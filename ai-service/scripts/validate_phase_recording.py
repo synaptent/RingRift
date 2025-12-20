@@ -44,21 +44,37 @@ MANDATORY_RECORD_PHASES = [
     GamePhase.TERRITORY_PROCESSING,
 ]
 
-# Map of phases to valid move types
+# Map of phases to valid move types (aligned with game_engine.py _assert_phase_move_invariant)
 PHASE_TO_VALID_MOVE_TYPES: Dict[GamePhase, Set[str]] = {
     GamePhase.RING_PLACEMENT: {"place_ring", "skip_placement", "no_placement_action"},
-    GamePhase.MOVEMENT: {"move_stack", "move_ring", "build_stack", "no_movement_action"},
-    GamePhase.CAPTURE: {"overtaking_capture", "skip_capture"},
-    GamePhase.CHAIN_CAPTURE: {"continue_capture_segment", "overtaking_capture"},
-    GamePhase.LINE_PROCESSING: {"process_line", "choose_line_reward", "no_line_action"},
+    GamePhase.MOVEMENT: {
+        "move_stack", "move_ring", "build_stack",  # build_stack is legacy alias
+        "overtaking_capture", "continue_capture_segment",  # captures can start from movement
+        "no_movement_action",
+        "recovery_slide", "skip_recovery",  # RR-CANON-R110-R115
+    },
+    GamePhase.CAPTURE: {"overtaking_capture", "continue_capture_segment", "skip_capture"},
+    GamePhase.CHAIN_CAPTURE: {"overtaking_capture", "continue_capture_segment"},
+    GamePhase.LINE_PROCESSING: {
+        "process_line",
+        "choose_line_option",  # canonical
+        "choose_line_reward",  # legacy alias
+        "no_line_action",
+        "line_formation",  # legacy
+    },
     GamePhase.TERRITORY_PROCESSING: {
-        "process_territory_region",
+        "choose_territory_option",  # canonical
+        "process_territory_region",  # legacy alias
         "eliminate_rings_from_stack",
         "skip_territory_processing",
         "no_territory_action",
+        "territory_claim",  # legacy
     },
-    GamePhase.FORCED_ELIMINATION: {"forced_elimination", "eliminate_rings_from_stack"},
+    GamePhase.FORCED_ELIMINATION: {"forced_elimination"},
 }
+
+# Legacy move types accepted in any phase for backward compatibility
+LEGACY_MOVE_TYPES = {"line_formation", "territory_claim", "chain_capture", "swap_sides"}
 
 
 @dataclass
@@ -76,20 +92,25 @@ def infer_phase_from_move_type(move_type: str) -> Optional[str]:
 
     if move_type_lower in ("place_ring", "skip_placement", "no_placement_action"):
         return "ring_placement"
-    elif move_type_lower in ("move_stack", "move_ring", "build_stack", "no_movement_action"):
+    elif move_type_lower in ("move_stack", "move_ring", "build_stack", "no_movement_action",
+                              "recovery_slide", "skip_recovery"):
         return "movement"
     elif move_type_lower in ("overtaking_capture", "skip_capture"):
         return "capture"
     elif move_type_lower == "continue_capture_segment":
         return "chain_capture"
-    elif move_type_lower in ("process_line", "choose_line_reward", "no_line_action"):
+    elif move_type_lower in ("process_line", "choose_line_option", "choose_line_reward",
+                              "no_line_action", "line_formation"):
         return "line_processing"
-    elif move_type_lower in ("process_territory_region", "skip_territory_processing", "no_territory_action"):
+    elif move_type_lower in ("choose_territory_option", "process_territory_region",
+                              "skip_territory_processing", "no_territory_action", "territory_claim"):
         return "territory_processing"
     elif move_type_lower == "eliminate_rings_from_stack":
         return "territory_processing"  # Default, could also be forced_elimination
     elif move_type_lower == "forced_elimination":
         return "forced_elimination"
+    elif move_type_lower in ("swap_sides", "chain_capture"):
+        return None  # Meta-moves, valid in any phase
     return None
 
 
@@ -144,7 +165,11 @@ def validate_game_phase_recording(game_id: str, moves: List[dict], num_players: 
                 valid_types = PHASE_TO_VALID_MOVE_TYPES.get(phase, set())
                 for record in records:
                     move_type = record.get("type", record.get("move_type", ""))
-                    if move_type.lower() not in {t.lower() for t in valid_types}:
+                    move_type_lower = move_type.lower()
+                    # Legacy move types are accepted in any phase
+                    if move_type_lower in LEGACY_MOVE_TYPES:
+                        continue
+                    if move_type_lower not in {t.lower() for t in valid_types}:
                         violations.append(
                             PhaseViolation(
                                 game_id=game_id,

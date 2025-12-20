@@ -45,6 +45,8 @@ const wsErrorMoveRejected = new Counter('ws_error_move_rejected_total');
 const wsErrorAccessDenied = new Counter('ws_error_access_denied_total');
 const wsErrorInternalError = new Counter('ws_error_internal_error_total');
 const authTokenExpired = new Counter('auth_token_expired_total');
+const rateLimitHit = new Counter('rate_limit_hit_total');
+const trueErrors = new Counter('true_errors_total');
 
 const concurrentActiveGames = new Gauge('concurrent_active_games');
 
@@ -200,6 +202,10 @@ export const options = {
     ws_handshake_success_rate: [
       `rate>${connectionStabilitySlo.connection_success_rate_percent / 100}`,
     ],
+
+    // True error rate: errors excluding auth (401) and rate limiting (429)
+    // This provides the real application error rate for SLO validation.
+    true_errors_total: ['rate<0.005'], // Less than 0.5% true error rate
   },
   tags: {
     scenario: 'websocket-gameplay',
@@ -445,9 +451,10 @@ export default function (data) {
         errorCode = null;
       }
 
-      if (errorCode === 'AUTH_TOKEN_EXPIRED') {
-        authTokenExpired.add(1);
+      // Classify 401 as auth token expired (not a true error)
+      authTokenExpired.add(1);
 
+      if (errorCode === 'AUTH_TOKEN_EXPIRED') {
         const refreshed = getValidToken(baseUrl, {
           apiPrefix: API_PREFIX,
           tags: { name: 'auth-login-websocket-gameplay-refresh' },
@@ -469,6 +476,14 @@ export default function (data) {
       }
     }
 
+    // Handle rate limiting as a separate classification (not a true error)
+    if (createRes.status === 429) {
+      rateLimitHit.add(1);
+      console.warn(`VU ${__VU}: Rate limited during game creation (429)`);
+      sleep(2);
+      return;
+    }
+
     let createdGameId = null;
     try {
       const body = JSON.parse(createRes.body);
@@ -485,6 +500,10 @@ export default function (data) {
       myLastObservedMoveNumberForPlayer = 0;
       console.log(`VU ${__VU}: Created AI game ${myGameId} for WebSocket gameplay`);
     } else {
+      // Record as true error only if not already classified as auth/rate-limit
+      if (createRes.status !== 401 && createRes.status !== 429) {
+        trueErrors.add(1);
+      }
       console.error(
         `VU ${__VU}: Game creation failed - status=${createRes.status} body=${createRes.body}`
       );
@@ -900,23 +919,35 @@ function handleErrorMessage(errorPayload, helpers) {
 
   if (code === 'MOVE_REJECTED') {
     wsErrorMoveRejected.add(1);
+    trueErrors.add(1); // Move rejection is a true application error
     helpers.clearAwaiting();
     return;
   }
 
   if (code === 'ACCESS_DENIED') {
     wsErrorAccessDenied.add(1);
+    // ACCESS_DENIED may be auth-related, classify separately
+    authTokenExpired.add(1);
+    helpers.clearAwaiting();
+    return;
+  }
+
+  if (code === 'RATE_LIMITED' || code === 'TOO_MANY_REQUESTS') {
+    // Rate limiting is not a true error
+    rateLimitHit.add(1);
     helpers.clearAwaiting();
     return;
   }
 
   if (code === 'INTERNAL_ERROR') {
     wsErrorInternalError.add(1);
+    trueErrors.add(1); // Internal errors are true application errors
     helpers.clearAwaiting();
     return;
   }
 
-  // Other error codes are logged but not classified into dedicated counters.
+  // Other error codes are logged and counted as true errors
+  trueErrors.add(1);
   console.warn(
     `VU ${__VU}: Unclassified WebSocket error code ${code} - message=${
       errorPayload && errorPayload.message

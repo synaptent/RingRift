@@ -30,11 +30,11 @@ class CalibrationBin:
 
     @property
     def mean_prediction(self) -> float:
-        return np.mean(self.predictions) if self.predictions else 0.0
+        return float(np.mean(self.predictions)) if self.predictions else 0.0
 
     @property
     def mean_outcome(self) -> float:
-        return np.mean(self.outcomes) if self.outcomes else 0.0
+        return float(np.mean(self.outcomes)) if self.outcomes else 0.0
 
     @property
     def calibration_error(self) -> float:

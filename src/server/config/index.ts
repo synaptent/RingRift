@@ -51,6 +51,7 @@ export {
   isDevelopment,
   isTest,
   isProductionLike,
+  parseDurationToSeconds,
 } from './env';
 
 export type {

@@ -66,11 +66,15 @@ disable_error_code = [
     "misc",            # 262 errors - decorators/generics issues
     "operator",        # 28 errors - numeric type issues
     "var-annotated",   # Enable later
-    "return-value",    # 75 errors - Optional/type mismatches
+    "return-value",    # 69 errors - Optional/type mismatches (being fixed incrementally)
     # Fixed 2025-12-19: exit-return errors (bool->None), MarkerInfo import
 ]
 
 # Per-module overrides - stricter checking on critical parity modules
+# Modules with return-value checking enabled (fixed 2025-12-19):
+# - app.training.dynamic_export
+# - app.training.value_calibration
+# - app.training.gradient_surgery
 # These modules must maintain type parity with TypeScript equivalents
 [[tool.mypy.overrides]]
 module = "app.board_manager"
@@ -156,6 +160,38 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.importlinter]
+# Architecture tests - enforce dependency rules
+# Run with: lint-imports
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "AI layer should not import from training"
+type = "forbidden"
+source_modules = ["app.ai"]
+forbidden_modules = ["app.training"]
+ignore_imports = [
+    # Allow specific exceptions for shared utilities
+    "app.ai.neural_net -> app.training.train",  # NeuralNetAI needs training utils
+]
+
+[[tool.importlinter.contracts]]
+name = "Models should be dependency-free"
+type = "independence"
+modules = ["app.models"]
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "app.main",
+    "app.routers",
+    "app.ai",
+    "app.game_engine",
+    "app.models",
+]
+# Allow same-layer imports and downward dependencies
 
 [tool.mutmut]
 # Mutation testing configuration

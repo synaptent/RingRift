@@ -39,32 +39,61 @@ const normalizeIpKey = (ip: string | undefined | null): string => {
   return raw;
 };
 
+// =============================================================================
+// RATE LIMIT BYPASS FOR LOAD TESTING
+// =============================================================================
+//
+// ⚠️  SECURITY WARNING - READ CAREFULLY ⚠️
+//
+// This bypass mechanism allows load test users to skip rate limiting.
+// It is intended ONLY for staging environments during load testing.
+//
+// CRITICAL SECURITY REQUIREMENTS:
+// 1. RATE_LIMIT_BYPASS_ENABLED must default to false
+// 2. NEVER enable in production - it defeats DDoS protection
+// 3. Only use with controlled load test user accounts
+// 4. All bypass events are logged for audit purposes
+//
+// The bypass is opt-in and requires BOTH:
+// - RATE_LIMIT_BYPASS_ENABLED=true in environment
+// - Request from a user matching RATE_LIMIT_BYPASS_USER_PATTERN
+//   OR request from an IP in RATE_LIMIT_BYPASS_IPS
+//
+// =============================================================================
+
 /**
- * Load test bypass configuration.
+ * Check if rate limit bypass is enabled in environment.
  *
- * When RATE_LIMIT_BYPASS_ENABLED=true, requests from load test users
- * or whitelisted IPs will bypass rate limiting.
- *
- * Environment variables:
- *   RATE_LIMIT_BYPASS_ENABLED - Set to 'true' to enable bypass
- *   RATE_LIMIT_BYPASS_USER_PATTERN - Regex pattern for user emails (default: loadtest.*@loadtest\\.local)
- *   RATE_LIMIT_BYPASS_IPS - Comma-separated list of whitelisted IPs
+ * ⚠️  CRITICAL: This must default to false to prevent accidental exposure.
  */
 const isRateLimitBypassEnabled = (): boolean => {
   return process.env.RATE_LIMIT_BYPASS_ENABLED === 'true';
 };
 
+/**
+ * Get the compiled regex pattern for load test user emails.
+ * Returns null if bypass is disabled or pattern is invalid.
+ */
 const getBypassUserPattern = (): RegExp | null => {
   if (!isRateLimitBypassEnabled()) return null;
-  const pattern = process.env.RATE_LIMIT_BYPASS_USER_PATTERN || 'loadtest.*@loadtest\\.local';
+  // Default pattern: ^loadtest\..+@loadtest\.local$
+  // Matches: loadtest.user1@loadtest.local, loadtest.vu_42@loadtest.local
+  const pattern = process.env.RATE_LIMIT_BYPASS_USER_PATTERN || '^loadtest\\..+@loadtest\\.local$';
   try {
-    return new RegExp(pattern, 'i');
+    return new RegExp(pattern);
   } catch {
-    logger.warn('Invalid RATE_LIMIT_BYPASS_USER_PATTERN, bypass disabled');
+    logger.warn('Invalid RATE_LIMIT_BYPASS_USER_PATTERN, bypass disabled', {
+      event: 'rate_limit_bypass_pattern_invalid',
+      pattern,
+    });
     return null;
   }
 };
 
+/**
+ * Get the set of whitelisted IPs for rate limit bypass.
+ * Returns empty set if bypass is disabled.
+ */
 const getBypassIPs = (): Set<string> => {
   if (!isRateLimitBypassEnabled()) return new Set();
   const ips = process.env.RATE_LIMIT_BYPASS_IPS || '';
@@ -77,15 +106,47 @@ const getBypassIPs = (): Set<string> => {
 };
 
 /**
- * Check if a request should bypass rate limiting.
- * Returns true for load test users or whitelisted IPs.
+ * Log when rate limit bypass is triggered.
+ * This provides an audit trail for security review.
  */
-export const shouldBypassRateLimit = (req: Request): boolean => {
+const logBypassTriggered = (
+  req: Request,
+  reason: 'ip' | 'user_pattern',
+  identifier: string
+): void => {
+  const authReq = req as AuthenticatedRequest;
+  logger.info('Rate limit bypass triggered', {
+    event: 'rate_limit_bypass_triggered',
+    reason,
+    identifier,
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    userId: authReq.user?.id,
+    userEmail: authReq.user?.email,
+  });
+};
+
+/**
+ * Check if a request should bypass rate limiting.
+ *
+ * Returns true for load test users or whitelisted IPs when bypass is enabled.
+ * All bypass events are logged for audit purposes.
+ *
+ * @param req - Express request object
+ * @param logBypass - Whether to log bypass events (default: true)
+ * @returns true if the request should bypass rate limiting
+ */
+export const shouldBypassRateLimit = (req: Request, logBypass: boolean = true): boolean => {
   if (!isRateLimitBypassEnabled()) return false;
 
   // Check IP whitelist
+  const normalizedIp = normalizeIpKey(req.ip);
   const bypassIPs = getBypassIPs();
-  if (bypassIPs.has(normalizeIpKey(req.ip))) {
+  if (bypassIPs.has(normalizedIp)) {
+    if (logBypass) {
+      logBypassTriggered(req, 'ip', normalizedIp);
+    }
     return true;
   }
 
@@ -95,6 +156,9 @@ export const shouldBypassRateLimit = (req: Request): boolean => {
   if (userEmail) {
     const pattern = getBypassUserPattern();
     if (pattern && pattern.test(userEmail)) {
+      if (logBypass) {
+        logBypassTriggered(req, 'user_pattern', userEmail);
+      }
       return true;
     }
   }

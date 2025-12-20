@@ -157,9 +157,9 @@ def estimate_samples(
 ) -> int:
     """Estimate number of training samples from games."""
     effective_games = min(game_count, max_games) if max_games else game_count
-    moves_per_game = BOARD_ADJUSTMENTS.get(board_type, {}).get("moves_per_game", 60)
+    moves_per_game: int = BOARD_ADJUSTMENTS.get(board_type, {}).get("moves_per_game", 60)
     total_moves = effective_games * moves_per_game
-    return total_moves // sample_every
+    return int(total_moves // sample_every)
 
 
 def get_export_settings(

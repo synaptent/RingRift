@@ -114,6 +114,39 @@ function extractRate(metricName, data) {
 }
 
 /**
+ * Compute a summary breakdown of errors by classification.
+ *
+ * Returns:
+ * - auth_expired_count: number of auth token expired errors (401)
+ * - rate_limit_count: number of rate limit hits (429)
+ * - true_error_count: number of real application errors
+ * - excluded_count: total auth + rate limit (noise to exclude)
+ *
+ * @param {Object|null} authStats - Counter stats for auth_token_expired_total
+ * @param {Object|null} rateLimitStats - Counter stats for rate_limit_hit_total
+ * @param {Object|null} trueErrorStats - Counter stats for true_errors_total
+ * @returns {Object} Computed breakdown
+ */
+function computeErrorBreakdown(authStats, rateLimitStats, trueErrorStats) {
+  const authCount = (authStats && typeof authStats.count === 'number') ? authStats.count : 0;
+  const rateLimitCount = (rateLimitStats && typeof rateLimitStats.count === 'number') ? rateLimitStats.count : 0;
+  const trueErrorCount = (trueErrorStats && typeof trueErrorStats.count === 'number') ? trueErrorStats.count : 0;
+
+  const excludedCount = authCount + rateLimitCount;
+  const totalClassified = excludedCount + trueErrorCount;
+
+  return {
+    auth_expired_count: authCount,
+    rate_limit_count: rateLimitCount,
+    true_error_count: trueErrorCount,
+    excluded_count: excludedCount,
+    total_classified: totalClassified,
+    // Human-readable summary for logs
+    summary: `Auth expired: ${authCount}, Rate limited: ${rateLimitCount}, True errors: ${trueErrorCount} (${excludedCount} excluded from SLO)`,
+  };
+}
+
+/**
  * Parse a k6 threshold expression such as "p(95)<800" or "rate<0.01".
  *
  * @param {string} expr
@@ -331,7 +364,35 @@ function buildSummaryObject(scenarioName, environmentLabel, thresholdsEnvLabel, 
     websocket_protocol_errors: extractCounterSummary('websocket_protocol_errors', data),
 
     // Auth lifecycle classifications used by long-running load tests.
+    // These are expected during long runs and should NOT count toward true error rate.
     auth_token_expired_total: extractCounterSummary('auth_token_expired_total', data),
+
+    // Rate limiting - expected during capacity stress tests.
+    // These are infrastructure-level responses, NOT application errors.
+    rate_limit_hit_total: extractCounterSummary('rate_limit_hit_total', data),
+
+    // True errors - all errors EXCLUDING auth (401) and rate-limit (429).
+    // This is the key SLO metric for application health.
+    true_errors_total: extractCounterSummary('true_errors_total', data),
+  };
+
+  // Compute derived error breakdown for SLO summary
+  const totalErrorStats = extractCounterSummary('http_req_failed', data);
+  const authExpiredStats = classifications.auth_token_expired_total;
+  const rateLimitStats = classifications.rate_limit_hit_total;
+  const trueErrorStats = classifications.true_errors_total;
+
+  const errorBreakdown = {
+    // Total HTTP request failures (from k6 built-in)
+    total_http_failures: totalErrorStats,
+    // Auth token expired (401) - expected noise, not app errors
+    auth_token_expired: authExpiredStats,
+    // Rate limit hit (429) - capacity signal, not app errors
+    rate_limit_hit: rateLimitStats,
+    // True errors - real application errors for SLO
+    true_errors: trueErrorStats,
+    // Computed true error rate if counts are available
+    computed_breakdown: computeErrorBreakdown(authExpiredStats, rateLimitStats, trueErrorStats),
   };
 
   const raw = {
@@ -363,6 +424,10 @@ function buildSummaryObject(scenarioName, environmentLabel, thresholdsEnvLabel, 
     overallPass: slo.overallPass,
     thresholds: slo.thresholds,
     slo,
+
+    // Error breakdown showing auth/rate-limit exclusions for "true error rate" SLO.
+    // This is the key metric distinguishing infrastructure noise from real app errors.
+    errorBreakdown,
 
     // Preserve the existing compact metric shape for backwards compatibility.
     thresholdsEnv: raw.thresholdsEnv,

@@ -1062,14 +1062,23 @@ class ParallelGameRunner:
         if player_has_rings is None:
             player_has_rings = self._compute_player_ring_status_batch()
 
-        for g in torch.where(candidate_mask)[0].tolist():
-            if self.state.game_status[g].item() != GameStatus.ACTIVE:
+        # Pre-extract GPU tensors to CPU to minimize synchronization overhead
+        # (MPS performance optimization - reduces .item() calls per iteration)
+        game_indices = torch.where(candidate_mask)[0]
+        game_status_cpu = self.state.game_status[game_indices].cpu().numpy()
+        candidates_cpu = self.state.lps_consecutive_exclusive_player[game_indices].cpu().numpy()
+        player_has_rings_cpu = player_has_rings[game_indices].cpu().numpy()
+
+        for i, g in enumerate(game_indices.tolist()):
+            if game_status_cpu[i] != GameStatus.ACTIVE:
                 continue
 
-            candidate = int(self.state.lps_consecutive_exclusive_player[g].item())
+            candidate = int(candidates_cpu[i])
             if candidate <= 0:
                 continue
 
+            # Note: _player_has_real_action_gpu still causes GPU sync - would need
+            # batched move generation to fully optimize (see GPU_PIPELINE_ROADMAP.md)
             if not self._player_has_real_action_gpu(g, candidate):
                 continue
 
@@ -1077,7 +1086,7 @@ class ParallelGameRunner:
             for pid in range(1, self.num_players + 1):
                 if pid == candidate:
                     continue
-                if not bool(player_has_rings[g, pid].item()):
+                if not bool(player_has_rings_cpu[i, pid]):
                     continue
                 if self._player_has_real_action_gpu(g, pid):
                     others_have_real = True

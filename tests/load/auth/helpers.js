@@ -5,6 +5,11 @@ const DEFAULT_TOKEN_TTL_SECONDS = Number(__ENV.LOADTEST_AUTH_TOKEN_TTL_S || 15 *
 const TOKEN_REFRESH_SAFETY_WINDOW_SECONDS = Number(
   __ENV.LOADTEST_AUTH_REFRESH_WINDOW_S || 60
 );
+// Maximum jitter (in seconds) added to token refresh timing to prevent "refresh storms"
+// when many VUs attempt to refresh simultaneously
+const TOKEN_REFRESH_JITTER_MAX_SECONDS = Number(
+  __ENV.LOADTEST_AUTH_REFRESH_JITTER_S || 30
+);
 
 /**
  * Multi-user pool configuration.
@@ -212,12 +217,18 @@ export function getValidToken(baseUrl, options) {
 
   const now = Date.now();
 
+  // Add jitter to token refresh timing to prevent "refresh storms" when many VUs
+  // reach the refresh window simultaneously. Each VU gets a random offset so
+  // refreshes are distributed across the jitter window.
+  const jitterMs = Math.random() * TOKEN_REFRESH_JITTER_MAX_SECONDS * 1000;
+
   const shouldLogin =
     forceRefresh ||
     !cachedAuthState ||
     cachedAuthState.baseUrl !== baseUrl ||
-    // Proactively refresh shortly before the token is expected to expire.
-    now >= cachedAuthState.expiresAtMs - TOKEN_REFRESH_SAFETY_WINDOW_SECONDS * 1000;
+    // Proactively refresh shortly before the token is expected to expire,
+    // with added jitter to spread out refresh requests.
+    now >= cachedAuthState.expiresAtMs - TOKEN_REFRESH_SAFETY_WINDOW_SECONDS * 1000 - jitterMs;
 
   if (shouldLogin) {
     const result = loginAndGetToken(baseUrl, {

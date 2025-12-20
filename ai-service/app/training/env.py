@@ -785,21 +785,21 @@ class RingRiftEnv:
             self._move_count += 1
             auto_generated_moves.append(auto_move)
 
-        # Track position for repetition detection (SHOULD BE DISABLED - see REPETITION_THRESHOLD)
+        # Repetition detection (diagnostic feature, disabled by default).
+        # The S-invariant (board shrinks each turn) theoretically prevents position repetition.
+        # If a repetition is detected, it indicates either a zobrist hash collision or a rules bug.
         terminated_by_repetition = False
         if self._repetition_threshold > 0:
-            pos_hash = getattr(self._state, 'zobrist_hash', 0)
-            if pos_hash:
+            pos_hash = self._state.zobrist_hash  # May be None if not computed
+            if pos_hash is not None and pos_hash != 0:
                 self._position_counts[pos_hash] = self._position_counts.get(pos_hash, 0) + 1
                 if self._position_counts[pos_hash] >= self._repetition_threshold:
                     terminated_by_repetition = True
-                    # ERROR: This should NEVER happen! The S-invariant guarantees no repetition.
-                    # If this triggers, investigate as a bug (zobrist hash collision or rules violation).
+                    # This should never happen due to S-invariant. Investigate if triggered.
                     logger.error(
-                        "BUG: GAME_DRAW_BY_REPETITION triggered but S-invariant should prevent this! "
-                        "position_hash=%d repeated %d times. "
+                        "REPETITION_DETECTED: position_hash=%d repeated %d times. "
                         "board_type=%s, num_players=%d, move_count=%d. "
-                        "Investigate: hash collision or S-invariant violation.",
+                        "Possible causes: zobrist hash collision or S-invariant violation.",
                         pos_hash,
                         self._position_counts[pos_hash],
                         self.board_type.value,

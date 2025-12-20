@@ -153,20 +153,23 @@ def generate_cage_data(
 
             state = engine.apply_move(state, selected_move)
 
-        # Determine outcome
-        if state.winner is not None:
-            for sample in game_samples:
-                # Outcome from perspective of the player who made the move
+        # Determine outcome - collect samples from all games
+        for sample in game_samples:
+            if state.winner is not None:
+                # Game ended with winner
                 if state.winner == sample['player']:
                     outcome = 1.0  # Win
                 else:
                     outcome = -1.0  # Loss
+            else:
+                # Draw or timeout
+                outcome = 0.0
 
-                all_boards.append(sample['board'])
-                all_globals.append(sample['global'])
-                all_actions.append(sample['action'])
-                all_outcomes.append(outcome)
-                all_is_best.append(sample['is_best'])
+            all_boards.append(sample['board'])
+            all_globals.append(sample['global'])
+            all_actions.append(sample['action'])
+            all_outcomes.append(outcome)
+            all_is_best.append(sample['is_best'])
 
         games_completed += 1
         if games_completed % 20 == 0:

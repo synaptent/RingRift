@@ -91,6 +91,13 @@ export const options = {
       `rate<${loadTestEnv.capacity_failures_total.rate}`,
     ],
 
+    // True error rate thresholds - excludes auth (401) and rate-limit (429) errors
+    // This provides the real application error rate for SLO validation.
+    // These errors are "noise" from expected infrastructure behavior, not true app bugs.
+    'true_errors_total': [
+      `rate<${loadTestEnv.true_errors?.rate || 0.005}`, // Less than 0.5% true error rate
+    ],
+
     // WebSocket protocol errors
     'websocket_protocol_errors': [
       `count<=${loadTestEnv.websocket.protocol_errors_max}`,

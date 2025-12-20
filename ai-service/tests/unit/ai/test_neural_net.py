@@ -549,8 +549,8 @@ class TestDecodedPolicyIndex:
 class TestNeuralNetAIInit:
     """Tests for NeuralNetAI initialization."""
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_init_cpu_device(self, mock_cuda, mock_mps, mock_config):
         """Test initialization selects CPU when no GPU available."""
         from app.ai.neural_net import NeuralNetAI
@@ -562,8 +562,8 @@ class TestNeuralNetAIInit:
         assert ai.model is None  # Lazy initialization
         assert ai.history_length == 3
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=True)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=True)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     @patch.dict("os.environ", {"RINGRIFT_NN_ARCHITECTURE": "auto"}, clear=False)
     def test_init_mps_device(self, mock_cuda, mock_mps, mock_config):
         """Test initialization selects MPS when available and architecture is auto."""
@@ -574,8 +574,8 @@ class TestNeuralNetAIInit:
         assert ai.device.type == "mps"
         assert ai._use_mps_arch is True
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=True)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=True)
     def test_init_cuda_device(self, mock_cuda, mock_mps, mock_config):
         """Test initialization selects CUDA when available."""
         from app.ai.neural_net import NeuralNetAI
@@ -584,8 +584,8 @@ class TestNeuralNetAIInit:
 
         assert ai.device.type == "cuda"
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=True)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=True)
     @patch.dict("os.environ", {"RINGRIFT_FORCE_CPU": "1"}, clear=False)
     def test_init_force_cpu(self, mock_cuda, mock_mps, mock_config):
         """Test RINGRIFT_FORCE_CPU environment variable."""
@@ -595,8 +595,8 @@ class TestNeuralNetAIInit:
 
         assert ai.device.type == "cpu"
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_init_with_board_type(self, mock_cuda, mock_mps, mock_config):
         """Test initialization with explicit board_type triggers early model init."""
         from app.ai.neural_net import NeuralNetAI
@@ -613,8 +613,8 @@ class TestNeuralNetAIInit:
         assert ai._initialized_board_type == BoardType.SQUARE8
         assert ai.board_size == 8
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_init_feature_version(self, mock_cuda, mock_mps):
         """Test feature version is read from config."""
         from app.ai.neural_net import NeuralNetAI
@@ -628,8 +628,8 @@ class TestNeuralNetAIInit:
 class TestNeuralNetAIGameHistory:
     """Tests for NeuralNetAI game history management."""
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_game_history_initialized_empty(self, mock_cuda, mock_mps, mock_config):
         """Test game history starts empty."""
         from app.ai.neural_net import NeuralNetAI
@@ -638,8 +638,8 @@ class TestNeuralNetAIGameHistory:
 
         assert ai.game_history == {}
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_history_length_default(self, mock_cuda, mock_mps, mock_config):
         """Test default history length is 3."""
         from app.ai.neural_net import NeuralNetAI
@@ -679,8 +679,8 @@ class TestCNNArchitectureConstants:
 class TestEnsureModelInitialized:
     """Tests for _ensure_model_initialized method."""
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_double_init_same_board_type_ok(self, mock_cuda, mock_mps, mock_config):
         """Test calling _ensure_model_initialized twice with same board type is ok."""
         from app.ai.neural_net import NeuralNetAI
@@ -695,8 +695,8 @@ class TestEnsureModelInitialized:
 
         assert ai._initialized_board_type == BoardType.SQUARE8
 
-    @patch("app.ai.neural_net.torch.backends.mps.is_available", return_value=False)
-    @patch("app.ai.neural_net.torch.cuda.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
     def test_double_init_different_board_type_raises(self, mock_cuda, mock_mps, mock_config):
         """Test calling _ensure_model_initialized with different board type raises."""
         from app.ai.neural_net import NeuralNetAI

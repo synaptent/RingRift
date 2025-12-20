@@ -83,9 +83,13 @@ If the API does not return `expiresIn`, set:
 ### Ready-to-Run Environment Block
 
 ```bash
-export STAGING_URL="https://staging.example.com"
-export WS_URL="wss://staging.example.com"
-export AI_SERVICE_URL="https://ai-staging.example.com"
+# Remote staging (documented in docs/runbooks/DEPLOYMENT_ROUTINE.md)
+export STAGING_URL="https://staging.ringrift.com"
+export WS_URL="wss://staging.ringrift.com"
+
+# AI service health is optional; use an internal endpoint if reachable.
+# For docker-based staging, this is typically:
+export AI_SERVICE_URL="http://ai-service:8001"
 
 export LOADTEST_EMAIL="loadtest_user_1@loadtest.local"
 export LOADTEST_PASSWORD="TestPassword123!"

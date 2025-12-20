@@ -32,7 +32,7 @@ import {
   ResetPasswordSchema,
 } from '../../shared/validation/schemas';
 import { getCacheService, CacheKeys } from '../cache/redis';
-import { config } from '../config';
+import { config, parseDurationToSeconds } from '../config';
 
 const router = Router();
 
@@ -700,6 +700,9 @@ router.post(
     // Set refresh token as httpOnly cookie for security
     res.cookie('refreshToken', refreshToken, getRefreshTokenCookieOptions());
 
+    // Calculate token TTL in seconds from config for client token management
+    const expiresIn = parseDurationToSeconds(config.auth.accessTokenExpiresIn);
+
     res.json({
       success: true,
       data: {
@@ -707,6 +710,8 @@ router.post(
         accessToken,
         // Note: refreshToken still included in body for backward compatibility
         refreshToken,
+        // Token TTL in seconds - enables clients to schedule proactive refresh
+        expiresIn,
       },
       message: 'Login successful',
     });

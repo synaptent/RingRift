@@ -269,6 +269,54 @@ export const EnvSchema = z.object({
   /** Fallback (in-memory) rate limit max requests */
   RATE_LIMIT_FALLBACK_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
 
+  // -------------------------------------------------------------------
+  // RATE LIMIT BYPASS (STAGING/LOAD TESTING ONLY)
+  // -------------------------------------------------------------------
+  // ⚠️  SECURITY WARNING: These settings bypass rate limiting protection.
+  //     NEVER enable in production! Only for staging load tests.
+  //
+  //     When enabled, requests from matching users or IPs will not be
+  //     subject to rate limiting. This allows load testing without false
+  //     rate limit errors polluting test results.
+  //
+  //     The bypass is ONLY active when:
+  //     1. RATE_LIMIT_BYPASS_ENABLED is explicitly set to 'true'
+  //     2. The authenticated user's email matches RATE_LIMIT_BYPASS_USER_PATTERN
+  //        OR the request IP is in RATE_LIMIT_BYPASS_IPS
+  // -------------------------------------------------------------------
+
+  /**
+   * Enable rate limit bypass for load testing.
+   *
+   * ⚠️  CRITICAL SECURITY: Must default to false. Never enable in production!
+   *
+   * When true, requests from load test users (matching RATE_LIMIT_BYPASS_USER_PATTERN)
+   * or whitelisted IPs will bypass rate limiting entirely.
+   */
+  RATE_LIMIT_BYPASS_ENABLED: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+
+  /**
+   * Regex pattern to match load test user emails for rate limit bypass.
+   *
+   * Only users whose email matches this pattern will bypass rate limiting
+   * (when RATE_LIMIT_BYPASS_ENABLED is true).
+   *
+   * Default pattern matches: loadtest.*@loadtest.local
+   * Examples: loadtest.user1@loadtest.local, loadtest.vu_42@loadtest.local
+   */
+  RATE_LIMIT_BYPASS_USER_PATTERN: z.string().default('^loadtest\\..+@loadtest\\.local$'),
+
+  /**
+   * Comma-separated list of IP addresses to bypass rate limiting.
+   *
+   * These IPs will bypass rate limiting (when RATE_LIMIT_BYPASS_ENABLED is true).
+   * Empty string means no IPs are whitelisted.
+   */
+  RATE_LIMIT_BYPASS_IPS: z.string().default(''),
+
   // ===================================================================
   // LOGGING
   // ===================================================================
@@ -697,4 +745,44 @@ export function isTest(nodeEnv: NodeEnv): boolean {
  */
 export function isProductionLike(nodeEnv: NodeEnv): boolean {
   return nodeEnv === 'production' || nodeEnv === 'staging';
+}
+
+/**
+ * Parse a duration string (e.g., "15m", "1h", "7d") to seconds.
+ *
+ * Supported units:
+ * - s: seconds
+ * - m: minutes
+ * - h: hours
+ * - d: days
+ *
+ * @param duration - Duration string like "15m", "1h", "7d"
+ * @returns Duration in seconds
+ * @throws Error if the format is invalid
+ */
+export function parseDurationToSeconds(duration: string): number {
+  const trimmed = duration.trim();
+  const match = trimmed.match(/^(\d+)([smhd])$/i);
+
+  if (!match) {
+    throw new Error(
+      `Invalid duration format: "${duration}". Expected format like "15m", "1h", "7d".`
+    );
+  }
+
+  const value = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+
+  switch (unit) {
+    case 's':
+      return value;
+    case 'm':
+      return value * 60;
+    case 'h':
+      return value * 60 * 60;
+    case 'd':
+      return value * 24 * 60 * 60;
+    default:
+      throw new Error(`Unknown duration unit: "${unit}"`);
+  }
 }

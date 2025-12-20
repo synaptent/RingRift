@@ -123,6 +123,28 @@ jobs:
       - name: Run mypy
         run: mypy app --ignore-missing-imports --no-error-summary || true
 
+  architecture-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'ai-service/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install import-linter
+
+      - name: Check architecture constraints
+        run: |
+          echo "Checking architecture constraints..."
+          lint-imports || echo "::warning::Architecture constraint violations detected"
+
   deprecation-check:
     runs-on: ubuntu-latest
     steps:
@@ -303,6 +325,62 @@ jobs:
               echo "::warning::High mutation survival rate (${RATE}%) - consider adding more thorough tests"
             fi
           fi
+
+  gpu-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'ai-service/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: Verify GPU module imports
+        run: |
+          python -c "
+          # Core GPU modules
+          from app.ai.gpu_batch_state import BatchGameState
+          from app.ai.gpu_game_types import MoveType, GameStatus
+          from app.ai.gpu_parallel_games import ParallelGameRunner
+          from app.ai.gpu_heuristic import evaluate_positions_batch
+          from app.ai.gpu_move_generation import generate_all_moves_batch
+          from app.ai.gpu_line_detection import detect_lines_vectorized
+          from app.ai.gpu_move_application import apply_placement_moves_batch
+          print('All GPU module imports OK')
+          "
+
+      - name: Test BatchGameState creation (CPU mode)
+        run: |
+          python -c "
+          import torch
+          from app.ai.gpu_batch_state import BatchGameState
+
+          # Create batch state on CPU
+          state = BatchGameState.create_batch(
+              batch_size=4,
+              board_size=8,
+              num_players=2,
+              device=torch.device('cpu')
+          )
+          assert state.batch_size == 4
+          assert state.board_size == 8
+          assert state.num_players == 2
+          print(f'BatchGameState created: {state.batch_size} games on {state.device}')
+          "
+
+      - name: Run GPU parity tests (CPU mode)
+        run: |
+          # Run GPU parity tests which verify GPU code matches CPU semantics
+          pytest tests/gpu/test_gpu_cpu_parity.py -v --tb=short -x --timeout=60
 
   sanity-check:
     runs-on: ubuntu-latest

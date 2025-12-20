@@ -126,8 +126,8 @@ class GradientSurgeon:
             Combined loss value
         """
         if not self.config.enabled:
-            # Simple sum without surgery
-            total_loss = sum(losses.values())
+            # Simple sum without surgery (losses must be non-empty)
+            total_loss: torch.Tensor = sum(losses.values())  # type: ignore[assignment]
             model.zero_grad()
             total_loss.backward()
             return total_loss
@@ -154,7 +154,8 @@ class GradientSurgeon:
             param.grad.copy_(combined_grad[idx:idx + numel].view_as(param))
             idx += numel
 
-        return sum(losses.values())
+        combined_loss: torch.Tensor = sum(losses.values())  # type: ignore[assignment]
+        return combined_loss
 
     def check_gradient_conflict(
         self,

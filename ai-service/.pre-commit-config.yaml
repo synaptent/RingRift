@@ -33,3 +33,13 @@ repos:
         pass_filenames: true
         # Only run on modified/staged files
         stages: [commit]
+
+      # Warn about large Python files (>1000 lines)
+      # Encourages modular design and easier maintenance
+      - id: check-file-size
+        name: Check Python File Size
+        entry: python scripts/hooks/check_file_size.py
+        language: python
+        types: [python]
+        pass_filenames: true
+        stages: [commit]

@@ -22,6 +22,8 @@ export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
 export const capacityFailures = new Counter('capacity_failures_total');
 const authTokenExpired = new Counter('auth_token_expired_total');
+const rateLimitHit = new Counter('rate_limit_hit_total');
+const trueErrors = new Counter('true_errors_total');
 
 // Custom metrics
 const concurrentActiveGames = new Gauge('concurrent_active_games');
@@ -130,6 +132,10 @@ export const options = {
       `count<=${loadTestEnv.id_lifecycle_mismatches_total.max}`,
     ],
     capacity_failures_total: [`rate<${loadTestEnv.capacity_failures_total.rate}`],
+
+    // True error rate: errors excluding auth (401) and rate limiting (429)
+    // This provides the real application error rate for SLO validation.
+    true_errors_total: ['rate<0.005'], // Less than 0.5% true error rate
   },
 
   tags: {
@@ -166,45 +172,90 @@ function markGameInactive() {
 /**
  * Classify failures for POST /api/games when the request payload is expected
  * to be valid according to the CreateGameRequest contract.
+ *
+ * Classification separates auth/rate-limit errors from true application errors:
+ * - 401 (Unauthorized) → auth_token_expired_total (expected during long runs)
+ * - 429 (Too Many Requests) → rate_limit_hit_total (capacity signal, not app error)
+ * - Other 4xx/5xx → true_errors_total (real application errors for SLO)
  */
 function classifyCreateGameFailure(res, createdGameId) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
-    return;
+    trueErrors.add(1);
+    return 'network_error';
   }
 
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
-    contractFailures.add(1);
-    return;
+  if (res.status === 401) {
+    // Auth token expired - classified separately, not a true error
+    authTokenExpired.add(1);
+    return 'auth_expired';
   }
 
-  if (res.status === 429 || res.status >= 500) {
+  if (res.status === 429) {
+    // Rate limited - classified separately, not a true error
+    rateLimitHit.add(1);
     capacityFailures.add(1);
-    return;
+    return 'rate_limited';
+  }
+
+  if (res.status === 400 || res.status === 403) {
+    contractFailures.add(1);
+    trueErrors.add(1);
+    return 'contract_failure';
+  }
+
+  if (res.status >= 500) {
+    capacityFailures.add(1);
+    trueErrors.add(1);
+    return 'server_error';
   }
 
   // 2xx but missing/malformed body or game object.
   if (res.status >= 200 && res.status < 300 && !createdGameId) {
     contractFailures.add(1);
+    trueErrors.add(1);
+    return 'malformed_response';
   }
+
+  return 'success';
 }
 
 /**
  * Classify failures for GET /api/games/:gameId when polling concurrently
  * created games. We treat early 404s (well below MAX_POLLS_PER_GAME) as
  * potential ID lifecycle mismatches.
+ *
+ * Classification separates auth/rate-limit errors from true application errors:
+ * - 401 (Unauthorized) → auth_token_expired_total (expected during long runs)
+ * - 429 (Too Many Requests) → rate_limit_hit_total (capacity signal, not app error)
+ * - Other 4xx/5xx → true_errors_total (real application errors for SLO)
  */
 function classifyGameStateFailure(res, pollCountBefore) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
-    return;
+    trueErrors.add(1);
+    return 'network_error';
   }
 
   const status = res.status;
 
-  if (status === 400 || status === 401 || status === 403) {
+  if (status === 401) {
+    // Auth token expired - classified separately, not a true error
+    authTokenExpired.add(1);
+    return 'auth_expired';
+  }
+
+  if (status === 429) {
+    // Rate limited - classified separately, not a true error
+    rateLimitHit.add(1);
+    capacityFailures.add(1);
+    return 'rate_limited';
+  }
+
+  if (status === 400 || status === 403) {
     contractFailures.add(1);
-    return;
+    trueErrors.add(1);
+    return 'contract_failure';
   }
 
   if (status === 404) {
@@ -213,13 +264,19 @@ function classifyGameStateFailure(res, pollCountBefore) {
     // cleanup/expiry.
     if (pollCountBefore < MAX_POLLS_PER_GAME / 4) {
       idLifecycleMismatches.add(1);
+      trueErrors.add(1);
+      return 'id_lifecycle_mismatch';
     }
-    return;
+    return 'expired';
   }
 
-  if (status === 429 || status >= 500) {
+  if (status >= 500) {
     capacityFailures.add(1);
+    trueErrors.add(1);
+    return 'server_error';
   }
+
+  return 'success';
 }
 
 export function setup() {

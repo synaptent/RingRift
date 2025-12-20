@@ -769,6 +769,24 @@ def apply_movement_moves_batch_vectorized(
             flip_players = players_exp[is_opponent_marker]
             state.marker_owner[flip_games, flip_y, flip_x] = flip_players.to(state.marker_owner.dtype)
 
+        # Find own markers to collapse to territory (per RR-CANON-R090)
+        is_own_marker = (path_marker_owners == players_exp) & valid_path
+        if is_own_marker.any():
+            collapse_games = game_indices_exp[is_own_marker]
+            collapse_y = path_y_safe[is_own_marker]
+            collapse_x = path_x_safe[is_own_marker]
+            collapse_players = players_exp[is_own_marker]
+            # Remove marker and convert to territory
+            state.marker_owner[collapse_games, collapse_y, collapse_x] = 0
+            state.is_collapsed[collapse_games, collapse_y, collapse_x] = True
+            state.territory_owner[collapse_games, collapse_y, collapse_x] = collapse_players.to(
+                state.territory_owner.dtype
+            )
+            # Update territory count per player
+            # Use scatter_add to count collapsed markers per (game, player) pair
+            for g, p in zip(collapse_games.tolist(), collapse_players.tolist()):
+                state.territory_count[g, p] += 1
+
     # Handle landing on ANY marker (per RR-CANON-R091/R092)
     # Landing on any marker (own or opponent) removes it and costs 1 ring (cap-elimination)
     dest_marker = state.marker_owner[game_indices, to_y, to_x]
@@ -780,6 +798,7 @@ def apply_movement_moves_batch_vectorized(
         marker_games = game_indices[landing_on_any_marker]
         marker_y = to_y[landing_on_any_marker]
         marker_x = to_x[landing_on_any_marker]
+        marker_players = players[landing_on_any_marker]
         # Remove the marker
         state.marker_owner[marker_games, marker_y, marker_x] = 0
         # Only collapse if landing on OWN marker
@@ -788,9 +807,25 @@ def apply_movement_moves_batch_vectorized(
             collapse_games = marker_games[own_marker_mask]
             collapse_y = marker_y[own_marker_mask]
             collapse_x = marker_x[own_marker_mask]
+            collapse_players = marker_players[own_marker_mask]
             state.is_collapsed[collapse_games, collapse_y, collapse_x] = True
+            state.territory_owner[collapse_games, collapse_y, collapse_x] = collapse_players.to(
+                state.territory_owner.dtype
+            )
+            # Update territory count per player
+            for g, p in zip(collapse_games.tolist(), collapse_players.tolist()):
+                state.territory_count[g, p] += 1
 
-    # Clear origin
+        # Track eliminated rings from landing cost (cap-elimination)
+        # The moving player loses a ring from their cap
+        for g, p in zip(marker_games.tolist(), marker_players.tolist()):
+            state.eliminated_rings[g, p] += 1
+            state.rings_caused_eliminated[g, p] += 1
+
+    # Place departure marker at origin (per RR-CANON-R090)
+    state.marker_owner[game_indices, from_y, from_x] = players.to(state.marker_owner.dtype)
+
+    # Clear origin stack
     state.stack_owner[game_indices, from_y, from_x] = 0
     state.stack_height[game_indices, from_y, from_x] = 0
     state.cap_height[game_indices, from_y, from_x] = 0
@@ -1039,18 +1074,9 @@ def apply_capture_moves_batch_vectorized(
             flip_players = players_exp[is_opponent_marker]
             state.marker_owner[flip_games, flip_y, flip_x] = flip_players.to(state.marker_owner.dtype)
 
-    # Eliminate defender's ring (update tracking tensors) - vectorized using index_put_
-    ones = torch.ones(n_games, dtype=state.eliminated_rings.dtype, device=device)
-    state.eliminated_rings.index_put_(
-        (game_indices, defender_owner.long()),
-        ones,
-        accumulate=True
-    )
-    state.rings_caused_eliminated.index_put_(
-        (game_indices, players.long()),
-        ones,
-        accumulate=True
-    )
+    # Note: Captured rings are BURIED, not ELIMINATED. They go under the attacker's stack
+    # and can be liberated if the attacker's stack is later captured.
+    # We track buried_rings below, not eliminated_rings here.
 
     # === Update TARGET stack (reduce height by 1, capturing the top ring) ===
     new_target_height = torch.clamp(defender_height - 1, min=0)
@@ -1124,8 +1150,8 @@ def apply_capture_moves_batch_vectorized(
     state.stack_height[game_indices, to_y, to_x] = new_height.to(state.stack_height.dtype)
     state.cap_height[game_indices, to_y, to_x] = new_cap_height.to(state.cap_height.dtype)
 
-    # Place marker for attacker at landing
-    state.marker_owner[game_indices, to_y, to_x] = players.to(state.marker_owner.dtype)
+    # Note: No marker at landing - there's a stack there. marker_owner should remain 0.
+    # (Already cleared on line 1134-1138 if there was a landing marker)
 
     # Clear must_move_from constraint after capture (RR-CANON-R090)
     # The player has fulfilled their movement obligation by capturing.

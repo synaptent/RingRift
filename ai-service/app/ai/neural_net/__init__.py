@@ -13,6 +13,9 @@ For backwards compatibility, all public symbols are re-exported from
 the legacy module.
 """
 
+# Import torch for patching compatibility in tests
+import torch
+
 # Re-export everything from the legacy module for backwards compatibility
 # This ensures `from app.ai.neural_net import X` continues to work
 from app.ai._neural_net_legacy import (

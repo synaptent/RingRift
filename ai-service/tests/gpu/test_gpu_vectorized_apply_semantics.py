@@ -1,11 +1,6 @@
 import pytest
 import torch
 
-# These tests verify detailed move application semantics but need updating for current API
-pytestmark = pytest.mark.skip(
-    reason="GPU vectorized apply semantics tests need updating for current API - assertions mismatch"
-)
-
 from app.ai.gpu_parallel_games import (
     BatchGameState,
     BatchMoves,

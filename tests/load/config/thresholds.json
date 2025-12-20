@@ -250,6 +250,10 @@
       "capacity_failures_total": {
         "rate": 0.01
       },
+      "true_errors": {
+        "_comment": "True error rate excluding auth (401) and rate-limit (429) responses. These are real application errors.",
+        "rate": 0.005
+      },
       "websocket": {
         "protocol_errors_max": 0,
         "connection_errors_max": 50
@@ -264,6 +268,10 @@
       },
       "capacity_failures_total": {
         "rate": 0.005
+      },
+      "true_errors": {
+        "_comment": "True error rate excluding auth (401) and rate-limit (429) responses. These are real application errors.",
+        "rate": 0.002
       },
       "websocket": {
         "protocol_errors_max": 0,

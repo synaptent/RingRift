@@ -29,7 +29,8 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
-from app.game_engine import BoardType, GameEngine
+from app.game_engine import GameEngine
+from app.models import BoardType
 # NOTE: create_initial_state is imported lazily inside functions to avoid circular imports
 from app.rules.serialization import serialize_game_state
 

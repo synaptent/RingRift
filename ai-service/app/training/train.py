@@ -2846,6 +2846,8 @@ def train_model(
             model.eval()
             val_loss = torch.tensor(0.0, device=device)  # Accumulate on GPU
             val_batches = 0
+            val_policy_correct = 0  # Policy accuracy tracking
+            val_policy_total = 0
             if dist_metrics is not None:
                 dist_metrics.reset()
 
@@ -2944,6 +2946,12 @@ def train_model(
 
                         policy_log_probs = torch.log_softmax(policy_pred, dim=1)
 
+                        # Policy accuracy: compare predicted move vs target move
+                        pred_move = policy_pred.argmax(dim=1)
+                        target_move = policy_targets.argmax(dim=1)
+                        val_policy_correct += (pred_move == target_move).sum().item()
+                        val_policy_total += pred_move.size(0)
+
                         # Use multi-player value loss for validation too
                         if use_multi_player_loss:
                             effective_val_num_players = (
@@ -3018,6 +3026,11 @@ def train_model(
             else:
                 avg_val_loss = 0.0
 
+            # Compute policy accuracy
+            avg_policy_accuracy = (
+                val_policy_correct / val_policy_total if val_policy_total > 0 else 0.0
+            )
+
             # Update training state for emergency checkpoints (2025-12)
             training_state.epoch = epoch
             training_state.avg_val_loss = avg_val_loss
@@ -3040,7 +3053,8 @@ def train_model(
                 epoch_log = (
                     f"Epoch [{epoch+1}/{config.epochs_per_iter}], "
                     f"Train Loss: {avg_train_loss:.4f}, "
-                    f"Val Loss: {avg_val_loss:.4f}"
+                    f"Val Loss: {avg_val_loss:.4f}, "
+                    f"Policy Acc: {avg_policy_accuracy:.1%}"
                 )
                 if hot_buffer is not None:
                     hot_stats = hot_buffer.get_statistics()
@@ -3056,6 +3070,7 @@ def train_model(
                             "total_epochs": config.epochs_per_iter,
                             "train_loss": float(avg_train_loss),
                             "val_loss": float(avg_val_loss),
+                            "policy_accuracy": float(avg_policy_accuracy),
                             "lr": float(optimizer.param_groups[0]['lr']),
                             "config": f"{config.board_type.value}_{num_players}p",
                         }
@@ -3121,6 +3136,7 @@ def train_model(
                 'epoch': epoch + 1,
                 'train_loss': float(avg_train_loss),
                 'val_loss': float(avg_val_loss),
+                'policy_accuracy': float(avg_policy_accuracy),
                 'lr': float(optimizer.param_groups[0]['lr']),
             }
 
@@ -3171,7 +3187,7 @@ def train_model(
                         loss=avg_val_loss,  # Use validation loss as primary
                         policy_loss=epoch_record.get('avg_policy_loss', 0.0),
                         value_loss=epoch_record.get('avg_value_loss', 0.0),
-                        accuracy=0.0,  # TODO: Add accuracy tracking
+                        accuracy=avg_policy_accuracy,
                         learning_rate=optimizer.param_groups[0]['lr'],
                         batch_size=config.batch_size,
                         samples_per_second=epoch_record.get('samples_per_second', 0.0),
