@@ -161,8 +161,10 @@ def select_moves_vectorized(
 
     selected[valid_selection] = local_idx[valid_selection]
 
-    # Clamp to valid range
-    selected = torch.clamp(selected, min=0)
+    # NOTE: Do NOT clamp to 0 here! Games with no valid selection should keep -1.
+    # The apply functions check for valid indices >= 0.
+    # Bug fixed 2025-12-20: clamping -1 to 0 caused movements to be recorded
+    # for games that should only have captures (or vice versa).
 
     return selected
 
@@ -344,7 +346,9 @@ def select_moves_heuristic(
     local_idx = original_indices - moves.move_offsets
 
     selected[valid_selection] = local_idx[valid_selection]
-    selected = torch.clamp(selected, min=0)
+
+    # NOTE: Do NOT clamp to 0 here! Games with no valid selection should keep -1.
+    # Bug fixed 2025-12-20: see select_moves_vectorized for details.
 
     return selected
 
