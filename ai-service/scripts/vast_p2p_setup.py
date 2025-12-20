@@ -77,10 +77,14 @@ KNOWN_PEERS = _load_known_peers()
 
 
 def run_local_command(cmd: str, timeout: int = 60) -> Tuple[bool, str]:
-    """Run command locally."""
+    """Run command locally.
+
+    Uses shlex.split() to parse command string safely (no shell injection).
+    """
+    import shlex
     try:
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout
+            shlex.split(cmd), capture_output=True, text=True, timeout=timeout
         )
         return result.returncode == 0, result.stdout.strip() or result.stderr.strip()
     except subprocess.TimeoutExpired:

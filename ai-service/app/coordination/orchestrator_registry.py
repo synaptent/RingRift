@@ -1360,11 +1360,21 @@ def auto_register_known_coordinators() -> dict[str, bool]:
         },
     ]
 
+    # Allowed module prefixes for security (defense-in-depth)
+    ALLOWED_MODULE_PREFIXES = ("app.coordination.", "app.training.", "app.distributed.")
+
     for coord_def in known_coordinators:
         name = coord_def["name"]
         try:
+            # Validate module path before dynamic import
+            module_path = coord_def["module"]
+            if not any(module_path.startswith(prefix) for prefix in ALLOWED_MODULE_PREFIXES):
+                logger.warning(f"Skipping disallowed module: {module_path}")
+                results[name] = False
+                continue
+
             # Dynamic import
-            module = __import__(coord_def["module"], fromlist=[coord_def["getter"]])
+            module = __import__(module_path, fromlist=[coord_def["getter"]])
             getter = getattr(module, coord_def["getter"])
             coordinator = getter()
 
@@ -1450,11 +1460,23 @@ def discover_and_register_orchestrators() -> dict[str, Any]:
         },
     ]
 
+    # Allowed module prefixes for security (defense-in-depth)
+    ALLOWED_ORCH_PREFIXES = (
+        "app.coordination.", "app.training.", "app.distributed.", "app.tournament."
+    )
+
     for orch_def in known_orchestrators:
         name = orch_def["name"]
         try:
+            # Validate module path before dynamic import
+            module_path = orch_def["module"]
+            if not any(module_path.startswith(prefix) for prefix in ALLOWED_ORCH_PREFIXES):
+                logger.warning(f"Skipping disallowed orchestrator module: {module_path}")
+                results[name] = {"success": False, "error": "Disallowed module path"}
+                continue
+
             # Dynamic import
-            module_parts = orch_def["module"].rsplit(".", 1)
+            module_parts = module_path.rsplit(".", 1)
             package = __import__(module_parts[0], fromlist=[module_parts[1]])
             module = getattr(package, module_parts[1])
 
