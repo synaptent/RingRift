@@ -53,7 +53,7 @@ class GPUMinimaxTester:
 
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
-        self.results: List[TestResult] = []
+        self.results: list[TestResult] = []
         self.rules_engine = DefaultRulesEngine()
 
         # Detect GPU
@@ -301,7 +301,7 @@ class GPUMinimaxTester:
     def test_gpu_memory_bounds(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        batch_sizes: List[int] = [32, 64, 128],
+        batch_sizes: list[int] = [32, 64, 128],
     ) -> bool:
         """Test GPU memory usage stays within bounds."""
         self._log(f"\n=== Test: GPU Memory Bounds ===")

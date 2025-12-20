@@ -129,8 +129,8 @@ def send_alert(
     message: str,
     level: Union[AlertSeverity, AlertLevel] = AlertSeverity.INFO,
     node_id: str = "",
-    slack_url: Optional[str] = None,
-    discord_url: Optional[str] = None,
+    slack_url: str | None = None,
+    discord_url: str | None = None,
 ) -> bool:
     """Send alert to configured webhooks.
 

@@ -136,7 +136,7 @@ if HAS_PROMETHEUS:
     )
 
 
-def get_current_elo_ratings() -> List[Tuple]:
+def get_current_elo_ratings() -> list[tuple]:
     """Get current Elo ratings from database."""
     if not ELO_DB_PATH.exists():
         return []
@@ -168,7 +168,7 @@ def get_current_elo_ratings() -> List[Tuple]:
     return results
 
 
-def get_elo_history(hours: int = 24) -> Dict[str, List[Tuple]]:
+def get_elo_history(hours: int = 24) -> dict[str, list[tuple]]:
     """Get Elo rating history for the last N hours, grouped by config."""
     if not ELO_DB_PATH.exists():
         return {}
@@ -196,7 +196,7 @@ def get_elo_history(hours: int = 24) -> Dict[str, List[Tuple]]:
     conn.close()
 
     # Group by config
-    history: Dict[str, List[Tuple]] = {}
+    history: dict[str, list[tuple]] = {}
     for row in results:
         config = f"{row[1]}_{row[2]}p"
         if config not in history:
@@ -206,7 +206,7 @@ def get_elo_history(hours: int = 24) -> Dict[str, List[Tuple]]:
     return history
 
 
-def calculate_improvement_rate(config: str, history: List[Tuple]) -> Tuple[float, float]:
+def calculate_improvement_rate(config: str, history: list[tuple]) -> tuple[float, float]:
     """Calculate Elo improvement rate for a config.
 
     Returns: (improvement_per_hour, total_improvement_24h)
@@ -215,7 +215,7 @@ def calculate_improvement_rate(config: str, history: List[Tuple]) -> Tuple[float
         return 0.0, 0.0
 
     # Get best rating at each timestamp
-    best_by_time: Dict[float, float] = {}
+    best_by_time: dict[float, float] = {}
     for row in history:
         ts = row[5]
         rating = row[3]
@@ -267,8 +267,8 @@ def update_metrics():
     ratings = get_current_elo_ratings()
 
     # Track best per config
-    best_per_config: Dict[str, float] = {}
-    models_per_config: Dict[str, int] = {}
+    best_per_config: dict[str, float] = {}
+    models_per_config: dict[str, int] = {}
 
     for row in ratings:
         participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update, ptype, version = row
@@ -337,7 +337,7 @@ def update_metrics():
     # Update top N leaders per config (for leaderboard panels)
     # Group ratings by config and take top 5
     from collections import defaultdict
-    config_leaders: Dict[str, List] = defaultdict(list)
+    config_leaders: dict[str, list] = defaultdict(list)
 
     for row in ratings:
         participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update, ptype, version = row

@@ -195,7 +195,7 @@ def reserve_games_from_db(
     db_path: Path,
     holdout_percent: int = DEFAULT_HOLDOUT_PERCENT,
     dry_run: bool = False,
-) -> List[HoldoutGame]:
+) -> list[HoldoutGame]:
     """Reserve games from a SQLite game database for holdout.
 
     Supports both legacy schema (game_state column) and v7 schema
@@ -342,7 +342,7 @@ def reserve_games_from_db(
 def reserve_games_from_all_sources(
     holdout_percent: int = DEFAULT_HOLDOUT_PERCENT,
     dry_run: bool = False,
-) -> Dict[str, List[HoldoutGame]]:
+) -> dict[str, list[HoldoutGame]]:
     """Reserve games from all available sources."""
     results = {}
 
@@ -356,7 +356,7 @@ def reserve_games_from_all_sources(
     return results
 
 
-def get_holdout_stats() -> Dict[str, Any]:
+def get_holdout_stats() -> dict[str, Any]:
     """Get statistics about the holdout set."""
     conn = get_db_connection()
 
@@ -420,7 +420,7 @@ def extract_positions_for_config(
     board_type: str,
     num_players: int,
     max_positions: int = 10000,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Extract feature vectors and values from holdout games.
 
     Returns (features, values) numpy arrays ready for model evaluation.
@@ -498,7 +498,7 @@ def evaluate_model_on_holdout(
     board_type: str,
     num_players: int,
     train_loss: float = 0.0,
-) -> Optional[EvaluationResult]:
+) -> EvaluationResult | None:
     """Evaluate a model on the holdout set."""
     import torch
 
@@ -580,7 +580,7 @@ def evaluate_model_stratified(
     board_type: str,
     num_players: int,
     max_positions_per_phase: int = 3000,
-) -> Dict[str, StratifiedEvaluation]:
+) -> dict[str, StratifiedEvaluation]:
     """Evaluate a model on holdout set with stratification by game phase.
 
     Returns dict mapping phase -> StratifiedEvaluation.
@@ -594,8 +594,8 @@ def evaluate_model_stratified(
         from app.training.nnue_dataset import extract_features_from_state
 
         # Organize positions by phase
-        phase_features: Dict[str, List] = {phase: [] for phase in GAME_PHASES}
-        phase_values: Dict[str, List] = {phase: [] for phase in GAME_PHASES}
+        phase_features: dict[str, list] = {phase: [] for phase in GAME_PHASES}
+        phase_values: dict[str, list] = {phase: [] for phase in GAME_PHASES}
 
         rows = conn.execute("""
             SELECT game_data FROM holdout_games
@@ -715,7 +715,7 @@ def evaluate_model_stratified(
     return results
 
 
-def get_stratified_summary(board_type: str, num_players: int) -> Dict[str, Any]:
+def get_stratified_summary(board_type: str, num_players: int) -> dict[str, Any]:
     """Get summary of stratified evaluation results for a config."""
     conn = get_db_connection()
 
@@ -757,7 +757,7 @@ def get_stratified_summary(board_type: str, num_players: int) -> Dict[str, Any]:
         conn.close()
 
 
-def check_for_overfitting(threshold: float = OVERFIT_THRESHOLD) -> List[Dict[str, Any]]:
+def check_for_overfitting(threshold: float = OVERFIT_THRESHOLD) -> list[dict[str, Any]]:
     """Check all recent evaluations for signs of overfitting."""
     conn = get_db_connection()
     overfit_models = []

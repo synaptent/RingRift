@@ -114,8 +114,8 @@ def _summarize_python_state(db_path: Path, game_id: str, ts_k: int) -> Any:
 
 def _compute_structural_diffs(
     py_state: Any,
-    ts_state: Dict[str, Any],
-) -> Tuple[bool, str]:
+    ts_state: dict[str, Any],
+) -> tuple[bool, str]:
     """
     Compare core structural aspects of the two states.
 
@@ -130,7 +130,7 @@ def _compute_structural_diffs(
     collapsed_py = dbg._summarize_collapsed_py(py_state)  # type: ignore[attr-defined]
     collapsed_ts = dbg._summarize_collapsed_ts(ts_state)  # type: ignore[attr-defined]
 
-    reasons: List[str] = []
+    reasons: list[str] = []
 
     if players_py != players_ts:
         reasons.append("players(elim/territory/hand) differ")
@@ -172,10 +172,10 @@ def classify_structural_mismatches(
     root = Path(__file__).resolve().parents[1]
     data = json.loads(summary_path.read_text())
 
-    divergences: List[Dict[str, Any]] = data.get("semantic_divergences", [])
-    results: List[StructuralClassification] = []
+    divergences: list[dict[str, Any]] = data.get("semantic_divergences", [])
+    results: list[StructuralClassification] = []
 
-    processed_games: Dict[Tuple[str, str, int], bool] = {}
+    processed_games: dict[tuple[str, str, int], bool] = {}
 
     for idx, entry in enumerate(divergences):
         if limit_games is not None and idx >= limit_games:
@@ -233,7 +233,7 @@ def classify_structural_mismatches(
         )
 
     # Aggregate per-game structural flags for convenience.
-    per_game: Dict[Tuple[str, str], bool] = {}
+    per_game: dict[tuple[str, str], bool] = {}
     for r in results:
         key = (r.db_path, r.game_id)
         if r.structural:

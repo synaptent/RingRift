@@ -118,7 +118,7 @@ class TestDescentAIHex(unittest.TestCase):
         """
         # Keep the search very small for test speed.
         self.ai.config.think_time = 10  # milliseconds
-        
+
         # Use legacy search path for this test since it specifically tests
         # the hex NN integration via the legacy apply_move pathway.
         self.ai.use_incremental_search = False

@@ -85,13 +85,13 @@ class GPUInfo:
 class NodeHealth:
     """Health status of a cluster node."""
     status: NodeStatus
-    gpus: List[GPUInfo] = field(default_factory=list)
-    load_average: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    gpus: list[GPUInfo] = field(default_factory=list)
+    load_average: tuple[float, float, float] = (0.0, 0.0, 0.0)
     memory_total_gb: float = 0.0
     memory_available_gb: float = 0.0
     disk_free_gb: float = 0.0
     uptime_seconds: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
     checked_at: float = field(default_factory=time.time)
 
     @property
@@ -109,9 +109,9 @@ class ClusterNode:
     def __init__(
         self,
         name: str,
-        hostname: Optional[str] = None,
+        hostname: str | None = None,
         ssh_user: str = "ubuntu",
-        ssh_key: Optional[str] = None,
+        ssh_key: str | None = None,
         connect_timeout: int = 10,
         command_timeout: int = 30,
         ringrift_path: str = "~/ringrift/ai-service",
@@ -123,15 +123,15 @@ class ClusterNode:
         self.connect_timeout = connect_timeout
         self.command_timeout = command_timeout
         self.ringrift_path = ringrift_path
-        self._health: Optional[NodeHealth] = None
+        self._health: NodeHealth | None = None
         self._health_checked_at: float = 0
 
     def run(
         self,
         command: str,
-        timeout: Optional[int] = None,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        timeout: int | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         check: bool = False,
     ) -> CommandResult:
         """Execute a command on this node via SSH.
@@ -225,8 +225,8 @@ class ClusterNode:
     def run_python(
         self,
         script: str,
-        args: Optional[List[str]] = None,
-        timeout: Optional[int] = None,
+        args: list[str] | None = None,
+        timeout: int | None = None,
     ) -> CommandResult:
         """Execute a Python script on this node.
 
@@ -414,7 +414,7 @@ class ClusterManager:
 
     def __init__(
         self,
-        nodes: Optional[List[Dict[str, Any]]] = None,
+        nodes: list[dict[str, Any]] | None = None,
         max_workers: int = 8,
         ssh_user: str = "ubuntu",
         use_config: bool = True,
@@ -429,7 +429,7 @@ class ClusterManager:
             use_config: If True and nodes not specified, load from config files
         """
         self.max_workers = max_workers
-        self.nodes: Dict[str, ClusterNode] = {}
+        self.nodes: dict[str, ClusterNode] = {}
 
         if nodes:
             # Use explicitly provided nodes
@@ -460,11 +460,11 @@ class ClusterManager:
             except Exception as e:
                 logger.warning(f"Failed to load hosts from config: {e}")
 
-    def get_node(self, name: str) -> Optional[ClusterNode]:
+    def get_node(self, name: str) -> ClusterNode | None:
         """Get a node by name."""
         return self.nodes.get(name)
 
-    def get_healthy_nodes(self, force_check: bool = False) -> List[ClusterNode]:
+    def get_healthy_nodes(self, force_check: bool = False) -> list[ClusterNode]:
         """Get all healthy nodes in the cluster."""
         healthy = []
 
@@ -488,10 +488,10 @@ class ClusterManager:
     def run_on_all(
         self,
         command: str,
-        nodes: Optional[List[str]] = None,
+        nodes: list[str] | None = None,
         parallel: bool = True,
         continue_on_error: bool = True,
-    ) -> Dict[str, CommandResult]:
+    ) -> dict[str, CommandResult]:
         """Run a command on multiple nodes.
 
         Args:
@@ -548,7 +548,7 @@ class ClusterManager:
 
         return results
 
-    def collect_metrics(self) -> Dict[str, Any]:
+    def collect_metrics(self) -> dict[str, Any]:
         """Collect metrics from all nodes."""
         metrics = {
             "timestamp": time.time(),
@@ -591,8 +591,8 @@ class ClusterManager:
         self,
         local_path: Path,
         remote_path: str,
-        nodes: Optional[List[str]] = None,
-    ) -> Dict[str, CommandResult]:
+        nodes: list[str] | None = None,
+    ) -> dict[str, CommandResult]:
         """Deploy a file to multiple nodes.
 
         Args:
@@ -646,7 +646,7 @@ class VastNodeManager:
     def __init__(self):
         self.ssh_key = os.path.expanduser("~/.ssh/id_cluster")
 
-    def list_instances(self) -> List[Dict[str, Any]]:
+    def list_instances(self) -> list[dict[str, Any]]:
         """List all Vast.ai instances."""
         try:
             result = subprocess.run(
@@ -662,7 +662,7 @@ class VastNodeManager:
             logger.warning(f"Failed to list Vast.ai instances: {e}")
         return []
 
-    def get_instance_ssh(self, instance_id: int) -> Optional[Tuple[str, int]]:
+    def get_instance_ssh(self, instance_id: int) -> tuple[str, int] | None:
         """Get SSH host and port for a Vast.ai instance."""
         for inst in self.list_instances():
             if inst.get("id") == instance_id:
@@ -699,7 +699,7 @@ class VastNodeManager:
         ssh_host: str,
         ssh_port: int,
         node_id: str,
-        peers: List[str],
+        peers: list[str],
     ) -> bool:
         """Start P2P orchestrator on a Vast.ai instance."""
         peers_str = ",".join(peers)
@@ -743,7 +743,7 @@ class ClusterAutomation:
         self.cluster = ClusterManager()
         self.vast = VastNodeManager()
 
-    def discover_all_nodes(self) -> Dict[str, Dict[str, Any]]:
+    def discover_all_nodes(self) -> dict[str, dict[str, Any]]:
         """Discover all nodes across all providers.
 
         Returns:
@@ -820,8 +820,8 @@ class ClusterAutomation:
 
     def ensure_all_orchestrators_running(
         self,
-        peers: Optional[List[str]] = None,
-    ) -> Dict[str, bool]:
+        peers: list[str] | None = None,
+    ) -> dict[str, bool]:
         """Ensure P2P orchestrators are running on all nodes.
 
         Returns:
@@ -879,7 +879,7 @@ class ClusterAutomation:
 
         return results
 
-    def get_cluster_summary(self) -> Dict[str, Any]:
+    def get_cluster_summary(self) -> dict[str, Any]:
         """Get summary of entire cluster status."""
         nodes = self.discover_all_nodes()
 

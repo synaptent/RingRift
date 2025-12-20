@@ -79,7 +79,7 @@ class CurriculumStage:
     """Definition of a curriculum training stage."""
     name: str
     stage_id: int
-    move_range: Tuple[int, int]  # (min_move, max_move), inclusive
+    move_range: tuple[int, int]  # (min_move, max_move), inclusive
     description: str
     min_accuracy: float  # Min accuracy to progress to next stage
     epochs: int = 10
@@ -140,8 +140,8 @@ CURRICULUM_STAGES = [
 class CurriculumState:
     """Persistent state for curriculum training."""
     current_stage: int = 1
-    stage_accuracies: Dict[int, float] = field(default_factory=dict)
-    stage_completed: Dict[int, bool] = field(default_factory=dict)
+    stage_accuracies: dict[int, float] = field(default_factory=dict)
+    stage_completed: dict[int, bool] = field(default_factory=dict)
     total_epochs_trained: int = 0
     last_updated: str = ""
 
@@ -161,7 +161,7 @@ class AdaptiveWeightConfig:
     rebalance_interval_seconds: int = 3600  # How often to recompute weights
 
 
-def compute_adaptive_weights(elo_db_path: Path) -> Dict[str, float]:
+def compute_adaptive_weights(elo_db_path: Path) -> dict[str, float]:
     """Compute adaptive training weights based on Elo performance.
 
     Boost training weight for underperforming configurations.
@@ -176,7 +176,7 @@ def compute_adaptive_weights(elo_db_path: Path) -> Dict[str, float]:
     """
     import statistics
 
-    weights: Dict[str, float] = {}
+    weights: dict[str, float] = {}
 
     if not elo_db_path.exists():
         logger.warning(f"Elo database not found: {elo_db_path}")
@@ -203,7 +203,7 @@ def compute_adaptive_weights(elo_db_path: Path) -> Dict[str, float]:
                 GROUP BY board_type, num_players
             """)
 
-        elo_by_config: Dict[str, float] = {}
+        elo_by_config: dict[str, float] = {}
         for row in cursor:
             config_key = f"{row[0]}_{row[1]}p"
             elo_by_config[config_key] = row[2]
@@ -289,9 +289,9 @@ def get_elo_trend(elo_db_path: Path, config_key: str, window: int = 10) -> float
 
 
 def apply_adaptive_weights_to_samples(
-    samples: List[Dict],
-    weights: Dict[str, float],
-) -> List[Dict]:
+    samples: list[dict],
+    weights: dict[str, float],
+) -> list[dict]:
     """Apply adaptive weights to training samples.
 
     For configurations with weight > 1.0, oversample those positions.
@@ -337,7 +337,7 @@ class AdaptiveCurriculumRebalancer:
     ):
         self.elo_db_path = elo_db_path
         self.config = config or AdaptiveWeightConfig()
-        self._current_weights: Dict[str, float] = {}
+        self._current_weights: dict[str, float] = {}
         self._last_rebalance: float = 0.0
 
     def should_rebalance(self) -> bool:
@@ -346,7 +346,7 @@ class AdaptiveCurriculumRebalancer:
         now = time.time()
         return (now - self._last_rebalance) >= self.config.rebalance_interval_seconds
 
-    def rebalance(self) -> Dict[str, float]:
+    def rebalance(self) -> dict[str, float]:
         """Recompute weights from current Elo data."""
         import time
         self._current_weights = compute_adaptive_weights(self.elo_db_path)
@@ -354,7 +354,7 @@ class AdaptiveCurriculumRebalancer:
         logger.info(f"Rebalanced adaptive weights: {len(self._current_weights)} configs")
         return self._current_weights
 
-    def get_current_weights(self) -> Dict[str, float]:
+    def get_current_weights(self) -> dict[str, float]:
         """Get current weight multipliers."""
         if not self._current_weights:
             self.rebalance()
@@ -382,7 +382,7 @@ def save_curriculum_state(state: CurriculumState, path: Path) -> None:
         json.dump(asdict(state), f, indent=2)
 
 
-def get_stage_by_id(stage_id: int) -> Optional[CurriculumStage]:
+def get_stage_by_id(stage_id: int) -> CurriculumStage | None:
     """Get curriculum stage by ID."""
     for stage in CURRICULUM_STAGES:
         if stage.stage_id == stage_id:
@@ -391,12 +391,12 @@ def get_stage_by_id(stage_id: int) -> Optional[CurriculumStage]:
 
 
 def filter_training_data_by_stage(
-    db_paths: List[Path],
+    db_paths: list[Path],
     stage: CurriculumStage,
     board_type: str,
     num_players: int,
     max_samples: int = 100000,
-) -> Tuple[List[Dict], Dict[str, int]]:
+) -> tuple[list[dict], dict[str, int]]:
     """Filter training data to positions from a specific game phase.
 
     Returns:
@@ -493,12 +493,12 @@ def filter_training_data_by_stage(
 
 def train_stage(
     stage: CurriculumStage,
-    db_paths: List[Path],
+    db_paths: list[Path],
     board_type: str,
     num_players: int,
-    model_path: Optional[Path] = None,
+    model_path: Path | None = None,
     output_dir: Path = AI_SERVICE_ROOT / "logs" / "curriculum",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Train model on a specific curriculum stage.
 
     Returns:
@@ -572,13 +572,13 @@ def train_stage(
 
 
 def run_curriculum_training(
-    db_paths: List[Path],
+    db_paths: list[Path],
     board_type: str,
     num_players: int,
     start_stage: int = 1,
     auto_progress: bool = False,
     output_dir: Path = AI_SERVICE_ROOT / "logs" / "curriculum",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run curriculum training through stages.
 
     Args:

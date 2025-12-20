@@ -124,7 +124,7 @@ def _make_move(
 def _run_parity_check(
     state: GameState,
     move: Move,
-) -> Tuple[FSMOrchestrationResult, GamePhase, int, bool]:
+) -> tuple[FSMOrchestrationResult, GamePhase, int, bool]:
     """
     Run both FSM and legacy phase machine on the same input.
 

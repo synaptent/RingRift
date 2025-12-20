@@ -10,7 +10,8 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from collections.abc import Callable
 from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
@@ -105,8 +106,8 @@ class MockEventBus:
     """Mock event bus for testing event-driven coordination."""
 
     def __init__(self):
-        self.subscribers: Dict[Any, List[Callable]] = {}
-        self.emitted_events: List[tuple] = []
+        self.subscribers: dict[Any, list[Callable]] = {}
+        self.emitted_events: list[tuple] = []
 
     def subscribe(self, event_type: Any, handler: Callable) -> None:
         """Subscribe a handler to an event type."""
@@ -150,7 +151,7 @@ class MockEventBus:
         self.subscribers.clear()
         self.emitted_events.clear()
 
-    def get_emitted(self, event_type: Any = None) -> List[tuple]:
+    def get_emitted(self, event_type: Any = None) -> list[tuple]:
         """Get emitted events, optionally filtered by type."""
         if event_type is None:
             return self.emitted_events.copy()
@@ -217,7 +218,7 @@ class MockNodeResources:
     updated_at: float = field(default_factory=time.time)
     orchestrator: str = "test"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "cpu_percent": self.cpu_percent,
@@ -285,7 +286,7 @@ def sample_nodes(node_resources_factory):
 @dataclass
 class MockClusterState:
     """Mock ClusterState for testing."""
-    nodes: List[MockNodeResources] = field(default_factory=list)
+    nodes: list[MockNodeResources] = field(default_factory=list)
     total_cpu_util: float = 0.0
     total_gpu_util: float = 0.0
     total_memory_util: float = 0.0

@@ -34,7 +34,7 @@ from app.training.crossboard_strength import (
 )
 
 
-def _parse_tiers(tiers_spec: str) -> List[str]:
+def _parse_tiers(tiers_spec: str) -> list[str]:
     spec = tiers_spec.strip()
     if not spec:
         raise ValueError("tiers must be non-empty")
@@ -52,7 +52,7 @@ def _parse_tiers(tiers_spec: str) -> List[str]:
     return [normalise_tier_name(part) for part in spec.split(",") if part.strip()]
 
 
-def _parse_boards(boards_spec: str) -> List[str]:
+def _parse_boards(boards_spec: str) -> list[str]:
     boards = [b.strip().lower() for b in boards_spec.split(",") if b.strip()]
     if not boards:
         raise ValueError("boards must be non-empty")
@@ -70,8 +70,8 @@ def _parse_boards(boards_spec: str) -> List[str]:
     return normalized
 
 
-def _parse_board_reports(items: List[str]) -> Dict[str, str]:
-    reports: Dict[str, str] = {}
+def _parse_board_reports(items: list[str]) -> dict[str, str]:
+    reports: dict[str, str] = {}
     for item in items:
         if "=" not in item:
             raise ValueError(
@@ -88,7 +88,7 @@ def _parse_board_reports(items: List[str]) -> Dict[str, str]:
     return reports
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run difficulty-tier tournaments across multiple boards and emit a "
@@ -184,13 +184,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _load_report(path: str) -> Dict[str, Any]:
+def _load_report(path: str) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _extract_elos(report: Dict[str, Any]) -> Dict[str, float]:
-    elos: Dict[str, float] = {}
+def _extract_elos(report: dict[str, Any]) -> dict[str, float]:
+    elos: dict[str, float] = {}
     for row in report.get("rankings", []):
         tier = row.get("tier")
         if not tier:
@@ -199,7 +199,7 @@ def _extract_elos(report: Dict[str, Any]) -> Dict[str, float]:
     return elos
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     boards = _parse_boards(args.boards)
@@ -216,8 +216,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     os.makedirs(args.output_dir, exist_ok=True)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    board_report_paths: Dict[str, str] = {}
-    board_reports: Dict[str, Dict[str, Any]] = {}
+    board_report_paths: dict[str, str] = {}
+    board_reports: dict[str, dict[str, Any]] = {}
 
     provided = _parse_board_reports(args.board_report)
     if provided:

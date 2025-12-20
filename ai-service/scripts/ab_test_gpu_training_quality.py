@@ -82,7 +82,7 @@ class ABTestConfig:
 
     # Test phases
     skip_generation: bool = False
-    validate_existing: Optional[str] = None  # Path to existing selfplay data
+    validate_existing: str | None = None  # Path to existing selfplay data
 
     # Quality thresholds - comparing heuristic vs random
     # Strategic play should produce MORE territory victories (more decisive)
@@ -107,12 +107,12 @@ class SelfplayStats:
     games_per_second: float
     moves_per_game: float
     draw_rate: float
-    wins_by_player: Dict[str, int]
-    victory_type_counts: Dict[str, int]
+    wins_by_player: dict[str, int]
+    victory_type_counts: dict[str, int]
     device: str
 
     @classmethod
-    def from_json(cls, data: Dict[str, Any]) -> "SelfplayStats":
+    def from_json(cls, data: dict[str, Any]) -> "SelfplayStats":
         return cls(
             total_games=data.get("total_games", 0),
             total_moves=data.get("total_moves", 0),
@@ -146,7 +146,7 @@ class ComparisonResult:
     # Overall
     all_checks_passed: bool
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "random_stats": asdict(self.random_stats),
             "hybrid_stats": asdict(self.hybrid_stats),
@@ -175,7 +175,7 @@ def run_selfplay(
     num_players: int,
     seed: int,
     use_gpu: bool = False,
-) -> Optional[SelfplayStats]:
+) -> SelfplayStats | None:
     """Run selfplay and return statistics.
 
     Args:
@@ -258,7 +258,7 @@ def run_selfplay(
 # =============================================================================
 
 def check_win_balance(
-    wins_by_player: Dict[str, int],
+    wins_by_player: dict[str, int],
     min_rate: float,
     max_rate: float,
 ) -> bool:

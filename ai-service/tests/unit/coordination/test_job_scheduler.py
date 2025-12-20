@@ -66,7 +66,7 @@ class MockHost:
     memory_gb: int = 128
     cpus: int = 16
     enabled: bool = True
-    properties: Dict[str, Any] = None
+    properties: dict[str, Any] = None
 
     def __post_init__(self):
         if self.properties is None:

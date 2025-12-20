@@ -130,7 +130,7 @@ except ImportError:
     get_training_coordinator = lambda: None
 
 # Global training job ID for cleanup on unexpected exit
-_active_training_job_id: Optional[str] = None
+_active_training_job_id: str | None = None
 
 def _cleanup_training_slot():
     """Release training slot on unexpected exit."""
@@ -154,7 +154,7 @@ logger = setup_script_logging("train_nnue")
 HYPERPARAMS_CONFIG = Path(__file__).parent.parent / "config" / "training_hyperparams.yaml"
 
 
-def load_board_hyperparams(board_type: str, num_players: int = 2) -> Dict[str, Any]:
+def load_board_hyperparams(board_type: str, num_players: int = 2) -> dict[str, Any]:
     """Load board-specific training hyperparameters from config file.
 
     Args:
@@ -273,7 +273,7 @@ def parse_board_type(value: str) -> BoardType:
     return mapping[key]
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Train NNUE evaluation network for RingRift Minimax AI",
@@ -1296,7 +1296,7 @@ def find_optimal_batch_size(
 def create_demo_dataset(
     board_type: BoardType,
     num_samples: int = 1000,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Create a synthetic demo dataset for testing."""
     logger.info(f"Creating synthetic demo dataset with {num_samples} samples")
 
@@ -1307,7 +1307,7 @@ def create_demo_dataset(
     return features, values
 
 
-def parse_curriculum_schedule(schedule: str) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+def parse_curriculum_schedule(schedule: str) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     """Parse loss curriculum schedule string.
 
     Args:
@@ -1319,7 +1319,7 @@ def parse_curriculum_schedule(schedule: str) -> Tuple[Tuple[float, float, float]
     parts = schedule.split('->')
     start_str, end_str = parts[0], parts[1] if len(parts) > 1 else parts[0]
 
-    def parse_weights(s: str) -> Tuple[float, float, float]:
+    def parse_weights(s: str) -> tuple[float, float, float]:
         vals = [float(x.strip()) for x in s.split(',')]
         total = sum(vals)
         return (vals[0] / total, vals[1] / total, vals[2] / total)
@@ -1330,9 +1330,9 @@ def parse_curriculum_schedule(schedule: str) -> Tuple[Tuple[float, float, float]
 def compute_curriculum_weights(
     epoch: int,
     total_epochs: int,
-    start_weights: Tuple[float, float, float],
-    end_weights: Tuple[float, float, float],
-) -> Tuple[float, float, float]:
+    start_weights: tuple[float, float, float],
+    end_weights: tuple[float, float, float],
+) -> tuple[float, float, float]:
     """Compute curriculum weights for current epoch by linear interpolation."""
     progress = epoch / max(total_epochs - 1, 1)
     return tuple(
@@ -1385,7 +1385,7 @@ class ValueWhitener:
         std = max(self.running_var ** 0.5, self.eps)
         return values * std + self.running_mean
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get current statistics."""
         return {
             'mean': self.running_mean,
@@ -1407,7 +1407,7 @@ class ModelEMA:
     Reference: 'Averaging Weights Leads to Wider Optima' (UAI 2018)
     """
 
-    def __init__(self, model: nn.Module, decay: float = 0.999, device: Optional[torch.device] = None):
+    def __init__(self, model: nn.Module, decay: float = 0.999, device: torch.device | None = None):
         self.decay = decay
         self.device = device
         self.shadow = {}
@@ -1440,7 +1440,7 @@ class ModelEMA:
                 param.data.copy_(self.backup[name])
         self.backup = {}
 
-    def get_shadow_model_state(self) -> Dict[str, torch.Tensor]:
+    def get_shadow_model_state(self) -> dict[str, torch.Tensor]:
         """Get EMA weights as state dict."""
         return {k: v.clone() for k, v in self.shadow.items()}
 
@@ -1924,7 +1924,7 @@ class BoardSpecificNAS:
         board_type: str,
         num_players: int,
         feature_dim: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get optimal architecture for board type.
 
         Args:
@@ -2190,7 +2190,7 @@ class DifficultyAwareCurriculum:
         values: torch.Tensor,
         epoch: int,
         total_epochs: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Filter batch to include samples at current difficulty level."""
         threshold = self.get_threshold(epoch, total_epochs)
 
@@ -2246,7 +2246,7 @@ class MultiTaskHead(nn.Module):
             nn.Sigmoid(),  # Complexity in [0, 1]
         )
 
-    def forward(self, hidden: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, hidden: torch.Tensor) -> dict[str, torch.Tensor]:
         return {
             'territory': self.territory_head(hidden),
             'phase': self.phase_head(hidden),
@@ -2292,7 +2292,7 @@ class LAMBOptimizer(optim.Optimizer):
         self,
         params,
         lr: float = 1e-3,
-        betas: Tuple[float, float] = (0.9, 0.999),
+        betas: tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-6,
         weight_decay: float = 0.01,
         adam: bool = False,
@@ -2419,10 +2419,10 @@ class PopulationBasedTraining:
         }
 
         # Population state
-        self.population: List[Dict[str, Any]] = []
-        self.scores: List[float] = []
+        self.population: list[dict[str, Any]] = []
+        self.scores: list[float] = []
 
-    def initialize_population(self) -> List[Dict[str, float]]:
+    def initialize_population(self) -> list[dict[str, float]]:
         """Initialize random population of hyperparameters."""
         self.population = []
         for _ in range(self.population_size):
@@ -2441,7 +2441,7 @@ class PopulationBasedTraining:
         """Update score for a population member."""
         self.scores[member_idx] = score
 
-    def exploit_and_explore(self, member_idx: int) -> Dict[str, float]:
+    def exploit_and_explore(self, member_idx: int) -> dict[str, float]:
         """Exploit successful members and explore new hyperparameters."""
         # Find better performing members
         my_score = self.scores[member_idx]
@@ -2476,7 +2476,7 @@ class AsyncGradientCompressor:
 
     def __init__(self, compression_ratio: float = 0.1):
         self.compression_ratio = compression_ratio
-        self.error_feedback: Dict[str, torch.Tensor] = {}
+        self.error_feedback: dict[str, torch.Tensor] = {}
 
     def compress(self, name: str, gradient: torch.Tensor) -> torch.Tensor:
         """Compress gradient using top-k sparsification."""
@@ -2600,7 +2600,7 @@ class KnowledgeDistillation:
     def get_teacher_outputs(
         self,
         features: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Get soft targets from teacher model."""
         teacher_out = self.teacher(features)
         if isinstance(teacher_out, tuple):
@@ -2616,8 +2616,8 @@ class KnowledgeDistillation:
         student_value: torch.Tensor,
         teacher_value: torch.Tensor,
         hard_labels: torch.Tensor,
-        student_features: Optional[torch.Tensor] = None,
-        teacher_features: Optional[torch.Tensor] = None,
+        student_features: torch.Tensor | None = None,
+        teacher_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute combined distillation loss."""
         # Soft target loss (KL divergence with temperature)
@@ -2671,7 +2671,7 @@ class PrioritizedReplayBuffer:
         self.beta_end = beta_end
         self.beta_anneal_steps = beta_anneal_steps
 
-        self.buffer: List[Tuple[torch.Tensor, float]] = []
+        self.buffer: list[tuple[torch.Tensor, float]] = []
         self.priorities = np.zeros(capacity, dtype=np.float32)
         self.position = 0
         self.size = 0
@@ -2688,12 +2688,12 @@ class PrioritizedReplayBuffer:
         self.priorities[self.position] = priority ** self.alpha
         self.position = (self.position + 1) % self.capacity
 
-    def update_priorities(self, indices: List[int], priorities: np.ndarray):
+    def update_priorities(self, indices: list[int], priorities: np.ndarray):
         """Update priorities based on TD errors."""
         for idx, priority in zip(indices, priorities):
             self.priorities[idx] = (abs(priority) + 1e-6) ** self.alpha
 
-    def sample(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor, List[int], torch.Tensor]:
+    def sample(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor, list[int], torch.Tensor]:
         """Sample batch with prioritized sampling."""
         self.step += 1
 
@@ -2891,7 +2891,7 @@ class DynamicBatchSizer:
         self.window_size = window_size
         self.min_epochs_between_scaling = min_epochs_between_scaling
 
-        self.gradient_norms: List[float] = []
+        self.gradient_norms: list[float] = []
         self.epochs_since_scaling = 0
 
     def record_gradient_norm(self, norm: float):
@@ -2954,9 +2954,9 @@ class StructuredPruning:
     ):
         self.prune_ratio = prune_ratio
         self.importance_metric = importance_metric
-        self.importance_scores: Dict[str, torch.Tensor] = {}
+        self.importance_scores: dict[str, torch.Tensor] = {}
 
-    def compute_importance(self, model: nn.Module, dataloader=None) -> Dict[str, torch.Tensor]:
+    def compute_importance(self, model: nn.Module, dataloader=None) -> dict[str, torch.Tensor]:
         """Compute importance scores for each layer."""
         for name, module in model.named_modules():
             if isinstance(module, nn.Linear):
@@ -2999,7 +2999,7 @@ class StructuredPruning:
 
         return new_layer, indices
 
-    def prune_model(self, model: nn.Module) -> Tuple[nn.Module, Dict[str, float]]:
+    def prune_model(self, model: nn.Module) -> tuple[nn.Module, dict[str, float]]:
         """Prune entire model and return pruned version with statistics."""
         self.compute_importance(model)
 
@@ -3071,7 +3071,7 @@ class GamePhaseNetwork(nn.Module):
             nn.ReLU(),
         )
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass with phase-aware routing.
 
         Returns:
@@ -3137,7 +3137,7 @@ class AuxiliaryValueTargets(nn.Module):
 
         self.mse_loss = nn.MSELoss()
 
-    def forward(self, hidden: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, hidden: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute auxiliary predictions."""
         return {
             'material': self.material_head(hidden),
@@ -3148,8 +3148,8 @@ class AuxiliaryValueTargets(nn.Module):
 
     def compute_loss(
         self,
-        predictions: Dict[str, torch.Tensor],
-        targets: Dict[str, torch.Tensor],
+        predictions: dict[str, torch.Tensor],
+        targets: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """Compute combined auxiliary loss."""
         total_loss = torch.tensor(0.0, device=predictions['material'].device)
@@ -3179,13 +3179,13 @@ class GrokkingDetector:
         self.plateau_threshold = plateau_threshold
         self.window_size = window_size
 
-        self.train_losses: List[float] = []
-        self.val_losses: List[float] = []
+        self.train_losses: list[float] = []
+        self.val_losses: list[float] = []
         self.grokking_detected = False
         self.grokking_epoch = None
         self.plateau_start = None
 
-    def update(self, train_loss: float, val_loss: float, epoch: int) -> Dict[str, Any]:
+    def update(self, train_loss: float, val_loss: float, epoch: int) -> dict[str, Any]:
         """Update with new losses and check for grokking."""
         self.train_losses.append(train_loss)
         self.val_losses.append(val_loss)
@@ -3231,7 +3231,7 @@ class GrokkingDetector:
 
         return result
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get summary of grokking analysis."""
         return {
             'grokking_detected': self.grokking_detected,
@@ -3264,14 +3264,14 @@ class IntegratedSelfPlay:
         self.exploration_fraction = exploration_fraction
         self.update_interval = update_interval
 
-        self.position_buffer: List[Dict[str, Any]] = []
+        self.position_buffer: list[dict[str, Any]] = []
         self.games_played = 0
         self.steps_since_update = 0
 
         # Thread-safe queue for positions
         self._position_queue: queue.Queue = queue.Queue(maxsize=buffer_size)
         self._stop_event = threading.Event()
-        self._worker_thread: Optional[threading.Thread] = None
+        self._worker_thread: threading.Thread | None = None
 
     def start_background_generation(self):
         """Start background self-play thread."""
@@ -3310,7 +3310,7 @@ class IntegratedSelfPlay:
                 logger.warning(f"Self-play error: {e}")
                 time.sleep(0.1)
 
-    def _play_game(self) -> List[Dict[str, Any]]:
+    def _play_game(self) -> list[dict[str, Any]]:
         """Play a single self-play game and return positions."""
         positions = []
 
@@ -3341,7 +3341,7 @@ class IntegratedSelfPlay:
 
         return positions
 
-    def get_batch(self, batch_size: int) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+    def get_batch(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor] | None:
         """Get a batch of positions from the buffer."""
         positions = []
         for _ in range(batch_size):
@@ -3440,7 +3440,7 @@ class NNUETrainer:
         lars_trust_coef: float = 0.001,
         gradient_profiling: bool = False,
         gradient_profile_freq: int = 100,
-        teacher_model: Optional[nn.Module] = None,
+        teacher_model: nn.Module | None = None,
         distill_alpha: float = 0.5,
         distill_temperature: float = 2.0,
     ):
@@ -3658,7 +3658,7 @@ class NNUETrainer:
 
         return total_loss / max(num_batches, 1)
 
-    def validate(self, dataloader: DataLoader, sample_fraction: float = 1.0) -> Tuple[float, float]:
+    def validate(self, dataloader: DataLoader, sample_fraction: float = 1.0) -> tuple[float, float]:
         """Validate on held-out data. Returns (loss, accuracy).
 
         Args:
@@ -3730,7 +3730,7 @@ class NNUETrainer:
 
 
 def train_nnue(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: BoardType,
     num_players: int,
     epochs: int,
@@ -3743,11 +3743,11 @@ def train_nnue(
     num_hidden_layers: int,
     sample_every_n: int,
     min_game_length: int,
-    max_samples: Optional[int],
+    max_samples: int | None,
     save_path: str,
     device: torch.device,
     seed: int,
-    cache_path: Optional[str] = None,
+    cache_path: str | None = None,
     demo: bool = False,
     balanced_sampling: bool = False,
     early_end: int = 40,
@@ -3795,7 +3795,7 @@ def train_nnue(
     gradient_profile_freq: int = 100,
     num_heads: int = 1,
     knowledge_distill: bool = False,
-    teacher_model: Optional[str] = None,
+    teacher_model: str | None = None,
     distill_alpha: float = 0.5,
     distill_temperature: float = 2.0,
     # 2024-12 Training Improvements
@@ -3813,7 +3813,7 @@ def train_nnue(
     online_bootstrap: bool = False,
     bootstrap_temperature: float = 1.5,
     bootstrap_start_epoch: int = 10,
-    transfer_from: Optional[str] = None,
+    transfer_from: str | None = None,
     transfer_freeze_epochs: int = 5,
     lookahead: bool = False,
     lookahead_k: int = 5,
@@ -3862,10 +3862,10 @@ def train_nnue(
     self_play: bool = False,
     self_play_buffer: int = 100000,
     distillation: bool = False,
-    teacher_path: Optional[str] = None,
+    teacher_path: str | None = None,
     distill_temp: float = 4.0,
     distill_alpha_phase3: float = 0.7,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Train NNUE model and return training report."""
     seed_all(seed)
 
@@ -4520,7 +4520,7 @@ def train_nnue(
     best_epoch = 0
     epochs_without_improvement = 0
     qat_enabled = False
-    history: Dict[str, List[float]] = {
+    history: dict[str, list[float]] = {
         "train_loss": [],
         "val_loss": [],
         "val_accuracy": [],
@@ -5011,7 +5011,7 @@ def train_nnue(
     return report
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     global _active_training_job_id  # For atexit cleanup
     args = parse_args(argv)
@@ -5073,7 +5073,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 logger.info(f"  Mixed precision enabled: {args.amp_dtype}")
 
     # Expand glob patterns in database paths
-    db_paths: List[str] = []
+    db_paths: list[str] = []
     for pattern in args.db:
         expanded = glob.glob(pattern)
         if expanded:

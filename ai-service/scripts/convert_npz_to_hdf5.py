@@ -56,7 +56,7 @@ def convert_npz_to_hdf5(
     compress: bool = False,
     chunk_size: int = 1000,
     verify: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convert an NPZ file to HDF5 format.
 
     Args:
@@ -96,8 +96,8 @@ def convert_npz_to_hdf5(
     compression = 'gzip' if compress else None
     compression_opts = 4 if compress else None
 
-    checksums_npz: Dict[str, str] = {}
-    checksums_hdf5: Dict[str, str] = {}
+    checksums_npz: dict[str, str] = {}
+    checksums_hdf5: dict[str, str] = {}
 
     with h5py.File(hdf5_path, 'w') as hf:
         # Store metadata
@@ -332,7 +332,7 @@ def convert_directory(
     compress: bool = False,
     verify: bool = False,
     skip_existing: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convert all NPZ files in a directory to HDF5.
 
     Args:

@@ -37,7 +37,7 @@ app = Flask(__name__, static_folder=str(DASHBOARD_ASSETS))
 CORS(app)
 
 # TensorBoard process management
-_tensorboard_process: Optional[subprocess.Popen] = None
+_tensorboard_process: subprocess.Popen | None = None
 
 
 # ============================================================================

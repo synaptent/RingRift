@@ -85,7 +85,7 @@ class BenchmarkResult:
     std_dev_ms: float
     throughput_per_sec: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -100,7 +100,7 @@ class ComparisonResult:
     speedup: float
     meets_phase1_target: bool  # >= 3x speedup
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -113,11 +113,11 @@ class BenchmarkReport:
     torch_version: str
     cuda_available: bool
     mps_available: bool
-    results: List[BenchmarkResult]
-    comparisons: List[ComparisonResult]
+    results: list[BenchmarkResult]
+    comparisons: list[ComparisonResult]
     phase1_gate_passed: bool
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp,
             "device": self.device,
@@ -271,7 +271,7 @@ def create_benchmark_state(
 
 
 def benchmark_cpu_evaluation(
-    states: List[GameState],
+    states: list[GameState],
     iterations: int,
 ) -> BenchmarkResult:
     """Benchmark CPU-only heuristic evaluation."""
@@ -311,7 +311,7 @@ def benchmark_cpu_evaluation(
 
 
 def benchmark_gpu_batch_evaluation(
-    states: List[GameState],
+    states: list[GameState],
     iterations: int,
     device: torch.device,
 ) -> BenchmarkResult:
@@ -375,7 +375,7 @@ def benchmark_gpu_batch_evaluation(
 
 
 def benchmark_hybrid_evaluation(
-    states: List[GameState],
+    states: list[GameState],
     iterations: int,
     device: torch.device,
 ) -> BenchmarkResult:
@@ -435,7 +435,7 @@ def get_device() -> torch.device:
 
 
 def run_benchmarks(
-    board_types: List[BoardType],
+    board_types: list[BoardType],
     num_players: int,
     num_states: int,
     iterations: int,

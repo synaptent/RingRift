@@ -32,7 +32,7 @@ except ImportError:
     get_evaluation_interval = None
 
 
-def _load_tournament_hosts() -> List[Dict[str, Any]]:
+def _load_tournament_hosts() -> list[dict[str, Any]]:
     """Load tournament hosts from config/distributed_hosts.yaml."""
     config_path = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
 
@@ -80,15 +80,15 @@ class ShadowTournamentService:
         self.state = state
         self.event_bus = event_bus
         # Tracking for adaptive intervals
-        self._eval_durations: List[float] = []  # Recent evaluation durations
+        self._eval_durations: list[float] = []  # Recent evaluation durations
         self._eval_success_rate: float = 1.0  # Rolling success rate
         self._last_interval_adjustment: float = 0.0
         # Round-robin index for tournament host selection
         self._host_index: int = 0
         # Track host availability for load balancing
-        self._host_busy: Dict[str, bool] = {h["name"]: False for h in self.TOURNAMENT_HOSTS}
+        self._host_busy: dict[str, bool] = {h["name"]: False for h in self.TOURNAMENT_HOSTS}
 
-    def _get_next_tournament_host(self) -> Dict[str, Any]:
+    def _get_next_tournament_host(self) -> dict[str, Any]:
         """Get next available tournament host using round-robin."""
         # Try to find an available host
         for _ in range(len(self.TOURNAMENT_HOSTS)):
@@ -101,7 +101,7 @@ class ShadowTournamentService:
         self._host_index = (self._host_index + 1) % len(self.TOURNAMENT_HOSTS)
         return host
 
-    async def _run_remote_tournament(self, host: Dict[str, Any], config_key: str) -> Dict[str, Any]:
+    async def _run_remote_tournament(self, host: dict[str, Any], config_key: str) -> dict[str, Any]:
         """Run tournament on remote host via SSH."""
         parts = config_key.rsplit("_", 1)
         board_type = parts[0]
@@ -154,7 +154,7 @@ class ShadowTournamentService:
         finally:
             self._host_busy[host_name] = False
 
-    async def run_shadow_tournament(self, config_key: str) -> Dict[str, Any]:
+    async def run_shadow_tournament(self, config_key: str) -> dict[str, Any]:
         """Run a quick shadow tournament for a configuration on remote hosts."""
         parts = config_key.rsplit("_", 1)
         board_type = parts[0]
@@ -188,7 +188,7 @@ class ShadowTournamentService:
             print(f"[ShadowTournament] Error running tournament for {config_key}: {e}")
             return {"config": config_key, "error": str(e), "success": False}
 
-    async def run_full_tournament(self) -> Dict[str, Any]:
+    async def run_full_tournament(self) -> dict[str, Any]:
         """Run a full tournament across all configurations on best remote host."""
         await self.event_bus.publish(DataEvent(
             event_type=DataEventType.EVALUATION_STARTED,
@@ -242,9 +242,9 @@ class ShadowTournamentService:
 
     async def run_parallel_shadow_tournaments(
         self,
-        config_keys: List[str],
+        config_keys: list[str],
         max_concurrent: int = 4
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run shadow tournaments for multiple configs in parallel on remote hosts.
 
         Dispatches tournaments to Vast hosts with high CPU counts for efficient
@@ -263,7 +263,7 @@ class ShadowTournamentService:
         # Use semaphore to limit concurrency
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def run_with_semaphore(config_key: str) -> Dict[str, Any]:
+        async def run_with_semaphore(config_key: str) -> dict[str, Any]:
             async with semaphore:
                 return await self.run_shadow_tournament(config_key)
 
@@ -305,10 +305,10 @@ class ShadowTournamentService:
 
     async def run_batched_parallel_tournaments(
         self,
-        config_keys: List[str],
+        config_keys: list[str],
         games_per_config: int = 50,
         batch_size: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Phase 3.3: Run tournaments in batches for more efficient resource utilization.
 
         This method batches multiple configs together on powerful hosts, running
@@ -352,7 +352,7 @@ class ShadowTournamentService:
         print(f"[ShadowTournament] Batched tournament: {len(batches)} batches on high-CPU hosts, "
               f"{len(remaining)} individual configs remaining")
 
-        async def run_batch(host: Dict[str, Any], batch_configs: List[str]) -> List[Dict[str, Any]]:
+        async def run_batch(host: dict[str, Any], batch_configs: list[str]) -> list[dict[str, Any]]:
             """Run a batch of configs on a single host."""
             ssh_target = host["ssh"]
             ringrift_path = host["ringrift_path"]
@@ -404,7 +404,7 @@ class ShadowTournamentService:
         batch_tasks = [run_batch(host, configs) for host, configs in batches]
 
         # Run remaining configs individually on standard hosts
-        async def run_individual(config_key: str) -> Dict[str, Any]:
+        async def run_individual(config_key: str) -> dict[str, Any]:
             return await self.run_shadow_tournament(config_key)
 
         individual_tasks = [run_individual(ck) for ck in remaining]

@@ -35,7 +35,8 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, List, Optional, Union
+from typing import List, Optional, Union
+from collections.abc import Iterator
 
 from scripts.lib.logging_config import get_logger
 
@@ -91,9 +92,9 @@ def get_file_age_days(path: Union[str, Path]) -> float:
 
 def is_file_older_than(
     path: Union[str, Path],
-    hours: Optional[float] = None,
-    days: Optional[float] = None,
-    minutes: Optional[float] = None,
+    hours: float | None = None,
+    days: float | None = None,
+    minutes: float | None = None,
 ) -> bool:
     """Check if a file is older than the specified duration.
 
@@ -131,11 +132,11 @@ def is_file_older_than(
 
 def find_files_older_than(
     directory: Union[str, Path],
-    hours: Optional[float] = None,
-    days: Optional[float] = None,
+    hours: float | None = None,
+    days: float | None = None,
     pattern: str = "*",
     recursive: bool = False,
-) -> List[Path]:
+) -> list[Path]:
     """Find files older than the specified duration.
 
     Args:
@@ -282,7 +283,7 @@ class ElapsedTimer:
         # Logs: "Processing data completed in 1.5s"
     """
 
-    def __init__(self, description: Optional[str] = None, log_on_exit: bool = True):
+    def __init__(self, description: str | None = None, log_on_exit: bool = True):
         """Initialize timer.
 
         Args:
@@ -434,8 +435,8 @@ def parse_timestamp(value: Union[str, int, float, datetime]) -> datetime:
 
 def parse_timestamp_safe(
     value: Union[str, int, float, datetime, None],
-    default: Optional[datetime] = None,
-) -> Optional[datetime]:
+    default: datetime | None = None,
+) -> datetime | None:
     """Parse a timestamp, returning default on failure.
 
     Args:

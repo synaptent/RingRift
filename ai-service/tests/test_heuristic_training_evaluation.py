@@ -56,7 +56,7 @@ from scripts import (  # noqa: E402
 )
 
 
-def _make_zero_profile(baseline: Dict[str, float]) -> Dict[str, float]:
+def _make_zero_profile(baseline: dict[str, float]) -> dict[str, float]:
     """Return an all-zero weight profile matching the baseline schema."""
     return {k: 0.0 for k in baseline.keys()}
 
@@ -114,13 +114,13 @@ def test_evaluate_fitness_zero_profile_wiring_and_stats() -> None:
     baseline = dict(BASE_V1_BALANCED_WEIGHTS)
     zero_profile = _make_zero_profile(baseline)
 
-    baseline_stats: Dict[str, Any] = {}
-    zero_stats: Dict[str, Any] = {}
+    baseline_stats: dict[str, Any] = {}
+    zero_stats: dict[str, Any] = {}
 
-    def _baseline_hook(d: Dict[str, Any]) -> None:
+    def _baseline_hook(d: dict[str, Any]) -> None:
         baseline_stats.update(d)
 
-    def _zero_hook(d: Dict[str, Any]) -> None:
+    def _zero_hook(d: dict[str, Any]) -> None:
         zero_stats.update(d)
 
     # Small evaluation budget to keep the test reasonably cheap while still
@@ -214,7 +214,7 @@ def test_evaluate_fitness_debug_callback_receives_stats() -> None:
     games_per_eval = 2
     board_type = BoardType.SQUARE8
 
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     def _cb(c_w, b_w, bt, stats):
         captured["candidate"] = c_w
@@ -292,7 +292,7 @@ def _build_midgame_state() -> GameState:
 
 def _make_heuristic_ai_with_profile(
     player_number: int,
-    weights: Dict[str, float],
+    weights: dict[str, float],
 ) -> HeuristicAI:
     """
     Helper that mirrors the training harness behaviour by constructing a

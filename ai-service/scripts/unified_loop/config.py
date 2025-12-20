@@ -136,7 +136,7 @@ class TrainingConfig:
     gradient_accumulation: int = 1  # Gradient accumulation steps
     # Knowledge distillation (optional)
     use_knowledge_distill: bool = False  # Train from teacher model
-    teacher_model_path: Optional[str] = None  # Path to teacher model
+    teacher_model_path: str | None = None  # Path to teacher model
     distill_alpha: float = 0.5  # Blend weight (0=pure label, 1=pure teacher)
     distill_temperature: float = 2.0  # Softening temperature
     # Advanced NNUE policy training options (2024-12)
@@ -166,7 +166,7 @@ class TrainingConfig:
     hard_example_top_k: float = 0.3  # Top 30% hardest examples
     use_dynamic_batch: bool = False  # Dynamic batch scheduling (optional)
     dynamic_batch_schedule: str = "linear"  # linear, exponential, or step
-    transfer_from_model: Optional[str] = None  # Cross-board transfer learning
+    transfer_from_model: str | None = None  # Cross-board transfer learning
     transfer_freeze_epochs: int = 5  # Freeze transferred layers for N epochs
     # Advanced optimizer enhancements
     use_lookahead: bool = True  # Lookahead optimizer wrapper
@@ -218,7 +218,7 @@ class TrainingConfig:
     use_self_play: bool = False  # Integrated self-play data generation
     self_play_buffer: int = 100000  # Self-play position buffer size
     use_distillation: bool = False  # Knowledge distillation
-    distillation_teacher_path: Optional[str] = None  # Path to teacher model
+    distillation_teacher_path: str | None = None  # Path to teacher model
     distillation_temp: float = 4.0  # Distillation temperature
     distillation_alpha: float = 0.7  # Soft vs hard targets weight
     # NNUE policy training script
@@ -229,7 +229,7 @@ class TrainingConfig:
     # =========================================================================
     # Gradient Checkpointing - trade compute for memory
     use_gradient_checkpointing: bool = False  # Enable for large models
-    gradient_checkpoint_layers: Optional[List[str]] = None  # Specific layers to checkpoint
+    gradient_checkpoint_layers: list[str] | None = None  # Specific layers to checkpoint
     # PFSP Opponent Pool - Prioritized Fictitious Self-Play
     use_pfsp: bool = True  # Enable diverse opponent selection
     pfsp_max_pool_size: int = 20  # Maximum opponents in pool
@@ -295,7 +295,7 @@ class TrainingConfig:
     streaming_chunk_size: int = 10000  # Samples per chunk
     # Profiling - Performance analysis
     use_profiling: bool = False  # Enable PyTorch Profiler
-    profile_dir: Optional[str] = None  # Profiler output directory
+    profile_dir: str | None = None  # Profiler output directory
     # A/B Testing - Model comparison
     use_ab_testing: bool = False  # Enable A/B model testing
     ab_min_games: int = 100  # Minimum games for significance
@@ -312,7 +312,7 @@ class TrainingConfig:
     # =========================================================================
     # Local parallel selfplay engine selection
     selfplay_engine: str = "descent"  # "descent", "mcts", or "gumbel"
-    selfplay_num_workers: Optional[int] = None  # Default: CPU count - 1
+    selfplay_num_workers: int | None = None  # Default: CPU count - 1
     selfplay_games_per_batch: int = 20  # Games per local selfplay batch
     # Temperature scheduling for exploration/exploitation tradeoff
     selfplay_temperature: float = 1.0  # Base move selection temperature
@@ -346,7 +346,7 @@ class TrainingConfig:
     # Training Checkpointing (Phase 7)
     checkpoint_enabled: bool = True  # Save training state for crash recovery
     checkpoint_interval_seconds: float = 300.0  # Save checkpoint every 5 minutes
-    checkpoint_path: Optional[str] = None  # Path to checkpoint file (default: data/training_checkpoint.json)
+    checkpoint_path: str | None = None  # Path to checkpoint file (default: data/training_checkpoint.json)
     # A/B Testing for Hyperparameters (Phase 7)
     ab_testing_enabled: bool = False  # Enable A/B testing for new configs
     ab_test_fraction: float = 0.3  # Fraction of configs to use test hyperparameters
@@ -359,8 +359,8 @@ class TrainingConfig:
     gradient_norm_threshold: float = 100.0  # Gradient explosion threshold
     max_consecutive_anomalies: int = 5  # Max anomalies before forced halt
     # Configurable Validation Intervals - More frequent validation during training
-    validation_interval_steps: Optional[int] = 1000  # Validate every N steps (None=epoch only)
-    validation_interval_epochs: Optional[float] = None  # Validate every N epochs (overrides steps)
+    validation_interval_steps: int | None = 1000  # Validate every N steps (None=epoch only)
+    validation_interval_epochs: float | None = None  # Validate every N epochs (overrides steps)
     validation_subset_size: float = 1.0  # Fraction of val data for fast validation
     adaptive_validation_interval: bool = False  # Adjust interval by loss variance
     # Warm Restarts Learning Rate - SGDR (cosine annealing with warm restarts)
@@ -369,7 +369,7 @@ class TrainingConfig:
     warm_restart_t_mult: int = 2  # Period multiplier after each restart
     warm_restart_eta_min: float = 1e-6  # Minimum learning rate
     # Seed Management - Reproducibility
-    training_seed: Optional[int] = None  # Random seed (None=random)
+    training_seed: int | None = None  # Random seed (None=random)
     deterministic_training: bool = False  # Enable CuDNN deterministic mode (slower)
     # Data Quality Freshness - Time-based sample weighting
     freshness_decay_hours: float = 24.0  # Freshness half-life in hours
@@ -495,7 +495,7 @@ class EvaluationConfig:
     shadow_games_per_config: int = 15  # Canonical: 15 (was 10)
     full_tournament_interval_seconds: int = 3600  # 1 hour
     full_tournament_games: int = 50
-    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
+    baseline_models: list[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
     # Adaptive interval settings - go faster when cluster is healthy
     adaptive_interval_enabled: bool = True
     adaptive_interval_min_seconds: int = 120  # Can go as low as 2 min
@@ -906,7 +906,7 @@ class FeedbackState:
         """
         return self.data_quality_score >= threshold
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization/logging."""
         return {
             'curriculum_weight': self.curriculum_weight,
@@ -951,9 +951,9 @@ class ConfigState:
 
 def create_integrated_manager_from_config(
     training_config: TrainingConfig,
-    model: Optional[Any] = None,
+    model: Any | None = None,
     board_type: str = "square8",
-) -> Optional["IntegratedTrainingManager"]:
+) -> "IntegratedTrainingManager" | None:
     """Create an IntegratedTrainingManager from TrainingConfig.
 
     Args:

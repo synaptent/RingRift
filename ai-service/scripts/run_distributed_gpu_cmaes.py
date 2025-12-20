@@ -73,11 +73,11 @@ DEFAULT_WEIGHTS = {
 WEIGHT_NAMES = list(DEFAULT_WEIGHTS.keys())
 
 
-def weights_to_vector(weights: Dict[str, float]) -> np.ndarray:
+def weights_to_vector(weights: dict[str, float]) -> np.ndarray:
     return np.array([weights.get(name, DEFAULT_WEIGHTS[name]) for name in WEIGHT_NAMES])
 
 
-def vector_to_weights(vec: np.ndarray) -> Dict[str, float]:
+def vector_to_weights(vec: np.ndarray) -> dict[str, float]:
     return {name: float(vec[i]) for i, name in enumerate(WEIGHT_NAMES)}
 
 
@@ -90,8 +90,8 @@ def vector_to_weights(vec: np.ndarray) -> Dict[str, float]:
 class EvalTask:
     """Task for fitness evaluation."""
     task_id: str
-    candidate_weights: Dict[str, float]
-    baseline_weights: Dict[str, float]
+    candidate_weights: dict[str, float]
+    baseline_weights: dict[str, float]
     num_games: int
     board_size: int
     num_players: int
@@ -105,7 +105,7 @@ class EvalResult:
     fitness: float
     games_played: int
     elapsed_seconds: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class GPUWorker:
@@ -182,8 +182,8 @@ def run_worker_server(port: int, board_size: int, num_players: int):
 
     class TaskRequest(BaseModel):
         task_id: str
-        candidate_weights: Dict[str, float]
-        baseline_weights: Dict[str, float]
+        candidate_weights: dict[str, float]
+        baseline_weights: dict[str, float]
         num_games: int = 50
         board_size: int = 8
         num_players: int = 2
@@ -194,7 +194,7 @@ def run_worker_server(port: int, board_size: int, num_players: int):
         fitness: float
         games_played: int
         elapsed_seconds: float
-        error: Optional[str] = None
+        error: str | None = None
 
     @app.post("/evaluate", response_model=TaskResponse)
     async def evaluate_task(request: TaskRequest):
@@ -252,12 +252,12 @@ class DistributedCoordinator:
 
     def __init__(
         self,
-        worker_urls: List[str],
+        worker_urls: list[str],
         board_size: int = 8,
         num_players: int = 2,
         games_per_eval: int = 50,
         max_moves: int = 2000,
-        baseline_weights: Optional[Dict[str, float]] = None,
+        baseline_weights: dict[str, float] | None = None,
     ):
         self.worker_urls = worker_urls
         self.board_size = board_size
@@ -274,7 +274,7 @@ class DistributedCoordinator:
         for url in worker_urls:
             logger.info(f"  - {url}")
 
-    def check_workers(self) -> Dict[str, Any]:
+    def check_workers(self) -> dict[str, Any]:
         """Check health of all workers."""
         import requests
 
@@ -289,8 +289,8 @@ class DistributedCoordinator:
 
     def evaluate_population(
         self,
-        population: List[np.ndarray],
-    ) -> Tuple[List[float], Dict[str, Any]]:
+        population: list[np.ndarray],
+    ) -> tuple[list[float], dict[str, Any]]:
         """Evaluate population distributed across workers."""
         import requests
 
@@ -359,7 +359,7 @@ class DistributedCoordinator:
 
 
 def run_distributed_cmaes(
-    worker_urls: List[str],
+    worker_urls: list[str],
     board_type: str,
     num_players: int,
     generations: int,
@@ -368,9 +368,9 @@ def run_distributed_cmaes(
     output_dir: str,
     sigma: float = 0.5,
     max_moves: int = 2000,
-    baseline_weights: Optional[Dict[str, float]] = None,
+    baseline_weights: dict[str, float] | None = None,
     seed: int = 42,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run distributed CMA-ES optimization."""
     try:
         import cma

@@ -32,7 +32,7 @@ TEST_TIMEOUT_SECONDS = 60
 # Subset of pools we expect to exist in this repo. Hex pools are wired in
 # code but their JSONL files are generated out-of-band and may be absent,
 # so they are intentionally excluded here.
-NAMED_POOLS_UNDER_TEST: List[str] = [
+NAMED_POOLS_UNDER_TEST: list[str] = [
     "square8_2p_core",
     "square19_2p_core",
     "square8_3p_baseline",

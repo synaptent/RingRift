@@ -57,10 +57,10 @@ from app.rules.default_engine import DefaultRulesEngine
 class SwapExperimentResult:
     """Result from a single swap experiment game."""
 
-    p1_opening_position: Tuple[int, int]
+    p1_opening_position: tuple[int, int]
     opening_strength: float
     p2_swapped: bool
-    winner: Optional[int]
+    winner: int | None
     move_count: int
     p2_player_number: int  # After potential swap
 
@@ -70,7 +70,7 @@ class SwapExperimentSummary:
     """Summary statistics for a set of swap experiments."""
 
     position_type: str
-    position: Tuple[int, int]
+    position: tuple[int, int]
     games_played: int
     avg_opening_strength: float
     swap_rate: float
@@ -93,7 +93,7 @@ POSITION_CATEGORIES = {
 
 
 def create_game_with_p1_opening(
-    p1_position: Tuple[int, int],
+    p1_position: tuple[int, int],
     board_type: BoardType = BoardType.SQUARE8,
 ) -> GameState:
     """Create a game state where P1 has already placed their first ring.
@@ -195,7 +195,7 @@ def create_ai_with_weights(
     player_number: int,
     weights: HeuristicWeights,
     randomness: float = 0.05,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> HeuristicAI:
     """Create a HeuristicAI instance with custom weights."""
     ai = HeuristicAI(
@@ -217,7 +217,7 @@ def play_game_from_state(
     weights: HeuristicWeights,
     max_moves: int = 400,
     randomness: float = 0.05,
-    seed_base: Optional[int] = None,
+    seed_base: int | None = None,
 ) -> SwapExperimentResult:
     """Play a game from a given initial state and track swap decision.
 
@@ -278,11 +278,11 @@ def play_game_from_state(
 
 
 def run_experiment_for_position(
-    position: Tuple[int, int],
+    position: tuple[int, int],
     num_games: int,
     weights: HeuristicWeights,
     verbose: bool = False,
-) -> List[SwapExperimentResult]:
+) -> list[SwapExperimentResult]:
     """Run multiple games with P1 starting at a specific position."""
     results = []
 
@@ -302,9 +302,9 @@ def run_experiment_for_position(
 
 
 def analyze_results(
-    results: List[SwapExperimentResult],
+    results: list[SwapExperimentResult],
     position_type: str,
-    position: Tuple[int, int],
+    position: tuple[int, int],
 ) -> SwapExperimentSummary:
     """Analyze experiment results and compute summary statistics."""
     games_played = len(results)
@@ -383,9 +383,9 @@ def run_position_sweep(
     num_games_per_position: int,
     weights: HeuristicWeights,
     verbose: bool = False,
-) -> Dict[str, List[SwapExperimentSummary]]:
+) -> dict[str, list[SwapExperimentSummary]]:
     """Run experiments for all position categories."""
-    all_summaries: Dict[str, List[SwapExperimentSummary]] = {}
+    all_summaries: dict[str, list[SwapExperimentSummary]] = {}
 
     for category, positions in POSITION_CATEGORIES.items():
         print(f"\n--- Testing {category.upper()} positions ---")
@@ -403,7 +403,7 @@ def run_position_sweep(
     return all_summaries
 
 
-def print_category_comparison(summaries: Dict[str, List[SwapExperimentSummary]]) -> None:
+def print_category_comparison(summaries: dict[str, list[SwapExperimentSummary]]) -> None:
     """Print a comparison table across position categories."""
     print("\n" + "=" * 80)
     print("CATEGORY COMPARISON")

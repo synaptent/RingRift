@@ -78,7 +78,7 @@ def find_checkpoints(
     models_dir: str = "models",
     skip_checkpoint_dir: bool = True,
     versioned_only: bool = True,
-) -> List[Path]:
+) -> list[Path]:
     """Find all checkpoints for a candidate model.
 
     Looks for:
@@ -163,7 +163,7 @@ def evaluate_checkpoint(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     games_per_opponent: int = 10,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Evaluate a checkpoint via mini-gauntlet against baselines.
 
     Uses the unified game_gauntlet module for consistent evaluation.
@@ -217,7 +217,7 @@ def select_best_checkpoint(
     num_players: int = 2,
     min_random_win_rate: float = DEFAULT_MIN_RANDOM_WIN_RATE,
     min_heuristic_win_rate: float = DEFAULT_MIN_HEURISTIC_WIN_RATE,
-) -> Tuple[Optional[Path], List[Dict[str, Any]]]:
+) -> tuple[Path | None, list[dict[str, Any]]]:
     """Evaluate all checkpoints and select the best one by Elo.
 
     Checkpoints must pass baseline gating requirements before being

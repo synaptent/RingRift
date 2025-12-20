@@ -104,7 +104,7 @@ GAME_SOURCE_TAG = "run_model_elo_tournament"
 # ============================================
 
 def create_ai_from_model(
-    model_def: Dict[str, Any],
+    model_def: dict[str, Any],
     player_number: int,
     board_type: BoardType,
 ) -> "BaseAI":
@@ -174,13 +174,13 @@ def create_ai_from_model(
 
 
 def play_model_vs_model_game(
-    model_a: Dict[str, Any],
-    model_b: Dict[str, Any],
+    model_a: dict[str, Any],
+    model_b: dict[str, Any],
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 10000,
     save_game_history: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Play a single game between two models (NN or baseline).
 
     Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec, game_record
@@ -313,9 +313,9 @@ def play_nn_vs_nn_game(
     mcts_simulations: int = 100,
     save_game_history: bool = True,
     ai_type: str = "descent",
-    ai_type_a: Optional[str] = None,
-    ai_type_b: Optional[str] = None,
-) -> Dict[str, Any]:
+    ai_type_a: str | None = None,
+    ai_type_b: str | None = None,
+) -> dict[str, Any]:
     """Play a single game between two neural network models.
 
     Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec, game_record
@@ -331,20 +331,20 @@ def play_nn_vs_nn_game(
     from datetime import datetime
     from app.ai.neural_net import NeuralNetAI, clear_model_cache
 
-    def _timeout_tiebreak_winner(final_state: GameState) -> Optional[int]:
+    def _timeout_tiebreak_winner(final_state: GameState) -> int | None:
         """Deterministically select a winner for evaluation-only timeouts."""
         players = getattr(final_state, "players", None) or []
         if not players:
             return None
 
-        territory_counts: Dict[int, int] = {}
+        territory_counts: dict[int, int] = {}
         try:
             for p_id in final_state.board.collapsed_spaces.values():
                 territory_counts[int(p_id)] = territory_counts.get(int(p_id), 0) + 1
         except Exception:
             pass
 
-        marker_counts: Dict[int, int] = {int(p.player_number): 0 for p in players}
+        marker_counts: dict[int, int] = {int(p.player_number): 0 for p in players}
         try:
             for marker in final_state.board.markers.values():
                 owner = int(marker.player)
@@ -352,7 +352,7 @@ def play_nn_vs_nn_game(
         except Exception:
             pass
 
-        last_actor: Optional[int] = None
+        last_actor: int | None = None
         try:
             if final_state.move_history:
                 last_actor = int(final_state.move_history[-1].player)
@@ -538,7 +538,7 @@ def play_nn_vs_nn_game(
     status = "completed" if game_state.game_status == GameStatus.COMPLETED else str(game_state.game_status.value)
 
     # Evaluation-only timeout tie-break (avoid draw-heavy tournaments).
-    winner_player: Optional[int] = None
+    winner_player: int | None = None
     if game_state.winner is not None:
         try:
             winner_player = int(game_state.winner)
@@ -546,7 +546,7 @@ def play_nn_vs_nn_game(
             winner_player = None
 
     timed_out = bool(move_count >= max_moves and winner_player is None)
-    evaluation_tiebreak_player: Optional[int] = None
+    evaluation_tiebreak_player: int | None = None
     if winner_player is None:
         evaluation_tiebreak_player = _timeout_tiebreak_winner(game_state)
 
@@ -609,16 +609,16 @@ def play_nn_vs_nn_game(
 
 def run_model_matchup(
     db: EloDatabase,
-    model_a: Dict[str, Any],
-    model_b: Dict[str, Any],
+    model_a: dict[str, Any],
+    model_b: dict[str, Any],
     board_type: str,
     num_players: int,
     games: int,
     tournament_id: str,
     nn_ai_type: str = "descent",
     use_both_ai_types: bool = False,
-    save_games_dir: Optional[Path] = None,
-) -> Dict[str, int]:
+    save_games_dir: Path | None = None,
+) -> dict[str, int]:
     """Run multiple games between two models and update Elo.
 
     If save_games_dir is provided, games are saved to JSONL for training data.
@@ -797,7 +797,7 @@ def discover_models(
     board_type: str = "square8",
     num_players: int = 2,
     include_nnue: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Discover all trained models for a given board type.
 
     Args:
@@ -869,7 +869,7 @@ def discover_models(
     return sorted(models, key=lambda x: x["created_at"], reverse=True)
 
 
-def get_baseline_players(board_type: str, num_players: int) -> List[Dict[str, Any]]:
+def get_baseline_players(board_type: str, num_players: int) -> list[dict[str, Any]]:
     """Get baseline player definitions for Elo calibration.
 
     These provide anchor points for the Elo scale:
@@ -925,7 +925,7 @@ def get_baseline_players(board_type: str, num_players: int) -> List[Dict[str, An
     return baselines
 
 
-def register_models(db: EloDatabase, models: List[Dict[str, Any]]):
+def register_models(db: EloDatabase, models: list[dict[str, Any]]):
     """Register discovered models in the database."""
     for m in models:
         # Determine AI type from model path
@@ -958,7 +958,7 @@ def get_leaderboard(
     board_type: str = None,
     num_players: int = None,
     limit: int = 50,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get current Elo leaderboard."""
     rows = db.get_leaderboard(board_type=board_type, num_players=num_players, min_games=0, limit=limit)
 
@@ -1066,7 +1066,7 @@ def update_elo_after_match(
             pass
 
 
-def print_leaderboard(leaderboard: List[Dict[str, Any]], title: str = "Elo Leaderboard"):
+def print_leaderboard(leaderboard: list[dict[str, Any]], title: str = "Elo Leaderboard"):
     """Pretty print the leaderboard."""
     print(f"\n{'='*80}")
     print(f" {title}")
@@ -1416,12 +1416,12 @@ def run_continuous_tournament(args):
 
 
 def generate_elo_based_matchups(
-    models: List[Dict[str, Any]],
+    models: list[dict[str, Any]],
     db: EloDatabase,
     board_type: str,
     num_players: int,
     max_elo_diff: int = 200,
-) -> List[Tuple[Dict, Dict]]:
+) -> list[tuple[dict, dict]]:
     """Generate matchups between models with similar Elo ratings.
 
     This produces more informative games than random matchups, as close
@@ -1476,7 +1476,7 @@ def archive_low_elo_models(
     num_players: int,
     elo_threshold: int = 1400,
     min_games: int = 50,
-) -> List[str]:
+) -> list[str]:
     """Archive models with low Elo after sufficient games.
 
     Archived models are marked in the database and excluded from future tournaments.

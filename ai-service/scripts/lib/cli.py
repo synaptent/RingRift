@@ -50,7 +50,7 @@ VALID_PLAYER_COUNTS = [2, 3, 4]
 # Canonical mapping from string names to BoardType enum
 # Includes all common aliases used across scripts
 if _HAS_BOARD_TYPE:
-    BOARD_TYPE_MAP: Dict[str, "BoardType"] = {
+    BOARD_TYPE_MAP: dict[str, "BoardType"] = {
         # Standard names
         "square8": BoardType.SQUARE8,
         "square19": BoardType.SQUARE19,
@@ -153,7 +153,7 @@ def add_config_arg(
     parser: argparse.ArgumentParser,
     short: str = "-c",
     long: str = "--config",
-    default: Optional[str] = None,
+    default: str | None = None,
     required: bool = False,
     help_text: str = "Configuration file path",
 ) -> None:
@@ -181,7 +181,7 @@ def add_node_arg(
     parser: argparse.ArgumentParser,
     long: str = "--node-id",
     required: bool = True,
-    default: Optional[str] = None,
+    default: str | None = None,
     help_text: str = "Node identifier",
 ) -> None:
     """Add --node-id argument to parser.
@@ -214,8 +214,8 @@ def add_board_args(
     players_arg: str = "--num-players",
     default_board: str = "square8",
     default_players: int = 2,
-    board_choices: Optional[List[str]] = None,
-    player_choices: Optional[List[int]] = None,
+    board_choices: list[str] | None = None,
+    player_choices: list[int] | None = None,
 ) -> None:
     """Add board and num-players arguments to parser.
 
@@ -248,7 +248,7 @@ def add_output_arg(
     parser: argparse.ArgumentParser,
     short: str = "-o",
     long: str = "--output",
-    default: Optional[str] = None,
+    default: str | None = None,
     required: bool = False,
     help_text: str = "Output file or directory path",
 ) -> None:
@@ -275,7 +275,7 @@ def add_output_arg(
 def add_limit_arg(
     parser: argparse.ArgumentParser,
     long: str = "--limit",
-    default: Optional[int] = None,
+    default: int | None = None,
     help_text: str = "Maximum number of items to process",
 ) -> None:
     """Add --limit argument to parser.
@@ -298,7 +298,7 @@ def add_parallel_arg(
     parser: argparse.ArgumentParser,
     short: str = "-j",
     long: str = "--jobs",
-    default: Optional[int] = None,
+    default: int | None = None,
     help_text: str = "Number of parallel jobs (default: CPU count)",
 ) -> None:
     """Add --jobs argument for parallelism.
@@ -347,7 +347,7 @@ def add_common_args(
     verbose: bool = True,
     dry_run: bool = True,
     config: bool = False,
-    config_default: Optional[str] = None,
+    config_default: str | None = None,
 ) -> None:
     """Add common arguments to parser.
 
@@ -511,7 +511,7 @@ def print_dry_run_notice() -> None:
 
 def print_summary(
     title: str,
-    items: Dict[str, Any],
+    items: dict[str, Any],
     indent: int = 2,
 ) -> None:
     """Print a formatted summary.

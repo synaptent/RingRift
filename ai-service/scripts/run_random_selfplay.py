@@ -49,7 +49,7 @@ def play_random_game(
     board_type: str = "square8",
     num_players: int = 2,
     max_moves: int = 10000,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     game_index: int = 0,
 ) -> dict:
     """Play a game using purely random move selection."""
@@ -60,7 +60,7 @@ def play_random_game(
     # Capture initial state for training data export (required for NPZ conversion)
     initial_state_snapshot = state.model_dump(mode="json")
     game_start_time = time.time()
-    moves_played: List[dict] = []
+    moves_played: list[dict] = []
     recovery_opportunities = 0
 
     for move_num in range(max_moves):

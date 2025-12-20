@@ -32,9 +32,9 @@ if TYPE_CHECKING:
 
 
 def _build_q23_region_state(
-    internal_heights: List[int],
+    internal_heights: list[int],
     outside_height: int,
-) -> tuple["GameState", List[Position], int]:
+) -> tuple["GameState", list[Position], int]:
     """Construct a Q23-style 2×2 disconnected region on square8 for P1.
 
     Geometry mirrors the TS territoryProcessing.property harness but fixes
@@ -75,7 +75,7 @@ def _build_q23_region_state(
 
     # Simple rectangular ring of markers one cell around the region, matching
     # the Q23 mini-region fixtures used on the TS side.
-    border_coords: List[tuple[int, int]] = []
+    border_coords: list[tuple[int, int]] = []
     for x in range(1, 5):
         border_coords.append((x, 1))
         border_coords.append((x, 4))
@@ -127,7 +127,7 @@ def _build_q23_region_state(
 )
 @settings(max_examples=25, deadline=None)
 def test_territory_processing_q23_region_property(
-    internal_heights: List[int],
+    internal_heights: list[int],
     outside_height: int,
 ) -> None:
     """Territory-processing invariants for random Q23-style 2×2 regions.
@@ -194,7 +194,7 @@ def test_territory_processing_q23_region_property(
     delta_territory = p1_after.territory_spaces - initial_territory
     # Reconstruct the border ring used in _build_q23_region_state so we do not
     # need to change its return type.
-    border_coords: List[tuple[int, int]] = []
+    border_coords: list[tuple[int, int]] = []
     for x in range(1, 5):
         border_coords.append((x, 1))
         border_coords.append((x, 4))

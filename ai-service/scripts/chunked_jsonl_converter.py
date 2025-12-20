@@ -40,7 +40,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Iterator
 
 # Ensure ai-service root on path for scripts/lib imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -76,7 +77,7 @@ class ConversionStats:
         )
 
 
-def detect_board_type(path: Path) -> Tuple[str, int]:
+def detect_board_type(path: Path) -> tuple[str, int]:
     """Detect board type and player count from file path.
 
     Returns (board_type, num_players) tuple.
@@ -105,13 +106,13 @@ def detect_board_type(path: Path) -> Tuple[str, int]:
 def read_jsonl_chunked(
     filepath: Path,
     chunk_size: int = 1000,
-) -> Iterator[List[Dict[str, Any]]]:
+) -> Iterator[list[dict[str, Any]]]:
     """Read JSONL file in chunks to avoid memory issues.
 
     Yields lists of parsed records, each list up to chunk_size items.
     Automatically detects and handles gzip-compressed files.
     """
-    chunk: List[Dict[str, Any]] = []
+    chunk: list[dict[str, Any]] = []
 
     try:
         with open_jsonl_file(filepath) as f:
@@ -175,11 +176,11 @@ def get_db_connection(
 
 
 def process_chunk(
-    records: List[Dict[str, Any]],
+    records: list[dict[str, Any]],
     conn: sqlite3.Connection,
     source_file: str,
     file_stem: str,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """Process a chunk of records and insert into database.
 
     Returns (added, duplicates, invalid) counts.
@@ -243,9 +244,9 @@ def process_file(
     filepath: Path,
     output_dir: Path,
     chunk_size: int,
-    board_type_filter: Optional[str] = None,
-    num_players_filter: Optional[int] = None,
-) -> Tuple[str, int, int, int]:
+    board_type_filter: str | None = None,
+    num_players_filter: int | None = None,
+) -> tuple[str, int, int, int]:
     """Process a single JSONL file.
 
     Returns (filepath, added, duplicates, invalid).
@@ -286,9 +287,9 @@ def process_file(
 
 def scan_jsonl_files(
     input_dir: Path,
-    converted_files: Set[str],
+    converted_files: set[str],
     min_size_bytes: int = 100,
-) -> List[Path]:
+) -> list[Path]:
     """Scan for unconverted JSONL files."""
     files = []
 
@@ -311,7 +312,7 @@ def scan_jsonl_files(
     return sorted(files, key=lambda f: f.stat().st_size, reverse=True)
 
 
-def load_marker_file(marker_path: Path) -> Set[str]:
+def load_marker_file(marker_path: Path) -> set[str]:
     """Load set of already-converted file paths."""
     if not marker_path.exists():
         return set()
@@ -323,7 +324,7 @@ def load_marker_file(marker_path: Path) -> Set[str]:
         return set()
 
 
-def save_marker_file(marker_path: Path, converted: Set[str]) -> None:
+def save_marker_file(marker_path: Path, converted: set[str]) -> None:
     """Save converted file paths to marker."""
     try:
         marker_path.write_text("\n".join(sorted(converted)))
@@ -450,7 +451,7 @@ def main():
 
     # Process files
     stats = ConversionStats()
-    newly_converted: Set[str] = set()
+    newly_converted: set[str] = set()
 
     logger.info("Starting conversion...")
 

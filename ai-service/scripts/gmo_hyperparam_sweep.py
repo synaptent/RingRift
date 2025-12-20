@@ -78,7 +78,7 @@ class SweepConfig:
 class SweepResult:
     """Results from a single sweep trial."""
 
-    config: Dict
+    config: dict
     vs_random_wins: int
     vs_random_losses: int
     vs_random_draws: int
@@ -95,7 +95,7 @@ class SweepResult:
 def create_gmo_from_config(
     sweep_config: SweepConfig,
     player_number: int,
-    checkpoint_path: Optional[Path] = None,
+    checkpoint_path: Path | None = None,
     device: str = "cpu",
 ) -> GMOAI:
     """Create a GMO AI instance from sweep config."""
@@ -134,7 +134,7 @@ def play_game(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 500,
-) -> Tuple[Optional[int], int, float]:
+) -> tuple[int | None, int, float]:
     """Play a single game and return (winner, num_moves, total_time)."""
     state = create_initial_state(board_type=board_type, num_players=num_players)
 
@@ -180,7 +180,7 @@ def play_game(
 def evaluate_config(
     sweep_config: SweepConfig,
     games_per_baseline: int = 20,
-    checkpoint_path: Optional[Path] = None,
+    checkpoint_path: Path | None = None,
     device: str = "cpu",
 ) -> SweepResult:
     """Evaluate a single configuration against baselines."""
@@ -252,8 +252,8 @@ def evaluate_config(
 
 
 def generate_sweep_configs(
-    param_grid: Dict[str, List],
-) -> List[SweepConfig]:
+    param_grid: dict[str, list],
+) -> list[SweepConfig]:
     """Generate all combinations of parameters."""
     keys = list(param_grid.keys())
     values = list(param_grid.values())
@@ -267,13 +267,13 @@ def generate_sweep_configs(
 
 
 def run_sweep(
-    param_grid: Dict[str, List],
+    param_grid: dict[str, list],
     games_per_baseline: int = 20,
-    checkpoint_path: Optional[Path] = None,
+    checkpoint_path: Path | None = None,
     device: str = "cpu",
-    results_file: Optional[Path] = None,
-    resume_from: Optional[Path] = None,
-) -> List[SweepResult]:
+    results_file: Path | None = None,
+    resume_from: Path | None = None,
+) -> list[SweepResult]:
     """Run hyperparameter sweep."""
     configs = generate_sweep_configs(param_grid)
     logger.info(f"Generated {len(configs)} configurations to test")
@@ -319,7 +319,7 @@ def run_sweep(
     return results
 
 
-def save_results(results: List[SweepResult], filepath: Path) -> None:
+def save_results(results: list[SweepResult], filepath: Path) -> None:
     """Save sweep results to JSON."""
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -335,7 +335,7 @@ def save_results(results: List[SweepResult], filepath: Path) -> None:
     logger.info(f"Saved results to {filepath}")
 
 
-def analyze_results(results: List[SweepResult]) -> Dict:
+def analyze_results(results: list[SweepResult]) -> dict:
     """Analyze sweep results and find best configuration."""
     if not results:
         return {}

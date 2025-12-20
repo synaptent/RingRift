@@ -71,7 +71,7 @@ class CAGEDataset(Dataset):
 def generate_cage_data(
     num_games: int = 100,
     board_type: BoardType = BoardType.SQUARE8,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Generate training data for CAGE.
 
     Returns:
@@ -189,7 +189,7 @@ def train_epoch(
     dataloader: DataLoader,
     optimizer: optim.Optimizer,
     device: torch.device,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Train for one epoch."""
     model.train()
 

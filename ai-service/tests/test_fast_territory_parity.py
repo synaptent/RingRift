@@ -13,7 +13,7 @@ from app.models import (
 )
 
 
-def territories_equivalent(t1: List[Territory], t2: List[Territory]) -> bool:
+def territories_equivalent(t1: list[Territory], t2: list[Territory]) -> bool:
     """Check if two lists of territories are equivalent (order-independent)."""
     if len(t1) != len(t2):
         return False

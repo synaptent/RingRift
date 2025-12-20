@@ -41,7 +41,8 @@ import time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Tuple
+from typing import Any, Dict, List, Tuple
+from collections.abc import Generator
 
 # Add project root to path
 SCRIPT_DIR = Path(__file__).parent
@@ -60,7 +61,7 @@ from scripts.lib.data_quality import (
 logger = get_logger(__name__)
 
 
-def find_jsonl_files(data_dir: Path, board_type: str, num_players: int) -> List[Path]:
+def find_jsonl_files(data_dir: Path, board_type: str, num_players: int) -> list[Path]:
     """Find all JSONL files that might contain matching games.
 
     Args:
@@ -97,7 +98,7 @@ def stream_games_from_file(
     board_type: str,
     num_players: int,
     sample_rate: float = 1.0,
-) -> Generator[Dict[str, Any], None, None]:
+) -> Generator[dict[str, Any], None, None]:
     """Stream games from a JSONL file with optional sampling.
 
     Args:
@@ -146,7 +147,7 @@ def harvest_local_data(
     output_file: Path,
     sample_rate: float = 1.0,
     shuffle_files: bool = True,
-) -> Tuple[int, QualityStats]:
+) -> tuple[int, QualityStats]:
     """Harvest high-quality games from local data.
 
     Args:
@@ -184,7 +185,7 @@ def harvest_local_data(
         random.shuffle(files)
 
     # Process games
-    quality_games: List[Tuple[GameQuality, Dict[str, Any]]] = []
+    quality_games: list[tuple[GameQuality, dict[str, Any]]] = []
     seen_ids: set = set()
     games_checked = 0
     quality_distribution: Counter = Counter()

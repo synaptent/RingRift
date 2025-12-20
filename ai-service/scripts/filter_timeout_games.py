@@ -46,7 +46,7 @@ class FilterStats:
     jsonl_games_after: int = 0
     jsonl_games_removed: int = 0
     files_processed: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def total_removed(self) -> int:
@@ -61,7 +61,7 @@ class FilterStats:
         )
 
 
-def is_timeout_game(termination_reason: Optional[str]) -> bool:
+def is_timeout_game(termination_reason: str | None) -> bool:
     """Check if a game ended due to timeout."""
     if not termination_reason:
         return False
@@ -69,7 +69,7 @@ def is_timeout_game(termination_reason: Optional[str]) -> bool:
     return "timeout" in term_lower
 
 
-def filter_sqlite_db(db_path: Path, dry_run: bool = False, backup: bool = True) -> Tuple[int, int, int]:
+def filter_sqlite_db(db_path: Path, dry_run: bool = False, backup: bool = True) -> tuple[int, int, int]:
     """Filter timeout games from a SQLite database.
 
     Returns: (games_before, games_after, games_removed)
@@ -135,7 +135,7 @@ def filter_sqlite_db(db_path: Path, dry_run: bool = False, backup: bool = True) 
         return 0, 0, 0
 
 
-def filter_jsonl_file(jsonl_path: Path, dry_run: bool = False, backup: bool = True) -> Tuple[int, int, int]:
+def filter_jsonl_file(jsonl_path: Path, dry_run: bool = False, backup: bool = True) -> tuple[int, int, int]:
     """Filter timeout games from a JSONL file.
 
     Returns: (games_before, games_after, games_removed)
@@ -261,9 +261,9 @@ async def filter_remote_host(
     ssh_host: str,
     ssh_user: str,
     remote_path: str,
-    ssh_key: Optional[str] = None,
+    ssh_key: str | None = None,
     dry_run: bool = False,
-) -> Tuple[str, FilterStats]:
+) -> tuple[str, FilterStats]:
     """Filter training data on a remote host."""
     stats = FilterStats()
 
@@ -419,7 +419,7 @@ print(f"FILTER_RESULT:{{db_removed}}:{{jsonl_removed}}:{{files_processed}}")
         return host_name, stats
 
 
-def load_hosts(config_path: Path) -> List[Dict[str, Any]]:
+def load_hosts(config_path: Path) -> list[dict[str, Any]]:
     """Load host configurations."""
     if not config_path.exists():
         return []
@@ -443,7 +443,7 @@ def load_hosts(config_path: Path) -> List[Dict[str, Any]]:
     return hosts
 
 
-async def filter_cluster(config_path: Path, dry_run: bool = False, specific_host: Optional[str] = None):
+async def filter_cluster(config_path: Path, dry_run: bool = False, specific_host: str | None = None):
     """Filter training data across all cluster hosts."""
     hosts = load_hosts(config_path)
 

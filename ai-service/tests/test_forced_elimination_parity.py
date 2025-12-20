@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
 def _block_all_positions_except(
     state: "GameState",
-    allowed: List[Position],
+    allowed: list[Position],
 ) -> None:
     """Collapse all positions except the given ones to block movement/capture.
 
@@ -71,7 +71,7 @@ def _block_all_positions_except(
 def _enumerate_forced_elimination_options(
     state: "GameState",
     player: int,
-) -> Dict[str, Tuple[int, int]]:
+) -> dict[str, tuple[int, int]]:
     """Return {pos_key: (cap_height, stack_height)} for all FE candidates.
 
     This uses GameEngine._get_forced_elimination_moves as the Python analogue
@@ -79,7 +79,7 @@ def _enumerate_forced_elimination_options(
     from the board.
     """
     moves = GameEngine._get_forced_elimination_moves(state, player)
-    options: Dict[str, Tuple[int, int]] = {}
+    options: dict[str, tuple[int, int]] = {}
     board = state.board
 
     for move in moves:
@@ -92,10 +92,10 @@ def _enumerate_forced_elimination_options(
     return options
 
 
-def _build_mixed_caps_forced_elimination_state() -> Tuple[
+def _build_mixed_caps_forced_elimination_state() -> tuple[
     "GameState",
     Position,
-    List[Position],
+    list[Position],
 ]:
     """Blocked state where P1 has stacks with mixed positive capHeights.
 
@@ -162,10 +162,10 @@ def _build_mixed_caps_forced_elimination_state() -> Tuple[
     return state, pos_low, [pos_high, pos_mid, pos_low]
 
 
-def _build_all_zero_caps_forced_elimination_state() -> Tuple[
+def _build_all_zero_caps_forced_elimination_state() -> tuple[
     "GameState",
     Position,
-    List[Position],
+    list[Position],
 ]:
     """Blocked state where P1 has stacks whose capHeight metadata is zero.
 

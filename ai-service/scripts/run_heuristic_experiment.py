@@ -63,7 +63,8 @@ import os
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Dict, Iterable, List
+from typing import Dict, List
+from collections.abc import Iterable
 
 # Ensure project root (containing ``app`` and ``scripts``) is on sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -97,7 +98,7 @@ from app.training.env import (  # type: ignore  # noqa: E402
 from app.utils.progress_reporter import ProgressReporter  # type: ignore  # noqa: E402
 
 
-BOARD_TYPES: Dict[str, BoardType] = {
+BOARD_TYPES: dict[str, BoardType] = {
     "Square8": BoardType.SQUARE8,
     "Square19": BoardType.SQUARE19,
     "Hex": BoardType.HEXAGONAL,
@@ -386,11 +387,11 @@ def run_match(
     return match
 
 
-def _parse_list(value: str) -> List[str]:
+def _parse_list(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
-def _parse_int_list(value: str) -> List[int]:
+def _parse_int_list(value: str) -> list[int]:
     return [int(v.strip()) for v in value.split(",") if v.strip()]
 
 
@@ -445,14 +446,14 @@ def _write_csv(path: str, rows: Iterable[MatchStats]) -> None:
             )
 
 
-def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
+def run_experiments(args: argparse.Namespace) -> list[MatchStats]:
     mode = args.mode
 
     difficulties = _parse_int_list(args.difficulties)
     boards = _parse_list(args.boards)
     games = args.games_per_match
 
-    results: List[MatchStats] = []
+    results: list[MatchStats] = []
 
     if mode == "baseline-vs-trained":
         if not args.trained_profiles_a:

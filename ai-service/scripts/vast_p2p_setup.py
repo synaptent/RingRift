@@ -43,7 +43,7 @@ SOCKS_PORT = 1055
 ARIA2_RPC_PORT = 6800
 ARIA2_DATA_PORT = 8766
 
-def _load_known_peers() -> List[str]:
+def _load_known_peers() -> list[str]:
     """Load bootstrap peers from config/distributed_hosts.yaml."""
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
 
@@ -73,7 +73,7 @@ def _load_known_peers() -> List[str]:
 KNOWN_PEERS = _load_known_peers()
 
 
-def run_local_command(cmd: str, timeout: int = 60) -> Tuple[bool, str]:
+def run_local_command(cmd: str, timeout: int = 60) -> tuple[bool, str]:
     """Run command locally.
 
     Uses shlex.split() to parse command string safely (no shell injection).
@@ -90,7 +90,7 @@ def run_local_command(cmd: str, timeout: int = 60) -> Tuple[bool, str]:
         return False, str(e)
 
 
-def get_vast_instances() -> List[Dict]:
+def get_vast_instances() -> list[dict]:
     """Get running Vast instances from CLI."""
     try:
         vastai_paths = [
@@ -179,7 +179,7 @@ fi
 '''
 
 
-def setup_tailscale_socks(host: str, port: int, name: str) -> Tuple[str, bool, str]:
+def setup_tailscale_socks(host: str, port: int, name: str) -> tuple[str, bool, str]:
     """Setup Tailscale in userspace mode with SOCKS5 on a Vast instance."""
     script = TAILSCALE_USERSPACE_SETUP.replace("{SOCKS_PORT}", str(SOCKS_PORT))
 
@@ -257,7 +257,7 @@ fi
 '''
 
 
-def setup_aria2_server(host: str, port: int, name: str) -> Tuple[str, bool, str]:
+def setup_aria2_server(host: str, port: int, name: str) -> tuple[str, bool, str]:
     """Setup aria2 RPC and data server on a Vast instance."""
     script = ARIA2_SERVER_SETUP.replace("{ARIA2_RPC_PORT}", str(ARIA2_RPC_PORT))
     script = script.replace("{ARIA2_DATA_PORT}", str(ARIA2_DATA_PORT))
@@ -313,7 +313,7 @@ exit 1
 '''
 
 
-def setup_cloudflare_tunnel(host: str, port: int, name: str) -> Tuple[str, bool, str]:
+def setup_cloudflare_tunnel(host: str, port: int, name: str) -> tuple[str, bool, str]:
     """Setup Cloudflare quick tunnel on a Vast instance."""
     script = CLOUDFLARE_TUNNEL_SETUP.replace("{P2P_PORT}", str(P2P_PORT))
 
@@ -386,7 +386,7 @@ fi
 '''
 
 
-def start_p2p_with_socks(host: str, port: int, name: str) -> Tuple[str, bool, str]:
+def start_p2p_with_socks(host: str, port: int, name: str) -> tuple[str, bool, str]:
     """Start P2P orchestrator with SOCKS proxy on a Vast instance."""
     peers_str = ",".join(KNOWN_PEERS)
     script = P2P_START_SCRIPT.replace("{SOCKS_PORT}", str(SOCKS_PORT))
@@ -410,7 +410,7 @@ def start_p2p_with_socks(host: str, port: int, name: str) -> Tuple[str, bool, st
 # Status Checking
 # =============================================================================
 
-def check_instance_status(host: str, port: int, name: str) -> Dict:
+def check_instance_status(host: str, port: int, name: str) -> dict:
     """Check comprehensive status of a Vast instance."""
     status = {
         "name": name,
@@ -506,7 +506,7 @@ def setup_all_local():
     print("\n" + "=" * 70)
 
 
-def deploy_to_all_vast(components: List[str] = None):
+def deploy_to_all_vast(components: list[str] = None):
     """Deploy components to all Vast instances."""
     if components is None:
         components = ["tailscale", "aria2", "p2p"]

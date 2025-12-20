@@ -16,7 +16,8 @@ import argparse
 import json
 import os
 import sys
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Tuple
+from collections.abc import Iterable
 
 
 # Allow imports from app/ when run from the ai-service root.
@@ -35,9 +36,9 @@ OUTPUT_DIR = os.path.join("logs", "axis_aligned", "profiles")
 def build_axis_aligned_profile(
     factor_key: str,
     *,
-    base_weights: HeuristicWeights | Dict[str, float] | None = None,
+    base_weights: HeuristicWeights | dict[str, float] | None = None,
     ordered_keys: Iterable[str] | None = None,
-) -> Tuple[HeuristicWeights, HeuristicWeights, float]:
+) -> tuple[HeuristicWeights, HeuristicWeights, float]:
     """Construct positive/negative axis-aligned profiles for a single factor.
 
     Parameters

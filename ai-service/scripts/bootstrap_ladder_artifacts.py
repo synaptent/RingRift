@@ -46,7 +46,7 @@ def _now_tag() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 
-def _parse_boards(values: Optional[list[str]]) -> Optional[set[str]]:
+def _parse_boards(values: list[str] | None) -> set[str] | None:
     if not values:
         return None
     allowed = {"square8", "square19", "hexagonal"}
@@ -59,7 +59,7 @@ def _parse_boards(values: Optional[list[str]]) -> Optional[set[str]]:
     return out
 
 
-def _parse_players(values: Optional[list[int]]) -> Optional[set[int]]:
+def _parse_players(values: list[int] | None) -> set[int] | None:
     if not values:
         return None
     allowed = {2, 3, 4}
@@ -71,7 +71,7 @@ def _parse_players(values: Optional[list[int]]) -> Optional[set[int]]:
     return out
 
 
-def _resolve_latest_checkpoint(models_dir: Path, model_id: str) -> Optional[Path]:
+def _resolve_latest_checkpoint(models_dir: Path, model_id: str) -> Path | None:
     patterns = [
         f"{model_id}.pth",
         f"{model_id}_mps.pth",

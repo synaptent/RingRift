@@ -54,7 +54,7 @@ from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 def _run_cmd(
     cmd: list[str],
     cwd: Path | None = None,
-    env_overrides: Dict[str, str] | None = None,
+    env_overrides: dict[str, str] | None = None,
     *,
     capture_output: bool = True,
     stream_to_stderr: bool = False,
@@ -89,14 +89,14 @@ def _run_cmd(
         return subprocess.CompletedProcess(cmd, returncode=124)
 
 
-def _write_json(path: Path, payload: Dict[str, Any]) -> None:
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _start_heartbeat(
     summary_path: Path,
-    stage_payload: Dict[str, Any],
+    stage_payload: dict[str, Any],
     *,
     heartbeat_seconds: int,
     db_path: Path | None = None,
@@ -106,7 +106,7 @@ def _start_heartbeat(
     stop_event = threading.Event()
     started = time.monotonic()
 
-    def _try_read_db_counts(path: Path) -> Dict[str, int]:
+    def _try_read_db_counts(path: Path) -> dict[str, int]:
         """Best-effort progress counters for the GameReplayDB SQLite file."""
         try:
             import sqlite3
@@ -114,7 +114,7 @@ def _start_heartbeat(
             uri = f"file:{path.as_posix()}?mode=ro"
             conn = sqlite3.connect(uri, uri=True, timeout=0.1)
             cur = conn.cursor()
-            counts: Dict[str, int] = {}
+            counts: dict[str, int] = {}
             for table in ("games", "game_moves"):
                 try:
                     cur.execute(f"SELECT COUNT(*) FROM {table}")
@@ -167,7 +167,7 @@ def run_selfplay_soak(
     difficulty_band: str,
     include_training_data_jsonl: bool = False,
     soak_timeout_seconds: int | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a small Python self-play soak and record games to db_path."""
     logs_dir = AI_SERVICE_ROOT / "logs" / "selfplay"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -236,6 +236,10 @@ def run_selfplay_soak(
     # avoid masking territory-processing divergence during canonical gates.
     if board_type in {"square19", "hexagonal"}:
         env_overrides.setdefault("RINGRIFT_USE_FAST_TERRITORY", "false")
+        # Default to the incremental make/unmake evaluator on large boards
+        # to avoid long-running heuristic evaluations during canonical gates.
+        if "RINGRIFT_USE_MAKE_UNMAKE" not in os.environ:
+            env_overrides["RINGRIFT_USE_MAKE_UNMAKE"] = "true"
 
     print(
         f"[parity-gate] self-play soak: board={board_type} players={num_players} "
@@ -252,7 +256,7 @@ def run_selfplay_soak(
         timeout_seconds=soak_timeout_seconds,
     )
 
-    soak_summary: Dict[str, Any] | None = None
+    soak_summary: dict[str, Any] | None = None
     if summary_path.exists():
         try:
             with summary_path.open("r", encoding="utf-8") as f:
@@ -260,7 +264,7 @@ def run_selfplay_soak(
         except Exception:
             soak_summary = None
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "returncode": proc.returncode,
         "summary_path": str(summary_path),
         "summary": soak_summary,
@@ -274,7 +278,7 @@ def run_parity_check(
     *,
     progress_every: int = 200,
     parity_timeout_seconds: int | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the TS↔Python parity harness on a single DB and return the parsed summary.
 
     This always invokes the parity script in **canonical** mode with
@@ -317,7 +321,7 @@ def run_parity_check(
         timeout_seconds=parity_timeout_seconds,
     )
 
-    summary: Dict[str, Any]
+    summary: dict[str, Any]
     if summary_path.exists():
         try:
             with summary_path.open("r", encoding="utf-8") as f:
@@ -338,9 +342,9 @@ def run_parity_check(
     return summary
 
 
-def run_parity_checks(db_paths: list[Path]) -> Dict[str, Any]:
+def run_parity_checks(db_paths: list[Path]) -> dict[str, Any]:
     """Run parity on multiple DBs and aggregate results."""
-    summaries: list[Dict[str, Any]] = []
+    summaries: list[dict[str, Any]] = []
     all_pass = True
     for db_path in db_paths:
         summary = run_parity_check(db_path)
@@ -482,8 +486,8 @@ def main() -> None:
     db_path = Path(args.db).resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    parity_summary: Dict[str, Any] | Dict[str, Any]
-    soak_result: Dict[str, Any] = {}
+    parity_summary: dict[str, Any] | dict[str, Any]
+    soak_result: dict[str, Any] = {}
     dbs_to_check: list[Path] = [db_path]
 
     summary_path: Path | None = None
@@ -686,7 +690,7 @@ def main() -> None:
             passed_gate = bool(parity_summary.get("passed_canonical_parity_gate"))
             passed = parity_rc == 0 and passed_gate
 
-    gate_summary: Dict[str, Any] = {
+    gate_summary: dict[str, Any] = {
         "stage": "complete",
         "board_type": args.board_type,
         "num_players": args.num_players,

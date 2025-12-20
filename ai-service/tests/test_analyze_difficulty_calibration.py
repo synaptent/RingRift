@@ -21,7 +21,7 @@ from app.models import AIType, BoardType  # type: ignore[import]  # noqa: E402
 import scripts.analyze_difficulty_calibration as adc  # noqa: E402
 
 
-def _write_json(path: Path, payload: Dict[str, Any]) -> None:
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True),
@@ -29,7 +29,7 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     )
 
 
-def _make_calibration_payload() -> Dict[str, Any]:
+def _make_calibration_payload() -> dict[str, Any]:
     """Return a small but representative calibration aggregates payload."""
     return {
         "board": "square8",
@@ -79,7 +79,7 @@ def _make_calibration_payload() -> Dict[str, Any]:
     }
 
 
-def _make_registry_payload(run_rel_path: str) -> Dict[str, Any]:
+def _make_registry_payload(run_rel_path: str) -> dict[str, Any]:
     """Return a minimal candidate registry payload for D4."""
     current = {
         "tier": "D4",
@@ -151,7 +151,7 @@ def test_analyze_difficulty_calibration_happy_path(
     # Eval/perf artefacts for the registry candidate.
     eval_root = tmp_path / "eval_root"
     run_dir = eval_root / run_rel_path
-    eval_payload: Dict[str, Any] = {
+    eval_payload: dict[str, Any] = {
         "tier": "D4",
         "board_type": "square8",
         "num_players": 2,
@@ -161,7 +161,7 @@ def test_analyze_difficulty_calibration_happy_path(
             "win_rate_vs_previous_tier": 0.58,
         },
     }
-    perf_payload: Dict[str, Any] = {
+    perf_payload: dict[str, Any] = {
         "tier_name": "D4_SQ8_2P",
         "difficulty": 4,
         "board_type": "square8",
@@ -191,7 +191,7 @@ def test_analyze_difficulty_calibration_happy_path(
         assert num_players == 2
         return _make_ladder_config(difficulty)
 
-    def _fake_load_registry(path: Optional[str] = None) -> Dict[str, Any]:
+    def _fake_load_registry(path: str | None = None) -> dict[str, Any]:
         assert path is None or os.path.samefile(path, registry_path)
         return json.loads(registry_path.read_text(encoding="utf-8"))
 
@@ -209,7 +209,7 @@ def test_analyze_difficulty_calibration_happy_path(
     output_json = eval_root / "calibration_summary.square8_2p.json"
     output_md = eval_root / "calibration_summary.square8_2p.md"
 
-    argv: List[str] = [
+    argv: list[str] = [
         "--calibration-aggregates",
         os.fspath(calib_path),
         "--registry-path",
@@ -296,7 +296,7 @@ def test_analyze_difficulty_calibration_validation_error(
     output_json = tmp_path / "summary.json"
     output_md = tmp_path / "summary.md"
 
-    argv: List[str] = [
+    argv: list[str] = [
         "--calibration-aggregates",
         os.fspath(bad_path),
         "--output-json",

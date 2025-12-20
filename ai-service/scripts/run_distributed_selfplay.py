@@ -113,14 +113,14 @@ class ModelPoolEntry:
     """Entry in the model pool for diverse selfplay."""
     model_id: str
     path: str
-    ai_types: List[str]  # Which AI types can use this model: "descent", "mcts", "minimax"
-    elo_estimate: Optional[float] = None  # Estimated Elo if known
+    ai_types: list[str]  # Which AI types can use this model: "descent", "mcts", "minimax"
+    elo_estimate: float | None = None  # Estimated Elo if known
 
 
 def scan_model_pool(
-    models_dir: Optional[str] = None,
+    models_dir: str | None = None,
     include_baselines: bool = True,
-) -> List[ModelPoolEntry]:
+) -> list[ModelPoolEntry]:
     """Scan for available model checkpoints to build a diverse pool.
 
     Returns a list of ModelPoolEntry objects representing available models
@@ -133,7 +133,7 @@ def scan_model_pool(
     Returns:
         List of ModelPoolEntry objects
     """
-    pool: List[ModelPoolEntry] = []
+    pool: list[ModelPoolEntry] = []
 
     # Add non-neural baselines first (always available)
     if include_baselines:
@@ -205,7 +205,7 @@ def scan_model_pool(
     return pool
 
 
-def get_models_for_ai_type(pool: List[ModelPoolEntry], ai_type: str) -> List[ModelPoolEntry]:
+def get_models_for_ai_type(pool: list[ModelPoolEntry], ai_type: str) -> list[ModelPoolEntry]:
     """Filter pool to models compatible with a given AI type."""
     return [m for m in pool if ai_type in m.ai_types]
 
@@ -224,15 +224,15 @@ class WorkerConfig:
     board_type: BoardType
     num_players: int
     max_moves: int
-    seed: Optional[int]
+    seed: int | None
     engine_mode: str
     difficulty_band: str
     output_uri: str
     checkpoint_interval: int
-    checkpoint_path: Optional[str]
+    checkpoint_path: str | None
     sample_every_n_moves: int
     gc_interval: int
-    telemetry_path: Optional[str] = None
+    telemetry_path: str | None = None
     telemetry_interval: int = 50
 
 
@@ -243,12 +243,12 @@ class WorkerStats:
     worker_id: str
     games_completed: int
     samples_generated: int
-    wins_by_player: Dict[int, int]
+    wins_by_player: dict[int, int]
     avg_game_length: float
     total_time_sec: float
     games_per_second: float
     samples_per_second: float
-    storage_stats: Dict[str, Any]
+    storage_stats: dict[str, Any]
 
 
 class Telemetry:
@@ -261,7 +261,7 @@ class Telemetry:
     def __init__(
         self,
         worker_id: str,
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
         log_interval: int = 50,
     ):
         self.worker_id = worker_id
@@ -272,13 +272,13 @@ class Telemetry:
         # Metrics
         self.games_completed = 0
         self.samples_generated = 0
-        self.wins_by_player: Dict[int, int] = {}
-        self.game_lengths: List[int] = []
+        self.wins_by_player: dict[int, int] = {}
+        self.game_lengths: list[int] = []
         self.draws = 0
 
         # Rolling window for recent stats (last 100 games)
-        self._recent_lengths: List[int] = []
-        self._recent_winners: List[int] = []
+        self._recent_lengths: list[int] = []
+        self._recent_winners: list[int] = []
         self._max_recent = 100
 
     def record_game(
@@ -367,7 +367,7 @@ class Telemetry:
         except Exception as e:
             logger.warning(f"Failed to write telemetry: {e}")
 
-    def get_final_stats(self) -> Dict[str, Any]:
+    def get_final_stats(self) -> dict[str, Any]:
         """Get final statistics for summary."""
         elapsed = time.time() - self.start_time
         total_decided = sum(self.wins_by_player.values())
@@ -425,20 +425,20 @@ class PlayerAssignment:
     player_number: int
     ai_type: str
     difficulty: int
-    model_id: Optional[str] = None
-    model_path: Optional[str] = None
-    elo_estimate: Optional[float] = None
+    model_id: str | None = None
+    model_path: str | None = None
+    elo_estimate: float | None = None
 
 
 def build_ai_pool(
     game_index: int,
-    player_numbers: List[int],
+    player_numbers: list[int],
     engine_mode: str,
-    base_seed: Optional[int],
+    base_seed: int | None,
     board_type: BoardType,
     difficulty_band: str,
-    model_pool: Optional[List[ModelPoolEntry]] = None,
-) -> Tuple[Dict[int, Any], List[PlayerAssignment]]:
+    model_pool: list[ModelPoolEntry] | None = None,
+) -> tuple[dict[int, Any], list[PlayerAssignment]]:
     """Build AI instances for all players in a game.
 
     Args:
@@ -455,8 +455,8 @@ def build_ai_pool(
         The assignments list tracks which model was assigned to each player
         for Elo tracking purposes.
     """
-    ai_by_player: Dict[int, Any] = {}
-    assignments: List[PlayerAssignment] = []
+    ai_by_player: dict[int, Any] = {}
+    assignments: list[PlayerAssignment] = []
 
     game_rng = random.Random((base_seed + game_index) if base_seed is not None else None)
 
@@ -560,13 +560,13 @@ def build_ai_pool(
 
 def extract_training_samples(
     game_id: str,
-    state_history: List[GameState],
-    move_history: List[Any],
+    state_history: list[GameState],
+    move_history: list[Any],
     final_state: GameState,
     board_type: BoardType,
     sample_interval: int,
-    metadata: Dict[str, Any],
-) -> List[TrainingSample]:
+    metadata: dict[str, Any],
+) -> list[TrainingSample]:
     """Extract training samples from a completed game.
 
     For each sampled state, assigns the outcome from the perspective
@@ -618,8 +618,8 @@ def run_single_game(
     config: WorkerConfig,
     game_index: int,
     env: Any,
-    model_pool: Optional[List[ModelPoolEntry]] = None,
-) -> Tuple[Optional[GameState], List[GameState], List[Any], Dict[str, Any]]:
+    model_pool: list[ModelPoolEntry] | None = None,
+) -> tuple[GameState | None, list[GameState], list[Any], dict[str, Any]]:
     """Run a single self-play game.
 
     Args:
@@ -652,8 +652,8 @@ def run_single_game(
         model_pool=model_pool,
     )
 
-    state_history: List[GameState] = [state.model_copy(deep=True)]
-    move_history: List[Any] = []
+    state_history: list[GameState] = [state.model_copy(deep=True)]
+    move_history: list[Any] = []
     move_count = 0
 
     while True:
@@ -712,7 +712,7 @@ def save_checkpoint(
     config: WorkerConfig,
     games_completed: int,
     samples_generated: int,
-    wins_by_player: Dict[int, int],
+    wins_by_player: dict[int, int],
 ) -> None:
     """Save checkpoint for resumption after preemption."""
     if not config.checkpoint_path:
@@ -734,7 +734,7 @@ def save_checkpoint(
         logger.warning(f"Failed to save checkpoint: {e}")
 
 
-def load_checkpoint(config: WorkerConfig) -> Optional[Dict[str, Any]]:
+def load_checkpoint(config: WorkerConfig) -> dict[str, Any] | None:
     """Load checkpoint if it exists."""
     if not config.checkpoint_path or not os.path.exists(config.checkpoint_path):
         return None
@@ -773,7 +773,7 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
     env = make_env(env_config)
 
     # Scan model pool for diverse selfplay
-    model_pool: Optional[List[ModelPoolEntry]] = None
+    model_pool: list[ModelPoolEntry] | None = None
     if config.engine_mode in ("diverse", "descent-only"):
         model_pool = scan_model_pool(include_baselines=(config.engine_mode == "diverse"))
         logger.info(f"Loaded model pool with {len(model_pool)} entries for {config.engine_mode} mode")
@@ -782,8 +782,8 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
     checkpoint = load_checkpoint(config)
     start_game = 0
     samples_generated = 0
-    wins_by_player: Dict[int, int] = {}
-    total_game_lengths: List[int] = []
+    wins_by_player: dict[int, int] = {}
+    total_game_lengths: list[int] = []
 
     if checkpoint:
         start_game = checkpoint.get("games_completed", 0)

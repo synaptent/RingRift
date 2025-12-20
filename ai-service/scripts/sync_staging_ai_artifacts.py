@@ -36,7 +36,8 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
+from collections.abc import Iterable
 
 
 def _env_bool(value: str | None) -> bool:
@@ -58,7 +59,7 @@ def _is_best_alias_checkpoint(path: Path) -> bool:
     return bool(_BEST_ALIAS_PTH_RE.match(path.name))
 
 
-def _gather_files(project_root: Path, *, include_snapshot_checkpoints: bool) -> List[Path]:
+def _gather_files(project_root: Path, *, include_snapshot_checkpoints: bool) -> list[Path]:
     candidates: list[Path] = []
 
     models_dir = project_root / "ai-service" / "models"

@@ -37,7 +37,8 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
+from collections.abc import Callable
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -88,9 +89,9 @@ class CompressionResult:
     original_latency_ms: float
     compressed_latency_ms: float
     speedup: float
-    original_accuracy: Optional[float] = None
-    compressed_accuracy: Optional[float] = None
-    accuracy_drop: Optional[float] = None
+    original_accuracy: float | None = None
+    compressed_accuracy: float | None = None
+    accuracy_drop: float | None = None
 
 
 def get_model_size_mb(model_path: Path) -> float:
@@ -105,7 +106,7 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def count_nonzero_parameters(model: nn.Module) -> Tuple[int, int]:
+def count_nonzero_parameters(model: nn.Module) -> tuple[int, int]:
     """Count non-zero and total parameters."""
     total = 0
     nonzero = 0
@@ -117,7 +118,7 @@ def count_nonzero_parameters(model: nn.Module) -> Tuple[int, int]:
 
 def measure_latency(
     model: nn.Module,
-    input_shape: Tuple[int, ...],
+    input_shape: tuple[int, ...],
     num_runs: int = 100,
     warmup: int = 10,
     device: str = "cpu",
@@ -177,7 +178,7 @@ class ModelQuantizer:
     def quantize_static(
         self,
         model: nn.Module,
-        calibration_data: List[torch.Tensor],
+        calibration_data: list[torch.Tensor],
     ) -> nn.Module:
         """Apply static quantization with calibration.
 
@@ -220,7 +221,7 @@ class ModelPruner:
     def prune_magnitude(
         self,
         model: nn.Module,
-        sparsity: Optional[float] = None,
+        sparsity: float | None = None,
     ) -> nn.Module:
         """Apply magnitude-based unstructured pruning.
 
@@ -239,7 +240,7 @@ class ModelPruner:
     def prune_structured(
         self,
         model: nn.Module,
-        sparsity: Optional[float] = None,
+        sparsity: float | None = None,
     ) -> nn.Module:
         """Apply structured pruning (remove entire channels/neurons).
 
@@ -372,7 +373,7 @@ def compress_model(
     model_path: Path,
     output_path: Path,
     config: CompressionConfig,
-    validation_fn: Optional[Callable] = None,
+    validation_fn: Callable | None = None,
 ) -> CompressionResult:
     """Apply full compression pipeline to a model.
 

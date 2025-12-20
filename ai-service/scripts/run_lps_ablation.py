@@ -104,11 +104,11 @@ class GameResult:
     """Result of a single game."""
     game_id: int
     lps_rounds: int
-    rings_per_player: Optional[int]  # None means default
+    rings_per_player: int | None  # None means default
     board_type: str
     num_players: int
     termination_reason: str
-    winner: Optional[int]
+    winner: int | None
     move_count: int
     duration_ms: float
 
@@ -117,13 +117,13 @@ class GameResult:
 class ExperimentConfig:
     """Configuration for an LPS ablation experiment."""
     num_games: int
-    board_types: List[str]
+    board_types: list[str]
     num_players: int
-    lps_rounds_values: List[int]
-    rings_per_player_values: List[Optional[int]]  # None means use default
+    lps_rounds_values: list[int]
+    rings_per_player_values: list[int | None]  # None means use default
     engine_mode: str
     seed: int
-    output_dir: Optional[str]
+    output_dir: str | None
     verbose: bool = False
     progress_interval: int = 10
 
@@ -131,9 +131,9 @@ class ExperimentConfig:
 @dataclass
 class ExperimentResults:
     """Aggregated results from an experiment run."""
-    config: Dict[str, Any]
-    results_by_condition: Dict[str, Dict[str, Any]]
-    raw_results: List[Dict[str, Any]]
+    config: dict[str, Any]
+    results_by_condition: dict[str, dict[str, Any]]
+    raw_results: list[dict[str, Any]]
 
 
 def get_termination_reason(state: GameState) -> str:
@@ -177,7 +177,7 @@ def run_single_game(
     board_type: BoardType,
     num_players: int,
     lps_rounds: int,
-    rings_per_player: Optional[int],
+    rings_per_player: int | None,
     engine_mode: str,
     seed: int,
     game_id: int,
@@ -310,8 +310,8 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
             print("Falling back to heuristic-only mode")
             config.engine_mode = "heuristic-only"
 
-    all_results: List[GameResult] = []
-    results_by_condition: Dict[str, Dict[str, Any]] = {}
+    all_results: list[GameResult] = []
+    results_by_condition: dict[str, dict[str, Any]] = {}
 
     for board_type_str in config.board_types:
         board_type = BOARD_TYPE_MAP.get(board_type_str)
@@ -340,7 +340,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 condition_key = f"{board_type_str}_{config.num_players}p_lps{lps_rounds}_{rings_label}"
                 print(f"\n--- Running condition: {condition_key} ---")
 
-                condition_results: List[GameResult] = []
+                condition_results: list[GameResult] = []
                 termination_counts = Counter()
 
                 for game_id in range(config.num_games):
@@ -431,7 +431,7 @@ def print_comparison_table(results: ExperimentResults) -> None:
             print(f"{display_label:<30} {territory:>9.1f}% {elimination:>11.1f}% {lps:>9.1f}% {other:>9.1f}% {stats['avg_move_count']:>10.1f}")
 
 
-def parse_rings_value(val: str) -> Optional[int]:
+def parse_rings_value(val: str) -> int | None:
     """Parse a rings-per-player value from CLI.
 
     - 'default', '0', or empty string -> None (use default from BOARD_CONFIGS)

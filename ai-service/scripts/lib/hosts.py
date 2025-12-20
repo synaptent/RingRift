@@ -47,7 +47,7 @@ class HostConfig:
     ssh_user: str = "ubuntu"
     ssh_port: int = 22
     ssh_key: str = "~/.ssh/id_cluster"
-    tailscale_ip: Optional[str] = None
+    tailscale_ip: str | None = None
     ringrift_path: str = "~/ringrift/ai-service"
     venv_activate: str = "source ~/ringrift/ai-service/venv/bin/activate"
     memory_gb: int = 0
@@ -56,13 +56,13 @@ class HostConfig:
     gpu_type: str = ""
     vram_gb: int = 0
     role: str = "selfplay"
-    roles: List[str] = field(default_factory=list)
+    roles: list[str] = field(default_factory=list)
     status: str = "unknown"
     p2p_voter: bool = False
-    vast_instance_id: Optional[str] = None
-    aws_instance_id: Optional[str] = None
-    worker_url: Optional[str] = None
-    worker_port: Optional[int] = None
+    vast_instance_id: str | None = None
+    aws_instance_id: str | None = None
+    worker_url: str | None = None
+    worker_port: int | None = None
     notes: str = ""
 
     @property
@@ -86,7 +86,7 @@ class HostConfig:
         return self.tailscale_ip or self.ssh_host
 
     @property
-    def all_roles(self) -> List[str]:
+    def all_roles(self) -> list[str]:
         """Get all roles (combining legacy role and roles list)."""
         roles = list(self.roles) if self.roles else []
         if self.role and self.role not in roles:
@@ -105,7 +105,7 @@ class EloSyncConfig:
     sync_port: int = 8766
     sync_interval: int = 300
     divergence_threshold: int = 50
-    transports: List[str] = field(default_factory=lambda: ["tailscale", "http"])
+    transports: list[str] = field(default_factory=lambda: ["tailscale", "http"])
 
 
 class HostsManager:
@@ -113,16 +113,16 @@ class HostsManager:
 
     def __init__(
         self,
-        distributed_hosts_path: Optional[Path] = None,
-        cluster_yaml_path: Optional[Path] = None,
+        distributed_hosts_path: Path | None = None,
+        cluster_yaml_path: Path | None = None,
     ):
         self._distributed_path = distributed_hosts_path or DISTRIBUTED_HOSTS_PATH
         self._cluster_path = cluster_yaml_path or CLUSTER_YAML_PATH
-        self._hosts: Optional[Dict[str, HostConfig]] = None
-        self._elo_sync: Optional[EloSyncConfig] = None
-        self._raw_config: Optional[Dict] = None
+        self._hosts: dict[str, HostConfig] | None = None
+        self._elo_sync: EloSyncConfig | None = None
+        self._raw_config: dict | None = None
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load configuration from YAML files."""
         if self._raw_config is not None:
             return self._raw_config
@@ -148,7 +148,7 @@ class HostsManager:
         self._raw_config = {}
         return self._raw_config
 
-    def _parse_host(self, name: str, data: Dict[str, Any]) -> HostConfig:
+    def _parse_host(self, name: str, data: dict[str, Any]) -> HostConfig:
         """Parse a host configuration from raw data."""
         # Handle both distributed_hosts.yaml and cluster.yaml formats
         ssh_host = data.get("ssh_host") or data.get("host", name)
@@ -184,7 +184,7 @@ class HostsManager:
             notes=data.get("notes", ""),
         )
 
-    def _load_hosts(self) -> Dict[str, HostConfig]:
+    def _load_hosts(self) -> dict[str, HostConfig]:
         """Load and parse all hosts."""
         if self._hosts is not None:
             return self._hosts
@@ -207,12 +207,12 @@ class HostsManager:
 
     def get_hosts(
         self,
-        role: Optional[str] = None,
-        status: Optional[str] = None,
-        gpu_type: Optional[str] = None,
-        p2p_voter: Optional[bool] = None,
-        is_vast: Optional[bool] = None,
-    ) -> List[HostConfig]:
+        role: str | None = None,
+        status: str | None = None,
+        gpu_type: str | None = None,
+        p2p_voter: bool | None = None,
+        is_vast: bool | None = None,
+    ) -> list[HostConfig]:
         """Get hosts matching filters.
 
         Args:
@@ -244,11 +244,11 @@ class HostsManager:
 
         return hosts
 
-    def get_host(self, name: str) -> Optional[HostConfig]:
+    def get_host(self, name: str) -> HostConfig | None:
         """Get a specific host by name."""
         return self._load_hosts().get(name)
 
-    def get_host_names(self) -> List[str]:
+    def get_host_names(self) -> list[str]:
         """Get all host names."""
         return list(self._load_hosts().keys())
 
@@ -270,7 +270,7 @@ class HostsManager:
 
         return self._elo_sync
 
-    def get_hosts_by_group(self, group_name: str) -> List[HostConfig]:
+    def get_hosts_by_group(self, group_name: str) -> list[HostConfig]:
         """Get hosts in a named group (from cluster.yaml groups section)."""
         config = self._load_config()
         groups = config.get("groups", {})
@@ -292,7 +292,7 @@ class HostsManager:
 
 
 # Global instance
-_hosts_manager: Optional[HostsManager] = None
+_hosts_manager: HostsManager | None = None
 
 
 def get_hosts_manager() -> HostsManager:
@@ -304,12 +304,12 @@ def get_hosts_manager() -> HostsManager:
 
 
 def get_hosts(
-    role: Optional[str] = None,
-    status: Optional[str] = None,
-    gpu_type: Optional[str] = None,
-    p2p_voter: Optional[bool] = None,
-    is_vast: Optional[bool] = None,
-) -> List[HostConfig]:
+    role: str | None = None,
+    status: str | None = None,
+    gpu_type: str | None = None,
+    p2p_voter: bool | None = None,
+    is_vast: bool | None = None,
+) -> list[HostConfig]:
     """Get hosts matching filters.
 
     Args:
@@ -331,12 +331,12 @@ def get_hosts(
     )
 
 
-def get_host(name: str) -> Optional[HostConfig]:
+def get_host(name: str) -> HostConfig | None:
     """Get a specific host by name."""
     return get_hosts_manager().get_host(name)
 
 
-def get_host_names() -> List[str]:
+def get_host_names() -> list[str]:
     """Get all host names."""
     return get_hosts_manager().get_host_names()
 
@@ -346,34 +346,34 @@ def get_elo_sync_config() -> EloSyncConfig:
     return get_hosts_manager().get_elo_sync_config()
 
 
-def get_hosts_by_group(group_name: str) -> List[HostConfig]:
+def get_hosts_by_group(group_name: str) -> list[HostConfig]:
     """Get hosts in a named group."""
     return get_hosts_manager().get_hosts_by_group(group_name)
 
 
 # Convenience aliases for backwards compatibility
-def load_distributed_hosts() -> Dict[str, HostConfig]:
+def load_distributed_hosts() -> dict[str, HostConfig]:
     """Load all hosts (backwards compatible name)."""
     return get_hosts_manager()._load_hosts()
 
 
-def get_training_hosts() -> List[HostConfig]:
+def get_training_hosts() -> list[HostConfig]:
     """Get hosts suitable for training."""
     return get_hosts(role="nn_training")
 
 
-def get_selfplay_hosts() -> List[HostConfig]:
+def get_selfplay_hosts() -> list[HostConfig]:
     """Get hosts suitable for self-play."""
     return get_hosts(role="selfplay")
 
 
-def get_active_hosts() -> List[HostConfig]:
+def get_active_hosts() -> list[HostConfig]:
     """Get hosts with ready/active status."""
     ready = get_hosts(status="ready")
     active = get_hosts(status="active")
     return list({h.name: h for h in ready + active}.values())
 
 
-def get_p2p_voters() -> List[HostConfig]:
+def get_p2p_voters() -> list[HostConfig]:
     """Get hosts that are P2P voters."""
     return get_hosts(p2p_voter=True)

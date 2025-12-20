@@ -36,7 +36,7 @@ PROTECTED_PATTERNS = [
 DEFAULT_THRESHOLD = 0.5
 
 
-def load_gauntlet_results() -> Dict[str, float]:
+def load_gauntlet_results() -> dict[str, float]:
     """Load model scores from aggregated results."""
     scores = {}
 
@@ -59,7 +59,7 @@ def is_protected(model_name: str) -> bool:
     return False
 
 
-def find_models_to_prune(scores: Dict[str, float], threshold: float) -> List[Path]:
+def find_models_to_prune(scores: dict[str, float], threshold: float) -> list[Path]:
     """Find model files that should be pruned."""
     to_prune = []
 
@@ -86,7 +86,7 @@ def backup_model(model_file: Path):
     shutil.move(str(model_file), str(dest))
 
 
-def prune_models(models: List[Path], backup: bool = True) -> int:
+def prune_models(models: list[Path], backup: bool = True) -> int:
     """Prune the specified models."""
     pruned = 0
     log_entries = []
@@ -126,7 +126,7 @@ def prune_models(models: List[Path], backup: bool = True) -> int:
     return pruned
 
 
-def calculate_savings(models: List[Path]) -> float:
+def calculate_savings(models: list[Path]) -> float:
     """Calculate total disk space that would be freed."""
     return sum(m.stat().st_size for m in models) / (1024 * 1024 * 1024)  # GB
 

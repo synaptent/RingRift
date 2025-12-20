@@ -85,7 +85,7 @@ def quantize_model(model: RingRiftNNUE) -> torch.nn.Module:
 def save_quantized_model(
     original_checkpoint_path: str,
     quantized_model: torch.nn.Module,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
 ) -> str:
     """Save quantized model to checkpoint."""
     # Load original checkpoint to preserve metadata
@@ -170,7 +170,7 @@ def benchmark_model(model_path: str, num_iterations: int = 1000) -> dict:
     }
 
 
-def find_nnue_models(directory: str) -> List[str]:
+def find_nnue_models(directory: str) -> list[str]:
     """Find all NNUE model checkpoints in a directory."""
     models = []
     for ext in ["*.pth", "*.pt"]:

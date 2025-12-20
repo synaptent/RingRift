@@ -59,7 +59,7 @@ class GameResult:
     policy_indices: np.ndarray
     policy_values: np.ndarray
     game_length: int
-    winner: Optional[int]
+    winner: int | None
     seed: int
     worker_id: int
     termination_reason: str = "unknown"
@@ -70,7 +70,7 @@ class WorkerTask:
     """Task assignment for a worker process."""
 
     worker_id: int
-    game_indices: List[int]
+    game_indices: list[int]
     base_seed: int
     ai_type: str
     memory_config_gb: float
@@ -80,7 +80,7 @@ def create_ai_instance(
     ai_type: str,
     player_number: int,
     seed: int,
-    memory_config: Optional[MemoryConfig] = None,
+    memory_config: MemoryConfig | None = None,
 ):
     """Create an AI instance based on type string.
 
@@ -133,8 +133,8 @@ def create_ai_instance(
 def play_single_game(
     seed: int,
     ai_type: str,
-    memory_config: Optional[MemoryConfig] = None,
-) -> Tuple[int, Optional[int], str]:
+    memory_config: MemoryConfig | None = None,
+) -> tuple[int, int | None, str]:
     """Play a single self-play game and return result.
 
     Args:
@@ -206,7 +206,7 @@ def play_single_game(
     return move_count, winner, termination_reason
 
 
-def worker_process(task: WorkerTask) -> List[GameResult]:
+def worker_process(task: WorkerTask) -> list[GameResult]:
     """Worker process that runs multiple games.
 
     Each worker runs its assigned games sequentially and returns results.
@@ -288,7 +288,7 @@ def worker_process(task: WorkerTask) -> List[GameResult]:
 
 
 def aggregate_results(
-    results: List[GameResult],
+    results: list[GameResult],
     output_dir: Path,
 ) -> dict:
     """Aggregate results from all workers and save to output directory.
@@ -354,7 +354,7 @@ def divide_memory_budget(total_memory_gb: float, num_workers: int) -> float:
 def distribute_games_to_workers(
     num_games: int,
     num_workers: int,
-) -> List[List[int]]:
+) -> list[list[int]]:
     """Distribute game indices evenly across workers.
 
     Returns:
@@ -382,7 +382,7 @@ def create_worker_tasks(
     per_worker_memory_gb: float,
     base_seed: int,
     ai_type: str,
-) -> List[WorkerTask]:
+) -> list[WorkerTask]:
     """Create worker tasks with game distributions.
 
     Args:
@@ -418,7 +418,7 @@ def run_parallel_self_play(
     output_dir: Path,
     ai_type: str,
     base_seed: int = 42,
-    memory_budget_gb: Optional[float] = None,
+    memory_budget_gb: float | None = None,
 ) -> dict:
     """Run parallel self-play games and aggregate results.
 

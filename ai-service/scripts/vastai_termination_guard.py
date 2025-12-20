@@ -115,7 +115,7 @@ class VastaiTerminationGuard:
             finally:
                 self._emergency_sync_in_progress = False
 
-    def _get_local_game_dbs(self) -> List[Path]:
+    def _get_local_game_dbs(self) -> list[Path]:
         """Get list of local game databases."""
         data_dir = Path(self.config.data_dir)
         if not data_dir.exists():
@@ -297,7 +297,7 @@ class VastaiTerminationGuard:
             logger.debug(f"Heartbeat failed: {e}")
             return False
 
-    async def _check_vastai_status(self) -> Optional[str]:
+    async def _check_vastai_status(self) -> str | None:
         """Check Vast.ai instance status via API.
 
         Returns status string or None if unavailable.

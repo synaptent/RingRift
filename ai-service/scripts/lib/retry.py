@@ -36,19 +36,18 @@ import time
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
-    Generator,
     Optional,
     Tuple,
     Type,
     TypeVar,
     Union,
 )
+from collections.abc import Callable, Generator
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-ExceptionTypes = Union[Type[Exception], Tuple[Type[Exception], ...]]
+ExceptionTypes = Union[type[Exception], tuple[type[Exception], ...]]
 
 
 @dataclass
@@ -142,7 +141,7 @@ def retry(
     max_delay: float = 60.0,
     exponential: bool = True,
     exceptions: ExceptionTypes = Exception,
-    on_retry: Optional[Callable[[Exception, int], None]] = None,
+    on_retry: Callable[[Exception, int], None] | None = None,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator for automatic retry with exponential backoff.
 
@@ -172,7 +171,7 @@ def retry(
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
-            last_exception: Optional[Exception] = None
+            last_exception: Exception | None = None
 
             for attempt in config.attempts():
                 try:
@@ -206,7 +205,7 @@ def retry(
 
 
 def retry_on_exception(
-    *exceptions: Type[Exception],
+    *exceptions: type[Exception],
     max_attempts: int = 3,
     delay: float = 1.0,
     max_delay: float = 60.0,
@@ -240,8 +239,8 @@ def retry_on_exception(
 
 def with_timeout(
     timeout: float,
-    default: Optional[T] = None,
-) -> Callable[[Callable[..., T]], Callable[..., Optional[T]]]:
+    default: T | None = None,
+) -> Callable[[Callable[..., T]], Callable[..., T | None]]:
     """Decorator to add timeout to a function (using threading).
 
     Note: This uses threading and may not interrupt all operations.
@@ -258,9 +257,9 @@ def with_timeout(
     """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
-    def decorator(func: Callable[..., T]) -> Callable[..., Optional[T]]:
+    def decorator(func: Callable[..., T]) -> Callable[..., T | None]:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
+        def wrapper(*args: Any, **kwargs: Any) -> T | None:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(func, *args, **kwargs)
                 try:
@@ -307,7 +306,7 @@ def retry_async(
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
-            last_exception: Optional[Exception] = None
+            last_exception: Exception | None = None
 
             for attempt in config.attempts():
                 try:

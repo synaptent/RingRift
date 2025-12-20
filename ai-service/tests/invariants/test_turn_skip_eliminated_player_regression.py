@@ -54,7 +54,7 @@ FAILURE_SNAPSHOT_PATH = os.path.join(
 )
 
 
-def describe_state(state: GameState, label: str = "") -> Dict[str, Any]:
+def describe_state(state: GameState, label: str = "") -> dict[str, Any]:
     """Return diagnostic info for a game state."""
     p1 = next((p for p in state.players if p.player_number == 1), None)
     p2 = next((p for p in state.players if p.player_number == 2), None)

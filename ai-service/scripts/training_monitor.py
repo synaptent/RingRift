@@ -89,10 +89,10 @@ class Alert:
     level: str  # "info", "warning", "critical"
     category: str
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
-def load_unified_state() -> Optional[Dict[str, Any]]:
+def load_unified_state() -> dict[str, Any] | None:
     """Load the unified loop state file."""
     state_path = AI_SERVICE_ROOT / "logs" / "unified_loop" / "unified_loop_state.json"
     if not state_path.exists():
@@ -105,7 +105,7 @@ def load_unified_state() -> Optional[Dict[str, Any]]:
         return None
 
 
-def check_recent_models(hours: int = 24) -> List[Tuple[str, datetime, int]]:
+def check_recent_models(hours: int = 24) -> list[tuple[str, datetime, int]]:
     """Find models created in the last N hours."""
     models_dir = AI_SERVICE_ROOT / "models"
     cutoff = time.time() - (hours * 3600)
@@ -121,7 +121,7 @@ def check_recent_models(hours: int = 24) -> List[Tuple[str, datetime, int]]:
     return sorted(recent, key=lambda x: x[1], reverse=True)
 
 
-def check_db_health(db_path: Path) -> Tuple[bool, str, int, int, int]:
+def check_db_health(db_path: Path) -> tuple[bool, str, int, int, int]:
     """Check if a SQLite database is healthy.
 
     Returns: (healthy, message, total_games, trainable_games, games_with_moves)
@@ -188,7 +188,7 @@ def check_db_health(db_path: Path) -> Tuple[bool, str, int, int, int]:
         return False, str(e), 0, 0, 0
 
 
-def check_gpu_processes() -> List[Dict[str, Any]]:
+def check_gpu_processes() -> list[dict[str, Any]]:
     """Check running GPU processes."""
     import subprocess
     try:
@@ -215,7 +215,7 @@ def check_gpu_processes() -> List[Dict[str, Any]]:
         return []
 
 
-def check_gpu_utilization() -> Optional[int]:
+def check_gpu_utilization() -> int | None:
     """Get current GPU utilization percentage."""
     try:
         result = subprocess.run(
@@ -229,7 +229,7 @@ def check_gpu_utilization() -> Optional[int]:
     return None
 
 
-def check_disk_usage() -> Tuple[float, float]:
+def check_disk_usage() -> tuple[float, float]:
     """Check disk usage. Returns (percent_used, free_gb).
 
     Uses unified resource_guard utilities when available for consistent
@@ -254,7 +254,7 @@ def check_disk_usage() -> Tuple[float, float]:
         return 0.0, 0.0
 
 
-def check_model_age() -> Tuple[Optional[float], Optional[str]]:
+def check_model_age() -> tuple[float | None, str | None]:
     """Check age of most recent model. Returns (hours_since, model_name)."""
     models_dir = AI_SERVICE_ROOT / "models"
     if not models_dir.exists():
@@ -269,9 +269,9 @@ def check_model_age() -> Tuple[Optional[float], Optional[str]]:
     return hours_since, most_recent.name
 
 
-def generate_report(verbose: bool = False) -> Dict[str, Any]:
+def generate_report(verbose: bool = False) -> dict[str, Any]:
     """Generate a comprehensive training status report with alerts."""
-    alerts: List[Alert] = []
+    alerts: list[Alert] = []
     report = {
         "timestamp": datetime.now().isoformat(),
         "status": "unknown",

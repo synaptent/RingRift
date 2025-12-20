@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 
 
-def load_model_weights(model_path: str) -> Dict[str, torch.Tensor]:
+def load_model_weights(model_path: str) -> dict[str, torch.Tensor]:
     """Load model weights from a checkpoint file."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
 
@@ -50,10 +50,10 @@ def load_model_weights(model_path: str) -> Dict[str, torch.Tensor]:
 
 
 def save_ensemble(
-    state_dict: Dict[str, torch.Tensor],
+    state_dict: dict[str, torch.Tensor],
     output_path: str,
-    source_models: List[str],
-    weights: Optional[List[float]] = None,
+    source_models: list[str],
+    weights: list[float] | None = None,
 ):
     """Save an ensemble model with metadata."""
     checkpoint = {
@@ -69,9 +69,9 @@ def save_ensemble(
 
 
 def average_weights(
-    model_paths: List[str],
-    weights: Optional[List[float]] = None,
-) -> Dict[str, torch.Tensor]:
+    model_paths: list[str],
+    weights: list[float] | None = None,
+) -> dict[str, torch.Tensor]:
     """Average weights from multiple models.
 
     Args:
@@ -119,7 +119,7 @@ def get_top_models_from_db(
     board_type: str,
     num_players: int,
     top_n: int = 5,
-) -> List[Tuple[str, float]]:
+) -> list[tuple[str, float]]:
     """Get top N models by Elo from the training database.
 
     Returns list of (model_path, elo) tuples sorted by Elo descending.

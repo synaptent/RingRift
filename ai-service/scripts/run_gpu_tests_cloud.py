@@ -56,7 +56,7 @@ GPU_HOST_PRIORITY = [
 MIN_GPU_MEMORY = 8  # 8GB minimum
 
 
-def load_hosts_config() -> Dict[str, Dict]:
+def load_hosts_config() -> dict[str, dict]:
     """Load host configuration from YAML file."""
     if not HAS_YAML:
         print("Error: PyYAML not installed. Install with: pip install pyyaml")
@@ -76,7 +76,7 @@ def load_hosts_config() -> Dict[str, Dict]:
     return config.get("hosts", {})
 
 
-def get_gpu_hosts(hosts: Dict[str, Dict]) -> List[str]:
+def get_gpu_hosts(hosts: dict[str, dict]) -> list[str]:
     """Filter and sort hosts by GPU capability."""
     gpu_hosts = []
 
@@ -103,7 +103,7 @@ def get_gpu_hosts(hosts: Dict[str, Dict]) -> List[str]:
     return sorted(gpu_hosts, key=priority_key)
 
 
-def build_ssh_command(host_config: Dict) -> List[str]:
+def build_ssh_command(host_config: dict) -> list[str]:
     """Build SSH command for a host."""
     ssh_cmd = ["ssh"]
 
@@ -135,7 +135,7 @@ def build_ssh_command(host_config: Dict) -> List[str]:
     return ssh_cmd
 
 
-def check_host_connectivity(host_name: str, host_config: Dict) -> bool:
+def check_host_connectivity(host_name: str, host_config: dict) -> bool:
     """Check if host is reachable via SSH."""
     ssh_cmd = build_ssh_command(host_config)
     ssh_cmd.append("echo ok")
@@ -155,10 +155,10 @@ def check_host_connectivity(host_name: str, host_config: Dict) -> bool:
 
 def run_gpu_tests_on_host(
     host_name: str,
-    host_config: Dict,
+    host_config: dict,
     mode: str = "quick",
     dry_run: bool = False,
-) -> Dict:
+) -> dict:
     """Run GPU tests on a remote host."""
     print(f"\n{'='*60}")
     print(f"Running GPU tests on: {host_name}")

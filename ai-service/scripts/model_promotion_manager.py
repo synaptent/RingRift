@@ -151,7 +151,7 @@ class PromotedModel:
     promoted_at: str
     symlink_name: str  # e.g., "square8_2p_best.pth"
     alias_id: str  # e.g., "ringrift_best_sq8_2p"
-    alias_paths: List[str]  # absolute file paths under ai-service/models
+    alias_paths: list[str]  # absolute file paths under ai-service/models
 
 
 def _get_default_elo_threshold() -> float:
@@ -222,8 +222,8 @@ class AutoPromotionTrigger:
 
     def __init__(self, config: AutoPromotionConfig = None):
         self.config = config or AutoPromotionConfig()
-        self._last_check: Dict[str, float] = {}  # config -> timestamp
-        self._promoted_models: Dict[str, PromotedModel] = {}  # config -> last promoted
+        self._last_check: dict[str, float] = {}  # config -> timestamp
+        self._promoted_models: dict[str, PromotedModel] = {}  # config -> last promoted
         self._event_bus = None  # Lazy initialization
 
     def setup_event_subscriptions(self):
@@ -321,7 +321,7 @@ class AutoPromotionTrigger:
         self,
         board_type: str = None,
         num_players: int = None,
-    ) -> List[PromotionCandidate]:
+    ) -> list[PromotionCandidate]:
         """Check for models that should be promoted.
 
         Args:
@@ -346,7 +346,7 @@ class AutoPromotionTrigger:
 
         return candidates
 
-    def _check_config(self, board_type: str, num_players: int) -> Optional[PromotionCandidate]:
+    def _check_config(self, board_type: str, num_players: int) -> PromotionCandidate | None:
         """Check a specific configuration for promotion candidates."""
         config_key = f"{board_type}_{num_players}p"
 
@@ -399,7 +399,7 @@ class AutoPromotionTrigger:
             is_significant=is_significant,
         )
 
-    def _get_current_best(self, board_type: str, num_players: int) -> Optional[PromotedModel]:
+    def _get_current_best(self, board_type: str, num_players: int) -> PromotedModel | None:
         """Get the currently promoted model for a configuration."""
         config_key = f"{board_type}_{num_players}p"
 
@@ -475,7 +475,7 @@ class AutoPromotionTrigger:
         self,
         candidate: PromotionCandidate,
         verbose: bool = True,
-    ) -> Optional[PromotedModel]:
+    ) -> PromotedModel | None:
         """Execute promotion for a candidate model.
 
         Args:
@@ -694,7 +694,7 @@ def _write_json_atomic(path: Path, payload: Any) -> None:
     os.replace(tmp, path)
 
 
-def get_best_model_from_elo(board_type: str, num_players: int) -> Optional[Dict[str, Any]]:
+def get_best_model_from_elo(board_type: str, num_players: int) -> dict[str, Any] | None:
     """Get the best model from Elo leaderboard for a given config.
 
     Supports both unified_elo.db (participant_id schema) and
@@ -793,7 +793,7 @@ class RollbackCandidate:
     games_since_promotion: int
 
 
-def check_for_elo_regression(board_type: str, num_players: int) -> Optional[RollbackCandidate]:
+def check_for_elo_regression(board_type: str, num_players: int) -> RollbackCandidate | None:
     """Check if current promoted model has significant Elo regression.
 
     Returns RollbackCandidate if rollback is recommended, None otherwise.
@@ -949,7 +949,7 @@ def perform_rollback(candidate: RollbackCandidate, *, verbose: bool = True) -> b
         return False
 
 
-def check_and_rollback_all(*, verbose: bool = True) -> List[RollbackCandidate]:
+def check_and_rollback_all(*, verbose: bool = True) -> list[RollbackCandidate]:
     """Check all configurations for Elo regression and perform rollbacks.
 
     Returns list of rollback candidates that were processed.
@@ -975,10 +975,10 @@ def check_and_rollback_all(*, verbose: bool = True) -> List[RollbackCandidate]:
     return rollbacks
 
 
-def find_model_file(model_id: str) -> Optional[Path]:
+def find_model_file(model_id: str) -> Path | None:
     """Find the actual model file for a given model ID."""
     # Prefer exact filenames, then fall back to best-effort prefix matches.
-    candidates: List[Path] = [
+    candidates: list[Path] = [
         MODELS_DIR / f"{model_id}_mps.pth",
         MODELS_DIR / f"{model_id}.pth",
         MODELS_DIR / model_id,
@@ -1082,7 +1082,7 @@ def publish_best_alias(
     elo_rating: float,
     games_played: int,
     verbose: bool,
-) -> List[Path]:
+) -> list[Path]:
     alias = best_alias_id(board_type, num_players)
     published_at = datetime.utcnow().isoformat() + "Z"
 
@@ -1165,7 +1165,7 @@ def create_symlink(model_path: Path, symlink_name: str) -> bool:
         return False
 
 
-def update_promoted_config(promoted_models: List[PromotedModel]) -> bool:
+def update_promoted_config(promoted_models: list[PromotedModel]) -> bool:
     """Update the promoted_models.json config file."""
     config = {
         "updated_at": datetime.utcnow().isoformat() + "Z",
@@ -1194,7 +1194,7 @@ def update_promoted_config(promoted_models: List[PromotedModel]) -> bool:
         return False
 
 
-def update_sandbox_config(promoted_models: List[PromotedModel]) -> bool:
+def update_sandbox_config(promoted_models: list[PromotedModel]) -> bool:
     """Update the TypeScript sandbox config with promoted models."""
     config = {
         "_comment": "Auto-generated by model_promotion_manager.py - DO NOT EDIT",
@@ -1242,7 +1242,7 @@ def log_promotion(promoted_model: PromotedModel) -> None:
 
 
 def sync_to_cluster_ssh(
-    promoted_models: List[PromotedModel],
+    promoted_models: list[PromotedModel],
     *,
     verbose: bool = True,
     restart_p2p: bool = False,
@@ -1262,7 +1262,7 @@ def sync_to_cluster_ssh(
 
         hosts = config.get("hosts", {})
         success_count = 0
-        files: List[Path] = []
+        files: list[Path] = []
         for m in promoted_models:
             for raw in m.alias_paths:
                 p = Path(raw)
@@ -1270,7 +1270,7 @@ def sync_to_cluster_ssh(
                     files.append(p)
 
         # De-duplicate by resolved path.
-        uniq: List[Path] = []
+        uniq: list[Path] = []
         seen: set[Path] = set()
         for p in files:
             rp = p.resolve()
@@ -1297,7 +1297,7 @@ def sync_to_cluster_ssh(
             ssh_port = host_config.get("ssh_port", 22)
             ssh_key = host_config.get("ssh_key")
             ringrift_path = host_config.get("ringrift_path", "~/ringrift")
-            host_candidates: List[str] = []
+            host_candidates: list[str] = []
             for candidate in (tailscale_ip, ssh_host):
                 if candidate and candidate not in host_candidates:
                     host_candidates.append(str(candidate))
@@ -1310,7 +1310,7 @@ def sync_to_cluster_ssh(
                 ringrift_path_str = ringrift_path_str[: -len("/ai-service")]
             remote_models_dir = f"{ringrift_path_str}/ai-service/models"
 
-            def _build_ssh_base_args() -> List[str]:
+            def _build_ssh_base_args() -> list[str]:
                 args = [
                     "-o", "ConnectTimeout=10",
                     "-o", "BatchMode=yes",
@@ -1323,7 +1323,7 @@ def sync_to_cluster_ssh(
                 return args
 
             synced = False
-            last_error: Optional[str] = None
+            last_error: str | None = None
             for candidate_host in host_candidates:
                 ssh_cmd = ["ssh", *_build_ssh_base_args(), f"{ssh_user}@{candidate_host}"]
                 ssh_opts = _build_ssh_base_args()
@@ -1502,7 +1502,7 @@ def update_all_promotions(
     verbose: bool = True,
     update_sandbox: bool = False,
     run_regression: bool = True,
-) -> List[PromotedModel]:
+) -> list[PromotedModel]:
     """Publish best-model aliases (and optional symlinks/config) for all configs.
 
     Args:
@@ -1841,7 +1841,7 @@ def main():
                 print(f"  {r.board_type}_{r.num_players}p: rolled back to {r.previous_model}")
         return
 
-    promoted_models: List[PromotedModel] = []
+    promoted_models: list[PromotedModel] = []
     did_publish = False
 
     if args.full_pipeline:

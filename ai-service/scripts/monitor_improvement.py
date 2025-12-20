@@ -44,7 +44,7 @@ class MonitorState:
     """Persisted state for change detection."""
     last_check: float = 0
     last_match_count: int = 0
-    known_strong_models: List[str] = None
+    known_strong_models: list[str] = None
     last_training_status: str = "unknown"
 
     def __post_init__(self):
@@ -66,7 +66,7 @@ def save_state(state: MonitorState):
     _state_manager.save(state)
 
 
-def get_elo_stats() -> Dict:
+def get_elo_stats() -> dict:
     """Get current ELO database statistics."""
     if not ELO_DB_PATH.exists():
         return {}
@@ -131,7 +131,7 @@ def get_elo_stats() -> Dict:
     return stats
 
 
-def check_training_status() -> Tuple[str, str]:
+def check_training_status() -> tuple[str, str]:
     """Check if training is running on RTX 4060Ti."""
     try:
         result = subprocess.run(
@@ -149,7 +149,7 @@ def check_training_status() -> Tuple[str, str]:
         return "unknown", str(e)
 
 
-def send_alert(title: str, message: str, slack_url: Optional[str] = None):
+def send_alert(title: str, message: str, slack_url: str | None = None):
     """Send alert via console and optionally Slack."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -176,7 +176,7 @@ def send_alert(title: str, message: str, slack_url: Optional[str] = None):
             print(f"Slack alert failed: {e}")
 
 
-def run_check(state: MonitorState, slack_url: Optional[str] = None) -> MonitorState:
+def run_check(state: MonitorState, slack_url: str | None = None) -> MonitorState:
     """Run a single monitoring check."""
     stats = get_elo_stats()
 

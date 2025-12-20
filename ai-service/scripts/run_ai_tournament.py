@@ -41,7 +41,7 @@ AI_CLASSES = {"Random": RandomAI, "Heuristic": HeuristicAI, "Minimax": MinimaxAI
 BOARD_TYPES = {"Square8": BoardType.SQUARE8, "Square19": BoardType.SQUARE19, "Hex": BoardType.HEXAGONAL}
 
 
-def create_game_state(board_type_str: str, p1_config: Dict, p2_config: Dict) -> GameState:
+def create_game_state(board_type_str: str, p1_config: dict, p2_config: dict) -> GameState:
     board_type = BOARD_TYPES.get(board_type_str, BoardType.SQUARE8)
 
     size = 8
@@ -103,7 +103,7 @@ def create_game_state(board_type_str: str, p1_config: Dict, p2_config: Dict) -> 
     )
 
 
-def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> Tuple[int, GameState, List[Dict[str, Any]], int, Dict[str, Any]]:
+def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> tuple[int, GameState, list[dict[str, Any]], int, dict[str, Any]]:
     """
     Run a single game between two AI instances.
     Returns tuple of (winner, final_game_state, move_history, move_count, initial_state_json).
@@ -115,7 +115,7 @@ def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> Tuple[int
         if not players:
             return 1
 
-        marker_counts: Dict[int, int] = {int(p.player_number): 0 for p in players}
+        marker_counts: dict[int, int] = {int(p.player_number): 0 for p in players}
         try:
             for marker in final_state.board.markers.values():
                 owner = int(marker.player)
@@ -129,8 +129,8 @@ def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> Tuple[int
         except Exception:
             last_actor = None
 
-        best_player: Optional[int] = None
-        best_key: Optional[tuple] = None
+        best_player: int | None = None
+        best_key: tuple | None = None
         for idx, player in enumerate(players):
             player_num = getattr(player, "player_number", None)
             if player_num is None:
@@ -163,7 +163,7 @@ def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> Tuple[int
     rules_engine = DefaultRulesEngine()
 
     move_count = 0
-    moves_played: List[Dict[str, Any]] = []
+    moves_played: list[dict[str, Any]] = []
 
     print(f"Starting game: {p1_ai.__class__.__name__} (P1) vs " f"{p2_ai.__class__.__name__} (P2) on {board_type}")
 
@@ -202,7 +202,7 @@ def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> Tuple[int
             return (winner, game_state, moves_played, move_count, initial_state_json)
 
         # Record move for training data
-        move_record: Dict[str, Any] = {
+        move_record: dict[str, Any] = {
             "type": move.type.value if hasattr(move.type, 'value') else str(move.type),
             "player": move.player,
         }
@@ -283,9 +283,9 @@ def main():
     ai2 = p2_class(2, AIConfig(difficulty=args.p2_diff, think_time=0, randomness=0, rngSeed=None))
 
     stats = {"p1_wins": 0, "p2_wins": 0, "draws": 0}
-    victory_type_counts: Dict[str, int] = {}
-    stalemate_by_tiebreaker: Dict[str, int] = {}
-    game_records: List[Dict[str, Any]] = []
+    victory_type_counts: dict[str, int] = {}
+    stalemate_by_tiebreaker: dict[str, int] = {}
+    game_records: list[dict[str, Any]] = []
 
     # Initialize progress reporter for time-based progress output (~10s intervals)
     progress_reporter = SoakProgressReporter(
@@ -346,7 +346,7 @@ def main():
 
         # Build game record with standardized metadata
         game_status = final_state.game_status.value if hasattr(final_state.game_status, 'value') else str(final_state.game_status)
-        record: Dict[str, Any] = {
+        record: dict[str, Any] = {
             # === Core game identifiers ===
             "game_id": f"tournament_{args.board.lower()}_2p_{i}_{int(time.time())}",
             "board_type": args.board.lower(),  # square8, square19, hexagonal

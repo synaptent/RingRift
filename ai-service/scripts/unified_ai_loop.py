@@ -925,7 +925,7 @@ def get_disk_usage_percent(path: str = None) -> float:
         return 100.0  # Assume full on error to be safe
 
 
-def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
+def check_disk_has_capacity(threshold: float = None) -> tuple[bool, float]:
     """Check if disk has capacity below threshold for data sync.
 
     Uses unified resource_guard utilities when available for consistent
@@ -942,7 +942,7 @@ def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
     return (current < threshold, current)
 
 
-def check_all_resources() -> Tuple[bool, str]:
+def check_all_resources() -> tuple[bool, str]:
     """Check if all resources (CPU, memory, disk) are within limits.
 
     Uses unified 80% max utilization thresholds from resource_guard.
@@ -1482,7 +1482,7 @@ class ComponentHealth:
             return HealthStatus.HEALTHY
         return HealthStatus.UNKNOWN
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "name": self.name,
@@ -1496,7 +1496,7 @@ class ComponentHealth:
 
 
 # Global health tracker (set by UnifiedAILoop)
-_health_tracker: Optional["HealthTracker"] = None
+_health_tracker: "HealthTracker" | None = None
 
 
 class HealthTracker:
@@ -1504,7 +1504,7 @@ class HealthTracker:
 
     def __init__(self):
         # Initialize health trackers for each component
-        self.components: Dict[str, ComponentHealth] = {
+        self.components: dict[str, ComponentHealth] = {
             "data_collector": ComponentHealth("data_collector", stale_threshold_seconds=300),
             "evaluator": ComponentHealth("evaluator", stale_threshold_seconds=1800),
             "training_scheduler": ComponentHealth("training_scheduler", stale_threshold_seconds=7200),
@@ -1553,7 +1553,7 @@ class HealthTracker:
             return HealthStatus.HEALTHY
         return HealthStatus.UNKNOWN
 
-    def get_health_summary(self) -> Dict[str, Any]:
+    def get_health_summary(self) -> dict[str, Any]:
         """Get full health summary for API response."""
         overall = self.get_overall_status()
         if HAS_PROMETHEUS:
@@ -1673,7 +1673,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         pass  # Suppress request logging
 
 
-def start_metrics_server(port: int = 9090) -> Optional[HTTPServer]:
+def start_metrics_server(port: int = 9090) -> HTTPServer | None:
     """Start the Prometheus metrics HTTP server."""
     if not HAS_PROMETHEUS:
         print("[Metrics] prometheus_client not installed, metrics disabled")
@@ -1728,10 +1728,10 @@ class ConfigPriorityQueue:
     """
 
     def __init__(self):
-        self._priority_cache: Dict[str, float] = {}
+        self._priority_cache: dict[str, float] = {}
         self._last_recalc: float = 0.0
         self._recalc_interval: float = 60.0  # Recalculate every 60 seconds
-        self._trained_model_counts: Dict[str, int] = {}
+        self._trained_model_counts: dict[str, int] = {}
         self._model_counts_last_update: float = 0.0
 
     def _update_trained_model_counts(self) -> None:
@@ -1745,7 +1745,7 @@ class ConfigPriorityQueue:
         if now - self._model_counts_last_update < 120:
             return
 
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
 
         # Initialize all configs to 0
         for board in ["square8", "square19", "hexagonal", "hex8"]:
@@ -1822,7 +1822,7 @@ class ConfigPriorityQueue:
         self,
         config_key: str,
         config_state: ConfigState,
-        now: Optional[float] = None
+        now: float | None = None
     ) -> float:
         """Calculate priority score for a config (higher = more urgent).
 
@@ -1900,9 +1900,9 @@ class ConfigPriorityQueue:
 
     def get_prioritized_configs(
         self,
-        configs: Dict[str, ConfigState],
-        limit: Optional[int] = None
-    ) -> List[Tuple[str, float]]:
+        configs: dict[str, ConfigState],
+        limit: int | None = None
+    ) -> list[tuple[str, float]]:
         """Get configs sorted by priority (highest first).
 
         Args:
@@ -1937,9 +1937,9 @@ class ConfigPriorityQueue:
 
     def get_highest_priority_for_training(
         self,
-        configs: Dict[str, ConfigState],
+        configs: dict[str, ConfigState],
         min_games_threshold: int = 100
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get the highest priority config that's ready for training.
 
         Args:
@@ -1964,7 +1964,7 @@ class ConfigPriorityQueue:
 
         return best_key
 
-    def invalidate_cache(self, config_key: Optional[str] = None):
+    def invalidate_cache(self, config_key: str | None = None):
         """Invalidate priority cache (call after state changes).
 
         Args:
@@ -1990,10 +1990,10 @@ class UnifiedLoopState:
     total_promotions: int = 0
 
     # Host states
-    hosts: Dict[str, HostState] = field(default_factory=dict)
+    hosts: dict[str, HostState] = field(default_factory=dict)
 
     # Configuration states (keyed by "board_type_num_players")
-    configs: Dict[str, ConfigState] = field(default_factory=dict)
+    configs: dict[str, ConfigState] = field(default_factory=dict)
 
     # Current training state
     training_in_progress: bool = False
@@ -2013,7 +2013,7 @@ class UnifiedLoopState:
     health_status: str = "unknown"  # "healthy", "unhealthy", or "unknown"
 
     # Curriculum weights (config_key -> weight)
-    curriculum_weights: Dict[str, float] = field(default_factory=dict)
+    curriculum_weights: dict[str, float] = field(default_factory=dict)
     last_curriculum_rebalance: float = 0.0
 
     # PBT state
@@ -2028,7 +2028,7 @@ class UnifiedLoopState:
     nas_run_id: str = ""
     nas_started_at: float = 0.0
     nas_generation: int = 0
-    nas_best_architecture: Optional[Dict[str, Any]] = None
+    nas_best_architecture: dict[str, Any] | None = None
 
     # PER state
     per_buffer_path: str = ""
@@ -2036,13 +2036,13 @@ class UnifiedLoopState:
     per_buffer_size: int = 0
 
     # Calibration state (config_key -> last calibration report dict)
-    calibration_reports: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    calibration_reports: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_calibration_time: float = 0.0
     current_temperature_preset: str = "default"
 
     # Tier gating state (config_key -> current tier)
     # Tiers: D2 -> D4 -> D6 -> D8 (difficulty progression)
-    tier_assignments: Dict[str, str] = field(default_factory=dict)
+    tier_assignments: dict[str, str] = field(default_factory=dict)
     tier_promotions_count: int = 0
     last_tier_check: float = 0.0
 
@@ -2057,9 +2057,9 @@ class UnifiedLoopState:
     cmaes_in_progress: bool = False
     cmaes_run_id: str = ""
     cmaes_started_at: float = 0.0
-    cmaes_best_weights: Optional[Dict[str, float]] = None
+    cmaes_best_weights: dict[str, float] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert state to dictionary for serialization."""
         return {
             "started_at": self.started_at,
@@ -2117,7 +2117,7 @@ class UnifiedLoopState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "UnifiedLoopState":
+    def from_dict(cls, data: dict[str, Any]) -> "UnifiedLoopState":
         """Create state from dictionary."""
         state = cls()
         for key in ["started_at", "last_cycle_at", "total_data_syncs", "total_training_runs",
@@ -2203,7 +2203,7 @@ class PBTIntegration:
         self.config = config
         self.state = state
         self.event_bus = event_bus
-        self._pbt_process: Optional[asyncio.subprocess.Process] = None
+        self._pbt_process: asyncio.subprocess.Process | None = None
 
     async def start_pbt_run(self, board_type: str = "square8", num_players: int = 2) -> bool:
         """Start a new PBT run."""
@@ -2252,7 +2252,7 @@ class PBTIntegration:
             self.state.pbt_in_progress = False
             return False
 
-    async def check_pbt_status(self) -> Optional[Dict[str, Any]]:
+    async def check_pbt_status(self) -> dict[str, Any] | None:
         """Check status of running PBT."""
         if not self.state.pbt_in_progress or not self._pbt_process:
             return None
@@ -2312,7 +2312,7 @@ class NASIntegration:
         self.config = config
         self.state = state
         self.event_bus = event_bus
-        self._nas_process: Optional[asyncio.subprocess.Process] = None
+        self._nas_process: asyncio.subprocess.Process | None = None
 
     async def start_nas_run(self, board_type: str = "square8", num_players: int = 2) -> bool:
         """Start a new NAS run."""
@@ -2361,7 +2361,7 @@ class NASIntegration:
             self.state.nas_in_progress = False
             return False
 
-    async def check_nas_status(self) -> Optional[Dict[str, Any]]:
+    async def check_nas_status(self) -> dict[str, Any] | None:
         """Check status of running NAS."""
         if not self.state.nas_in_progress or not self._nas_process:
             return None
@@ -2428,7 +2428,7 @@ class PERIntegration:
         self.state = state
         self.event_bus = event_bus
 
-    async def rebuild_buffer(self, db_path: Optional[Path] = None) -> bool:
+    async def rebuild_buffer(self, db_path: Path | None = None) -> bool:
         """Rebuild the prioritized replay buffer from game database."""
         if not self.config.enabled:
             return False
@@ -2522,7 +2522,7 @@ class UnifiedAILoop:
 
         # Cross-process queue for inbound events (bidirectional bridging)
         # Note: Outbound cross-process publishing is handled by canonical EventBus
-        self._cross_process_queue: Optional[CrossProcessEventQueue] = None
+        self._cross_process_queue: CrossProcessEventQueue | None = None
         if HAS_CROSS_PROCESS_EVENTS:
             try:
                 self._cross_process_queue = CrossProcessEventQueue()
@@ -2589,7 +2589,7 @@ class UnifiedAILoop:
         )
 
         # Model registry for tracking model lifecycle and provenance
-        self.model_registry: Optional[ModelRegistry] = None
+        self.model_registry: ModelRegistry | None = None
         if HAS_MODEL_REGISTRY:
             try:
                 registry_dir = AI_SERVICE_ROOT / "data" / "model_registry"
@@ -2602,7 +2602,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize model registry: {e}")
 
         # Pipeline feedback controller for closed-loop integration
-        self.feedback: Optional[PipelineFeedbackController] = None
+        self.feedback: PipelineFeedbackController | None = None
         if HAS_FEEDBACK and config.feedback.enabled:
             try:
                 self.feedback = create_feedback_controller(AI_SERVICE_ROOT)
@@ -2638,7 +2638,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize feedback controller: {e}")
 
         # Feedback signal router for routing FeedbackAction signals to handlers
-        self.feedback_router: Optional[FeedbackSignalRouter] = None
+        self.feedback_router: FeedbackSignalRouter | None = None
         if HAS_FEEDBACK and FeedbackSignalRouter is not None:
             try:
                 self.feedback_router = FeedbackSignalRouter()
@@ -2680,8 +2680,8 @@ class UnifiedAILoop:
         print("[UnifiedLoop] Health tracker initialized")
 
         # Task coordination - prevents runaway spawning across orchestrators
-        self.task_coordinator: Optional[TaskCoordinator] = None
-        self._task_id: Optional[str] = None  # Initialize to avoid AttributeError on shutdown
+        self.task_coordinator: TaskCoordinator | None = None
+        self._task_id: str | None = None  # Initialize to avoid AttributeError on shutdown
         if HAS_TASK_COORDINATOR:
             try:
                 self.task_coordinator = TaskCoordinator.get_instance()
@@ -2713,7 +2713,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to acquire new orchestrator role: {e}")
 
         # Hot data buffer - caches recent games in memory to reduce DB roundtrips
-        self.hot_buffer: Optional[HotDataBuffer] = None
+        self.hot_buffer: HotDataBuffer | None = None
         if HAS_HOT_BUFFER and getattr(config, 'use_hot_buffer', True):
             try:
                 self.hot_buffer = create_hot_buffer(
@@ -2725,7 +2725,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize hot buffer: {e}")
 
         # Quality bridge - connects manifest quality scores to training data selection
-        self.quality_bridge: Optional[QualityBridge] = None
+        self.quality_bridge: QualityBridge | None = None
         if HAS_QUALITY_BRIDGE and getattr(config, 'use_quality_scoring', True):
             try:
                 self.quality_bridge = get_quality_bridge()
@@ -2740,7 +2740,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize quality bridge: {e}")
 
         # Adaptive controller - plateau detection and dynamic game scaling
-        self.adaptive_ctrl: Optional[AdaptiveController] = None
+        self.adaptive_ctrl: AdaptiveController | None = None
         if HAS_ADAPTIVE_CONTROLLER and getattr(config, 'use_adaptive_control', True):
             try:
                 state_path = AI_SERVICE_ROOT / config.log_dir / "adaptive_controller_state.json"
@@ -2758,9 +2758,9 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize adaptive controller: {e}")
 
         # P2P cluster integration - distributed training across cluster
-        self.p2p: Optional[P2PIntegrationManager] = None
+        self.p2p: P2PIntegrationManager | None = None
         self._p2p_started = False
-        self._p2p_backend: Optional[P2PBackend] = None  # Direct backend for low-level API calls
+        self._p2p_backend: P2PBackend | None = None  # Direct backend for low-level API calls
         if HAS_P2P and config.p2p.enabled:
             try:
                 # Try resilient leader discovery if seed URLs configured
@@ -2814,7 +2814,7 @@ class UnifiedAILoop:
                 self.p2p = None
 
         # Execution backend - unified interface for local/SSH/P2P execution
-        self.backend: Optional[OrchestratorBackend] = None
+        self.backend: OrchestratorBackend | None = None
         if HAS_BACKENDS:
             try:
                 # Auto-detect backend type from config
@@ -2834,7 +2834,7 @@ class UnifiedAILoop:
 
         # Local selfplay generator (parallel with Gumbel-MCTS support)
         # Skip in coordinator-only mode to prevent local CPU/memory usage
-        self.local_selfplay: Optional[LocalSelfplayGenerator] = None
+        self.local_selfplay: LocalSelfplayGenerator | None = None
         if HAS_LOCAL_SELFPLAY and not DISABLE_LOCAL_TASKS:
             try:
                 num_workers = getattr(config, 'selfplay_workers', None)
@@ -2867,7 +2867,7 @@ class UnifiedAILoop:
             print("[UnifiedLoop] Local selfplay disabled (coordinator-only mode)")
 
         # Resource optimizer - cooperative cluster-wide utilization targeting (60-80%)
-        self.resource_optimizer: Optional[ResourceOptimizer] = None
+        self.resource_optimizer: ResourceOptimizer | None = None
         if HAS_RESOURCE_OPTIMIZER:
             try:
                 self.resource_optimizer = get_resource_optimizer()
@@ -2878,7 +2878,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize resource optimizer: {e}")
 
         # Priority job scheduler - ensures critical jobs (promotion eval) preempt selfplay
-        self.job_scheduler: Optional[PriorityJobScheduler] = None
+        self.job_scheduler: PriorityJobScheduler | None = None
         if HAS_JOB_SCHEDULER:
             try:
                 self.job_scheduler = get_job_scheduler()
@@ -2891,7 +2891,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize job scheduler: {e}")
 
         # Stage event bus - pipeline stage completion events for cross-component coordination
-        self.stage_event_bus: Optional[StageEventBus] = None
+        self.stage_event_bus: StageEventBus | None = None
         if HAS_STAGE_EVENTS:
             try:
                 self.stage_event_bus = get_stage_event_bus()
@@ -2902,7 +2902,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize stage event bus: {e}")
 
         # Unified promotion controller - augments ModelPromoter with consistent criteria
-        self.promotion_controller: Optional[PromotionController] = None
+        self.promotion_controller: PromotionController | None = None
         if HAS_PROMOTION_CONTROLLER:
             try:
                 criteria = PromotionCriteria(
@@ -2917,7 +2917,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize promotion controller: {e}")
 
         # Training lifecycle manager - coordinates service startup/shutdown/health
-        self.lifecycle_manager: Optional[TrainingLifecycleManager] = None
+        self.lifecycle_manager: TrainingLifecycleManager | None = None
         if HAS_LIFECYCLE_MANAGER:
             try:
                 self.lifecycle_manager = TrainingLifecycleManager()
@@ -2931,14 +2931,14 @@ class UnifiedAILoop:
         self._shutdown_event = asyncio.Event()
 
         # Timing trackers
-        self._last_shadow_eval: Dict[str, float] = {}
+        self._last_shadow_eval: dict[str, float] = {}
         self._last_full_eval: float = 0.0
         self._last_diverse_tournament: float = 0.0
         self._started_time: float = 0.0
 
         # Gauntlet evaluation and model culling
-        self.gauntlet: Optional[DistributedNNGauntlet] = None
-        self.culler: Optional[ModelCullingController] = None
+        self.gauntlet: DistributedNNGauntlet | None = None
+        self.culler: ModelCullingController | None = None
         self._last_gauntlet_check: float = 0.0
         self._gauntlet_interval: float = 900.0  # 15 minutes between gauntlet checks (increased frequency)
         if HAS_GAUNTLET:
@@ -2952,7 +2952,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize gauntlet/culler: {e}")
 
         # Elo database synchronization for cluster-wide consistency
-        self.elo_sync_manager: Optional[EloSyncManager] = None
+        self.elo_sync_manager: EloSyncManager | None = None
         self._elo_sync_interval: float = 300.0  # 5 minutes
         self._last_elo_sync: float = 0.0
         if HAS_ELO_SYNC:
@@ -2967,7 +2967,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize EloSyncManager: {e}")
 
         # Elo reconciliation for drift detection and conflict resolution
-        self.elo_reconciler: Optional[EloReconciler] = None
+        self.elo_reconciler: EloReconciler | None = None
         self._elo_reconcile_interval: float = 1800.0  # 30 minutes
         self._last_elo_reconcile: float = 0.0
         self._elo_drift_threshold: float = 50.0  # Alert on drift > 50 Elo
@@ -2983,10 +2983,10 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize EloReconciler: {e}")
 
         # Automatic rollback monitoring for promoted models
-        self.rollback_monitor: Optional[RollbackMonitor] = None
+        self.rollback_monitor: RollbackMonitor | None = None
         self._rollback_check_interval: float = 900.0  # 15 minutes
         self._last_rollback_check: float = 0.0
-        self._promoted_models: Dict[str, Dict[str, Any]] = {}  # config_key -> {model_id, baseline_elo, promoted_at}
+        self._promoted_models: dict[str, dict[str, Any]] = {}  # config_key -> {model_id, baseline_elo, promoted_at}
         if HAS_ROLLBACK_MONITOR:
             try:
                 self.rollback_monitor = RollbackMonitor(
@@ -3004,7 +3004,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize RollbackMonitor: {e}")
 
         # Model registry synchronization for cluster-wide consistency
-        self.registry_sync_manager: Optional[RegistrySyncManager] = None
+        self.registry_sync_manager: RegistrySyncManager | None = None
         self._registry_sync_interval: float = 600.0  # 10 minutes
         self._last_registry_sync: float = 0.0
         if HAS_REGISTRY_SYNC and HAS_MODEL_REGISTRY and self.model_registry:
@@ -3132,9 +3132,9 @@ class UnifiedAILoop:
         self,
         job_type: str,
         priority: "JobPriority",
-        config: Dict[str, Any],
+        config: dict[str, Any],
         requires_gpu: bool = False,
-        host_preference: Optional[str] = None,
+        host_preference: str | None = None,
     ) -> bool:
         """Schedule a job with the priority job scheduler.
 
@@ -3160,7 +3160,7 @@ class UnifiedAILoop:
         )
         return self.job_scheduler.schedule(job)
 
-    def _get_next_scheduled_job(self) -> Optional[Tuple["ScheduledJob", Any]]:
+    def _get_next_scheduled_job(self) -> tuple["ScheduledJob", Any] | None:
         """Get the next job to run from the priority queue.
 
         Returns:
@@ -3364,7 +3364,7 @@ class UnifiedAILoop:
             # Count model files and calculate sizes
             total_models = 0
             total_size_bytes = 0
-            versions_count: Dict[str, int] = {}
+            versions_count: dict[str, int] = {}
             max_version = 0
 
             if models_dir.exists():
@@ -3416,7 +3416,7 @@ class UnifiedAILoop:
                         ORDER BY board_type, num_players, rating DESC
                     """)
 
-                    seen_configs: Set[str] = set()
+                    seen_configs: set[str] = set()
 
                     for row in rows:
                         config_key = f"{row[0]}_{row[1]}p"
@@ -3561,7 +3561,7 @@ class UnifiedAILoop:
 
             # Track previous ELO per config
             if not hasattr(self, '_previous_config_elo'):
-                self._previous_config_elo: Dict[str, float] = {}
+                self._previous_config_elo: dict[str, float] = {}
 
             # Check each active config
             for config_key, config_state in self.state.configs.items():
@@ -3693,7 +3693,7 @@ class UnifiedAILoop:
         except Exception as e:
             print(f"[Feedback] Error processing evaluation feedback: {e}")
 
-    async def _check_regression_after_evaluation(self, payload: Dict[str, Any]) -> None:
+    async def _check_regression_after_evaluation(self, payload: dict[str, Any]) -> None:
         """Check for regression using centralized RegressionDetector.
 
         This integrates the centralized regression detection into the evaluation
@@ -4540,7 +4540,7 @@ class UnifiedAILoop:
         self,
         config_key: str,
         win_rate_threshold: float = 0.55,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Check if a model should be promoted to the next difficulty tier.
 
         Promotion requires winning > threshold against current tier opponents.
@@ -4599,7 +4599,7 @@ class UnifiedAILoop:
               f"(est. win rate: {estimated_win_rate:.1%} < {win_rate_threshold:.1%})")
         return False, current_tier
 
-    async def run_tier_gating_checks(self) -> Dict[str, str]:
+    async def run_tier_gating_checks(self) -> dict[str, str]:
         """Run tier gating checks for all configurations.
 
         Returns dict of config -> new_tier for any promotions.
@@ -4632,7 +4632,7 @@ class UnifiedAILoop:
         self,
         board_type: str = "square8",
         num_players: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run parity validation gate on game databases.
 
         Validates that games pass the canonical parity check (TS engine replay
@@ -4748,9 +4748,9 @@ class UnifiedAILoop:
 
     async def run_cmaes_optimization(
         self,
-        config_key: Optional[str] = None,
+        config_key: str | None = None,
         reason: str = "manual",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run CMA-ES hyperparameter optimization.
 
         This is typically triggered by:
@@ -5330,7 +5330,7 @@ class UnifiedAILoop:
             print(f"[FeedbackRouter] Error handling SCALE_DOWN_SELFPLAY: {e}")
             return False
 
-    async def route_feedback_signal(self, signal: 'FeedbackSignal') -> List[Tuple[str, bool]]:
+    async def route_feedback_signal(self, signal: 'FeedbackSignal') -> list[tuple[str, bool]]:
         """Route a feedback signal through the router.
 
         This can be called by components to route signals through the unified router.
@@ -5347,9 +5347,9 @@ class UnifiedAILoop:
     async def run_diverse_tournaments(
         self,
         games_per_config: int = 50,
-        board_types: Optional[List[str]] = None,
-        player_counts: Optional[List[int]] = None,
-    ) -> Dict[str, Any]:
+        board_types: list[str] | None = None,
+        player_counts: list[int] | None = None,
+    ) -> dict[str, Any]:
         """Run diverse tournaments across all board/player configurations.
 
         This provides richer Elo calibration by testing all AI types:
@@ -5468,7 +5468,7 @@ class UnifiedAILoop:
     # P2P Cluster Callbacks
     # =========================================================================
 
-    async def _on_p2p_cluster_unhealthy(self, error: Optional[str] = None):
+    async def _on_p2p_cluster_unhealthy(self, error: str | None = None):
         """Handle cluster unhealthy event from P2P manager."""
         print(f"[P2P] Cluster unhealthy: {error or 'unknown error'}")
         await self.event_bus.publish(DataEvent(
@@ -5476,7 +5476,7 @@ class UnifiedAILoop:
             payload={"error": error},
         ))
 
-    async def _on_p2p_nodes_dead(self, nodes: List[str]):
+    async def _on_p2p_nodes_dead(self, nodes: list[str]):
         """Handle nodes dead event from P2P manager."""
         print(f"[P2P] Dead nodes detected: {nodes}")
         await self.event_bus.publish(DataEvent(
@@ -5484,7 +5484,7 @@ class UnifiedAILoop:
             payload={"nodes": nodes},
         ))
 
-    async def _on_p2p_selfplay_scaled(self, result: Dict[str, Any]):
+    async def _on_p2p_selfplay_scaled(self, result: dict[str, Any]):
         """Handle selfplay auto-scale event from P2P manager."""
         actions = result.get("actions", [])
         print(f"[P2P] Selfplay scaled: {len(actions)} actions taken")
@@ -6571,7 +6571,7 @@ class UnifiedAILoop:
         except Exception as e:
             print(f"[Utilization] P2P scale request error: {e}")
 
-    async def get_backend_workers(self) -> List[Dict[str, Any]]:
+    async def get_backend_workers(self) -> list[dict[str, Any]]:
         """Query available workers from the execution backend.
 
         Returns:
@@ -6603,9 +6603,9 @@ class UnifiedAILoop:
         games: int,
         board_type: str = "square8",
         num_players: int = 2,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         **kwargs,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run selfplay games using the execution backend.
 
         Distributes games across available workers using the configured backend.
@@ -6652,10 +6652,10 @@ class UnifiedAILoop:
         games: int,
         config_key: str,
         engine: str = "descent",
-        nn_model_id: Optional[str] = None,
+        nn_model_id: str | None = None,
         gumbel_simulations: int = 64,
         gumbel_top_k: int = 16,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run selfplay games locally using parallel workers.
 
         Uses the LocalSelfplayGenerator for efficient multi-process game generation.
@@ -6714,10 +6714,10 @@ class UnifiedAILoop:
         self,
         games: int,
         config_key: str,
-        nn_model_id: Optional[str] = None,
+        nn_model_id: str | None = None,
         simulations: int = 64,
         top_k: int = 16,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Convenience method for Gumbel-MCTS selfplay generation.
 
         Gumbel-MCTS produces higher quality training data with soft policy
@@ -6742,7 +6742,7 @@ class UnifiedAILoop:
             gumbel_top_k=top_k,
         )
 
-    async def sync_backend_data(self) -> Dict[str, int]:
+    async def sync_backend_data(self) -> dict[str, int]:
         """Sync game data from workers using the execution backend.
 
         Returns:
@@ -7072,8 +7072,8 @@ class UnifiedAILoop:
                 pass
 
     async def _run_two_stage_gauntlet_async(
-        self, config_key: str, unrated_models: List[str]
-    ) -> Optional[int]:
+        self, config_key: str, unrated_models: list[str]
+    ) -> int | None:
         """Run two-stage gauntlet asynchronously in thread pool.
 
         Stage 1: Quick screen (10 games) - eliminate <40% win rate models
@@ -7514,8 +7514,8 @@ class UnifiedAILoop:
         self,
         config_key: str,
         model_id: str,
-        previous_model_id: Optional[str] = None,
-        baseline_elo: Optional[float] = None,
+        previous_model_id: str | None = None,
+        baseline_elo: float | None = None,
     ) -> None:
         """Register a newly promoted model for rollback monitoring.
 
@@ -7995,7 +7995,7 @@ class UnifiedAILoop:
 # Config Validation
 # =============================================================================
 
-def validate_config(config: UnifiedLoopConfig) -> Tuple[bool, List[str]]:
+def validate_config(config: UnifiedLoopConfig) -> tuple[bool, list[str]]:
     """Validate configuration at startup.
 
     Returns:

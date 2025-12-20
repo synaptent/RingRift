@@ -16,7 +16,8 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import List, Tuple
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 # Add parent directories to path for standalone execution
@@ -43,7 +44,7 @@ except ImportError:
     HAS_BENCHMARK = False
 
 
-def simple_benchmark(func: Callable, iterations: int = 100) -> Tuple[float, float, float]:
+def simple_benchmark(func: Callable, iterations: int = 100) -> tuple[float, float, float]:
     """Simple benchmark without pytest-benchmark."""
     times = []
     for _ in range(iterations):

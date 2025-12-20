@@ -156,7 +156,7 @@ class ModelPromoter:
             except Exception as e:
                 print(f"[ModelPromoter] Warning: Failed to initialize ModelLifecycleManager: {e}")
 
-    async def check_promotion_candidates(self) -> List[Dict[str, Any]]:
+    async def check_promotion_candidates(self) -> list[dict[str, Any]]:
         """Check for models that should be promoted."""
         if not self.config.auto_promote:
             return []
@@ -179,7 +179,7 @@ class ModelPromoter:
             """, (self.config.min_games,))
 
             # Group by config and find candidates
-            by_config: Dict[str, List[tuple]] = {}
+            by_config: dict[str, list[tuple]] = {}
             for row in rows:
                 config_key = f"{row[1]}_{row[2]}p"
                 if config_key not in by_config:
@@ -258,7 +258,7 @@ class ModelPromoter:
             print(f"[ModelPromoter] Error checking candidates: {e}")
             return []
 
-    async def execute_promotion(self, candidate: Dict[str, Any]) -> bool:
+    async def execute_promotion(self, candidate: dict[str, Any]) -> bool:
         """Execute a model promotion with holdout validation gate and cluster health check."""
         try:
             await self.event_bus.publish(DataEvent(
@@ -398,7 +398,7 @@ class ModelPromoter:
             print(f"[ModelPromoter] Error executing promotion: {e}")
             return False
 
-    async def _sync_to_cluster(self, candidate: Dict[str, Any]):
+    async def _sync_to_cluster(self, candidate: dict[str, Any]):
         """Sync promoted model to cluster."""
         try:
             cmd = [
@@ -423,7 +423,7 @@ class ModelPromoter:
 
     def _emit_execution_metrics(
         self,
-        candidate: Dict[str, Any],
+        candidate: dict[str, Any],
         success: bool,
         dry_run: bool = False,
     ) -> None:
@@ -444,7 +444,7 @@ class ModelPromoter:
             print(f"[ModelPromoter] Error emitting execution metrics: {e}")
 
 
-async def verify_elo_promotion_pipeline() -> Dict[str, Any]:
+async def verify_elo_promotion_pipeline() -> dict[str, Any]:
     """Verify the Elo promotion pipeline is working end-to-end.
 
     This function checks all components of the promotion pipeline:
@@ -557,7 +557,7 @@ async def verify_elo_promotion_pipeline() -> Dict[str, Any]:
     return results
 
 
-def print_promotion_verification(results: Dict[str, Any]) -> None:
+def print_promotion_verification(results: dict[str, Any]) -> None:
     """Pretty print promotion verification results."""
     print("\n" + "=" * 60)
     print("ELO PROMOTION PIPELINE VERIFICATION")

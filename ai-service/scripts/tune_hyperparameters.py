@@ -51,14 +51,14 @@ logger = setup_script_logging("tune_hyperparameters")
 class TrialResult:
     """Result of a single hyperparameter trial."""
     trial_id: int
-    params: Dict[str, Any]
-    val_loss: Optional[float] = None
-    elo_score: Optional[float] = None
+    params: dict[str, Any]
+    val_loss: float | None = None
+    elo_score: float | None = None
     combined_score: float = -float("inf")
     training_time_sec: float = 0.0
     elo_games: int = 0
     timestamp: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -67,16 +67,16 @@ class TuningSession:
     board_type: str
     num_players: int
     config_key: str
-    trials: List[TrialResult] = field(default_factory=list)
+    trials: list[TrialResult] = field(default_factory=list)
     best_trial_id: int = -1
     best_score: float = -float("inf")
-    best_params: Dict[str, Any] = field(default_factory=dict)
+    best_params: dict[str, Any] = field(default_factory=dict)
     total_trials: int = 0
     start_time: str = ""
     last_updated: str = ""
 
 
-def load_hyperparams_config() -> Dict[str, Any]:
+def load_hyperparams_config() -> dict[str, Any]:
     """Load the hyperparameters configuration file."""
     if HYPERPARAMS_PATH.exists():
         with open(HYPERPARAMS_PATH) as f:
@@ -84,7 +84,7 @@ def load_hyperparams_config() -> Dict[str, Any]:
     return {"defaults": {}, "configs": {}, "tuning_config": {}}
 
 
-def save_hyperparams_config(config: Dict[str, Any]) -> None:
+def save_hyperparams_config(config: dict[str, Any]) -> None:
     """Save the hyperparameters configuration file."""
     config["last_updated"] = datetime.utcnow().isoformat() + "Z"
     HYPERPARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -98,10 +98,10 @@ def get_config_key(board_type: str, num_players: int) -> str:
 
 
 def sample_hyperparams(
-    search_space: Dict[str, Any],
-    best_params: Optional[Dict[str, Any]] = None,
+    search_space: dict[str, Any],
+    best_params: dict[str, Any] | None = None,
     exploitation_prob: float = 0.3,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Sample hyperparameters from the search space.
 
     With exploitation_prob probability, perturb the best known params.
@@ -136,13 +136,13 @@ def sample_hyperparams(
 
 
 def train_model_with_params(
-    params: Dict[str, Any],
+    params: dict[str, Any],
     board_type: str,
     num_players: int,
-    db_paths: List[Path],
+    db_paths: list[Path],
     epochs: int = 10,
-    output_dir: Optional[Path] = None,
-) -> Tuple[Optional[float], Optional[Path], Dict[str, Any]]:
+    output_dir: Path | None = None,
+) -> tuple[float | None, Path | None, dict[str, Any]]:
     """Train a model with given hyperparameters.
 
     Returns:
@@ -225,7 +225,7 @@ def evaluate_model_elo(
     board_type: str,
     num_players: int,
     num_games: int = 20,
-) -> Optional[float]:
+) -> float | None:
     """Evaluate a model's strength via Elo games against baseline.
 
     Returns win rate against baseline (0.0 to 1.0).
@@ -277,8 +277,8 @@ def evaluate_model_elo(
 
 
 def compute_combined_score(
-    val_loss: Optional[float],
-    elo_score: Optional[float],
+    val_loss: float | None,
+    elo_score: float | None,
     val_weight: float = 0.6,
     elo_weight: float = 0.4,
 ) -> float:
@@ -307,11 +307,11 @@ def run_tuning_session(
     board_type: str,
     num_players: int,
     max_trials: int = 30,
-    db_paths: Optional[List[Path]] = None,
+    db_paths: list[Path] | None = None,
     epochs_per_trial: int = 10,
     elo_games_per_trial: int = 20,
     resume: bool = False,
-    output_dir: Optional[Path] = None,
+    output_dir: Path | None = None,
 ) -> TuningSession:
     """Run a hyperparameter tuning session.
 

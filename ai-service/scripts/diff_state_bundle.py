@@ -11,8 +11,8 @@ from app.rules.serialization import deserialize_game_state
 
 def _compute_structural_diffs_from_states(
     py_state: Any,
-    ts_state: Dict[str, Any],
-) -> Tuple[bool, str]:
+    ts_state: dict[str, Any],
+) -> tuple[bool, str]:
     """Compute a concise structural diff summary between Python and TS states."""
     players_py = dbg._summarize_players_py(py_state)  # type: ignore[attr-defined]
     players_ts = dbg._summarize_players_ts(ts_state)  # type: ignore[attr-defined]

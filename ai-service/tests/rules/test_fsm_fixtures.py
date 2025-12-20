@@ -38,7 +38,7 @@ from app.rules.fsm import validate_move_for_phase, FSMValidationResult
 FIXTURES_PATH = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "fsm-parity" / "v1" / "fsm_transitions.vectors.json"
 
 
-def _load_fixtures() -> Dict[str, Any]:
+def _load_fixtures() -> dict[str, Any]:
     """Load the cross-language FSM fixtures."""
     with open(FIXTURES_PATH, "r") as f:
         return json.load(f)
@@ -47,7 +47,7 @@ def _load_fixtures() -> Dict[str, Any]:
 # Map fixture event types to MoveType enum values
 # Note: Some FSM events (END_CHAIN, _ADVANCE_TURN, RESIGN, TIMEOUT) don't have
 # direct MoveType equivalents in Python - they're FSM-internal transitions.
-_EVENT_TO_MOVE_TYPE: Dict[str, Optional[MoveType]] = {
+_EVENT_TO_MOVE_TYPE: dict[str, MoveType | None] = {
     "PLACE_RING": MoveType.PLACE_RING,
     "SKIP_PLACEMENT": MoveType.SKIP_PLACEMENT,
     "NO_PLACEMENT_ACTION": MoveType.NO_PLACEMENT_ACTION,
@@ -67,7 +67,7 @@ _EVENT_TO_MOVE_TYPE: Dict[str, Optional[MoveType]] = {
 }
 
 # Map fixture phase strings to GamePhase enum
-_PHASE_TO_ENUM: Dict[str, GamePhase] = {
+_PHASE_TO_ENUM: dict[str, GamePhase] = {
     "ring_placement": GamePhase.RING_PLACEMENT,
     "movement": GamePhase.MOVEMENT,
     "capture": GamePhase.CAPTURE,
@@ -142,8 +142,8 @@ def _make_game_state(
 def _make_move(
     move_type: MoveType,
     player: int = 1,
-    to: Optional[Dict[str, int]] = None,
-    from_pos: Optional[Dict[str, int]] = None,
+    to: dict[str, int] | None = None,
+    from_pos: dict[str, int] | None = None,
 ) -> Move:
     """Create a test move from fixture data."""
     to_pos = Position(x=to["x"], y=to["y"]) if to else Position(x=0, y=0)
@@ -165,17 +165,17 @@ class TestFSMCrossLanguageFixtures:
     """Test FSM validation using cross-language fixtures."""
 
     @pytest.fixture(scope="class")
-    def fixtures(self) -> Dict[str, Any]:
+    def fixtures(self) -> dict[str, Any]:
         """Load fixtures once per test class."""
         return _load_fixtures()
 
-    def test_fixtures_loaded(self, fixtures: Dict[str, Any]):
+    def test_fixtures_loaded(self, fixtures: dict[str, Any]):
         """Verify fixtures are loaded correctly."""
         assert fixtures["version"] == "v1"
         assert fixtures["count"] == len(fixtures["vectors"])
         assert len(fixtures["vectors"]) > 0
 
-    def test_all_phases_covered(self, fixtures: Dict[str, Any]):
+    def test_all_phases_covered(self, fixtures: dict[str, Any]):
         """Verify all major phases have at least one test vector."""
         categories = set(v["category"] for v in fixtures["vectors"])
         expected_phases = {
@@ -197,12 +197,12 @@ class TestFSMValidationVectors:
     """Test individual FSM validation vectors."""
 
     @pytest.fixture(scope="class")
-    def vectors(self) -> List[Dict[str, Any]]:
+    def vectors(self) -> list[dict[str, Any]]:
         """Load all vectors."""
         fixtures = _load_fixtures()
         return fixtures["vectors"]
 
-    def _can_test_vector(self, vector: Dict[str, Any]) -> bool:
+    def _can_test_vector(self, vector: dict[str, Any]) -> bool:
         """Check if we can test this vector with Python FSM validation.
 
         Some vectors test internal FSM transitions (_ADVANCE_TURN, RESIGN, TIMEOUT)
@@ -225,11 +225,11 @@ class TestFSMValidationVectors:
 
         return True
 
-    def _get_testable_vectors(self, vectors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _get_testable_vectors(self, vectors: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter vectors to only those testable with Python FSM."""
         return [v for v in vectors if self._can_test_vector(v)]
 
-    def test_ring_placement_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_ring_placement_vectors(self, vectors: list[dict[str, Any]]):
         """Test ring_placement phase vectors."""
         ring_placement_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -239,7 +239,7 @@ class TestFSMValidationVectors:
         for vector in ring_placement_vectors:
             self._run_validation_vector(vector)
 
-    def test_movement_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_movement_vectors(self, vectors: list[dict[str, Any]]):
         """Test movement phase vectors."""
         movement_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -249,7 +249,7 @@ class TestFSMValidationVectors:
         for vector in movement_vectors:
             self._run_validation_vector(vector)
 
-    def test_capture_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_capture_vectors(self, vectors: list[dict[str, Any]]):
         """Test capture phase vectors."""
         capture_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -259,7 +259,7 @@ class TestFSMValidationVectors:
         for vector in capture_vectors:
             self._run_validation_vector(vector)
 
-    def test_chain_capture_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_chain_capture_vectors(self, vectors: list[dict[str, Any]]):
         """Test chain_capture phase vectors."""
         chain_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -269,7 +269,7 @@ class TestFSMValidationVectors:
         for vector in chain_vectors:
             self._run_validation_vector(vector)
 
-    def test_line_processing_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_line_processing_vectors(self, vectors: list[dict[str, Any]]):
         """Test line_processing phase vectors."""
         line_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -279,7 +279,7 @@ class TestFSMValidationVectors:
         for vector in line_vectors:
             self._run_validation_vector(vector)
 
-    def test_territory_processing_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_territory_processing_vectors(self, vectors: list[dict[str, Any]]):
         """Test territory_processing phase vectors."""
         territory_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -289,7 +289,7 @@ class TestFSMValidationVectors:
         for vector in territory_vectors:
             self._run_validation_vector(vector)
 
-    def test_forced_elimination_vectors(self, vectors: List[Dict[str, Any]]):
+    def test_forced_elimination_vectors(self, vectors: list[dict[str, Any]]):
         """Test forced_elimination phase vectors."""
         fe_vectors = [
             v for v in self._get_testable_vectors(vectors)
@@ -299,7 +299,7 @@ class TestFSMValidationVectors:
         for vector in fe_vectors:
             self._run_validation_vector(vector)
 
-    def _run_validation_vector(self, vector: Dict[str, Any]):
+    def _run_validation_vector(self, vector: dict[str, Any]):
         """Run a single validation vector test."""
         input_data = vector["input"]
         expected = vector["expectedOutput"]

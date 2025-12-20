@@ -25,7 +25,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class VictoryType(Enum):
 
 
 # Training value of different victory types (0-1 scale)
-VICTORY_TYPE_VALUE: Dict[VictoryType, float] = {
+VICTORY_TYPE_VALUE: dict[VictoryType, float] = {
     VictoryType.RING: 1.0,
     VictoryType.RING_FORMATION: 1.0,
     VictoryType.ELIMINATION: 0.9,
@@ -108,7 +109,7 @@ class QualityScores:
     source_elo: float = 0.0
     tactical_content: float = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         return {
             "decisive_win": self.decisive_win,
             "game_length": self.game_length,
@@ -129,8 +130,8 @@ class GameQuality:
     scores: QualityScores
     victory_type: VictoryType
     move_count: int
-    source_file: Optional[str] = None
-    source_node: Optional[str] = None
+    source_file: str | None = None
+    source_node: str | None = None
 
     @property
     def quality_bucket(self) -> str:
@@ -174,8 +175,8 @@ class GameQualityScorer:
     def __init__(
         self,
         config_key: str = "square8_2p",
-        weights: Optional[QualityWeights] = None,
-        reference_time: Optional[datetime] = None,
+        weights: QualityWeights | None = None,
+        reference_time: datetime | None = None,
     ):
         """Initialize the scorer.
 
@@ -191,9 +192,9 @@ class GameQualityScorer:
 
     def score(
         self,
-        game: Dict[str, Any],
-        source_file: Optional[str] = None,
-        source_node: Optional[str] = None,
+        game: dict[str, Any],
+        source_file: str | None = None,
+        source_node: str | None = None,
     ) -> GameQuality:
         """Score a game's quality for training.
 
@@ -256,7 +257,7 @@ class GameQualityScorer:
             source_node=source_node,
         )
 
-    def _extract_game_id(self, game: Dict[str, Any]) -> str:
+    def _extract_game_id(self, game: dict[str, Any]) -> str:
         """Extract or generate a game ID."""
         if "game_id" in game:
             return game["game_id"]
@@ -264,7 +265,7 @@ class GameQualityScorer:
         content = json.dumps(game, sort_keys=True)
         return hashlib.md5(content.encode()).hexdigest()[:12]
 
-    def _extract_victory_type(self, game: Dict[str, Any]) -> VictoryType:
+    def _extract_victory_type(self, game: dict[str, Any]) -> VictoryType:
         """Extract victory type from game data."""
         vt_str = game.get("victory_type", "")
         if not vt_str:
@@ -276,7 +277,7 @@ class GameQualityScorer:
                 return VictoryType.STALEMATE
         return VictoryType.from_string(vt_str)
 
-    def _extract_move_count(self, game: Dict[str, Any]) -> int:
+    def _extract_move_count(self, game: dict[str, Any]) -> int:
         """Extract move count from game data."""
         if "move_count" in game:
             return game["move_count"]
@@ -284,7 +285,7 @@ class GameQualityScorer:
             return len(game["moves"])
         return 0
 
-    def _score_decisive_win(self, game: Dict[str, Any], victory_type: VictoryType) -> float:
+    def _score_decisive_win(self, game: dict[str, Any], victory_type: VictoryType) -> float:
         """Score based on whether the game had a decisive outcome."""
         winner = game.get("winner")
 
@@ -318,7 +319,7 @@ class GameQualityScorer:
         else:
             return 0.5 + 0.5 * (cfg.max_moves - move_count) / (cfg.max_moves - cfg.ideal_max)
 
-    def _score_move_diversity(self, moves: List[Any]) -> float:
+    def _score_move_diversity(self, moves: list[Any]) -> float:
         """Score based on move diversity (penalize repetitive play)."""
         if not moves:
             return 0.5
@@ -331,7 +332,7 @@ class GameQualityScorer:
         # Scale: 50% unique = 0.75, 100% unique = 1.0
         return min(1.0, 0.5 + diversity_ratio)
 
-    def _score_recency(self, game: Dict[str, Any]) -> float:
+    def _score_recency(self, game: dict[str, Any]) -> float:
         """Score based on how recent the game is."""
         timestamp = game.get("timestamp") or game.get("created_at")
 
@@ -364,14 +365,14 @@ class GameQualityScorer:
             logger.debug(f"Failed to parse timestamp: {e}")
             return 0.5
 
-    def _score_source_elo(self, game: Dict[str, Any]) -> float:
+    def _score_source_elo(self, game: dict[str, Any]) -> float:
         """Score based on the Elo of the model that generated the game."""
         elo = game.get("model_elo") or game.get("source_elo") or 1500
 
         # Normalize: 1200-2000 Elo range maps to 0.0-1.0
         return max(0.0, min(1.0, (elo - 1200) / 800))
 
-    def _score_tactical_content(self, game: Dict[str, Any], moves: List[Any]) -> float:
+    def _score_tactical_content(self, game: dict[str, Any], moves: list[Any]) -> float:
         """Score based on tactical complexity of the game."""
         score = 0.3  # Base score
 
@@ -399,8 +400,8 @@ class QualityFilter:
     def __init__(
         self,
         min_quality: float = 0.6,
-        max_games: Optional[int] = None,
-        exclude_victory_types: Optional[Set[VictoryType]] = None,
+        max_games: int | None = None,
+        exclude_victory_types: set[VictoryType] | None = None,
         min_moves: int = 10,
         max_moves: int = 500,
         deduplicate: bool = True,
@@ -424,8 +425,8 @@ class QualityFilter:
 
     def filter(
         self,
-        games: Iterator[Tuple[GameQuality, Dict[str, Any]]],
-    ) -> List[Tuple[GameQuality, Dict[str, Any]]]:
+        games: Iterator[tuple[GameQuality, dict[str, Any]]],
+    ) -> list[tuple[GameQuality, dict[str, Any]]]:
         """Filter games based on quality criteria.
 
         Args:
@@ -434,8 +435,8 @@ class QualityFilter:
         Returns:
             Filtered and sorted list of (GameQuality, game_data) tuples
         """
-        seen_ids: Set[str] = set()
-        filtered: List[Tuple[GameQuality, Dict[str, Any]]] = []
+        seen_ids: set[str] = set()
+        filtered: list[tuple[GameQuality, dict[str, Any]]] = []
 
         for quality, game_data in games:
             # Check quality threshold
@@ -479,12 +480,12 @@ class QualityStats:
     total_games: int = 0
     filtered_games: int = 0
     avg_quality: float = 0.0
-    quality_distribution: Dict[str, int] = field(default_factory=dict)
-    victory_type_distribution: Dict[str, int] = field(default_factory=dict)
+    quality_distribution: dict[str, int] = field(default_factory=dict)
+    victory_type_distribution: dict[str, int] = field(default_factory=dict)
     avg_move_count: float = 0.0
-    source_distribution: Dict[str, int] = field(default_factory=dict)
+    source_distribution: dict[str, int] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "total_games": self.total_games,
             "filtered_games": self.filtered_games,
@@ -496,7 +497,7 @@ class QualityStats:
         }
 
 
-def compute_quality_stats(qualities: List[GameQuality]) -> QualityStats:
+def compute_quality_stats(qualities: list[GameQuality]) -> QualityStats:
     """Compute statistics from a list of quality assessments."""
     if not qualities:
         return QualityStats()

@@ -46,12 +46,12 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 class JSONLArchiver:
     """Archives processed JSONL files."""
 
-    def __init__(self, archive_dir: Optional[Path] = None):
+    def __init__(self, archive_dir: Path | None = None):
         self.archive_dir = archive_dir or AI_SERVICE_ROOT / "data" / "archives" / "jsonl"
         self.manifest_path = self.archive_dir / "archive_manifest.json"
-        self.manifest: Dict[str, Any] = self._load_manifest()
+        self.manifest: dict[str, Any] = self._load_manifest()
 
-    def _load_manifest(self) -> Dict[str, Any]:
+    def _load_manifest(self) -> dict[str, Any]:
         """Load or create archive manifest."""
         if self.manifest_path.exists():
             with open(self.manifest_path) as f:
@@ -76,7 +76,7 @@ class JSONLArchiver:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    def find_jsonl_files(self, min_age_hours: int = 24) -> List[Path]:
+    def find_jsonl_files(self, min_age_hours: int = 24) -> list[Path]:
         """Find JSONL files older than min_age_hours."""
         selfplay_dir = AI_SERVICE_ROOT / "data" / "selfplay"
         cutoff = time.time() - (min_age_hours * 3600)
@@ -111,7 +111,7 @@ class JSONLArchiver:
             logger.warning(f"Verification failed for {jsonl_path}: {e}")
             return False
 
-    def archive_file(self, jsonl_path: Path, dry_run: bool = False) -> Optional[Dict[str, Any]]:
+    def archive_file(self, jsonl_path: Path, dry_run: bool = False) -> dict[str, Any] | None:
         """Archive a single JSONL file."""
         if not jsonl_path.exists():
             return None
@@ -172,7 +172,7 @@ class JSONLArchiver:
         }
 
     def run(self, min_age_hours: int = 24, dry_run: bool = False,
-            verify_db: Optional[Path] = None) -> Dict[str, Any]:
+            verify_db: Path | None = None) -> dict[str, Any]:
         """Run the archival process."""
         results = {
             "files_processed": 0,

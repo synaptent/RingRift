@@ -148,7 +148,7 @@ def run_ts_invariant_soak() -> bool:
     return True
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a small invariant soak across canonical_* DBs (Python) and optionally TS orchestrator."
     )

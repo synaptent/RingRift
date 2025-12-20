@@ -56,7 +56,7 @@ class ExportConfig:
     """Export configuration for a board/player combination."""
     board_type: str
     num_players: int
-    db_patterns: List[str] = field(default_factory=list)
+    db_patterns: list[str] = field(default_factory=list)
     output_prefix: str = ""
     min_new_games: int = 100  # Minimum new games before re-export
     encoder_version: str = "v3"
@@ -153,9 +153,9 @@ DEFAULT_CONFIGS = [
 @dataclass
 class ExportState:
     """Tracks export state for incremental processing."""
-    last_export_time: Dict[str, float] = field(default_factory=dict)
-    last_game_count: Dict[str, int] = field(default_factory=dict)
-    last_export_hash: Dict[str, str] = field(default_factory=dict)
+    last_export_time: dict[str, float] = field(default_factory=dict)
+    last_game_count: dict[str, int] = field(default_factory=dict)
+    last_export_hash: dict[str, str] = field(default_factory=dict)
 
 
 # Use StateManager for persistent state
@@ -172,7 +172,7 @@ def save_state(state: ExportState) -> None:
     _state_manager.save(state)
 
 
-def find_databases(config: ExportConfig) -> List[Path]:
+def find_databases(config: ExportConfig) -> list[Path]:
     """Find all database files matching the config patterns."""
     databases = []
     for pattern in config.db_patterns:
@@ -190,7 +190,7 @@ def find_databases(config: ExportConfig) -> List[Path]:
     return databases
 
 
-def count_available_games(databases: List[Path]) -> int:
+def count_available_games(databases: list[Path]) -> int:
     """Count total available games across all databases."""
     total = 0
     for db_path in databases:
@@ -208,7 +208,7 @@ def count_available_games(databases: List[Path]) -> int:
     return total
 
 
-def run_export(config: ExportConfig, databases: List[Path]) -> Tuple[bool, str]:
+def run_export(config: ExportConfig, databases: list[Path]) -> tuple[bool, str]:
     """Run the export script for a configuration."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = TRAINING_DIR / f"{config.output_prefix}_auto_{timestamp}.npz"
@@ -264,7 +264,7 @@ def run_export(config: ExportConfig, databases: List[Path]) -> Tuple[bool, str]:
         return False, str(e)
 
 
-def should_export(config: ExportConfig, state: ExportState, databases: List[Path]) -> bool:
+def should_export(config: ExportConfig, state: ExportState, databases: list[Path]) -> bool:
     """Determine if export should run for this configuration."""
     key = f"{config.board_type}_{config.num_players}p"
 
@@ -311,7 +311,7 @@ def process_config(config: ExportConfig, state: ExportState) -> bool:
     return False
 
 
-def run_once(board_filter: Optional[str] = None, players_filter: Optional[int] = None) -> int:
+def run_once(board_filter: str | None = None, players_filter: int | None = None) -> int:
     """Run export once for all configurations."""
     logger.info("=" * 60)
     logger.info("Starting automated training data export")

@@ -10,7 +10,7 @@ from app.models import BoardType
 
 
 class _DummyNeuralNet:
-    def __init__(self, *, model: object, call_sizes: List[int]) -> None:
+    def __init__(self, *, model: object, call_sizes: list[int]) -> None:
         self.device = "cuda"
         self.model = model
         self.history_length = 3

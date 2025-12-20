@@ -199,13 +199,13 @@ class SystemHealth:
         errors: List of error messages
     """
     timestamp: float = field(default_factory=time.time)
-    disk: Optional[DiskHealth] = None
-    memory: Optional[MemoryHealth] = None
-    cpu: Optional[CPUHealth] = None
-    gpus: List[GPUInfo] = field(default_factory=list)
+    disk: DiskHealth | None = None
+    memory: MemoryHealth | None = None
+    cpu: CPUHealth | None = None
+    gpus: list[GPUInfo] = field(default_factory=list)
     is_healthy: bool = True
-    warnings: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def disk_percent(self) -> float:
@@ -247,7 +247,7 @@ class ServiceHealth:
     response_time_ms: float = 0.0
     status_code: int = 0
     error: str = ""
-    response_data: Dict[str, Any] = field(default_factory=dict)
+    response_data: dict[str, Any] = field(default_factory=dict)
 
 
 def check_disk_space(path: Union[str, Path] = "/") -> DiskHealth:
@@ -404,7 +404,7 @@ def check_cpu() -> CPUHealth:
     )
 
 
-def check_gpus() -> List[GPUInfo]:
+def check_gpus() -> list[GPUInfo]:
     """Check GPU status using nvidia-smi.
 
     Returns:
@@ -494,8 +494,8 @@ def check_http_health(
     url: str,
     timeout: float = 10.0,
     expected_status: int = 200,
-    json_field: Optional[str] = None,
-    headers: Optional[Dict[str, str]] = None,
+    json_field: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> ServiceHealth:
     """Check health of an HTTP service.
 
@@ -592,10 +592,10 @@ def check_port_open(
 
 
 def check_process_health(
-    pid: Optional[int] = None,
-    pattern: Optional[str] = None,
+    pid: int | None = None,
+    pattern: str | None = None,
     min_count: int = 1,
-) -> Tuple[bool, int]:
+) -> tuple[bool, int]:
     """Check if processes are running.
 
     Args:

@@ -358,9 +358,9 @@ class TrainingScheduler:
         config: TrainingConfig,
         state: "UnifiedLoopState",
         event_bus: "EventBus",
-        feedback_config: Optional[FeedbackConfig] = None,
-        feedback: Optional["PipelineFeedbackController"] = None,
-        config_priority: Optional["ConfigPriorityQueue"] = None
+        feedback_config: FeedbackConfig | None = None,
+        feedback: "PipelineFeedbackController" | None = None,
+        config_priority: "ConfigPriorityQueue" | None = None
     ):
         # Import ConfigPriorityQueue at runtime to avoid circular imports
         from scripts.unified_ai_loop import ConfigPriorityQueue as CPQ
@@ -371,26 +371,26 @@ class TrainingScheduler:
         self.feedback_config = feedback_config or FeedbackConfig()
         self.feedback = feedback
         self.config_priority = config_priority or CPQ()
-        self._training_process: Optional[asyncio.subprocess.Process] = None
+        self._training_process: asyncio.subprocess.Process | None = None
         # Dynamic threshold tracking (for promotion velocity calculation)
-        self._promotion_history: List[float] = []  # Timestamps of recent promotions
-        self._training_history: List[float] = []   # Timestamps of recent training runs
+        self._promotion_history: list[float] = []  # Timestamps of recent promotions
+        self._training_history: list[float] = []   # Timestamps of recent training runs
         # Per-config training coordination (allows parallel training of different configs)
-        self._training_locks: Dict[str, int] = {}  # config_key -> fd
-        self._training_lock_paths: Dict[str, Path] = {}
+        self._training_locks: dict[str, int] = {}  # config_key -> fd
+        self._training_lock_paths: dict[str, Path] = {}
         self._max_concurrent_training = 3  # Allow up to 3 parallel training runs
         # Calibration tracking (per config)
-        self._calibration_trackers: Dict[str, Any] = {}
+        self._calibration_trackers: dict[str, Any] = {}
         if HAS_VALUE_CALIBRATION:
             for config_key in state.configs:
                 self._calibration_trackers[config_key] = CalibrationTracker(window_size=1000)
         # Temperature scheduler for self-play exploration
-        self._temp_scheduler: Optional[Any] = None
+        self._temp_scheduler: Any | None = None
         if HAS_TEMPERATURE_SCHEDULING:
             self._temp_scheduler = create_temp_scheduler(state.current_temperature_preset or "default")
 
         # Simplified 3-signal trigger system (2024-12)
-        self._simplified_triggers: Optional[Any] = None
+        self._simplified_triggers: Any | None = None
         if HAS_SIMPLIFIED_TRIGGERS and getattr(config, 'use_simplified_triggers', True):
             trigger_cfg = TriggerConfig(
                 freshness_threshold=config.trigger_threshold_games,
@@ -404,15 +404,15 @@ class TrainingScheduler:
             print("[Training] Using simplified 3-signal trigger system")
 
         # Curriculum feedback loop (2024-12)
-        self._curriculum_feedback: Optional[Any] = None
+        self._curriculum_feedback: Any | None = None
         if HAS_CURRICULUM_FEEDBACK:
             self._curriculum_feedback = get_curriculum_feedback()
             print("[Training] Using curriculum feedback loop for adaptive weights")
 
         # Advanced training utilities (2025-12)
-        self._pfsp_pool: Optional[Any] = None
-        self._cmaes_auto_tuner: Optional[Any] = None
-        self._gradient_checkpointing: Optional[Any] = None
+        self._pfsp_pool: Any | None = None
+        self._cmaes_auto_tuner: Any | None = None
+        self._gradient_checkpointing: Any | None = None
 
         if HAS_ADVANCED_TRAINING:
             # Initialize PFSP opponent pool
@@ -426,7 +426,7 @@ class TrainingScheduler:
                 print("[Training] PFSP opponent pool initialized")
 
             # Initialize CMA-ES auto-tuner (per config)
-            self._cmaes_auto_tuners: Dict[str, Any] = {}
+            self._cmaes_auto_tuners: dict[str, Any] = {}
             if getattr(config, 'use_cmaes_auto_tuning', True):
                 for config_key in state.configs:
                     parts = config_key.rsplit("_", 1)
@@ -455,16 +455,16 @@ class TrainingScheduler:
             print("[Training] Elo-based checkpoint selection enabled")
 
         # Bottleneck fix integrations (2025-12)
-        self._streaming_pipelines: Dict[str, Any] = {}
-        self._async_validator: Optional[Any] = None
-        self._connection_pool: Optional[Any] = None
+        self._streaming_pipelines: dict[str, Any] = {}
+        self._async_validator: Any | None = None
+        self._connection_pool: Any | None = None
         self._parity_failure_rate: float = 0.0  # Track parity failures for training decisions
         # Execution backend for remote training dispatch (coordinator mode)
-        self._backend: Optional["OrchestratorBackend"] = None
+        self._backend: "OrchestratorBackend" | None = None
         # Auto-recovery state (Phase 7)
-        self._retry_attempts: Dict[str, int] = {}  # config_key -> retry count
-        self._last_failure_time: Dict[str, float] = {}  # config_key -> timestamp
-        self._pending_retries: List[Tuple[str, float]] = []  # (config_key, scheduled_time)
+        self._retry_attempts: dict[str, int] = {}  # config_key -> retry count
+        self._last_failure_time: dict[str, float] = {}  # config_key -> timestamp
+        self._pending_retries: list[tuple[str, float]] = []  # (config_key, scheduled_time)
 
         # Initialize streaming pipelines for each config
         if HAS_STREAMING_PIPELINE and getattr(config, 'use_streaming_pipeline', True):
@@ -506,7 +506,7 @@ class TrainingScheduler:
                 print("[Training] Connection pool enabled for database operations")
 
         # Circuit breaker for training operations (2025-12)
-        self._circuit_breaker: Optional[Any] = None
+        self._circuit_breaker: Any | None = None
         if HAS_CIRCUIT_BREAKER:
             # Use the singleton registry and get/create a breaker for training operations
             self._circuit_breaker = CircuitBreakerRegistry.get_instance().get_breaker("training")
@@ -514,20 +514,20 @@ class TrainingScheduler:
 
         # Retry policy configuration (2025-12)
         # RetryPolicy provides dicts with: max_retries, base_delay, max_delay, exponential_base
-        self._retry_policy: Optional[Dict[str, Any]] = None
+        self._retry_policy: dict[str, Any] | None = None
         if HAS_RETRY_POLICY:
             # Use CONSERVATIVE policy for training (important operations)
             self._retry_policy = RetryPolicy.CONSERVATIVE
             print(f"[Training] Using CONSERVATIVE retry policy (max_retries={self._retry_policy['max_retries']})")
 
         # Data sync service reference for pre-training sync (P5)
-        self._sync_service: Optional[Any] = None
-        self._manifest: Optional[Any] = None
+        self._sync_service: Any | None = None
+        self._manifest: Any | None = None
         self._pre_training_sync_enabled = getattr(config, 'pre_training_sync', True)
         self._pre_training_sync_min_quality = getattr(config, 'pre_training_sync_min_quality', 0.6)
         self._pre_training_sync_limit = getattr(config, 'pre_training_sync_limit', 500)
         # Track games consumed per training run for quality feedback
-        self._training_consumed_games: Dict[str, List[str]] = {}  # config_key -> [game_ids]
+        self._training_consumed_games: dict[str, list[str]] = {}  # config_key -> [game_ids]
 
         # Initialize manifest directly for pre-training sync (quality-aware data sync)
         if HAS_DATA_MANIFEST and self._pre_training_sync_enabled:
@@ -600,7 +600,7 @@ class TrainingScheduler:
             return 0
 
     async def _update_source_quality_after_training(
-        self, config_key: str, training_result: Dict[str, Any]
+        self, config_key: str, training_result: dict[str, Any]
     ) -> None:
         """Update source quality in manifest based on training results.
 
@@ -646,7 +646,7 @@ class TrainingScheduler:
         except Exception as e:
             print(f"[Training] Error in source quality update: {e}")
 
-    def get_training_quality_stats(self, config_key: str) -> Dict[str, Any]:
+    def get_training_quality_stats(self, config_key: str) -> dict[str, Any]:
         """Get quality statistics for a training configuration.
 
         Returns stats about games consumed, quality distribution, and manifest state.
@@ -876,7 +876,7 @@ class TrainingScheduler:
         if self._simplified_triggers is not None:
             self._simplified_triggers.record_training_complete(config_key, games_at_training)
 
-    def get_next_training_config_simplified(self) -> Optional[str]:
+    def get_next_training_config_simplified(self) -> str | None:
         """Get the highest priority config that should train using simplified system."""
         if self._simplified_triggers is None:
             return None
@@ -917,7 +917,7 @@ class TrainingScheduler:
                 config_key, winner, model_elo, opponent_type="selfplay"
             )
 
-    def get_curriculum_weights(self) -> Dict[str, float]:
+    def get_curriculum_weights(self) -> dict[str, float]:
         """Get curriculum weights for all configs.
 
         Returns:
@@ -937,7 +937,7 @@ class TrainingScheduler:
         weights = self.get_curriculum_weights()
         return weights.get(config_key, 1.0)
 
-    def get_training_quality(self, config_key: str) -> Dict[str, Any]:
+    def get_training_quality(self, config_key: str) -> dict[str, Any]:
         """Get training quality metrics for feedback to selfplay.
 
         This enables the selfplay generator to adjust engine selection
@@ -954,7 +954,7 @@ class TrainingScheduler:
             - last_val_loss: Most recent validation loss
             - parity_failure_rate: Rate of parity validation failures
         """
-        quality: Dict[str, Any] = {
+        quality: dict[str, Any] = {
             'loss_plateau': False,
             'overfit_detected': False,
             'last_val_loss': None,
@@ -1210,7 +1210,7 @@ class TrainingScheduler:
                 continue
         return count
 
-    def should_trigger_training(self) -> Optional[str]:
+    def should_trigger_training(self) -> str | None:
         """Check if training should be triggered. Returns config key or None.
 
         Supports parallel training: different configs can train simultaneously,
@@ -1709,7 +1709,7 @@ class TrainingScheduler:
                     "--distill-temperature", str(self.config.distill_temperature),
                 ])
 
-            
+
             # 2024-12 Advanced Training Improvements
             if getattr(self.config, 'use_value_whitening', True):
                 cmd.extend([
@@ -1951,8 +1951,8 @@ class TrainingScheduler:
         db_path: Path,
         epochs: int,
         run_dir: Path,
-        jsonl_path: Optional[Path] = None,
-    ) -> Optional[asyncio.subprocess.Process]:
+        jsonl_path: Path | None = None,
+    ) -> asyncio.subprocess.Process | None:
         """Start NNUE policy training with advanced optimizations.
 
         Uses the new training features: SWA, EMA, progressive batching,
@@ -2068,7 +2068,7 @@ class TrainingScheduler:
             print(f"[Training] Error starting NNUE policy training: {e}")
             return None
 
-    async def check_training_status(self) -> Optional[Dict[str, Any]]:
+    async def check_training_status(self) -> dict[str, Any] | None:
         """Check if current training has completed."""
         if not self.state.training_in_progress or not self._training_process:
             return None
@@ -2204,7 +2204,7 @@ class TrainingScheduler:
 
         return None
 
-    async def _run_calibration_analysis(self, config_key: str) -> Optional[Dict[str, Any]]:
+    async def _run_calibration_analysis(self, config_key: str) -> dict[str, Any] | None:
         """Run value calibration analysis on recent training data."""
         if not HAS_VALUE_CALIBRATION:
             return None
@@ -2230,7 +2230,7 @@ class TrainingScheduler:
             print(f"[Calibration] Error analyzing {config_key}: {e}")
             return None
 
-    def _get_latest_model_path(self, config_key: str) -> Optional[Path]:
+    def _get_latest_model_path(self, config_key: str) -> Path | None:
         """Get the path to the latest trained model for a config."""
         try:
             models_dir = AI_SERVICE_ROOT / "models"
@@ -2387,7 +2387,7 @@ class TrainingScheduler:
             import traceback
             traceback.print_exc()
 
-    def get_pfsp_opponent(self, config_key: str) -> Optional[str]:
+    def get_pfsp_opponent(self, config_key: str) -> str | None:
         """Get a PFSP-selected opponent for selfplay."""
         if self._pfsp_pool is None:
             return None
@@ -2406,7 +2406,7 @@ class TrainingScheduler:
         except Exception as e:
             print(f"[PFSP] Error updating stats: {e}")
 
-    def get_temperature_for_move(self, move_number: int, game_state: Optional[Any] = None) -> float:
+    def get_temperature_for_move(self, move_number: int, game_state: Any | None = None) -> float:
         """Get exploration temperature for a given move in self-play."""
         if self._temp_scheduler is None:
             return 1.0
@@ -2417,7 +2417,7 @@ class TrainingScheduler:
         if self._temp_scheduler is not None:
             self._temp_scheduler.set_training_progress(progress)
 
-    async def request_urgent_training(self, configs: List[str], reason: str) -> bool:
+    async def request_urgent_training(self, configs: list[str], reason: str) -> bool:
         """Request urgent training for specified configs due to feedback signal."""
         if self.state.training_in_progress:
             print(f"[Training] Urgent training request deferred: training already in progress")
@@ -2445,7 +2445,7 @@ class TrainingScheduler:
     # Advanced Training Utilities (2025-12)
     # =========================================================================
 
-    def get_pfsp_opponent(self, config_key: str, current_elo: float = INITIAL_ELO_RATING) -> Optional[str]:
+    def get_pfsp_opponent(self, config_key: str, current_elo: float = INITIAL_ELO_RATING) -> str | None:
         """Get an opponent from PFSP pool for self-play.
 
         Args:
@@ -2469,7 +2469,7 @@ class TrainingScheduler:
         model_path: str,
         elo: float = INITIAL_ELO_RATING,
         generation: int = 0,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> None:
         """Add an opponent to the PFSP pool.
 
@@ -2500,7 +2500,7 @@ class TrainingScheduler:
         if self._pfsp_pool is not None:
             self._pfsp_pool.update_stats(model_path, won, drew, elo_change)
 
-    def get_pfsp_pool_stats(self) -> Dict[str, Any]:
+    def get_pfsp_pool_stats(self) -> dict[str, Any]:
         """Get PFSP opponent pool statistics."""
         if self._pfsp_pool is not None:
             return self._pfsp_pool.get_pool_stats()
@@ -2509,9 +2509,9 @@ class TrainingScheduler:
     def update_cmaes_metrics(
         self,
         config_key: str,
-        current_elo: Optional[float] = None,
-        current_loss: Optional[float] = None,
-        current_win_rate: Optional[float] = None,
+        current_elo: float | None = None,
+        current_loss: float | None = None,
+        current_win_rate: float | None = None,
     ) -> None:
         """Update CMA-ES auto-tuner with current training metrics.
 
@@ -2538,7 +2538,7 @@ class TrainingScheduler:
             return self._cmaes_auto_tuners[config_key].should_tune()
         return False
 
-    async def run_cmaes_auto_tuning(self, config_key: str) -> Optional[Dict[str, Any]]:
+    async def run_cmaes_auto_tuning(self, config_key: str) -> dict[str, Any] | None:
         """Run CMA-ES hyperparameter optimization for a config.
 
         Args:
@@ -2572,7 +2572,7 @@ class TrainingScheduler:
 
         return result
 
-    def get_cmaes_status(self, config_key: str) -> Dict[str, Any]:
+    def get_cmaes_status(self, config_key: str) -> dict[str, Any]:
         """Get CMA-ES auto-tuner status for a config."""
         if hasattr(self, '_cmaes_auto_tuners') and config_key in self._cmaes_auto_tuners:
             return self._cmaes_auto_tuners[config_key].get_status()
@@ -2632,7 +2632,7 @@ class TrainingScheduler:
             except Exception:
                 pass
 
-    def get_streaming_stats(self, config_key: Optional[str] = None) -> Dict[str, Any]:
+    def get_streaming_stats(self, config_key: str | None = None) -> dict[str, Any]:
         """Get streaming pipeline statistics.
 
         Args:
@@ -2694,7 +2694,7 @@ class TrainingScheduler:
             return True
         return False
 
-    def get_async_validator_report(self) -> Dict[str, Any]:
+    def get_async_validator_report(self) -> dict[str, Any]:
         """Get async shadow validation report.
 
         Returns:
@@ -2714,7 +2714,7 @@ class TrainingScheduler:
             return self._async_validator.check_error()
         return False
 
-    def get_connection_pool_stats(self) -> Dict[str, Any]:
+    def get_connection_pool_stats(self) -> dict[str, Any]:
         """Get connection pool statistics.
 
         Returns:
@@ -2724,7 +2724,7 @@ class TrainingScheduler:
             return self._connection_pool.get_stats()
         return {'enabled': False}
 
-    def get_bottleneck_fix_status(self) -> Dict[str, Any]:
+    def get_bottleneck_fix_status(self) -> dict[str, Any]:
         """Get comprehensive status of all bottleneck fix integrations.
 
         Returns:
@@ -2789,7 +2789,7 @@ class TrainingScheduler:
         # Recompute urgency
         feedback.compute_urgency()
 
-    def get_config_feedback(self, config_key: str) -> Optional[FeedbackState]:
+    def get_config_feedback(self, config_key: str) -> FeedbackState | None:
         """Get consolidated FeedbackState for a config.
 
         Args:
@@ -2809,10 +2809,10 @@ class TrainingScheduler:
     def update_config_feedback(
         self,
         config_key: str,
-        elo: Optional[float] = None,
-        win_rate: Optional[float] = None,
-        parity_passed: Optional[bool] = None,
-        curriculum_weight: Optional[float] = None,
+        elo: float | None = None,
+        win_rate: float | None = None,
+        parity_passed: bool | None = None,
+        curriculum_weight: float | None = None,
     ) -> None:
         """Update feedback signals for a config.
 
@@ -2863,7 +2863,7 @@ class TrainingScheduler:
         # Recompute urgency after updates
         feedback.compute_urgency()
 
-    def get_all_feedback_states(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_feedback_states(self) -> dict[str, dict[str, Any]]:
         """Get consolidated feedback states for all configs.
 
         Returns:
@@ -2876,7 +2876,7 @@ class TrainingScheduler:
                 result[config_key] = feedback.to_dict()
         return result
 
-    def get_most_urgent_config(self) -> Optional[str]:
+    def get_most_urgent_config(self) -> str | None:
         """Get the config with highest training urgency.
 
         Uses the consolidated FeedbackState urgency score to
@@ -2921,7 +2921,7 @@ class TrainingScheduler:
         plateau_threshold = getattr(self.feedback_config, 'plateau_count_for_cmaes', 2)
         return feedback.elo_plateau_count >= plateau_threshold
 
-    def get_feedback_summary(self) -> Dict[str, Any]:
+    def get_feedback_summary(self) -> dict[str, Any]:
         """Get summary of all feedback signals across configs.
 
         Returns:
@@ -2951,7 +2951,7 @@ class TrainingScheduler:
     # Training Auto-Recovery (Phase 7)
     # =========================================================================
 
-    def schedule_training_retry(self, config_key: str) -> Optional[float]:
+    def schedule_training_retry(self, config_key: str) -> float | None:
         """Schedule a retry for a failed training run.
 
         Uses exponential backoff with jitter based on retry count. Returns the
@@ -3040,7 +3040,7 @@ class TrainingScheduler:
             (k, t) for k, t in self._pending_retries if k != config_key
         ]
 
-    def get_pending_retry(self) -> Optional[str]:
+    def get_pending_retry(self) -> str | None:
         """Get a config that is due for retry.
 
         Returns:
@@ -3089,7 +3089,7 @@ class TrainingScheduler:
             self.schedule_training_retry(config_key)
             return False
 
-    def get_retry_status(self) -> Dict[str, Any]:
+    def get_retry_status(self) -> dict[str, Any]:
         """Get current retry status for all configs.
 
         Returns:
@@ -3115,7 +3115,7 @@ class TrainingScheduler:
     # Post-Promotion Warmup (Phase 7)
     # =========================================================================
 
-    def is_in_warmup_period(self, config_key: str) -> Tuple[bool, str]:
+    def is_in_warmup_period(self, config_key: str) -> tuple[bool, str]:
         """Check if config is in post-promotion warmup period.
 
         After a model is promoted, we wait for:
@@ -3154,7 +3154,7 @@ class TrainingScheduler:
 
         return False, "warmup_complete"
 
-    def get_warmup_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_warmup_status(self) -> dict[str, dict[str, Any]]:
         """Get warmup status for all configs.
 
         Returns:
@@ -3350,7 +3350,7 @@ class TrainingScheduler:
 
         return config_hash < threshold
 
-    def get_ab_test_assignments(self) -> Dict[str, str]:
+    def get_ab_test_assignments(self) -> dict[str, str]:
         """Get A/B test group assignments for all configs.
 
         Returns:
@@ -3361,7 +3361,7 @@ class TrainingScheduler:
             for config_key in self.state.configs
         }
 
-    def get_hyperparameters_for_config(self, config_key: str) -> Dict[str, Any]:
+    def get_hyperparameters_for_config(self, config_key: str) -> dict[str, Any]:
         """Get hyperparameters for a config, applying A/B test overrides.
 
         Args:

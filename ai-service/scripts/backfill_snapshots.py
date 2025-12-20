@@ -40,8 +40,8 @@ DEFAULT_SNAPSHOT_INTERVAL = 20
 def get_games_needing_snapshots(
     conn: sqlite3.Connection,
     snapshot_interval: int,
-    limit: Optional[int] = None,
-) -> List[Tuple[str, int]]:
+    limit: int | None = None,
+) -> list[tuple[str, int]]:
     """Find games that need snapshot backfill.
 
     Returns list of (game_id, move_count) tuples for games that:
@@ -90,7 +90,7 @@ def get_games_needing_snapshots(
 def get_game_data(
     conn: sqlite3.Connection,
     game_id: str,
-) -> Tuple[Optional[GameState], List[Move]]:
+) -> tuple[GameState | None, list[Move]]:
     """Load initial state and moves for a game."""
     cursor = conn.cursor()
 
@@ -211,9 +211,9 @@ def backfill_game(
 def backfill_database(
     db_path: str,
     snapshot_interval: int = DEFAULT_SNAPSHOT_INTERVAL,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     dry_run: bool = False,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Backfill snapshots for all games in the database.
 
     Returns (games_processed, snapshots_created).

@@ -52,7 +52,7 @@ def test_format_results_json_includes_ci_and_win_rate() -> None:
     """format_results_json exposes win-rate and CI needed for promotion decisions."""
     results = _make_results(player1_wins=7, player2_wins=3)
 
-    payload: Dict[str, Any] = format_results_json(results)
+    payload: dict[str, Any] = format_results_json(results)
     res = payload["results"]
 
     assert res["player1_wins"] == 7

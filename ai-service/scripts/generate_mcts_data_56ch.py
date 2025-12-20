@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("generate_mcts_56ch")
 
 
-def extract_mcts_quality(mcts_ai: GumbelMCTSAI, valid_moves: List) -> List[Tuple[int, float]]:
+def extract_mcts_quality(mcts_ai: GumbelMCTSAI, valid_moves: list) -> list[tuple[int, float]]:
     """Extract move quality labels from MCTS search results."""
     if mcts_ai._last_search_actions is None:
         return []
@@ -67,7 +67,7 @@ def generate_data(
     num_games: int = 100,
     mcts_simulations: int = 100,
     board_type: BoardType = BoardType.SQUARE8,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Generate 56-channel training data with MCTS labels."""
     engine = GameEngine()
     nn = NeuralNetAI(1, AIConfig(difficulty=5))

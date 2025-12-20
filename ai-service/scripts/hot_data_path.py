@@ -80,15 +80,15 @@ class HotPathConfig:
 @dataclass
 class HotPathState:
     """Persistent state for hot path training."""
-    last_processed_game_id: Optional[str] = None
+    last_processed_game_id: str | None = None
     total_games_processed: int = 0
     batches_since_eval: int = 0
     current_model_version: int = 0
     promotions: int = 0
-    last_update_time: Optional[str] = None
-    training_history: List[Dict[str, Any]] = field(default_factory=list)
+    last_update_time: str | None = None
+    training_history: list[dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "last_processed_game_id": self.last_processed_game_id,
             "total_games_processed": self.total_games_processed,
@@ -100,7 +100,7 @@ class HotPathState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "HotPathState":
+    def from_dict(cls, data: dict[str, Any]) -> "HotPathState":
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
@@ -132,7 +132,7 @@ class HotDataPath:
         with open(self.config.state_file, 'w') as f:
             json.dump(self.state.to_dict(), f, indent=2)
 
-    def get_new_games(self) -> List[Path]:
+    def get_new_games(self) -> list[Path]:
         """Find selfplay databases with new games."""
         game_dbs = []
 
@@ -153,7 +153,7 @@ class HotDataPath:
 
         return sorted(game_dbs, key=lambda p: p.stat().st_mtime, reverse=True)
 
-    def count_new_games(self, db_paths: List[Path]) -> int:
+    def count_new_games(self, db_paths: list[Path]) -> int:
         """Count total games available for training."""
         total = 0
         for db_path in db_paths:
@@ -167,9 +167,9 @@ class HotDataPath:
 
     def export_training_batch(
         self,
-        db_paths: List[Path],
+        db_paths: list[Path],
         max_games: int
-    ) -> Tuple[bool, Path]:
+    ) -> tuple[bool, Path]:
         """Export a batch of games for training using 'played' policy."""
         output_dir = self.config.data_dir / "batches"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -200,7 +200,7 @@ class HotDataPath:
 
         return output_path.exists(), output_path
 
-    def get_current_model(self) -> Optional[Path]:
+    def get_current_model(self) -> Path | None:
         """Get the current best model for this config."""
         # Check for hot path model first
         hot_model = self.config.checkpoint_dir / f"hot_{self.config.board_type}_{self.config.num_players}p_v{self.state.current_model_version}.pth"
@@ -228,7 +228,7 @@ class HotDataPath:
         decay_steps = (self.state.total_games_processed - self.config.lr_warmup_games) // 10000
         return base_lr * (self.config.lr_decay_factor ** decay_steps)
 
-    def train_on_batch(self, batch_path: Path) -> Tuple[bool, Optional[Path]]:
+    def train_on_batch(self, batch_path: Path) -> tuple[bool, Path | None]:
         """Train model on a batch of data."""
         current_model = self.get_current_model()
         new_version = self.state.current_model_version + 1
@@ -269,7 +269,7 @@ class HotDataPath:
 
         return False, None
 
-    def evaluate_and_promote(self, new_model: Path) -> Tuple[bool, float]:
+    def evaluate_and_promote(self, new_model: Path) -> tuple[bool, float]:
         """Evaluate new model against baseline and promote if improved."""
         baseline = self._get_baseline_model()
         if not baseline or not baseline.exists():
@@ -320,7 +320,7 @@ class HotDataPath:
 
         return False, 0.0
 
-    def _get_baseline_model(self) -> Optional[Path]:
+    def _get_baseline_model(self) -> Path | None:
         """Get the current production baseline model."""
         token = {"square8": "sq8", "square19": "sq19", "hexagonal": "hex"}.get(
             self.config.board_type, "sq8"

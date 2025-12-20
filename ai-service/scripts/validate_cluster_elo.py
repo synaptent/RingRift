@@ -45,7 +45,7 @@ except ImportError:
 LOCAL_ELO_DB = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 
-def get_cluster_nodes_for_validation() -> List[Tuple[str, str]]:
+def get_cluster_nodes_for_validation() -> list[tuple[str, str]]:
     """Get cluster nodes for validation.
 
     Uses scripts.lib.hosts module (preferred), falls back to app.sync,
@@ -70,7 +70,7 @@ def get_cluster_nodes_for_validation() -> List[Tuple[str, str]]:
     return _load_hosts_from_yaml()
 
 
-def _load_hosts_from_yaml() -> List[Tuple[str, str]]:
+def _load_hosts_from_yaml() -> list[tuple[str, str]]:
     """Load cluster nodes directly from YAML (legacy fallback)."""
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
     if not config_path.exists():
@@ -144,7 +144,7 @@ CLUSTER_NODES = get_cluster_nodes_for_validation()
 ELO_DIVERGENCE_THRESHOLD = get_divergence_threshold()
 
 
-def fetch_elo_from_node(host: str, port: int = 8770, timeout: int = 10) -> Optional[Dict[str, Any]]:
+def fetch_elo_from_node(host: str, port: int = 8770, timeout: int = 10) -> dict[str, Any] | None:
     """Fetch Elo leaderboard from a cluster node."""
     url = f"http://{host}:{port}/api/elo/leaderboard"
     try:
@@ -163,10 +163,10 @@ def fetch_elo_from_node(host: str, port: int = 8770, timeout: int = 10) -> Optio
 
 
 def compare_leaderboards(
-    source: Dict[str, Any],
-    target: Dict[str, Any],
+    source: dict[str, Any],
+    target: dict[str, Any],
     threshold: float = ELO_DIVERGENCE_THRESHOLD
-) -> Tuple[List[Dict], List[Dict], List[Dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Compare two Elo leaderboards.
 
     Returns (matches, diverged, missing_in_target).

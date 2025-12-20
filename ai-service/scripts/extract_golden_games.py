@@ -44,9 +44,9 @@ from app.models import GameState, Move  # noqa: E402
 def _load_final_state(
     db: GameReplayDB,
     game_id: str,
-    meta: Dict[str, Any],
+    meta: dict[str, Any],
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
 ) -> GameState:
     """Best-effort reconstruction of the final state for a game.
 
@@ -78,7 +78,7 @@ def _load_final_state(
 
 def extract_games(
     source_db_path: str,
-    game_ids: List[str],
+    game_ids: list[str],
     dest_db_path: str,
 ) -> None:
     """Extract specified games into a fresh destination GameReplayDB."""
@@ -117,7 +117,7 @@ def extract_games(
 
         # Decode existing metadata_json if present so we preserve provenance.
         raw_meta_json = meta.get("metadata_json")
-        metadata: Dict[str, Any] = {}
+        metadata: dict[str, Any] = {}
         if raw_meta_json:
             try:
                 metadata = json.loads(raw_meta_json)

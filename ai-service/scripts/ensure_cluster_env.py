@@ -19,7 +19,8 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
+from collections.abc import Sequence
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(AI_SERVICE_ROOT) not in sys.path:
@@ -41,16 +42,16 @@ DEFAULT_REQUIRED_MODULES = (
 class HostEnvReport:
     host: str
     ok: bool
-    ssh_targets: List[str]
+    ssh_targets: list[str]
     python: str
-    missing: Dict[str, str]
-    versions: Dict[str, str]
-    error: Optional[str] = None
+    missing: dict[str, str]
+    versions: dict[str, str]
+    error: str | None = None
     attempted_install: bool = False
     attempted_bootstrap: bool = False
 
 
-def _parse_hosts_list(raw: Optional[str]) -> Optional[List[str]]:
+def _parse_hosts_list(raw: str | None) -> list[str] | None:
     if raw is None:
         return None
     parts = [p.strip() for p in raw.split(",") if p.strip()]
@@ -117,17 +118,17 @@ def _install_requirements(host: HostConfig, *, timeout_sec: int) -> tuple[bool, 
 
 
 def _filter_hosts(
-    hosts: Dict[str, HostConfig],
+    hosts: dict[str, HostConfig],
     *,
-    only: Optional[Sequence[str]],
+    only: Sequence[str] | None,
     include_nonready: bool,
-) -> Dict[str, HostConfig]:
+) -> dict[str, HostConfig]:
     selected = hosts
     if only:
         allow = {name.strip() for name in only if name.strip()}
         selected = {k: v for k, v in hosts.items() if k in allow}
 
-    filtered: Dict[str, HostConfig] = {}
+    filtered: dict[str, HostConfig] = {}
     for name, cfg in selected.items():
         status = str(cfg.properties.get("status") or "").strip().lower()
         if include_nonready or not status or status == "ready":
@@ -135,7 +136,7 @@ def _filter_hosts(
     return filtered
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--hosts",
@@ -192,12 +193,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise SystemExit("No eligible hosts found (check --hosts / distributed_hosts.yaml).")
 
     check_cmd = _build_check_command(required)
-    reports: List[HostEnvReport] = []
+    reports: list[HostEnvReport] = []
 
     started = time.time()
     for name, host in selected.items():
         rc, stdout, stderr = _run_remote(host, check_cmd, timeout=int(args.timeout_sec))
-        payload: Dict[str, Any] = {}
+        payload: dict[str, Any] = {}
         if stdout.strip():
             try:
                 payload = json.loads(stdout.strip().splitlines()[-1])

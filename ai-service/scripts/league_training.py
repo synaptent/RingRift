@@ -131,7 +131,7 @@ def get_model_league(
     model_id: str,
     board_type: str,
     num_players: int,
-) -> Optional[str]:
+) -> str | None:
     """Get the current league of a model."""
     if not LEAGUE_DB_PATH.exists():
         return None
@@ -160,7 +160,7 @@ def add_model_to_league(
     board_type: str,
     num_players: int,
     elo: float,
-    league: Optional[str] = None,
+    league: str | None = None,
 ) -> str:
     """Add a model to the league system."""
     init_league_db()
@@ -185,8 +185,8 @@ def add_model_to_league(
 def get_league_standings(
     board_type: str,
     num_players: int,
-    league: Optional[str] = None,
-) -> List[Dict]:
+    league: str | None = None,
+) -> list[dict]:
     """Get standings for a league or all leagues."""
     if not LEAGUE_DB_PATH.exists():
         return []
@@ -215,7 +215,7 @@ def get_league_standings(
 def evaluate_promotions_demotions(
     board_type: str,
     num_players: int,
-) -> Tuple[List[Dict], List[Dict]]:
+) -> tuple[list[dict], list[dict]]:
     """Evaluate which models should be promoted or demoted.
 
     Returns:
@@ -265,7 +265,7 @@ def apply_promotions_demotions(
     board_type: str,
     num_players: int,
     dry_run: bool = False,
-) -> Dict:
+) -> dict:
     """Apply promotions and demotions for a board/player config."""
     promotions, demotions = evaluate_promotions_demotions(board_type, num_players)
 
@@ -308,7 +308,7 @@ def schedule_league_matches(
     num_players: int,
     league: str,
     num_matches: int = 10,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Schedule matches for models in a league.
 
     Prioritizes matches between models with similar Elo (competitive games).

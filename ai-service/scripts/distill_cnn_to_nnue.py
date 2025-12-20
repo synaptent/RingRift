@@ -63,7 +63,7 @@ def parse_board_type(board_str: str) -> BoardType:
     return BoardType.SQUARE8
 
 
-def parse_move(move_dict: dict, move_number: int) -> Optional[Move]:
+def parse_move(move_dict: dict, move_number: int) -> Move | None:
     """Parse a move dict into a Move object.
 
     Handles both DB-style (full JSON) and minimal move dicts.
@@ -141,7 +141,7 @@ class CNNDistiller:
         self.board_size = get_board_size(board_type)
         logger.info(f"CNN loaded: policy_size={self.policy_size}, device={self.device}")
 
-    def get_policy(self, state: GameState, player: int) -> Dict[str, float]:
+    def get_policy(self, state: GameState, player: int) -> dict[str, float]:
         """Get CNN policy distribution for a state.
 
         Returns sparse policy dict {move_idx: prob}.
@@ -187,9 +187,9 @@ class CNNDistiller:
 
     def distill_game(
         self,
-        game: Dict[str, Any],
+        game: dict[str, Any],
         sample_every: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Add CNN policy distributions to a game record."""
         # Parse initial state
         board_type_str = game.get("board_type", "square8")
@@ -253,9 +253,9 @@ def extract_games_from_db(
     db_path: str,
     board_type: BoardType,
     num_players: int,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
     min_game_length: int = 20,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Extract games from SQLite database.
 
     Returns list of game dicts compatible with distill_game().

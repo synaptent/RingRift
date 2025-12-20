@@ -76,7 +76,7 @@ class NodeStatus:
     games_completed: int = 0
     games_target: int = 0
     last_check: str = ""
-    data_files: List[str] = field(default_factory=list)
+    data_files: list[str] = field(default_factory=list)
     error: str = ""
 
 
@@ -89,8 +89,8 @@ class PipelineState:
     last_training_time: str = ""
     last_training_games: int = 0
     current_model_version: str = ""
-    training_history: List[Dict] = field(default_factory=list)
-    node_statuses: Dict[str, Dict] = field(default_factory=dict)
+    training_history: list[dict] = field(default_factory=list)
+    node_statuses: dict[str, dict] = field(default_factory=dict)
 
     def save(self, path: Path = PIPELINE_STATE_FILE):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,7 +106,7 @@ class PipelineState:
         return cls()
 
 
-def get_cluster_nodes() -> List[Tuple[str, str, int]]:
+def get_cluster_nodes() -> list[tuple[str, str, int]]:
     """Get list of cluster nodes from vastai."""
     try:
         result = subprocess.run(
@@ -200,7 +200,7 @@ def collect_data_from_node(
     host: str,
     port: int,
     local_dir: Path,
-) -> Tuple[int, List[str]]:
+) -> tuple[int, list[str]]:
     """Collect data files from a node."""
     collected_files = []
     total_games = 0
@@ -281,7 +281,7 @@ def is_aligned_data_file(filepath: Path) -> bool:
         return False
 
 
-def get_aligned_data_files(data_dir: Path) -> List[Path]:
+def get_aligned_data_files(data_dir: Path) -> list[Path]:
     """Get only data files with properly aligned move indices."""
     aligned = []
     for jsonl_file in data_dir.glob("*.jsonl"):
@@ -309,8 +309,8 @@ def trigger_training(
     output_dir: Path,
     min_games: int = 500,
     epochs: int = 30,
-    pretrained: Optional[Path] = None,
-) -> Tuple[bool, Dict]:
+    pretrained: Path | None = None,
+) -> tuple[bool, dict]:
     """Trigger KL training on collected data."""
     # Find all properly aligned data files (validates actual content)
     data_files = get_aligned_data_files(data_dir)
@@ -390,7 +390,7 @@ def run_ab_test(
     model_b: Path,
     num_games: int = AB_TEST_GAMES,
     think_time: int = AB_TEST_THINK_TIME,
-) -> Tuple[int, int, int, float]:
+) -> tuple[int, int, int, float]:
     """Run A/B test between two models.
 
     Returns: (a_wins, b_wins, draws, win_rate_a)
@@ -472,7 +472,7 @@ def train_and_evaluate(
     output_dir: Path,
     min_games: int,
     run_ab_test_flag: bool = True,
-) -> Tuple[bool, Dict]:
+) -> tuple[bool, dict]:
     """Train a new model and optionally A/B test against production.
 
     Returns: (promoted, result_dict)
@@ -518,7 +518,7 @@ def train_and_evaluate(
     return False, result
 
 
-def get_next_training_threshold(current_games: int) -> Optional[int]:
+def get_next_training_threshold(current_games: int) -> int | None:
     """Get the next training threshold based on current game count."""
     for threshold in TRAINING_THRESHOLDS:
         if current_games >= threshold:
@@ -527,7 +527,7 @@ def get_next_training_threshold(current_games: int) -> Optional[int]:
     return None
 
 
-def print_status(state: PipelineState, node_statuses: List[NodeStatus]):
+def print_status(state: PipelineState, node_statuses: list[NodeStatus]):
     """Print current pipeline status."""
     print("\n" + "=" * 70)
     print("DATA PIPELINE STATUS")

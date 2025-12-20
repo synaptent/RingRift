@@ -38,7 +38,7 @@ class VastInstance:
     status: str
 
 
-def get_vast_instances() -> List[VastInstance]:
+def get_vast_instances() -> list[VastInstance]:
     """Get list of running Vast instances."""
     try:
         result = subprocess.run(
@@ -65,7 +65,7 @@ def get_vast_instances() -> List[VastInstance]:
 
 
 
-def check_p2p_health(inst: VastInstance) -> Tuple[bool, int, float]:
+def check_p2p_health(inst: VastInstance) -> tuple[bool, int, float]:
     """Check P2P health on instance. Returns (is_healthy, selfplay_jobs, disk_percent)."""
     ok, output = run_vast_ssh_command(
         inst.ssh_host, inst.ssh_port,
@@ -130,7 +130,7 @@ def stop_p2p(inst: VastInstance) -> bool:
     return ok
 
 
-def print_status(instances: List[VastInstance]):
+def print_status(instances: list[VastInstance]):
     """Print status of all instances."""
     print(f"\n{'ID':<12} {'GPU':<20} {'#':<3} {'P2P':<6} {'Selfplay':<10} {'Disk':<6}")
     print("-" * 60)

@@ -114,8 +114,8 @@ MATCHUP_TYPES = {
 @dataclass
 class MatchupConfig:
     """Configuration for a specific matchup."""
-    p1_difficulties: List[int]
-    p2_difficulties: List[int]
+    p1_difficulties: list[int]
+    p2_difficulties: list[int]
     description: str
 
 
@@ -148,8 +148,8 @@ def create_ai_for_player(
     player_num: int,
     difficulty: int,
     board_type: BoardType,
-    seed: Optional[int] = None,
-) -> Tuple[Any, str]:
+    seed: int | None = None,
+) -> tuple[Any, str]:
     """Create an AI instance for a player.
 
     Returns (ai_instance, ai_type_name)
@@ -176,8 +176,8 @@ def play_game(
     num_players: int,
     matchup: MatchupConfig,
     max_moves: int = 2000,
-    seed: Optional[int] = None,
-) -> Optional[GameResult]:
+    seed: int | None = None,
+) -> GameResult | None:
     """Play a single game with the specified matchup."""
     rng = random.Random(seed)
     game_id = str(uuid.uuid4())
@@ -263,7 +263,7 @@ def play_game(
         return None
 
 
-def get_config_game_counts(data_dir: Path) -> Dict[str, int]:
+def get_config_game_counts(data_dir: Path) -> dict[str, int]:
     """Get current game counts per config from database files."""
     import sqlite3
 
@@ -295,7 +295,7 @@ def get_config_game_counts(data_dir: Path) -> Dict[str, int]:
     return counts
 
 
-def prioritize_configs(counts: Dict[str, int], target_per_config: int) -> List[Tuple[str, int]]:
+def prioritize_configs(counts: dict[str, int], target_per_config: int) -> list[tuple[str, int]]:
     """Return configs prioritized by how far below target they are.
 
     Returns list of (config_key, games_needed) sorted by most needed first.
@@ -311,7 +311,7 @@ def prioritize_configs(counts: Dict[str, int], target_per_config: int) -> List[T
     return needed
 
 
-def _play_game_worker(args: Tuple) -> Optional[Dict]:
+def _play_game_worker(args: tuple) -> dict | None:
     """Worker function for parallel game execution."""
     board_type, num_players, matchup_def, max_moves, seed = args
 
@@ -340,7 +340,7 @@ def run_balanced_selfplay(
     output_dir: Path,
     max_moves: int = 2000,
     prioritize_underrepresented: bool = False,
-    target_games: Optional[int] = None,
+    target_games: int | None = None,
     num_workers: int = 1,
 ):
     """Run balanced selfplay across all configurations.

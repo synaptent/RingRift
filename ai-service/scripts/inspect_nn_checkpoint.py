@@ -98,7 +98,7 @@ def _resolve_checkpoint_from_nn_model_id(
     )
 
 
-def _load_checkpoint(path: Path) -> Tuple[Dict[str, Any], Dict[str, torch.Tensor]]:
+def _load_checkpoint(path: Path) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     if not isinstance(ckpt, dict):
         raise TypeError(f"Unexpected checkpoint type: {type(ckpt).__name__}")
@@ -126,7 +126,7 @@ def _load_checkpoint(path: Path) -> Tuple[Dict[str, Any], Dict[str, torch.Tensor
     return meta, state_dict  # type: ignore[return-value]
 
 
-def _shape(t: Optional[torch.Tensor]) -> Optional[Tuple[int, ...]]:
+def _shape(t: torch.Tensor | None) -> tuple[int, ...] | None:
     if t is None:
         return None
     if not hasattr(t, "shape"):

@@ -31,8 +31,8 @@ class SimpleState:
 @dataclass
 class ComplexState:
     """Complex dataclass with nested structures."""
-    values: List[int] = field(default_factory=list)
-    metadata: Dict[str, str] = field(default_factory=dict)
+    values: list[int] = field(default_factory=list)
+    metadata: dict[str, str] = field(default_factory=dict)
     last_run: float = 0.0
 
 

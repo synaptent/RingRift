@@ -122,14 +122,14 @@ class NodeState:
     # Derived
     is_gpu_idle: bool = False
     is_cpu_idle: bool = False
-    recommended_work: List[WorkType] = field(default_factory=list)
+    recommended_work: list[WorkType] = field(default_factory=list)
 
 
 # =============================================================================
 # Configuration Loading
 # =============================================================================
 
-def load_cluster_config() -> Dict[str, List[NodeConfig]]:
+def load_cluster_config() -> dict[str, list[NodeConfig]]:
     """Load cluster configuration from YAML."""
     config_path = CONFIG_DIR / "cluster_nodes.yaml"
 
@@ -170,7 +170,7 @@ def load_cluster_config() -> Dict[str, List[NodeConfig]]:
     return nodes
 
 
-def _get_fallback_config() -> Dict[str, List[NodeConfig]]:
+def _get_fallback_config() -> dict[str, list[NodeConfig]]:
     """Return empty config when YAML not available.
 
     Node configuration should only come from config/cluster_nodes.yaml.
@@ -264,7 +264,7 @@ def try_wake_node(config: NodeConfig) -> bool:
     return wake_node_ssh(config.host, config.user)
 
 
-def wake_cpu_nodes(cpu_nodes: List[NodeConfig], max_attempts: int = 2) -> List[NodeConfig]:
+def wake_cpu_nodes(cpu_nodes: list[NodeConfig], max_attempts: int = 2) -> list[NodeConfig]:
     """Try to wake all CPU-rich nodes, return those that are reachable."""
     reachable = []
 
@@ -347,7 +347,7 @@ def check_node_state(config: NodeConfig) -> NodeState:
     return state
 
 
-def get_all_node_states(cluster_config: Dict[str, List[NodeConfig]]) -> List[NodeState]:
+def get_all_node_states(cluster_config: dict[str, list[NodeConfig]]) -> list[NodeState]:
     """Get state of all nodes in the cluster."""
     states = []
 
@@ -431,7 +431,7 @@ def stop_cpu_work_on_gpu_node(config: NodeConfig) -> bool:
 # =============================================================================
 
 def rebalance_cluster(
-    cluster_config: Dict[str, List[NodeConfig]],
+    cluster_config: dict[str, list[NodeConfig]],
     dry_run: bool = False
 ) -> int:
     """Rebalance work across the cluster with CPU-first logic.
@@ -563,7 +563,7 @@ def rebalance_cluster(
     return changes
 
 
-def generate_status_report(cluster_config: Dict[str, List[NodeConfig]]) -> str:
+def generate_status_report(cluster_config: dict[str, list[NodeConfig]]) -> str:
     """Generate comprehensive status report."""
     lines = []
     lines.append("=" * 90)

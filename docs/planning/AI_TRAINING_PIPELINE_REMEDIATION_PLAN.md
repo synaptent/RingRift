@@ -623,6 +623,20 @@ The AI Training Pipeline Remediation is complete when:
 
 - `ai-service/scripts/run_canonical_selfplay_parity_gate.py`
 
+### AI-02: Default make/unmake eval on large-board canonical selfplay (2025-12-20)
+
+**Status:** ✅ CONFIG UPDATED (awaiting regeneration + gate re-run)
+
+**Context:** Large-board canonical soaks were terminating before games completed. Defaulting to the incremental make/unmake evaluator reduces per-move overhead and stabilizes square19/hex selfplay without changing canonical rules.
+
+**Actions Completed:**
+
+1. ✅ Default `RINGRIFT_USE_MAKE_UNMAKE=true` for square19/hex in the canonical parity gate runner unless explicitly overridden.
+
+**Files Modified:**
+
+- `ai-service/scripts/run_canonical_selfplay_parity_gate.py`
+
 ### AI-02: Enforce phase invariants during canonical selfplay (2025-12-20)
 
 **Status:** ✅ CONFIG UPDATED (awaiting regeneration + gate re-run)

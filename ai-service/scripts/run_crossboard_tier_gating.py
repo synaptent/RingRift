@@ -33,7 +33,7 @@ CROSSBOARD_GATE_FILENAME = "crossboard_gate_report.json"
 FULL_GATE_FILENAME = "gate_report.json"
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run optional cross-board parity gate, then full tier gating, "
@@ -147,7 +147,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _run_parity_gate(args: argparse.Namespace, run_dir: str) -> Optional[Dict[str, Any]]:
+def _run_parity_gate(args: argparse.Namespace, run_dir: str) -> dict[str, Any] | None:
     if not args.parity_player1 or not args.parity_player2:
         return None
 
@@ -186,7 +186,7 @@ def _run_parity_gate(args: argparse.Namespace, run_dir: str) -> Optional[Dict[st
         return json.load(f)
 
 
-def _run_full_gate(args: argparse.Namespace, run_dir: str) -> Dict[str, Any]:
+def _run_full_gate(args: argparse.Namespace, run_dir: str) -> dict[str, Any]:
     cmd = [
         sys.executable,
         os.path.join(SCRIPT_DIR, "run_full_tier_gating.py"),
@@ -213,9 +213,9 @@ def _run_full_gate(args: argparse.Namespace, run_dir: str) -> Dict[str, Any]:
 
 
 def combine_gate_reports(
-    parity_report: Optional[Dict[str, Any]],
-    full_gate_report: Dict[str, Any],
-) -> Dict[str, Any]:
+    parity_report: dict[str, Any] | None,
+    full_gate_report: dict[str, Any],
+) -> dict[str, Any]:
     parity_pass = True
     if parity_report is not None:
         parity_pass = bool(parity_report.get("gate", {}).get("overall_pass"))
@@ -244,7 +244,7 @@ def combine_gate_reports(
     }
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     run_dir = os.path.abspath(args.run_dir)
     os.makedirs(run_dir, exist_ok=True)

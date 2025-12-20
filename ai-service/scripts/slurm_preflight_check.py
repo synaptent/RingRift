@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-def _run(cmd: List[str]) -> subprocess.CompletedProcess[str]:
+def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
@@ -34,7 +34,7 @@ def _resolve_path(path: str, repo_root: Path) -> Path:
     return resolved
 
 
-def _print_check(label: str, ok: bool, detail: Optional[str] = None) -> None:
+def _print_check(label: str, ok: bool, detail: str | None = None) -> None:
     status = "OK" if ok else "MISSING"
     suffix = f" ({detail})" if detail else ""
     print(f"[{status}] {label}{suffix}")

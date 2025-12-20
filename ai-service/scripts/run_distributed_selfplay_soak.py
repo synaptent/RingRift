@@ -114,7 +114,7 @@ except ImportError:
     create_argument_parser = None  # type: ignore
 
 # Board configurations with appropriate max moves
-BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
+BOARD_CONFIGS: dict[str, dict[int, int]] = {
     # board_type: {num_players: max_moves}
     "square8": {2: 400, 3: 600, 4: 800},
     "square19": {2: 2000, 3: 3000, 4: 4000},
@@ -127,7 +127,7 @@ BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
 # - 16GB machine: only 8x8 works reliably
 # - 64GB machine: can run 19x19/hex with memory pressure
 # - 96GB machine: runs everything comfortably
-BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
+BOARD_MEMORY_REQUIREMENTS: dict[str, int] = {
     "square8": 8,  # 8GB minimum for 8x8 games
     "square19": 48,  # 48GB minimum for 19x19 games (64GB machine has pressure)
     "hexagonal": 48,  # 48GB minimum for hex games
@@ -142,7 +142,7 @@ TEMPLATE_CONFIG_PATH = "config/distributed_hosts.template.yaml"
 VALID_MODES = ["local", "lan", "aws", "hybrid"]
 
 
-def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, Dict]:
+def load_remote_hosts(config_path: str | None = None) -> dict[str, dict]:
     """Load remote host configuration from YAML file.
 
     Looks for config in:
@@ -192,7 +192,7 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, Dict]:
     return {}
 
 
-def _remote_ai_service_dir(host_config: Dict) -> str:
+def _remote_ai_service_dir(host_config: dict) -> str:
     """Return the remote ai-service directory for a host config.
 
     Host configs sometimes specify the repo root (RingRift/) and sometimes the
@@ -258,10 +258,10 @@ def _format_remote_venv_activate(venv_activate: str) -> str:
 
 
 # Remote hosts loaded at module init (can be overridden by load_remote_hosts)
-REMOTE_HOSTS: Dict[str, Dict] = {}
+REMOTE_HOSTS: dict[str, dict] = {}
 
 
-def get_hosts_for_mode(mode: str, remote_hosts: Dict[str, Dict]) -> List[str]:
+def get_hosts_for_mode(mode: str, remote_hosts: dict[str, dict]) -> list[str]:
     """Get list of hosts based on deployment mode.
 
     Args:
@@ -301,7 +301,7 @@ def get_hosts_for_mode(mode: str, remote_hosts: Dict[str, Dict]) -> List[str]:
     return hosts
 
 
-def get_local_memory_gb() -> Tuple[int, int]:
+def get_local_memory_gb() -> tuple[int, int]:
     """Get total and available physical memory on local machine in GB.
 
     Returns:
@@ -374,7 +374,7 @@ def get_local_memory_gb() -> Tuple[int, int]:
     return 8, 4
 
 
-def get_remote_memory_gb(host_name: str, host_config: Dict) -> Tuple[int, int]:
+def get_remote_memory_gb(host_name: str, host_config: dict) -> tuple[int, int]:
     """Get total and available physical memory on remote host in GB via SSH.
 
     Returns:
@@ -459,10 +459,10 @@ class HostMemoryInfo:
 
 
 # Cached host memory info (keyed by host name)
-HOST_MEMORY_INFO_CACHE: Dict[str, HostMemoryInfo] = {}
+HOST_MEMORY_INFO_CACHE: dict[str, HostMemoryInfo] = {}
 
 
-def detect_all_host_memory(hosts: List[str]) -> Tuple[Dict[str, int], Dict[str, HostMemoryInfo]]:
+def detect_all_host_memory(hosts: list[str]) -> tuple[dict[str, int], dict[str, HostMemoryInfo]]:
     """Detect memory for all specified hosts.
 
     Returns:
@@ -507,10 +507,10 @@ class HostDiskInfo:
 
 
 # Cached host disk info (keyed by host name)
-HOST_DISK_INFO_CACHE: Dict[str, HostDiskInfo] = {}
+HOST_DISK_INFO_CACHE: dict[str, HostDiskInfo] = {}
 
 
-def get_local_disk_gb(path: str) -> Tuple[int, int]:
+def get_local_disk_gb(path: str) -> tuple[int, int]:
     """Get total and available disk on the filesystem backing `path` in GB."""
     try:
         usage = shutil.disk_usage(path)
@@ -522,7 +522,7 @@ def get_local_disk_gb(path: str) -> Tuple[int, int]:
         return 0, 0
 
 
-def get_remote_disk_gb(host_name: str, host_config: Dict) -> Tuple[int, int]:
+def get_remote_disk_gb(host_name: str, host_config: dict) -> tuple[int, int]:
     """Get total and available disk on the filesystem backing the remote ai-service dir in GB."""
     ssh_host = host_config["ssh_host"]
     ssh_user = host_config.get("ssh_user")
@@ -568,9 +568,9 @@ def get_remote_disk_gb(host_name: str, host_config: Dict) -> Tuple[int, int]:
 
 
 def detect_all_host_disk(
-    hosts: List[str],
+    hosts: list[str],
     ringrift_ai_dir: str,
-) -> Tuple[Dict[str, int], Dict[str, HostDiskInfo]]:
+) -> tuple[dict[str, int], dict[str, HostDiskInfo]]:
     """Detect disk for all specified hosts.
 
     Returns:
@@ -605,12 +605,12 @@ def detect_all_host_disk(
 
 def get_eligible_hosts_for_board(
     board_type: str,
-    hosts: List[str],
-    host_memory: Dict[str, int],
+    hosts: list[str],
+    host_memory: dict[str, int],
     *,
-    host_disk_available: Optional[Dict[str, int]] = None,
+    host_disk_available: dict[str, int] | None = None,
     min_disk_gb: int = 0,
-) -> List[str]:
+) -> list[str]:
     """Return list of hosts that have enough memory and disk for the given board type."""
     required_memory = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
     eligible = []
@@ -645,17 +645,17 @@ class JobConfig:
 
 def generate_job_configs(
     games_per_config: int,
-    hosts: List[str],
+    hosts: list[str],
     output_dir: str,
     base_seed: int = 42,
     difficulty_band: str = "light",
     engine_mode: str = "mixed",
-    host_memory: Optional[Dict[str, int]] = None,
-    host_disk_available: Optional[Dict[str, int]] = None,
+    host_memory: dict[str, int] | None = None,
+    host_disk_available: dict[str, int] | None = None,
     min_remote_free_disk_gb: int = 0,
-    allowed_board_types: Optional[List[str]] = None,
-    allowed_num_players: Optional[List[int]] = None,
-) -> List[JobConfig]:
+    allowed_board_types: list[str] | None = None,
+    allowed_num_players: list[int] | None = None,
+) -> list[JobConfig]:
     """Generate job configurations distributed across hosts based on memory capacity.
 
     Jobs are assigned only to hosts with sufficient memory for the board type.
@@ -796,7 +796,7 @@ def build_soak_command(job: JobConfig, is_remote: bool = False) -> str:
     return " ".join(cmd_parts)
 
 
-def run_local_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int) -> Tuple[str, bool, str]:
+def run_local_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int) -> tuple[str, bool, str]:
     """Run a self-play job on the local machine."""
     cmd = build_soak_command(job)
 
@@ -831,7 +831,7 @@ def run_local_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int)
         return job.job_id, False, str(e)
 
 
-def run_remote_job(job: JobConfig, host_config: Dict, *, timeout_seconds: int) -> Tuple[str, bool, str]:
+def run_remote_job(job: JobConfig, host_config: dict, *, timeout_seconds: int) -> tuple[str, bool, str]:
     """Run a self-play job on a remote machine via SSH."""
     ssh_host = host_config["ssh_host"]
     ssh_user = host_config.get("ssh_user")
@@ -905,7 +905,7 @@ def run_remote_job(job: JobConfig, host_config: Dict, *, timeout_seconds: int) -
         return job.job_id, False, str(e)
 
 
-def run_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int) -> Tuple[str, bool, str]:
+def run_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int) -> tuple[str, bool, str]:
     """Dispatch job to appropriate host."""
     if job.host == "local":
         return run_local_job(job, ringrift_ai_dir, timeout_seconds=timeout_seconds)
@@ -917,7 +917,7 @@ def run_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int) -> Tu
 
 def cleanup_remote_job_artifacts(
     job: JobConfig,
-    host_config: Dict,
+    host_config: dict,
     *,
     cleanup_jsonl: bool,
     timeout_seconds: int,
@@ -986,7 +986,7 @@ def _fetch_single_job(
     fetch_jsonl: bool,
     fetch_timeout_seconds: int,
     cleanup_remote: bool,
-) -> Optional[str]:
+) -> str | None:
     """Fetch a single job's database from remote host. Thread-safe.
 
     Returns:
@@ -1095,14 +1095,14 @@ def _fetch_single_job(
 
 
 def fetch_remote_results(
-    jobs: List[JobConfig],
+    jobs: list[JobConfig],
     output_dir: str,
     *,
     fetch_jsonl: bool,
     fetch_timeout_seconds: int,
     cleanup_remote: bool,
     parallel_workers: int = 8,
-) -> List[str]:
+) -> list[str]:
     """Fetch database files from remote hosts in parallel.
 
     Uses ThreadPoolExecutor to download from multiple hosts simultaneously,
@@ -1161,7 +1161,7 @@ def fetch_remote_results(
     return fetched_dbs
 
 
-def run_parity_checks(db_paths: List[str], ringrift_ai_dir: str) -> Tuple[int, int]:
+def run_parity_checks(db_paths: list[str], ringrift_ai_dir: str) -> tuple[int, int]:
     """Run parity checks on the given databases.
 
     Returns:
@@ -1506,7 +1506,7 @@ def main():
     os.makedirs(failures_dir, exist_ok=True)
 
     # Group jobs by host for parallel execution
-    jobs_by_host: Dict[str, List[JobConfig]] = {}
+    jobs_by_host: dict[str, list[JobConfig]] = {}
     for job in jobs:
         if job.host not in jobs_by_host:
             jobs_by_host[job.host] = []

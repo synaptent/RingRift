@@ -64,7 +64,7 @@ class GameStateAdapter(MCTSGameState):
         else:
             self._legal_moves = engine.get_valid_moves(real_state, self._current_player)
 
-    def get_legal_moves(self) -> List[int]:
+    def get_legal_moves(self) -> list[int]:
         """Return indices [0, 1, 2, ...] for legal moves."""
         return list(range(len(self._legal_moves)))
 
@@ -152,7 +152,7 @@ class HeuristicNetworkWrapper:
         return policy, value
 
 
-def parse_move_dict(move_dict: Dict[str, Any], move_number: int) -> Optional[Move]:
+def parse_move_dict(move_dict: dict[str, Any], move_number: int) -> Move | None:
     """Parse a move dict into a Move object with defaults for missing fields.
 
     Returns None for unknown move types.
@@ -225,11 +225,11 @@ def get_board_size(board_type: BoardType) -> int:
 
 
 def reanalyze_game(
-    game: Dict[str, Any],
+    game: dict[str, Any],
     mcts,
     engine: DefaultRulesEngine,
     sample_every: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Reanalyze a single game to add MCTS policy distributions.
 
     Args:

@@ -44,7 +44,7 @@ from app.training.initial_state import create_initial_state
 @dataclass
 class MatchResult:
     """Result of a single game."""
-    winner: Optional[int]  # 1, 2, or None for draw
+    winner: int | None  # 1, 2, or None for draw
     moves: int
     duration_sec: float
     p1_swapped: bool  # True if P1 played as player 2
@@ -233,7 +233,7 @@ def run_tournament(
     )
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Evaluate NNUE model performance vs heuristic evaluation",
@@ -280,7 +280,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     args = parse_args(argv)
 
@@ -302,7 +302,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Games per matchup: {args.games}")
     print()
 
-    results: List[TournamentResult] = []
+    results: list[TournamentResult] = []
 
     # Tournament 1: Minimax+NNUE vs Minimax+Heuristic (same difficulty)
     print("Tournament 1: Minimax+NNUE vs Minimax+Heuristic")

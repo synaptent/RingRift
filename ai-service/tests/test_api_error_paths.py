@@ -81,7 +81,7 @@ def _make_minimal_state(num_players: int = 2) -> GameState:
     )
 
 
-def _make_state_with_empty_players() -> Dict[str, Any]:
+def _make_state_with_empty_players() -> dict[str, Any]:
     """Create a game state dict with empty players list."""
     state = _make_minimal_state()
     state_dict = jsonable_encoder(state, by_alias=True)

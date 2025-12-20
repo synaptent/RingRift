@@ -91,7 +91,7 @@ def play_game(
     ai2,
     board_type: BoardType = BoardType.SQUARE8,
     max_moves: int = 500,
-) -> Tuple[Optional[int], int, float, float]:
+) -> tuple[int | None, int, float, float]:
     """Play a game and return (winner, moves, ai1_time, ai2_time)."""
     state = create_initial_state(board_type=board_type, num_players=2)
 
@@ -233,7 +233,7 @@ def main():
     args = parser.parse_args()
 
     opponents = [o.strip() for o in args.opponents.split(",")]
-    results: List[MatchResult] = []
+    results: list[MatchResult] = []
 
     print("\n" + "="*70)
     print("GMO EVALUATION vs STRONG BASELINES")

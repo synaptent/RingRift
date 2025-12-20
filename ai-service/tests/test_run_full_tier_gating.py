@@ -57,7 +57,7 @@ def test_eval_perf_budget_flags_thresholds(
     p95: float,
     max_avg: float,
     max_p95: float,
-    expected: Dict[str, Any],
+    expected: dict[str, Any],
 ) -> None:
     """_eval_perf_budget should mirror the perf-budget semantics used by the CLI."""
     budget = _make_budget(max_avg, max_p95)

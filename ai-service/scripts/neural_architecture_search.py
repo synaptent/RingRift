@@ -109,13 +109,13 @@ DEFAULT_ELITE_FRACTION = 0.1
 class Architecture:
     """A candidate neural network architecture."""
     arch_id: str
-    params: Dict[str, Any]
+    params: dict[str, Any]
     performance: float = 0.0  # Validation metric (e.g., policy accuracy)
     flops: int = 0  # Estimated FLOPs
     param_count: int = 0  # Number of parameters
     latency_ms: float = 0.0  # Inference latency
     generations_survived: int = 0
-    parent_ids: List[str] = field(default_factory=list)
+    parent_ids: list[str] = field(default_factory=list)
     created_at: str = ""
     evaluated: bool = False
 
@@ -127,18 +127,18 @@ class NASState:
     strategy: str
     board_type: str
     num_players: int
-    search_space: Dict[str, Any]
-    population: List[Architecture]
+    search_space: dict[str, Any]
+    population: list[Architecture]
     generation: int = 0
     total_evaluations: int = 0
     best_performance: float = 0.0
-    best_architecture: Optional[Dict[str, Any]] = None
-    pareto_front: List[Dict[str, Any]] = field(default_factory=list)
-    history: List[Dict[str, Any]] = field(default_factory=list)
+    best_architecture: dict[str, Any] | None = None
+    pareto_front: list[dict[str, Any]] = field(default_factory=list)
+    history: list[dict[str, Any]] = field(default_factory=list)
     created_at: str = ""
 
 
-def sample_architecture(arch_id: str, search_space: Dict[str, Any] = SEARCH_SPACE) -> Architecture:
+def sample_architecture(arch_id: str, search_space: dict[str, Any] = SEARCH_SPACE) -> Architecture:
     """Sample a random architecture from the search space."""
     params = {}
 
@@ -165,7 +165,7 @@ def mutate_architecture(
     arch: Architecture,
     new_id: str,
     mutation_rate: float = DEFAULT_MUTATION_RATE,
-    search_space: Dict[str, Any] = SEARCH_SPACE,
+    search_space: dict[str, Any] = SEARCH_SPACE,
 ) -> Architecture:
     """Mutate an architecture by randomly changing some parameters."""
     new_params = copy.deepcopy(arch.params)
@@ -202,7 +202,7 @@ def crossover_architectures(
     parent1: Architecture,
     parent2: Architecture,
     new_id: str,
-    search_space: Dict[str, Any] = SEARCH_SPACE,
+    search_space: dict[str, Any] = SEARCH_SPACE,
 ) -> Architecture:
     """Create child architecture by crossing over two parents."""
     new_params = {}
@@ -222,7 +222,7 @@ def crossover_architectures(
     )
 
 
-def estimate_architecture_cost(arch: Architecture) -> Tuple[int, int]:
+def estimate_architecture_cost(arch: Architecture) -> tuple[int, int]:
     """Estimate FLOPs and parameter count for an architecture.
 
     Returns:
@@ -420,7 +420,7 @@ def _evaluate_architecture_simulated(arch: Architecture) -> float:
 
 
 def tournament_selection(
-    population: List[Architecture],
+    population: list[Architecture],
     tournament_size: int = 3,
 ) -> Architecture:
     """Select architecture via tournament selection."""
@@ -428,7 +428,7 @@ def tournament_selection(
     return max(contestants, key=lambda a: a.performance)
 
 
-def is_pareto_dominated(arch: Architecture, others: List[Architecture]) -> bool:
+def is_pareto_dominated(arch: Architecture, others: list[Architecture]) -> bool:
     """Check if architecture is dominated by any other (worse on all objectives)."""
     for other in others:
         if other.arch_id == arch.arch_id:
@@ -440,7 +440,7 @@ def is_pareto_dominated(arch: Architecture, others: List[Architecture]) -> bool:
     return False
 
 
-def update_pareto_front(population: List[Architecture]) -> List[Dict[str, Any]]:
+def update_pareto_front(population: list[Architecture]) -> list[dict[str, Any]]:
     """Extract non-dominated architectures (Pareto front)."""
     evaluated = [a for a in population if a.evaluated]
     pareto = []
@@ -565,8 +565,8 @@ def random_search_step(state: NASState, batch_size: int = 5) -> NASState:
 
 
 def bayesian_acquisition(
-    evaluated: List[Architecture],
-    search_space: Dict[str, Any],
+    evaluated: list[Architecture],
+    search_space: dict[str, Any],
     num_candidates: int = 100,
 ) -> Architecture:
     """Simple acquisition function for Bayesian-style search.

@@ -30,7 +30,7 @@ from scripts.convert_npz_to_hdf5 import (
 
 
 @pytest.fixture
-def sample_npz_data() -> Dict[str, np.ndarray]:
+def sample_npz_data() -> dict[str, np.ndarray]:
     """Create sample training data similar to real RingRift data."""
     num_samples = 100
     feature_size = (14, 8, 8)  # channels x board_size x board_size
@@ -77,7 +77,7 @@ def sample_npz_data() -> Dict[str, np.ndarray]:
 
 
 @pytest.fixture
-def sample_npz_file(sample_npz_data: Dict[str, np.ndarray], tmp_path: Path) -> Path:
+def sample_npz_file(sample_npz_data: dict[str, np.ndarray], tmp_path: Path) -> Path:
     """Save sample data to NPZ file."""
     npz_path = tmp_path / "test_data.npz"
     np.savez(npz_path, **sample_npz_data)
@@ -105,7 +105,7 @@ class TestConvertNpzToHdf5:
         assert result['num_keys'] == 8  # features, globals, values, policy_*, phases, board_*
 
     def test_conversion_preserves_dense_data(
-        self, sample_npz_file: Path, sample_npz_data: Dict[str, np.ndarray],
+        self, sample_npz_file: Path, sample_npz_data: dict[str, np.ndarray],
         tmp_path: Path
     ):
         """Test that dense arrays are preserved exactly."""
@@ -128,7 +128,7 @@ class TestConvertNpzToHdf5:
             )
 
     def test_conversion_preserves_sparse_data(
-        self, sample_npz_file: Path, sample_npz_data: Dict[str, np.ndarray],
+        self, sample_npz_file: Path, sample_npz_data: dict[str, np.ndarray],
         tmp_path: Path
     ):
         """Test that sparse policy arrays are preserved."""
@@ -152,7 +152,7 @@ class TestConvertNpzToHdf5:
                 )
 
     def test_conversion_preserves_string_object_arrays(
-        self, sample_npz_file: Path, sample_npz_data: Dict[str, np.ndarray],
+        self, sample_npz_file: Path, sample_npz_data: dict[str, np.ndarray],
         tmp_path: Path
     ):
         """Test that string object arrays are preserved."""
@@ -172,7 +172,7 @@ class TestConvertNpzToHdf5:
                 assert hdf5_val == sample_npz_data['phases'][i]
 
     def test_conversion_preserves_scalar_values(
-        self, sample_npz_file: Path, sample_npz_data: Dict[str, np.ndarray],
+        self, sample_npz_file: Path, sample_npz_data: dict[str, np.ndarray],
         tmp_path: Path
     ):
         """Test that scalar values (strings and numerics) are preserved."""
@@ -266,7 +266,7 @@ class TestConvertNpzToHdf5:
 class TestConvertDirectory:
     """Test cases for batch directory conversion."""
 
-    def test_directory_conversion(self, sample_npz_data: Dict, tmp_path: Path):
+    def test_directory_conversion(self, sample_npz_data: dict, tmp_path: Path):
         """Test converting multiple NPZ files in a directory."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
@@ -289,7 +289,7 @@ class TestConvertDirectory:
         assert (output_dir / "data_1.h5").exists()
         assert (output_dir / "data_2.h5").exists()
 
-    def test_skip_existing(self, sample_npz_data: Dict, tmp_path: Path):
+    def test_skip_existing(self, sample_npz_data: dict, tmp_path: Path):
         """Test that existing HDF5 files are skipped."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"

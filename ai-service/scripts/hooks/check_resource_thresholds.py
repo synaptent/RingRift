@@ -63,7 +63,7 @@ GUARD_PATTERNS = [
 ]
 
 
-def check_file(filepath: Path) -> List[Tuple[int, str, str]]:
+def check_file(filepath: Path) -> list[tuple[int, str, str]]:
     """Check a file for hardcoded resource thresholds.
 
     Args:

@@ -71,7 +71,7 @@ class BenchmarkResult:
     std_dev_ms: float
     moves_evaluated: int
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -81,11 +81,11 @@ class ValidationResult:
     game_id: str
     total_moves: int
     valid: bool
-    errors: List[str]
+    errors: list[str]
     python_valid: bool
-    ts_valid: Optional[bool] = None
+    ts_valid: bool | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -276,8 +276,8 @@ def run_gpu_selfplay_games(
     board_type: str = "square8",
     num_players: int = 2,
     ai_type: str = "maxn",
-    db_path: Optional[str] = None,
-) -> Tuple[str, List[str]]:
+    db_path: str | None = None,
+) -> tuple[str, list[str]]:
     """Run self-play games with GPU-accelerated AI and record to database.
 
     Returns:
@@ -317,7 +317,7 @@ def run_gpu_selfplay_games(
                 config.think_time = 300  # 300ms for faster games
                 ais[p] = MCTSAI(player_number=p, config=config)
 
-        moves_list: List[Move] = []
+        moves_list: list[Move] = []
         max_moves = 200  # Prevent infinite games
 
         while state.game_status == "active" and len(moves_list) < max_moves:
@@ -452,7 +452,7 @@ def validate_game_python(db_path: str, game_id: str) -> ValidationResult:
         )
 
 
-def validate_game_typescript(db_path: str, game_id: str) -> Optional[bool]:
+def validate_game_typescript(db_path: str, game_id: str) -> bool | None:
     """Validate a game against TypeScript rules engine.
 
     Returns True if valid, False if invalid, None if TS validation unavailable.
@@ -493,7 +493,7 @@ def validate_game_typescript(db_path: str, game_id: str) -> Optional[bool]:
         return None
 
 
-def print_benchmark_results(results: List[BenchmarkResult]) -> None:
+def print_benchmark_results(results: list[BenchmarkResult]) -> None:
     """Print benchmark results in a table format."""
     print("\n" + "=" * 70)
     print("BENCHMARK RESULTS")
@@ -528,7 +528,7 @@ def print_benchmark_results(results: List[BenchmarkResult]) -> None:
                 print(f"  Status: MARGINAL (< 1.5x speedup)")
 
 
-def print_validation_results(results: List[ValidationResult]) -> None:
+def print_validation_results(results: list[ValidationResult]) -> None:
     """Print validation results summary."""
     print("\n" + "=" * 70)
     print("VALIDATION RESULTS")

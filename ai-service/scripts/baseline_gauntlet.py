@@ -86,7 +86,7 @@ def discover_models(
     num_players: int = 2,
     nn_only: bool = False,
     nnue_only: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Discover all models for the given board/player config.
 
     Uses the unified discovery API from app.models.discovery for consistent
@@ -128,7 +128,7 @@ def play_game(
     opponent_type: str,  # "random", "heuristic", "mcts"
     board_type: BoardType = BoardType.SQUARE8,
     model_plays_first: bool = True,
-) -> Optional[int]:
+) -> int | None:
     """Play a single game, return winner (1 or 2) or None for draw/error."""
     try:
         from app.game_engine import GameEngine
@@ -213,7 +213,7 @@ def play_game(
         return None
 
 
-def compute_confidence_interval(wins: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
+def compute_confidence_interval(wins: int, total: int, confidence: float = 0.95) -> tuple[float, float]:
     """Compute Wilson score confidence interval for win rate.
 
     Args:
@@ -283,7 +283,7 @@ def test_model_vs_baseline_adaptive(
     target_margin: float = 0.15,
     confidence: float = 0.95,
     board_type: BoardType = BoardType.SQUARE8,
-) -> Tuple[float, int]:
+) -> tuple[float, int]:
     """Test model against baseline with adaptive game count.
 
     Stops early if the result is decisive (confidence interval doesn't
@@ -340,7 +340,7 @@ def test_model_vs_baseline_adaptive(
 
 
 def run_gauntlet_for_model(
-    model: Dict[str, Any],
+    model: dict[str, Any],
     num_games: int = 10,
     board_type: BoardType = BoardType.SQUARE8,
     fast_mode: bool = True,
@@ -425,7 +425,7 @@ def _run_model_wrapper(args):
 
 
 def run_gauntlet(
-    models: List[Dict[str, Any]],
+    models: list[dict[str, Any]],
     num_games: int = 10,
     board_type: BoardType = BoardType.SQUARE8,
     parallel: int = 1,
@@ -433,7 +433,7 @@ def run_gauntlet(
     adaptive: bool = False,
     min_games: int = 6,
     max_games: int = 30,
-) -> List[GauntletResult]:
+) -> list[GauntletResult]:
     """Run gauntlet for all models."""
     total = len(models)
     mode_str = "adaptive" if adaptive else f"{num_games} games"
@@ -492,7 +492,7 @@ def run_gauntlet(
         return results
 
 
-def save_results(results: List[GauntletResult], path: Path = RESULTS_FILE):
+def save_results(results: list[GauntletResult], path: Path = RESULTS_FILE):
     """Save results to JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -520,7 +520,7 @@ def save_results(results: List[GauntletResult], path: Path = RESULTS_FILE):
     print(f"Results saved to {path}")
 
 
-def load_results(path: Path = RESULTS_FILE) -> List[GauntletResult]:
+def load_results(path: Path = RESULTS_FILE) -> list[GauntletResult]:
     """Load results from JSON."""
     if not path.exists():
         return []
@@ -534,7 +534,7 @@ def load_results(path: Path = RESULTS_FILE) -> List[GauntletResult]:
     ]
 
 
-def print_results(results: List[GauntletResult], top_n: int = 50):
+def print_results(results: list[GauntletResult], top_n: int = 50):
     """Print ranked results."""
     if not results:
         print("No results found.")

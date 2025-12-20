@@ -103,7 +103,7 @@ def main():
             )
         """)
         conn_out.commit()
-        
+
         total_inserted = 0
         total_moves = 0
         errors = 0
@@ -237,7 +237,7 @@ def main():
             except Exception as e:
                 errors += 1
                 print(f"Error processing {db_path.name}: {str(e)[:50]}")
-        
+
         # Checkpoint WAL to main database
         conn_out.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
@@ -261,9 +261,9 @@ def main():
         print("\nBreakdown by config:")
         for row in cursor.fetchall():
             print(f"  {row[0]}_{row[1]}p: {row[2]} games")
-        
+
         conn_out.close()
-        
+
     finally:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         lock_file.close()

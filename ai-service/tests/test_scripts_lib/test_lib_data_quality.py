@@ -142,7 +142,7 @@ class TestQualityWeights:
 class TestGameQualityScorer:
     """Tests for GameQualityScorer."""
 
-    def create_game(self, **kwargs) -> Dict[str, Any]:
+    def create_game(self, **kwargs) -> dict[str, Any]:
         """Helper to create a game dictionary."""
         base = {
             "game_id": "test-game-001",

@@ -36,7 +36,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ class Alert:
     alert_type: AlertType
     message: str
     timestamp: datetime = field(default_factory=datetime.now)
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     source: str = ""
     acknowledged: bool = False
 
@@ -139,7 +140,7 @@ class Alert:
     def __repr__(self) -> str:
         return f"Alert({self.severity.value}, {self.alert_type.value}, {self.message!r})"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "severity": self.severity.value,
@@ -152,7 +153,7 @@ class Alert:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Alert":
+    def from_dict(cls, data: dict[str, Any]) -> "Alert":
         """Create from dictionary."""
         return cls(
             severity=AlertSeverity(data["severity"]),
@@ -178,7 +179,7 @@ def create_alert(
     severity: AlertSeverity,
     alert_type: AlertType,
     message: str,
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
     source: str = "",
 ) -> Alert:
     """Convenience function to create an alert."""
@@ -229,7 +230,7 @@ class AlertManager:
     def __init__(
         self,
         name: str,
-        thresholds: Optional[AlertThresholds] = None,
+        thresholds: AlertThresholds | None = None,
         min_severity: AlertSeverity = AlertSeverity.INFO,
         dedup_window_seconds: int = 300,
     ):
@@ -238,10 +239,10 @@ class AlertManager:
         self.min_severity = min_severity
         self.dedup_window_seconds = dedup_window_seconds
 
-        self.alerts: List[Alert] = []
-        self.alert_history: List[Alert] = []
-        self._handlers: List[AlertHandler] = []
-        self._last_alert_times: Dict[str, datetime] = {}
+        self.alerts: list[Alert] = []
+        self.alert_history: list[Alert] = []
+        self._handlers: list[AlertHandler] = []
+        self._last_alert_times: dict[str, datetime] = {}
 
     def add_handler(self, handler: AlertHandler) -> None:
         """Add an alert handler (e.g., for Slack, email, logging)."""
@@ -302,7 +303,7 @@ class AlertManager:
 
         return True
 
-    def flush(self) -> List[Alert]:
+    def flush(self) -> list[Alert]:
         """Process pending alerts through handlers and clear."""
         pending = self.alerts.copy()
 
@@ -318,10 +319,10 @@ class AlertManager:
 
     def get_alerts(
         self,
-        severity: Optional[AlertSeverity] = None,
-        alert_type: Optional[AlertType] = None,
-        since: Optional[datetime] = None,
-    ) -> List[Alert]:
+        severity: AlertSeverity | None = None,
+        alert_type: AlertType | None = None,
+        since: datetime | None = None,
+    ) -> list[Alert]:
         """Get alerts matching criteria."""
         result = self.alert_history.copy()
 
@@ -341,7 +342,7 @@ class AlertManager:
         self.alert_history.clear()
         self._last_alert_times.clear()
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get summary of alert activity."""
         by_severity = {}
         by_type = {}
@@ -394,7 +395,7 @@ def check_disk_alert(
     percent: float,
     thresholds: AlertThresholds,
     path: str = "/",
-) -> Optional[Alert]:
+) -> Alert | None:
     """Check disk usage and return alert if threshold exceeded."""
     if percent >= thresholds.disk_critical_percent:
         return create_alert(
@@ -416,7 +417,7 @@ def check_disk_alert(
 def check_memory_alert(
     percent: float,
     thresholds: AlertThresholds,
-) -> Optional[Alert]:
+) -> Alert | None:
     """Check memory usage and return alert if threshold exceeded."""
     if percent >= thresholds.memory_critical_percent:
         return create_alert(
@@ -438,7 +439,7 @@ def check_memory_alert(
 def check_cpu_alert(
     percent: float,
     thresholds: AlertThresholds,
-) -> Optional[Alert]:
+) -> Alert | None:
     """Check CPU usage and return alert if threshold exceeded."""
     if percent >= thresholds.cpu_critical_percent:
         return create_alert(

@@ -34,8 +34,8 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 def find_game_databases(
     base_dir: Path,
-    board_type: Optional[str] = None,
-) -> List[Path]:
+    board_type: str | None = None,
+) -> list[Path]:
     """Find all game databases in directory tree."""
     dbs = []
 
@@ -69,7 +69,7 @@ def find_game_databases(
     return dbs
 
 
-def get_db_stats(db_path: Path) -> Dict[str, Any]:
+def get_db_stats(db_path: Path) -> dict[str, Any]:
     """Get statistics from a game database."""
     try:
         # Open in read-only mode to avoid locking issues

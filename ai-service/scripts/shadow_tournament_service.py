@@ -159,7 +159,7 @@ class TournamentConfig:
     full_interval_seconds: int = field(default_factory=_get_default_full_interval)
     full_games: int = 50
     include_baselines: bool = True
-    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100"])
+    baseline_models: list[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100"])
     timeout_seconds: int = 600  # Per tournament
     concurrent_tournaments: int = 4  # OPTIMIZED: 4 parallel tournaments (was 1)
 
@@ -180,7 +180,7 @@ class EvaluationResult:
     timestamp: float
     tournament_type: str  # "shadow" or "full"
     success: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ShadowTournamentService:
@@ -192,25 +192,25 @@ class ShadowTournamentService:
         self.prometheus_port = prometheus_port
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self._last_shadow: Dict[str, float] = {}
+        self._last_shadow: dict[str, float] = {}
         self._last_full: float = 0.0
-        self._watched_dirs: Set[Path] = set()
-        self._known_checkpoints: Set[str] = set()
-        self._results_history: List[EvaluationResult] = []
-        self._elo_baselines: Dict[str, float] = {}  # Baseline Elo for regression detection
+        self._watched_dirs: set[Path] = set()
+        self._known_checkpoints: set[str] = set()
+        self._results_history: list[EvaluationResult] = []
+        self._elo_baselines: dict[str, float] = {}  # Baseline Elo for regression detection
         # Use canonical config for regression threshold if available
         self._regression_threshold: float = (
             get_regression_elo_threshold() if HAS_UNIFIED_CONFIG else 30.0
         )
-        self._app: Optional[Any] = None
-        self._http_runner: Optional[Any] = None
+        self._app: Any | None = None
+        self._http_runner: Any | None = None
         self._health_registered = False
 
     async def run_shadow_tournament(
         self,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
     ) -> EvaluationResult:
         """Run a quick shadow tournament for a configuration."""
         config_key = f"{board_type}_{num_players}p"
@@ -374,9 +374,9 @@ class ShadowTournamentService:
 
     async def run_parallel_shadow_tournaments(
         self,
-        configs: Optional[List[tuple]] = None,
-        max_concurrent: Optional[int] = None,
-    ) -> List[EvaluationResult]:
+        configs: list[tuple] | None = None,
+        max_concurrent: int | None = None,
+    ) -> list[EvaluationResult]:
         """Run shadow tournaments in parallel for faster evaluation.
 
         OPTIMIZED: Run up to N tournaments concurrently to maximize throughput.
@@ -455,8 +455,8 @@ class ShadowTournamentService:
 
     async def run_full_tournament(
         self,
-        configs: Optional[List[tuple]] = None,
-    ) -> List[EvaluationResult]:
+        configs: list[tuple] | None = None,
+    ) -> list[EvaluationResult]:
         """Run a full tournament across configurations."""
         if configs is None:
             configs = ALL_CONFIGS
@@ -606,7 +606,7 @@ class ShadowTournamentService:
                     print(f"[ShadowTournament] New checkpoint: {pth_file.name}")
                     await self.run_checkpoint_evaluation(pth_file)
 
-    def get_needs_shadow_eval(self) -> Optional[tuple]:
+    def get_needs_shadow_eval(self) -> tuple | None:
         """Get next configuration needing shadow evaluation."""
         now = time.time()
 
@@ -619,7 +619,7 @@ class ShadowTournamentService:
 
         return None
 
-    def get_all_needs_shadow_eval(self) -> List[tuple]:
+    def get_all_needs_shadow_eval(self) -> list[tuple]:
         """Get all configurations needing shadow evaluation.
 
         OPTIMIZED: Returns all configs that are due for evaluation,
@@ -641,7 +641,7 @@ class ShadowTournamentService:
         """Check if full tournament is due."""
         return time.time() - self._last_full >= self.config.full_interval_seconds
 
-    def get_recent_results(self, limit: int = 50) -> List[EvaluationResult]:
+    def get_recent_results(self, limit: int = 50) -> list[EvaluationResult]:
         """Get recent evaluation results."""
         return self._results_history[-limit:]
 
@@ -742,7 +742,7 @@ class ShadowTournamentService:
         if HAS_PROMETHEUS:
             SERVICE_UP.set(0)
 
-    def check_regression(self, result: EvaluationResult) -> Optional[Dict[str, Any]]:
+    def check_regression(self, result: EvaluationResult) -> dict[str, Any] | None:
         """Check if result shows regression from baseline."""
         if not result.success:
             return None

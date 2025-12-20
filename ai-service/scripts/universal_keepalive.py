@@ -52,7 +52,7 @@ LAMBDA_IPS = ["100.97.104.89", "100.91.25.13"]  # Primary Lambda nodes for conne
 # Notification settings
 SLACK_WEBHOOK_URL = os.environ.get("RINGRIFT_SLACK_WEBHOOK", "")
 NOTIFICATION_COOLDOWN = 300  # 5 minutes between repeated alerts
-_last_notification_time: Dict[str, float] = {}
+_last_notification_time: dict[str, float] = {}
 
 
 def send_notification(event_type: str, message: str, node_id: str, severity: str = "warning") -> bool:
@@ -180,7 +180,7 @@ class UniversalKeepalive:
         self.node_type = detect_node_type()
         self.ai_service_root = get_ai_service_root()
         self.running = True
-        self.caffeinate_pid: Optional[int] = None
+        self.caffeinate_pid: int | None = None
 
         # Setup signal handlers
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -194,7 +194,7 @@ class UniversalKeepalive:
         logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
 
-    def check_p2p_health(self) -> Tuple[bool, Optional[dict]]:
+    def check_p2p_health(self) -> tuple[bool, dict | None]:
         """Check if P2P orchestrator is healthy."""
         try:
             url = f"http://localhost:{P2P_PORT}/health"
@@ -362,7 +362,7 @@ class UniversalKeepalive:
         except Exception as e:
             logger.debug(f"Vast keepalive write failed: {e}")
 
-    def run_health_check(self) -> Dict[str, bool]:
+    def run_health_check(self) -> dict[str, bool]:
         """Run all health checks and return status."""
         status = {
             "p2p_running": False,

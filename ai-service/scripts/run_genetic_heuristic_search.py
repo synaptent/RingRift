@@ -108,10 +108,10 @@ def _initial_population(
     size: int,
     sigma: float,
     rng: np.random.Generator,
-) -> List[Individual]:
+) -> list[Individual]:
     """Create an initial population around the balanced baseline."""
     baseline = dict(BASE_V1_BALANCED_WEIGHTS)
-    pop: List[Individual] = [Individual(weights=baseline)]
+    pop: list[Individual] = [Individual(weights=baseline)]
     while len(pop) < size:
         mutated = _mutate_weights(baseline, rng, sigma)
         pop.append(Individual(weights=mutated))
@@ -119,9 +119,9 @@ def _initial_population(
 
 
 def _evaluate_population(
-    population: List[Individual],
+    population: list[Individual],
     games_per_eval: int,
-    boards: List[BoardType],
+    boards: list[BoardType],
     *,
     eval_mode: str = "initial-only",
     state_pool_id: str = "v1",
@@ -149,7 +149,7 @@ def _evaluate_population(
             candidate_w: HeuristicWeights,
             baseline_w: HeuristicWeights,
             board_type: BoardType,
-            stats: Dict[str, Any],
+            stats: dict[str, Any],
             *,
             _total_individuals: int = total_individuals,
             _generation_index: int | None = generation_index,
@@ -248,9 +248,9 @@ def _evaluate_population(
 
 
 def _select_elites(
-    population: List[Individual],
+    population: list[Individual],
     elite_count: int,
-) -> List[Individual]:
+) -> list[Individual]:
     sorted_pop = sorted(
         population,
         key=lambda ind: ind.fitness or 0.0,
@@ -260,12 +260,12 @@ def _select_elites(
 
 
 def _next_generation(
-    elites: List[Individual],
+    elites: list[Individual],
     population_size: int,
     sigma: float,
     rng: np.random.Generator,
-) -> List[Individual]:
-    next_pop: List[Individual] = []
+) -> list[Individual]:
+    next_pop: list[Individual] = []
 
     # Always carry the single best individual forward unchanged (elitism).
     if elites:
@@ -443,7 +443,7 @@ def main() -> None:
     if not raw_names:
         raise SystemExit("At least one board must be specified in --eval-boards")
 
-    boards: List[BoardType] = []
+    boards: list[BoardType] = []
     for name in raw_names:
         try:
             boards.append(BOARD_NAME_TO_TYPE[name])
@@ -478,7 +478,7 @@ def main() -> None:
     # Initialize progress reporter for time-based progress output, unless
     # explicitly disabled via CLI. This keeps default behaviour (~10s
     # heartbeats) while allowing very quiet runs when needed.
-    progress_reporter: Optional[OptimizationProgressReporter]
+    progress_reporter: OptimizationProgressReporter | None
     if args.disable_progress:
         progress_reporter = None
     else:

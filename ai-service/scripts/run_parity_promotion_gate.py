@@ -24,7 +24,8 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping
+from typing import Any, Dict, List
+from collections.abc import Iterable, Mapping, MutableMapping
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +57,7 @@ class MatrixSpec:
     max_moves: int
 
 
-def _default_matrix(games: int, max_moves: int) -> List[MatrixSpec]:
+def _default_matrix(games: int, max_moves: int) -> list[MatrixSpec]:
     """Build the default evaluation matrix for gating.
 
     The default keeps the focus on the square8 2-player setting used by the
@@ -83,7 +84,7 @@ def _run_matrix(
     checkpoint2: str | None,
     cmaes_weights: str | None,
     minimax_depth: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a single candidate-vs-baseline evaluation matrix."""
     board_type = BOARD_TYPE_MAP[spec.board_key]
 
@@ -108,7 +109,7 @@ def _evaluate_promotion(
     formatted_by_matrix: Mapping[str, Mapping[str, Any]],
     *,
     min_ci_lower_bound: float = 0.5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compute promotion decision from formatted evaluation results.
 
     Args:
@@ -132,7 +133,7 @@ def _evaluate_promotion(
               - piece_advantage_p1
               - passes
     """
-    matrices_summary: Dict[str, Any] = {}
+    matrices_summary: dict[str, Any] = {}
     overall_pass = True
     worst_ci_lower = 1.0
 
@@ -273,7 +274,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
 
     # Build matrix specs from requested boards.
-    matrix_specs: List[MatrixSpec] = []
+    matrix_specs: list[MatrixSpec] = []
     for board_key in args.boards:
         if board_key not in BOARD_TYPE_MAP:
             raise SystemExit(f"Unsupported board: {board_key}")
@@ -293,7 +294,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             max_moves=args.max_moves,
         )
 
-    formatted_by_matrix: MutableMapping[str, Dict[str, Any]] = {}
+    formatted_by_matrix: MutableMapping[str, dict[str, Any]] = {}
     for spec in matrix_specs:
         payload = _run_matrix(
             spec,
@@ -312,7 +313,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         min_ci_lower_bound=args.min_ci_lower_bound,
     )
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "config": {
             "player1": args.player1,
             "player2": args.player2,

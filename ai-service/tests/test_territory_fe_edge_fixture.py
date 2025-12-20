@@ -221,22 +221,22 @@ class TestTerritoryFeEdgeFixture:
         - The input GameState remains unchanged (immutability of apply_move).
         """
         base_state = load_python_state_from_bundle(k=89)
- 
+
         assert base_state.board.type == BoardType.SQUARE8
         assert base_state.current_phase.value == "territory_processing"
         assert base_state.current_player == 1
- 
+
         region = TERRITORY_FE_EDGE_REGION_P1
         internal_pos = Position(x=6, y=1)
         internal_key = internal_pos.to_key()
- 
+
         internal_stack = base_state.board.stacks.get(internal_key)
         assert internal_stack is not None, (
             "Expected a stack at (6,1) in the fixture board"
         )
         internal_height = internal_stack.stack_height
         assert internal_height > 0
- 
+
         # Player-1 elimination stats and global elimination count before
         # applying the move.
         before_p1_elims = 0
@@ -244,9 +244,9 @@ class TestTerritoryFeEdgeFixture:
             if p.player_number == 1:
                 before_p1_elims = p.eliminated_rings
                 break
- 
+
         before_total_elims = base_state.total_rings_eliminated
- 
+
         # Construct a PROCESS_TERRITORY_REGION move that carries the curated
         # region geometry explicitly via disconnectedRegions, so that
         # _apply_territory_claim processes exactly this region.
@@ -260,18 +260,18 @@ class TestTerritoryFeEdgeFixture:
             thinkTime=0,
             moveNumber=len(base_state.move_history) + 1,
         )
- 
+
         # Apply the move via the canonical GameEngine.apply_move surface, which
         # clones the input state and invokes _apply_territory_claim internally.
         next_state = GameEngine.apply_move(base_state, move)
- 
+
         # Input state must remain unchanged.
         assert internal_key in base_state.board.stacks
         assert base_state.total_rings_eliminated == before_total_elims
- 
+
         # Internal stack is removed on the resulting board.
         assert internal_key not in next_state.board.stacks
- 
+
         # All region spaces are collapsed to player 1, with no stacks or
         # markers remaining on those cells.
         for pos in region.spaces:
@@ -282,7 +282,7 @@ class TestTerritoryFeEdgeFixture:
             )
             assert key not in next_state.board.stacks
             assert key not in next_state.board.markers
- 
+
         # All rings from the internal stack are credited to player 1 as
         # eliminations, and the global elimination count increases by the same
         # amount. This mirrors the TS invariant that internal eliminations are
@@ -292,23 +292,23 @@ class TestTerritoryFeEdgeFixture:
             if p.player_number == 1:
                 after_p1_elims = p.eliminated_rings
                 break
- 
+
         after_total_elims = next_state.total_rings_eliminated
- 
+
         assert after_p1_elims == before_p1_elims + internal_height, (
             "Expected all internal rings from (6,1) to be credited to "
             "player 1; "
             f"before={before_p1_elims}, internal_height={internal_height}, "
             f"after={after_p1_elims}"
         )
- 
+
         assert after_total_elims == before_total_elims + internal_height, (
             "Expected total_rings_eliminated to increase by the internal "
             "stack height; "
             f"before={before_total_elims}, internal_height={internal_height}, "
             f"after={after_total_elims}"
         )
- 
+
     def test_mini_region_self_elimination_prerequisite_depends_on_stacks_outside_region(  # noqa: E501
         self,
     ) -> None:
@@ -324,14 +324,14 @@ class TestTerritoryFeEdgeFixture:
           the region is no longer processable for player 1.
         """
         game_state = load_python_state_from_bundle(k=89)
- 
+
         assert game_state.board.type == BoardType.SQUARE8
         assert game_state.current_phase.value == "territory_processing"
         assert game_state.current_player == 1
- 
+
         region = TERRITORY_FE_MINI_REGION_P1
         region_keys = _region_keys(region)
- 
+
         # Collect all P1 stacks outside the SQ8-A mini-region.
         p1_stacks = BoardManager.get_player_stacks(
             game_state.board,
@@ -342,13 +342,13 @@ class TestTerritoryFeEdgeFixture:
             for stack in p1_stacks
             if stack.position.to_key() not in region_keys
         ]
- 
+
         # The fixture must have at least one P1 stack outside the mini-region
         # for the self-elimination prerequisite to be meaningful.
         assert outside_keys, (
             "Expected at least one P1 stack outside SQ8-A mini-region"
         )
- 
+
         # With the original board, the mini-region should satisfy the
         # self-elimination prerequisite.
         can_process = GameEngine._can_process_disconnected_region(
@@ -357,7 +357,7 @@ class TestTerritoryFeEdgeFixture:
             player_number=1,
         )
         assert can_process is True
- 
+
         # Now construct a variant of the state where all P1 stacks outside the
         # mini-region have been removed.
         board_no_outside = game_state.board.model_copy()
@@ -365,11 +365,11 @@ class TestTerritoryFeEdgeFixture:
         board_no_outside.stacks = game_state.board.stacks.copy()
         for key in outside_keys:
             board_no_outside.stacks.pop(key, None)
- 
+
         state_no_outside = game_state.model_copy(
             update={"board": board_no_outside},
         )
- 
+
         can_process_after = GameEngine._can_process_disconnected_region(
             state_no_outside,
             region,
@@ -381,7 +381,7 @@ class TestTerritoryFeEdgeFixture:
             "SQ8-A mini-region should not be processable when P1 has no "
             "stacks outside it"
         )
- 
+
     def test_mini_region_internal_eliminations_and_credit_on_k89_edge_fixture(
         self,
     ) -> None:
@@ -398,13 +398,13 @@ class TestTerritoryFeEdgeFixture:
         - The input GameState remains unchanged (immutability of apply_move).
         """
         base_state = load_python_state_from_bundle(k=89)
- 
+
         assert base_state.board.type == BoardType.SQUARE8
         assert base_state.current_phase.value == "territory_processing"
         assert base_state.current_player == 1
- 
+
         region = TERRITORY_FE_MINI_REGION_P1
- 
+
         # Representative internal stack at (1,6) used as the move target.
         internal_pos = Position(x=1, y=6)
         internal_key = internal_pos.to_key()
@@ -414,7 +414,7 @@ class TestTerritoryFeEdgeFixture:
         )
         internal_height = internal_stack.stack_height
         assert internal_height > 0
- 
+
         # Total internal height across all region spaces in the mini-region,
         # computed directly from the fixture board (expected to be 4).
         total_internal_height = 0
@@ -425,7 +425,7 @@ class TestTerritoryFeEdgeFixture:
                 total_internal_height += stack.stack_height
         assert total_internal_height >= internal_height
         assert total_internal_height > 0
- 
+
         # Player-1 elimination stats and global elimination count before
         # applying the move.
         before_p1_elims = 0
@@ -433,9 +433,9 @@ class TestTerritoryFeEdgeFixture:
             if p.player_number == 1:
                 before_p1_elims = p.eliminated_rings
                 break
- 
+
         before_total_elims = base_state.total_rings_eliminated
- 
+
         # Construct a PROCESS_TERRITORY_REGION move that carries the SQ8-A
         # mini-region geometry explicitly via disconnectedRegions, so that
         # _apply_territory_claim processes exactly this mini-region.
@@ -449,15 +449,15 @@ class TestTerritoryFeEdgeFixture:
             thinkTime=0,
             moveNumber=len(base_state.move_history) + 1,
         )
- 
+
         # Apply the move via the canonical GameEngine.apply_move surface, which
         # clones the input state and invokes _apply_territory_claim internally.
         next_state = GameEngine.apply_move(base_state, move)
- 
+
         # Input state must remain unchanged.
         assert internal_key in base_state.board.stacks
         assert base_state.total_rings_eliminated == before_total_elims
- 
+
         # All mini-region stacks are removed on the resulting board and the
         # mini-region spaces are collapsed to player 1.
         for pos in region.spaces:
@@ -468,7 +468,7 @@ class TestTerritoryFeEdgeFixture:
             )
             assert key not in next_state.board.stacks
             assert key not in next_state.board.markers
- 
+
         # All rings from stacks in the SQ8-A mini-region are credited to
         # player 1 as eliminations, and the global elimination count
         # increases by the same amount. This mirrors the TS invariant that
@@ -478,9 +478,9 @@ class TestTerritoryFeEdgeFixture:
             if p.player_number == 1:
                 after_p1_elims = p.eliminated_rings
                 break
- 
+
         after_total_elims = next_state.total_rings_eliminated
- 
+
         assert after_p1_elims == before_p1_elims + total_internal_height, (
             "Expected all internal rings from SQ8-A mini-region to be "
             "credited to player 1; "
@@ -488,7 +488,7 @@ class TestTerritoryFeEdgeFixture:
             f"total_internal_height={total_internal_height}, "
             f"after={after_p1_elims}"
         )
- 
+
         assert after_total_elims == (
             before_total_elims + total_internal_height
         ), (
@@ -498,8 +498,8 @@ class TestTerritoryFeEdgeFixture:
             f"total_internal_height={total_internal_height}, "
             f"after={after_total_elims}"
         )
- 
- 
+
+
 if __name__ == "__main__":  # pragma: no cover - manual debug helper
     # Allow running this module directly for quick iteration:
     #   cd ai-service && python -m pytest \

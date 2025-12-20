@@ -107,16 +107,16 @@ class LocalSelfplayGenerator:
         self,
         state: "UnifiedLoopState",
         event_bus: "EventBus",
-        output_dir: Optional[Path] = None,
-        num_workers: Optional[int] = None,
-        training_scheduler: Optional[Any] = None,
+        output_dir: Path | None = None,
+        num_workers: int | None = None,
+        training_scheduler: Any | None = None,
     ):
         self.state = state
         self.event_bus = event_bus
         self.output_dir = output_dir or AI_SERVICE_ROOT / "data" / "games" / "local_selfplay"
         self.num_workers = num_workers
         self._running = False
-        self._generation_task: Optional[asyncio.Task] = None
+        self._generation_task: asyncio.Task | None = None
         # Reference to training scheduler for PFSP and priority access
         self._training_scheduler = training_scheduler
         # Reference to signal computer for evaluation feedback loop
@@ -140,7 +140,7 @@ class LocalSelfplayGenerator:
         """
         self._signal_computer = signal_computer
 
-    def get_pfsp_opponent(self, config_key: str, current_elo: float = INITIAL_ELO_RATING) -> Optional[str]:
+    def get_pfsp_opponent(self, config_key: str, current_elo: float = INITIAL_ELO_RATING) -> str | None:
         """Get PFSP-selected opponent for selfplay.
 
         Args:
@@ -154,7 +154,7 @@ class LocalSelfplayGenerator:
             return self._training_scheduler.get_pfsp_opponent(config_key, current_elo)
         return None
 
-    def get_prioritized_config(self) -> Optional[str]:
+    def get_prioritized_config(self) -> str | None:
         """Get the config that should have highest selfplay priority.
 
         Priority is based on:
@@ -230,7 +230,7 @@ class LocalSelfplayGenerator:
 
         return best_config
 
-    def get_config_priorities(self) -> Dict[str, float]:
+    def get_config_priorities(self) -> dict[str, float]:
         """Get priority scores for all configs.
 
         Returns:
@@ -348,7 +348,7 @@ class LocalSelfplayGenerator:
             logger.debug(f"[AdaptiveEngine] {config_key} priority={priority:.2f} < {quality_threshold} -> using 'descent'")
             return "descent"
 
-    def get_all_adaptive_engines(self) -> Dict[str, str]:
+    def get_all_adaptive_engines(self) -> dict[str, str]:
         """Get recommended engine for all configs.
 
         Returns:
@@ -364,16 +364,16 @@ class LocalSelfplayGenerator:
         num_games: int,
         config_key: str,
         engine: str = "descent",
-        nn_model_id: Optional[str] = None,
+        nn_model_id: str | None = None,
         gumbel_simulations: int = 64,
         gumbel_top_k: int = 16,
-        progress_callback: Optional[callable] = None,
+        progress_callback: callable | None = None,
         use_pfsp_opponent: bool = False,
         current_elo: float = INITIAL_ELO_RATING,
         temperature: float = 1.0,
         use_temperature_decay: bool = True,
         opening_temperature: float = 1.5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate selfplay games locally.
 
         Args:
@@ -534,10 +534,10 @@ class LocalSelfplayGenerator:
         self,
         num_games: int,
         config_key: str,
-        nn_model_id: Optional[str] = None,
+        nn_model_id: str | None = None,
         simulations: int = 64,
         top_k: int = 16,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Convenience method to generate games using Gumbel-MCTS.
 
         Gumbel-MCTS produces higher quality training data with soft policy
@@ -568,7 +568,7 @@ class LocalSelfplayGenerator:
         target_games_per_hour: int = 100,
         engine: str = "descent",
         batch_size: int = 20,
-        nn_model_id: Optional[str] = None,
+        nn_model_id: str | None = None,
     ) -> None:
         """Run continuous selfplay generation in the background.
 
@@ -651,7 +651,7 @@ class LocalSelfplayGenerator:
         )
         return self._generation_task
 
-    def get_generation_stats(self) -> Dict[str, Any]:
+    def get_generation_stats(self) -> dict[str, Any]:
         """Get statistics about local selfplay generation."""
         stats = {
             "output_dir": str(self.output_dir),
@@ -683,9 +683,9 @@ class LocalSelfplayGenerator:
         num_games: int,
         config_key: str,
         batch_size: int = 64,
-        nn_model_path: Optional[str] = None,
+        nn_model_path: str | None = None,
         temperature: float = 1.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate selfplay games using GPU-accelerated parallel game runner.
 
         This uses app/ai/gpu_parallel_games.py for maximum throughput on GPU.

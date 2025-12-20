@@ -11,7 +11,8 @@ broader set of legacy/experimental fixtures under xfail.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Tuple
+from collections.abc import Iterable
 
 import json
 import os
@@ -28,7 +29,7 @@ from app.utils.paths import AI_SERVICE_ROOT
 PARITY_FIXTURES_DIR = AI_SERVICE_ROOT / "parity_fixtures"
 
 
-def _iter_canonical_fixtures() -> Iterable[Tuple[str, str]]:
+def _iter_canonical_fixtures() -> Iterable[tuple[str, str]]:
   """Yield (db_path, game_id) pairs for canonical parity fixtures.
 
   We currently treat fixtures whose filenames start with
@@ -39,7 +40,7 @@ def _iter_canonical_fixtures() -> Iterable[Tuple[str, str]]:
   if not PARITY_FIXTURES_DIR.exists():
     return []
 
-  pairs: list[Tuple[str, str]] = []
+  pairs: list[tuple[str, str]] = []
   for entry in sorted(PARITY_FIXTURES_DIR.iterdir()):
     name = entry.name
     if not name.endswith(".json"):

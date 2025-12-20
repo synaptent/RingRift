@@ -66,7 +66,7 @@ class NodeConfig:
     vram_gb: int = 0
     batch_multiplier: int = 8
     priority: int = 3
-    roles: List[str] = field(default_factory=list)
+    roles: list[str] = field(default_factory=list)
     status: str = "unknown"
     tailscale_ip: str = ""
     notes: str = ""
@@ -75,9 +75,9 @@ class NodeConfig:
 class NodeStatus:
     name: str
     online: bool = False
-    gpu_util: List[int] = field(default_factory=list)
-    gpu_memory_used: List[int] = field(default_factory=list)
-    gpu_memory_total: List[int] = field(default_factory=list)
+    gpu_util: list[int] = field(default_factory=list)
+    gpu_memory_used: list[int] = field(default_factory=list)
+    gpu_memory_total: list[int] = field(default_factory=list)
     cpu_load: float = 0.0
     disk_percent: float = 0.0
     memory_percent: float = 0.0
@@ -92,16 +92,16 @@ class Job:
     status: str  # pending, running, completed, failed
     node: str
     created_at: str
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    params: Dict[str, Any] = field(default_factory=dict)
-    result: Optional[Dict[str, Any]] = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] | None = None
 
 class ClusterConfig:
     def __init__(self, config_path: Path = CONFIG_PATH):
         self.config_path = config_path
-        self.nodes: Dict[str, NodeConfig] = {}
-        self.groups: Dict[str, List[str]] = {}
+        self.nodes: dict[str, NodeConfig] = {}
+        self.groups: dict[str, list[str]] = {}
         self.alerts = {}
 
         # Prefer unified hosts module if available
@@ -191,10 +191,10 @@ class ClusterConfig:
         except Exception as e:
             print(f"Warning: Could not load YAML config: {e}")
 
-    def get_nodes_by_group(self, group: str) -> List[str]:
+    def get_nodes_by_group(self, group: str) -> list[str]:
         return self.groups.get(group, [])
 
-    def get_active_nodes(self) -> List[str]:
+    def get_active_nodes(self) -> list[str]:
         return [name for name, node in self.nodes.items()
                 if node.status == "active"]
 
@@ -207,7 +207,7 @@ class AlertManager:
         self.config = config
         self.slack_webhook = os.environ.get("RINGRIFT_SLACK_WEBHOOK", "")
         self.discord_webhook = os.environ.get("RINGRIFT_DISCORD_WEBHOOK", "")
-        self.alert_history: Dict[str, datetime] = {}
+        self.alert_history: dict[str, datetime] = {}
         self.cooldown_minutes = 15
 
     def send_alert(self, title: str, message: str, severity: str = "warning"):
@@ -346,12 +346,12 @@ def check_node(name: str, config: NodeConfig) -> NodeStatus:
     status.last_check = datetime.now()
     return status
 
-def check_all_nodes(config: ClusterConfig, nodes: List[str] = None, parallel: bool = True) -> Dict[str, NodeStatus]:
+def check_all_nodes(config: ClusterConfig, nodes: list[str] = None, parallel: bool = True) -> dict[str, NodeStatus]:
     """Check status of all nodes."""
     if nodes is None:
         nodes = list(config.nodes.keys())
 
-    results: Dict[str, NodeStatus] = {}
+    results: dict[str, NodeStatus] = {}
 
     if parallel:
         threads = []
@@ -380,7 +380,7 @@ class JobQueue:
     def __init__(self, db_path: Path = JOBS_DB_PATH):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.jobs: Dict[str, Job] = {}
+        self.jobs: dict[str, Job] = {}
         self._load()
 
     def _load(self):
@@ -410,7 +410,7 @@ class JobQueue:
         with open(self.db_path, "w") as f:
             json.dump(data, f, indent=2)
 
-    def submit(self, job_type: str, node: str, params: Dict[str, Any] = None) -> Job:
+    def submit(self, job_type: str, node: str, params: dict[str, Any] = None) -> Job:
         import uuid
         jid = str(uuid.uuid4())[:8]
         job = Job(
@@ -425,7 +425,7 @@ class JobQueue:
         self._save()
         return job
 
-    def update_status(self, jid: str, status: str, result: Dict = None):
+    def update_status(self, jid: str, status: str, result: dict = None):
         if jid in self.jobs:
             self.jobs[jid].status = status
             if status == "running":
@@ -436,13 +436,13 @@ class JobQueue:
                     self.jobs[jid].result = result
             self._save()
 
-    def list_jobs(self, status: str = None) -> List[Job]:
+    def list_jobs(self, status: str = None) -> list[Job]:
         jobs = list(self.jobs.values())
         if status:
             jobs = [j for j in jobs if j.status == status]
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)
 
-    def get_pending_for_node(self, node: str) -> List[Job]:
+    def get_pending_for_node(self, node: str) -> list[Job]:
         return [j for j in self.jobs.values()
                 if j.node == node and j.status == "pending"]
 
@@ -508,8 +508,8 @@ def cmd_monitor(args, config: ClusterConfig):
     print(f"  Monitoring {len(nodes)} nodes until {end_time.strftime('%H:%M:%S')}")
     print(f"{'='*60}\n")
 
-    offline_since: Dict[str, datetime] = {}
-    low_gpu_since: Dict[str, datetime] = {}
+    offline_since: dict[str, datetime] = {}
+    low_gpu_since: dict[str, datetime] = {}
     iteration = 0
 
     try:

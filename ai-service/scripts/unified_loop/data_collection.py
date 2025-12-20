@@ -122,16 +122,16 @@ class StreamingDataCollector:
         config: DataIngestionConfig,
         state: "UnifiedLoopState",
         event_bus: "EventBus",
-        hot_buffer: Optional["HotDataBuffer"] = None,
+        hot_buffer: "HotDataBuffer" | None = None,
     ):
         self.config = config
         self.state = state
         self.event_bus = event_bus
         self.hot_buffer = hot_buffer
-        self._known_game_ids: Set[str] = set()
+        self._known_game_ids: set[str] = set()
 
         # Initialize unified manifest for game deduplication
-        self._manifest: Optional[DataManifest] = None
+        self._manifest: DataManifest | None = None
         if HAS_UNIFIED_MANIFEST:
             try:
                 manifest_path = AI_SERVICE_ROOT / "data" / "data_manifest.db"
@@ -141,7 +141,7 @@ class StreamingDataCollector:
                 print(f"[DataCollector] Failed to initialize manifest: {e}")
 
         # Initialize unified WAL for crash recovery
-        self._wal: Optional[UnifiedWAL] = None
+        self._wal: UnifiedWAL | None = None
         if HAS_UNIFIED_WAL:
             try:
                 wal_path = AI_SERVICE_ROOT / "data" / "unified_wal.db"
@@ -151,7 +151,7 @@ class StreamingDataCollector:
                 print(f"[DataCollector] Failed to initialize WAL: {e}")
 
         # Initialize host sync profiles for ephemeral detection
-        self._host_profiles: Dict[str, HostSyncProfile] = {}
+        self._host_profiles: dict[str, HostSyncProfile] = {}
         if HAS_HOST_CLASSIFICATION:
             self._init_host_profiles()
 
@@ -408,7 +408,7 @@ class StreamingDataCollector:
         # Also sync selfplay JSONL files
         await self._sync_selfplay_jsonl(host)
 
-    def compute_quality_stats(self, sample_size: int = 500) -> Dict[str, Any]:
+    def compute_quality_stats(self, sample_size: int = 500) -> dict[str, Any]:
         """Compute data quality statistics from synced databases.
 
         Returns:
@@ -541,7 +541,7 @@ class StreamingDataCollector:
 
         return total_new
 
-    async def _fast_parallel_query(self, hosts: List["HostState"]) -> Dict[str, int]:
+    async def _fast_parallel_query(self, hosts: list["HostState"]) -> dict[str, int]:
         """Query all hosts in parallel with short timeout to get game counts.
 
         This is much faster than querying each host sequentially during sync_host.
@@ -550,7 +550,7 @@ class StreamingDataCollector:
         Returns:
             Dict mapping host name to game count (0 for failed queries)
         """
-        async def query_host_count(host: "HostState") -> Tuple[str, int]:
+        async def query_host_count(host: "HostState") -> tuple[str, int]:
             # Circuit breaker check
             if HAS_CIRCUIT_BREAKER:
                 breaker = get_host_breaker()
@@ -676,7 +676,7 @@ class StreamingDataCollector:
         # Count games from multiple sources:
         # 1. Synced DB files: data/games/synced/*.db
         # 2. GPU selfplay JSONL: data/games/gpu_selfplay/{config}/games.jsonl
-        config_counts: Dict[str, int] = {}
+        config_counts: dict[str, int] = {}
         total_counted = 0
 
         # Source 1: Synced DB files

@@ -81,7 +81,7 @@ class ValidationResult:
         }
 
 
-def load_candidate_weights(path: str) -> Tuple[HeuristicWeights, dict]:
+def load_candidate_weights(path: str) -> tuple[HeuristicWeights, dict]:
     """Load candidate weights from a file."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -106,7 +106,7 @@ def play_validation_games(
     num_players: int,
     board_type: BoardType = BoardType.SQUARE8,
     eval_randomness: float = 0.15,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """Play validation games between candidate and default weights.
 
     Returns:
@@ -142,7 +142,7 @@ def play_validation_games(
         state = GameState.create_initial(board_type, num_players)
 
         # Create AIs for each seat
-        ais: List[HeuristicAI] = []
+        ais: list[HeuristicAI] = []
         for seat in range(num_players):
             if seat == candidate_seat:
                 ai = HeuristicAI(candidate_config, rules)
@@ -269,7 +269,7 @@ def validate_weights(
 def promote_weights(
     candidate_path: str,
     profile_id: str,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
 ) -> str:
     """Promote validated weights to a profile.
 
@@ -307,7 +307,7 @@ def promote_weights(
     return output_path
 
 
-def expand_glob_patterns(patterns: Optional[List[str]]) -> List[str]:
+def expand_glob_patterns(patterns: list[str] | None) -> list[str]:
     """Expand glob patterns to actual file paths."""
     if not patterns:
         return []
@@ -410,7 +410,7 @@ def main():
     }
     board_type = board_map[args.board]
 
-    results: List[ValidationResult] = []
+    results: list[ValidationResult] = []
 
     # Validate general candidates
     if args.candidates:

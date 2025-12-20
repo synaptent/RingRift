@@ -51,10 +51,10 @@ class IdleGPUState:
     gpu_name: str
     gpu_percent: float
     cpu_percent: float
-    external_work: Dict[str, bool]
+    external_work: dict[str, bool]
 
 
-def http_get(url: str, timeout: int = 15) -> Optional[dict]:
+def http_get(url: str, timeout: int = 15) -> dict | None:
     """Make HTTP GET request and return JSON."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -64,7 +64,7 @@ def http_get(url: str, timeout: int = 15) -> Optional[dict]:
         return None
 
 
-def get_slack_webhook_url() -> Optional[str]:
+def get_slack_webhook_url() -> str | None:
     """Get Slack webhook URL from environment or file."""
     # Try environment variable first
     url = os.environ.get("RINGRIFT_SLACK_WEBHOOK") or os.environ.get("SLACK_WEBHOOK_URL")
@@ -79,7 +79,7 @@ def get_slack_webhook_url() -> Optional[str]:
     return None
 
 
-def send_slack_alert(webhook_url: str, title: str, message: str, severity: str = "warning", details: Dict[str, Any] = None) -> bool:
+def send_slack_alert(webhook_url: str, title: str, message: str, severity: str = "warning", details: dict[str, Any] = None) -> bool:
     """Send alert to Slack."""
     colors = {
         "info": "#2196F3",
@@ -124,7 +124,7 @@ def is_gpu_heavy(gpu_name: str) -> bool:
     return any(tag.upper() in gpu_upper for tag in GPU_HEAVY_TAGS)
 
 
-def load_state() -> Dict[str, IdleGPUState]:
+def load_state() -> dict[str, IdleGPUState]:
     """Load idle state from file."""
     if not STATE_FILE.exists():
         return {}
@@ -149,7 +149,7 @@ def load_state() -> Dict[str, IdleGPUState]:
         return {}
 
 
-def save_state(state: Dict[str, IdleGPUState]) -> None:
+def save_state(state: dict[str, IdleGPUState]) -> None:
     """Save idle state to file."""
     try:
         data = {
@@ -169,7 +169,7 @@ def save_state(state: Dict[str, IdleGPUState]) -> None:
         logger.warning(f"Failed to save state: {e}")
 
 
-def check_cluster() -> List[dict]:
+def check_cluster() -> list[dict]:
     """Check cluster for idle GPU-heavy nodes."""
     status = http_get(f"http://localhost:{P2P_PORT}/status")
     if not status:

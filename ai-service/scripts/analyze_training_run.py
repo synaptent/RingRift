@@ -32,9 +32,9 @@ class EpochMetrics:
     epoch: int
     train_loss: float
     val_loss: float
-    policy_loss: Optional[float] = None
-    value_loss: Optional[float] = None
-    learning_rate: Optional[float] = None
+    policy_loss: float | None = None
+    value_loss: float | None = None
+    learning_rate: float | None = None
 
 
 @dataclass
@@ -46,17 +46,17 @@ class TrainingRunSummary:
     best_val_loss: float
     final_train_loss: float
     final_val_loss: float
-    epochs: List[EpochMetrics] = field(default_factory=list)
+    epochs: list[EpochMetrics] = field(default_factory=list)
     early_stopped: bool = False
-    model_version: Optional[str] = None
-    board_type: Optional[str] = None
-    training_samples: Optional[int] = None
-    validation_samples: Optional[int] = None
+    model_version: str | None = None
+    board_type: str | None = None
+    training_samples: int | None = None
+    validation_samples: int | None = None
 
 
 def parse_training_log(log_path: Path) -> TrainingRunSummary:
     """Parse a training log file and extract metrics."""
-    epochs: List[EpochMetrics] = []
+    epochs: list[EpochMetrics] = []
     early_stopped = False
     model_version = None
     board_type = None
@@ -258,7 +258,7 @@ def print_loss_curve(summary: TrainingRunSummary, width: int = 50) -> None:
     print()
 
 
-def compare_runs(summaries: List[TrainingRunSummary]) -> None:
+def compare_runs(summaries: list[TrainingRunSummary]) -> None:
     """Print a comparison table of multiple training runs."""
     if not summaries:
         return

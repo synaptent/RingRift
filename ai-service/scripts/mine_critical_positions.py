@@ -24,7 +24,8 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Any, Iterator
+from typing import Dict, List, Optional, Any
+from collections.abc import Iterator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -52,10 +53,10 @@ class CriticalPosition:
     board_type: str
 
     # The game state (serialized)
-    state: Dict[str, Any]
+    state: dict[str, Any]
 
     # The move that was played from this position
-    move_played: Dict[str, Any]
+    move_played: dict[str, Any]
     player_to_move: int
 
     # Outcome information
@@ -84,16 +85,16 @@ class GameTrajectory:
     winner: int
     termination_reason: str
     total_moves: int
-    states: List[Dict[str, Any]] = field(default_factory=list)
-    moves: List[Dict[str, Any]] = field(default_factory=list)
+    states: list[dict[str, Any]] = field(default_factory=list)
+    moves: list[dict[str, Any]] = field(default_factory=list)
 
 
-def state_to_dict(state: GameState) -> Dict[str, Any]:
+def state_to_dict(state: GameState) -> dict[str, Any]:
     """Convert GameState to serializable dict."""
     return state.model_dump(mode="json")
 
 
-def move_to_dict(move: Move) -> Dict[str, Any]:
+def move_to_dict(move: Move) -> dict[str, Any]:
     """Convert Move to serializable dict."""
     return move.model_dump(mode="json")
 
@@ -167,7 +168,7 @@ def load_trajectory_from_db(
     db: GameReplayDB,
     game_meta: dict,
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
 ) -> GameTrajectory:
     """Reconstruct a GameTrajectory from database records by replaying moves.
 
@@ -201,7 +202,7 @@ def load_trajectory_from_db(
 
 def iterate_db_trajectories(
     db_path: str,
-    board_type: Optional[str] = None,
+    board_type: str | None = None,
     limit: int = 1000,
 ) -> Iterator[GameTrajectory]:
     """Iterate over games from a database, yielding trajectories.
@@ -221,7 +222,7 @@ def iterate_db_trajectories(
 
     # Build filter kwargs - iterate_games doesn't support limit param,
     # so we track count ourselves
-    filters: Dict[str, Any] = {}
+    filters: dict[str, Any] = {}
     if bt_enum is not None:
         filters["board_type"] = bt_enum
 
@@ -237,7 +238,7 @@ def extract_critical_positions(
     trajectory: GameTrajectory,
     rings_from_victory: int = 2,
     last_n_moves: int = 10,
-) -> List[CriticalPosition]:
+) -> list[CriticalPosition]:
     """Extract critical positions from a game trajectory."""
     critical = []
 
@@ -321,7 +322,7 @@ def run_mining(
     rings_from_victory: int = 2,
     last_n_moves: int = 10,
     verbose: bool = True,
-) -> List[CriticalPosition]:
+) -> list[CriticalPosition]:
     """Run critical position mining over multiple self-play games."""
     all_critical = []
 
@@ -367,12 +368,12 @@ def run_mining(
 
 def run_mining_from_db(
     db_path: str,
-    board_type: Optional[str] = None,
+    board_type: str | None = None,
     limit: int = 1000,
     rings_from_victory: int = 2,
     last_n_moves: int = 10,
     verbose: bool = True,
-) -> List[CriticalPosition]:
+) -> list[CriticalPosition]:
     """Run critical position mining over games loaded from a database.
 
     Args:

@@ -38,7 +38,8 @@ import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterator, Optional, TextIO, Union
+from typing import Any, Dict, Optional, TextIO, Union
+from collections.abc import Generator, Iterator
 
 from scripts.lib.logging_config import get_logger
 
@@ -102,9 +103,9 @@ def open_jsonl_file(filepath: Union[str, Path]) -> Generator[TextIO, None, None]
 
 def read_jsonl_lines(
     filepath: Union[str, Path],
-    limit: Optional[int] = None,
+    limit: int | None = None,
     skip_invalid: bool = True,
-) -> Iterator[Dict[str, Any]]:
+) -> Iterator[dict[str, Any]]:
     """Read and parse lines from a JSONL file.
 
     Args:
@@ -160,7 +161,7 @@ def count_jsonl_lines(filepath: Union[str, Path]) -> int:
 
 def write_jsonl_lines(
     filepath: Union[str, Path],
-    records: Iterator[Dict[str, Any]],
+    records: Iterator[dict[str, Any]],
     compress: bool = False,
     append: bool = False,
 ) -> int:
@@ -333,9 +334,9 @@ def save_json_compact(
 
 def update_json(
     filepath: Union[str, Path],
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     atomic: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load a JSON file, update it with new values, and save.
 
     Args:

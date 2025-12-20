@@ -60,7 +60,7 @@ def create_initial_state():
 def generate_random_game_trace(seed: int, max_moves: int = 50, scenario: str | None = None):
     random.seed(seed)
     state = create_initial_state()
-    
+
     if scenario == "chain_capture":
         # Setup chain capture scenario
         state.current_phase = GamePhase.MOVEMENT
@@ -73,7 +73,7 @@ def generate_random_game_trace(seed: int, max_moves: int = 50, scenario: str | N
             controllingPlayer=1
         )
         state.board.stacks["2,2"] = p1_stack
-        
+
         # Player 2 at (2,3) height 1
         p2_stack1 = RingStack(
             position=Position(x=2, y=3),
@@ -83,7 +83,7 @@ def generate_random_game_trace(seed: int, max_moves: int = 50, scenario: str | N
             controllingPlayer=2
         )
         state.board.stacks["2,3"] = p2_stack1
-        
+
         # Player 2 at (2,5) height 1
         p2_stack2 = RingStack(
             position=Position(x=2, y=5),
@@ -93,34 +93,34 @@ def generate_random_game_trace(seed: int, max_moves: int = 50, scenario: str | N
             controllingPlayer=2
         )
         state.board.stacks["2,5"] = p2_stack2
-        
+
     elif scenario == "forced_elimination":
         # Setup forced elimination scenario
         # Player 1 has no rings in hand and no moves
         # This is hard to setup perfectly randomly, but we can try to create a blocked state
         pass
 
-    trace: List[Dict[str, Any]] = []
-    
+    trace: list[dict[str, Any]] = []
+
     for _ in range(max_moves):
         if state.game_status != GameStatus.ACTIVE:
             break
-            
+
         moves = GameEngine.get_valid_moves(state, state.current_player)
         if not moves:
             break
-            
+
         move = random.choice(moves)
-        
+
         # Capture state before move
         state_before = json.loads(state.model_dump_json(by_alias=True))
-        
+
         # Apply move
         state = GameEngine.apply_move(state, move)
-        
+
         # Capture state after move
         state_after = json.loads(state.model_dump_json(by_alias=True))
-        
+
         move_dict = json.loads(move.model_dump_json(by_alias=True))
 
         # Normalize capture move types to the segmented canonical model used
@@ -134,7 +134,7 @@ def generate_random_game_trace(seed: int, max_moves: int = 50, scenario: str | N
         # speak the same segmented dialect as the TS backend and sandbox.
         if move_dict.get("type") == "chain_capture":
             move_dict["type"] = "continue_capture_segment"
-        
+
         trace.append({
             "stateBefore": state_before,
             "move": move_dict,
@@ -142,7 +142,7 @@ def generate_random_game_trace(seed: int, max_moves: int = 50, scenario: str | N
             "sInvariant": BoardManager.compute_progress_snapshot(state).S,
             "stateHash": BoardManager.hash_game_state(state)
         })
-        
+
     return trace
 
 
@@ -150,7 +150,7 @@ def generate_trace_from_replay_db(
     db_path: str,
     game_id: str,
     max_moves: int | None = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Generate a Python→TS parity trace from a recorded self-play GameReplayDB game.
 
@@ -174,7 +174,7 @@ def generate_trace_from_replay_db(
     if not history:
         raise RuntimeError(f"No history entries for game {game_id} in {db_path}")
 
-    trace: List[Dict[str, Any]] = []
+    trace: list[dict[str, Any]] = []
 
     for idx in range(min(limit, len(moves), len(history))):
         entry = history[idx]
@@ -252,7 +252,7 @@ def _maybe_generate_parity_vectors(output_dir: str) -> None:
         print("No semantic_divergences in parity_summary.latest.json; nothing to generate.")
         return
 
-    representatives: Dict[str, Dict[str, Any]] = {}
+    representatives: dict[str, dict[str, Any]] = {}
 
     for entry in semantic:
         ps = entry.get("python_summary") or {}

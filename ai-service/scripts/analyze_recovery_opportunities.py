@@ -279,7 +279,7 @@ def replay_game_and_find_recovery_opportunities(
     return opportunities
 
 
-def analyze_jsonl_file(filepath: Path, limit: Optional[int] = None) -> AnalysisStats:
+def analyze_jsonl_file(filepath: Path, limit: int | None = None) -> AnalysisStats:
     """Analyze a single JSONL file."""
     stats = AnalysisStats()
 

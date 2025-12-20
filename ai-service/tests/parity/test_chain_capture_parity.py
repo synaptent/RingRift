@@ -113,7 +113,7 @@ def place_stack(
     y: int,
     player: int,
     height: int = 1,
-    z: Optional[int] = None,
+    z: int | None = None,
 ) -> None:
     """Helper to place a stack on the board."""
     pos = Position(x=x, y=y, z=z)
@@ -134,7 +134,7 @@ def place_marker(
     x: int,
     y: int,
     player: int,
-    z: Optional[int] = None,
+    z: int | None = None,
 ) -> None:
     """Helper to place a marker on the board."""
     pos = Position(x=x, y=y, z=z)

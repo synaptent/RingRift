@@ -27,7 +27,7 @@ class RegressionTest:
     """Definition of a regression test."""
     name: str
     opponent_type: str  # 'heuristic', 'minimax', 'nn'
-    opponent_config: Dict
+    opponent_config: dict
     min_win_rate: float
     games: int
     board_type: str = "square8"
@@ -92,7 +92,7 @@ QUICK_REGRESSION_TESTS = [
 def run_regression_test(
     model_path: str,
     test: RegressionTest,
-) -> Dict:
+) -> dict:
     """Run a single regression test.
 
     Returns:
@@ -333,8 +333,8 @@ def run_regression_test(
 
 def run_all_tests(
     model_path: str,
-    tests: List[RegressionTest] = REGRESSION_TESTS,
-) -> Dict:
+    tests: list[RegressionTest] = REGRESSION_TESTS,
+) -> dict:
     """Run all regression tests on a model.
 
     Returns:
@@ -375,7 +375,7 @@ def run_all_tests(
     }
 
 
-def find_models_to_test() -> List[Path]:
+def find_models_to_test() -> list[Path]:
     """Find all best models to test."""
     models_dir = AI_SERVICE_ROOT / "models"
     return list(models_dir.glob("ringrift_best_*.pth"))

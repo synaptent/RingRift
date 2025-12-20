@@ -57,7 +57,8 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List, Optional, Tuple
+from typing import List, Optional, Tuple
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -229,11 +230,11 @@ class DistillationDataset(IterableDataset):
 
     def __init__(
         self,
-        db_paths: List[str],
+        db_paths: list[str],
         teacher_model: nn.Module,
         config: DistillationConfig,
         device: str = "cpu",
-        max_positions: Optional[int] = None,
+        max_positions: int | None = None,
     ):
         self.db_paths = db_paths
         self.teacher_model = teacher_model
@@ -243,7 +244,7 @@ class DistillationDataset(IterableDataset):
         self.feature_dim = get_feature_dim(config.board_type)
         self.rng = np.random.default_rng(config.seed)
 
-    def __iter__(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Iterate over (features, value) pairs."""
         positions_yielded = 0
         db_paths = self.db_paths.copy()
@@ -292,7 +293,7 @@ class DistillationDataset(IterableDataset):
         initial_state: GameState,
         moves: list,
         total_moves: int,
-    ) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Sample positions from a single game and generate distillation pairs."""
         # Try to get positions from state snapshots first
         for move_num in range(0, total_moves, self.config.sample_every_n_moves):
@@ -335,10 +336,10 @@ class DistillationDataset(IterableDataset):
 def train_nnue_distillation(
     teacher_model: nn.Module,
     student_model: RingRiftNNUE,
-    db_paths: List[str],
+    db_paths: list[str],
     config: DistillationConfig,
     device: str = "cpu",
-) -> Tuple[RingRiftNNUE, dict]:
+) -> tuple[RingRiftNNUE, dict]:
     """Train NNUE via distillation from NN teacher.
 
     Args:
@@ -531,7 +532,7 @@ def save_nnue_checkpoint(
 # CLI Interface
 # =============================================================================
 
-def count_available_positions(db_paths: List[str], board_type: BoardType) -> int:
+def count_available_positions(db_paths: list[str], board_type: BoardType) -> int:
     """Count total available positions across databases."""
     total = 0
     for db_path in db_paths:

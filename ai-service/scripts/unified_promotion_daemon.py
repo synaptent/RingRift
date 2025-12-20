@@ -63,7 +63,7 @@ class DaemonConfig:
 
     # Gauntlet settings
     games_per_baseline: int = 10
-    baselines: List[str] = field(default_factory=lambda: ["random", "heuristic"])
+    baselines: list[str] = field(default_factory=lambda: ["random", "heuristic"])
     fast_mode: bool = True
 
     # Promotion thresholds
@@ -77,7 +77,7 @@ class DaemonConfig:
     restart_p2p_after_sync: bool = False
 
     # Notifications
-    slack_webhook_url: Optional[str] = None
+    slack_webhook_url: str | None = None
     notify_on_promotion: bool = True
     notify_on_rejection: bool = False
 
@@ -125,16 +125,16 @@ class DaemonConfig:
 @dataclass
 class DaemonState:
     """Persistent daemon state."""
-    known_models: Dict[str, str] = field(default_factory=dict)  # path -> hash
-    evaluated_models: Dict[str, Dict] = field(default_factory=dict)  # path -> result
-    last_check: Optional[str] = None
-    promotions: List[Dict] = field(default_factory=list)
+    known_models: dict[str, str] = field(default_factory=dict)  # path -> hash
+    evaluated_models: dict[str, dict] = field(default_factory=dict)  # path -> result
+    last_check: str | None = None
+    promotions: list[dict] = field(default_factory=list)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "DaemonState":
+    def from_dict(cls, data: dict) -> "DaemonState":
         return cls(
             known_models=data.get("known_models", {}),
             evaluated_models=data.get("evaluated_models", {}),
@@ -150,11 +150,11 @@ class DaemonState:
 class ModelWatcher:
     """Watch for new model files."""
 
-    def __init__(self, models_dir: Path, patterns: List[str] = None):
+    def __init__(self, models_dir: Path, patterns: list[str] = None):
         self.models_dir = models_dir
         self.patterns = patterns or ["*.pth"]
 
-    def get_all_models(self) -> List[Path]:
+    def get_all_models(self) -> list[Path]:
         """Get all model files."""
         models = []
         for pattern in self.patterns:
@@ -168,7 +168,7 @@ class ModelWatcher:
         stat = path.stat()
         return hashlib.md5(f"{stat.st_size}:{stat.st_mtime}".encode()).hexdigest()[:16]
 
-    def get_new_models(self, known: Dict[str, str]) -> List[Path]:
+    def get_new_models(self, known: dict[str, str]) -> list[Path]:
         """Get models not in known set."""
         new_models = []
         for model in self.get_all_models():
@@ -195,7 +195,7 @@ class GauntletRunner:
     def __init__(self, config: DaemonConfig):
         self.config = config
 
-    def run_gauntlet(self, model_path: Path) -> Optional[Dict]:
+    def run_gauntlet(self, model_path: Path) -> dict | None:
         """Run gauntlet for a single model."""
         try:
             # Import gauntlet functions
@@ -239,7 +239,7 @@ class GauntletRunner:
             logger.error(f"Gauntlet failed for {model_path}: {e}")
             return None
 
-    def _parse_model_info(self, path: Path) -> Dict[str, Any]:
+    def _parse_model_info(self, path: Path) -> dict[str, Any]:
         """Parse model info from filename or sidecar JSON."""
         info = {"type": "nn", "board_type": "square8", "num_players": 2}
 
@@ -284,7 +284,7 @@ class PromotionChecker:
     def __init__(self, config: DaemonConfig):
         self.config = config
 
-    def should_promote(self, gauntlet_result: Dict) -> tuple[bool, str]:
+    def should_promote(self, gauntlet_result: dict) -> tuple[bool, str]:
         """Check if model meets promotion criteria."""
         # Check win rates
         vs_random = gauntlet_result.get("vs_random", 0)
@@ -305,7 +305,7 @@ class PromotionChecker:
 
         return True, "Passed all criteria"
 
-    def get_current_best(self, board_type: str, num_players: int) -> Optional[Dict]:
+    def get_current_best(self, board_type: str, num_players: int) -> dict | None:
         """Get current best model for config from Elo DB."""
         try:
             from app.tournament.unified_elo_db import get_elo_database
@@ -366,7 +366,7 @@ class Notifier:
     def __init__(self, config: DaemonConfig):
         self.config = config
 
-    def notify_promotion(self, model_path: str, result: Dict) -> None:
+    def notify_promotion(self, model_path: str, result: dict) -> None:
         """Send notification for successful promotion."""
         if not self.config.notify_on_promotion:
             return
@@ -459,7 +459,7 @@ class UnifiedPromotionDaemon:
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
 
-    def check_once(self, dry_run: bool = False) -> Dict[str, Any]:
+    def check_once(self, dry_run: bool = False) -> dict[str, Any]:
         """Run one check cycle."""
         logger.info("=" * 70)
         logger.info("PROMOTION DAEMON CHECK")

@@ -131,7 +131,7 @@ class TransferResult:
     source_config: str
     target_config: str
     output_model: str
-    transfer_config: Dict[str, Any]
+    transfer_config: dict[str, Any]
     layers_transferred: int
     layers_adapted: int
     initial_loss: float
@@ -140,7 +140,7 @@ class TransferResult:
     timestamp: str = ""
 
 
-def get_layer_groups(model: nn.Module) -> Dict[str, List[str]]:
+def get_layer_groups(model: nn.Module) -> dict[str, list[str]]:
     """Categorize model layers into groups for progressive unfreezing.
 
     Returns dict with keys:
@@ -173,14 +173,14 @@ def get_layer_groups(model: nn.Module) -> Dict[str, List[str]]:
     return groups
 
 
-def freeze_layers(model: nn.Module, layer_names: List[str]):
+def freeze_layers(model: nn.Module, layer_names: list[str]):
     """Freeze specified layers."""
     for name, param in model.named_parameters():
         if name in layer_names:
             param.requires_grad = False
 
 
-def unfreeze_layers(model: nn.Module, layer_names: List[str]):
+def unfreeze_layers(model: nn.Module, layer_names: list[str]):
     """Unfreeze specified layers."""
     for name, param in model.named_parameters():
         if name in layer_names:
@@ -195,10 +195,10 @@ def count_parameters(model: nn.Module, trainable_only: bool = False) -> int:
 
 
 def adapt_policy_head(
-    state_dict: Dict[str, torch.Tensor],
+    state_dict: dict[str, torch.Tensor],
     source_policy_size: int,
     target_policy_size: int,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Adapt policy head weights to new policy size.
 
     Strategy:
@@ -246,10 +246,10 @@ def adapt_policy_head(
 
 
 def adapt_value_head(
-    state_dict: Dict[str, torch.Tensor],
+    state_dict: dict[str, torch.Tensor],
     source_num_players: int,
     target_num_players: int,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Adapt value head for different number of players.
 
     Strategy:
@@ -304,7 +304,7 @@ def load_and_adapt_model(
     source_path: Path,
     source_config: ConfigSpec,
     target_config: ConfigSpec,
-) -> Tuple[Dict[str, torch.Tensor], Dict[str, Any]]:
+) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
     """Load source model and adapt weights for target config.
 
     Returns:
@@ -368,12 +368,12 @@ def load_and_adapt_model(
 
 
 def create_transfer_checkpoint(
-    adapted_state_dict: Dict[str, torch.Tensor],
+    adapted_state_dict: dict[str, torch.Tensor],
     source_path: Path,
     source_config: ConfigSpec,
     target_config: ConfigSpec,
-    transfer_info: Dict[str, Any],
-) -> Dict[str, Any]:
+    transfer_info: dict[str, Any],
+) -> dict[str, Any]:
     """Create a checkpoint with transfer metadata."""
     return {
         "model_state_dict": adapted_state_dict,
@@ -392,7 +392,7 @@ def run_transfer_learning(
     source_config: ConfigSpec,
     target_config: ConfigSpec,
     transfer_config: TransferConfig,
-    db_paths: List[Path],
+    db_paths: list[Path],
     output_path: Path,
 ) -> TransferResult:
     """Run the full transfer learning pipeline.

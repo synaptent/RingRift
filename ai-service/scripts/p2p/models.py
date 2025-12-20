@@ -45,7 +45,7 @@ class NodeInfo:
     has_gpu: bool = False
     gpu_name: str = ""
     memory_gb: int = 0
-    capabilities: List[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     version: str = "1.0.0"
     # Self-reported endpoint (may be different from the observed reachable
     # endpoint stored in `host`/`port`, e.g. overlays or containers).
@@ -216,7 +216,7 @@ class NodeInfo:
 
         return score
 
-    def check_load_average_safe(self) -> Tuple[bool, str]:
+    def check_load_average_safe(self) -> tuple[bool, str]:
         """Check if system load average is safe for spawning new processes.
 
         SAFEGUARD: Uses actual os.getloadavg() instead of just CPU percentage.
@@ -330,14 +330,14 @@ class DistributedCMAESState:
     games_per_eval: int = 50
     current_generation: int = 0
     best_fitness: float = 0.0
-    best_weights: Dict[str, float] = field(default_factory=dict)
-    worker_nodes: List[str] = field(default_factory=list)
+    best_weights: dict[str, float] = field(default_factory=dict)
+    worker_nodes: list[str] = field(default_factory=list)
     status: str = "pending"
     started_at: float = 0.0
     last_update: float = 0.0
     results_file: str = ""
     # LEARNED LESSONS - Store pending results keyed by (generation, individual_idx)
-    pending_results: Dict[str, float] = field(default_factory=dict)
+    pending_results: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -354,14 +354,14 @@ class DistributedTournamentState:
     job_id: str
     board_type: str = "square8"
     num_players: int = 2
-    agent_ids: List[str] = field(default_factory=list)
+    agent_ids: list[str] = field(default_factory=list)
     games_per_pairing: int = 2
     total_matches: int = 0
     completed_matches: int = 0
-    worker_nodes: List[str] = field(default_factory=list)
-    pending_matches: List[dict] = field(default_factory=list)
-    results: List[dict] = field(default_factory=list)
-    final_ratings: Dict[str, float] = field(default_factory=dict)
+    worker_nodes: list[str] = field(default_factory=list)
+    pending_matches: list[dict] = field(default_factory=list)
+    results: list[dict] = field(default_factory=list)
+    final_ratings: dict[str, float] = field(default_factory=dict)
     status: str = "pending"
     started_at: float = 0.0
     last_update: float = 0.0
@@ -392,8 +392,8 @@ class SSHTournamentRun:
     checkpoint_path: str = ""
     report_path: str = ""
     log_path: str = ""
-    command: List[str] = field(default_factory=list)
-    return_code: Optional[int] = None
+    command: list[str] = field(default_factory=list)
+    return_code: int | None = None
     error_message: str = ""
 
     def to_dict(self) -> dict:
@@ -413,8 +413,8 @@ class ImprovementLoopState:
     best_model_path: str = ""
     best_winrate: float = 0.0
     consecutive_failures: int = 0
-    worker_nodes: List[str] = field(default_factory=list)
-    selfplay_progress: Dict[str, int] = field(default_factory=dict)  # node_id -> games done
+    worker_nodes: list[str] = field(default_factory=list)
+    selfplay_progress: dict[str, int] = field(default_factory=dict)  # node_id -> games done
     status: str = "pending"
     started_at: float = 0.0
     last_update: float = 0.0
@@ -448,7 +448,7 @@ class TrainingJob:
     batch_size: int = 4096  # Increased for GH200/H100 GPUs
     learning_rate: float = 0.001
     # Data sources
-    data_paths: List[str] = field(default_factory=list)
+    data_paths: list[str] = field(default_factory=list)
     data_games_count: int = 0
     # Output
     output_model_path: str = ""
@@ -578,14 +578,14 @@ class NodeDataManifest:
     collected_at: float          # When this manifest was collected
     total_files: int = 0
     total_size_bytes: int = 0
-    files: List[DataFileInfo] = field(default_factory=list)
+    files: list[DataFileInfo] = field(default_factory=list)
     # Summary by type
     selfplay_games: int = 0      # Total selfplay games (from JSONL line counts)
     model_count: int = 0         # Number of model files
     training_data_size: int = 0  # Total training data size
 
     @property
-    def files_by_path(self) -> Dict[str, DataFileInfo]:
+    def files_by_path(self) -> dict[str, DataFileInfo]:
         return {f.path: f for f in self.files}
 
     def to_dict(self) -> dict:
@@ -604,28 +604,28 @@ class NodeDataManifest:
 class ClusterDataManifest:
     """Aggregated data manifest for the entire cluster (leader-only)."""
     collected_at: float
-    node_manifests: Dict[str, NodeDataManifest] = field(default_factory=dict)
+    node_manifests: dict[str, NodeDataManifest] = field(default_factory=dict)
     # Cluster-wide totals
     total_nodes: int = 0
     total_files: int = 0
     total_size_bytes: int = 0
     total_selfplay_games: int = 0
     # Data distribution analysis
-    files_by_node: Dict[str, int] = field(default_factory=dict)
-    unique_files: Set[str] = field(default_factory=set)
-    missing_from_nodes: Dict[str, List[str]] = field(default_factory=dict)  # file -> list of nodes missing it
+    files_by_node: dict[str, int] = field(default_factory=dict)
+    unique_files: set[str] = field(default_factory=set)
+    missing_from_nodes: dict[str, list[str]] = field(default_factory=dict)  # file -> list of nodes missing it
 
     @property
-    def manifests_by_node(self) -> Dict[str, NodeDataManifest]:
+    def manifests_by_node(self) -> dict[str, NodeDataManifest]:
         return self.node_manifests
 
     @property
-    def by_board_type(self) -> Dict[str, Dict[str, Any]]:
+    def by_board_type(self) -> dict[str, dict[str, Any]]:
         """Aggregate selfplay game counts by (board_type, num_players).
 
         Key format matches downstream training logic: `{board_type}_{num_players}p`.
         """
-        totals: Dict[str, Dict[str, Any]] = {}
+        totals: dict[str, dict[str, Any]] = {}
 
         for node_id, node_manifest in self.node_manifests.items():
             for f in node_manifest.files:
@@ -668,7 +668,7 @@ class DataSyncJob:
     job_id: str
     source_node: str            # Node that has the file(s)
     target_node: str            # Node that needs the file(s)
-    files: List[str]            # List of file paths to sync (relative to data/)
+    files: list[str]            # List of file paths to sync (relative to data/)
     status: str = "pending"     # pending, running, completed, failed
     started_at: float = 0.0
     completed_at: float = 0.0
@@ -693,7 +693,7 @@ class ClusterSyncPlan:
     created_at: float
     total_files_to_sync: int = 0
     total_bytes_to_sync: int = 0
-    sync_jobs: List[DataSyncJob] = field(default_factory=list)
+    sync_jobs: list[DataSyncJob] = field(default_factory=list)
     # Status tracking
     status: str = "pending"     # pending, running, completed, failed
     jobs_completed: int = 0

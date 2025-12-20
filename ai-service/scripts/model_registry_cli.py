@@ -58,7 +58,7 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY_DIR = AI_SERVICE_ROOT / "data" / "model_registry"
 
 
-def get_registry(registry_dir: Optional[Path] = None) -> ModelRegistry:
+def get_registry(registry_dir: Path | None = None) -> ModelRegistry:
     """Get or create the model registry."""
     registry_dir = registry_dir or DEFAULT_REGISTRY_DIR
     return ModelRegistry(registry_dir)

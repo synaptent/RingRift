@@ -316,7 +316,7 @@ def test_line_validator_multiple_lines(empty_game_state):
 def test_territory_validator(empty_game_state):
     validator = TerritoryValidator()
     empty_game_state.current_phase = GamePhase.TERRITORY_PROCESSING
- 
+
     # Setup disconnected territory
     from app.models import Territory
     territory = Territory(
@@ -325,7 +325,7 @@ def test_territory_validator(empty_game_state):
         isDisconnected=True,
     )
     empty_game_state.board.territories["t1"] = territory
- 
+
     # Valid territory process
     move = Move(
         id="m1",
@@ -337,12 +337,12 @@ def test_territory_validator(empty_game_state):
         moveNumber=1,
     )
     assert validator.validate(empty_game_state, move) is True
-     
+
     # No disconnected territory
     empty_game_state.board.territories = {}
     assert validator.validate(empty_game_state, move) is False
- 
- 
+
+
 def test_no_dead_placement_matches_movement_semantics(empty_game_state):
     """
     For any PLACE_RING move accepted by the engine's ring placement
@@ -351,24 +351,24 @@ def test_no_dead_placement_matches_movement_semantics(empty_game_state):
     legal move (movement or capture) in that state.
     """
     from app.game_engine import GameEngine
- 
+
     state = empty_game_state
     player = state.current_player
- 
+
     placement_moves = GameEngine._get_ring_placement_moves(state, player)
     assert placement_moves, "Expected at least one legal placement move"
- 
+
     for placement in placement_moves:
         next_state = GameEngine.apply_move(state, placement)
- 
+
         # Only check the invariant when the engine actually advances to
         # MOVEMENT; some placements may skip directly to line/territory
         # processing.
         if next_state.current_phase != GamePhase.MOVEMENT:
             continue
- 
+
         assert next_state.must_move_from_stack_key == placement.to.to_key()
- 
+
         moves = GameEngine.get_valid_moves(next_state, player)
         assert moves, (
             "Placement accepted by no-dead-placement led to MOVEMENT "

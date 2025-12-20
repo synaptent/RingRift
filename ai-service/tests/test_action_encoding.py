@@ -135,7 +135,7 @@ class TestActionEncoding(unittest.TestCase):
 
         idx = self.ai.encode_move(move, self.board_size)
         self.assertNotEqual(idx, INVALID_MOVE_INDEX)
-        
+
         # Manual calculation check
         # Index = (y * 19 + x) * 3 + (count - 1)
         # (3 * 19 + 3) * 3 + 0 = 60 * 3 = 180

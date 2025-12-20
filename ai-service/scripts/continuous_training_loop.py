@@ -84,7 +84,7 @@ class ContinuousTrainingPipeline:
         ))
         logger.addHandler(file_handler)
 
-    def _load_state(self) -> Dict[str, Any]:
+    def _load_state(self) -> dict[str, Any]:
         """Load pipeline state from disk."""
         if self.state_file.exists():
             try:
@@ -107,7 +107,7 @@ class ContinuousTrainingPipeline:
         with open(self.state_file, 'w') as f:
             json.dump(self.state, f, indent=2)
 
-    def run_selfplay(self) -> Optional[Path]:
+    def run_selfplay(self) -> Path | None:
         """Run selfplay data generation."""
         logger.info(f"Starting selfplay: {self.games_per_cycle} games")
 
@@ -147,7 +147,7 @@ class ContinuousTrainingPipeline:
             logger.error(f"Selfplay error: {e}")
             return None
 
-    def aggregate_data(self) -> Optional[Path]:
+    def aggregate_data(self) -> Path | None:
         """Aggregate all selfplay data for training."""
         data_files = list(self.data_dir.glob("selfplay_iter*.npz"))
         if not data_files:
@@ -190,7 +190,7 @@ class ContinuousTrainingPipeline:
 
         return merged_path if total_samples >= self.min_samples_for_training else None
 
-    def train_model(self, data_path: Path) -> Optional[Path]:
+    def train_model(self, data_path: Path) -> Path | None:
         """Train a new model on aggregated data."""
         logger.info(f"Starting training: {self.epochs_per_cycle} epochs")
 
@@ -237,7 +237,7 @@ class ContinuousTrainingPipeline:
             logger.error(f"Training error: {e}")
             return None
 
-    def evaluate_model(self, model_path: Path) -> Optional[float]:
+    def evaluate_model(self, model_path: Path) -> float | None:
         """Evaluate model in gauntlet and return Elo."""
         logger.info(f"Starting gauntlet evaluation: {self.gauntlet_games} games")
 

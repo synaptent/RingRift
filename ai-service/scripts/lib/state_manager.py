@@ -34,7 +34,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar, Union
+from typing import Any, Dict, Generic, Optional, Type, TypeVar, Union
+from collections.abc import Callable
 
 from scripts.lib.logging_config import get_logger
 
@@ -66,8 +67,8 @@ class StateManager(Generic[T]):
     def __init__(
         self,
         state_file: Union[str, Path],
-        state_class: Type[T],
-        default_factory: Optional[Callable[[], T]] = None,
+        state_class: type[T],
+        default_factory: Callable[[], T] | None = None,
     ):
         """Initialize state manager.
 
@@ -260,8 +261,8 @@ class StatePersistence:
 
 def load_json_state(
     path: Union[str, Path],
-    default: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    default: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Load state from a JSON file, returning default if not found.
 
     Simple function for scripts that use plain dictionaries.
@@ -290,7 +291,7 @@ def load_json_state(
 
 def save_json_state(
     path: Union[str, Path],
-    state: Dict[str, Any],
+    state: dict[str, Any],
 ) -> bool:
     """Save state dictionary to a JSON file.
 

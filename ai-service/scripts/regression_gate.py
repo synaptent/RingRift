@@ -86,10 +86,10 @@ class RegressionReport:
     total_tests: int
     passed_tests: int
     failed_tests: int
-    results: List[RegressionTestResult] = field(default_factory=list)
+    results: list[RegressionTestResult] = field(default_factory=list)
     duration_seconds: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model_path": self.model_path,
             "config": self.config,
@@ -150,7 +150,7 @@ class RegressionGate:
     ) -> RegressionReport:
         """Run all regression tests on a model candidate."""
         start_time = time.time()
-        results: List[RegressionTestResult] = []
+        results: list[RegressionTestResult] = []
 
         if verbose:
             print(f"[RegressionGate] Testing {model_path} for {config}")
@@ -600,7 +600,7 @@ class RegressionGate:
         except Exception as e:
             print(f"[RegressionGate] Error saving report: {e}")
 
-    def get_recent_results(self, config: str = None, limit: int = 10) -> List[Dict]:
+    def get_recent_results(self, config: str = None, limit: int = 10) -> list[dict]:
         """Get recent regression test results."""
         conn = sqlite3.connect(self._results_db)
 

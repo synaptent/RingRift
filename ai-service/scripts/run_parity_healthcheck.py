@@ -33,7 +33,8 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Iterable, Sequence
 
 # Ensure `app.*` and `tests.*` imports resolve when run from ai-service/
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -57,8 +58,8 @@ class ParityCaseResult:
 
     suite: str
     case_id: str
-    mismatch_type: Optional[str]
-    details: Optional[str] = None
+    mismatch_type: str | None
+    details: str | None = None
 
 
 SUPPORTED_SUITES = (
@@ -66,7 +67,7 @@ SUPPORTED_SUITES = (
     "plateau_snapshots",
 )
 
-PARITY_ID_BY_SUITE: Dict[str, str] = {
+PARITY_ID_BY_SUITE: dict[str, str] = {
     # Contract vectors parity (full TS↔Python turn/phase semantics).
     "contract_vectors_v2": "PARITY-TS-PY-CONTRACT-VECTORS",
     # Seed / plateau parity based on TS ComparableSnapshot exports.
@@ -85,7 +86,7 @@ def _classify_contract_vector_mismatch(failures: Sequence[str]) -> str:
     category (validation / status / hash / s_invariant) for metrics and
     dashboards, not to encode every possible failure shape.
     """
-    kind_flags: Dict[str, bool] = {
+    kind_flags: dict[str, bool] = {
         "validation": False,
         "status": False,
         "hash": False,
@@ -125,7 +126,7 @@ def _classify_contract_vector_mismatch(failures: Sequence[str]) -> str:
     return "unknown"
 
 
-def run_contract_vectors_suite() -> List[ParityCaseResult]:
+def run_contract_vectors_suite() -> list[ParityCaseResult]:
     """Run the v2 contract vectors against the Python engine.
 
     This reuses the existing contract-vector runner module, but instead of
@@ -134,7 +135,7 @@ def run_contract_vectors_suite() -> List[ParityCaseResult]:
     Vectors with explicit 'skip' field or 'multi_phase' tag are excluded
     because they require orchestrator-level execution, not single-move testing.
     """
-    results: List[ParityCaseResult] = []
+    results: list[ParityCaseResult] = []
     all_vectors = contract_vectors.load_all_vectors()
 
     # Filter out vectors that require orchestrator execution or have known
@@ -199,7 +200,7 @@ def run_contract_vectors_suite() -> List[ParityCaseResult]:
     return results
 
 
-def _iter_plateau_snapshots() -> Iterable[Tuple[str, Any]]:
+def _iter_plateau_snapshots() -> Iterable[tuple[str, Any]]:
     """Yield (case_id, snapshot_dict) for available plateau fixtures."""
     import json
 
@@ -207,12 +208,12 @@ def _iter_plateau_snapshots() -> Iterable[Tuple[str, Any]]:
         if not path.exists():
             continue
         with path.open("r", encoding="utf-8") as f:
-            snapshot: Dict[str, Any] = json.load(f)
+            snapshot: dict[str, Any] = json.load(f)
         label = snapshot.get("label") or path.stem
         yield label, snapshot
 
 
-def run_plateau_snapshots_suite() -> List[ParityCaseResult]:
+def run_plateau_snapshots_suite() -> list[ParityCaseResult]:
     """Run plateau snapshot parity checks (seed plateau parity).
 
     For each TS ComparableSnapshot JSON fixture we:
@@ -224,7 +225,7 @@ def run_plateau_snapshots_suite() -> List[ParityCaseResult]:
     Any structural difference is reported as a ``hash`` mismatch; exceptions
     during hydration are reported as ``validation`` mismatches.
     """
-    results: List[ParityCaseResult] = []
+    results: list[ParityCaseResult] = []
 
     for case_id, snapshot in _iter_plateau_snapshots():
         try:
@@ -280,14 +281,14 @@ def _summarise_parity_results(
     results: Sequence[ParityCaseResult],
     *,
     profile: str = "parity-healthcheck",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Aggregate per-case parity results into a compact summary dict."""
     total_cases = len(results)
     mismatches_total = sum(1 for r in results if r.mismatch_type)
 
-    mismatches_by_type: Dict[str, int] = {}
-    mismatches_by_suite: Dict[str, int] = {}
-    suites: List[str] = []
+    mismatches_by_type: dict[str, int] = {}
+    mismatches_by_suite: dict[str, int] = {}
+    suites: list[str] = []
 
     for r in results:
         if r.suite not in suites:
@@ -296,7 +297,7 @@ def _summarise_parity_results(
             mismatches_by_type[r.mismatch_type] = mismatches_by_type.get(r.mismatch_type, 0) + 1
             mismatches_by_suite[r.suite] = mismatches_by_suite.get(r.suite, 0) + 1
 
-    samples: List[Dict[str, Any]] = []
+    samples: list[dict[str, Any]] = []
     for r in results:
         if not r.mismatch_type:
             continue
@@ -311,7 +312,7 @@ def _summarise_parity_results(
         if len(samples) >= MAX_SAMPLE_MISMATCHES:
             break
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "profile": profile or "parity-healthcheck",
         "suites": sorted(set(suites)),
         "total_cases": total_cases,
@@ -336,7 +337,7 @@ SUITE_RUNNERS = {
 
 def run_parity_healthcheck(
     args: argparse.Namespace,
-) -> Tuple[List[ParityCaseResult], Dict[str, Any]]:
+) -> tuple[list[ParityCaseResult], dict[str, Any]]:
     """Execute the selected suites and return (results, summary)."""
     if getattr(args, "suite", None):
         selected = list(dict.fromkeys(args.suite))
@@ -350,7 +351,7 @@ def run_parity_healthcheck(
             f"Supported suites: {', '.join(sorted(SUITE_RUNNERS))}.",
         )
 
-    all_results: List[ParityCaseResult] = []
+    all_results: list[ParityCaseResult] = []
     for suite in selected:
         runner = SUITE_RUNNERS[suite]
         suite_results = runner()
@@ -363,7 +364,7 @@ def run_parity_healthcheck(
     return all_results, summary
 
 
-def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run a bounded TS↔Python rules parity healthcheck over selected "
@@ -393,7 +394,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:  # pragma: no cover
+def main(argv: Sequence[str] | None = None) -> None:  # pragma: no cover
     args = _parse_args(argv)
     _results, summary = run_parity_healthcheck(args)
 

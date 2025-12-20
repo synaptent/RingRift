@@ -20,7 +20,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Tuple
+from collections.abc import Iterable
 
 import pytest
 
@@ -32,7 +33,7 @@ from app.utils.paths import AI_SERVICE_ROOT
 PARITY_FIXTURES_DIR = AI_SERVICE_ROOT / "parity_fixtures"
 
 
-def _iter_parity_fixtures() -> Iterable[Tuple[str, str]]:
+def _iter_parity_fixtures() -> Iterable[tuple[str, str]]:
     """Yield (db_path, game_id) pairs from parity fixture JSON files.
 
     Each fixture written by ``check_ts_python_replay_parity.py`` contains:
@@ -42,7 +43,7 @@ def _iter_parity_fixtures() -> Iterable[Tuple[str, str]]:
     if not PARITY_FIXTURES_DIR.exists():
         return []
 
-    pairs: list[Tuple[str, str]] = []
+    pairs: list[tuple[str, str]] = []
     for entry in sorted(PARITY_FIXTURES_DIR.iterdir()):
         if not entry.name.endswith(".json"):
             continue

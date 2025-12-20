@@ -172,30 +172,30 @@ class TestLogContext:
         """LogContext should change level only in context."""
         logger = setup_logging("test_context_1", level=logging.INFO)
         original_level = logger.level
-        
+
         with LogContext(logger, logging.DEBUG):
             assert logger.level == logging.DEBUG
-        
+
         assert logger.level == original_level
 
     def test_restores_level_on_exception(self):
         """LogContext should restore level even on exception."""
         logger = setup_logging("test_context_2", level=logging.INFO)
         original_level = logger.level
-        
+
         try:
             with LogContext(logger, logging.DEBUG):
                 assert logger.level == logging.DEBUG
                 raise ValueError("test")
         except ValueError:
             pass
-        
+
         assert logger.level == original_level
 
     def test_returns_logger_in_context(self):
         """LogContext should return logger from __enter__."""
         logger = setup_logging("test_context_3")
-        
+
         with LogContext(logger, logging.DEBUG) as ctx_logger:
             assert ctx_logger is logger
 

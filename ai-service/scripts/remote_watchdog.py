@@ -90,10 +90,10 @@ def start_selfplay(config, seed_offset=0):
     players = config["players"]
     games = config["games"]
     seed = int(time.time()) + seed_offset
-    
+
     output_dir = PROJECT_DIR / f"data/selfplay/{board}_{players}p"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     cmd = [
         sys.executable, str(PROJECT_DIR / "scripts/run_hybrid_selfplay.py"),
         "--num-games", str(games),
@@ -102,10 +102,10 @@ def start_selfplay(config, seed_offset=0):
         "--output-dir", str(output_dir),
         "--seed", str(seed),
     ]
-    
+
     log_file = f"/tmp/selfplay_{board}_{players}p.log"
     log(f"Starting selfplay: {board} {players}p, {games} games")
-    
+
     with open(log_file, "a") as f:
         subprocess.Popen(cmd, stdout=f, stderr=f, cwd=str(PROJECT_DIR),
                         env={**os.environ, "PYTHONPATH": str(PROJECT_DIR)})
@@ -113,7 +113,7 @@ def start_selfplay(config, seed_offset=0):
 def restart_selfplay_if_needed(state):
     current = count_selfplay_jobs()
     log(f"Selfplay jobs: {current} (min: {MIN_SELFPLAY_JOBS})")
-    
+
     if current < MIN_SELFPLAY_JOBS:
         needed = MIN_SELFPLAY_JOBS - current
         for i in range(needed):
@@ -150,35 +150,35 @@ def main():
     log("=== Remote Watchdog Started ===")
     log(f"Project dir: {PROJECT_DIR}")
     log(f"Check interval: {CHECK_INTERVAL}s")
-    
+
     state = load_state()
-    
+
     while True:
         try:
             log("--- Health Check ---")
-            
+
             # Count jobs
             selfplay = count_selfplay_jobs()
             training = count_training_jobs()
             cmaes = count_cmaes_jobs()
             disk = get_disk_usage()
-            
+
             log(f"Jobs: selfplay={selfplay}, training={training}, cmaes={cmaes}, disk={disk}")
-            
+
             # Restart selfplay if needed
             restart_selfplay_if_needed(state)
-            
+
             # Check disk space warning - 70% limit enforced 2025-12-16
             if disk != "unknown":
                 pct = int(disk.replace("%", ""))
                 if pct > 70:
                     log(f"WARNING: Disk usage at {disk}! (limit: 70%)")
-            
+
             log(f"State: restarts={state['restarts']}")
-            
+
         except Exception as e:
             log(f"ERROR: {e}")
-        
+
         time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":

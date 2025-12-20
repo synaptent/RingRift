@@ -61,7 +61,7 @@ class ModelPruningService:
         counts = self._count_models()
         return counts["total"] >= self.config.threshold
 
-    async def run_pruning_cycle(self) -> Optional[str]:
+    async def run_pruning_cycle(self) -> str | None:
         """Run model evaluation and pruning cycle."""
         if self._pruning_in_progress:
             return None
@@ -138,7 +138,7 @@ class ModelPruningService:
             self._pruning_in_progress = False
             self._prune_process = None
 
-    async def run_elo_based_culling(self) -> Optional[Dict[str, Any]]:
+    async def run_elo_based_culling(self) -> dict[str, Any] | None:
         """Run fast ELO-based culling using existing ratings.
 
         This is faster than game-based evaluation as it uses existing ELO

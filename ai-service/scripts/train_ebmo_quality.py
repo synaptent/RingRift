@@ -141,7 +141,7 @@ def train_epoch(
     device: torch.device,
     epoch: int,
     use_boundary_loss: bool = True,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Train for one epoch."""
     model.train()
     total_loss = 0.0
@@ -221,7 +221,7 @@ def evaluate(
     model: EBMONetwork,
     dataloader: DataLoader,
     device: torch.device,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Evaluate model on validation set."""
     model.eval()
     correct = 0

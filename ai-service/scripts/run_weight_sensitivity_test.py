@@ -52,12 +52,12 @@ class WeightResult:
         return self.wins - self.losses
 
 
-def create_single_weight_profile(weight_key: str, value: float) -> Dict[str, float]:
+def create_single_weight_profile(weight_key: str, value: float) -> dict[str, float]:
     """Create a profile with only one weight active."""
     return {k: (value if k == weight_key else 0.0) for k in HEURISTIC_WEIGHT_KEYS}
 
 
-def create_zero_profile() -> Dict[str, float]:
+def create_zero_profile() -> dict[str, float]:
     """Create a profile with all weights set to zero."""
     return {k: 0.0 for k in HEURISTIC_WEIGHT_KEYS}
 
@@ -70,12 +70,12 @@ class GameResult:
     move_count: int
     initial_state: GameState
     final_state: GameState
-    moves: List[Move]
+    moves: list[Move]
 
 
 def play_game(
-    p1_weights: Dict[str, float],
-    p2_weights: Dict[str, float],
+    p1_weights: dict[str, float],
+    p2_weights: dict[str, float],
     board_type: str,
     max_moves: int,
     seed: int,
@@ -123,7 +123,7 @@ def play_game(
     move_count = 0
     game_start = time.time()
     last_progress = game_start
-    moves_collected: List[Move] = [] if collect_moves else []
+    moves_collected: list[Move] = [] if collect_moves else []
 
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         curr_player = state.current_player
@@ -208,8 +208,8 @@ def run_sensitivity_test(
     seed: int = 42,
     verbose: bool = True,
     use_true_random_baseline: bool = False,
-    replay_db: Optional[GameReplayDB] = None,
-) -> List[WeightResult]:
+    replay_db: GameReplayDB | None = None,
+) -> list[WeightResult]:
     """Run sensitivity test for all weights.
 
     Args:
@@ -219,7 +219,7 @@ def run_sensitivity_test(
         replay_db: Optional database for recording game replays.
     """
 
-    results: List[WeightResult] = []
+    results: list[WeightResult] = []
     zero_profile = create_zero_profile()
     games_recorded = 0
 

@@ -139,11 +139,11 @@ POLICY_KL_MIN_SAMPLES = int(os.environ.get("RINGRIFT_POLICY_KL_MIN_SAMPLES", "50
 ENABLE_INCREMENTAL_EXPORT = os.environ.get("RINGRIFT_ENABLE_INCREMENTAL_EXPORT", "1") == "1" and HAS_INCREMENTAL_EXPORT
 
 # Track HP tuning recommendations
-_hp_tuning_recommendations: Dict[Tuple[str, int], bool] = {}
+_hp_tuning_recommendations: dict[tuple[str, int], bool] = {}
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 
-def merge_npz_files(npz_files: List[str], output_path: str) -> int:
+def merge_npz_files(npz_files: list[str], output_path: str) -> int:
     """Merge multiple NPZ training data files into one.
 
     Args:
@@ -294,7 +294,7 @@ def merge_npz_files(npz_files: List[str], output_path: str) -> int:
 # Uses canonical selfplay.db and diverse_synced per-config DBs
 # NOTE: selfplay_stats.db is for monitoring ONLY (no game_moves table)
 # NOTE: jsonl_converted_*.db have NO game_moves table - don't use for training
-CONFIG_DATABASES: Dict[Tuple[str, int], List[str]] = {
+CONFIG_DATABASES: dict[tuple[str, int], list[str]] = {
     # Square8 configs - use selfplay.db (canonical, has moves)
     ("square8", 2): [
         "data/games/selfplay.db",  # Canonical DB with game_moves
@@ -345,7 +345,7 @@ CONFIG_DATABASES: Dict[Tuple[str, int], List[str]] = {
 # JSONL from tournaments, hybrid selfplay, GPU selfplay, and MCTS selfplay
 # NOTE: Prior to 2025-12-17, only canonical and data/games were searched - this
 # caused a critical data flow mismatch where selfplay data wasn't reaching training!
-CONFIG_JSONL_DIRS: Dict[Tuple[str, int], List[str]] = {
+CONFIG_JSONL_DIRS: dict[tuple[str, int], list[str]] = {
     # Square8 2p - highest priority, include all selfplay sources
     ("square8", 2): [
         "data/selfplay/canonical",  # Canonical selfplay JSONL
@@ -416,7 +416,7 @@ CONFIG_JSONL_DIRS: Dict[Tuple[str, int], List[str]] = {
 
 # Training thresholds - trigger training when this many NEW games are available
 # Set low initially to trigger training quickly, adjust based on game generation rate
-THRESHOLDS: Dict[Tuple[str, int], int] = {
+THRESHOLDS: dict[tuple[str, int], int] = {
     ("square8", 2): 100,   # Square8 has most data, can use higher threshold
     ("square8", 3): 50,
     ("square8", 4): 50,
@@ -434,7 +434,7 @@ THRESHOLDS: Dict[Tuple[str, int], int] = {
 
 # Export settings per config: (max_games, sample_every, epochs)
 # Replay bug is now fixed so all moves can be replayed correctly
-EXPORT_SETTINGS: Dict[Tuple[str, int], Tuple[int, int, int]] = {
+EXPORT_SETTINGS: dict[tuple[str, int], tuple[int, int, int]] = {
     # Square8: ~100-200 moves per game
     ("square8", 2): (50, 5, 5),
     ("square8", 3): (50, 5, 5),
@@ -462,8 +462,8 @@ DEFAULT_EPOCHS = 5
 def get_export_settings_for_config(
     board_type: str,
     num_players: int,
-    db_paths: Optional[List[str]] = None,
-) -> Tuple[int, int, int]:
+    db_paths: list[str] | None = None,
+) -> tuple[int, int, int]:
     """Get export settings for a config, using dynamic settings if available.
 
     Returns:
@@ -491,13 +491,13 @@ def get_export_settings_for_config(
 
 
 # Track last training count per config
-last_trained_counts: Dict[Tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
+last_trained_counts: dict[tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
 
 # Unified ELO database path
 UNIFIED_ELO_DB = os.path.join(DATA_DIR, "unified_elo.db")
 
 # PFSP opponent pools per config (for diverse selfplay training)
-PFSP_POOLS: Dict[Tuple[str, int], Any] = {}
+PFSP_POOLS: dict[tuple[str, int], Any] = {}
 if HAS_PFSP:
     for config in [("square8", 2), ("square8", 4), ("hex8", 2), ("hexagonal", 2)]:
         try:
@@ -511,8 +511,8 @@ if HAS_PFSP:
             print(f"[PFSP] Failed to initialize pool for {config}: {e}")
 
 # CMA-ES Auto-Tuners per config (for hyperparameter optimization on plateau)
-CMAES_TUNERS: Dict[Tuple[str, int], Any] = {}
-LAST_CMAES_ELO: Dict[Tuple[str, int], float] = {}
+CMAES_TUNERS: dict[tuple[str, int], Any] = {}
+LAST_CMAES_ELO: dict[tuple[str, int], float] = {}
 
 # Board type name variants for model file matching
 BOARD_VARIANTS = {
@@ -563,7 +563,7 @@ def get_config_elo(board_type: str, num_players: int) -> float:
     return 1500.0  # Default ELO
 
 
-def check_nas_results(board_type: str, num_players: int) -> Optional[Dict[str, Any]]:
+def check_nas_results(board_type: str, num_players: int) -> dict[str, Any] | None:
     """Check if there are NAS results available for this config.
 
     Returns best architecture params if found, None otherwise.
@@ -606,7 +606,7 @@ def check_nas_results(board_type: str, num_players: int) -> Optional[Dict[str, A
     return best_arch
 
 
-def check_nas_recommendation(board_type: str, num_players: int) -> Optional[str]:
+def check_nas_recommendation(board_type: str, num_players: int) -> str | None:
     """Check if NAS should be recommended for this config.
 
     Returns recommendation message if NAS is recommended.
@@ -641,7 +641,7 @@ def check_nas_recommendation(board_type: str, num_players: int) -> Optional[str]
     return None
 
 
-def check_hp_tuning_recommendation(board_type: str, num_players: int, total_games: int) -> Optional[str]:
+def check_hp_tuning_recommendation(board_type: str, num_players: int, total_games: int) -> str | None:
     """Check if HP tuning should be recommended for a config.
 
     Returns a recommendation message if HP tuning is recommended, None otherwise.
@@ -706,7 +706,7 @@ def trigger_hp_tuning(board_type: str, num_players: int, trials: int = 20) -> bo
         return False
 
 
-def get_all_config_elos() -> Dict[Tuple[str, int], float]:
+def get_all_config_elos() -> dict[tuple[str, int], float]:
     """Get ELO ratings for all configs at once for efficiency."""
     elos = {k: 1500.0 for k in THRESHOLDS}
 
@@ -760,14 +760,14 @@ def count_trained_models(board_type: str, num_players: int) -> int:
     return count
 
 
-def get_model_counts() -> Dict[Tuple[str, int], int]:
+def get_model_counts() -> dict[tuple[str, int], int]:
     """Get count of trained models for each config."""
     return {config: count_trained_models(board_type, num_players)
             for config in THRESHOLDS
             for board_type, num_players in [config]}
 
 
-def find_databases(path: str) -> List[str]:
+def find_databases(path: str) -> list[str]:
     """Find all .db files in a path (file or directory)."""
     full_path = os.path.join(BASE_DIR, path) if not path.startswith("/") else path
 
@@ -783,7 +783,7 @@ def find_databases(path: str) -> List[str]:
     return []
 
 
-def find_jsonl_files(path: str) -> List[str]:
+def find_jsonl_files(path: str) -> list[str]:
     """Find all .jsonl files in a path (file or directory)."""
     full_path = os.path.join(BASE_DIR, path) if not path.startswith("/") else path
 
@@ -799,7 +799,7 @@ def find_jsonl_files(path: str) -> List[str]:
     return []
 
 
-def auto_discover_jsonl_dirs() -> Dict[str, List[str]]:
+def auto_discover_jsonl_dirs() -> dict[str, list[str]]:
     """Auto-discover all selfplay JSONL directories.
 
     Scans data/selfplay for subdirectories containing JSONL files.
@@ -823,7 +823,7 @@ def auto_discover_jsonl_dirs() -> Dict[str, List[str]]:
     return discovered
 
 
-def get_dynamic_jsonl_dirs(board_type: str, num_players: int) -> List[str]:
+def get_dynamic_jsonl_dirs(board_type: str, num_players: int) -> list[str]:
     """Get JSONL directories for a config, including auto-discovered ones.
 
     Combines static CONFIG_JSONL_DIRS with dynamically discovered directories
@@ -859,7 +859,7 @@ def get_dynamic_jsonl_dirs(board_type: str, num_players: int) -> List[str]:
 
 
 def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int,
-                       max_lines: int = 10000) -> Tuple[int, Set[str]]:
+                       max_lines: int = 10000) -> tuple[int, set[str]]:
     """Count games in JSONL file matching board_type and num_players.
 
     Returns (count, set of game_ids) for deduplication.
@@ -914,12 +914,12 @@ def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int,
 
 
 # Cache for JSONL file metadata to avoid repeated parsing
-_jsonl_metadata_cache: Dict[str, Dict[Tuple[str, int], int]] = {}
-_jsonl_cache_time: Dict[str, float] = {}
+_jsonl_metadata_cache: dict[str, dict[tuple[str, int], int]] = {}
+_jsonl_cache_time: dict[str, float] = {}
 JSONL_CACHE_TTL = 300  # 5 minute cache TTL
 
 
-def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> Dict[Tuple[str, int], Set[str]]:
+def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> dict[tuple[str, int], set[str]]:
     """Parse JSONL file once and return game counts per config.
 
     Returns dict of (board_type, num_players) -> set of game_ids.
@@ -932,7 +932,7 @@ def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> Dict[Tupl
             return _jsonl_metadata_cache.get(cache_key, {})
 
     # Parse file
-    result: Dict[Tuple[str, int], Set[str]] = {}
+    result: dict[tuple[str, int], set[str]] = {}
 
     if not os.path.exists(jsonl_path):
         return result
@@ -988,7 +988,7 @@ def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> Dict[Tupl
     return result
 
 
-def get_jsonl_counts(board_type: str, num_players: int) -> Tuple[int, List[str]]:
+def get_jsonl_counts(board_type: str, num_players: int) -> tuple[int, list[str]]:
     """Get total JSONL game counts for a config, returning (total_count, jsonl_files_with_games).
 
     Uses dynamic directory discovery to find all selfplay JSONL sources.
@@ -999,7 +999,7 @@ def get_jsonl_counts(board_type: str, num_players: int) -> Tuple[int, List[str]]
 
     total_count = 0
     jsonl_with_games = []
-    seen_game_ids: Set[str] = set()  # Dedupe across files
+    seen_game_ids: set[str] = set()  # Dedupe across files
 
     for path in jsonl_dirs:
         for jsonl_path in find_jsonl_files(path):
@@ -1073,7 +1073,7 @@ def count_games_with_moves(db_path: str, board_type: str, num_players: int) -> i
         return 0
 
 
-def get_config_counts() -> Dict[Tuple[str, int], Tuple[int, List[str], int, List[str]]]:
+def get_config_counts() -> dict[tuple[str, int], tuple[int, list[str], int, list[str]]]:
     """Get game counts for each config from both DB and JSONL sources.
 
     Returns dict of config -> (db_count, db_paths, jsonl_count, jsonl_paths).
@@ -1164,7 +1164,7 @@ def check_cmaes_auto_tuning(board_type: str, num_players: int, iteration: int) -
             CMAES_TUNERS[key] = None
 
 
-def get_pfsp_opponent(board_type: str, num_players: int) -> Optional[str]:
+def get_pfsp_opponent(board_type: str, num_players: int) -> str | None:
     """Get a PFSP-weighted opponent for selfplay.
 
     Returns model path selected based on PFSP prioritization (hard opponents
@@ -1217,8 +1217,8 @@ def update_pfsp_stats(board_type: str, num_players: int, model_id: str,
         pass
 
 
-def run_training(board_type: str, num_players: int, db_paths: List[str],
-                  jsonl_paths: List[str], current_count: int, iteration: int = 0) -> bool:
+def run_training(board_type: str, num_players: int, db_paths: list[str],
+                  jsonl_paths: list[str], current_count: int, iteration: int = 0) -> bool:
     """Run export and training for a config using DB and/or JSONL sources.
 
     Supports three modes:
@@ -1548,8 +1548,8 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
     return True
 
 
-def run_policy_training(board_type: str, num_players: int, db_paths: List[str],
-                         jsonl_paths: List[str], current_count: int, iteration: int = 0) -> bool:
+def run_policy_training(board_type: str, num_players: int, db_paths: list[str],
+                         jsonl_paths: list[str], current_count: int, iteration: int = 0) -> bool:
     """Run policy training with auto KL loss detection.
 
     This trains a policy network using MCTS visit distributions when available.

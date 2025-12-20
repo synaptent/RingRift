@@ -12,7 +12,7 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 ## Context Snapshot (Overall Assessment)
 
 - **State:** Stable beta with consolidated orchestrator, strong TS-Python parity, and large test suites (`CURRENT_STATE_ASSESSMENT.md`).
-- **Primary risk:** Canonical large-board datasets (square19/hex) are still empty because canonical selfplay soaks are exiting with returncode -15 (SIGTERM) before any games complete.
+- **Primary risk:** Canonical large-board datasets (square19/hex) are still low-volume (3 + 1 games) because canonical selfplay soaks exit with returncode -15 (SIGTERM) before higher-volume runs complete.
 - **Quality gap:** Line coverage ~69% vs >=80% target and scenario matrix expansion still pending (`CURRENT_STATE_ASSESSMENT.md`, `PROJECT_GOALS.md`, `KNOWN_ISSUES.md`).
 - **UX/test polish:** Client coverage and weird-state UX/telemetry alignment are still P1 (`TODO.md`, `docs/UX_RULES_WEIRD_STATES_SPEC.md`).
 - **Data readiness:** Canonical square8 gate now passes; square19/hex still need successful gated runs (`ai-service/TRAINING_DATA_REGISTRY.md`).
@@ -186,7 +186,9 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 - [x] Repro: square19/hex soaks terminate with returncode -15 and 0 games recorded using default heuristic evaluation path.
 - [x] Mitigation: `RINGRIFT_USE_MAKE_UNMAKE=true` enables square19 canonical soak; 1-game run passed parity/history (light band).
 - [x] Found crash in make/unmake path (`NoneType.to_key` for non-spatial moves); fixed in `ai-service/app/ai/heuristic_ai.py` to skip `move.to` for no-op/decision moves.
-- [ ] Re-run square19/hex canonical selfplay with make/unmake enabled to reach volume targets and confirm parity/history gates.
+- [x] Generated low-volume canonical DBs via direct soak + gate-only runs: square19 (3 games) and hexagonal (1 game) now `canonical_ok=true` with `db_health.canonical_*.json`.
+- [ ] Default large-board parity gates to `RINGRIFT_USE_MAKE_UNMAKE=true` (unless explicitly overridden) and document the rationale.
+- [ ] Scale square19/hex to volume targets and stabilize `generate_canonical_selfplay.py` for >1 game on large boards (make/unmake + on-the-fly parity settings).
 - [ ] Update `ai-service/TRAINING_DATA_REGISTRY.md` with canonical_square8 details and add square19/hex once gates pass.
 
 ---

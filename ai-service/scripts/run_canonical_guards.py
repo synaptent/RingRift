@@ -40,7 +40,7 @@ def _log(msg: str) -> None:
     print(f"[canonical-guards] {msg}")
 
 
-def _canonical_db_paths() -> List[Path]:
+def _canonical_db_paths() -> list[Path]:
     games_dir = AI_SERVICE_ROOT / "data" / "games"
     if not games_dir.exists():
         return []
@@ -156,7 +156,7 @@ def run_invariant_soak(with_ts: bool) -> bool:
     return proc.returncode == 0
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run canonical guardrails: history validator, parity sample, and invariant soak."
     )

@@ -16,7 +16,8 @@ import time
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import List, Tuple
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,7 +41,7 @@ except ImportError:
     HAS_BENCHMARK = False
 
 
-def simple_benchmark(func: Callable, iterations: int = 100) -> Tuple[float, float, float]:
+def simple_benchmark(func: Callable, iterations: int = 100) -> tuple[float, float, float]:
     """Simple benchmark without pytest-benchmark.
 
     Returns (min_time, avg_time, max_time) in milliseconds.

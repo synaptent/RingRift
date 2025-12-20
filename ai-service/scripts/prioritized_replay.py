@@ -69,10 +69,10 @@ class ReplayExperience:
     move_idx: int
     board_type: str
     num_players: int
-    state_encoding: Optional[np.ndarray] = None  # Board state features
+    state_encoding: np.ndarray | None = None  # Board state features
     action: int = 0  # Move index
     value_target: float = 0.0  # Game outcome
-    policy_target: Optional[np.ndarray] = None  # MCTS policy
+    policy_target: np.ndarray | None = None  # MCTS policy
     priority: float = DEFAULT_MAX_PRIORITY
     td_error: float = 0.0  # Temporal difference error
 
@@ -131,7 +131,7 @@ class SumTree:
         self.tree[idx] = priority
         self._propagate(idx, change)
 
-    def get(self, s: float) -> Tuple[int, float, Any]:
+    def get(self, s: float) -> tuple[int, float, Any]:
         """Sample leaf by cumulative priority.
 
         Returns (tree_index, priority, data).
@@ -174,7 +174,7 @@ class PrioritizedReplayBuffer:
         priority = self.max_priority ** self.alpha
         self.tree.add(priority, experience)
 
-    def sample(self, batch_size: int) -> Tuple[List[int], List[ReplayExperience], np.ndarray]:
+    def sample(self, batch_size: int) -> tuple[list[int], list[ReplayExperience], np.ndarray]:
         """Sample batch with priorities.
 
         Returns:
@@ -214,7 +214,7 @@ class PrioritizedReplayBuffer:
 
         return indices, experiences, weights.astype(np.float32)
 
-    def update_priorities(self, indices: List[int], td_errors: np.ndarray):
+    def update_priorities(self, indices: list[int], td_errors: np.ndarray):
         """Update priorities based on TD errors."""
         for idx, error in zip(indices, td_errors):
             priority = (abs(error) + self.epsilon) ** self.alpha
@@ -283,8 +283,8 @@ def compute_td_error(
 
 def build_buffer_from_database(
     db_path: Path,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     capacity: int = 100000,
     max_games: int = 1000,
 ) -> PrioritizedReplayBuffer:

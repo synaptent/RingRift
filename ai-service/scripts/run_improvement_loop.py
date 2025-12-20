@@ -146,7 +146,7 @@ MAX_LOAD_ABSOLUTE = float(os.environ.get("RINGRIFT_MAX_LOAD_ABSOLUTE", "100.0"))
 LOAD_BACKOFF_SECONDS = float(os.environ.get("RINGRIFT_LOAD_BACKOFF_SECONDS", "30.0"))
 
 
-def get_system_load() -> Tuple[float, float, float]:
+def get_system_load() -> tuple[float, float, float]:
     """Get system load averages (1min, 5min, 15min)."""
     try:
         return os.getloadavg()
@@ -212,8 +212,8 @@ class OverlappedPipelineManager:
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
-        self._selfplay_future: Optional[asyncio.Task] = None
-        self._selfplay_result: Optional[Tuple[bool, int, Optional[Path]]] = None
+        self._selfplay_future: asyncio.Task | None = None
+        self._selfplay_result: tuple[bool, int, Path | None] | None = None
         self._loop = None
 
     def _get_loop(self):
@@ -256,7 +256,7 @@ class OverlappedPipelineManager:
         config: dict,
         iteration: int,
         dry_run: bool = False,
-    ) -> Tuple[bool, int, Optional[Path]]:
+    ) -> tuple[bool, int, Path | None]:
         """Get selfplay result, waiting if async task is running.
 
         If no async task was started, runs selfplay synchronously.
@@ -313,7 +313,7 @@ def publish_ringrift_best_alias(
     board: str,
     num_players: int,
     best_model_path: Path,
-    promotion_summary: Optional[dict] = None,
+    promotion_summary: dict | None = None,
 ) -> Path:
     """Publish a ringrift_best_* alias so the canonical ladder can consume the model."""
     token = _alias_token_for_board(board)
@@ -403,7 +403,7 @@ def _resolve_ai_service_path(raw: str) -> Path:
 def _resolve_default_reanalysis_nn_model_id(
     board: str,
     num_players: int,
-) -> Optional[str]:
+) -> str | None:
     """Best-effort nn_model_id prefix for reanalysis search.
 
     When the improvement loop has not produced a `*_best.pth` yet, we still
@@ -438,13 +438,13 @@ class LoopState:
     """Checkpoint state for resumable improvement loop."""
 
     iteration: int = 0
-    best_model_path: Optional[str] = None
+    best_model_path: str | None = None
     best_winrate: float = 0.0
     consecutive_failures: int = 0
     total_improvements: int = 0
     total_games_generated: int = 0
-    history: List[dict] = field(default_factory=list)
-    ingested_db_fingerprints: Dict[str, str] = field(default_factory=dict)
+    history: list[dict] = field(default_factory=list)
+    ingested_db_fingerprints: dict[str, str] = field(default_factory=dict)
 
 
 def load_state(state_path: Path) -> LoopState:
@@ -560,7 +560,7 @@ def _log_promotion_decision(
     config: dict,
     iteration: int,
     summary: dict,
-    model_path: Optional[Path] = None,
+    model_path: Path | None = None,
 ) -> None:
     """Log promotion decision to JSONL file for audit trail.
 
@@ -618,13 +618,13 @@ def validate_model(model_path: Path) -> bool:
 
 
 def run_command(
-    cmd: List[str],
+    cmd: list[str],
     dry_run: bool = False,
     capture: bool = False,
-    timeout: Optional[int] = None,
-    cwd: Optional[Path] = None,
-    env_overrides: Optional[Dict[str, str]] = None,
-) -> Tuple[int, str, str]:
+    timeout: int | None = None,
+    cwd: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     """Run a command with optional dry-run mode.
 
     Returns: (return_code, stdout, stderr)
@@ -660,7 +660,7 @@ def _validate_canonical_training_source(
     registry_path: Path,
     *,
     allow_pending_gate: bool,
-) -> Tuple[bool, List[str]]:
+) -> tuple[bool, list[str]]:
     """Validate that db_path is a canonical training source per registry + gate summary."""
     from scripts.validate_canonical_training_sources import (  # type: ignore[import]
         validate_canonical_sources,
@@ -681,7 +681,7 @@ def run_selfplay(
     config: dict,
     iteration: int,
     dry_run: bool = False,
-) -> Tuple[bool, int, Optional[Path]]:
+) -> tuple[bool, int, Path | None]:
     """Run selfplay to generate training data.
 
     Returns: (success, games_generated, staging_db_path)
@@ -705,7 +705,7 @@ def run_selfplay(
     replay_db_path = Path(config["replay_db"])
     canonical_mode = bool(config.get("canonical_mode", False))
 
-    staging_db_path: Optional[Path] = None
+    staging_db_path: Path | None = None
     record_db_path = replay_db_path
     if canonical_mode:
         staging_dir = _resolve_ai_service_path(str(config.get("staging_db_dir") or "data/games/staging/improvement_loop"))
@@ -773,7 +773,7 @@ def ingest_training_pool(
     iteration: int,
     state: LoopState,
     *,
-    staging_db_path: Optional[Path],
+    staging_db_path: Path | None,
     dry_run: bool = False,
     parallel_workers: int = 8,
 ) -> bool:
@@ -801,14 +801,14 @@ def ingest_training_pool(
     if quarantine_db is not None:
         excluded.add(quarantine_db)
 
-    scan_dirs: List[Path] = []
+    scan_dirs: list[Path] = []
     for raw in (config.get("ingest_scan_dirs") or []):
         try:
             scan_dirs.append(_resolve_ai_service_path(str(raw)).resolve())
         except Exception:
             continue
 
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     if staging_db_path is not None:
         candidates.append(staging_db_path.resolve())
     for scan_dir in scan_dirs:
@@ -820,14 +820,14 @@ def ingest_training_pool(
 
     # De-dupe while preserving stable ordering.
     seen: set[Path] = set()
-    unique_candidates: List[Path] = []
+    unique_candidates: list[Path] = []
     for path in candidates:
         if path in seen:
             continue
         seen.add(path)
         unique_candidates.append(path)
 
-    inputs: List[Path] = []
+    inputs: list[Path] = []
     for path in unique_candidates:
         if path in excluded:
             continue
@@ -847,7 +847,7 @@ def ingest_training_pool(
     log_dir.mkdir(parents=True, exist_ok=True)
     report_json = log_dir / f"training_pool_ingest_iter{iteration}_{board}_{players}p.json"
 
-    cmd: List[str] = [
+    cmd: list[str] = [
         sys.executable,
         "scripts/build_canonical_training_pool_db.py",
         "--output-db",
@@ -906,7 +906,7 @@ def export_training_data(
     config: dict,
     iteration: int,
     dry_run: bool = False,
-) -> Tuple[bool, Path]:
+) -> tuple[bool, Path]:
     """Export training data from selfplay database.
 
     Returns: (success, output_path)
@@ -936,7 +936,7 @@ def export_training_data(
     legacy_maxn_encoding = bool(config.get("legacy_maxn_encoding", False))
     use_board_aware_encoding = board in {"square8", "square19"} and not legacy_maxn_encoding
 
-    cmd: List[str]
+    cmd: list[str]
     timeout_sec = 600
     if dataset_policy_target == "played":
         cmd = [
@@ -1045,7 +1045,7 @@ def train_model(
     iteration: int,
     data_path: Path,
     dry_run: bool = False,
-) -> Tuple[bool, Path]:
+) -> tuple[bool, Path]:
     """Fine-tune neural network on new data.
 
     Returns: (success, model_path)
@@ -1149,7 +1149,7 @@ def _run_pool_opponent_eval(
     seed: int,
     out_path: Path,
     dry_run: bool,
-) -> Tuple[bool, int, int, int, str]:
+) -> tuple[bool, int, int, int, str]:
     """Run evaluation against a single pool opponent.
 
     Returns: (success, wins, losses, draws, error_msg)
@@ -1210,7 +1210,7 @@ def evaluate_model(
     iteration: int,
     iter_model: Path,
     dry_run: bool = False,
-) -> Tuple[bool, dict]:
+) -> tuple[bool, dict]:
     """Evaluate new model against baseline.
 
     Returns: (success, evaluation_summary)
@@ -1544,10 +1544,10 @@ def _select_promotion_pool_opponents(
     players: int,
     models_dir: Path,
     iter_model: Path,
-    best_model: Optional[Path],
+    best_model: Path | None,
     pool_size: int,
     diverse_sampling: bool = True,
-) -> List[Path]:
+) -> list[Path]:
     """Select a diverse pool of opponent checkpoints for promotion gating.
 
     When diverse_sampling=True (default), selects opponents from different
@@ -1739,14 +1739,14 @@ def rollback_model(config: dict, dry_run: bool = False) -> bool:
 
 
 def run_diverse_tournaments(
-    board_types: List[str],
-    player_counts: List[int],
+    board_types: list[str],
+    player_counts: list[int],
     games_per_config: int,
-    cluster_config: Optional[str] = None,
+    cluster_config: str | None = None,
     use_distributed: bool = True,
     dry_run: bool = False,
-    output_base: Optional[str] = None,
-) -> Tuple[bool, int, int]:
+    output_base: str | None = None,
+) -> tuple[bool, int, int]:
     """Run diverse tournaments across board/player configurations.
 
     Returns: (success, total_games, total_samples)
@@ -1786,7 +1786,7 @@ def run_diverse_tournaments(
     for cfg in configs:
         print(f"  - {cfg.board_type} {cfg.num_players}p x {cfg.num_games} games")
 
-    results: List[TournamentResult] = []
+    results: list[TournamentResult] = []
 
     try:
         if use_distributed:
@@ -1832,8 +1832,8 @@ def run_improvement_iteration(
     config: dict,
     state: LoopState,
     dry_run: bool = False,
-    pipeline_manager: Optional[OverlappedPipelineManager] = None,
-) -> Tuple[bool, float, int]:
+    pipeline_manager: OverlappedPipelineManager | None = None,
+) -> tuple[bool, float, int]:
     """Run a single iteration of the improvement loop.
 
     Args:

@@ -42,7 +42,7 @@ PINNED_BASELINES = {
 }
 
 
-def get_pinned_rating(participant_id: str) -> Optional[float]:
+def get_pinned_rating(participant_id: str) -> float | None:
     """Check if participant is a pinned baseline."""
     for prefix, rating in PINNED_BASELINES.items():
         if participant_id.startswith(prefix):
@@ -50,7 +50,7 @@ def get_pinned_rating(participant_id: str) -> Optional[float]:
     return None
 
 
-def analyze_database(db_path: Path) -> Dict:
+def analyze_database(db_path: Path) -> dict:
     """Analyze database for integrity issues."""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
@@ -239,7 +239,7 @@ def expected_score(rating_a: float, rating_b: float) -> float:
     return 1.0 / (1.0 + 10 ** ((rating_b - rating_a) / 400.0))
 
 
-def recalculate_ratings(db_path: Path, dry_run: bool = False) -> Dict:
+def recalculate_ratings(db_path: Path, dry_run: bool = False) -> dict:
     """Recalculate all ELO ratings from match history.
 
     This replays all matches chronologically to rebuild accurate ratings.

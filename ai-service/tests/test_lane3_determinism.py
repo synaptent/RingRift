@@ -35,7 +35,7 @@ class TestAITypeEnumCompleteness:
     """Ensure all AIType values are handled by the factory."""
 
     # Types exposed to TypeScript service (must maintain parity)
-    TYPESCRIPT_EXPOSED_TYPES: Set[AIType] = {
+    TYPESCRIPT_EXPOSED_TYPES: set[AIType] = {
         AIType.RANDOM,
         AIType.HEURISTIC,
         AIType.MINIMAX,
@@ -47,7 +47,7 @@ class TestAITypeEnumCompleteness:
     }
 
     # Python-only types (not exposed to TS, used internally)
-    PYTHON_ONLY_TYPES: Set[AIType] = {
+    PYTHON_ONLY_TYPES: set[AIType] = {
         AIType.GPU_MINIMAX,
         AIType.MAXN,
         AIType.BRS,

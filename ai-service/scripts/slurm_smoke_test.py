@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-def _run(cmd: List[str]) -> subprocess.CompletedProcess[str]:
+def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
@@ -69,12 +69,12 @@ def _build_sbatch_args(
     work_type: str,
     job_name: str,
     log_dir: Path,
-    partition: Optional[str],
-    time_limit: Optional[str],
-    gpus: Optional[int],
-    cpus: Optional[int],
-    mem: Optional[str],
-) -> List[str]:
+    partition: str | None,
+    time_limit: str | None,
+    gpus: int | None,
+    cpus: int | None,
+    mem: str | None,
+) -> list[str]:
     args = [
         "--job-name",
         job_name,
@@ -103,7 +103,7 @@ def _build_sbatch_args(
     return args
 
 
-def _get_status(job_id: str) -> Tuple[Optional[str], Optional[str]]:
+def _get_status(job_id: str) -> tuple[str | None, str | None]:
     result = _run(["squeue", "-j", job_id, "-h", "-o", "%T"])
     if result.returncode == 0:
         state = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""

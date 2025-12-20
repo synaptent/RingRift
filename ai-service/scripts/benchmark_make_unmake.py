@@ -262,7 +262,7 @@ def benchmark_search(
 
     state = create_midgame_state() if use_midgame else create_starting_state()
 
-    times: List[float] = []
+    times: list[float] = []
     total_nodes = 0
     peak_memory = 0.0
 
@@ -300,7 +300,7 @@ def benchmark_search(
 def validate_correctness(
     depth: int = 2,
     num_positions: int = 3,
-) -> Tuple[bool, List[str]]:
+) -> tuple[bool, list[str]]:
     """Validate that both search modes produce equivalent results.
 
     Tests that:
@@ -314,7 +314,7 @@ def validate_correctness(
     Returns:
         Tuple of (all_passed, list_of_messages).
     """
-    messages: List[str] = []
+    messages: list[str] = []
     all_passed = True
 
     # Create configs for both modes
@@ -377,7 +377,7 @@ def validate_correctness(
     return all_passed, messages
 
 
-def run_make_unmake_roundtrip_test() -> Tuple[bool, List[str]]:
+def run_make_unmake_roundtrip_test() -> tuple[bool, list[str]]:
     """Test that make/unmake produces identical state restoration.
 
     Verifies that:
@@ -391,7 +391,7 @@ def run_make_unmake_roundtrip_test() -> Tuple[bool, List[str]]:
     from app.rules.mutable_state import MutableGameState
     from app.game_engine import GameEngine
 
-    messages: List[str] = []
+    messages: list[str] = []
     passed = True
 
     state = create_midgame_state()
@@ -483,7 +483,7 @@ def main():
     depths = [2, 3]  # Start with lower depths to avoid long runtimes
     num_runs = 3
 
-    results: List[BenchmarkResult] = []
+    results: list[BenchmarkResult] = []
 
     for depth in depths:
         print(f"\nDepth {depth} (averaging {num_runs} runs):")

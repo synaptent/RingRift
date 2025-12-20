@@ -93,7 +93,7 @@ def place_stack(
     y: int,
     player: int,
     height: int = 1,
-    z: Optional[int] = None,
+    z: int | None = None,
 ) -> None:
     """Helper to place a stack on the board."""
     pos = Position(x=x, y=y, z=z)
@@ -147,7 +147,7 @@ class TestChainCapturePhaseFix:
         state.move_history.append(
             create_setup_move(1, Position(x=2, y=2))
         )
-        
+
         # Ensure we are in MOVEMENT or CAPTURE phase initially (depending on how we got here)
         # But GameEngine._get_capture_moves works regardless of phase if we call it directly.
         # Let's assume we are in MOVEMENT phase and about to capture.

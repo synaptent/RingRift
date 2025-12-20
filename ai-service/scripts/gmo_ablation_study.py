@@ -191,7 +191,7 @@ def create_ablated_gmo(
     return ai
 
 
-def play_game(ai1, ai2, max_moves: int = 500) -> Tuple[Optional[int], int]:
+def play_game(ai1, ai2, max_moves: int = 500) -> tuple[int | None, int]:
     """Play a game and return (winner, num_moves)."""
     from app.training.initial_state import create_initial_state
 
@@ -232,7 +232,7 @@ def run_ablation(
     ablation_name: str,
     num_games: int = 30,
     device: str = "cpu",
-) -> Dict:
+) -> dict:
     """Run a single ablation study."""
     ablation_config = ABLATIONS[ablation_name]
     logger.info(f"Running ablation: {ablation_name}")

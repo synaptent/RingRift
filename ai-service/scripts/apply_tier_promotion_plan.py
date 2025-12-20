@@ -42,7 +42,7 @@ PROMOTION_SUMMARY_FILENAME = "promotion_summary.json"
 PROMOTION_PATCH_GUIDE_FILENAME = "promotion_patch_guide.txt"
 
 
-def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the promotion-plan applier."""
     parser = argparse.ArgumentParser(
         description=(
@@ -98,7 +98,7 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _load_promotion_plan(path: str) -> Dict[str, Any]:
+def _load_promotion_plan(path: str) -> dict[str, Any]:
     """Load and parse a promotion_plan.json file."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -109,7 +109,7 @@ def _normalise_board_label(board: str) -> str:
     return board.strip().lower()
 
 
-def _board_to_enum(board_label: str) -> Optional[BoardType]:
+def _board_to_enum(board_label: str) -> BoardType | None:
     """Map a textual board label to BoardType, restricting to square8."""
     norm = _normalise_board_label(board_label)
     if norm in {"square8", "sq8"}:
@@ -118,10 +118,10 @@ def _board_to_enum(board_label: str) -> Optional[BoardType]:
 
 
 def _validate_plan_against_cli(
-    plan: Dict[str, Any],
+    plan: dict[str, Any],
     board: str,
     num_players: int,
-    tier_override: Optional[str],
+    tier_override: str | None,
 ) -> tuple[str, str, int]:
     """Validate the plan against CLI inputs.
 
@@ -176,8 +176,8 @@ def _validate_ladder_view(
     tier: str,
     board_type: BoardType,
     num_players: int,
-    plan: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    plan: dict[str, Any],
+) -> dict[str, Any] | None:
     """Validate that the plan's current_model_id matches the ladder config.
 
     Returns a small dict describing the ladder view when validation
@@ -231,7 +231,7 @@ def _write_promotion_summary(
     tier: str,
     board_label: str,
     num_players: int,
-    ladder_info: Dict[str, Any],
+    ladder_info: dict[str, Any],
     decision: str,
     registry_path: str,
     status_after_update: str,
@@ -259,7 +259,7 @@ def _write_patch_guide(
     tier: str,
     board_label: str,
     num_players: int,
-    ladder_info: Dict[str, Any],
+    ladder_info: dict[str, Any],
     decision: str,
     registry_path: str,
     dry_run: bool,
@@ -308,7 +308,7 @@ def _write_patch_guide(
     return out_path
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Entry point for the tier promotion-plan application helper."""
     args = _parse_args(argv)
 
@@ -347,7 +347,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     if decision == "promote" and not args.allow_unsafe_plan:
         reason = plan.get("reason")
-        reason_dict: Dict[str, Any] = reason if isinstance(reason, dict) else {}
+        reason_dict: dict[str, Any] = reason if isinstance(reason, dict) else {}
         used = bool(reason_dict.get("use_candidate_artifact", False))
         present = bool(reason_dict.get("candidate_artifact_present", False))
         loaded = reason_dict.get("candidate_artifact_loaded", None)

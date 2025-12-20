@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-def _load_yaml(path: Path) -> Dict[str, Any]:
+def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         import yaml  # type: ignore
     except Exception:
@@ -45,7 +45,7 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     return data
 
 
-def _dump_yaml(data: Dict[str, Any]) -> str:
+def _dump_yaml(data: dict[str, Any]) -> str:
     try:
         import yaml  # type: ignore
     except Exception:
@@ -54,7 +54,7 @@ def _dump_yaml(data: Dict[str, Any]) -> str:
     return yaml.safe_dump(data, sort_keys=False)
 
 
-def _infer_role(explicit_role: Optional[str], gpu: str) -> str:
+def _infer_role(explicit_role: str | None, gpu: str) -> str:
     if explicit_role:
         return explicit_role
     return "mixed" if gpu else "selfplay"
@@ -86,7 +86,7 @@ def main() -> None:
     data = _load_yaml(cfg_path)
     hosts = data["hosts"]
 
-    entry: Dict[str, Any] = {
+    entry: dict[str, Any] = {
         "ssh_host": args.ssh_host,
         "ssh_user": args.ssh_user,
         "ssh_port": int(args.ssh_port),

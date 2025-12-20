@@ -55,7 +55,7 @@ def debug_game(model_path: str):
         # Show energy distribution for EBMO by move type
         if current == 1:
             energies = ebmo.get_move_energies(state, valid_moves)
-            
+
             # Group by move type
             by_type = {}
             for move, energy_val in zip(valid_moves, energies.values()):
@@ -63,7 +63,7 @@ def debug_game(model_path: str):
                 if mtype not in by_type:
                     by_type[mtype] = []
                 by_type[mtype].append(energy_val)
-            
+
             print(f"\nMove {move_num+1} (Player {current} - {ai_name})")
             print(f"  Valid moves by type (min energy):")
             for mtype, vals in sorted(by_type.items(), key=lambda x: min(x[1])):

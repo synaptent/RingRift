@@ -79,7 +79,7 @@ class TransferResult:
     checksum_verified: bool = False
 
 
-def get_instance_ssh_info(instance_id: str) -> Tuple[str, int]:
+def get_instance_ssh_info(instance_id: str) -> tuple[str, int]:
     """Get SSH host and port for a Vast.ai instance."""
     try:
         result = subprocess.run(
@@ -103,7 +103,7 @@ def get_instance_ssh_info(instance_id: str) -> Tuple[str, int]:
     return "", 0
 
 
-def parse_remote_path(remote: str) -> Tuple[str, str]:
+def parse_remote_path(remote: str) -> tuple[str, str]:
     """Parse instance_id:/path format into (instance_id, path)."""
     if ":" not in remote:
         raise ValueError(f"Remote path must be in format 'instance_id:/path': {remote}")
@@ -389,7 +389,7 @@ def smart_push(
     local_path: Path,
     instance_id: str,
     remote_path: str,
-    config: Optional[TransferConfig] = None,
+    config: TransferConfig | None = None,
 ) -> TransferResult:
     """Smart file push with automatic fallback to best transfer method."""
     config = config or TransferConfig()
@@ -429,10 +429,10 @@ def smart_push(
 
 def push_to_multiple(
     local_path: Path,
-    instance_ids: List[str],
+    instance_ids: list[str],
     remote_path: str,
-    config: Optional[TransferConfig] = None,
-) -> Dict[str, TransferResult]:
+    config: TransferConfig | None = None,
+) -> dict[str, TransferResult]:
     """Push file to multiple cluster nodes."""
     results = {}
     for instance_id in instance_ids:
@@ -449,7 +449,7 @@ def push_to_multiple(
     return results
 
 
-def create_torrent(local_path: Path, output_path: Optional[Path] = None) -> Optional[Path]:
+def create_torrent(local_path: Path, output_path: Path | None = None) -> Path | None:
     """Create a torrent file for distribution."""
     if output_path is None:
         output_path = local_path.with_suffix(local_path.suffix + ".torrent")
@@ -485,7 +485,7 @@ def create_torrent(local_path: Path, output_path: Optional[Path] = None) -> Opti
 def aria2_download(
     url: str,
     output_dir: Path,
-    filename: Optional[str] = None,
+    filename: str | None = None,
     connections: int = 16,
     timeout: int = 300,
 ) -> TransferResult:
@@ -546,11 +546,11 @@ def aria2_download(
 
 def torrent_distribute(
     local_path: Path,
-    instance_ids: List[str],
+    instance_ids: list[str],
     remote_path: str,
-    config: Optional[TransferConfig] = None,
+    config: TransferConfig | None = None,
     _seed_port: int = 6881,
-) -> Dict[str, TransferResult]:
+) -> dict[str, TransferResult]:
     """Distribute file to multiple nodes using BitTorrent mesh.
 
     This method:

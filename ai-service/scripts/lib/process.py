@@ -42,7 +42,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
+from collections.abc import Callable, Generator, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class ProcessInfo:
     """Information about a running process."""
     pid: int
     command: str = ""
-    args: List[str] = field(default_factory=list)
+    args: list[str] = field(default_factory=list)
 
     @property
     def full_command(self) -> str:
@@ -105,7 +106,7 @@ class SingletonLock:
     def __init__(
         self,
         name: str,
-        lock_dir: Optional[Path] = None,
+        lock_dir: Path | None = None,
         write_pid: bool = True,
     ):
         """Initialize singleton lock.
@@ -119,7 +120,7 @@ class SingletonLock:
         self.lock_dir = lock_dir or Path("/tmp")
         self.write_pid = write_pid
         self.lock_path = self.lock_dir / f"ringrift_{name}.lock"
-        self._file_handle: Optional[Any] = None
+        self._file_handle: Any | None = None
         self._acquired = False
 
     @property
@@ -172,7 +173,7 @@ class SingletonLock:
             self._file_handle = None
         self._acquired = False
 
-    def get_holder_pid(self) -> Optional[int]:
+    def get_holder_pid(self) -> int | None:
         """Get PID of process holding the lock, if any."""
         try:
             if self.lock_path.exists():
@@ -210,8 +211,8 @@ class SignalHandler:
 
     def __init__(
         self,
-        on_shutdown: Optional[Callable[[], None]] = None,
-        signals: Optional[Sequence[int]] = None,
+        on_shutdown: Callable[[], None] | None = None,
+        signals: Sequence[int] | None = None,
     ):
         """Initialize signal handler.
 
@@ -222,7 +223,7 @@ class SignalHandler:
         self.running = True
         self.shutdown_requested = False
         self._on_shutdown = on_shutdown
-        self._original_handlers: Dict[int, Any] = {}
+        self._original_handlers: dict[int, Any] = {}
 
         signals = signals or [signal.SIGTERM, signal.SIGINT]
         for sig in signals:
@@ -268,7 +269,7 @@ def is_process_running(pid: int) -> bool:
 def find_processes_by_pattern(
     pattern: str,
     exclude_self: bool = True,
-) -> List[ProcessInfo]:
+) -> list[ProcessInfo]:
     """Find running processes matching a pattern.
 
     Uses pgrep to find processes. Pattern is matched against full command line.
@@ -450,9 +451,9 @@ def kill_processes_by_pattern(
 
 
 def run_command(
-    command: Union[str, List[str]],
-    cwd: Optional[Union[str, Path]] = None,
-    env: Optional[Dict[str, str]] = None,
+    command: Union[str, list[str]],
+    cwd: Union[str, Path] | None = None,
+    env: dict[str, str] | None = None,
     timeout: float = 30.0,
     shell: bool = False,
     capture_output: bool = True,
@@ -542,7 +543,7 @@ def run_command(
 @contextmanager
 def daemon_context(
     name: str,
-    lock_dir: Optional[Path] = None,
+    lock_dir: Path | None = None,
     exit_if_running: bool = True,
 ) -> Generator[SignalHandler, None, None]:
     """Context manager for daemon processes.
@@ -602,7 +603,7 @@ def wait_for_process_exit(
     return False
 
 
-def get_process_start_time(pid: int) -> Optional[float]:
+def get_process_start_time(pid: int) -> float | None:
     """Get process start time as Unix timestamp.
 
     Args:

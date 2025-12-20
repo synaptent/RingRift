@@ -32,14 +32,14 @@ class MatchupResult:
     draws: int
     total_games: int
     win_rate: float
-    win_rate_ci: Tuple[float, float]
+    win_rate_ci: tuple[float, float]
     avg_game_length: float
     avg_game_length_std: float
-    victory_types: Dict[str, int]
+    victory_types: dict[str, int]
     source_file: str
 
 
-def wilson_score_interval(successes: int, trials: int, confidence: float = 0.95) -> Tuple[float, float]:
+def wilson_score_interval(successes: int, trials: int, confidence: float = 0.95) -> tuple[float, float]:
     """
     Calculate Wilson score confidence interval for a proportion.
 
@@ -216,7 +216,7 @@ def statistical_power(effect_size: float, n: int, alpha: float = 0.05) -> float:
     return round(norm_cdf(z_power), 4)
 
 
-def load_result_file(filepath: Path) -> Optional[MatchupResult]:
+def load_result_file(filepath: Path) -> MatchupResult | None:
     """Load and parse a single result JSON file."""
     try:
         with open(filepath, "r") as f:
@@ -261,20 +261,20 @@ def load_result_file(filepath: Path) -> Optional[MatchupResult]:
         return None
 
 
-def load_all_results(results_dir: Path) -> List[MatchupResult]:
+def load_all_results(results_dir: Path) -> list[MatchupResult]:
     """Load all result files from the results directory.
 
     Uses ProgressReporter to provide throttled visibility when scanning
     large result directories so long-running report generation jobs do not
     go silent.
     """
-    results: List[MatchupResult] = []
+    results: list[MatchupResult] = []
 
     # Materialize the file list up front so we know the total for reporting.
     files = list(results_dir.glob("*.json"))
     total_files = len(files)
 
-    reporter: Optional[ProgressReporter] = None
+    reporter: ProgressReporter | None = None
     if total_files > 0:
         reporter = ProgressReporter(
             total_units=total_files,
@@ -301,7 +301,7 @@ def load_all_results(results_dir: Path) -> List[MatchupResult]:
     return results
 
 
-def analyze_vs_random(results: List[MatchupResult]) -> Dict:
+def analyze_vs_random(results: list[MatchupResult]) -> dict:
     """Analyze all matchups against random baseline."""
     vs_random = {}
 
@@ -351,7 +351,7 @@ def analyze_vs_random(results: List[MatchupResult]) -> Dict:
     return vs_random
 
 
-def analyze_pairwise(results: List[MatchupResult]) -> Dict:
+def analyze_pairwise(results: list[MatchupResult]) -> dict:
     """Analyze pairwise comparisons between AIs (excluding random)."""
     pairwise = {}
 
@@ -390,7 +390,7 @@ def analyze_pairwise(results: List[MatchupResult]) -> Dict:
     return pairwise
 
 
-def calculate_cross_comparison(vs_random: Dict) -> Dict:
+def calculate_cross_comparison(vs_random: dict) -> dict:
     """Calculate statistical comparisons between different AIs based on their vs-random performance."""
     comparisons = {}
 
@@ -430,7 +430,7 @@ def calculate_cross_comparison(vs_random: Dict) -> Dict:
     return comparisons
 
 
-def rank_ais(vs_random: Dict, pairwise: Dict) -> List[Dict]:
+def rank_ais(vs_random: dict, pairwise: dict) -> list[dict]:
     """Rank AIs based on performance metrics."""
     scores = {}
 
@@ -496,7 +496,7 @@ def rank_ais(vs_random: Dict, pairwise: Dict) -> List[Dict]:
     return ranked
 
 
-def generate_report(results_dir: Path, output_path: Path) -> Dict:
+def generate_report(results_dir: Path, output_path: Path) -> dict:
     """Generate comprehensive statistical analysis report."""
 
     print(f"Loading results from {results_dir}...")
@@ -599,7 +599,7 @@ def generate_report(results_dir: Path, output_path: Path) -> Dict:
     return report
 
 
-def print_summary(report: Dict) -> None:
+def print_summary(report: dict) -> None:
     """Print a human-readable summary of the report."""
 
     print("\n" + "=" * 70)

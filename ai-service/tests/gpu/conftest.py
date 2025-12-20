@@ -65,7 +65,7 @@ def cpu_engine():
 # =============================================================================
 
 
-def create_test_players(num_players: int, rings_per_player: int) -> List[Player]:
+def create_test_players(num_players: int, rings_per_player: int) -> list[Player]:
     """Create test players with specified ring count."""
     return [
         Player(
@@ -200,7 +200,7 @@ def add_stack_to_state(
     state: GameState,
     x: int,
     y: int,
-    rings: List[int],
+    rings: list[int],
 ) -> GameState:
     """Add a stack to the game state.
 
@@ -324,7 +324,7 @@ def state_3p_with_line_opportunity(empty_square8_3p):
 # =============================================================================
 
 
-def moves_to_comparable_set(moves: List[Any]) -> set:
+def moves_to_comparable_set(moves: list[Any]) -> set:
     """Convert a list of moves to a comparable set of tuples."""
     result = set()
     for move in moves:
@@ -347,7 +347,7 @@ def moves_to_comparable_set(moves: List[Any]) -> set:
     return result
 
 
-def assert_moves_equal(cpu_moves: List[Any], gpu_moves: List[Any], context: str = ""):
+def assert_moves_equal(cpu_moves: list[Any], gpu_moves: list[Any], context: str = ""):
     """Assert that two move lists contain the same moves."""
     cpu_set = moves_to_comparable_set(cpu_moves)
     gpu_set = moves_to_comparable_set(gpu_moves)

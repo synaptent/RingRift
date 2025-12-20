@@ -96,8 +96,8 @@ class GameQuality:
     board_type: str
     num_players: int
     quality_score: float
-    scores: Dict[str, float]
-    game_data: Dict[str, Any]
+    scores: dict[str, float]
+    game_data: dict[str, Any]
     source_node: str
     source_file: str
 
@@ -107,15 +107,15 @@ class ClusterDataStats:
     """Statistics for cluster-wide data."""
     total_games: int = 0
     total_size_gb: float = 0.0
-    nodes: Dict[str, Dict] = field(default_factory=dict)
-    configs: Dict[str, Dict] = field(default_factory=dict)
+    nodes: dict[str, dict] = field(default_factory=dict)
+    configs: dict[str, dict] = field(default_factory=dict)
     victory_types: Counter = field(default_factory=Counter)
-    quality_distribution: Dict[str, int] = field(default_factory=dict)
+    quality_distribution: dict[str, int] = field(default_factory=dict)
 
 
 
 
-def compute_game_quality(game: Dict[str, Any], source_node: str, source_file: str) -> Optional[GameQuality]:
+def compute_game_quality(game: dict[str, Any], source_node: str, source_file: str) -> GameQuality | None:
     """Compute quality score for a single game."""
     scores = {}
 
@@ -213,7 +213,7 @@ def compute_game_quality(game: Dict[str, Any], source_node: str, source_file: st
     )
 
 
-def analyze_node_data(node: str) -> Dict[str, Any]:
+def analyze_node_data(node: str) -> dict[str, Any]:
     """Analyze selfplay data on a single node."""
     print(f"  Analyzing {node}...")
 
@@ -359,7 +359,7 @@ def harvest_games_from_node(
     num_players: int,
     min_quality: float,
     max_games: int,
-) -> List[GameQuality]:
+) -> list[GameQuality]:
     """Harvest high-quality games from a single node."""
     print(f"  Harvesting from {node}...")
 
@@ -431,8 +431,8 @@ def harvest_cluster_data(
     num_players: int = 2,
     min_quality: float = 0.6,
     max_games: int = 50000,
-    output_dir: Optional[Path] = None,
-) -> List[GameQuality]:
+    output_dir: Path | None = None,
+) -> list[GameQuality]:
     """Harvest high-quality training data from the entire cluster."""
     print(f"\nHarvesting {board_type}_{num_players}p games (min quality: {min_quality})...\n")
 

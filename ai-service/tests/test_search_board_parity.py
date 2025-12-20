@@ -26,7 +26,7 @@ from app.rules.mutable_state import MutableGameState, MoveUndo  # noqa: E402
 # For SearchBoard / MutableGameState parity we treat them as:
 #   - canonical Python trajectories via GameEngine.apply_move (trace_mode=True)
 #   - reference sequences of Move objects to replay via MutableGameState.
-LARGE_BOARD_FIXTURES: List[str] = [
+LARGE_BOARD_FIXTURES: list[str] = [
     # Square19 2p midgame capture-heavy position
     (
         "selfplay_square19_2p__"
@@ -85,7 +85,7 @@ def _replay_canonical_sequence(
     db: GameReplayDB,
     game_id: str,
     move_index: int,
-) -> Tuple[GameState, List[Move]]:
+) -> tuple[GameState, list[Move]]:
     """Replay 0..move_index via canonical GameEngine.apply_move.
 
     Returns:
@@ -108,7 +108,7 @@ def _replay_canonical_sequence(
 
 def _replay_via_mutable(
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
 ) -> GameState:
     """Replay the same move sequence via MutableGameState (SearchBoard).
 
@@ -341,7 +341,7 @@ def test_mutable_state_large_board_make_unmake_roundtrip(
     mutable = MutableGameState.from_immutable(base_state)
     original_state = base_state
 
-    undos: List[MoveUndo] = []
+    undos: list[MoveUndo] = []
     max_steps = 5
 
     for _ in range(max_steps):

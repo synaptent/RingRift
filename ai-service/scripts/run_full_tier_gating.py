@@ -50,7 +50,7 @@ GATE_REPORT_NAME = "gate_report.json"
 STATUS_NAME = "status.json"
 
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for full tier gating."""
     parser = argparse.ArgumentParser(
         description=(
@@ -98,7 +98,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _load_training_report(run_dir: str) -> Dict[str, Any]:
+def _load_training_report(run_dir: str) -> dict[str, Any]:
     """Load training_report.json from *run_dir* or exit with an error."""
     path = os.path.join(run_dir, TRAINING_REPORT_NAME)
     if not os.path.exists(path):
@@ -114,9 +114,9 @@ def _run_tier_gate_cli(
     tier: str,
     candidate_id: str,
     run_dir: str,
-    seed: Optional[int],
-    num_games_override: Optional[int],
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    seed: int | None,
+    num_games_override: int | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Invoke run_tier_gate.py in difficulty-tier mode.
 
     Returns the TierEvaluationResult payload and the promotion plan
@@ -157,7 +157,7 @@ def _run_tier_gate_cli(
     return eval_payload, plan_payload
 
 
-def _eval_perf_budget(result: TierPerfResult) -> Dict[str, Any]:
+def _eval_perf_budget(result: TierPerfResult) -> dict[str, Any]:
     """Evaluate whether a perf benchmark result is within its tier budget."""
     within_avg = result.average_ms <= result.budget.max_avg_move_ms
     within_p95 = result.p95_ms <= result.budget.max_p95_move_ms
@@ -173,7 +173,7 @@ def _run_perf_if_available(
     tier: str,
     run_dir: str,
     demo: bool,
-) -> Tuple[Optional[TierPerfResult], Optional[Dict[str, Any]], Optional[str]]:
+) -> tuple[TierPerfResult | None, dict[str, Any] | None, str | None]:
     """Run perf benchmark when a TierPerfBudget exists for *tier*.
 
     Returns (TierPerfResult or None, evaluation dict or None,
@@ -199,7 +199,7 @@ def _run_perf_if_available(
     eval_dict = _eval_perf_budget(result)
 
     perf_path = os.path.join(run_dir, TIER_PERF_FILENAME)
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "tier_name": result.tier_name,
         "difficulty": result.budget.difficulty,
         "board_type": result.budget.board_type.value,
@@ -229,7 +229,7 @@ def _update_status_json(
 ) -> None:
     """Create or update status.json for the run directory."""
     status_path = os.path.join(run_dir, STATUS_NAME)
-    status: Dict[str, Any] = {}
+    status: dict[str, Any] = {}
     if os.path.exists(status_path):
         try:
             with open(status_path, "r", encoding="utf-8") as f:
@@ -291,7 +291,7 @@ def _update_status_json(
         json.dump(status, f, indent=2, sort_keys=True)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point for the full tier gating pipeline."""
     args = parse_args(argv)
     tier = args.tier.upper()
@@ -346,9 +346,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     gate_pass = bool(tier_eval.get("overall_pass"))
 
     # Perf benchmark (when budgets exist and not explicitly disabled).
-    perf_result: Optional[TierPerfResult] = None
-    perf_eval: Optional[Dict[str, Any]] = None
-    perf_result_path: Optional[str] = None
+    perf_result: TierPerfResult | None = None
+    perf_eval: dict[str, Any] | None = None
+    perf_result_path: str | None = None
     perf_run = False
 
     if not args.no_perf:
@@ -365,7 +365,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Cross-tier sanity checks are currently stubbed; the structure is
     # left in place for future tiny tournaments.
-    cross_tier_sanity: Dict[str, Any] = {
+    cross_tier_sanity: dict[str, Any] = {
         "run": False,
     }
 
@@ -379,19 +379,19 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     created_at = datetime.now(timezone.utc).isoformat()
 
-    evaluation_block: Dict[str, Any] = {
+    evaluation_block: dict[str, Any] = {
         "result_path": TIER_EVAL_FILENAME,
         "promotion_plan_path": PROMOTION_PLAN_FILENAME,
         "overall_pass": gate_pass,
     }
 
-    perf_block: Dict[str, Any] = {
+    perf_block: dict[str, Any] = {
         "run": perf_run,
         "result_path": perf_result_path,
         "overall_pass": (perf_eval.get("overall_pass") if perf_run and perf_eval else None),
     }
 
-    gate_report: Dict[str, Any] = {
+    gate_report: dict[str, Any] = {
         "tier": tier,
         "board": board_from_report,
         "num_players": num_players_from_report,

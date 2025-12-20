@@ -55,7 +55,7 @@ from app.training.eval_pools import (  # noqa: E402
 )
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the eval tournament harness."""
     parser = argparse.ArgumentParser(
         description=("Run evaluation tournaments for AI tiers/engines on named " "evaluation pools."),
@@ -133,7 +133,7 @@ def _build_ai_for_tier(
     tier_name: str,
     pool_cfg: EvalPoolConfig,
     player_number: int,
-    rng_seed: Optional[int],
+    rng_seed: int | None,
 ) -> Any:
     """Construct an AI instance from the ladder tier for this pool.
 
@@ -157,7 +157,7 @@ def _build_ai_for_tier(
             "Extend ladder_config or choose a different pool/tier."
         ) from exc
 
-    nn_model_id: Optional[str] = None
+    nn_model_id: str | None = None
     if tier_cfg.ai_type in (AIType.MCTS, AIType.DESCENT):
         nn_model_id = tier_cfg.model_id
 
@@ -175,7 +175,7 @@ def _build_ai_for_tier(
 def _build_ai_from_engine_spec(
     engine: str,
     player_number: int,
-    rng_seed: Optional[int],
+    rng_seed: int | None,
 ) -> Any:
     """Construct an AI instance from a simple engine spec.
 
@@ -185,7 +185,7 @@ def _build_ai_from_engine_spec(
     evaluation.
     """
     name = engine.strip().lower()
-    engine_map: Dict[str, Tuple[AIType, int]] = {
+    engine_map: dict[str, tuple[AIType, int]] = {
         "random": (AIType.RANDOM, 1),
         "heuristic": (AIType.HEURISTIC, 2),
         "minimax": (AIType.MINIMAX, 4),
@@ -211,7 +211,7 @@ def _build_ai_for_spec(
     spec: str,
     pool_cfg: EvalPoolConfig,
     player_number: int,
-    rng_seed: Optional[int],
+    rng_seed: int | None,
 ) -> Any:
     """Construct an AI from either a tier id or an engine spec string."""
     try:
@@ -243,8 +243,8 @@ def _effective_max_moves(
 
 def _build_report_filename(
     pool_cfg: EvalPoolConfig,
-    tier: Optional[str],
-    opponent: Optional[str],
+    tier: str | None,
+    opponent: str | None,
     demo: bool,
 ) -> str:
     """Return a descriptive JSON filename for the report.
@@ -271,13 +271,13 @@ def _build_report_filename(
 def _run_tournament_on_pool(
     pool_name: str,
     pool_cfg: EvalPoolConfig,
-    scenarios: List[EvalScenario],
+    scenarios: list[EvalScenario],
     primary_spec: str,
-    opponent_spec: Optional[str],
+    opponent_spec: str | None,
     num_games: int,
     base_seed: int,
     demo: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Core tournament loop over a single evaluation pool."""
     from app.training.env import RingRiftEnv  # noqa: E402
 
@@ -305,14 +305,14 @@ def _run_tournament_on_pool(
             "Warning: --opponent is ignored for multiplayer pools " "(num_players > 2); running symmetric evaluation.",
         )
 
-    scenario_results: List[Dict[str, Any]] = []
+    scenario_results: list[dict[str, Any]] = []
     total_games = 0
     total_moves_all = 0
 
     for s_idx, scenario in enumerate(scenarios):
         games_for_scenario = 0
-        wins_by_player: Dict[int, int] = {}
-        victory_reasons: Dict[str, int] = {}
+        wins_by_player: dict[int, int] = {}
+        victory_reasons: dict[str, int] = {}
         total_moves_for_scenario = 0
 
         player_numbers = [p.player_number for p in scenario.initial_state.players]
@@ -321,7 +321,7 @@ def _run_tournament_on_pool(
             game_seed = (base_seed + s_idx * 1_000_003 + game_index) & 0x7FFFFFFF
 
             # Build per-player AIs.
-            ai_by_player: Dict[int, Any] = {}
+            ai_by_player: dict[int, Any] = {}
             if multiplayer:
                 for pnum in player_numbers:
                     rng = game_seed + pnum * 97
@@ -379,7 +379,7 @@ def _run_tournament_on_pool(
             env._move_count = 0
 
             moves_played = 0
-            last_info: Dict[str, Any] = {}
+            last_info: dict[str, Any] = {}
             while True:
                 state = env.state
                 if state.game_status != GameStatus.ACTIVE:
@@ -440,7 +440,7 @@ def _run_tournament_on_pool(
 
     avg_game_length_all = float(total_moves_all) / total_games if total_games > 0 else 0.0
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "pool_name": pool_name,
         "board_type": pool_cfg.board_type.value,
         "num_players": pool_cfg.num_players,
@@ -463,7 +463,7 @@ def _run_tournament_on_pool(
     return report
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint for the eval tournament harness."""
     args = parse_args(argv)
 
@@ -480,7 +480,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     base_seed = args.seed if args.seed is not None else 1_234_567
 
     # In demo mode we keep the number of scenarios tiny to ensure fast runs.
-    max_scenarios: Optional[int]
+    max_scenarios: int | None
     if args.demo:
         max_scenarios = 2
     else:

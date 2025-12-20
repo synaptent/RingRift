@@ -43,14 +43,14 @@ class SSHConfig:
     host: str
     port: int = 22
     user: str = "root"
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     connect_timeout: int = 10
     strict_host_key_checking: str = "accept-new"  # "no", "yes", or "accept-new"
     batch_mode: bool = True
-    server_alive_interval: Optional[int] = None
+    server_alive_interval: int | None = None
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "SSHConfig":
+    def from_dict(cls, d: dict[str, Any]) -> "SSHConfig":
         """Create config from a dictionary (e.g., from YAML config)."""
         return cls(
             host=d.get("ssh_host") or d.get("host") or d.get("tailscale_ip", ""),
@@ -60,7 +60,7 @@ class SSHConfig:
             connect_timeout=int(d.get("connect_timeout", 10)),
         )
 
-    def build_ssh_args(self) -> List[str]:
+    def build_ssh_args(self) -> list[str]:
         """Build SSH command arguments."""
         args = ["ssh"]
 
@@ -95,7 +95,7 @@ class SSHResult:
     success: bool
     output: str
     exit_code: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     duration_seconds: float = 0.0
 
     def __bool__(self) -> bool:
@@ -108,15 +108,15 @@ def run_ssh_command(
     *,
     port: int = 22,
     user: str = "root",
-    ssh_key: Optional[str] = None,
+    ssh_key: str | None = None,
     timeout: int = 30,
     retries: int = 0,
     retry_delay: float = 2.0,
-    connect_timeout: Optional[int] = None,
+    connect_timeout: int | None = None,
     strict_host_key_checking: str = "accept-new",
     batch_mode: bool = True,
-    server_alive_interval: Optional[int] = None,
-) -> Tuple[bool, str]:
+    server_alive_interval: int | None = None,
+) -> tuple[bool, str]:
     """Run SSH command on remote host.
 
     Args:
@@ -165,7 +165,7 @@ def run_ssh_command_with_config(
     timeout: int = 30,
     retries: int = 0,
     retry_delay: float = 2.0,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run SSH command using an SSHConfig object.
 
     Args:
@@ -214,12 +214,12 @@ def run_ssh_command_with_config(
 
 
 def run_ssh_command_from_dict(
-    host_config: Dict[str, Any],
+    host_config: dict[str, Any],
     command: str,
     *,
     timeout: int = 30,
     retries: int = 0,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run SSH command using host configuration from a dictionary.
 
     Useful for configs loaded from YAML files.
@@ -242,11 +242,11 @@ def run_ssh_command_from_dict(
 
 
 async def run_ssh_command_async(
-    ssh_args: List[str],
+    ssh_args: list[str],
     command: str,
     *,
     timeout: int = 60,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run SSH command asynchronously.
 
     Args:
@@ -280,7 +280,7 @@ async def run_ssh_command_async_with_config(
     command: str,
     *,
     timeout: int = 60,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run SSH command asynchronously using an SSHConfig object.
 
     Args:
@@ -303,7 +303,7 @@ def run_vast_ssh_command(
     *,
     timeout: int = 30,
     retries: int = 0,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run SSH command on a Vast.ai instance.
 
     Uses root user and accept-new host key checking (common for Vast).

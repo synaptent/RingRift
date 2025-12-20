@@ -58,9 +58,9 @@ class GameStats:
     avg_game_length: float = 0.0
     min_game_length: int = 0
     max_game_length: int = 0
-    win_rates_by_player: Dict[int, float] = field(default_factory=dict)
-    phase_distribution: Dict[str, int] = field(default_factory=dict)
-    victory_types: Dict[str, int] = field(default_factory=dict)
+    win_rates_by_player: dict[int, float] = field(default_factory=dict)
+    phase_distribution: dict[str, int] = field(default_factory=dict)
+    victory_types: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -69,8 +69,8 @@ class MoveAnalysis:
     game_id: str
     move_idx: int
     player: int
-    actual_move: Dict[str, Any]
-    ai_best_move: Optional[Dict[str, Any]] = None
+    actual_move: dict[str, Any]
+    ai_best_move: dict[str, Any] | None = None
     actual_eval: float = 0.0
     best_eval: float = 0.0
     eval_diff: float = 0.0
@@ -84,8 +84,8 @@ class BlunderStats:
     blunders_found: int = 0
     blunder_rate: float = 0.0
     avg_blunder_severity: float = 0.0
-    blunders_by_phase: Dict[str, int] = field(default_factory=dict)
-    blunders_by_player: Dict[int, int] = field(default_factory=dict)
+    blunders_by_phase: dict[str, int] = field(default_factory=dict)
+    blunders_by_player: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -94,7 +94,7 @@ class LossPattern:
     pattern_type: str
     description: str
     frequency: int
-    example_games: List[str] = field(default_factory=list)
+    example_games: list[str] = field(default_factory=list)
     avg_move_number: float = 0.0
     phase: str = "midgame"
     severity: str = "medium"  # low, medium, high
@@ -112,8 +112,8 @@ class LossAnalysis:
     mistakes: int = 0
     turning_point_move: int = 0
     phase_at_loss: str = "midgame"
-    eval_trajectory: List[float] = field(default_factory=list)
-    critical_moves: List[int] = field(default_factory=list)
+    eval_trajectory: list[float] = field(default_factory=list)
+    critical_moves: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -123,16 +123,16 @@ class AnalysisReport:
     num_players: int
     timestamp: str
     game_stats: GameStats
-    blunder_stats: Optional[BlunderStats] = None
-    top_opening_moves: List[Dict[str, Any]] = field(default_factory=list)
-    phase_timing: Dict[str, float] = field(default_factory=dict)
-    recommendations: List[str] = field(default_factory=list)
+    blunder_stats: BlunderStats | None = None
+    top_opening_moves: list[dict[str, Any]] = field(default_factory=list)
+    phase_timing: dict[str, float] = field(default_factory=dict)
+    recommendations: list[str] = field(default_factory=list)
 
 
 def analyze_game_database(
     db_path: Path,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
 ) -> GameStats:
     """Analyze games in a database.
 
@@ -223,9 +223,9 @@ def find_blunders(
     db_path: Path,
     threshold: float = 0.3,
     max_games: int = 100,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-) -> Tuple[BlunderStats, List[MoveAnalysis]]:
+    board_type: str | None = None,
+    num_players: int | None = None,
+) -> tuple[BlunderStats, list[MoveAnalysis]]:
     """Find blunders (large evaluation drops) in games.
 
     A blunder is defined as a move that drops the evaluation by more
@@ -327,9 +327,9 @@ def find_blunders(
 def analyze_opening_patterns(
     db_path: Path,
     first_n_moves: int = 10,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-) -> List[Dict[str, Any]]:
+    board_type: str | None = None,
+    num_players: int | None = None,
+) -> list[dict[str, Any]]:
     """Analyze common opening patterns.
 
     Args:
@@ -405,11 +405,11 @@ def analyze_opening_patterns(
 
 def analyze_losses(
     db_path: Path,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     model_player: int = 0,
     limit: int = 100,
-) -> List[LossAnalysis]:
+) -> list[LossAnalysis]:
     """Analyze games where the model lost.
 
     Args:
@@ -501,7 +501,7 @@ def analyze_losses(
     return losses
 
 
-def _generate_eval_trajectory(total_moves: int, model_player: int, winner: int) -> List[float]:
+def _generate_eval_trajectory(total_moves: int, model_player: int, winner: int) -> list[float]:
     """Generate synthetic evaluation trajectory for a game.
 
     In production, this would use actual model evaluations stored during play.
@@ -525,9 +525,9 @@ def _generate_eval_trajectory(total_moves: int, model_player: int, winner: int) 
 
 
 def find_loss_patterns(
-    losses: List[LossAnalysis],
+    losses: list[LossAnalysis],
     min_frequency: int = 3,
-) -> List[LossPattern]:
+) -> list[LossPattern]:
     """Find common patterns in losses.
 
     Args:
@@ -610,7 +610,7 @@ def find_loss_patterns(
     return patterns
 
 
-def print_loss_analysis(losses: List[LossAnalysis], patterns: List[LossPattern]):
+def print_loss_analysis(losses: list[LossAnalysis], patterns: list[LossPattern]):
     """Print loss analysis report."""
     print("\n" + "=" * 70)
     print("LOSS ANALYSIS REPORT")

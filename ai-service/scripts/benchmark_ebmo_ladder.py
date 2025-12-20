@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from app.ai.ebmo_ai import EBMO_AI
 from app.ai.heuristic_ai import HeuristicAI

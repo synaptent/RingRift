@@ -28,10 +28,10 @@ class ReplayStep(NamedTuple):
     move_player: int
     phase_after: str
     player_after: int
-    state_hash: Optional[str]
+    state_hash: str | None
 
 
-def get_recorded_game_steps(db_path: str, game_id: str) -> List[ReplayStep]:
+def get_recorded_game_steps(db_path: str, game_id: str) -> list[ReplayStep]:
     """Get the recorded Python replay steps from the database."""
     db = GameReplayDB(db_path)
 
@@ -77,7 +77,7 @@ def get_recorded_game_steps(db_path: str, game_id: str) -> List[ReplayStep]:
     return steps
 
 
-def run_ts_replay(db_path: str, game_id: str) -> Optional[List[Dict]]:
+def run_ts_replay(db_path: str, game_id: str) -> list[dict] | None:
     """Run the TypeScript replay script and parse its JSON output."""
     script_path = Path(__file__).parent.parent.parent.parent / "scripts" / "selfplay-db-ts-replay.ts"
 
@@ -128,9 +128,9 @@ def run_ts_replay(db_path: str, game_id: str) -> Optional[List[Dict]]:
 
 
 def compare_replays(
-    py_steps: List[ReplayStep],
-    ts_steps: List[Dict],
-) -> Dict[str, List[Dict]]:
+    py_steps: list[ReplayStep],
+    ts_steps: list[dict],
+) -> dict[str, list[dict]]:
     """Compare Python and TypeScript replay outputs."""
     divergences = []
 
@@ -187,7 +187,7 @@ GOLDEN_GAME_ENV = "RINGRIFT_PARITY_GOLDEN_GAME_ID"
 class TestDifferentialReplay:
     """Test suite for differential Python/TypeScript replay comparison."""
 
-    def get_test_db_and_game(self) -> Optional[tuple]:
+    def get_test_db_and_game(self) -> tuple | None:
         """Find a test database and game for replay testing."""
         db_paths = [
             Path("logs/soak_full_20251204/square8_4p.db"),

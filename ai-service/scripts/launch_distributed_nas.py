@@ -45,7 +45,7 @@ class VastInstance:
     status: str
 
 
-def get_vast_instances() -> List[VastInstance]:
+def get_vast_instances() -> list[VastInstance]:
     """Get list of running Vast instances."""
     try:
         result = subprocess.run(
@@ -127,7 +127,7 @@ def launch_nas_worker(
     players: int,
     run_id: str,
     dry_run: bool = False,
-) -> Optional[int]:
+) -> int | None:
     """Launch NAS worker on a Vast instance. Returns PID if successful."""
     ssh_target = f"root@{inst.ssh_host}"
     ssh_opts = ["-o", "StrictHostKeyChecking=no", "-p", str(inst.ssh_port)]

@@ -70,7 +70,7 @@ class TrainingJob:
     batch_size: int = 256
     epochs: int = 50
     sampling_weights: str = "victory_type"
-    transfer_from: Optional[str] = None
+    transfer_from: str | None = None
     run_elo_after: bool = False
 
 
@@ -153,7 +153,7 @@ OPTIMIZED_CONFIGS = {
 }
 
 
-def find_best_source_model(board_type: str, num_players: int) -> Optional[Path]:
+def find_best_source_model(board_type: str, num_players: int) -> Path | None:
     """Find the best model for transfer learning source."""
     patterns = [
         f"ringrift_best_{board_type}_{num_players}p.pth",
@@ -174,7 +174,7 @@ def run_transfer_learning(
     source_board: str,
     target_board: str,
     num_players: int,
-) -> Optional[Path]:
+) -> Path | None:
     """Run transfer learning to create initial weights for target board."""
     print(f"[Transfer] Looking for {source_board} model to transfer to {target_board}...")
 
@@ -214,7 +214,7 @@ def run_transfer_learning(
         return None
 
 
-def run_training_job(job: TrainingJob, initial_model: Optional[Path] = None) -> Tuple[bool, str]:
+def run_training_job(job: TrainingJob, initial_model: Path | None = None) -> tuple[bool, str]:
     """Run a single training job."""
     config_key = f"{job.board_type}_{job.num_players}p"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -361,7 +361,7 @@ def run_elo_tournament(board_type: str, num_players: int, games: int = 30) -> bo
         return False
 
 
-def run_all_optimized(configs: List[str], run_elo: bool = True) -> Dict[str, bool]:
+def run_all_optimized(configs: list[str], run_elo: bool = True) -> dict[str, bool]:
     """Run all optimized training jobs."""
     results = {}
 

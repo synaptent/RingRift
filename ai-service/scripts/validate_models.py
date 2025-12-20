@@ -55,9 +55,9 @@ class ModelValidationResult:
     path: Path
     valid: bool
     size_bytes: int
-    error: Optional[str] = None
-    load_time_ms: Optional[float] = None
-    checksum: Optional[str] = None
+    error: str | None = None
+    load_time_ms: float | None = None
+    checksum: str | None = None
 
 
 @dataclass
@@ -70,7 +70,7 @@ class ValidationReport:
     zero_byte_models: int = 0
     total_size_bytes: int = 0
     corrupted_size_bytes: int = 0
-    results: List[ModelValidationResult] = field(default_factory=list)
+    results: list[ModelValidationResult] = field(default_factory=list)
 
     def add_result(self, result: ModelValidationResult):
         self.results.append(result)
@@ -85,7 +85,7 @@ class ValidationReport:
             if result.size_bytes == 0:
                 self.zero_byte_models += 1
 
-    def get_corrupted_paths(self) -> List[Path]:
+    def get_corrupted_paths(self) -> list[Path]:
         return [r.path for r in self.results if not r.valid]
 
     def print_summary(self):
@@ -249,8 +249,8 @@ def scan_models(
 def cleanup_corrupted_models(
     report: ValidationReport,
     dry_run: bool = True,
-    backup_dir: Optional[Path] = None
-) -> List[Path]:
+    backup_dir: Path | None = None
+) -> list[Path]:
     """
     Remove corrupted model files.
 
@@ -293,7 +293,7 @@ def cleanup_corrupted_models(
 
 def update_elo_database(
     db_path: Path,
-    removed_models: List[Path],
+    removed_models: list[Path],
     dry_run: bool = True
 ) -> int:
     """
@@ -369,7 +369,7 @@ def validate_model_quick(model_path: Path) -> bool:
     return True
 
 
-def validate_model_after_save(model_path: Path, expected_keys: Optional[List[str]] = None) -> bool:
+def validate_model_after_save(model_path: Path, expected_keys: list[str] | None = None) -> bool:
     """
     Validate a model immediately after saving.
     This should be called after torch.save() to ensure the file is valid.
@@ -467,7 +467,7 @@ def safe_model_save(
         return False
 
 
-def run_remote_validation(host: str, models_dir: str = "/root/ringrift/ai-service/models") -> Optional[ValidationReport]:
+def run_remote_validation(host: str, models_dir: str = "/root/ringrift/ai-service/models") -> ValidationReport | None:
     """
     Run model validation on a remote host via SSH.
 
@@ -664,7 +664,7 @@ class ModelHygieneChecker:
         self.corrupted_count = 0
         self.cleaned_count = 0
 
-    def check_and_cleanup(self, force: bool = False) -> Dict[str, int]:
+    def check_and_cleanup(self, force: bool = False) -> dict[str, int]:
         """
         Run validation if enough time has passed since last check.
 
@@ -712,7 +712,7 @@ class ModelHygieneChecker:
 
         return result
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         """Get cumulative statistics."""
         return {
             "total_corrupted_found": self.corrupted_count,
@@ -721,7 +721,7 @@ class ModelHygieneChecker:
         }
 
 
-def validate_checkpoint_after_save(checkpoint_path: Path, expected_keys: Optional[List[str]] = None) -> bool:
+def validate_checkpoint_after_save(checkpoint_path: Path, expected_keys: list[str] | None = None) -> bool:
     """
     Quick validation after saving a checkpoint.
     Call this immediately after torch.save() to verify the file is valid.

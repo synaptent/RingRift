@@ -60,7 +60,7 @@ def test_eval_budget_flags_thresholds(
   p95: float,
   max_avg: float,
   max_p95: float,
-  expected: Dict[str, Any],
+  expected: dict[str, Any],
 ) -> None:
   """_eval_budget should set within_avg / within_p95 / overall_pass consistently."""
   budget = _make_dummy_budget(max_avg, max_p95)

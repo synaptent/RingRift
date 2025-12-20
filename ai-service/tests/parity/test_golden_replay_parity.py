@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import List, Tuple
+from collections.abc import Iterable
 
 import pytest
 
@@ -34,13 +35,13 @@ from tests.parity.test_differential_replay import (  # noqa: E402
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "golden_games"
 
 
-def _iter_golden_games() -> Iterable[Tuple[Path, str]]:
+def _iter_golden_games() -> Iterable[tuple[Path, str]]:
   """Yield (db_path, game_id) pairs for all games in golden fixture DBs."""
   if not FIXTURES_DIR.exists():
     return []
 
-  db_paths: List[Path] = sorted(FIXTURES_DIR.glob("*.db"))
-  games: List[Tuple[Path, str]] = []
+  db_paths: list[Path] = sorted(FIXTURES_DIR.glob("*.db"))
+  games: list[tuple[Path, str]] = []
 
   for db_path in db_paths:
     db = GameReplayDB(str(db_path))

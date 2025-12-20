@@ -31,7 +31,7 @@ from app.models import BoardType, GameState, Move, MoveType, Position
 from app.training.generate_data import create_initial_state
 
 
-def parse_position(pos_dict: Dict[str, Any], board_type: BoardType = None) -> Position:
+def parse_position(pos_dict: dict[str, Any], board_type: BoardType = None) -> Position:
     """Parse a position dict into a Position object.
 
     For hexagonal boards, converts GPU array indices (0-24) to canonical
@@ -62,11 +62,11 @@ def parse_position(pos_dict: Dict[str, Any], board_type: BoardType = None) -> Po
 
 
 def parse_move(
-    move_dict: Dict[str, Any],
+    move_dict: dict[str, Any],
     move_number: int,
     timestamp: str,
     board_type: BoardType = None,
-) -> Optional[Move]:
+) -> Move | None:
     """Parse a move dict into a Move object.
 
     Returns None for unknown or bookkeeping-only move types (e.g. unknown_6/NO_ACTION).
@@ -177,13 +177,13 @@ def get_board_type(board_str: str) -> BoardType:
 
 
 def _find_matching_candidate_move(
-    candidates: List[Move],
+    candidates: list[Move],
     *,
     desired_type: MoveType,
-    from_pos: Optional[Position],
-    to_pos: Optional[Position],
-    must_move_from_key: Optional[str] = None,
-) -> Optional[Move]:
+    from_pos: Position | None,
+    to_pos: Position | None,
+    must_move_from_key: str | None = None,
+) -> Move | None:
     from_key = from_pos.to_key() if from_pos else None
     to_key = to_pos.to_key() if to_pos else None
     if to_key is None and desired_type == MoveType.SKIP_CAPTURE:
@@ -216,9 +216,10 @@ def _find_matching_candidate_move(
 
 
 def expand_gpu_jsonl_moves_to_canonical(
-    gpu_moves: List[Move],
+    gpu_moves: list[Move],
     initial_state: GameState,
-) -> tuple[List[Move], GameState]:
+    verbose: bool = False,
+) -> tuple[list[Move], GameState]:
     """Expand GPU JSONL move histories into canonical phase-recorded moves.
 
     GPU JSONLs omit explicit phase-bookkeeping and decision moves that are
@@ -230,7 +231,7 @@ def expand_gpu_jsonl_moves_to_canonical(
     """
     from app.models.core import GamePhase
 
-    expanded: List[Move] = []
+    expanded: list[Move] = []
     state = initial_state
     move_num = 0
 
@@ -291,8 +292,11 @@ def expand_gpu_jsonl_moves_to_canonical(
             ts,
         )
 
-    for gpu_move in gpu_moves:
+    for gpu_idx, gpu_move in enumerate(gpu_moves):
         ts = gpu_move.timestamp
+        if verbose:
+            print(f"  [GPU {gpu_idx}] type={gpu_move.type.value} player={gpu_move.player} from={gpu_move.from_pos} to={gpu_move.to}")
+            print(f"         state: phase={state.current_phase.value} player={state.current_player}")
         # GPU JSONL streams sometimes include legacy/internal bookkeeping moves
         # (line_formation, territory_claim) that do not map 1:1 to the canonical
         # per-phase move surface. Canonicalisation is driven by the CPU engine's
@@ -386,6 +390,9 @@ def expand_gpu_jsonl_moves_to_canonical(
             must_move_from_key=state.must_move_from_stack_key,
         )
         if matched is None:
+            if verbose:
+                print(f"  [ERROR] No match for GPU move {gpu_idx}")
+                print(f"         Candidates ({len(candidates)}): {[(c.type.value, c.from_pos, c.to) for c in candidates[:5]]}")
             raise RuntimeError(
                 "No matching candidate move "
                 f"(gpu_move_number={gpu_move.move_number}, gpu_player={gpu_move.player}, "
@@ -449,8 +456,9 @@ def expand_gpu_jsonl_moves_to_canonical(
 
 def import_game(
     db: GameReplayDB,
-    game_record: Dict[str, Any],
+    game_record: dict[str, Any],
     source_file: str,
+    verbose: bool = False,
 ) -> bool:
     """Import a single game record into the database.
 
@@ -480,7 +488,7 @@ def import_game(
     moves_data = game_record.get("moves", [])
     timestamp = game_record.get("timestamp", datetime.now().isoformat())
 
-    moves: List[Move] = []
+    moves: list[Move] = []
     for i, move_dict in enumerate(moves_data):
         try:
             move = parse_move(move_dict, i + 1, timestamp, board_type)
@@ -491,7 +499,7 @@ def import_game(
             return False
 
     try:
-        canonical_moves, final_state = expand_gpu_jsonl_moves_to_canonical(moves, initial_state)
+        canonical_moves, final_state = expand_gpu_jsonl_moves_to_canonical(moves, initial_state, verbose=verbose)
     except Exception as e:
         print(f"  Warning: Failed to canonicalize moves for {game_id}: {e}")
         return False
@@ -541,6 +549,10 @@ def main():
         "--limit", "-n", type=int, default=0,
         help="Maximum number of games to import (0 = all)"
     )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Print verbose debugging output for move canonicalization"
+    )
 
     args = parser.parse_args()
 
@@ -573,7 +585,7 @@ def main():
                 games_failed += 1
                 continue
 
-            if import_game(db, record, source_file):
+            if import_game(db, record, source_file, verbose=args.verbose):
                 games_imported += 1
                 if games_imported % 50 == 0:
                     print(f"  Imported {games_imported} games...")

@@ -81,9 +81,9 @@ DEFAULT_CONFIGS = [
 ]
 
 
-def get_game_counts(db_paths: List[str]) -> Dict[Tuple[str, int], int]:
+def get_game_counts(db_paths: list[str]) -> dict[tuple[str, int], int]:
     """Count games per board type and player count across all databases."""
-    counts: Dict[Tuple[str, int], int] = {}
+    counts: dict[tuple[str, int], int] = {}
 
     for db_path in db_paths:
         if not os.path.exists(db_path):
@@ -105,7 +105,7 @@ def get_game_counts(db_paths: List[str]) -> Dict[Tuple[str, int], int]:
     return counts
 
 
-def find_databases(data_dir: str = "data/games") -> List[str]:
+def find_databases(data_dir: str = "data/games") -> list[str]:
     """Find all SQLite game databases in the data directory."""
     db_paths = []
     data_path = Path(data_dir)
@@ -127,7 +127,7 @@ def get_model_path(board_type: str, num_players: int) -> str:
 
 def train_nnue(
     config: TrainingConfig,
-    db_paths: List[str],
+    db_paths: list[str],
     run_dir: str,
     force: bool = False,
 ) -> bool:
@@ -186,7 +186,7 @@ def train_nnue(
         return False
 
 
-def main(args: Optional[List[str]] = None) -> int:
+def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Train NNUE models for all configurations"
     )

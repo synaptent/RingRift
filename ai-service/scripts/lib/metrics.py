@@ -46,7 +46,8 @@ import math
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator, Optional, Dict, Any
+from typing import Optional, Dict, Any
+from collections.abc import Iterator
 
 from scripts.lib.datetime_utils import format_elapsed_time
 
@@ -148,7 +149,7 @@ class TimingStats:
         self.min_time = min(self.min_time, other.min_time)
         self.max_time = max(self.max_time, other.max_time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "name": self.name,
@@ -200,7 +201,7 @@ class RateCalculator:
 
     total_items: int = 0
     total_time: float = 0.0
-    _start_time: Optional[float] = field(default=None, repr=False)
+    _start_time: float | None = field(default=None, repr=False)
 
     def start(self) -> None:
         """Start the rate timer."""
@@ -212,7 +213,7 @@ class RateCalculator:
             self.total_time += time.perf_counter() - self._start_time
             self._start_time = None
 
-    def record(self, items: int = 1, elapsed: Optional[float] = None) -> None:
+    def record(self, items: int = 1, elapsed: float | None = None) -> None:
         """Record processed items.
 
         Args:
@@ -270,7 +271,7 @@ class RateCalculator:
         self.total_time = 0.0
         self._start_time = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "total_items": self.total_items,
@@ -416,7 +417,7 @@ class WinLossCounter:
         self.losses += other.losses
         self.draws += other.draws
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "wins": self.wins,
@@ -462,7 +463,7 @@ class ProgressTracker:
         """Set progress to specific value."""
         self.current = value
 
-    def reset(self, total: Optional[int] = None) -> None:
+    def reset(self, total: int | None = None) -> None:
         """Reset progress and optionally update total."""
         self.current = 0
         if total is not None:
@@ -499,7 +500,7 @@ class ProgressTracker:
         return min(1.0, self.current / self.total)
 
     @property
-    def eta_seconds(self) -> Optional[float]:
+    def eta_seconds(self) -> float | None:
         """Estimated time remaining in seconds."""
         if self.current <= 0:
             return None
@@ -536,7 +537,7 @@ class ProgressTracker:
             f"ETA: {self.eta_str}"
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "current": self.current,
@@ -661,7 +662,7 @@ class RunningStats:
         self.min_value = min(self.min_value, other.min_value)
         self.max_value = max(self.max_value, other.max_value)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "name": self.name,
@@ -711,9 +712,9 @@ class MetricsCollection:
         print(metrics.summary())
     """
 
-    _timings: Dict[str, TimingStats] = field(default_factory=dict)
-    _counters: Dict[str, Counter] = field(default_factory=dict)
-    _stats: Dict[str, RunningStats] = field(default_factory=dict)
+    _timings: dict[str, TimingStats] = field(default_factory=dict)
+    _counters: dict[str, Counter] = field(default_factory=dict)
+    _stats: dict[str, RunningStats] = field(default_factory=dict)
 
     def timing(self, name: str) -> TimingStats:
         """Get or create a TimingStats by name."""
@@ -763,7 +764,7 @@ class MetricsCollection:
 
         return "\n".join(lines) if lines else "No metrics recorded"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert all metrics to dictionary for serialization."""
         return {
             "timings": {k: v.to_dict() for k, v in self._timings.items()},

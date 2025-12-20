@@ -29,22 +29,22 @@ def _default_ts_dump_path(
     return dump_dir / name
 
 
-def _load_ts_state(ts_path: Path) -> Dict[str, Any]:
+def _load_ts_state(ts_path: Path) -> dict[str, Any]:
     if not ts_path.exists():
         raise FileNotFoundError(f"TS state dump not found: {ts_path}")
     with ts_path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _summarize_players_py(state) -> Dict[int, Tuple[int, int, int]]:
-    summary: Dict[int, Tuple[int, int, int]] = {}
+def _summarize_players_py(state) -> dict[int, tuple[int, int, int]]:
+    summary: dict[int, tuple[int, int, int]] = {}
     for p in state.players:
         summary[p.player_number] = (p.eliminated_rings, p.territory_spaces, p.rings_in_hand)
     return summary
 
 
-def _summarize_players_ts(ts_state: Dict[str, Any]) -> Dict[int, Tuple[int, int, int]]:
-    summary: Dict[int, Tuple[int, int, int]] = {}
+def _summarize_players_ts(ts_state: dict[str, Any]) -> dict[int, tuple[int, int, int]]:
+    summary: dict[int, tuple[int, int, int]] = {}
     for p in ts_state.get("players", []):
         num = int(p["playerNumber"])
         summary[num] = (
@@ -55,35 +55,35 @@ def _summarize_players_ts(ts_state: Dict[str, Any]) -> Dict[int, Tuple[int, int,
     return summary
 
 
-def _summarize_stacks_py(state) -> Dict[str, Tuple[int, int]]:
+def _summarize_stacks_py(state) -> dict[str, tuple[int, int]]:
     board = state.board
-    out: Dict[str, Tuple[int, int]] = {}
+    out: dict[str, tuple[int, int]] = {}
     for key, stack in (board.stacks or {}).items():
         out[str(key)] = (stack.stack_height, stack.controlling_player)
     return out
 
 
-def _summarize_stacks_ts(ts_state: Dict[str, Any]) -> Dict[str, Tuple[int, int]]:
+def _summarize_stacks_ts(ts_state: dict[str, Any]) -> dict[str, tuple[int, int]]:
     board = ts_state.get("board", {})
     stacks = board.get("stacks", {}) or {}
-    out: Dict[str, Tuple[int, int]] = {}
+    out: dict[str, tuple[int, int]] = {}
     for key, stack in stacks.items():
         out[str(key)] = (int(stack.get("stackHeight", 0)), int(stack.get("controllingPlayer", 0)))
     return out
 
 
-def _summarize_collapsed_py(state) -> Dict[str, int]:
+def _summarize_collapsed_py(state) -> dict[str, int]:
     board = state.board
-    out: Dict[str, int] = {}
+    out: dict[str, int] = {}
     for key, owner in (board.collapsed_spaces or {}).items():
         out[str(key)] = int(owner)
     return out
 
 
-def _summarize_collapsed_ts(ts_state: Dict[str, Any]) -> Dict[str, int]:
+def _summarize_collapsed_ts(ts_state: dict[str, Any]) -> dict[str, int]:
     board = ts_state.get("board", {})
     collapsed = board.get("collapsedSpaces", {}) or {}
-    out: Dict[str, int] = {}
+    out: dict[str, int] = {}
     for key, owner in collapsed.items():
         out[str(key)] = int(owner)
     return out

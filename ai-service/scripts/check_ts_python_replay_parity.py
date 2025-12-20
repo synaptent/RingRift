@@ -99,7 +99,7 @@ class StateSummary:
     # Optional per-state ANM classification for the active player. This is
     # populated for both Python and TS summaries whenever the underlying
     # harness exposes an ANM flag.
-    is_anm: Optional[bool] = None
+    is_anm: bool | None = None
 
 
 @dataclass
@@ -107,17 +107,17 @@ class GameParityResult:
     db_path: str
     game_id: str
     structure: str
-    structure_reason: Optional[str]
+    structure_reason: str | None
     total_moves_python: int
     total_moves_ts: int
-    diverged_at: Optional[int]
-    python_summary: Optional[StateSummary]
-    ts_summary: Optional[StateSummary]
+    diverged_at: int | None
+    python_summary: StateSummary | None
+    ts_summary: StateSummary | None
     # High-level classification of what differed at diverged_at, e.g.:
     # ['current_player'], ['current_phase', 'game_status'], ['move_count'], ['ts_missing_step']
-    mismatch_kinds: List[str] = field(default_factory=list)
+    mismatch_kinds: list[str] = field(default_factory=list)
     # Optional free-form context, such as "initial_state" vs "post_move" / "post_bridge"
-    mismatch_context: Optional[str] = None
+    mismatch_context: str | None = None
     # True when divergence occurs only at the very last move (end-of-game metadata
     # differences). These are insignificant for training purposes as no AI decisions
     # are made based on the divergent state.
@@ -129,8 +129,8 @@ class TsEventMetadata:
     """Metadata about a TS replay event used for parity comparison."""
 
     ts_k: int
-    db_move_index: Optional[int]
-    view: Optional[str]
+    db_move_index: int | None
+    view: str | None
     event_kind: str
 
 
@@ -148,7 +148,7 @@ def _canonicalize_status(status: str | None) -> str:
     return s
 
 
-def find_dbs(explicit_db: Optional[str] = None) -> List[Path]:
+def find_dbs(explicit_db: str | None = None) -> list[Path]:
     """Find GameReplayDB files to inspect."""
     root = REPO_ROOT
     if explicit_db:
@@ -160,7 +160,7 @@ def find_dbs(explicit_db: Optional[str] = None) -> List[Path]:
         root / "ai-service" / "data" / "games",
     ]
 
-    results: List[Path] = []
+    results: list[Path] = []
     visited = set()
 
     def walk(dir_path: Path, depth: int) -> None:
@@ -188,8 +188,8 @@ def find_dbs(explicit_db: Optional[str] = None) -> List[Path]:
 
 def _load_game_id_filter(
     *,
-    include_game_ids: Optional[List[str]],
-    include_game_ids_file: Optional[str],
+    include_game_ids: list[str] | None,
+    include_game_ids_file: str | None,
 ) -> set[str]:
     """Return a set of game_ids to include (empty set means include all)."""
     game_ids: set[str] = set()
@@ -227,7 +227,7 @@ def _load_game_id_filter(
     return game_ids
 
 
-def import_json_to_temp_db(json_path: str) -> Tuple[Path, str]:
+def import_json_to_temp_db(json_path: str) -> tuple[Path, str]:
     """Import a JSON scenario/fixture file into a temporary GameReplayDB.
 
     Supports three formats:
@@ -479,8 +479,8 @@ def replay_python_post_move_summaries(
     db: GameReplayDB,
     game_id: str,
     *,
-    limit_moves: Optional[int] = None,
-) -> Dict[int, StateSummary]:
+    limit_moves: int | None = None,
+) -> dict[int, StateSummary]:
     """Replay a game once and return per-move post-move summaries.
 
     This is an O(N) alternative to calling GameReplayDB.get_state_at_move(k)
@@ -506,7 +506,7 @@ def replay_python_post_move_summaries(
         moves = moves[:limit_moves]
     total_moves = len(moves)
 
-    summaries: Dict[int, StateSummary] = {}
+    summaries: dict[int, StateSummary] = {}
     working_state = state
 
     for idx, move in enumerate(moves):
@@ -571,7 +571,7 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
     )
 
 
-def classify_game_structure(db: GameReplayDB, game_id: str) -> Tuple[str, Optional[str]]:
+def classify_game_structure(db: GameReplayDB, game_id: str) -> tuple[str, str | None]:
     """Classify game recording structure.
 
     Returns (structure, reason) where structure is one of:
@@ -649,7 +649,7 @@ def run_ts_replay(
     db_path: Path,
     game_id: str,
     view_mode: str = "post_move",
-) -> Tuple[int, Dict[int, StateSummary], Dict[int, TsEventMetadata]]:
+) -> tuple[int, dict[int, StateSummary], dict[int, TsEventMetadata]]:
     """Invoke the TS harness and parse its per-move summaries.
 
     Returns:
@@ -711,13 +711,13 @@ def run_ts_replay(
     total_ts_moves = 0
 
     # Per-k summaries for each TS view.
-    initial_summary: Optional[StateSummary] = None
-    post_move_summaries: Dict[int, StateSummary] = {}
-    post_bridge_summaries: Dict[int, StateSummary] = {}
+    initial_summary: StateSummary | None = None
+    post_move_summaries: dict[int, StateSummary] = {}
+    post_bridge_summaries: dict[int, StateSummary] = {}
 
     # Per-k metadata for each TS view.
-    meta_post_move: Dict[int, TsEventMetadata] = {}
-    meta_post_bridge: Dict[int, TsEventMetadata] = {}
+    meta_post_move: dict[int, TsEventMetadata] = {}
+    meta_post_bridge: dict[int, TsEventMetadata] = {}
 
     assert proc.stdout is not None
     for raw_line in proc.stdout:
@@ -868,7 +868,7 @@ def run_ts_replay(
         )
 
     # Build the view-specific summaries and metadata.
-    summaries: Dict[int, StateSummary] = {}
+    summaries: dict[int, StateSummary] = {}
     if initial_summary is not None:
         summaries[0] = initial_summary
 
@@ -897,7 +897,7 @@ def run_ts_replay(
 def _dump_ts_states_for_ks(
     db_path: Path,
     game_id: str,
-    ks: List[int],
+    ks: list[int],
     dump_dir: Path,
 ) -> None:
     """Invoke the TS replay harness to dump TS GameState JSON at the requested k values."""
@@ -948,7 +948,7 @@ def dump_state_bundle(
     state_bundles_dir: Path,
     *,
     view_mode: str,
-    ts_event_metadata: Dict[int, TsEventMetadata] | None = None,
+    ts_event_metadata: dict[int, TsEventMetadata] | None = None,
 ) -> None:
     """Emit a rich TS+Python state bundle around the first divergence for faster debugging.
 
@@ -966,9 +966,9 @@ def dump_state_bundle(
         before_k = max(0, div_k - 1)
         ks = [before_k, div_k] if div_k != before_k else [div_k]
 
-    py_states: Dict[int, Dict[str, object]] = {}
-    ts_states: Dict[int, Dict[str, object]] = {}
-    meta_for_ks: Dict[str, Dict[str, object]] = {}
+    py_states: dict[int, dict[str, object]] = {}
+    ts_states: dict[int, dict[str, object]] = {}
+    meta_for_ks: dict[str, dict[str, object]] = {}
 
     for ts_k in ks:
         state = _get_python_state_for_ts_k(db, game_id, ts_k, result.total_moves_python)
@@ -1028,7 +1028,7 @@ def dump_state_bundle(
     # state differences. This is intentionally small and focused: it does not
     # attempt to recompute ANM for every k from JSON alone.
     if result.diverged_at is not None:
-        anm_entry: Dict[str, Optional[bool]] = {
+        anm_entry: dict[str, bool | None] = {
             "is_anm_ts": getattr(result.ts_summary, "is_anm", None) if result.ts_summary is not None else None,
             "is_anm_py": getattr(result.python_summary, "is_anm", None) if result.python_summary is not None else None,
         }
@@ -1048,7 +1048,7 @@ def check_game_parity(
     db_path: Path,
     game_id: str,
     view: str = "post_move",
-    state_bundles_dir: Optional[Path] = None,
+    state_bundles_dir: Path | None = None,
 ) -> GameParityResult:
     db = GameReplayDB(str(db_path))
     meta = db.get_game_metadata(game_id)
@@ -1103,11 +1103,11 @@ def check_game_parity(
     if len(py_post_move_summaries) != total_moves_py:
         total_moves_py = len(py_post_move_summaries)
 
-    diverged_at: Optional[int] = None
-    py_summary_at_diverge: Optional[StateSummary] = None
-    ts_summary_at_diverge: Optional[StateSummary] = None
-    mismatch_kinds: List[str] = []
-    mismatch_context: Optional[str] = None
+    diverged_at: int | None = None
+    py_summary_at_diverge: StateSummary | None = None
+    ts_summary_at_diverge: StateSummary | None = None
+    mismatch_kinds: list[str] = []
+    mismatch_context: str | None = None
 
     # Index alignment:
     #   TS k=0 (ts-replay-initial) = initial state BEFORE any moves
@@ -1125,7 +1125,7 @@ def check_game_parity(
     ts_initial = ts_summaries.get(0)
     if ts_initial is not None:
         py_initial = summarize_python_initial_state(db, game_id)
-        init_mismatches: List[str] = []
+        init_mismatches: list[str] = []
         if py_initial.current_player != ts_initial.current_player:
             init_mismatches.append("current_player")
         if py_initial.current_phase != ts_initial.current_phase:
@@ -1180,7 +1180,7 @@ def check_game_parity(
                 mismatch_context = view
                 break
 
-            step_mismatches: List[str] = []
+            step_mismatches: list[str] = []
             if py_summary.current_player != ts_summary.current_player:
                 step_mismatches.append("current_player")
             if py_summary.current_phase != ts_summary.current_phase:
@@ -1294,7 +1294,7 @@ def check_game_parity(
 def trace_game(
     db_path: Path,
     game_id: str,
-    max_k: Optional[int] = None,
+    max_k: int | None = None,
     view: str = "post_move",
 ) -> None:
     """Emit a per-step TS vs Python trace for a single game.
@@ -1332,7 +1332,7 @@ def trace_game(
     # Initial state (TS k=0 vs Python initial_state)
     py_initial = summarize_python_initial_state(db, game_id)
     ts_initial = ts_summaries.get(0)
-    init_dims: List[str] = []
+    init_dims: list[str] = []
     if ts_initial is None:
         init_dims.append("ts_missing_step")
     else:
@@ -1390,7 +1390,7 @@ def trace_game(
 
         ts_summary = ts_summaries.get(ts_k)
 
-        dims: List[str] = []
+        dims: list[str] = []
         if py_summary is not None and ts_summary is not None:
             if py_summary.current_player != ts_summary.current_player:
                 dims.append("current_player")
@@ -1408,9 +1408,9 @@ def trace_game(
         elif py_summary is not None and ts_summary is None:
             dims.append("ts_missing_step")
 
-        move_number: Optional[int] = None
-        move_player: Optional[int] = None
-        move_type: Optional[str] = None
+        move_number: int | None = None
+        move_player: int | None = None
+        move_type: str | None = None
         if 0 <= py_index < len(move_records):
             rec = move_records[py_index]
             move_number = rec.get("moveNumber")
@@ -1608,8 +1608,8 @@ def main() -> None:
         sys.exit(2)
 
     # Handle JSON input mode: import to temp DB and check single game
-    temp_db_path: Optional[Path] = None
-    json_game_id: Optional[str] = None
+    temp_db_path: Path | None = None
+    json_game_id: str | None = None
     if args.json:
         import shutil
 
@@ -1654,21 +1654,21 @@ def main() -> None:
 
     filtered_found_game_ids: set[str] = set()
 
-    structural_issues: List[Dict[str, object]] = []
-    semantic_divergences: List[Dict[str, object]] = []
-    end_of_game_only_divergences: List[Dict[str, object]] = []
-    mismatch_counts_by_dimension: Dict[str, int] = {}
+    structural_issues: list[dict[str, object]] = []
+    semantic_divergences: list[dict[str, object]] = []
+    end_of_game_only_divergences: list[dict[str, object]] = []
+    mismatch_counts_by_dimension: dict[str, int] = {}
     total_games = 0
     total_semantic_divergent = 0
     total_end_of_game_only = 0
     total_structural_issues = 0
     games_with_non_canonical_history = 0
 
-    fixtures_dir: Optional[Path] = Path(args.emit_fixtures_dir).resolve() if args.emit_fixtures_dir else None
+    fixtures_dir: Path | None = Path(args.emit_fixtures_dir).resolve() if args.emit_fixtures_dir else None
     if fixtures_dir is not None:
         fixtures_dir.mkdir(parents=True, exist_ok=True)
 
-    state_bundles_dir: Optional[Path] = (
+    state_bundles_dir: Path | None = (
         Path(args.emit_state_bundles_dir).resolve() if args.emit_state_bundles_dir else None
     )
     if state_bundles_dir is not None:
@@ -1760,8 +1760,8 @@ def main() -> None:
                     except Exception:
                         moves = []
 
-                    canonical_move_index: Optional[int] = None
-                    canonical_move_dict: Optional[Dict[str, object]] = None
+                    canonical_move_index: int | None = None
+                    canonical_move_dict: dict[str, object] | None = None
 
                     if moves:
                         if result.diverged_at is None or result.diverged_at <= 0:

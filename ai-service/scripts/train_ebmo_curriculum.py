@@ -89,7 +89,7 @@ def play_game(
     ai2,
     board_type: BoardType = BoardType.SQUARE8,
     max_moves: int = 200,
-) -> Tuple[int, List[Dict]]:
+) -> tuple[int, list[dict]]:
     """Play a game and record all states/actions.
 
     Returns:
@@ -140,9 +140,9 @@ def play_game(
 
 def generate_curriculum_data(
     stage: CurriculumStage,
-    ebmo_model_path: Optional[str] = None,
+    ebmo_model_path: str | None = None,
     device: torch.device = torch.device("cpu"),
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Generate training data for a curriculum stage.
 
     Returns:

@@ -43,7 +43,7 @@ def _load_cluster_auth_token() -> str:
     return ""
 
 
-def get_public_ip() -> Optional[str]:
+def get_public_ip() -> str | None:
     """Get this machine's public IP address."""
     # Try multiple services
     services = [
@@ -64,7 +64,7 @@ def get_public_ip() -> Optional[str]:
     return None
 
 
-def get_tailscale_ip() -> Optional[str]:
+def get_tailscale_ip() -> str | None:
     """Get this machine's Tailscale IPv4 (100.x) if available."""
     try:
         result = subprocess.run(
@@ -83,7 +83,7 @@ def get_tailscale_ip() -> Optional[str]:
         return None
 
 
-def get_local_ip() -> Optional[str]:
+def get_local_ip() -> str | None:
     """Get this machine's local IP address."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -111,8 +111,8 @@ def register_with_coordinator(
     node_id: str,
     host: str,
     port: int,
-    vast_instance_id: Optional[str] = None,
-    tailscale_ip: Optional[str] = None,
+    vast_instance_id: str | None = None,
+    tailscale_ip: str | None = None,
 ) -> bool:
     """Register this node with the P2P coordinator."""
     url = f"{coordinator_url.rstrip('/')}/register"
@@ -162,8 +162,8 @@ def register_with_any_coordinator(
     node_id: str,
     host: str,
     port: int,
-    vast_instance_id: Optional[str] = None,
-    tailscale_ip: Optional[str] = None,
+    vast_instance_id: str | None = None,
+    tailscale_ip: str | None = None,
 ) -> bool:
     for coordinator_url in coordinator_urls:
         if register_with_coordinator(

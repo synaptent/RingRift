@@ -55,7 +55,8 @@ import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Callable, Generator
 
 import numpy as np
 
@@ -122,7 +123,7 @@ SUPPORTED_AI_TYPES = [
 ]
 
 
-def _format_ai_label(ai_type: str, checkpoint: Optional[str]) -> str:
+def _format_ai_label(ai_type: str, checkpoint: str | None) -> str:
     if not checkpoint:
         return ai_type
     base = os.path.basename(checkpoint)
@@ -135,43 +136,43 @@ def _format_ai_label(ai_type: str, checkpoint: Optional[str]) -> str:
 class GameResult:
     """Result of a single game."""
 
-    winner: Optional[int]  # 1, 2, or None for draw
+    winner: int | None  # 1, 2, or None for draw
     length: int  # Number of moves
-    victory_type: Optional[str]  # elimination, resignation, etc
-    p1_decision_times: List[float] = field(default_factory=list)
-    p2_decision_times: List[float] = field(default_factory=list)
+    victory_type: str | None  # elimination, resignation, etc
+    p1_decision_times: list[float] = field(default_factory=list)
+    p2_decision_times: list[float] = field(default_factory=list)
     p1_final_pieces: int = 0  # Pieces remaining at game end
     p2_final_pieces: int = 0
     p1_was_player: str = ""  # Which AI type was player 1
     p2_was_player: str = ""  # Which AI type was player 2
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
 class EvaluationResults:
     """Aggregated results from evaluation."""
 
-    config: Dict[str, Any]
+    config: dict[str, Any]
     player1_wins: int = 0
     player2_wins: int = 0
     draws: int = 0
-    games: List[Dict[str, Any]] = field(default_factory=list)
+    games: list[dict[str, Any]] = field(default_factory=list)
     total_runtime_seconds: float = 0.0
 
     # Per-game statistics
-    game_lengths: List[int] = field(default_factory=list)
-    p1_decision_times: List[float] = field(default_factory=list)
-    p2_decision_times: List[float] = field(default_factory=list)
+    game_lengths: list[int] = field(default_factory=list)
+    p1_decision_times: list[float] = field(default_factory=list)
+    p2_decision_times: list[float] = field(default_factory=list)
 
     # Victory type breakdown
-    victory_types: Dict[str, int] = field(default_factory=dict)
+    victory_types: dict[str, int] = field(default_factory=dict)
 
     # Piece advantage tracking
-    p1_final_pieces_list: List[int] = field(default_factory=list)
-    p2_final_pieces_list: List[int] = field(default_factory=list)
+    p1_final_pieces_list: list[int] = field(default_factory=list)
+    p2_final_pieces_list: list[int] = field(default_factory=list)
 
 
-def wilson_score_interval(wins: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
+def wilson_score_interval(wins: int, total: int, confidence: float = 0.95) -> tuple[float, float]:
     """Calculate Wilson score confidence interval for win rate.
 
     The Wilson score interval is more accurate than the normal approximation,
@@ -210,7 +211,7 @@ def wilson_score_interval(wins: int, total: int, confidence: float = 0.95) -> Tu
     return (round(lower, 4), round(upper, 4))
 
 
-def load_cmaes_weights(path: str = "heuristic_weights_optimized.json") -> Dict[str, float]:
+def load_cmaes_weights(path: str = "heuristic_weights_optimized.json") -> dict[str, float]:
     """Load CMA-ES optimized weights from JSON file.
 
     Args:
@@ -239,10 +240,10 @@ def create_ai(
     ai_type: str,
     player_num: int,
     board_type: BoardType,
-    checkpoint: Optional[str] = None,
+    checkpoint: str | None = None,
     mm_depth: int = 3,
-    cmaes_path: Optional[str] = None,
-    game_seed: Optional[int] = None,
+    cmaes_path: str | None = None,
+    game_seed: int | None = None,
 ) -> BaseAI:
     """Create an AI instance based on the specified type.
 
@@ -261,7 +262,7 @@ def create_ai(
     # Derive a unique per-AI seed for this game.
     # Combine game_seed with player_num so P1 and P2 use
     # different RNG streams.
-    ai_rng_seed: Optional[int] = None
+    ai_rng_seed: int | None = None
     if game_seed is not None:
         # Use a hash-like combination to get a unique seed
         # per (game, player)
@@ -405,7 +406,7 @@ def count_player_pieces(game_state: GameState, player_num: int) -> int:
     return rings_in_hand + rings_on_board
 
 
-def determine_victory_type(game_state: GameState) -> Optional[str]:
+def determine_victory_type(game_state: GameState) -> str | None:
     """Determine the type of victory from the game state.
 
     Args:
@@ -436,7 +437,7 @@ def determine_victory_type(game_state: GameState) -> Optional[str]:
     return "elimination"
 
 
-def _tiebreak_winner(game_state: GameState) -> Optional[int]:
+def _tiebreak_winner(game_state: GameState) -> int | None:
     """Deterministically select a winner for evaluation-only timeouts.
 
     This does not change canonical rules; it is used only to avoid draw-heavy
@@ -445,8 +446,8 @@ def _tiebreak_winner(game_state: GameState) -> Optional[int]:
     if not getattr(game_state, "players", None):
         return None
 
-    best_player: Optional[int] = None
-    best_key: Optional[tuple] = None
+    best_player: int | None = None
+    best_key: tuple | None = None
 
     for idx, player in enumerate(game_state.players):
         player_num = getattr(player, "player_number", None)
@@ -568,10 +569,10 @@ def run_evaluation(
     player2_type: str,
     num_games: int,
     board_type: BoardType,
-    seed: Optional[int],
-    checkpoint_path: Optional[str],
-    checkpoint_path2: Optional[str],
-    cmaes_weights_path: Optional[str],
+    seed: int | None,
+    checkpoint_path: str | None,
+    checkpoint_path2: str | None,
+    cmaes_weights_path: str | None,
     minimax_depth: int,
     max_moves_per_game: int,
     verbose: bool,
@@ -812,7 +813,7 @@ def run_evaluation(
     return results
 
 
-def format_results_json(results: EvaluationResults) -> Dict[str, Any]:
+def format_results_json(results: EvaluationResults) -> dict[str, Any]:
     """Format EvaluationResults as a JSON-serializable dictionary.
 
     Args:

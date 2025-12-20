@@ -33,7 +33,7 @@ def play_selfplay_game(
     feature_extractor: FeatureExtractor,
     action_extractor: ActionFeatureExtractor,
     max_moves: int = 500,
-) -> Tuple[List, int | None]:
+) -> tuple[list, int | None]:
     """Play a self-play game and collect training data.
 
     Returns:

@@ -19,7 +19,7 @@ from app.models import BoardType  # type: ignore[import]
 import scripts.apply_tier_promotion_plan as apply_plan  # type: ignore[import]  # noqa: E402
 
 
-def _make_promotion_plan(tier: str, candidate_id: str) -> Dict[str, Any]:
+def _make_promotion_plan(tier: str, candidate_id: str) -> dict[str, Any]:
     """Construct a minimal promotion plan JSON compatible with the helper."""
     difficulty = int(tier[1:])
     cfg = get_ladder_tier_config(

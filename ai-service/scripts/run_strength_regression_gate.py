@@ -61,14 +61,14 @@ class MatchupSpec:
     name: str
     candidate: str
     opponent: str
-    pools: List[str]
+    pools: list[str]
     max_scenarios: int
     games_per_scenario: int
     max_moves: int
     think_time_ms: int
     use_neural_net: bool
-    heuristic_move_sample_limit: Optional[int]
-    heuristic_eval_mode: Optional[str]
+    heuristic_move_sample_limit: int | None
+    heuristic_eval_mode: str | None
     threshold: GateThreshold
     blocking: bool
 
@@ -87,7 +87,7 @@ def _resolve_ai_spec(spec: str) -> tuple[AIType, int]:
         return profile["ai_type"], difficulty
 
     name = raw.lower()
-    engine_map: Dict[str, Tuple[AIType, int]] = {
+    engine_map: dict[str, tuple[AIType, int]] = {
         "random": (AIType.RANDOM, 1),
         "heuristic": (AIType.HEURISTIC, 2),
         "minimax": (AIType.MINIMAX, 4),
@@ -106,11 +106,11 @@ def _build_ai(
     spec: str,
     *,
     player_number: int,
-    rng_seed: Optional[int],
+    rng_seed: int | None,
     think_time_ms: int,
     use_neural_net: bool,
-    heuristic_move_sample_limit: Optional[int],
-    heuristic_eval_mode: Optional[str],
+    heuristic_move_sample_limit: int | None,
+    heuristic_eval_mode: str | None,
 ) -> Any:
     ai_type, difficulty = _resolve_ai_spec(spec)
     profile = _get_difficulty_profile(difficulty)
@@ -135,7 +135,7 @@ def _compute_gate(
     losses: int,
     draws: int,
     threshold: GateThreshold,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     decisive = wins + losses
     if decisive <= 0:
         win_rate = 0.5
@@ -194,7 +194,7 @@ def _load_late_game_scenarios(
     pool_name: str,
     *,
     max_scenarios: int,
-) -> List[EvalScenario]:
+) -> list[EvalScenario]:
     """Load late-game snapshots from a pool.
 
     The pool JSONLs contain sequential snapshots from many games. For speed and
@@ -205,10 +205,10 @@ def _load_late_game_scenarios(
     pool_cfg = get_eval_pool_config(pool_name)
     path = _pool_path(pool_cfg)
 
-    best_by_segment: List[Tuple[int, str]] = []
+    best_by_segment: list[tuple[int, str]] = []
     best_moves = -1
     best_line = ""
-    last_moves: Optional[int] = None
+    last_moves: int | None = None
 
     with path.open("r", encoding="utf-8") as f:
         for raw in f:
@@ -237,7 +237,7 @@ def _load_late_game_scenarios(
     best_by_segment.sort(key=lambda t: t[0], reverse=True)
     selected = best_by_segment[: max(0, int(max_scenarios))]
 
-    scenarios: List[EvalScenario] = []
+    scenarios: list[EvalScenario] = []
     for idx, (moves_len, line) in enumerate(selected):
         state = GameState.model_validate_json(line)  # type: ignore[attr-defined]
         scenarios.append(
@@ -260,17 +260,17 @@ def _load_late_game_scenarios(
 def _run_matchup_on_pool(
     *,
     pool_cfg: EvalPoolConfig,
-    scenarios: List[EvalScenario],
+    scenarios: list[EvalScenario],
     candidate_spec: str,
     opponent_spec: str,
     games_per_scenario: int,
     base_seed: int,
     think_time_ms: int,
     use_neural_net: bool,
-    heuristic_move_sample_limit: Optional[int],
-    heuristic_eval_mode: Optional[str],
+    heuristic_move_sample_limit: int | None,
+    heuristic_eval_mode: str | None,
     max_moves: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     env = make_env(
         TrainingEnvConfig(
             board_type=pool_cfg.board_type,
@@ -285,7 +285,7 @@ def _run_matchup_on_pool(
     draws = 0
     total_games = 0
     total_moves = 0
-    victory_reasons: Dict[str, int] = {}
+    victory_reasons: dict[str, int] = {}
 
     for s_idx, scenario in enumerate(scenarios):
         # Eval pools are expected to contain canonical GameState snapshots.
@@ -306,7 +306,7 @@ def _run_matchup_on_pool(
             else:
                 candidate_as, opponent_as = p2, p1
 
-            ai_by_player: Dict[int, Any] = {
+            ai_by_player: dict[int, Any] = {
                 candidate_as: _build_ai(
                     candidate_spec,
                     player_number=candidate_as,
@@ -332,7 +332,7 @@ def _run_matchup_on_pool(
             env._move_count = 0
 
             moves_played = 0
-            last_info: Dict[str, Any] = {}
+            last_info: dict[str, Any] = {}
             while True:
                 state = env.state
                 if state.game_status != GameStatus.ACTIVE:
@@ -391,7 +391,7 @@ def _run_matchup_on_pool(
     }
 
 
-def _default_matchups(mode: str) -> List[MatchupSpec]:
+def _default_matchups(mode: str) -> list[MatchupSpec]:
     require_sig = mode == "nightly"
     confidence = 0.95
 
@@ -509,7 +509,7 @@ def _default_matchups(mode: str) -> List[MatchupSpec]:
     ]
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--mode",
@@ -532,7 +532,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     start = time.time()
 
@@ -541,12 +541,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     out_path = Path(args.output_json)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    matchups_report: Dict[str, Any] = {}
+    matchups_report: dict[str, Any] = {}
     overall_pass = True
-    skipped_pools: Dict[str, str] = {}
+    skipped_pools: dict[str, str] = {}
 
     for matchup in matchups:
-        pools_report: Dict[str, Any] = {}
+        pools_report: dict[str, Any] = {}
         total_wins = 0
         total_losses = 0
         total_draws = 0
@@ -611,7 +611,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "passes": passes,
         }
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "mode": args.mode,
         "seed": int(args.seed),
         "overall_pass": overall_pass,

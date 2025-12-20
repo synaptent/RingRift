@@ -73,7 +73,7 @@ def parse_board_type(value: str) -> BoardType:
     return mapping[key]
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Benchmark NNUE policy head quality",
@@ -134,10 +134,10 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def load_policy_model(
-    model_path: Optional[str],
+    model_path: str | None,
     board_type: BoardType,
     num_players: int,
-) -> Optional[RingRiftNNUEWithPolicy]:
+) -> RingRiftNNUEWithPolicy | None:
     """Load policy model from checkpoint."""
     if model_path is None:
         model_path = os.path.join(
@@ -183,10 +183,10 @@ def get_game_phase(state: GameState, move_number: int, total_moves: int) -> str:
 def evaluate_position(
     model: RingRiftNNUEWithPolicy,
     state: GameState,
-    legal_moves: List[Move],
+    legal_moves: list[Move],
     played_move: Move,
     board_type: BoardType,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Evaluate model predictions for a single position.
 
     Returns:
@@ -250,7 +250,7 @@ def evaluate_position(
     }
 
 
-def find_move_index(played_move: Move, legal_moves: List[Move]) -> int:
+def find_move_index(played_move: Move, legal_moves: list[Move]) -> int:
     """Find index of played move in legal moves list."""
     played_type = getattr(played_move, 'type', None)
     played_from = getattr(played_move, 'from_pos', None)
@@ -289,7 +289,7 @@ def benchmark_on_database(
     max_games: int,
     max_positions: int,
     rng: np.random.Generator,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark policy model on a database."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -446,7 +446,7 @@ def benchmark_on_database(
     return results
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     args = parse_args(argv)
 
@@ -454,7 +454,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     rng = np.random.default_rng(args.seed)
 
     # Expand database paths
-    db_paths: List[str] = []
+    db_paths: list[str] = []
     for pattern in args.db:
         expanded = glob.glob(pattern)
         if expanded:

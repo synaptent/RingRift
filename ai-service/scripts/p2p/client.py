@@ -66,9 +66,9 @@ class JobRequest:
     job_type: str
     config_key: str = "square8_2p"
     num_games: int = 100
-    node_id: Optional[str] = None  # Specific node, or None for auto-assign
+    node_id: str | None = None  # Specific node, or None for auto-assign
     priority: int = 1
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -77,11 +77,11 @@ class JobResult:
     job_id: str
     status: JobStatus
     node_id: str
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    output_path: Optional[str] = None
-    error: Optional[str] = None
-    metrics: Dict[str, Any] = field(default_factory=dict)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    output_path: str | None = None
+    error: str | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -104,10 +104,10 @@ class NodeInfo:
 @dataclass
 class ClusterStatus:
     """Status of the P2P cluster."""
-    leader_id: Optional[str] = None
+    leader_id: str | None = None
     role: str = "unknown"
     total_nodes: int = 0
-    online_nodes: List[NodeInfo] = field(default_factory=list)
+    online_nodes: list[NodeInfo] = field(default_factory=list)
     active_selfplay_count: int = 0
     active_training_count: int = 0
     avg_gpu_util: float = 0.0
@@ -141,7 +141,7 @@ class P2PClient:
         self.port = port
         self.timeout = timeout
         self.auto_discover = auto_discover
-        self._base_url: Optional[str] = None
+        self._base_url: str | None = None
 
     @property
     def base_url(self) -> str:
@@ -154,8 +154,8 @@ class P2PClient:
         self,
         path: str,
         method: str = "GET",
-        data: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
+        data: dict | None = None,
+    ) -> dict[str, Any]:
         """Make HTTP request to orchestrator."""
         url = f"{self.base_url}{path}"
 
@@ -188,7 +188,7 @@ class P2PClient:
         except json.JSONDecodeError as e:
             raise P2PClientError(f"Invalid JSON response: {e}")
 
-    def _try_discover(self) -> Optional[str]:
+    def _try_discover(self) -> str | None:
         """Try to discover P2P orchestrator on common hosts."""
         # Try loading from config
         try:
@@ -278,7 +278,7 @@ class P2PClient:
             uptime_seconds=data.get("uptime_seconds", 0),
         )
 
-    def get_node(self, node_id: str) -> Optional[NodeInfo]:
+    def get_node(self, node_id: str) -> NodeInfo | None:
         """Get info about a specific node."""
         status = self.get_status()
         for node in status.online_nodes:
@@ -286,7 +286,7 @@ class P2PClient:
                 return node
         return None
 
-    def get_jobs(self, status: Optional[JobStatus] = None) -> List[Dict[str, Any]]:
+    def get_jobs(self, status: JobStatus | None = None) -> list[dict[str, Any]]:
         """Get list of jobs from orchestrator."""
         data = self._request("/jobs")
         jobs = data.get("jobs", [])
@@ -319,7 +319,7 @@ class P2PClient:
         result = self._request("/jobs", method="POST", data=data)
         return result.get("job_id", "")
 
-    def get_job(self, job_id: str) -> Optional[JobResult]:
+    def get_job(self, job_id: str) -> JobResult | None:
         """Get details of a specific job."""
         try:
             data = self._request(f"/jobs/{job_id}")
@@ -352,7 +352,7 @@ class P2PClient:
         job_id: str,
         timeout: int = 3600,
         poll_interval: int = 10,
-    ) -> Optional[JobResult]:
+    ) -> JobResult | None:
         """Wait for a job to complete.
 
         Args:
@@ -377,7 +377,7 @@ class P2PClient:
 
 
 # Convenience functions
-_default_client: Optional[P2PClient] = None
+_default_client: P2PClient | None = None
 
 
 def get_client() -> P2PClient:
@@ -396,7 +396,7 @@ def get_cluster_status() -> ClusterStatus:
 def submit_selfplay_job(
     config_key: str = "square8_2p",
     num_games: int = 1000,
-    node_id: Optional[str] = None,
+    node_id: str | None = None,
 ) -> str:
     """Submit a self-play job to the cluster.
 
@@ -420,7 +420,7 @@ def submit_selfplay_job(
 def submit_training_job(
     config_key: str = "square8_2p",
     epochs: int = 50,
-    node_id: Optional[str] = None,
+    node_id: str | None = None,
 ) -> str:
     """Submit a training job to the cluster.
 

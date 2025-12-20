@@ -49,7 +49,7 @@ class OpeningNode:
     draws: int = 0
     losses: int = 0
     total_elo: float = 0.0
-    children: Dict[str, "OpeningNode"] = field(default_factory=dict)
+    children: dict[str, "OpeningNode"] = field(default_factory=dict)
 
     @property
     def win_rate(self) -> float:
@@ -62,7 +62,7 @@ class OpeningNode:
     def avg_elo(self) -> float:
         return self.total_elo / self.count if self.count > 0 else 1500.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "move": self.move,
             "count": self.count,
@@ -75,7 +75,7 @@ class OpeningNode:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "OpeningNode":
+    def from_dict(cls, data: dict[str, Any]) -> "OpeningNode":
         node = cls(
             move=data["move"],
             count=data["count"],
@@ -98,12 +98,12 @@ class OpeningBook:
     min_games: int
     root: OpeningNode = field(default_factory=lambda: OpeningNode(move="root"))
     total_games: int = 0
-    source_databases: List[str] = field(default_factory=list)
+    source_databases: list[str] = field(default_factory=list)
 
     def add_game(
         self,
-        moves: List[str],
-        winner: Optional[int],
+        moves: list[str],
+        winner: int | None,
         player_elo: float = 1500.0,
     ):
         """Add a game's opening to the book."""
@@ -146,10 +146,10 @@ class OpeningBook:
 
     def get_moves_for_position(
         self,
-        position_moves: List[str],
+        position_moves: list[str],
         temperature: float = 1.0,
         min_win_rate: float = 0.3,
-    ) -> List[Tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """Get weighted candidate moves for a position."""
         node = self.root
         for move in position_moves:
@@ -171,7 +171,7 @@ class OpeningBook:
             candidates = [(m, w / total) for m, w in candidates]
         return sorted(candidates, key=lambda x: -x[1])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "board_type": self.board_type,
             "num_players": self.num_players,
@@ -183,7 +183,7 @@ class OpeningBook:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "OpeningBook":
+    def from_dict(cls, data: dict[str, Any]) -> "OpeningBook":
         book = cls(
             board_type=data["board_type"],
             num_players=data["num_players"],
@@ -212,7 +212,7 @@ def extract_games_from_db(
     board_type: str,
     num_players: int,
     min_elo: float = 0.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Extract games from various database schemas."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -282,7 +282,7 @@ def extract_games_from_db(
 
 
 def generate_book_from_databases(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
     max_depth: int = 15,
@@ -327,7 +327,7 @@ def export_for_selfplay(book: OpeningBook, output_path: str):
     """Export opening book as flat list for selfplay sampling."""
     openings = []
 
-    def collect_sequences(node: OpeningNode, current_seq: List[str], depth: int):
+    def collect_sequences(node: OpeningNode, current_seq: list[str], depth: int):
         if depth >= book.max_depth or not node.children:
             if current_seq:
                 openings.append({
@@ -376,7 +376,7 @@ def print_book_stats(book: OpeningBook, max_depth: int = 5):
     print(f"Min Games: {book.min_games}")
     print(f"Sources: {len(book.source_databases)} database(s)")
 
-    def count_at_depth(node: OpeningNode, depth: int, counts: Dict[int, int]):
+    def count_at_depth(node: OpeningNode, depth: int, counts: dict[int, int]):
         if depth > max_depth:
             return
         counts[depth] = counts.get(depth, 0) + len(node.children)
@@ -408,7 +408,7 @@ def extract_opening_sequences(
     max_depth: int = 10,
     min_games: int = 50,
     min_win_rate: float = 0.52,
-) -> Dict[str, dict]:
+) -> dict[str, dict]:
     """Extract opening sequences from game database (legacy format)."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -422,7 +422,7 @@ def extract_opening_sequences(
         AND winner IS NOT NULL
     """, (board_type, num_players))
 
-    sequences: Dict[Tuple, Dict] = defaultdict(lambda: {"wins": [0] * num_players, "total": 0})
+    sequences: dict[tuple, dict] = defaultdict(lambda: {"wins": [0] * num_players, "total": 0})
 
     games_processed = 0
     for row in cursor:
@@ -465,7 +465,7 @@ def extract_opening_sequences(
     return opening_book
 
 
-def build_opening_tree(opening_book: Dict[str, dict]) -> dict:
+def build_opening_tree(opening_book: dict[str, dict]) -> dict:
     """Convert flat opening book to tree structure for efficient lookup.
 
     Returns:
@@ -492,10 +492,10 @@ def build_opening_tree(opening_book: Dict[str, dict]) -> dict:
 
 def get_best_moves(
     tree: dict,
-    current_moves: List[str],
+    current_moves: list[str],
     player: int = 0,
     top_k: int = 3,
-) -> List[Tuple[str, float]]:
+) -> list[tuple[str, float]]:
     """Get best moves from current position according to opening book.
 
     Args:

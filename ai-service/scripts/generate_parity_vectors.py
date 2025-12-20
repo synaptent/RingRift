@@ -66,10 +66,10 @@ class ParityVector:
     game_id: str
     move_number: int
     python_summary: StateSummary
-    ts_summary: Optional[StateSummary]
-    canonical_move: Optional[dict]
+    ts_summary: StateSummary | None
+    canonical_move: dict | None
     is_match: bool
-    mismatch_kinds: List[str]
+    mismatch_kinds: list[str]
 
 
 def _canonicalize_status(status: str | None) -> str:
@@ -132,7 +132,7 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
     )
 
 
-def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSummary]]:
+def run_ts_replay(db_path: Path, game_id: str) -> tuple[int, dict[int, StateSummary]]:
     """Invoke the TS replay harness to get state summaries at each move.
 
     Returns:
@@ -170,7 +170,7 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
         )
 
     total_ts_moves = 0
-    summaries: Dict[int, StateSummary] = {}
+    summaries: dict[int, StateSummary] = {}
 
     for line in stdout.splitlines():
         line = line.strip()
@@ -206,7 +206,7 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
     return total_ts_moves, summaries
 
 
-def sample_positions_uniform(total_moves: int, interval: int) -> List[int]:
+def sample_positions_uniform(total_moves: int, interval: int) -> list[int]:
     """Sample positions at regular intervals."""
     positions = []
     for k in range(0, total_moves + 1, interval):
@@ -214,7 +214,7 @@ def sample_positions_uniform(total_moves: int, interval: int) -> List[int]:
     return positions
 
 
-def sample_positions_random(total_moves: int, sample_rate: float, seed: Optional[int] = None) -> List[int]:
+def sample_positions_random(total_moves: int, sample_rate: float, seed: int | None = None) -> list[int]:
     """Sample positions randomly at given rate."""
     if seed is not None:
         random.seed(seed)
@@ -237,9 +237,9 @@ def sample_positions_key(
     db: GameReplayDB,
     game_id: str,
     total_moves: int,
-) -> List[int]:
+) -> list[int]:
     """Sample positions at key game events (phase transitions, captures, etc.)."""
-    positions: Set[int] = {0}  # Always include initial state
+    positions: set[int] = {0}  # Always include initial state
 
     moves = db.get_moves(game_id)
 
@@ -277,7 +277,7 @@ def sample_positions_key(
     return sorted(positions)
 
 
-def compare_summaries(py: StateSummary, ts: StateSummary) -> Tuple[bool, List[str]]:
+def compare_summaries(py: StateSummary, ts: StateSummary) -> tuple[bool, list[str]]:
     """Compare Python and TS summaries, return (is_match, mismatch_kinds)."""
     mismatches = []
 
@@ -301,7 +301,7 @@ def generate_vectors(
     sample_rate: float = 0.1,
     min_moves: int = 10,
     max_vectors: int = 50,
-    limit_games: Optional[int] = None,
+    limit_games: int | None = None,
     include_matching: bool = False,
     dry_run: bool = False,
 ) -> None:

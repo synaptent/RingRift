@@ -13,7 +13,7 @@ from scripts.run_self_play_soak import (  # type: ignore  # noqa: E402
 )
 
 
-def _make_records(reasons: List[str]) -> List[GameRecord]:
+def _make_records(reasons: list[str]) -> list[GameRecord]:
   return [
     GameRecord(
       index=i,

@@ -180,8 +180,8 @@ def play_game(
     game_idx: int,
     depth: int = 3,
     max_moves: int = 500,
-    nn: Optional[NeuralNetAI] = None,
-) -> List[Dict[str, Any]]:
+    nn: NeuralNetAI | None = None,
+) -> list[dict[str, Any]]:
     """Play a game and collect training samples.
 
     Returns list of samples: {board, globals, action, player, outcome}

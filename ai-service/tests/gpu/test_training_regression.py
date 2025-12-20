@@ -68,7 +68,7 @@ def fixed_seed():
 
 
 @pytest.fixture
-def synthetic_training_data(fixed_seed) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def synthetic_training_data(fixed_seed) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Generate fixed synthetic training data for regression tests.
 
     Returns deterministic data with known properties:

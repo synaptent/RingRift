@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import os
 import random
-from typing import Dict, Iterable
+from typing import Dict
+from collections.abc import Iterable
 
 # Allow imports from app/ when run as a script.
 import sys
@@ -51,7 +52,7 @@ def _make_random_weights(seed: int, low: float = -10.0, high: float = 30.0) -> H
 
 
 def _evaluate_profiles(
-    profiles: Dict[str, HeuristicWeights],
+    profiles: dict[str, HeuristicWeights],
     boards: Iterable[BoardType],
     games_per_eval: int,
 ) -> None:
@@ -82,7 +83,7 @@ def main() -> None:
     # Modest number of games per eval so the script can complete quickly.
     games_per_eval = 16
 
-    profiles: Dict[str, HeuristicWeights] = {
+    profiles: dict[str, HeuristicWeights] = {
         "baseline": dict(BASE_V1_BALANCED_WEIGHTS),
         "all_zero": _make_zero_weights(),
         "scaled_5x": _make_scaled_weights(5.0),

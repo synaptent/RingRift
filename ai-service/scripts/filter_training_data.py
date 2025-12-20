@@ -56,12 +56,12 @@ class GameQuality:
     """Quality metrics for a game."""
     game_id: str
     file_path: str
-    participants: List[str]
-    participant_elos: List[float]
+    participants: list[str]
+    participant_elos: list[float]
     avg_elo: float
     min_elo: float
     max_elo: float
-    winner_elo: Optional[float]
+    winner_elo: float | None
     num_moves: int
     quality_weight: float
     ai_type: str = "unknown"
@@ -82,7 +82,7 @@ NN_GUIDED_AI_TYPES = {
 }
 
 
-def get_elo_ratings() -> Dict[str, float]:
+def get_elo_ratings() -> dict[str, float]:
     """Load all Elo ratings from unified database."""
     ratings = {}
 
@@ -143,10 +143,10 @@ def calculate_quality_weight(avg_elo: float, min_elo: float) -> float:
 
 
 def analyze_game(
-    game_data: Dict[str, Any],
+    game_data: dict[str, Any],
     file_path: str,
-    elo_ratings: Dict[str, float],
-) -> Optional[GameQuality]:
+    elo_ratings: dict[str, float],
+) -> GameQuality | None:
     """Analyze a single game and compute quality metrics."""
     try:
         game_id = game_data.get("game_id", "unknown")
@@ -227,8 +227,8 @@ def analyze_game(
 
 def analyze_jsonl_file(
     file_path: Path,
-    elo_ratings: Dict[str, float],
-) -> List[GameQuality]:
+    elo_ratings: dict[str, float],
+) -> list[GameQuality]:
     """Analyze all games in a JSONL file."""
     games = []
 
@@ -266,14 +266,14 @@ def analyze_jsonl_file(
 
 
 def filter_games(
-    games: List[GameQuality],
+    games: list[GameQuality],
     min_avg_elo: float = DEFAULT_MIN_AVG_ELO,
     min_winner_elo: float = DEFAULT_MIN_WINNER_ELO,
     min_moves: int = 10,
-    ai_types_filter: Optional[set] = None,
+    ai_types_filter: set | None = None,
     exclude_timeout: bool = False,
     exclude_random: bool = False,
-) -> List[GameQuality]:
+) -> list[GameQuality]:
     """Filter games based on quality criteria."""
     filtered = []
 
@@ -308,11 +308,11 @@ def filter_games(
 
 
 def create_weighted_training_data(
-    games: List[GameQuality],
+    games: list[GameQuality],
     board_type: str,
     num_players: int,
     output_dir: Path,
-) -> Optional[Path]:
+) -> Path | None:
     """Create NPZ training file with quality-weighted samples.
 
     This creates sample_weights that can be used by the training script
@@ -347,7 +347,7 @@ def create_weighted_training_data(
     return weights_file
 
 
-def print_quality_stats(games: List[GameQuality], title: str = "Training Data Quality"):
+def print_quality_stats(games: list[GameQuality], title: str = "Training Data Quality"):
     """Print statistics about training data quality."""
     if not games:
         print(f"\n{title}: No games to analyze")

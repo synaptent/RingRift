@@ -109,7 +109,7 @@ class WorkerConfig:
     ssh_host: str
     ssh_user: str = "ubuntu"
     ssh_port: int = 22
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     ringrift_path: str = "~/ringrift/ai-service"
     venv_activate: str = "source venv/bin/activate"
     has_gpu: bool = False
@@ -119,7 +119,7 @@ class WorkerConfig:
     max_concurrent_evals: int = 1  # How many evals this worker can run
     enabled: bool = True
     shared_filesystem: bool = False  # True if on shared filesystem (e.g., GH200 cluster)
-    shared_work_dir: Optional[str] = None  # Path to shared work directory
+    shared_work_dir: str | None = None  # Path to shared work directory
 
 
 @dataclass
@@ -129,10 +129,10 @@ class EvalTask:
     arch: Architecture
     worker_name: str
     status: str = "pending"  # pending, running, completed, failed
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    started_at: float | None = None
+    completed_at: float | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
     retries: int = 0
 
 
@@ -143,20 +143,20 @@ class DistributedNASState:
     strategy: str
     board_type: str
     num_players: int
-    search_space: Dict[str, Any]
-    population: List[Architecture]
+    search_space: dict[str, Any]
+    population: list[Architecture]
     generation: int = 0
     total_evaluations: int = 0
     best_performance: float = 0.0
-    best_architecture: Optional[Dict[str, Any]] = None
-    pareto_front: List[Dict[str, Any]] = field(default_factory=list)
-    history: List[Dict[str, Any]] = field(default_factory=list)
+    best_architecture: dict[str, Any] | None = None
+    pareto_front: list[dict[str, Any]] = field(default_factory=list)
+    history: list[dict[str, Any]] = field(default_factory=list)
 
     # Distributed-specific fields
-    pending_tasks: List[EvalTask] = field(default_factory=list)
-    completed_tasks: List[EvalTask] = field(default_factory=list)
-    failed_tasks: List[EvalTask] = field(default_factory=list)
-    worker_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    pending_tasks: list[EvalTask] = field(default_factory=list)
+    completed_tasks: list[EvalTask] = field(default_factory=list)
+    failed_tasks: list[EvalTask] = field(default_factory=list)
+    worker_stats: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     created_at: str = ""
     updated_at: str = ""
@@ -271,7 +271,7 @@ class NASDatabase:
         conn.commit()
         conn.close()
 
-    def load_architecture(self, arch_id: str) -> Optional[Architecture]:
+    def load_architecture(self, arch_id: str) -> Architecture | None:
         """Load architecture from database."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -301,7 +301,7 @@ class NASDatabase:
             created_at=row[8],
         )
 
-    def get_unevaluated_architectures(self, limit: int = 10) -> List[Architecture]:
+    def get_unevaluated_architectures(self, limit: int = 10) -> list[Architecture]:
         """Get architectures that haven't been evaluated yet."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -397,7 +397,7 @@ class NASDatabase:
         """Update evaluation task status."""
         self.create_eval_task(task)  # Uses INSERT OR REPLACE
 
-    def get_pending_tasks(self, worker_name: Optional[str] = None) -> List[EvalTask]:
+    def get_pending_tasks(self, worker_name: str | None = None) -> list[EvalTask]:
         """Get pending evaluation tasks."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -512,7 +512,7 @@ class NASDatabase:
         conn.commit()
         conn.close()
 
-    def load_nas_state(self, run_id: str) -> Optional[DistributedNASState]:
+    def load_nas_state(self, run_id: str) -> DistributedNASState | None:
         """Load NAS state from database."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -614,7 +614,7 @@ class SharedFSTaskQueue:
                 "created_at": datetime.utcnow().isoformat() + "Z",
             }, f, indent=2)
 
-    def claim_task(self, worker_name: str) -> Optional[Dict[str, Any]]:
+    def claim_task(self, worker_name: str) -> dict[str, Any] | None:
         """Claim a pending task for a worker.
 
         Uses atomic rename for file locking on shared filesystem.
@@ -645,7 +645,7 @@ class SharedFSTaskQueue:
 
         return None
 
-    def complete_task(self, task_id: str, result: Dict[str, Any], success: bool = True):
+    def complete_task(self, task_id: str, result: dict[str, Any], success: bool = True):
         """Mark a task as completed with results."""
         running_file = self.running_dir / f"{task_id}.json"
         target_dir = self.completed_dir if success else self.failed_dir
@@ -671,7 +671,7 @@ class SharedFSTaskQueue:
         except FileNotFoundError:
             pass
 
-    def get_completed_tasks(self) -> List[Dict[str, Any]]:
+    def get_completed_tasks(self) -> list[dict[str, Any]]:
         """Get all completed tasks."""
         results = []
         for task_file in self.completed_dir.glob("*.json"):
@@ -682,7 +682,7 @@ class SharedFSTaskQueue:
                 continue
         return results
 
-    def get_failed_tasks(self) -> List[Dict[str, Any]]:
+    def get_failed_tasks(self) -> list[dict[str, Any]]:
         """Get all failed tasks."""
         results = []
         for task_file in self.failed_dir.glob("*.json"):
@@ -775,7 +775,7 @@ def run_shared_fs_worker(work_dir: Path, worker_name: str, max_tasks: int = -1):
 # Worker Management
 # =============================================================================
 
-def load_workers_config() -> List[WorkerConfig]:
+def load_workers_config() -> list[WorkerConfig]:
     """Load worker configurations from YAML files."""
     workers = []
     config_dir = AI_SERVICE_ROOT / "config"
@@ -825,7 +825,7 @@ def ssh_cmd(
     worker: WorkerConfig,
     cmd: str,
     timeout: int = 300,
-) -> Tuple[int, str, str]:
+) -> tuple[int, str, str]:
     """Execute SSH command on worker."""
     ssh_args = [
         "ssh",
@@ -886,7 +886,7 @@ async def evaluate_architecture_remote(
     board_type: str = "square8",
     num_players: int = 2,
     quick_eval: bool = True,
-) -> Tuple[bool, Dict[str, Any]]:
+) -> tuple[bool, dict[str, Any]]:
     """Evaluate architecture on a remote worker.
 
     Args:
@@ -1020,8 +1020,8 @@ class DistributedNASCoordinator:
         population_size: int = 20,
         max_concurrent: int = 10,
         quick_eval: bool = True,
-        db_path: Optional[Path] = None,
-        shared_work_dir: Optional[Path] = None,
+        db_path: Path | None = None,
+        shared_work_dir: Path | None = None,
     ):
         self.run_id = run_id
         self.strategy = strategy
@@ -1039,9 +1039,9 @@ class DistributedNASCoordinator:
 
         # Load workers
         self.workers = load_workers_config()
-        self.available_workers: List[WorkerConfig] = []
-        self.ssh_workers: List[WorkerConfig] = []  # Workers using SSH
-        self.shared_fs_workers: List[WorkerConfig] = []  # Workers on shared filesystem
+        self.available_workers: list[WorkerConfig] = []
+        self.ssh_workers: list[WorkerConfig] = []  # Workers using SSH
+        self.shared_fs_workers: list[WorkerConfig] = []  # Workers on shared filesystem
 
         # Shared filesystem task queue (for GH200 cluster)
         if shared_work_dir:
@@ -1049,13 +1049,13 @@ class DistributedNASCoordinator:
         else:
             # Default to project-relative path
             self.shared_work_dir = AI_SERVICE_ROOT / "data" / "nas_tasks" / run_id
-        self.shared_fs_queue: Optional[SharedFSTaskQueue] = None
+        self.shared_fs_queue: SharedFSTaskQueue | None = None
 
         # State
-        self.state: Optional[DistributedNASState] = None
+        self.state: DistributedNASState | None = None
         self._running = False
-        self._active_tasks: Dict[str, EvalTask] = {}  # task_id -> task
-        self._shared_fs_task_ids: Set[str] = set()  # Track tasks submitted to shared FS
+        self._active_tasks: dict[str, EvalTask] = {}  # task_id -> task
+        self._shared_fs_task_ids: set[str] = set()  # Track tasks submitted to shared FS
 
     async def initialize(self, resume: bool = False):
         """Initialize coordinator state."""
@@ -1116,7 +1116,7 @@ class DistributedNASCoordinator:
         logger.info(f"{len(self.available_workers)} workers available "
                     f"({len(self.shared_fs_workers)} shared FS, {len(self.ssh_workers)} SSH)")
 
-    def _select_worker(self) -> Optional[WorkerConfig]:
+    def _select_worker(self) -> WorkerConfig | None:
         """Select best available worker for next evaluation."""
         if not self.available_workers:
             return None
@@ -1205,7 +1205,7 @@ class DistributedNASCoordinator:
 
         self.db.update_eval_task(task)
 
-    async def _submit_shared_fs_tasks(self, architectures: List[Architecture]):
+    async def _submit_shared_fs_tasks(self, architectures: list[Architecture]):
         """Submit tasks to shared filesystem queue for GH200 workers."""
         if not self.shared_fs_queue or not architectures:
             return

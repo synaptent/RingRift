@@ -72,7 +72,7 @@ class ScalingConfig:
     scale_down_cooldown_minutes: int = 10   # Wait between scale-downs
 
     # Instance preferences (ordered by cost-effectiveness)
-    preferred_gpus: List[Dict[str, Any]] = None
+    preferred_gpus: list[dict[str, Any]] = None
 
     def __post_init__(self):
         if self.preferred_gpus is None:
@@ -88,14 +88,14 @@ class ScalingConfig:
 @dataclass
 class ScalingState:
     """Persistent autoscaler state."""
-    last_scale_up: Optional[datetime] = None
-    last_scale_down: Optional[datetime] = None
+    last_scale_up: datetime | None = None
+    last_scale_down: datetime | None = None
     instances_created_today: int = 0
     instances_terminated_today: int = 0
     daily_spend: float = 0.0
-    last_reset: Optional[datetime] = None
+    last_reset: datetime | None = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "last_scale_up": self.last_scale_up.isoformat() if self.last_scale_up else None,
             "last_scale_down": self.last_scale_down.isoformat() if self.last_scale_down else None,
@@ -106,7 +106,7 @@ class ScalingState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "ScalingState":
+    def from_dict(cls, data: dict) -> "ScalingState":
         return cls(
             last_scale_up=datetime.fromisoformat(data["last_scale_up"]) if data.get("last_scale_up") else None,
             last_scale_down=datetime.fromisoformat(data["last_scale_down"]) if data.get("last_scale_down") else None,
@@ -121,7 +121,7 @@ class ScalingState:
 # P2P Workload Monitoring
 # =============================================================================
 
-def _load_p2p_leaders_from_config() -> List[str]:
+def _load_p2p_leaders_from_config() -> list[str]:
     """Load P2P leader endpoints from config or environment."""
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
     leaders = []
@@ -152,7 +152,7 @@ def _load_p2p_leaders_from_config() -> List[str]:
         return []
 
 
-def get_p2p_status() -> Optional[Dict]:
+def get_p2p_status() -> dict | None:
     """Get P2P network status from leader."""
     import urllib.request
 
@@ -170,7 +170,7 @@ def get_p2p_status() -> Optional[Dict]:
     return None
 
 
-def analyze_workload(p2p_status: Dict) -> Dict[str, Any]:
+def analyze_workload(p2p_status: dict) -> dict[str, Any]:
     """Analyze P2P workload to determine scaling needs."""
     peers = p2p_status.get("peers", {})
 
@@ -205,7 +205,7 @@ def analyze_workload(p2p_status: Dict) -> Dict[str, Any]:
 # Vast.ai Instance Management
 # =============================================================================
 
-def get_vast_instances() -> List[Dict]:
+def get_vast_instances() -> list[dict]:
     """Get all Vast instances."""
     try:
         result = subprocess.run(
@@ -219,7 +219,7 @@ def get_vast_instances() -> List[Dict]:
     return []
 
 
-def get_running_instances() -> List[Dict]:
+def get_running_instances() -> list[dict]:
     """Get running Vast instances with cost info."""
     instances = get_vast_instances()
     return [i for i in instances if i.get("actual_status") == "running"]
@@ -231,7 +231,7 @@ def get_current_hourly_cost() -> float:
     return sum(i.get("dph_total", 0) or 0 for i in instances)
 
 
-def search_offers(gpu_name: str, max_price: float, min_reliability: float = 0.95) -> List[Dict]:
+def search_offers(gpu_name: str, max_price: float, min_reliability: float = 0.95) -> list[dict]:
     """Search for GPU offers."""
     try:
         query = f"gpu_name={gpu_name} reliability>{min_reliability} dph<{max_price} rentable=true"
@@ -246,7 +246,7 @@ def search_offers(gpu_name: str, max_price: float, min_reliability: float = 0.95
     return []
 
 
-def create_instance(offer_id: int, disk_gb: int = 50) -> Optional[str]:
+def create_instance(offer_id: int, disk_gb: int = 50) -> str | None:
     """Create a new Vast instance."""
     try:
         result = subprocess.run(
@@ -309,7 +309,7 @@ def stop_instance(instance_id: str) -> bool:
 # Vast Autoscaler Groups
 # =============================================================================
 
-def get_autoscaler_groups() -> List[Dict]:
+def get_autoscaler_groups() -> list[dict]:
     """Get all autoscaler groups."""
     try:
         result = subprocess.run(
@@ -331,7 +331,7 @@ def create_autoscaler_group(
     target_instances: int = 5,
     max_price: float = 0.10,
     disk_gb: int = 50,
-) -> Optional[str]:
+) -> str | None:
     """Create a new autoscaler group.
 
     Autoscaler groups automatically maintain a target number of instances,
@@ -374,9 +374,9 @@ def create_autoscaler_group(
 
 def update_autoscaler_group(
     group_id: str,
-    target_instances: Optional[int] = None,
-    min_instances: Optional[int] = None,
-    max_instances: Optional[int] = None,
+    target_instances: int | None = None,
+    min_instances: int | None = None,
+    max_instances: int | None = None,
 ) -> bool:
     """Update an autoscaler group's settings."""
     args = ["vastai", "change", "autoscaler", group_id]
@@ -472,11 +472,11 @@ def save_state(state: ScalingState):
 
 
 def should_scale_up(
-    workload: Dict[str, Any],
+    workload: dict[str, Any],
     config: ScalingConfig,
     state: ScalingState,
     current_cost: float,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Determine if we should scale up."""
     # Check cooldown
     if state.last_scale_up:
@@ -509,10 +509,10 @@ def should_scale_up(
 
 
 def should_scale_down(
-    workload: Dict[str, Any],
+    workload: dict[str, Any],
     config: ScalingConfig,
     state: ScalingState,
-) -> Tuple[bool, str, List[Dict]]:
+) -> tuple[bool, str, list[dict]]:
     """Determine if we should scale down. Returns (should_scale, reason, candidates)."""
     # Check cooldown
     if state.last_scale_down:
@@ -597,7 +597,7 @@ def execute_scale_up(config: ScalingConfig, state: ScalingState, dry_run: bool =
     return created
 
 
-def execute_scale_down(candidates: List[Dict], state: ScalingState, dry_run: bool = False) -> int:
+def execute_scale_down(candidates: list[dict], state: ScalingState, dry_run: bool = False) -> int:
     """Execute scale-down by stopping/destroying idle instances."""
     # Safety check: never terminate instances if disabled
     if SCALE_DOWN_DISABLED:

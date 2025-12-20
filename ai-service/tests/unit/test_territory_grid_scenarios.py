@@ -37,11 +37,11 @@ class GridScenario:
     horizontal_line_type: str
     # For marker lines: list of player numbers for each line
     # vertical_colors[0] = left line, vertical_colors[1] = right line
-    vertical_colors: Optional[List[int]]
-    horizontal_colors: Optional[List[int]]
+    vertical_colors: list[int] | None
+    horizontal_colors: list[int] | None
     # Intersection composition: list of 4 player numbers (or None for collapsed)
     # Order: top-left, top-right, bottom-left, bottom-right
-    intersection_contents: List[Optional[int]]
+    intersection_contents: list[int | None]
     # Expected number of disconnected territories
     # Note: Depends on active players and border color rules
     expected_description: str
@@ -140,12 +140,12 @@ def create_grid_board(scenario: GridScenario, board_size: int = 19) -> BoardStat
         (v_line_2, h_line_2),  # bottom-right
     ]
 
-    stacks: Dict[str, RingStack] = {}
-    markers: Dict[str, MarkerInfo] = {}
-    collapsed_spaces: Dict[str, int] = {}
+    stacks: dict[str, RingStack] = {}
+    markers: dict[str, MarkerInfo] = {}
+    collapsed_spaces: dict[str, int] = {}
 
     # Helper to add marker or collapsed space
-    def add_line_cell(x: int, y: int, line_type: str, player: Optional[int]):
+    def add_line_cell(x: int, y: int, line_type: str, player: int | None):
         pos = Position(x=x, y=y)
         key = pos.to_key()
         if line_type == "collapsed":
@@ -258,26 +258,26 @@ def create_grid_board(scenario: GridScenario, board_size: int = 19) -> BoardStat
     )
 
 
-def get_cpu_disconnected_regions(board: BoardState, player: int) -> List[Territory]:
+def get_cpu_disconnected_regions(board: BoardState, player: int) -> list[Territory]:
     """Get disconnected regions using the CPU BoardManager implementation."""
     return BoardManager.find_disconnected_regions(board, player)
 
 
-def count_unique_regions(regions: List[Territory]) -> int:
+def count_unique_regions(regions: list[Territory]) -> int:
     """Count unique regions by their space sets."""
-    seen_regions: Set[frozenset] = set()
+    seen_regions: set[frozenset] = set()
     for region in regions:
         space_keys = frozenset(pos.to_key() for pos in region.spaces)
         seen_regions.add(space_keys)
     return len(seen_regions)
 
 
-def get_all_marker_colors(board: BoardState) -> Set[int]:
+def get_all_marker_colors(board: BoardState) -> set[int]:
     """Get all unique marker colors on the board."""
     return {marker.player for marker in board.markers.values()}
 
 
-def get_active_players(board: BoardState) -> Set[int]:
+def get_active_players(board: BoardState) -> set[int]:
     """Get all players with stacks on the board."""
     return {stack.controlling_player for stack in board.stacks.values()}
 
@@ -560,7 +560,7 @@ class TestTerritoryRulesCompliance:
         )
 
         # Create a collapsed-space border around a region
-        collapsed: Dict[str, int] = {}
+        collapsed: dict[str, int] = {}
         # Vertical line at x=4
         for y in range(8):
             pos = Position(x=4, y=y)

@@ -67,11 +67,11 @@ class ModelResult:
     name: str
     board_type: str
     num_players: int
-    scores: List[float]
-    vs_random: List[float]
-    vs_heuristic: List[float]
-    vs_mcts: List[float]
-    sources: List[str]
+    scores: list[float]
+    vs_random: list[float]
+    vs_heuristic: list[float]
+    vs_mcts: list[float]
+    sources: list[str]
 
     @property
     def avg_score(self) -> float:
@@ -90,7 +90,7 @@ class ModelResult:
         return sum(self.vs_mcts) / len(self.vs_mcts) if self.vs_mcts else 0
 
 
-def collect_from_node(host: str, user: str) -> Dict[str, Any]:
+def collect_from_node(host: str, user: str) -> dict[str, Any]:
     """Collect gauntlet results from a single node."""
     try:
         # Try multiple possible result file locations
@@ -117,7 +117,7 @@ def collect_from_node(host: str, user: str) -> Dict[str, Any]:
     return {}
 
 
-def collect_all_results() -> List[Dict[str, Any]]:
+def collect_all_results() -> list[dict[str, Any]]:
     """Collect results from all nodes in parallel."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     results = []
@@ -149,9 +149,9 @@ def collect_all_results() -> List[Dict[str, Any]]:
     return results
 
 
-def aggregate_results(all_results: List[Dict[str, Any]]) -> Dict[str, ModelResult]:
+def aggregate_results(all_results: list[dict[str, Any]]) -> dict[str, ModelResult]:
     """Aggregate results across all nodes."""
-    models: Dict[str, ModelResult] = {}
+    models: dict[str, ModelResult] = {}
 
     for node_data in all_results:
         source = node_data.get("_source", "unknown")
@@ -184,7 +184,7 @@ def aggregate_results(all_results: List[Dict[str, Any]]) -> Dict[str, ModelResul
     return models
 
 
-def generate_report(models: Dict[str, ModelResult]) -> str:
+def generate_report(models: dict[str, ModelResult]) -> str:
     """Generate a ranking report."""
     lines = ["# Aggregated Gauntlet Results\n"]
 
@@ -212,7 +212,7 @@ def generate_report(models: Dict[str, ModelResult]) -> str:
     return "\n".join(lines)
 
 
-def save_aggregated(models: Dict[str, ModelResult]):
+def save_aggregated(models: dict[str, ModelResult]):
     """Save aggregated results to JSON."""
     data = {
         "num_models": len(models),
@@ -238,7 +238,7 @@ def save_aggregated(models: Dict[str, ModelResult]):
     print(f"\nAggregated results saved to {AGGREGATED_FILE}")
 
 
-def get_top_models(models: Dict[str, ModelResult], n: int = 5) -> Dict[str, List[str]]:
+def get_top_models(models: dict[str, ModelResult], n: int = 5) -> dict[str, list[str]]:
     """Get top N models per config for Elo tournament."""
     grouped = defaultdict(list)
     for model in models.values():

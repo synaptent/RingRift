@@ -156,7 +156,7 @@ def _load_gpu_imports() -> bool:
 def load_weights_from_profile(
     weights_file: str,
     profile_name: str,
-) -> Optional[Dict[str, float]]:
+) -> dict[str, float] | None:
     """Load heuristic weights from a profile file.
 
     Args:
@@ -252,7 +252,7 @@ class HotModelReloader:
         self,
         board_type: str,
         num_players: int,
-        model_alias_path: Optional[str] = None,
+        model_alias_path: str | None = None,
     ):
         self.board_type = board_type
         self.num_players = num_players
@@ -269,8 +269,8 @@ class HotModelReloader:
             )
 
         # Track model state
-        self._current_mtime: Optional[float] = None
-        self._current_hash: Optional[str] = None
+        self._current_mtime: float | None = None
+        self._current_hash: str | None = None
         self._update_count = 0
         self._last_check_game = 0
 
@@ -342,7 +342,7 @@ class HotModelReloader:
         except OSError:
             return False
 
-    def get_model_metadata(self) -> Dict[str, Any]:
+    def get_model_metadata(self) -> dict[str, Any]:
         """Get metadata about the current model file."""
         if not os.path.exists(self._watch_path):
             return {"exists": False}
@@ -369,7 +369,7 @@ class HotModelReloader:
 from app.utils.victory_type import derive_victory_type  # noqa: E402
 
 
-VIOLATION_TYPE_TO_INVARIANT_ID: Dict[str, str] = {
+VIOLATION_TYPE_TO_INVARIANT_ID: dict[str, str] = {
     "S_INVARIANT_DECREASED": "INV-S-MONOTONIC",
     "TOTAL_RINGS_ELIMINATED_DECREASED": "INV-ELIMINATION-MONOTONIC",
     "ACTIVE_NO_MOVES": "INV-ACTIVE-NO-MOVES",
@@ -381,7 +381,7 @@ MAX_INVARIANT_VIOLATION_SAMPLES = 50
 # Last computed timing profile for the most recent soak run. This is
 # populated only when --profile-timing is enabled and is consumed by the
 # CLI entrypoint when attaching timing data to summary_json payloads.
-_LAST_TIMING_PROFILE: Optional[Dict[str, Any]] = None
+_LAST_TIMING_PROFILE: dict[str, Any] | None = None
 
 
 @dataclass
@@ -390,32 +390,32 @@ class GameRecord:
     num_players: int
     board_type: str
     engine_mode: str
-    seed: Optional[int]
+    seed: int | None
     length: int
     status: str
-    winner: Optional[int]
+    winner: int | None
     termination_reason: str
     skipped: bool = False
-    invariant_violations_by_type: Dict[str, int] = field(default_factory=dict)
+    invariant_violations_by_type: dict[str, int] = field(default_factory=dict)
     # Pie-rule diagnostics: how many SWAP_SIDES moves occurred in this game,
     # and whether the pie rule was exercised at least once.
     swap_sides_moves: int = 0
     used_pie_rule: bool = False
     # Standardized victory type categorization per GAME_RECORD_SPEC.md
-    victory_type: Optional[str] = None
-    stalemate_tiebreaker: Optional[str] = None
+    victory_type: str | None = None
+    stalemate_tiebreaker: str | None = None
     # Training data: moves and initial state for reconstructing games from JSONL
     # These are optional and only included when --include-training-data is set
-    moves: Optional[List[Dict[str, Any]]] = None
-    initial_state: Optional[Dict[str, Any]] = None
+    moves: list[dict[str, Any]] | None = None
+    initial_state: dict[str, Any] | None = None
     # Failure diagnostics (populated only for skipped/exception games)
-    failure_debug: Optional[Dict[str, Any]] = None
+    failure_debug: dict[str, Any] | None = None
     # Source tracking for data quality auditing
     source: str = "run_self_play_soak.py"
     # DB recording diagnostics (when --record-db is enabled)
     db_recorded: bool = False
-    db_game_id: Optional[str] = None
-    db_record_error: Optional[str] = None
+    db_game_id: str | None = None
+    db_record_error: str | None = None
 
 
 def _record_invariant_violation(
@@ -423,11 +423,11 @@ def _record_invariant_violation(
     state: GameState,
     game_index: int,
     move_index: int,
-    per_game_counts: Dict[str, int],
-    samples: List[Dict[str, Any]],
+    per_game_counts: dict[str, int],
+    samples: list[dict[str, Any]],
     *,
-    prev_snapshot: Optional[Dict[str, int]] = None,
-    curr_snapshot: Optional[Dict[str, int]] = None,
+    prev_snapshot: dict[str, int] | None = None,
+    curr_snapshot: dict[str, int] | None = None,
 ) -> None:
     """Record a single invariant violation occurrence for soaks.
 
@@ -449,7 +449,7 @@ def _record_invariant_violation(
 
     board_type_value = state.board_type.value if hasattr(state.board_type, "value") else state.board_type
 
-    entry: Dict[str, Any] = {
+    entry: dict[str, Any] = {
         "type": violation_type,
         "invariant_id": VIOLATION_TYPE_TO_INVARIANT_ID.get(violation_type),
         "game_index": game_index,
@@ -502,8 +502,8 @@ def _append_state_to_jsonl(path: str, state: GameState) -> None:
 
 def _validate_history_trace(
     initial_state: GameState,
-    moves: List[Move],
-) -> Tuple[bool, Optional[str]]:
+    moves: list[Move],
+) -> tuple[bool, str | None]:
     """
     Lightweight trace-mode validation of a recorded move list.
 
@@ -555,7 +555,7 @@ def _canonical_termination_reason(
 def _resolve_default_nn_model_id(
     board_type: BoardType,
     num_players: int,
-) -> Optional[str]:
+) -> str | None:
     """Resolve a safe default nn_model_id prefix for neural-enabled tiers.
 
     Canonical NN checkpoints currently exist only for square8 2-player games.
@@ -598,10 +598,10 @@ def _scan_recent_nn_pool_model_ids(
     *,
     board_type: BoardType,
     num_players: int,
-    pool_dir: Optional[str],
+    pool_dir: str | None,
     pool_size: int,
-    exclude_ids: Optional[set[str]] = None,
-) -> List[str]:
+    exclude_ids: set[str] | None = None,
+) -> list[str]:
     """Best-effort scan for recent NN checkpoints usable as a diversity pool."""
     if pool_size <= 0:
         return []
@@ -611,7 +611,7 @@ def _scan_recent_nn_pool_model_ids(
     if not base_dir.exists() or not base_dir.is_dir():
         return []
 
-    board_tokens: List[str]
+    board_tokens: list[str]
     if board_type == BoardType.SQUARE8:
         board_tokens = ["sq8", "square8"]
     elif board_type == BoardType.SQUARE19:
@@ -619,7 +619,7 @@ def _scan_recent_nn_pool_model_ids(
     else:  # HEXAGONAL
         board_tokens = ["hex", "hexagonal"]
 
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     for path in base_dir.glob("*.pth"):
         name = path.name.lower()
         if name.endswith("_mps.pth"):
@@ -638,7 +638,7 @@ def _scan_recent_nn_pool_model_ids(
         candidates.append(path)
 
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    pool: List[str] = []
+    pool: list[str] = []
     for path in candidates:
         model_id = path.stem
         if model_id in exclude_ids:
@@ -652,16 +652,16 @@ def _scan_recent_nn_pool_model_ids(
 
 def _build_mixed_ai_pool(
     game_index: int,
-    player_numbers: List[int],
+    player_numbers: list[int],
     engine_mode: str,
-    base_seed: Optional[int],
+    base_seed: int | None,
     board_type: BoardType,
     difficulty_band: str = "canonical",
-    heuristic_weights: Optional[Dict[str, float]] = None,
+    heuristic_weights: dict[str, float] | None = None,
     nn_pool_size: int = 0,
-    nn_pool_dir: Optional[str] = None,
-    think_time_override: Optional[int] = None,
-) -> Tuple[Dict[int, Any], Dict[str, Any]]:
+    nn_pool_dir: str | None = None,
+    think_time_override: int | None = None,
+) -> tuple[dict[int, Any], dict[str, Any]]:
     """Construct per-player AI instances for a single game.
 
     For ``engine_mode == 'descent-only'`` we use DescentAI only.
@@ -684,8 +684,8 @@ def _build_mixed_ai_pool(
             player_{pnum}_ai_type, player_{pnum}_difficulty, player_{pnum}_profile_id
     """
 
-    ai_by_player: Dict[int, Any] = {}
-    ai_metadata: Dict[str, Any] = {}
+    ai_by_player: dict[int, Any] = {}
+    ai_metadata: dict[str, Any] = {}
 
     # In soak contexts we want near-zero search budgets for high-tier engines.
     # The core AI implementations treat think_time <= 0 as "use default budget",
@@ -751,7 +751,7 @@ def _build_mixed_ai_pool(
         )
 
         # If custom weights provided, register them as a dynamic profile
-        custom_profile_id: Optional[str] = None
+        custom_profile_id: str | None = None
         if heuristic_weights:
             custom_profile_id = "_soak_custom_weights"
             HEURISTIC_WEIGHT_PROFILES[custom_profile_id] = heuristic_weights
@@ -1117,8 +1117,8 @@ def _build_mixed_ai_pool(
         matchups = get_diverse_matchups(num_players=num_players, num_matchups=1, config=diverse_config)
         matchup = matchups[0] if matchups else None
 
-        ai_by_player: Dict[int, Any] = {}
-        ai_metadata: Dict[str, Any] = {"engine_mode": engine_mode, "use_gpu": use_gpu}
+        ai_by_player: dict[int, Any] = {}
+        ai_metadata: dict[str, Any] = {"engine_mode": engine_mode, "use_gpu": use_gpu}
 
         for pnum in range(1, num_players + 1):
             if matchup:
@@ -1159,8 +1159,8 @@ def _build_mixed_ai_pool(
 
     if engine_mode in single_ai_mode_map:
         ai_type = single_ai_mode_map[engine_mode]
-        ai_by_player: Dict[int, Any] = {}
-        ai_metadata: Dict[str, Any] = {"engine_mode": engine_mode}
+        ai_by_player: dict[int, Any] = {}
+        ai_metadata: dict[str, Any] = {"engine_mode": engine_mode}
 
         for pnum in range(1, num_players + 1):
             difficulty = 5
@@ -1297,7 +1297,7 @@ def _build_mixed_ai_pool(
 
 
 def _run_intra_game_gc(
-    ai_by_player: Dict[int, Any],
+    ai_by_player: dict[int, Any],
     move_count: int,
     verbose: bool = False,
 ) -> None:
@@ -1336,7 +1336,7 @@ def _run_intra_game_gc(
 
 def run_self_play_soak(
     args: argparse.Namespace,
-) -> Tuple[List[GameRecord], List[Dict[str, Any]]]:
+) -> tuple[list[GameRecord], list[dict[str, Any]]]:
     board_type = _parse_board_type(args.board_type)
     num_games = args.num_games
     num_players = args.num_players
@@ -1351,7 +1351,7 @@ def run_self_play_soak(
     nn_pool_dir = getattr(args, "nn_pool_dir", None)
 
     # Load heuristic weights from CLI args if specified
-    heuristic_weights: Optional[Dict[str, float]] = None
+    heuristic_weights: dict[str, float] | None = None
     heuristic_weights_file = getattr(args, "heuristic_weights_file", None)
     heuristic_profile = getattr(args, "heuristic_profile", None)
     if heuristic_weights_file and heuristic_profile:
@@ -1374,7 +1374,7 @@ def run_self_play_soak(
     model_alias_path = getattr(args, "model_alias_path", None)
     emit_events = getattr(args, "emit_events", False)
 
-    hot_reloader: Optional[HotModelReloader] = None
+    hot_reloader: HotModelReloader | None = None
     if watch_model_updates:
         hot_reloader = HotModelReloader(
             board_type=args.board_type,
@@ -1514,7 +1514,7 @@ def run_self_play_soak(
     # Optional lightweight timing profile across the soak run. When
     # profile_timing is False, the dict remains unused and no extra
     # time measurements are taken in the inner loop.
-    timing_totals: Dict[str, float] = {
+    timing_totals: dict[str, float] = {
         "env_reset": 0.0,
         "ai_build": 0.0,
         "move_select": 0.0,
@@ -1578,8 +1578,8 @@ def run_self_play_soak(
     )
     env = make_env(env_config)
 
-    records: List[GameRecord] = []
-    invariant_violation_samples: List[Dict[str, Any]] = []
+    records: list[GameRecord] = []
+    invariant_violation_samples: list[dict[str, Any]] = []
 
     # Initialize progress reporter for time-based progress output (~10s intervals)
     progress_reporter = SoakProgressReporter(
@@ -1604,7 +1604,7 @@ def run_self_play_soak(
     def _write_checkpoint(
         games_done: int,
         elapsed_sec: float,
-        _records_so_far: List[GameRecord],
+        _records_so_far: list[GameRecord],
     ) -> None:
         checkpoint_data = {
             "games_completed": games_done,
@@ -1720,8 +1720,8 @@ def run_self_play_soak(
             move_count = 0
             termination_reason = "unknown"
             last_move = None
-            failure_debug: Optional[Dict[str, Any]] = None
-            per_game_violations: Dict[str, int] = {}
+            failure_debug: dict[str, Any] | None = None
+            per_game_violations: dict[str, int] = {}
             swap_sides_moves_for_game = 0
             skipped = False  # track games we drop but continue
 
@@ -1729,7 +1729,7 @@ def run_self_play_soak(
             # Also track for JSONL training data if include_training_data is enabled
             should_track_game_data = replay_db or include_training_data
             initial_state_for_recording = state.model_copy(deep=True) if should_track_game_data else None
-            game_moves_for_recording: List[Any] = []
+            game_moves_for_recording: list[Any] = []
 
             # Initialise S-invariant / elimination snapshot for this game.
             prev_snapshot = compute_progress_snapshot(state)
@@ -1786,7 +1786,7 @@ def run_self_play_soak(
                         }.get(state.current_phase)
                         if fallback_req_type is not None:
                             # For FORCED_ELIMINATION, we need eligible positions
-                            eligible_positions: List[Position] = []
+                            eligible_positions: list[Position] = []
                             if fallback_req_type == PhaseRequirementType.FORCED_ELIMINATION_REQUIRED:
                                 stacks = BoardManager.get_player_stacks(state.board, current_player)
                                 eligible_positions = [
@@ -2630,7 +2630,7 @@ def run_self_play_soak(
 
         # Build a structured timing profile so callers (including the CLI
         # entrypoint) can persist this alongside other soak summary data.
-        timing_profile: Dict[str, Any] = {
+        timing_profile: dict[str, Any] = {
             "total_games": total_games_run,
             "total_moves": total_moves,
             "env_reset": {
@@ -2711,19 +2711,19 @@ def run_self_play_soak(
 
 
 def _summarise(
-    records: List[GameRecord],
-    invariant_samples: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    records: list[GameRecord],
+    invariant_samples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     total = len(records)
-    by_status: Dict[str, int] = {}
-    by_reason: Dict[str, int] = {}
-    skipped_by_reason: Dict[str, int] = {}
-    lengths: List[int] = []
+    by_status: dict[str, int] = {}
+    by_reason: dict[str, int] = {}
+    skipped_by_reason: dict[str, int] = {}
+    lengths: list[int] = []
     completed_games = 0
     max_moves_games = 0
     skipped_games = 0
-    violation_counts_by_type: Dict[str, int] = {}
-    invariant_violations_by_id: Dict[str, int] = {}
+    violation_counts_by_type: dict[str, int] = {}
+    invariant_violations_by_id: dict[str, int] = {}
     total_swap_sides_moves = 0
     games_with_swap_sides = 0
     db_recorded_games = 0
@@ -2778,7 +2778,7 @@ def _summarise(
 
     lengths_sorted = sorted(lengths) if lengths else [0]
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "total_games": total,
         "by_status": by_status,
         "by_termination_reason": by_reason,
@@ -2811,11 +2811,11 @@ def _summarise(
 
 def _build_healthcheck_summary(
     profile: str,
-    board_types: List[str],
-    engine_pairs: List[str],
-    records: List[GameRecord],
-    invariant_samples: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    board_types: list[str],
+    engine_pairs: list[str],
+    records: list[GameRecord],
+    invariant_samples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Construct a compact, machine-readable AI health-check summary.
 
     This helper layers profile/engine metadata and a parity placeholder over
@@ -2835,7 +2835,7 @@ def _build_healthcheck_summary(
         ),
     )
 
-    health_summary: Dict[str, Any] = {
+    health_summary: dict[str, Any] = {
         "profile": profile,
         "board_types": sorted(set(board_types)),
         "engine_pairs": engine_pairs,
@@ -2875,7 +2875,7 @@ def _build_healthcheck_summary(
 
 def run_ai_healthcheck_profile(
     args: argparse.Namespace,
-) -> Tuple[List[GameRecord], Dict[str, Any]]:
+) -> tuple[list[GameRecord], dict[str, Any]]:
     """Run a lightweight multi-board AI self-play health check.
 
     This profile reuses :func:`run_self_play_soak` to execute a small,
@@ -2909,8 +2909,8 @@ def run_ai_healthcheck_profile(
 
     base_seed = args.seed if getattr(args, "seed", None) is not None else 1764142864
 
-    all_records: List[GameRecord] = []
-    all_samples: List[Dict[str, Any]] = []
+    all_records: list[GameRecord] = []
+    all_samples: list[dict[str, Any]] = []
 
     # Derive a base directory for per-board JSONL logs from the user-supplied
     # --log-jsonl path.
@@ -2971,7 +2971,7 @@ def run_ai_healthcheck_profile(
 
 def run_gpu_self_play_soak(
     args: argparse.Namespace,
-) -> Tuple[List[GameRecord], List[Dict[str, Any]]]:
+) -> tuple[list[GameRecord], list[dict[str, Any]]]:
     """Run GPU-accelerated self-play games using ParallelGameRunner.
 
     This function provides a 5-10x speedup on CUDA GPUs and 1.5-3x on Apple MPS
@@ -3062,7 +3062,7 @@ def run_gpu_self_play_soak(
     stats = generator.get_statistics()
 
     # Convert GPU records to GameRecord format for compatibility
-    game_records: List[GameRecord] = []
+    game_records: list[GameRecord] = []
     for i, gpu_rec in enumerate(gpu_records):
         record = GameRecord(
             index=i,
@@ -3090,12 +3090,12 @@ def run_gpu_self_play_soak(
     print(f"  Draws: {stats.get('draws', 0)}")
 
     # GPU mode does not run invariant checks (they're CPU-only)
-    invariant_samples: List[Dict[str, Any]] = []
+    invariant_samples: list[dict[str, Any]] = []
 
     return game_records, invariant_samples
 
 
-def _has_anomalies(records: List[GameRecord]) -> bool:
+def _has_anomalies(records: list[GameRecord]) -> bool:
     """Return True if any record encodes an invariant/engine anomaly.
 
     This matches the semantics used by the CLI `--fail-on-anomaly` flag:

@@ -72,7 +72,7 @@ class BenchmarkConfig:
     num_players: int
     moves_to_benchmark: int = 10
     warmup_moves: int = 3
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # Predefined benchmark configurations
@@ -282,9 +282,9 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
 
 
 def run_benchmarks(
-    configs: List[BenchmarkConfig],
-    output_path: Optional[str] = None,
-) -> List[MemoryProfile]:
+    configs: list[BenchmarkConfig],
+    output_path: str | None = None,
+) -> list[MemoryProfile]:
     """Run multiple benchmarks and generate a report.
 
     Args:
@@ -345,7 +345,7 @@ def run_benchmarks(
 def run_remote_benchmark(
     host_name: str,
     benchmark_type: str = "standard",
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
 ) -> None:
     """Run benchmarks on a remote host via SSH.
 

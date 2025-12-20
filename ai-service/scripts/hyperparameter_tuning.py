@@ -52,7 +52,7 @@ class HyperparameterRange:
     param_type: str  # 'float', 'int', 'categorical'
     low: float = 0.0
     high: float = 1.0
-    choices: List[Any] = field(default_factory=list)
+    choices: list[Any] = field(default_factory=list)
     log_scale: bool = False
 
 
@@ -113,20 +113,20 @@ DEFAULT_SEARCH_SPACE = [
 class TrialResult:
     """Result of a hyperparameter trial."""
     trial_id: int
-    params: Dict[str, Any]
+    params: dict[str, Any]
     metric: float  # Primary metric (e.g., validation accuracy)
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict)
     duration_seconds: float = 0.0
     timestamp: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
 class TuningState:
     """Persistent state for hyperparameter tuning."""
-    best_params: Dict[str, Any] = field(default_factory=dict)
+    best_params: dict[str, Any] = field(default_factory=dict)
     best_metric: float = -float("inf")
-    trials: List[TrialResult] = field(default_factory=list)
+    trials: list[TrialResult] = field(default_factory=list)
     total_trials: int = 0
     strategy: str = "random"
     start_time: str = ""
@@ -134,8 +134,8 @@ class TuningState:
 
 
 def sample_params_random(
-    search_space: List[HyperparameterRange],
-) -> Dict[str, Any]:
+    search_space: list[HyperparameterRange],
+) -> dict[str, Any]:
     """Randomly sample parameters from search space."""
     params = {}
 
@@ -156,9 +156,9 @@ def sample_params_random(
 
 
 def sample_params_grid(
-    search_space: List[HyperparameterRange],
+    search_space: list[HyperparameterRange],
     index: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Sample parameters from a grid based on index."""
     # Create grid points for each parameter
     grid_sizes = []
@@ -190,13 +190,13 @@ def sample_params_grid(
 
 
 def evaluate_params(
-    params: Dict[str, Any],
-    db_paths: List[Path],
+    params: dict[str, Any],
+    db_paths: list[Path],
     board_type: str,
     num_players: int,
     epochs: int = 5,
     max_samples: int = 10000,
-) -> Tuple[float, Dict[str, float]]:
+) -> tuple[float, dict[str, float]]:
     """Evaluate a set of hyperparameters.
 
     This is a simplified evaluation that estimates performance based on
@@ -250,8 +250,8 @@ def evaluate_params(
 
 def run_tuning(
     strategy: str,
-    search_space: List[HyperparameterRange],
-    db_paths: List[Path],
+    search_space: list[HyperparameterRange],
+    db_paths: list[Path],
     board_type: str,
     num_players: int,
     max_trials: int = 50,

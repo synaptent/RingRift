@@ -82,7 +82,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _eval_budget(result: TierPerfResult) -> Dict[str, Any]:
+def _eval_budget(result: TierPerfResult) -> dict[str, Any]:
     """Evaluate whether the benchmark result is within configured budgets."""
     within_avg = result.average_ms <= result.budget.max_avg_move_ms
     within_p95 = result.p95_ms <= result.budget.max_p95_move_ms
@@ -96,7 +96,7 @@ def _eval_budget(result: TierPerfResult) -> Dict[str, Any]:
 
 def _print_human_summary(
     result: TierPerfResult,
-    budget_eval: Dict[str, Any],
+    budget_eval: dict[str, Any],
 ) -> None:
     """Print a concise human-readable summary of the benchmark."""
     budget: TierPerfBudget = result.budget
@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = os.path.dirname(output_path)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "tier_name": result.tier_name,
             "difficulty": result.budget.difficulty,
             "board_type": result.budget.board_type.value,

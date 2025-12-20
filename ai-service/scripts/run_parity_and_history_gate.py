@@ -46,7 +46,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Sequence
+from typing import List
+from collections.abc import Sequence
 
 
 def run_cmd(cmd: Sequence[str], cwd: Path) -> subprocess.CompletedProcess:
@@ -55,7 +56,7 @@ def run_cmd(cmd: Sequence[str], cwd: Path) -> subprocess.CompletedProcess:
     return proc
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Run both TS↔Python replay parity and canonical phase-history gates for a replay DB."
     )
@@ -100,7 +101,7 @@ def main(argv: List[str]) -> int:
     # Parity command: always thread through an explicit --mode, and when acting
     # as a canonical gate we also force --view post_move regardless of any view
     # passed via extra_args (our arguments are appended last so they win).
-    parity_cmd: List[str] = [
+    parity_cmd: list[str] = [
         sys.executable,
         str(scripts_dir / "check_ts_python_replay_parity.py"),
         "--db",
@@ -114,7 +115,7 @@ def main(argv: List[str]) -> int:
     if args.parity_mode == "canonical":
         parity_cmd += ["--view", "post_move"]
 
-    history_cmd: List[str] = [
+    history_cmd: list[str] = [
         sys.executable,
         str(scripts_dir / "check_canonical_phase_history.py"),
         "--db",

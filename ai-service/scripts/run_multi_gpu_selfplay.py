@@ -48,7 +48,7 @@ logger = setup_script_logging("run_multi_gpu_selfplay")
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def get_available_gpus() -> List[int]:
+def get_available_gpus() -> list[int]:
     """Get list of available CUDA GPUs."""
     if not torch.cuda.is_available():
         return []
@@ -129,7 +129,7 @@ def run_worker(
         })
 
 
-def merge_results(output_dir: Path, gpu_ids: List[int]) -> Dict[str, Any]:
+def merge_results(output_dir: Path, gpu_ids: list[int]) -> dict[str, Any]:
     """Merge results from all GPU workers."""
     merged_stats = {
         "total_games": 0,

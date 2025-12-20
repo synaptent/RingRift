@@ -58,28 +58,28 @@ class TestEngineCorrectness(unittest.TestCase):
 
     def test_apply_move_does_not_mutate_original(self):
         original_state = copy.deepcopy(self.state)
-        
+
         # Get a move (placement)
         moves = GameEngine.get_valid_moves(self.state, 1)
         self.assertTrue(len(moves) > 0)
         move = moves[0]
-        
+
         # Apply move
         new_state = GameEngine.apply_move(self.state, move)
-        
+
         # Check if original state is modified
         # Specifically check the stack that might have been modified
         original_stack = original_state.board.stacks.get("3,3")
         current_stack_in_original = self.state.board.stacks.get("3,3")
-        
+
         # If we placed on 3,3, it would change. If we placed elsewhere, a new stack would appear.
         # Let's check if any stack in original state changed.
-        
+
         self.assertEqual(len(self.state.board.stacks), len(original_state.board.stacks))
         for k, v in self.state.board.stacks.items():
             self.assertEqual(v.rings, original_state.board.stacks[k].rings)
             self.assertEqual(v.stack_height, original_state.board.stacks[k].stack_height)
-            
+
         # Also check if new_state is different
         self.assertNotEqual(len(new_state.board.stacks), len(self.state.board.stacks))
 

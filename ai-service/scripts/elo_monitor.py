@@ -52,10 +52,10 @@ class EloRating:
     config_key: str
     elo: float
     games: int
-    last_update: Optional[str]
+    last_update: str | None
     source: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -68,7 +68,7 @@ class TrainingActivity:
     age_hours: float
     is_active: bool
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -80,9 +80,9 @@ class EloAlert:
     config_key: str
     message: str
     elo: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.alert_type.value,
             "severity": self.severity.value,
@@ -110,7 +110,7 @@ class EloHistory:
     elo: float
     peak_elo: float
     last_check: str
-    stagnant_since: Optional[str]
+    stagnant_since: str | None
 
 
 class EloMonitor:
@@ -139,9 +139,9 @@ class EloMonitor:
         self.alert_hours = alert_hours
         self.regression_threshold = regression_threshold
         self.metrics = get_metrics_logger("elo_monitor", log_interval=300)
-        self._history: Dict[str, Any] = {}
+        self._history: dict[str, Any] = {}
 
-    def load_history(self) -> Dict[str, Any]:
+    def load_history(self) -> dict[str, Any]:
         """Load monitoring history from file."""
         if self.history_file.exists():
             try:
@@ -166,9 +166,9 @@ class EloMonitor:
         except Exception as e:
             logger.error(f"Failed to save history: {e}")
 
-    def get_current_ratings(self) -> Dict[str, EloRating]:
+    def get_current_ratings(self) -> dict[str, EloRating]:
         """Get current Elo ratings from all sources."""
-        ratings: Dict[str, EloRating] = {}
+        ratings: dict[str, EloRating] = {}
 
         # Load from Elo rating files
         for elo_file in self.ELO_FILE_LOCATIONS:
@@ -181,9 +181,9 @@ class EloMonitor:
         self.metrics.set("configs_tracked", len(ratings))
         return ratings
 
-    def _load_ratings_from_file(self, elo_file: Path) -> Dict[str, EloRating]:
+    def _load_ratings_from_file(self, elo_file: Path) -> dict[str, EloRating]:
         """Load ratings from a single Elo file."""
-        ratings: Dict[str, EloRating] = {}
+        ratings: dict[str, EloRating] = {}
 
         try:
             with open(elo_file) as f:
@@ -205,9 +205,9 @@ class EloMonitor:
 
         return ratings
 
-    def _extract_ratings_from_logs(self) -> Dict[str, EloRating]:
+    def _extract_ratings_from_logs(self) -> dict[str, EloRating]:
         """Extract Elo ratings from training log files."""
-        ratings: Dict[str, EloRating] = {}
+        ratings: dict[str, EloRating] = {}
         log_dir = Path("logs")
 
         if not log_dir.exists():
@@ -242,9 +242,9 @@ class EloMonitor:
 
         return ratings
 
-    def check_training_activity(self) -> Dict[str, TrainingActivity]:
+    def check_training_activity(self) -> dict[str, TrainingActivity]:
         """Check recent training activity from logs."""
-        activity: Dict[str, TrainingActivity] = {}
+        activity: dict[str, TrainingActivity] = {}
         log_dir = Path("logs")
 
         if not log_dir.exists():
@@ -283,10 +283,10 @@ class EloMonitor:
 
     def analyze(
         self,
-        ratings: Dict[str, EloRating],
-    ) -> List[EloAlert]:
+        ratings: dict[str, EloRating],
+    ) -> list[EloAlert]:
         """Analyze Elo status and generate alerts."""
-        alerts: List[EloAlert] = []
+        alerts: list[EloAlert] = []
         now = datetime.now(timezone.utc)
 
         if "configs" not in self._history:
@@ -356,7 +356,7 @@ class EloMonitor:
         self,
         last_update: str,
         now: datetime,
-    ) -> Optional[float]:
+    ) -> float | None:
         """Calculate hours since last update."""
         try:
             if isinstance(last_update, str):
@@ -402,9 +402,9 @@ class StatusReporter:
 
     def print_report(
         self,
-        ratings: Dict[str, EloRating],
-        activity: Dict[str, TrainingActivity],
-        alerts: List[EloAlert],
+        ratings: dict[str, EloRating],
+        activity: dict[str, TrainingActivity],
+        alerts: list[EloAlert],
     ) -> None:
         """Print a formatted status report."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -420,7 +420,7 @@ class StatusReporter:
 
         print(f"{'=' * 60}\n")
 
-    def _print_ratings(self, ratings: Dict[str, EloRating]) -> None:
+    def _print_ratings(self, ratings: dict[str, EloRating]) -> None:
         """Print current Elo ratings section."""
         print(f"{self._color('Current Elo Ratings:', 'blue')}")
         print("-" * 50)
@@ -443,7 +443,7 @@ class StatusReporter:
             elo_str = self._color(f"{rating.elo:7.1f}", color)
             print(f"  {rating.config_key:20s} {elo_str} Elo  ({rating.games:5d} games)")
 
-    def _print_activity(self, activity: Dict[str, TrainingActivity]) -> None:
+    def _print_activity(self, activity: dict[str, TrainingActivity]) -> None:
         """Print training activity section."""
         print(f"\n{self._color('Training Activity:', 'blue')}")
         print("-" * 50)
@@ -459,7 +459,7 @@ class StatusReporter:
                 status = self._color(f"idle {act.age_hours:.1f}h", "yellow")
             print(f"  {act.config_key:20s} {status}")
 
-    def _print_alerts(self, alerts: List[EloAlert]) -> None:
+    def _print_alerts(self, alerts: list[EloAlert]) -> None:
         """Print alerts section."""
         if not alerts:
             print(f"\n{self._color('No alerts - all systems healthy', 'green')}")
@@ -488,9 +488,9 @@ class StatusReporter:
 
     def to_json(
         self,
-        ratings: Dict[str, EloRating],
-        activity: Dict[str, TrainingActivity],
-        alerts: List[EloAlert],
+        ratings: dict[str, EloRating],
+        activity: dict[str, TrainingActivity],
+        alerts: list[EloAlert],
     ) -> str:
         """Convert report to JSON format."""
         output = {

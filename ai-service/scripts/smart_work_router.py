@@ -43,7 +43,7 @@ except ImportError:
     HAS_POLICIES = False
     def is_work_allowed(node_id: str, work_type: str) -> bool:
         return True  # Allow all if policies not available
-    def get_best_work_type(node_id: str, available: List[str]) -> Optional[str]:
+    def get_best_work_type(node_id: str, available: list[str]) -> str | None:
         return available[0] if available else None
 
 logging.basicConfig(
@@ -87,10 +87,10 @@ class NodeCapabilities:
     # Classification
     is_gpu_idle: bool = False
     is_cpu_busy: bool = False
-    recommended_work: List[str] = field(default_factory=list)
+    recommended_work: list[str] = field(default_factory=list)
 
 
-def http_get(url: str, timeout: int = 15) -> Optional[dict]:
+def http_get(url: str, timeout: int = 15) -> dict | None:
     """Make HTTP GET request."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -100,7 +100,7 @@ def http_get(url: str, timeout: int = 15) -> Optional[dict]:
         return None
 
 
-def http_post(url: str, data: dict, timeout: int = 30) -> Optional[dict]:
+def http_post(url: str, data: dict, timeout: int = 30) -> dict | None:
     """Make HTTP POST request."""
     try:
         req = urllib.request.Request(
@@ -130,7 +130,7 @@ def classify_gpu_tier(gpu_name: str) -> str:
     return "none"
 
 
-def detect_external_work(host: str) -> Dict[str, bool]:
+def detect_external_work(host: str) -> dict[str, bool]:
     """Detect work running outside P2P tracking via SSH."""
     work = {
         'cmaes_running': False,
@@ -182,7 +182,7 @@ def detect_external_work(host: str) -> Dict[str, bool]:
     return work
 
 
-def get_cluster_status() -> List[NodeCapabilities]:
+def get_cluster_status() -> list[NodeCapabilities]:
     """Get comprehensive cluster status."""
     nodes = []
 
@@ -239,7 +239,7 @@ def get_cluster_status() -> List[NodeCapabilities]:
     return nodes
 
 
-def generate_utilization_report(nodes: List[NodeCapabilities], detect_external: bool = False) -> str:
+def generate_utilization_report(nodes: list[NodeCapabilities], detect_external: bool = False) -> str:
     """Generate accurate utilization report."""
     lines = []
     lines.append("=" * 100)
@@ -285,7 +285,7 @@ def generate_utilization_report(nodes: List[NodeCapabilities], detect_external: 
 
         return f"{n.node_id:<22} GPU:{n.gpu_percent:5.1f}% CPU:{n.cpu_percent:5.1f}% | {work_str:<35} | {status}"
 
-    def print_section(title: str, node_list: List[NodeCapabilities]):
+    def print_section(title: str, node_list: list[NodeCapabilities]):
         if not node_list:
             return
         lines.append(f"\n{title} ({len(node_list)} nodes):")
@@ -324,7 +324,7 @@ def generate_utilization_report(nodes: List[NodeCapabilities], detect_external: 
     return "\n".join(lines)
 
 
-def get_training_configs() -> List[Tuple[str, int]]:
+def get_training_configs() -> list[tuple[str, int]]:
     """Get available training configurations."""
     configs = [
         ("square8", 2),
@@ -374,7 +374,7 @@ def kill_cmaes_on_node(host: str) -> bool:
         return False
 
 
-def kill_cpu_work_on_node(host: str, work_types: List[str] = None) -> dict:
+def kill_cpu_work_on_node(host: str, work_types: list[str] = None) -> dict:
     """Stop CPU-bound work on a node to free it for GPU work.
 
     Args:
@@ -426,7 +426,7 @@ def kill_cpu_work_on_node(host: str, work_types: List[str] = None) -> dict:
         return {'success': False, 'host': host, 'error': str(e)}
 
 
-def kill_cpu_work_parallel(nodes: List[NodeCapabilities], work_types: List[str] = None) -> int:
+def kill_cpu_work_parallel(nodes: list[NodeCapabilities], work_types: list[str] = None) -> int:
     """Kill CPU-bound work on multiple nodes in parallel.
 
     Returns number of successful kills.
@@ -487,7 +487,7 @@ def start_gpu_cmaes_on_node(host: str, board_type: str, num_players: int) -> boo
         return False
 
 
-def wake_up_cpu_nodes(cpu_nodes: List[NodeCapabilities]) -> List[NodeCapabilities]:
+def wake_up_cpu_nodes(cpu_nodes: list[NodeCapabilities]) -> list[NodeCapabilities]:
     """Try to wake up/reconnect to CPU-rich nodes.
 
     Returns list of nodes that are now available.
@@ -519,7 +519,7 @@ def start_cmaes_on_node(host: str, board_type: str, num_players: int) -> bool:
     return start_cpu_cmaes_on_node(host, board_type, num_players)
 
 
-def rebalance_cluster(nodes: List[NodeCapabilities], dry_run: bool = False) -> int:
+def rebalance_cluster(nodes: list[NodeCapabilities], dry_run: bool = False) -> int:
     """Rebalance work across the cluster.
 
     Strategy:

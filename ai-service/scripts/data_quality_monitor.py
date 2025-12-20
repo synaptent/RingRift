@@ -74,11 +74,11 @@ class QualityAlert:
     alert_type: AlertType
     severity: AlertSeverity
     message: str
-    board_type: Optional[str] = None
-    value: Optional[float] = None
-    count: Optional[int] = None
+    board_type: str | None = None
+    value: float | None = None
+    count: int | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.alert_type.value,
             "severity": self.severity.value,
@@ -100,7 +100,7 @@ class BoardTypeStats:
     avg_moves: float
     max_moves: int
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -113,11 +113,11 @@ class DatabaseAnalysis:
     total_games: int = 0
     quality_score: int = 100
     overall_draw_rate: float = 0.0
-    board_types: Dict[str, BoardTypeStats] = field(default_factory=dict)
-    alerts: List[QualityAlert] = field(default_factory=list)
-    error: Optional[str] = None
+    board_types: dict[str, BoardTypeStats] = field(default_factory=dict)
+    alerts: list[QualityAlert] = field(default_factory=list)
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "db_name": self.db_name,
             "db_path": self.db_path,
@@ -140,9 +140,9 @@ class AuditSummary:
     overall_draw_rate: float
     total_alerts: int
     critical_alerts: int
-    results: List[DatabaseAnalysis]
+    results: list[DatabaseAnalysis]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "databases_checked": self.databases_checked,
             "total_games": self.total_games,
@@ -237,8 +237,8 @@ class DatabaseAnalyzer:
 
     def __init__(
         self,
-        config: Optional[DataQualityConfig] = None,
-        prometheus_metrics: Optional[PrometheusMetrics] = None,
+        config: DataQualityConfig | None = None,
+        prometheus_metrics: PrometheusMetrics | None = None,
     ):
         self.config = config or DataQualityConfig()
         self.prometheus = prometheus_metrics
@@ -451,13 +451,13 @@ class DataQualityAuditor:
 
     def __init__(
         self,
-        data_dir: Optional[Path] = None,
-        config: Optional[DataQualityConfig] = None,
+        data_dir: Path | None = None,
+        config: DataQualityConfig | None = None,
     ):
         self.data_dir = data_dir or self.DEFAULT_DATA_DIR
         self.analyzer = DatabaseAnalyzer(config=config)
 
-    def find_databases(self) -> List[Path]:
+    def find_databases(self) -> list[Path]:
         """Find all game databases to analyze."""
         dbs = []
         for pattern in self.DATABASE_PATTERNS:
@@ -471,7 +471,7 @@ class DataQualityAuditor:
         if verbose:
             logger.info(f"Found {len(databases)} databases to analyze")
 
-        results: List[DatabaseAnalysis] = []
+        results: list[DatabaseAnalysis] = []
         total_games = 0
         total_draws = 0
         total_alerts = 0

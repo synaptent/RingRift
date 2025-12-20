@@ -47,8 +47,8 @@ from app.game_engine import GameEngine  # type: ignore[import]
 
 
 def make_test_state(
-    stacks: Dict[str, RingStack],
-    markers: Dict[str, MarkerInfo],
+    stacks: dict[str, RingStack],
+    markers: dict[str, MarkerInfo],
     player1_rings_in_hand: int = 0,
     player2_rings_in_hand: int = 16,
 ) -> GameState:

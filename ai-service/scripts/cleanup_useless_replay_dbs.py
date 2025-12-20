@@ -39,7 +39,7 @@ from app.db.game_replay import GameReplayDB
 from scripts.lib.paths import REPO_ROOT
 
 
-def find_dbs() -> List[Path]:
+def find_dbs() -> list[Path]:
     root = REPO_ROOT
     search_paths = [
         root / "data" / "games",
@@ -47,7 +47,7 @@ def find_dbs() -> List[Path]:
         root / "ai-service" / "data" / "games",
     ]
 
-    results: List[Path] = []
+    results: list[Path] = []
     visited = set()
 
     def walk(dir_path: Path, depth: int) -> None:
@@ -73,7 +73,7 @@ def find_dbs() -> List[Path]:
     return results
 
 
-def classify_game_structure(db: GameReplayDB, game_id: str) -> Tuple[str, str]:
+def classify_game_structure(db: GameReplayDB, game_id: str) -> tuple[str, str]:
     """Classify a game's recording structure; mirrors parity checker logic."""
     initial = db.get_initial_state(game_id)
     if initial is None:
@@ -147,8 +147,8 @@ def main() -> None:
         print("No GameReplayDB databases found.")
         return
 
-    useless_dbs: List[Path] = []
-    per_db_summaries: List[Dict[str, object]] = []
+    useless_dbs: list[Path] = []
+    per_db_summaries: list[dict[str, object]] = []
 
     for db_path in db_paths:
         try:
@@ -177,10 +177,10 @@ def main() -> None:
             continue
 
         # Aggregate basic metadata distributions over all games in this DB.
-        board_type_counts: Dict[str, int] = {}
-        num_players_counts: Dict[int, int] = {}
-        source_counts: Dict[str, int] = {}
-        termination_reason_counts: Dict[str, int] = {}
+        board_type_counts: dict[str, int] = {}
+        num_players_counts: dict[int, int] = {}
+        source_counts: dict[str, int] = {}
+        termination_reason_counts: dict[str, int] = {}
 
         for meta in games_all:
             bt = str(meta.get("board_type") or "")
@@ -201,7 +201,7 @@ def main() -> None:
         games = games_all[:limit]
 
         has_good = False
-        structure_counts: Dict[str, int] = {}
+        structure_counts: dict[str, int] = {}
         for meta in games:
             game_id = meta["game_id"]
             try:

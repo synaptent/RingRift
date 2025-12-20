@@ -27,7 +27,7 @@ def create_hex_mask(board_size: int = HEX_BOARD_SIZE) -> np.ndarray:
     """
     radius = (board_size - 1) // 2
     mask = np.zeros((board_size, board_size), dtype=bool)
-    
+
     for cy in range(board_size):
         for cx in range(board_size):
             q = cx - radius
@@ -36,7 +36,7 @@ def create_hex_mask(board_size: int = HEX_BOARD_SIZE) -> np.ndarray:
             # Valid hex cell if max Manhattan distance <= radius
             if max(abs(q), abs(r), abs(s)) <= radius:
                 mask[cy, cx] = True
-    
+
     return mask
 
 
@@ -225,16 +225,16 @@ class TestHexSymmetryTransform:
             """Policy roundtrip should recover original."""
             policy = np.random.rand(P_HEX).astype(np.float32)
             policy /= policy.sum()
-    
+
             for t_id in range(12):
                 transformed = transform.transform_policy(policy, t_id)
                 inverse_id = transform.get_inverse_transform(t_id)
                 recovered = transform.transform_policy(transformed, inverse_id)
-    
+
                 # Check non-zero values are preserved
                 orig_nonzero = set(np.where(policy > 1e-6)[0])
                 rec_nonzero = set(np.where(recovered > 1e-6)[0])
-    
+
                 # Note: some indices may be lost due to out-of-bounds
                 # after transformation, so we check overlap
                 overlap = len(orig_nonzero & rec_nonzero)

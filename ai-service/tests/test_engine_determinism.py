@@ -155,7 +155,7 @@ def _build_script(initial_timestamp: datetime):
     return move1, move2
 
 
-def _normalise_state(state: GameState) -> Dict[str, Any]:
+def _normalise_state(state: GameState) -> dict[str, Any]:
     """Project a GameState onto a deterministic, hashable snapshot.
 
     This deliberately ignores non-rules metadata such as timestamps,
@@ -182,7 +182,7 @@ def _normalise_state(state: GameState) -> Dict[str, Any]:
         key=lambda p: p["playerNumber"],
     )
 
-    snapshot: Dict[str, Any] = {
+    snapshot: dict[str, Any] = {
         "boardType": state.board.type,
         "currentPlayer": state.current_player,
         "currentPhase": state.current_phase,
@@ -199,7 +199,7 @@ def _normalise_state(state: GameState) -> Dict[str, Any]:
     return snapshot
 
 
-def run_engine_script() -> Tuple[Dict[str, Any], str]:
+def run_engine_script() -> tuple[dict[str, Any], str]:
     """Run the fixed move script from a fresh initial state.
 
     Returns:

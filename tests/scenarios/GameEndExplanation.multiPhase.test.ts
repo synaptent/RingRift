@@ -11,10 +11,18 @@
  * Axis references: V1, V2, L1-L4, T1-T4 (RULES_SCENARIO_MATRIX.md)
  */
 
+import fs from 'fs';
+import path from 'path';
+
 import {
   toVictoryState,
   processTurn,
 } from '../../src/shared/engine/orchestration/turnOrchestrator';
+import {
+  importVectorBundle,
+  deserializeGameState,
+  type ContractTestVector,
+} from '../../src/shared/engine/contracts';
 import type {
   GameState,
   GameHistoryEntry,
@@ -155,6 +163,139 @@ function addForcedEliminationHistory(state: GameState, actor: number = 1): void 
   };
 
   state.history = [entry];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Contract Vector Utilities
+// ═══════════════════════════════════════════════════════════════════════════
+
+type PhaseTransitionHint = {
+  phaseAfter?: string;
+  availableChainTarget?: Position;
+};
+
+const MULTI_PHASE_BUNDLE = path.resolve(
+  __dirname,
+  '../fixtures/contract-vectors/v2/multi_phase_turn.vectors.json'
+);
+
+function loadMultiPhaseVectors(): ContractTestVector[] {
+  const json = fs.readFileSync(MULTI_PHASE_BUNDLE, 'utf8');
+  return importVectorBundle(json);
+}
+
+function positionsEqual(a?: Position, b?: Position): boolean {
+  return !!a && !!b && a.x === b.x && a.y === b.y;
+}
+
+function convertVectorMove(vectorMove: any): Move {
+  const move: any = { ...vectorMove };
+  move.timestamp = move.timestamp ? new Date(move.timestamp) : new Date();
+  move.thinkTime = move.thinkTime ?? 0;
+  return move as Move;
+}
+
+function makeBookkeepingMove(decisionType: string, state: GameState, player: number): Move | null {
+  const moveNumber = state.moveHistory.length + 1;
+  const base = {
+    id: `auto-${decisionType}-${moveNumber}`,
+    player,
+    timestamp: new Date(),
+    thinkTime: 0,
+    moveNumber,
+    to: { x: 0, y: 0 },
+  } as Move;
+
+  switch (decisionType) {
+    case 'no_line_action_required':
+      return { ...base, type: 'no_line_action' };
+    case 'no_territory_action_required':
+      return { ...base, type: 'no_territory_action' };
+    case 'no_movement_action_required':
+      return { ...base, type: 'no_movement_action' };
+    case 'no_placement_action_required':
+      return { ...base, type: 'no_placement_action' };
+    default:
+      return null;
+  }
+}
+
+function pickDecisionMove(
+  decision: NonNullable<ReturnType<typeof processTurn>['pendingDecision']>,
+  state: GameState,
+  phaseHints: PhaseTransitionHint[]
+): Move {
+  const options = decision.options ?? [];
+  if (options.length === 0) {
+    const synthetic = makeBookkeepingMove(decision.type, state, decision.player);
+    if (!synthetic) {
+      throw new Error(`No options available for decision type ${decision.type}`);
+    }
+    return synthetic;
+  }
+
+  const hint = phaseHints.find((h) => h.phaseAfter === state.currentPhase);
+
+  switch (decision.type) {
+    case 'chain_capture': {
+      if (hint?.availableChainTarget) {
+        const targeted = options.find((opt: any) =>
+          positionsEqual(opt.to, hint.availableChainTarget)
+        );
+        if (targeted) return targeted;
+      }
+      break;
+    }
+    case 'line_reward': {
+      const zeroCollapse = options.find((opt: any) => (opt.collapsedMarkers ?? []).length === 0);
+      if (zeroCollapse) return zeroCollapse;
+
+      const sorted = [...options].sort((a: any, b: any) => {
+        const aLen = (a.collapsedMarkers ?? []).length;
+        const bLen = (b.collapsedMarkers ?? []).length;
+        return aLen - bLen;
+      });
+      return sorted[0];
+    }
+    case 'region_order': {
+      if (hint?.availableChainTarget) {
+        const matching = options.find((opt: any) =>
+          (opt.disconnectedRegions ?? []).some((reg: any) =>
+            reg.spaces?.some((pos: Position) => positionsEqual(pos, hint.availableChainTarget))
+          )
+        );
+        if (matching) return matching;
+      }
+      const sortedBySize = [...options].sort((a: any, b: any) => {
+        const aSize = (a.disconnectedRegions?.[0]?.spaces ?? []).length;
+        const bSize = (b.disconnectedRegions?.[0]?.spaces ?? []).length;
+        return aSize - bSize;
+      });
+      return sortedBySize[0];
+    }
+    case 'line_order': {
+      const sorted = [...options].sort((a: any, b: any) => {
+        const aKey = JSON.stringify(a.formedLines ?? []);
+        const bKey = JSON.stringify(b.formedLines ?? []);
+        return aKey.localeCompare(bKey);
+      });
+      return sorted[0];
+    }
+    default:
+      break;
+  }
+
+  return options[0];
+}
+
+function buildPhaseHints(vector: ContractTestVector): PhaseTransitionHint[] {
+  const input = vector.input as any;
+  const phaseHints = (input.phaseTransitions ?? []) as PhaseTransitionHint[];
+  const territoryRegion = input.territoryExpectation?.potentiallyDisconnectedRegion?.[0];
+  if (territoryRegion) {
+    phaseHints.push({ phaseAfter: 'territory_processing', availableChainTarget: territoryRegion });
+  }
+  return phaseHints;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -501,6 +642,57 @@ describe('GameEndExplanation for multi-phase turn scenarios', () => {
       expect(explanation.scoreBreakdown!['P3']).toBeDefined();
       expect(explanation.scoreBreakdown!['P4']).toBeDefined();
     });
+  });
+
+  describe('Orchestrator-driven multi-phase territory victories', () => {
+    const vectors = loadMultiPhaseVectors();
+    const vectorIds: Array<{ boardType: BoardType; id: string }> = [
+      { boardType: 'square8', id: 'multi_phase.full_sequence_with_territory' },
+      { boardType: 'square19', id: 'multi_phase.full_sequence_with_territory_square19' },
+      { boardType: 'hexagonal', id: 'multi_phase.full_sequence_with_territory_hex' },
+    ];
+
+    it.each(vectorIds)(
+      'produces territory GameEndExplanation after multi-phase turn on %s',
+      ({ boardType, id }) => {
+        const vector = vectors.find((entry) => entry.id === id);
+        if (!vector) {
+          throw new Error(`Missing multi-phase contract vector: ${id}`);
+        }
+
+        const state = deserializeGameState((vector.input as any).state);
+        state.territoryVictoryThreshold = 1;
+        state.players.forEach((player) => {
+          player.territorySpaces = 0;
+        });
+
+        const initialMove = convertVectorMove((vector.input as any).initialMove);
+        const phaseHints = buildPhaseHints(vector);
+
+        let result = processTurn(state, initialMove);
+        const phases = [...result.metadata.phasesTraversed];
+        let currentState = result.nextState;
+
+        while (result.status === 'awaiting_decision' && result.pendingDecision) {
+          const chosen = pickDecisionMove(result.pendingDecision, currentState, phaseHints);
+          result = processTurn(currentState, chosen);
+          phases.push(...result.metadata.phasesTraversed);
+          currentState = result.nextState;
+        }
+
+        expect(phases).toEqual(expect.arrayContaining(['line_processing', 'territory_processing']));
+        expect(result.status).toBe('complete');
+        expect(result.victoryResult).toBeDefined();
+        expect(result.victoryResult!.isGameOver).toBe(true);
+        expect(result.victoryResult!.reason).toBe('territory_control');
+
+        const explanation: GameEndExplanation = result.victoryResult!.gameEndExplanation!;
+        expect(explanation).toBeDefined();
+        expect(explanation.outcomeType).toBe('territory_control');
+        expect(explanation.boardType).toBe(boardType);
+        expect(explanation.winnerPlayerId).toBe('P1');
+      }
+    );
   });
 
   describe('UX copy and teaching references in GameEndExplanation', () => {

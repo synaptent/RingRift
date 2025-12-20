@@ -9,7 +9,8 @@ but game state fixtures are function-scoped to ensure test isolation.
 from datetime import datetime
 from pathlib import Path
 import sys
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
+from collections.abc import Callable
 
 import pytest
 
@@ -98,13 +99,13 @@ def player_factory() -> Callable[..., Player]:
 
     def _create_player(
         player_number: int = 1,
-        username: Optional[str] = None,
+        username: str | None = None,
         player_type: str = "human",
         rings_in_hand: int = 10,
         eliminated_rings: int = 0,
         territory_spaces: int = 0,
         time_remaining: int = 600,
-        ai_difficulty: Optional[int] = None,
+        ai_difficulty: int | None = None,
     ) -> Player:
         return Player(
             id=f"p{player_number}",
@@ -132,7 +133,7 @@ def move_factory() -> Callable[..., Move]:
         y: int = 0,
         move_type: MoveType = MoveType.PLACE_RING,
         move_number: int = 1,
-        from_pos: Optional[Position] = None,
+        from_pos: Position | None = None,
         count: int = 1,
     ) -> Move:
         return Move(
@@ -157,8 +158,8 @@ def ring_stack_factory() -> Callable[..., RingStack]:
     def _create_stack(
         x: int,
         y: int,
-        rings: List[int],
-        controlling_player: Optional[int] = None,
+        rings: list[int],
+        controlling_player: int | None = None,
     ) -> RingStack:
         if not rings:
             raise ValueError("Stack must have at least one ring")
@@ -186,10 +187,10 @@ def board_state_factory(ring_stack_factory) -> Callable[..., BoardState]:
 
     def _create_board(
         board_type: BoardType = BoardType.SQUARE8,
-        stacks: Optional[Dict[str, RingStack]] = None,
-        markers: Optional[Dict[str, MarkerInfo]] = None,
-        collapsed_spaces: Optional[Dict[str, int]] = None,
-        eliminated_rings: Optional[Dict[int, int]] = None,
+        stacks: dict[str, RingStack] | None = None,
+        markers: dict[str, MarkerInfo] | None = None,
+        collapsed_spaces: dict[str, int] | None = None,
+        eliminated_rings: dict[int, int] | None = None,
     ) -> BoardState:
         size = 8 if board_type == BoardType.SQUARE8 else 19 if board_type == BoardType.SQUARE19 else 5
         return BoardState(
@@ -215,12 +216,12 @@ def game_state_factory(player_factory, board_state_factory) -> Callable[..., Gam
         current_player: int = 1,
         current_phase: GamePhase = GamePhase.RING_PLACEMENT,
         game_status: GameStatus = GameStatus.ACTIVE,
-        players: Optional[List[Player]] = None,
-        board: Optional[BoardState] = None,
-        move_history: Optional[List[Move]] = None,
+        players: list[Player] | None = None,
+        board: BoardState | None = None,
+        move_history: list[Move] | None = None,
         rings_in_hand: int = 10,
         total_rings_in_play: int = 36,
-        rng_seed: Optional[int] = None,
+        rng_seed: int | None = None,
     ) -> GameState:
         if players is None:
             players = [player_factory(i, rings_in_hand=rings_in_hand) for i in range(1, num_players + 1)]
@@ -351,7 +352,7 @@ def clear_caches():
 def position_factory() -> Callable[..., Position]:
     """Factory for creating Position instances."""
 
-    def _create_position(x: int, y: int, z: Optional[int] = None) -> Position:
+    def _create_position(x: int, y: int, z: int | None = None) -> Position:
         if z is not None:
             return Position(x=x, y=y, z=z)
         return Position(x=x, y=y)

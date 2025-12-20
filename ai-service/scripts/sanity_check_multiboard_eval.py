@@ -40,7 +40,7 @@ from scripts.run_cmaes_optimization import (  # type: ignore  # noqa: E402
 )
 
 
-def _format_per_board(per_board: Dict[BoardType, float]) -> str:
+def _format_per_board(per_board: dict[BoardType, float]) -> str:
     """Return a compact string mapping board names to fitness values."""
     label_by_board = {
         BoardType.SQUARE8: "Square8",
@@ -56,9 +56,9 @@ def _format_per_board(per_board: Dict[BoardType, float]) -> str:
 
 def _run_profile(
     label: str,
-    candidate_weights: Dict[str, float],
-    baseline_weights: Dict[str, float],
-    boards: List[BoardType],
+    candidate_weights: dict[str, float],
+    baseline_weights: dict[str, float],
+    boards: list[BoardType],
     *,
     games_per_eval: int,
     max_moves: int,
@@ -68,7 +68,7 @@ def _run_profile(
     seed: int | None,
     per_board_mode: bool,
     verbose: bool,
-) -> Tuple[float, Dict[BoardType, float]]:
+) -> tuple[float, dict[BoardType, float]]:
     """Run evaluation for a single profile.
 
     Optionally emit per-board diagnostics and timings.
@@ -84,7 +84,7 @@ def _run_profile(
     )
 
     if per_board_mode:
-        per_board_fitness: Dict[BoardType, float] = {}
+        per_board_fitness: dict[BoardType, float] = {}
         start_all = time.perf_counter()
         for idx, board in enumerate(boards):
             print(
@@ -218,14 +218,14 @@ def main() -> None:
         seed=args.seed,
     )
 
-    boards: List[BoardType] = list(eval_cfg["boards"])
+    boards: list[BoardType] = list(eval_cfg["boards"])
     if args.boards:
         name_to_board = {
             "square8": BoardType.SQUARE8,
             "square19": BoardType.SQUARE19,
             "hex": BoardType.HEXAGONAL,
         }
-        requested: List[BoardType] = []
+        requested: list[BoardType] = []
         for raw in args.boards.split(","):
             name = raw.strip().lower()
             if not name:

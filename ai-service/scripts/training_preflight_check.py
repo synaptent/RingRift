@@ -35,8 +35,8 @@ class CheckResult:
     name: str
     passed: bool
     message: str = ""
-    error: Optional[str] = None
-    suggestion: Optional[str] = None
+    error: str | None = None
+    suggestion: str | None = None
 
 
 @dataclass
@@ -44,7 +44,7 @@ class CheckCategory:
     """Category of related checks."""
 
     name: str
-    checks: List[CheckResult] = field(default_factory=list)
+    checks: list[CheckResult] = field(default_factory=list)
 
     @property
     def all_passed(self) -> bool:
@@ -63,7 +63,7 @@ class PreflightChecker:
     """Runs all preflight checks and reports results."""
 
     def __init__(self):
-        self.categories: List[CheckCategory] = []
+        self.categories: list[CheckCategory] = []
 
     def add_check(self, category_name: str, result: CheckResult) -> None:
         """Add a check result to a category."""
@@ -938,7 +938,7 @@ class PreflightChecker:
             )
 
 
-def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the training preflight checker."""
     parser = argparse.ArgumentParser(
         description=(
@@ -976,12 +976,12 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _discover_db_paths_from_config(config_path: Path) -> List[Path]:
+def _discover_db_paths_from_config(config_path: Path) -> list[Path]:
     """Discover *.db paths referenced anywhere in a JSON config."""
     with config_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    found: List[str] = []
+    found: list[str] = []
 
     def _walk(node: object) -> None:
         if isinstance(node, dict):
@@ -996,7 +996,7 @@ def _discover_db_paths_from_config(config_path: Path) -> List[Path]:
 
     _walk(data)
 
-    db_paths: List[Path] = []
+    db_paths: list[Path] = []
     for raw in found:
         raw_str = raw.strip()
         if not raw_str:
@@ -1006,8 +1006,8 @@ def _discover_db_paths_from_config(config_path: Path) -> List[Path]:
         else:
             db_paths.append(AI_SERVICE_ROOT / raw_str)
 
-    seen: Dict[Path, bool] = {}
-    unique: List[Path] = []
+    seen: dict[Path, bool] = {}
+    unique: list[Path] = []
     for path in db_paths:
         key = path.resolve()
         if key in seen:
@@ -1031,7 +1031,7 @@ def _run_canonical_sources_preflight(args: argparse.Namespace) -> bool:
     if not registry_path.is_absolute():
         registry_path = AI_SERVICE_ROOT / registry_path
 
-    db_paths: List[Path] = []
+    db_paths: list[Path] = []
     for cfg in args.config or []:
         cfg_path = Path(cfg)
         if not cfg_path.is_absolute():
@@ -1081,7 +1081,7 @@ def _run_canonical_sources_preflight(args: argparse.Namespace) -> bool:
     return False
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point. Returns 0 on success, 1 on failure."""
     args = _parse_args(argv)
 

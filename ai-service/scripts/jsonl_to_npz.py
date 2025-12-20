@@ -113,7 +113,7 @@ def _get_phase_str(state: GameState) -> str:
 def _complete_remaining_phases(
     state: GameState,
     target_player: int,
-    target_move_type: Optional[MoveType] = None,
+    target_move_type: MoveType | None = None,
 ) -> GameState:
     """Apply no-action moves to advance through phases until we can apply the target move.
 
@@ -126,7 +126,7 @@ def _complete_remaining_phases(
         target_move_type: The type of move we're trying to apply (to determine target phase)
     """
     # Map move types to phases where they're valid (use actual GamePhase.value strings)
-    MOVE_VALID_PHASES: Dict[MoveType, List[str]] = {
+    MOVE_VALID_PHASES: dict[MoveType, list[str]] = {
         MoveType.PLACE_RING: ["ring_placement"],
         MoveType.NO_PLACEMENT_ACTION: ["ring_placement"],
         MoveType.MOVE_STACK: ["movement"],
@@ -228,7 +228,7 @@ def _value_from_winner(winner: int, perspective: int, num_players: int) -> float
         return -1.0
 
 
-def _compute_multi_player_values_from_winner(winner: int, num_players: int) -> List[float]:
+def _compute_multi_player_values_from_winner(winner: int, num_players: int) -> list[float]:
     """Compute value vector for all players from winner field."""
     values = []
     for p in range(1, 5):  # Always 4 slots
@@ -240,21 +240,21 @@ def _compute_multi_player_values_from_winner(winner: int, num_players: int) -> L
 
 
 def _process_gpu_selfplay_record(
-    record: Dict[str, Any],
+    record: dict[str, Any],
     encoder: NeuralNetAI,
     history_length: int,
     sample_every: int,
-) -> Tuple[
-    List[np.ndarray],  # features
-    List[np.ndarray],  # globals
-    List[float],       # values
-    List[np.ndarray],  # values_mp
-    List[int],         # num_players
-    List[np.ndarray],  # policy_indices
-    List[np.ndarray],  # policy_values
-    List[int],         # move_numbers
-    List[int],         # total_game_moves
-    List[str],         # phases
+) -> tuple[
+    list[np.ndarray],  # features
+    list[np.ndarray],  # globals
+    list[float],       # values
+    list[np.ndarray],  # values_mp
+    list[int],         # num_players
+    list[np.ndarray],  # policy_indices
+    list[np.ndarray],  # policy_values
+    list[int],         # move_numbers
+    list[int],         # total_game_moves
+    list[str],         # phases
     int,               # positions_extracted
 ]:
     """Process a GPU selfplay record with proper policy extraction.
@@ -266,16 +266,16 @@ def _process_gpu_selfplay_record(
 
     This produces training samples with both value AND policy targets.
     """
-    features_list: List[np.ndarray] = []
-    globals_list: List[np.ndarray] = []
-    values_list: List[float] = []
-    values_mp_list: List[np.ndarray] = []
-    num_players_list: List[int] = []
-    policy_indices_list: List[np.ndarray] = []
-    policy_values_list: List[np.ndarray] = []
-    move_numbers_list: List[int] = []
-    total_game_moves_list: List[int] = []
-    phases_list: List[str] = []
+    features_list: list[np.ndarray] = []
+    globals_list: list[np.ndarray] = []
+    values_list: list[float] = []
+    values_mp_list: list[np.ndarray] = []
+    num_players_list: list[int] = []
+    policy_indices_list: list[np.ndarray] = []
+    policy_values_list: list[np.ndarray] = []
+    move_numbers_list: list[int] = []
+    total_game_moves_list: list[int] = []
+    phases_list: list[str] = []
 
     # Extract data from record
     initial_state_dict = record.get("initial_state")
@@ -303,7 +303,7 @@ def _process_gpu_selfplay_record(
 
     # Replay game and extract features with proper policy targets
     current_state = initial_state
-    history_frames: List[np.ndarray] = []
+    history_frames: list[np.ndarray] = []
     positions_extracted = 0
 
     for move_idx, move in enumerate(moves):
@@ -387,7 +387,7 @@ def _process_gpu_selfplay_record(
             move_numbers_list, total_game_moves_list, phases_list, positions_extracted)
 
 
-def _move_type_from_str(type_str: str) -> Optional[MoveType]:
+def _move_type_from_str(type_str: str) -> MoveType | None:
     """Convert move type string to MoveType enum."""
     try:
         return MoveType(type_str)
@@ -459,7 +459,7 @@ def build_encoder(
     return encoder
 
 
-def parse_position(pos_dict: Optional[Dict[str, Any]]) -> Optional[Position]:
+def parse_position(pos_dict: dict[str, Any] | None) -> Position | None:
     """Parse position dict to Position object."""
     if pos_dict is None:
         return None
@@ -470,7 +470,7 @@ def parse_position(pos_dict: Optional[Dict[str, Any]]) -> Optional[Position]:
     )
 
 
-def parse_move(move_dict: Dict[str, Any]) -> Move:
+def parse_move(move_dict: dict[str, Any]) -> Move:
     """Parse move dict from JSONL to Move object."""
     return Move(
         id=move_dict.get("id", "imported"),
@@ -496,9 +496,9 @@ def parse_move(move_dict: Dict[str, Any]) -> Move:
 def encode_state_with_history(
     encoder: NeuralNetAI,
     state: GameState,
-    history_frames: List[np.ndarray],
+    history_frames: list[np.ndarray],
     history_length: int = 3,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Encode state with history frames, matching export_replay_dataset.py."""
     base_features, globals_vec = encoder._extract_features(state)
 
@@ -550,7 +550,7 @@ def value_from_final_ranking(
         return [1.0, 0.33, -0.33, -1.0][rank]
 
 
-def compute_multi_player_values(final_state: GameState, num_players: int) -> List[float]:
+def compute_multi_player_values(final_state: GameState, num_players: int) -> list[float]:
     """Compute value vector for all players."""
     values = []
     for p in range(1, 5):  # Always 4 slots
@@ -592,8 +592,8 @@ class CheckpointManager:
         self.checkpoint_interval = checkpoint_interval
         self.enabled = enabled and self.checkpoint_dir is not None
         self.chunk_count = 0
-        self.progress_file: Optional[Path] = None
-        self.progress: Dict[str, Any] = {}
+        self.progress_file: Path | None = None
+        self.progress: dict[str, Any] = {}
         self.history_length = int(history_length)
         self.feature_version = int(feature_version)
         self.policy_encoding = policy_encoding
@@ -602,7 +602,7 @@ class CheckpointManager:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self.progress_file = self.checkpoint_dir / "progress.json"
 
-    def load_progress(self) -> Dict[str, Any]:
+    def load_progress(self) -> dict[str, Any]:
         """Load progress from checkpoint if exists."""
         if not self.enabled or not self.progress_file.exists():
             return {"games_completed": 0, "chunks": [], "stats": {}}
@@ -640,17 +640,17 @@ class CheckpointManager:
 
     def save_chunk(
         self,
-        features: List[np.ndarray],
-        globals_vec: List[np.ndarray],
-        values: List[float],
-        values_mp: List[np.ndarray],
-        num_players: List[int],
-        policy_indices: List[np.ndarray],
-        policy_values: List[np.ndarray],
-        move_numbers: List[int],
-        total_game_moves: List[int],
-        phases: List[str],
-    ) -> Optional[Path]:
+        features: list[np.ndarray],
+        globals_vec: list[np.ndarray],
+        values: list[float],
+        values_mp: list[np.ndarray],
+        num_players: list[int],
+        policy_indices: list[np.ndarray],
+        policy_values: list[np.ndarray],
+        move_numbers: list[int],
+        total_game_moves: list[int],
+        phases: list[str],
+    ) -> Path | None:
         """Save a chunk of data to disk."""
         if not self.enabled or not features:
             return None
@@ -772,24 +772,24 @@ def process_jsonl_file(
     filepath: Path,
     encoder: NeuralNetAI,
     board_type: BoardType,
-    board_filter: Optional[str],
-    players_filter: Optional[int],
-    max_games: Optional[int],
+    board_filter: str | None,
+    players_filter: int | None,
+    max_games: int | None,
     sample_every: int,
     history_length: int,
     current_games: int,
     gpu_selfplay_mode: bool = False,
-) -> Tuple[
-    List[np.ndarray],  # features
-    List[np.ndarray],  # globals
-    List[float],       # values
-    List[np.ndarray],  # values_mp
-    List[int],         # num_players
-    List[np.ndarray],  # policy_indices
-    List[np.ndarray],  # policy_values
-    List[int],         # move_numbers
-    List[int],         # total_game_moves
-    List[str],         # phases
+) -> tuple[
+    list[np.ndarray],  # features
+    list[np.ndarray],  # globals
+    list[float],       # values
+    list[np.ndarray],  # values_mp
+    list[int],         # num_players
+    list[np.ndarray],  # policy_indices
+    list[np.ndarray],  # policy_values
+    list[int],         # move_numbers
+    list[int],         # total_game_moves
+    list[str],         # phases
     ConversionStats,
 ]:
     """Process a single JSONL file and extract training data."""
@@ -877,7 +877,7 @@ def process_jsonl_file(
 
                 # Replay game and extract features
                 current_state = initial_state
-                history_frames: List[np.ndarray] = []
+                history_frames: list[np.ndarray] = []
 
                 # Compute final state for value targets
                 # Replay until we hit an error, use that as "final" state
@@ -994,7 +994,7 @@ def process_jsonl_file(
     )
 
 
-def find_jsonl_files(input_path: Path, recursive: bool = True) -> List[Path]:
+def find_jsonl_files(input_path: Path, recursive: bool = True) -> list[Path]:
     """Find all JSONL files in the given path."""
     if input_path.is_file():
         return [input_path]
@@ -1003,16 +1003,16 @@ def find_jsonl_files(input_path: Path, recursive: bool = True) -> List[Path]:
 
 
 def convert_jsonl_to_npz(
-    input_paths: List[Path],
+    input_paths: list[Path],
     output_path: Path,
     board_type_str: str,
-    players_filter: Optional[int] = None,
-    max_games: Optional[int] = None,
+    players_filter: int | None = None,
+    max_games: int | None = None,
     sample_every: int = 1,
     history_length: int = 3,
     feature_version: int = 2,
     gpu_selfplay_mode: bool = False,
-    checkpoint_dir: Optional[Path] = None,
+    checkpoint_dir: Path | None = None,
     checkpoint_interval: int = 100,
     resume: bool = False,
     encoder_version: str = "v2",

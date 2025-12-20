@@ -44,7 +44,7 @@ PARITY_FIXTURES_DIR = AI_SERVICE_ROOT / "parity_fixtures"
 
 # Representative large-board fixtures (same set used in
 # test_search_board_parity.py for structural parity tests).
-LARGE_BOARD_FIXTURES: List[str] = [
+LARGE_BOARD_FIXTURES: list[str] = [
     ("selfplay_square19_2p__" "02aa8d91-47aa-4d3e-a506-cdd493bda33a__k118.json"),
     ("selfplay_hexagonal_2p__" "41c7c746-af99-48cb-8887-435b03b5eac7__k8.json"),
     ("selfplay_hexagonal_3p__" "1f7a10cc-e41c-48eb-80a9-8c4bfde8d3d0__k87.json"),
@@ -101,7 +101,7 @@ def _load_fixture_payload(fixture_name: str) -> dict:
 
 def _load_sequence_from_fixture(
     fixture_name: str,
-) -> Tuple[GameState, List[Move], BoardType]:
+) -> tuple[GameState, list[Move], BoardType]:
     """Load initial state and move slice from a parity fixture."""
     payload = _load_fixture_payload(fixture_name)
     db_path = payload["db_path"]
@@ -122,7 +122,7 @@ def _load_sequence_from_fixture(
 
 def _benchmark_canonical_replay(
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
     iterations: int,
 ) -> float:
     """Replay sequence via GameEngine.apply_move, return total time in seconds."""
@@ -138,7 +138,7 @@ def _benchmark_canonical_replay(
 
 def _benchmark_search_board_replay(
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
     iterations: int,
 ) -> float:
     """Replay sequence via MutableGameState.make_move, return total time."""
@@ -157,7 +157,7 @@ def _benchmark_search_board_replay(
 def run_benchmark_for_fixture(
     fixture_name: str,
     iterations: int,
-) -> List[ReplayBenchmarkResult]:
+) -> list[ReplayBenchmarkResult]:
     """Run canonical vs SearchBoard replay benchmarks for one fixture."""
     try:
         initial_state, moves, board_type = _load_sequence_from_fixture(fixture_name)
@@ -206,7 +206,7 @@ def main() -> int:
     print("NOTE: This script is for manual benchmarking only and is NOT used in CI.")
     print()
 
-    all_results: List[ReplayBenchmarkResult] = []
+    all_results: list[ReplayBenchmarkResult] = []
 
     for fixture_name in LARGE_BOARD_FIXTURES:
         print("-" * 72)
@@ -236,7 +236,7 @@ def main() -> int:
     print("=" * 72)
     print("Summary")
     print("=" * 72)
-    by_board: dict[str, List[ReplayBenchmarkResult]] = {}
+    by_board: dict[str, list[ReplayBenchmarkResult]] = {}
     for res in all_results:
         by_board.setdefault(res.board_type, []).append(res)
 

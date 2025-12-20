@@ -79,7 +79,7 @@ class TestMCTSAI(unittest.TestCase):
     def setUp(self):
         self.config = AIConfig(difficulty=5, think_time=1000, randomness=0.1)
         self.ai = MCTSAI(player_number=1, config=self.config)
-        
+
         self.game_state = GameState(
             id="test-game",
             boardType=BoardType.SQUARE8,
@@ -126,7 +126,7 @@ class TestMCTSAI(unittest.TestCase):
         self.ai.neural_net.encode_move.return_value = 0
 
         move = self.ai.select_move(self.game_state)
-        
+
         self.assertIsNotNone(move)
         self.assertEqual(move, mock_move)
 
@@ -157,7 +157,7 @@ class TestMCTSAI(unittest.TestCase):
 
         # Keep the search very small for test speed.
         self.ai.config.think_time = 10  # milliseconds
-        
+
         # Force legacy path for this test to ensure hex_model is exercised
         self.ai.use_incremental_search = False
 
@@ -208,7 +208,7 @@ class TestMCTSAI(unittest.TestCase):
 
 class TestMCTSNodeLite(unittest.TestCase):
     """Test the lightweight MCTSNodeLite class for incremental search."""
-    
+
     def test_init_defaults(self):
         """Test MCTSNodeLite initialization with defaults."""
         node = MCTSNodeLite()
@@ -222,12 +222,12 @@ class TestMCTSNodeLite(unittest.TestCase):
         self.assertEqual(node.prior, 0.0)
         self.assertEqual(len(node.untried_moves), 0)
         self.assertEqual(len(node.policy_map), 0)
-    
+
     def test_is_leaf(self):
         """Test is_leaf detection."""
         node = MCTSNodeLite()
         self.assertTrue(node.is_leaf())
-        
+
         # Add a child
         mock_move = MagicMock(spec=Move)
         mock_move.type = MoveType.PLACE_RING
@@ -235,19 +235,19 @@ class TestMCTSNodeLite(unittest.TestCase):
         child = node.add_child(mock_move)
         self.assertFalse(node.is_leaf())
         self.assertTrue(child.is_leaf())
-    
+
     def test_is_fully_expanded(self):
         """Test is_fully_expanded detection."""
         node = MCTSNodeLite()
         self.assertTrue(node.is_fully_expanded())
-        
+
         # Add untried moves
         mock_move = MagicMock(spec=Move)
         mock_move.type = MoveType.PLACE_RING
         mock_move.to = Position(x=0, y=0)
         node.untried_moves = [mock_move]
         self.assertFalse(node.is_fully_expanded())
-    
+
     def test_add_child(self):
         """Test adding child nodes."""
         parent = MCTSNodeLite()
@@ -255,33 +255,33 @@ class TestMCTSNodeLite(unittest.TestCase):
         mock_move.type = MoveType.PLACE_RING
         mock_move.to = Position(x=0, y=0)
         parent.untried_moves = [mock_move]
-        
+
         child = parent.add_child(mock_move, prior=0.5)
-        
+
         self.assertEqual(len(parent.children), 1)
         self.assertEqual(parent.children[0], child)
         self.assertEqual(child.parent, parent)
         self.assertEqual(child.move, mock_move)
         self.assertEqual(child.prior, 0.5)
         self.assertEqual(len(parent.untried_moves), 0)
-    
+
     def test_update(self):
         """Test node update with result."""
         node = MCTSNodeLite()
         node.update(1.0)
-        
+
         self.assertEqual(node.visits, 1)
         self.assertEqual(node.wins, 1.0)
-        
+
         node.update(-0.5)
         self.assertEqual(node.visits, 2)
         self.assertEqual(node.wins, 0.5)
-    
+
     def test_uct_select_child(self):
         """Test UCT child selection."""
         parent = MCTSNodeLite()
         parent.visits = 10
-        
+
         # Add two children with different stats
         move1 = MagicMock(spec=Move)
         move1.type = MoveType.PLACE_RING
@@ -289,19 +289,19 @@ class TestMCTSNodeLite(unittest.TestCase):
         move2 = MagicMock(spec=Move)
         move2.type = MoveType.PLACE_RING
         move2.to = Position(x=1, y=1)
-        
+
         parent.untried_moves = [move1, move2]
         child1 = parent.add_child(move1)
         child2 = parent.add_child(move2)
-        
+
         # Child1: low visits, high win rate
         child1.visits = 2
         child1.wins = 1.5
-        
+
         # Child2: high visits, lower win rate
         child2.visits = 5
         child2.wins = 2.0
-        
+
         # UCT should prefer exploration vs exploitation balance
         selected = parent.uct_select_child()
         self.assertIn(selected, [child1, child2])
@@ -309,10 +309,10 @@ class TestMCTSNodeLite(unittest.TestCase):
 
 class TestMCTSIncrementalSearch(unittest.TestCase):
     """Test MCTS incremental search using make/unmake pattern."""
-    
+
     def setUp(self):
         self.config = AIConfig(difficulty=5, think_time=100, randomness=0.0)
-        
+
         # Create a game state with some stacks to enable movement
         stacks = {
             "0,0": RingStack(
@@ -330,7 +330,7 @@ class TestMCTSIncrementalSearch(unittest.TestCase):
                 controllingPlayer=2
             ),
         }
-        
+
         self.game_state = GameState(
             id="test-game",
             boardType=BoardType.SQUARE8,
@@ -405,12 +405,12 @@ class TestMCTSIncrementalSearch(unittest.TestCase):
         """Test that incremental search returns a valid move."""
         real_move = self._create_test_move()
         mock_get_valid_moves.return_value = [real_move]
-        
+
         ai = MCTSAI(player_number=1, config=self.config)
         ai.neural_net = None  # Force heuristic rollout path
-        
+
         move = ai.select_move(self.game_state)
-        
+
         self.assertIsNotNone(move)
         self.assertEqual(move, real_move)
 
@@ -420,14 +420,14 @@ class TestMCTSIncrementalSearch(unittest.TestCase):
         """Test that legacy search returns a valid move."""
         real_move = self._create_test_move()
         mock_get_valid_moves.return_value = [real_move]
-        
+
         config = AIConfig(difficulty=5, think_time=100, randomness=0.0)
         config.use_incremental_search = False
         ai = MCTSAI(player_number=1, config=config)
         ai.neural_net = None  # Force heuristic rollout path
-        
+
         move = ai.select_move(self.game_state)
-        
+
         self.assertIsNotNone(move)
         self.assertEqual(move, real_move)
 
@@ -443,13 +443,13 @@ class TestMCTSIncrementalSearch(unittest.TestCase):
         ai_incr = MCTSAI(player_number=1, config=config_incr)
         self.assertTrue(ai_incr.use_incremental_search)
         self.assertIsNone(ai_incr.last_root_lite)  # Incremental uses last_root_lite
-        
+
         # Test legacy path configuration
         config_legacy = AIConfig(difficulty=5, think_time=50, randomness=0.0)
         config_legacy.use_incremental_search = False
         ai_legacy = MCTSAI(player_number=1, config=config_legacy)
         self.assertFalse(ai_legacy.use_incremental_search)
-        
+
         # Clean up
         ai_incr.clear_tree()
         ai_legacy.clear_tree()
@@ -459,14 +459,14 @@ class TestMCTSIncrementalSearch(unittest.TestCase):
         """Test that select_move_and_policy returns move and policy."""
         ai = MCTSAI(player_number=1, config=self.config)
         ai.neural_net = None
-        
+
         real_move = self._create_test_move()
-        
+
         with patch.object(
             ai.rules_engine, 'get_valid_moves', return_value=[real_move]
         ):
             move, policy = ai.select_move_and_policy(self.game_state)
-            
+
             self.assertIsNotNone(move)
             self.assertIsNotNone(policy)
             self.assertIsInstance(policy, dict)

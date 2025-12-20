@@ -44,7 +44,7 @@ from tests.parity.test_ts_seed_plateau_snapshot_parity import (  # noqa: E402
 def _load_plateau_state(path: Path) -> GameState:
     """Load a TS plateau ComparableSnapshot JSON and hydrate GameState."""
     with path.open("r", encoding="utf-8") as f:
-        snapshot: Dict[str, Any] = json.load(f)
+        snapshot: dict[str, Any] = json.load(f)
 
     return _build_game_state_from_snapshot(snapshot)
 

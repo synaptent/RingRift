@@ -32,7 +32,8 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Iterable, Mapping, Sequence
 
 # Ensure app.* imports resolve when run from the ai-service root.
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -66,17 +67,17 @@ class CandidateProfile:
 
     id: str
     weights: HeuristicWeights
-    meta: Dict[str, Any]
+    meta: dict[str, Any]
 
 
-def load_state_pool(path: str, max_states: int) -> List[GameState]:
+def load_state_pool(path: str, max_states: int) -> list[GameState]:
     """Load up to max_states GameState records from a JSONL pool.
 
     Each non-empty line is parsed via GameState.model_validate_json(...) and
     we assert that all states use BoardType.SQUARE8. Ordering is preserved
     (first N lines) for determinism.
     """
-    states: List[GameState] = []
+    states: list[GameState] = []
     if max_states <= 0:
         return states
     if not os.path.isfile(path):
@@ -113,7 +114,7 @@ def _validate_weight_keys(
         raise ValueError(f"{context} weight keys mismatch baseline schema: " f"missing={missing}, extra={extra}")
 
 
-def _load_weights_payload(path: str) -> Tuple[HeuristicWeights, Dict[str, Any]]:
+def _load_weights_payload(path: str) -> tuple[HeuristicWeights, dict[str, Any]]:
     """Load a weight dict and associated meta from a JSON file with 'weights'."""
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Weights file not found: {path!r}")
@@ -133,13 +134,13 @@ def load_candidate_profiles_from_dir(
     dir_path: str,
     pattern: str,
     baseline_keys: Iterable[str],
-) -> List[CandidateProfile]:
+) -> list[CandidateProfile]:
     """Load all candidate profiles from JSON files under dir_path."""
     import glob
 
     if not os.path.isdir(dir_path):
         raise FileNotFoundError(f"Candidates dir does not exist or is not a directory: {dir_path!r}")
-    candidates: List[CandidateProfile] = []
+    candidates: list[CandidateProfile] = []
     paths = sorted(glob.glob(os.path.join(dir_path, pattern)))
     for path in paths:
         if not os.path.isfile(path):
@@ -161,9 +162,9 @@ def load_candidate_profiles_from_dir(
 def load_candidate_profiles_from_files(
     paths: Sequence[str],
     baseline_keys: Iterable[str],
-) -> List[CandidateProfile]:
+) -> list[CandidateProfile]:
     """Load candidate profiles from an explicit list of JSON files."""
-    candidates: List[CandidateProfile] = []
+    candidates: list[CandidateProfile] = []
     for path in paths:
         weights, meta = _load_weights_payload(path)
         _validate_weight_keys(weights, baseline_keys, context=f"Candidate {path!r}")
@@ -179,7 +180,7 @@ def load_candidate_profiles_from_files(
     return candidates
 
 
-def _move_signature(move: Optional[Move]) -> Optional[Tuple[str, Optional[str], Optional[str]]]:
+def _move_signature(move: Move | None) -> tuple[str, str | None, str | None] | None:
     """Return a lightweight, comparable signature for a Move.
 
     The signature consists of (type.value, from_pos_key, to_pos_key).
@@ -187,12 +188,12 @@ def _move_signature(move: Optional[Move]) -> Optional[Tuple[str, Optional[str], 
     if move is None:
         return None
     move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
-    from_key: Optional[str]
+    from_key: str | None
     if move.from_pos is not None:
         from_key = move.from_pos.to_key()
     else:
         from_key = None
-    to_key: Optional[str]
+    to_key: str | None
     if move.to is not None:  # type: ignore[truthy-function]
         to_key = move.to.to_key()
     else:
@@ -206,7 +207,7 @@ def compare_moves_on_states(
     states: Sequence[GameState],
     *,
     label: str = "candidate",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compare baseline vs candidate select_move decisions on states.
 
     The AIs are configured with think_time=0 and randomness=0.0 so that
@@ -296,7 +297,7 @@ def compare_moves_on_states(
         sq_sum += diff * diff
     weight_l2 = math.sqrt(sq_sum)
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "same_moves": same_moves,
         "different_moves": different_moves,
         "total_states": total,
@@ -317,7 +318,7 @@ def compare_moves_on_states(
     return summary
 
 
-def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=("Compare baseline HeuristicAI policy against candidate weight " "profiles on a fixed state pool.")
     )
@@ -393,7 +394,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
 
     baseline_keys = list(BASE_V1_BALANCED_WEIGHTS.keys())
@@ -417,7 +418,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         baseline_id = "baseline_v1_balanced"
 
     # Load candidate profiles from directory and/or explicit files.
-    candidates: List[CandidateProfile] = []
+    candidates: list[CandidateProfile] = []
     if args.candidates_dir:
         dir_candidates = load_candidate_profiles_from_dir(
             args.candidates_dir,
@@ -450,7 +451,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     print(f"Candidates: {len(candidates)}")
     print()
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for candidate in candidates:
         stats = compare_moves_on_states(
             baseline_weights=baseline_weights,
@@ -465,7 +466,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         }
         results.append(entry)
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "meta": {
             "created_at": created_at,
             "seed": args.seed,

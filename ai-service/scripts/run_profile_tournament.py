@@ -23,7 +23,7 @@ from app.training.initial_state import create_initial_state
 from scripts.lib.cli import BOARD_TYPE_MAP
 
 
-def load_weight_profile(path: str) -> Dict[str, float]:
+def load_weight_profile(path: str) -> dict[str, float]:
     """Load weights from a JSON profile file."""
     with open(path, "r") as f:
         data = json.load(f)
@@ -32,10 +32,10 @@ def load_weight_profile(path: str) -> Dict[str, float]:
 
 def create_ai_with_weights(
     player_number: int,
-    weights: Dict[str, float],
+    weights: dict[str, float],
     difficulty: int = 10,
     randomness: float = 0.02,
-    rng_seed: Optional[int] = None,
+    rng_seed: int | None = None,
 ) -> HeuristicAI:
     """Create a HeuristicAI instance with custom weights applied."""
     ai = HeuristicAI(
@@ -56,7 +56,7 @@ def create_ai_with_weights(
 
 def run_game(
     ais: list, board_type: BoardType, num_players: int, max_moves: int = 300, verbose: bool = False
-) -> Tuple[Optional[int], Dict]:
+) -> tuple[int | None, dict]:
     """
     Run a single game.
     Returns (winner player number (1-indexed) or None for draw, game_info dict).
@@ -67,7 +67,7 @@ def run_game(
     move_types = []
     phases_seen = set()
 
-    def _timeout_tiebreak_winner(final_state: GameState) -> Optional[int]:
+    def _timeout_tiebreak_winner(final_state: GameState) -> int | None:
         """Deterministically select a winner for evaluation-only timeouts."""
         players = getattr(final_state, "players", None) or []
         if not players:
@@ -84,14 +84,14 @@ def run_game(
             )
             markers = getattr(board, "markers", None) or {}
 
-        territory_counts: Dict[int, int] = {}
+        territory_counts: dict[int, int] = {}
         try:
             for p_id in collapsed_spaces.values():
                 territory_counts[int(p_id)] = territory_counts.get(int(p_id), 0) + 1
         except Exception:
             pass
 
-        marker_counts: Dict[int, int] = {int(p.player_number): 0 for p in players}
+        marker_counts: dict[int, int] = {int(p.player_number): 0 for p in players}
         try:
             for marker in markers.values():
                 owner = int(getattr(marker, "player", getattr(marker, "player_number", 0)) or 0)
@@ -100,7 +100,7 @@ def run_game(
         except Exception:
             pass
 
-        last_actor: Optional[int] = None
+        last_actor: int | None = None
         try:
             if final_state.move_history:
                 last_actor = int(getattr(final_state.move_history[-1], "player", 0) or 0) or None
@@ -186,7 +186,7 @@ def run_game(
     return game_state.winner, game_info
 
 
-def generate_configurations(num_players: int) -> List[Tuple[str, ...]]:
+def generate_configurations(num_players: int) -> list[tuple[str, ...]]:
     """
     Generate all unique configurations for testing profile A vs profile B.
 

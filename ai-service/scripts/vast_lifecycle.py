@@ -69,7 +69,7 @@ GPU_BOARD_MAPPING = {
 DEFAULT_BOARD_TYPE = "square8"
 
 
-def get_vast_instances() -> List[Dict]:
+def get_vast_instances() -> list[dict]:
     """Dynamically get all running vast instances from vastai CLI."""
     try:
         # Try to find vastai executable
@@ -136,7 +136,7 @@ def get_vast_instances() -> List[Dict]:
         return _get_fallback_instances()
 
 
-def _get_fallback_instances() -> List[Dict]:
+def _get_fallback_instances() -> list[dict]:
     """Fallback hardcoded instance list if vastai CLI unavailable."""
     return [
         {"host": "ssh5.vast.ai", "port": 14364, "name": "vast-3070a", "gpu": "RTX 3070", "board_type": "hex8"},
@@ -162,7 +162,7 @@ setup_logging(level="INFO", log_file=LOG_FILE)
 logger = get_logger("vast_lifecycle")
 
 
-def check_instance_health(instance: Dict) -> Dict:
+def check_instance_health(instance: dict) -> dict:
     """Check health of a single Vast instance."""
     host, port = instance["host"], instance["port"]
     name = instance["name"]
@@ -283,7 +283,7 @@ print(f'{total}|{min_age:.2f}')
     return health
 
 
-def sync_git_repo(instance: Dict) -> bool:
+def sync_git_repo(instance: dict) -> bool:
     """Sync git repository on a Vast instance."""
     host, port = instance["host"], instance["port"]
     name = instance.get("name", "unknown")
@@ -336,7 +336,7 @@ def sync_git_repo(instance: Dict) -> bool:
             return False
 
 
-def restart_workers(instance: Dict, sync_code: bool = True) -> bool:
+def restart_workers(instance: dict, sync_code: bool = True) -> bool:
     """Restart selfplay workers on an instance."""
     host, port = instance["host"], instance["port"]
     board_type = instance.get("board_type", DEFAULT_BOARD_TYPE)
@@ -403,7 +403,7 @@ def restart_workers(instance: Dict, sync_code: bool = True) -> bool:
         return False
 
 
-def sync_data_from_instance(instance: Dict) -> int:
+def sync_data_from_instance(instance: dict) -> int:
     """Sync game data from instance to Lambda."""
     host, port = instance["host"], instance["port"]
     name = instance["name"]
@@ -501,7 +501,7 @@ def sync_data_from_instance(instance: Dict) -> int:
     return total_count
 
 
-def run_health_check() -> List[Dict]:
+def run_health_check() -> list[dict]:
     """Run health check on all instances."""
     logger.info("=" * 60)
     logger.info("VAST.AI INSTANCE HEALTH CHECK")
@@ -540,7 +540,7 @@ def run_health_check() -> List[Dict]:
     return results
 
 
-def run_restart_cycle(health_results: List[Dict]) -> int:
+def run_restart_cycle(health_results: list[dict]) -> int:
     """Restart workers on unhealthy instances.
 
     Skips instances that are running tournaments or training - these are doing
@@ -563,7 +563,7 @@ def run_restart_cycle(health_results: List[Dict]) -> int:
     return restarted
 
 
-def run_sync_cycle(health_results: List[Dict]) -> int:
+def run_sync_cycle(health_results: list[dict]) -> int:
     """Sync data from all reachable instances.
 
     Includes rate limiting (SYNC_DELAY_SECONDS between syncs) to prevent

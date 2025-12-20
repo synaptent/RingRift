@@ -144,20 +144,20 @@ class NodeResilience:
         self.state_path = STATE_DIR / f"state_{self.config.node_id}.json"
         state = self._load_state()
         self.fallback_job_prefix = f"resilience_fallback_{self.config.node_id}_"
-        self.fallback_job_ids: List[str] = [
+        self.fallback_job_ids: list[str] = [
             str(j).strip()
             for j in (state.get("fallback_job_ids") or [])
             if str(j).strip()
         ]
-        self.local_selfplay_pids: List[int] = self._discover_fallback_pids(state=state)
-        self.gpu_idle_since: Optional[float] = None
+        self.local_selfplay_pids: list[int] = self._discover_fallback_pids(state=state)
+        self.gpu_idle_since: float | None = None
         self.last_p2p_check = 0
         self.last_registration = 0
         self.p2p_connected = False
         self.running = True
         self._last_good_coordinator: str = ""
 
-    def _load_state(self) -> Dict[str, Any]:
+    def _load_state(self) -> dict[str, Any]:
         try:
             if not self.state_path.exists():
                 return {}
@@ -183,12 +183,12 @@ class NodeResilience:
         except Exception:
             pass
 
-    def _coordinator_urls(self) -> List[str]:
+    def _coordinator_urls(self) -> list[str]:
         raw = (self.config.coordinator_url or "").strip()
         urls = [u.strip() for u in raw.split(",") if u.strip()]
         return urls
 
-    def get_public_ip(self) -> Optional[str]:
+    def get_public_ip(self) -> str | None:
         """Get this machine's public IP address."""
         services = [
             "https://api.ipify.org",
@@ -205,7 +205,7 @@ class NodeResilience:
                 continue
         return None
 
-    def get_tailscale_ip(self) -> Optional[str]:
+    def get_tailscale_ip(self) -> str | None:
         """Get this machine's Tailscale IPv4 (100.x) if available."""
         try:
             result = subprocess.run(
@@ -359,8 +359,8 @@ class NodeResilience:
         path = path if path.startswith("/") else f"/{path}"
         return f"http://localhost:{self.config.p2p_port}{path}"
 
-    def _local_orchestrator_headers(self, *, json_body: bool = False) -> Dict[str, str]:
-        headers: Dict[str, str] = {}
+    def _local_orchestrator_headers(self, *, json_body: bool = False) -> dict[str, str]:
+        headers: dict[str, str] = {}
         if json_body:
             headers["Content-Type"] = "application/json"
         token = _load_cluster_auth_token()
@@ -368,7 +368,7 @@ class NodeResilience:
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _local_orchestrator_get_json(self, path: str, *, timeout: int = 5) -> Optional[Dict[str, Any]]:
+    def _local_orchestrator_get_json(self, path: str, *, timeout: int = 5) -> dict[str, Any] | None:
         try:
             url = self._local_orchestrator_url(path)
             with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -378,8 +378,8 @@ class NodeResilience:
             return None
 
     def _local_orchestrator_post_json(
-        self, path: str, payload: Dict[str, Any], *, timeout: int = 15
-    ) -> Optional[Dict[str, Any]]:
+        self, path: str, payload: dict[str, Any], *, timeout: int = 15
+    ) -> dict[str, Any] | None:
         try:
             url = self._local_orchestrator_url(path)
             data = json.dumps(payload).encode("utf-8")
@@ -395,9 +395,9 @@ class NodeResilience:
         except Exception:
             return None
 
-    def _list_local_jobs(self, *, status: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
+    def _list_local_jobs(self, *, status: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         try:
-            qs: Dict[str, str] = {"local": "1", "limit": str(int(limit))}
+            qs: dict[str, str] = {"local": "1", "limit": str(int(limit))}
             if status:
                 qs["status"] = str(status)
             query = urllib.parse.urlencode(qs)
@@ -530,11 +530,11 @@ class NodeResilience:
         except Exception:
             return 22
 
-    def _discover_fallback_pids(self, *, state: Optional[Dict[str, Any]] = None) -> List[int]:
+    def _discover_fallback_pids(self, *, state: dict[str, Any] | None = None) -> list[int]:
         """Recover fallback selfplay PIDs from local state (for daemon restarts)."""
         state = state or {}
         raw_pids = state.get("fallback_pids") or []
-        pids: List[int] = []
+        pids: list[int] = []
         for token in raw_pids:
             try:
                 pids.append(int(token))
@@ -563,7 +563,7 @@ class NodeResilience:
 
         Prefer the current interpreter, then ai-service venv, then system python3.
         """
-        candidates: List[str] = []
+        candidates: list[str] = []
         if sys.executable:
             candidates.append(sys.executable)
         venv_py = Path(self.config.ai_service_dir) / "venv" / "bin" / "python"
@@ -757,7 +757,7 @@ class NodeResilience:
                 script = (self.config.selfplay_script or "scripts/run_hybrid_selfplay.py").strip()
                 script_path = script if os.path.isabs(script) else os.path.join(self.config.ai_service_dir, script)
 
-                cmd: List[str]
+                cmd: list[str]
                 if script_path.endswith("run_gpu_selfplay.py"):
                     cmd = [
                         sys.executable,
@@ -842,7 +842,7 @@ class NodeResilience:
             except Exception as e:
                 logger.error(f"Failed to start CPU fallback selfplay: {e}")
 
-    def _target_fallback_job_ids(self) -> List[str]:
+    def _target_fallback_job_ids(self) -> list[str]:
         max_procs = max(1, int(self.config.max_local_selfplay_procs or 1))
         prefix = self.fallback_job_prefix
         if self.config.num_gpus > 0:
@@ -876,7 +876,7 @@ class NodeResilience:
                 job_type = "selfplay"
                 cuda_visible_devices = None
 
-            payload: Dict[str, Any] = {
+            payload: dict[str, Any] = {
                 "job_id": job_id,
                 "job_type": job_type,
                 "board_type": self.config.fallback_board,

@@ -59,7 +59,7 @@ class GameSample:
 class OutcomeDataset(Dataset):
     """Dataset of game samples with outcome labels."""
 
-    def __init__(self, samples: List[GameSample]):
+    def __init__(self, samples: list[GameSample]):
         self.samples = samples
 
     def __len__(self):
@@ -76,8 +76,8 @@ class OutcomeDataset(Dataset):
 
 def generate_games_vs_heuristic(
     num_games: int,
-    model_path: Optional[str] = None,
-) -> List[GameSample]:
+    model_path: str | None = None,
+) -> list[GameSample]:
     """Generate training data from EBMO vs Heuristic games."""
     if not HAS_APP:
         logger.error("Cannot generate games without app modules")
@@ -180,8 +180,8 @@ def generate_games_vs_heuristic(
 
 def generate_games_vs_random(
     num_games: int,
-    model_path: Optional[str] = None,
-) -> List[GameSample]:
+    model_path: str | None = None,
+) -> list[GameSample]:
     """Generate training data from EBMO vs Random games."""
     if not HAS_APP:
         logger.error("Cannot generate games without app modules")
@@ -276,7 +276,7 @@ class OutcomeTrainer:
 
     def __init__(
         self,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         device: str = 'auto',
         learning_rate: float = 1e-4,
         winner_target: float = -1.0,

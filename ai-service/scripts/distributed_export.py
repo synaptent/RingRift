@@ -105,17 +105,17 @@ CHUNK_DIR = "/tmp/ringrift_export_chunks"
 @dataclass
 class ExportConfig:
     """Configuration for distributed export."""
-    db_paths: List[str]
+    db_paths: list[str]
     board_type: str
     num_players: int
     output_path: str
     total_chunks: int = 8
     history_length: int = 3
-    min_moves: Optional[int] = 10
-    max_moves: Optional[int] = None
+    min_moves: int | None = 10
+    max_moves: int | None = None
     require_completed: bool = True
     encoder_version: str = "default"
-    hosts: List[Dict[str, Any]] = field(default_factory=list)
+    hosts: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -128,11 +128,11 @@ class WorkerStatus:
     chunk_index: int
     status: str  # pending, running, completed, failed
     http_port: int
-    output_file: Optional[str] = None
+    output_file: str | None = None
     samples: int = 0
-    error: Optional[str] = None
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
+    error: str | None = None
+    start_time: float | None = None
+    end_time: float | None = None
 
 
 # ============================================
@@ -144,8 +144,8 @@ def get_game_ids_from_db(
     board_type: str,
     num_players: int,
     require_completed: bool = True,
-    min_moves: Optional[int] = None,
-) -> List[str]:
+    min_moves: int | None = None,
+) -> list[str]:
     """Extract game IDs from database matching criteria."""
     import sqlite3
 
@@ -160,7 +160,7 @@ def get_game_ids_from_db(
         WHERE g.board_type = ?
         AND g.num_players = ?
     """
-    params: List[Any] = [board_type, num_players]
+    params: list[Any] = [board_type, num_players]
 
     if require_completed:
         query += " AND g.game_status = 'completed'"
@@ -184,9 +184,9 @@ def get_game_ids_from_db(
 
 
 def split_game_ids_into_chunks(
-    game_ids: List[str],
+    game_ids: list[str],
     total_chunks: int,
-) -> List[List[str]]:
+) -> list[list[str]]:
     """Split game IDs into roughly equal chunks."""
     # Shuffle for even distribution of game lengths
     shuffled = game_ids.copy()
@@ -205,10 +205,10 @@ def split_game_ids_into_chunks(
 # ============================================
 
 def run_worker_export(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
-    game_ids: List[str],
+    game_ids: list[str],
     output_path: str,
     history_length: int = 3,
     encoder_version: str = "default",
@@ -233,16 +233,16 @@ def run_worker_export(
     # Convert game_ids to set for fast lookup
     game_id_set = set(game_ids)
 
-    features_list: List[np.ndarray] = []
-    globals_list: List[np.ndarray] = []
-    values_list: List[float] = []
-    values_mp_list: List[np.ndarray] = []
-    num_players_list: List[int] = []
-    policy_indices_list: List[np.ndarray] = []
-    policy_values_list: List[np.ndarray] = []
-    move_numbers_list: List[int] = []
-    total_game_moves_list: List[int] = []
-    phases_list: List[str] = []
+    features_list: list[np.ndarray] = []
+    globals_list: list[np.ndarray] = []
+    values_list: list[float] = []
+    values_mp_list: list[np.ndarray] = []
+    num_players_list: list[int] = []
+    policy_indices_list: list[np.ndarray] = []
+    policy_values_list: list[np.ndarray] = []
+    move_numbers_list: list[int] = []
+    total_game_moves_list: list[int] = []
+    phases_list: list[str] = []
 
     games_processed = 0
     games_scanned = 0
@@ -286,7 +286,7 @@ def run_worker_export(
 
             # Incremental replay
             game_samples = []
-            history_frames: List[np.ndarray] = []
+            history_frames: list[np.ndarray] = []
             current_state = initial_state
             replay_succeeded = True
 
@@ -383,7 +383,7 @@ def run_worker_export(
     return len(features_list)
 
 
-def _mp_worker_task(args: Tuple) -> Tuple[int, str]:
+def _mp_worker_task(args: tuple) -> tuple[int, str]:
     """Multiprocessing worker task - processes a sub-chunk of games."""
     (
         worker_id,
@@ -428,15 +428,15 @@ def _mp_worker_task(args: Tuple) -> Tuple[int, str]:
 
 
 def run_worker_export_parallel(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
-    game_ids: List[str],
+    game_ids: list[str],
     output_dir: str,
     num_workers: int = 4,
     history_length: int = 3,
     encoder_version: str = "default",
-) -> Tuple[int, List[str]]:
+) -> tuple[int, list[str]]:
     """
     Run export in parallel using multiple local processes.
 
@@ -543,7 +543,7 @@ def serve_chunks(chunk_dir: Path, port: int):
 # Coordinator: Distribute Work + Collect Results
 # ============================================
 
-def load_hosts_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+def load_hosts_config(config_path: str | None = None) -> dict[str, Any]:
     """Load hosts configuration."""
     if config_path and os.path.exists(config_path):
         with open(config_path) as f:
@@ -559,10 +559,10 @@ def load_hosts_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
 
 def select_worker_hosts(
-    hosts_config: Dict[str, Any],
+    hosts_config: dict[str, Any],
     num_workers: int,
     prefer_high_cpu: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Select best hosts for export workers."""
     hosts = hosts_config.get("hosts", {})
 
@@ -595,10 +595,10 @@ def select_worker_hosts(
 
 
 def run_ssh_command(
-    host: Dict[str, Any],
+    host: dict[str, Any],
     command: str,
     timeout: int = 30,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run SSH command on remote host."""
     return lib_run_ssh_command(
         host=host["ssh_host"],
@@ -611,10 +611,10 @@ def run_ssh_command(
 
 
 def sync_db_to_host(
-    host: Dict[str, Any],
+    host: dict[str, Any],
     local_db_path: str,
     remote_db_dir: str = "/tmp/ringrift_export",
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Sync database file to remote host using rsync."""
     remote_path = f"{remote_db_dir}/{os.path.basename(local_db_path)}"
 
@@ -650,15 +650,15 @@ def sync_db_to_host(
 
 
 def start_worker_on_host(
-    host: Dict[str, Any],
-    db_paths: List[str],
+    host: dict[str, Any],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
-    game_ids: List[str],
+    game_ids: list[str],
     chunk_index: int,
     http_port: int,
     encoder_version: str = "default",
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Start export worker on remote host."""
     ringrift_path = host["ringrift_path"]
 
@@ -699,9 +699,9 @@ echo $!
 
 
 def collect_chunks_with_aria2(
-    sources: List[Tuple[str, str]],  # [(url, filename), ...]
+    sources: list[tuple[str, str]],  # [(url, filename), ...]
     output_dir: Path,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Collect chunk files using aria2."""
     if not shutil.which("aria2c"):
         logger.error("aria2c not found. Install with: apt install aria2")
@@ -746,7 +746,7 @@ def collect_chunks_with_aria2(
 # ============================================
 
 def merge_npz_chunks(
-    chunk_paths: List[str],
+    chunk_paths: list[str],
     output_path: str,
 ) -> int:
     """Merge multiple NPZ chunks into single dataset."""

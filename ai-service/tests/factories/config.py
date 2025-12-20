@@ -27,7 +27,7 @@ class MockTrainingConfig:
     num_filters: int = 192
     num_res_blocks: int = 12
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "learning_rate": self.learning_rate,
             "batch_size": self.batch_size,
@@ -48,7 +48,7 @@ class MockEvaluationConfig:
     min_games_for_elo: int = 30
     elo_k_factor: int = 32
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "shadow_games": self.shadow_games,
             "full_tournament_games": self.full_tournament_games,
@@ -62,9 +62,9 @@ class MockUnifiedConfig:
     """Mock unified configuration for testing."""
     training: MockTrainingConfig = field(default_factory=MockTrainingConfig)
     evaluation: MockEvaluationConfig = field(default_factory=MockEvaluationConfig)
-    configs: List[str] = field(default_factory=lambda: ["square8_2p", "hex8_2p"])
+    configs: list[str] = field(default_factory=lambda: ["square8_2p", "hex8_2p"])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "training": self.training.to_dict(),
             "evaluation": self.evaluation.to_dict(),
@@ -129,9 +129,9 @@ def create_evaluation_config(
 
 
 def create_unified_config(
-    training_config: Optional[MockTrainingConfig] = None,
-    evaluation_config: Optional[MockEvaluationConfig] = None,
-    configs: Optional[List[str]] = None,
+    training_config: MockTrainingConfig | None = None,
+    evaluation_config: MockEvaluationConfig | None = None,
+    configs: list[str] | None = None,
 ) -> MockUnifiedConfig:
     """Create a mock unified configuration for testing.
 

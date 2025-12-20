@@ -12,7 +12,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import Any, Dict, List, Optional, Tuple, Sequence
+from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -32,7 +33,7 @@ from scripts.export_replay_dataset import (
 
 def _build_encoder(
     board_type: BoardType,
-    nn_model_id: Optional[str],
+    nn_model_id: str | None,
     encoder_version: str = "v3",
     feature_version: int = 2,
 ) -> NeuralNetAI:
@@ -73,9 +74,9 @@ def _encode_sparse_policy_from_moves(
     probs: Sequence[float],
     *,
     use_board_aware_encoding: bool,
-) -> Tuple[np.ndarray, np.ndarray]:
-    p_indices: List[int] = []
-    p_values: List[float] = []
+) -> tuple[np.ndarray, np.ndarray]:
+    p_indices: list[int] = []
+    p_values: list[float] = []
     for move, prob in zip(moves, probs):
         idx = (
             encode_move_for_board(move, state.board)
@@ -99,7 +100,7 @@ def _reanalyze_mcts_policy(
     encoder: NeuralNetAI,
     *,
     use_board_aware_encoding: bool,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     ai.select_move(state)
     moves, probs = ai.get_visit_distribution()
     if not moves:
@@ -120,7 +121,7 @@ def _reanalyze_descent_policy(
     *,
     temperature: float,
     use_board_aware_encoding: bool,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     ai.select_move(state)
     state_key = ai._get_state_key(state)
     entry = ai.transposition_table.get(state_key)
@@ -129,8 +130,8 @@ def _reanalyze_descent_policy(
     _cur, children_values, _status, _rem, _visits = ai._unpack_tt_entry(entry)
     if not children_values:
         return np.array([], dtype=np.int32), np.array([], dtype=np.float32)
-    child_moves: List[Move] = []
-    child_vals: List[float] = []
+    child_moves: list[Move] = []
+    child_vals: list[float] = []
     for data in children_values.values():
         child_moves.append(data[0])
         child_vals.append(float(data[1]))
@@ -159,17 +160,17 @@ def reanalyze_replay_dataset(
     history_length: int = 3,
     feature_version: int = 2,
     sample_every: int = 1,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
     require_completed: bool = False,
-    min_moves: Optional[int] = None,
-    max_moves: Optional[int] = None,
+    min_moves: int | None = None,
+    max_moves: int | None = None,
     use_rank_aware_values: bool = True,
-    parity_fixtures_dir: Optional[str] = None,
+    parity_fixtures_dir: str | None = None,
     exclude_recovery: bool = False,
     policy_target: str = "mcts_visits",
     policy_search_think_time_ms: int = 50,
     policy_temperature: float = 1.0,
-    nn_model_id: Optional[str] = None,
+    nn_model_id: str | None = None,
     use_board_aware_encoding: bool = False,
 ) -> None:
     if policy_target not in {"mcts_visits", "descent_softmax"}:
@@ -178,8 +179,8 @@ def reanalyze_replay_dataset(
     db = GameReplayDB(db_path)
     encoder = _build_encoder(board_type, nn_model_id, feature_version=feature_version)
 
-    mcts_ais: Dict[int, Any] = {}
-    descent_ais: Dict[int, Any] = {}
+    mcts_ais: dict[int, Any] = {}
+    descent_ais: dict[int, Any] = {}
 
     def _get_mcts_ai(perspective: int) -> Any:
         if perspective not in mcts_ais:
@@ -208,19 +209,19 @@ def reanalyze_replay_dataset(
             descent_ais[perspective] = DescentAI(perspective, cfg)
         return descent_ais[perspective]
 
-    features_list: List[np.ndarray] = []
-    globals_list: List[np.ndarray] = []
-    values_list: List[float] = []
-    values_mp_list: List[np.ndarray] = []
-    num_players_list: List[int] = []
-    policy_indices_list: List[np.ndarray] = []
-    policy_values_list: List[np.ndarray] = []
+    features_list: list[np.ndarray] = []
+    globals_list: list[np.ndarray] = []
+    values_list: list[float] = []
+    values_mp_list: list[np.ndarray] = []
+    num_players_list: list[int] = []
+    policy_indices_list: list[np.ndarray] = []
+    policy_values_list: list[np.ndarray] = []
 
-    move_numbers_list: List[int] = []
-    total_game_moves_list: List[int] = []
-    phases_list: List[str] = []
+    move_numbers_list: list[int] = []
+    total_game_moves_list: list[int] = []
+    phases_list: list[str] = []
 
-    query_filters: Dict[str, Any] = {
+    query_filters: dict[str, Any] = {
         "board_type": board_type,
         "num_players": num_players,
     }
@@ -231,7 +232,7 @@ def reanalyze_replay_dataset(
     if max_moves is not None:
         query_filters["max_moves"] = max_moves
 
-    parity_cutoffs: Dict[str, int] = {}
+    parity_cutoffs: dict[str, int] = {}
     if parity_fixtures_dir:
         fixtures_path = os.path.abspath(parity_fixtures_dir)
         if os.path.isdir(fixtures_path):
@@ -266,7 +267,7 @@ def reanalyze_replay_dataset(
             if any("recovery" in str(m.get("type", "")).lower() for m in moves):
                 continue
 
-        max_safe_move_index: Optional[int] = None
+        max_safe_move_index: int | None = None
         if parity_cutoffs:
             cutoff = parity_cutoffs.get(game_id)
             if cutoff is not None:
@@ -292,7 +293,7 @@ def reanalyze_replay_dataset(
             for p in final_state.players:
                 values_vec[p.number - 1] = float(value_from_final_winner(final_state, p.number))
 
-        history_frames: List[np.ndarray] = []
+        history_frames: list[np.ndarray] = []
         for move_index, move in enumerate(moves):
             if max_safe_move_index is not None and move_index > max_safe_move_index:
                 break

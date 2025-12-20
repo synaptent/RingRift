@@ -46,7 +46,7 @@ def run_improvement_evaluation(
     games: int = 50,
     ai_type: str = "descent",
     think_time_ms: int = 2000,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run head-to-head evaluation between two models.
 
     Args:

@@ -93,7 +93,7 @@ def _enable_wal_mode(db_path: str) -> None:
         print(f"[merge_game_dbs] Warning: Could not enable WAL mode: {e}")
 
 
-def _load_merge_state(output_path: str) -> Dict[str, Any]:
+def _load_merge_state(output_path: str) -> dict[str, Any]:
     """Load merge state from previous run for crash recovery."""
     state_file = Path(output_path).parent / MERGE_STATE_FILE
     if state_file.exists():
@@ -105,7 +105,7 @@ def _load_merge_state(output_path: str) -> Dict[str, Any]:
     return {"processed_dbs": [], "seen_game_ids": []}
 
 
-def _save_merge_state(output_path: str, state: Dict[str, Any]) -> None:
+def _save_merge_state(output_path: str, state: dict[str, Any]) -> None:
     """Save merge state for crash recovery."""
     state_file = Path(output_path).parent / MERGE_STATE_FILE
     state["updated_at"] = datetime.now().isoformat()
@@ -129,9 +129,9 @@ def _clear_merge_state(output_path: str) -> None:
 def _load_final_state(
     db: GameReplayDB,
     game_id: str,
-    meta: Dict[str, Any],
+    meta: dict[str, Any],
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
 ) -> GameState:
     """Best-effort reconstruction of the final state for a game."""
     total_moves = meta.get("total_moves")
@@ -158,11 +158,11 @@ def _merge_single_db(
     dest_db: GameReplayDB,
     src_path: str,
     on_conflict: str = "skip",
-    seen_game_ids: Set[str] | None = None,
+    seen_game_ids: set[str] | None = None,
     *,
     store_history_entries: bool,
     compress_states: bool,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Merge all games from a single source DB into the destination DB.
 
     Args:
@@ -217,7 +217,7 @@ def _merge_single_db(
 
         # Decode existing metadata_json if present
         raw_meta_json = game_meta.get("metadata_json")
-        metadata: Dict[str, Any] = {}
+        metadata: dict[str, Any] = {}
         if raw_meta_json:
             try:
                 metadata = json.loads(raw_meta_json)
@@ -345,7 +345,7 @@ def main() -> None:
     processed_dbs = set(merge_state.get("processed_dbs", []))
 
     # Initialize cross-source deduplication set if enabled
-    seen_game_ids: Set[str] | None = None
+    seen_game_ids: set[str] | None = None
     if args.dedupe_by_game_id:
         seen_game_ids = set(merge_state.get("seen_game_ids", []))
 

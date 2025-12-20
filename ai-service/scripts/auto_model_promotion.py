@@ -45,7 +45,7 @@ MIN_GAMES_FOR_PROMOTION = 20    # Minimum games before considering
 CONFIDENCE_LEVEL = 0.90         # 90% confidence for promotion
 
 
-def get_current_best(board_config: str) -> Tuple[Optional[str], float]:
+def get_current_best(board_config: str) -> tuple[str | None, float]:
     """Get current best model and its Elo for a board config."""
     conn = sqlite3.connect(str(ELO_DB_PATH))
     cur = conn.cursor()
@@ -70,7 +70,7 @@ def get_current_best(board_config: str) -> Tuple[Optional[str], float]:
     return None, 1500.0  # Default Elo if no best model
 
 
-def get_candidates_for_promotion(board_config: str) -> List[Dict]:
+def get_candidates_for_promotion(board_config: str) -> list[dict]:
     """Get models that might be ready for promotion."""
     conn = sqlite3.connect(str(ELO_DB_PATH))
     cur = conn.cursor()
@@ -107,7 +107,7 @@ def get_candidates_for_promotion(board_config: str) -> List[Dict]:
     return candidates
 
 
-def evaluate_candidate(candidate: Dict, current_best_elo: float) -> Dict:
+def evaluate_candidate(candidate: dict, current_best_elo: float) -> dict:
     """Evaluate if a candidate should be promoted."""
     result = evaluate_promotion(
         candidate_wins=candidate["wins"],
@@ -176,7 +176,7 @@ def promote_model(model_id: str, board_config: str, elo: float) -> bool:
     return True
 
 
-def check_and_promote(board_configs: List[str] = None) -> List[Dict]:
+def check_and_promote(board_configs: list[str] = None) -> list[dict]:
     """Check all board configs and promote worthy candidates."""
     if board_configs is None:
         board_configs = [

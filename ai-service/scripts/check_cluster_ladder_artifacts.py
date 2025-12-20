@@ -25,7 +25,8 @@ import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
+from collections.abc import Sequence
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(AI_SERVICE_ROOT) not in sys.path:
@@ -38,7 +39,7 @@ def _shell_join(parts: Sequence[str]) -> str:
     return " ".join(shlex.quote(p) for p in parts)
 
 
-def _parse_board(value: Optional[str]) -> Optional[str]:
+def _parse_board(value: str | None) -> str | None:
     if value is None:
         return None
     key = value.strip().lower()
@@ -69,8 +70,8 @@ class HostCheckResult:
     host: str
     ok: bool
     exit_code: int
-    error: Optional[str]
-    payload: Optional[Dict[str, Any]]
+    error: str | None
+    payload: dict[str, Any] | None
 
 
 def _run_check_on_host(
@@ -78,9 +79,9 @@ def _run_check_on_host(
     host_name: str,
     host: HostConfig,
     timeout_sec: int,
-    board_type: Optional[str],
-    num_players: Optional[int],
-    difficulty: Optional[int],
+    board_type: str | None,
+    num_players: int | None,
+    difficulty: int | None,
     load_checkpoints: bool,
 ) -> HostCheckResult:
     executor = SSHExecutor(host)
@@ -169,7 +170,7 @@ def main(argv: list[str]) -> int:
     if args.hosts:
         requested = [h.strip() for h in args.hosts.split(",") if h.strip()]
 
-    selected: Dict[str, HostConfig] = {}
+    selected: dict[str, HostConfig] = {}
     for name, host in hosts.items():
         if requested is not None and name not in requested:
             continue

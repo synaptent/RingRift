@@ -34,7 +34,7 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("cleanup_corrupt_games")
 
 
-def analyze_move_corruption(db_path: str, sample_size: int = 1000) -> Dict:
+def analyze_move_corruption(db_path: str, sample_size: int = 1000) -> dict:
     """Analyze move data corruption in a database.
 
     Returns statistics about corrupt vs valid games.
@@ -115,7 +115,7 @@ def delete_corrupt_games(db_path: str, dry_run: bool = True) -> int:
     from app.models import BoardType
 
     db = GameReplayDB(db_path)
-    corrupt_ids: List[str] = []
+    corrupt_ids: list[str] = []
 
     board_types = [BoardType.SQUARE8, BoardType.SQUARE19, BoardType.HEXAGONAL]
 
@@ -195,8 +195,8 @@ def delete_corrupt_games(db_path: str, dry_run: bool = True) -> int:
 def export_valid_games(
     db_path: str,
     output_path: str,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
 ) -> int:
     """Export only valid games to a new database.
 

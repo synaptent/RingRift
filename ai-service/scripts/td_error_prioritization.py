@@ -73,7 +73,7 @@ class PrioritizedReplayBuffer:
                 idx = right
         return idx - (self.capacity - 1)
 
-    def add(self, priority: Optional[float] = None) -> int:
+    def add(self, priority: float | None = None) -> int:
         """Add sample with priority, return data index."""
         if priority is None:
             priority = self.max_priority
@@ -103,7 +103,7 @@ class PrioritizedReplayBuffer:
         self.tree[tree_idx] = priority
         self._propagate(tree_idx, change)
 
-    def sample(self, batch_size: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def sample(self, batch_size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Sample batch with prioritized sampling.
 
         Returns:

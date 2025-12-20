@@ -27,14 +27,14 @@ class NodeConfig:
     """Static configuration for a cluster node."""
     name: str
     host: str
-    tailscale_ip: Optional[str] = None
+    tailscale_ip: str | None = None
     ssh_user: str = "ubuntu"
     gpu_type: str = ""
     gpu_count: int = 1
     vram_gb: int = 0
     batch_multiplier: int = 32
     priority: int = 1  # 1=highest priority
-    roles: List[str] = field(default_factory=lambda: ["selfplay"])
+    roles: list[str] = field(default_factory=lambda: ["selfplay"])
     status: str = "active"
     notes: str = ""
 
@@ -79,44 +79,44 @@ class ClusterConfig:
     """Complete cluster configuration."""
     name: str = "ringrift-training"
     version: str = "2.0"
-    nodes: Dict[str, NodeConfig] = field(default_factory=dict)
-    groups: Dict[str, List[str]] = field(default_factory=dict)
+    nodes: dict[str, NodeConfig] = field(default_factory=dict)
+    groups: dict[str, list[str]] = field(default_factory=dict)
     alerts: AlertThresholds = field(default_factory=AlertThresholds)
     job_defaults: JobDefaults = field(default_factory=JobDefaults)
 
-    def get_node(self, node_id: str) -> Optional[NodeConfig]:
+    def get_node(self, node_id: str) -> NodeConfig | None:
         """Get node config by ID."""
         return self.nodes.get(node_id)
 
-    def get_tailscale_ip(self, node_id: str) -> Optional[str]:
+    def get_tailscale_ip(self, node_id: str) -> str | None:
         """Get tailscale IP for a node (fallback when hostname fails)."""
         node = self.nodes.get(node_id)
         return node.tailscale_ip if node else None
 
-    def get_active_nodes(self) -> List[NodeConfig]:
+    def get_active_nodes(self) -> list[NodeConfig]:
         """Get all active nodes."""
         return [n for n in self.nodes.values() if n.is_active]
 
-    def get_training_nodes(self) -> List[NodeConfig]:
+    def get_training_nodes(self) -> list[NodeConfig]:
         """Get nodes capable of training."""
         return [n for n in self.nodes.values() if n.can_train]
 
-    def get_selfplay_nodes(self) -> List[NodeConfig]:
+    def get_selfplay_nodes(self) -> list[NodeConfig]:
         """Get nodes capable of selfplay."""
         return [n for n in self.nodes.values() if n.can_selfplay]
 
-    def get_group_nodes(self, group_name: str) -> List[NodeConfig]:
+    def get_group_nodes(self, group_name: str) -> list[NodeConfig]:
         """Get nodes in a named group."""
         node_names = self.groups.get(group_name, [])
         return [self.nodes[n] for n in node_names if n in self.nodes]
 
-    def get_priority_sorted_nodes(self, role: str = "selfplay") -> List[NodeConfig]:
+    def get_priority_sorted_nodes(self, role: str = "selfplay") -> list[NodeConfig]:
         """Get nodes sorted by priority (1=highest)."""
         nodes = [n for n in self.nodes.values() if role in n.roles and n.is_active]
         return sorted(nodes, key=lambda n: n.priority)
 
 
-def load_cluster_config(config_path: Optional[Path] = None) -> ClusterConfig:
+def load_cluster_config(config_path: Path | None = None) -> ClusterConfig:
     """Load cluster configuration from YAML file.
 
     Args:
@@ -199,7 +199,7 @@ def load_cluster_config(config_path: Optional[Path] = None) -> ClusterConfig:
 
 
 # Global cached config instance
-_cached_config: Optional[ClusterConfig] = None
+_cached_config: ClusterConfig | None = None
 _cached_config_mtime: float = 0.0
 
 
@@ -232,7 +232,7 @@ def get_cluster_config(force_reload: bool = False) -> ClusterConfig:
     return _cached_config
 
 
-def get_webhook_urls() -> Dict[str, str]:
+def get_webhook_urls() -> dict[str, str]:
     """Get alert webhook URLs from config/cluster.yaml.
 
     Returns dict with 'slack' and 'discord' keys if configured.

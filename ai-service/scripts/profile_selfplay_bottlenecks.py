@@ -38,9 +38,9 @@ class SelfPlayProfiler:
     """Profiles self-play performance with detailed timing breakdown."""
 
     def __init__(self):
-        self.timings: Dict[str, TimingStats] = defaultdict(TimingStats)
-        self.move_counts: List[int] = []
-        self.game_times: List[float] = []
+        self.timings: dict[str, TimingStats] = defaultdict(TimingStats)
+        self.move_counts: list[int] = []
+        self.game_times: list[float] = []
 
     def time_section(self, name: str):
         """Context manager to time a code section."""

@@ -93,7 +93,7 @@ AUTH_TOKEN_FILE_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN_FILE"
 SSH_HOSTS = {}  # Populated at runtime
 
 
-def get_auth_token() -> Optional[str]:
+def get_auth_token() -> str | None:
     """Get auth token from environment or file."""
     # Try env var first
     token = os.environ.get(AUTH_TOKEN_ENV, "").strip()
@@ -121,7 +121,7 @@ def get_auth_token() -> Optional[str]:
     return None
 
 
-def get_auth_headers() -> Dict[str, str]:
+def get_auth_headers() -> dict[str, str]:
     """Get authorization headers for P2P requests."""
     token = get_auth_token()
     if token:
@@ -129,7 +129,7 @@ def get_auth_headers() -> Dict[str, str]:
     return {}
 
 
-def load_hosts_from_config() -> Dict[str, dict]:
+def load_hosts_from_config() -> dict[str, dict]:
     """Load hosts from distributed_hosts.yaml."""
     import yaml
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
@@ -161,7 +161,7 @@ def load_hosts_from_config() -> Dict[str, dict]:
     return hosts
 
 
-def discover_vast_instances() -> Dict[str, dict]:
+def discover_vast_instances() -> dict[str, dict]:
     """Discover Vast.ai instances via vastai CLI.
 
     Attempts to get Tailscale IPs for direct P2P access.
@@ -228,7 +228,7 @@ def discover_vast_instances() -> Dict[str, dict]:
     return hosts
 
 
-def discover_tailscale_peers() -> Dict[str, dict]:
+def discover_tailscale_peers() -> dict[str, dict]:
     """Discover nodes via Tailscale CLI."""
     hosts = {}
     try:
@@ -286,7 +286,7 @@ def discover_tailscale_peers() -> Dict[str, dict]:
     return hosts
 
 
-def discover_all_nodes() -> Dict[str, dict]:
+def discover_all_nodes() -> dict[str, dict]:
     """Discover all available nodes from all sources."""
     all_hosts = {}
 
@@ -413,7 +413,7 @@ def check_node_health(node_id: str, config: dict) -> NodeStatus:
     )
 
 
-def discover_healthy_nodes(max_workers: int = 20) -> Tuple[List[NodeStatus], Dict[str, dict]]:
+def discover_healthy_nodes(max_workers: int = 20) -> tuple[list[NodeStatus], dict[str, dict]]:
     """Discover all healthy nodes in the cluster.
 
     Returns:
@@ -500,7 +500,7 @@ def run_match_via_p2p(
     board_type: str = "square8",
     use_ramdrive: bool = False,
     max_retries: int = 2,
-) -> Tuple[Optional[MatchResult], Optional[str]]:
+) -> tuple[MatchResult | None, str | None]:
     """Run a single match on a remote node via P2P orchestrator endpoint.
 
     Uses the /tournament/play_elo_match endpoint on port 8770 which supports
@@ -587,7 +587,7 @@ def run_match_on_node(
     match_id: str,
     board_type: str = "square8",
     use_ramdrive: bool = False,
-) -> Tuple[Optional[MatchResult], Optional[str]]:
+) -> tuple[MatchResult | None, str | None]:
     """Run a single match on a remote node.
 
     First tries the P2P orchestrator endpoint (fast, supports all AI types),
@@ -712,7 +712,7 @@ print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - 
     return None, p2p_error or ssh_error or "Unknown failure"
 
 
-def calculate_elo(results: List[MatchResult]) -> Dict[str, float]:
+def calculate_elo(results: list[MatchResult]) -> dict[str, float]:
     """Calculate Elo ratings from match results.
 
     Random is pinned at 400 Elo as the anchor point.
@@ -755,7 +755,7 @@ def calculate_elo(results: List[MatchResult]) -> Dict[str, float]:
 
 
 def run_distributed_tournament(
-    agents: List[str],
+    agents: list[str],
     games_per_pairing: int = 4,
     board_type: str = "square8",
     use_ramdrive: bool = False,
@@ -763,7 +763,7 @@ def run_distributed_tournament(
     min_ram_gb: int = 0,
     retry_failed: bool = True,
     max_node_failures: int = 10,
-) -> Tuple[List[MatchResult], Dict[str, float]]:
+) -> tuple[list[MatchResult], dict[str, float]]:
     """Run distributed tournament across all healthy nodes.
 
     Args:
@@ -836,7 +836,7 @@ def run_distributed_tournament(
     print(f"  Est. matches/node: {len(matchups) // len(nodes)}")
 
     # Distribute matches across nodes
-    results: List[MatchResult] = []
+    results: list[MatchResult] = []
     tournament_id = f"elo_dist_{uuid.uuid4().hex[:8]}"
 
     # Create worker tasks
@@ -849,7 +849,7 @@ def run_distributed_tournament(
     from collections import Counter
     error_counts: Counter = Counter()
     node_failures: Counter = Counter()
-    disabled_nodes: Set[str] = set()
+    disabled_nodes: set[str] = set()
 
     # Round-robin node assignment with parallel execution
     def get_available_nodes():
@@ -993,7 +993,7 @@ def run_distributed_tournament(
     return results, ratings
 
 
-def print_leaderboard(ratings: Dict[str, float], results: List[MatchResult]):
+def print_leaderboard(ratings: dict[str, float], results: list[MatchResult]):
     """Print Elo leaderboard."""
     print("\n" + "=" * 70)
     print("ELO CALIBRATION RESULTS")

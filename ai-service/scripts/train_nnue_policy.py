@@ -83,7 +83,7 @@ def parse_board_type(value: str) -> BoardType:
     return mapping[key]
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Train NNUE with policy head for RingRift",
@@ -577,7 +577,7 @@ def augment_batch_with_hex(
     mask: torch.Tensor,
     target: torch.Tensor,
     sample_weights: torch.Tensor,
-    mcts_probs: Optional[torch.Tensor],
+    mcts_probs: torch.Tensor | None,
     augmenter: "HexBoardAugmenter",
 ) -> tuple:
     """Apply D6 symmetry augmentation to a batch of hex board samples.
@@ -634,7 +634,7 @@ def augment_batch_with_hex(
 
 
 def train_nnue_policy(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: BoardType,
     num_players: int,
     epochs: int,
@@ -643,18 +643,18 @@ def train_nnue_policy(
     weight_decay: float,
     val_split: float,
     early_stopping_patience: int,
-    hidden_dim: Optional[int],
+    hidden_dim: int | None,
     num_hidden_layers: int,
     value_weight: float,
     policy_weight: float,
     sample_every_n: int,
     min_game_length: int,
-    max_samples: Optional[int],
+    max_samples: int | None,
     max_moves_per_position: int,
     save_path: str,
     device: torch.device,
     seed: int,
-    pretrained_path: Optional[str] = None,
+    pretrained_path: str | None = None,
     freeze_value: bool = False,
     temperature_start: float = 2.0,
     temperature_end: float = 0.5,
@@ -682,18 +682,18 @@ def train_nnue_policy(
     ddp_rank: int = 0,
     use_swa: bool = False,
     swa_start_epoch: int = 0,
-    swa_lr: Optional[float] = None,
+    swa_lr: float | None = None,
     progressive_batch: bool = False,
     min_batch_size: int = 64,
     max_batch_size: int = 512,
-    jsonl_paths: Optional[List[str]] = None,
+    jsonl_paths: list[str] | None = None,
     hex_augment: bool = False,
     hex_augment_count: int = 6,
     policy_dropout: float = 0.1,
     gradient_accumulation_steps: int = 1,
     find_lr: bool = False,
     lr_finder_iterations: int = 100,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
 
@@ -946,7 +946,7 @@ def train_nnue_policy(
     best_val_loss = float("inf")
     best_epoch = 0
     epochs_without_improvement = 0
-    history: Dict[str, List[float]] = {
+    history: dict[str, list[float]] = {
         "train_loss": [],
         "train_value_loss": [],
         "train_policy_loss": [],
@@ -1107,7 +1107,7 @@ def train_nnue_policy(
     return report
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     args = parse_args(argv)
 
@@ -1115,7 +1115,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     board_type = parse_board_type(args.board_type)
 
     # Expand glob patterns in database paths
-    db_paths: List[str] = []
+    db_paths: list[str] = []
     for pattern in args.db:
         expanded = glob.glob(pattern)
         if expanded:
@@ -1126,7 +1126,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             logger.warning(f"Database not found: {pattern}")
 
     # Expand glob patterns in JSONL paths
-    jsonl_paths: List[str] = []
+    jsonl_paths: list[str] = []
     for pattern in args.jsonl:
         expanded = glob.glob(pattern)
         if expanded:

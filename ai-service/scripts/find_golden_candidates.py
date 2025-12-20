@@ -55,17 +55,17 @@ class CandidateGame:
     game_id: str
     board_type: str
     num_players: int
-    winner: Optional[int]
-    termination_reason: Optional[str]
+    winner: int | None
+    termination_reason: str | None
     total_moves: int
-    source: Optional[str]
-    invariant_violations_by_type: Dict[str, int]
+    source: str | None
+    invariant_violations_by_type: dict[str, int]
     swap_sides_moves: int
     used_pie_rule: bool
 
 
-def _collect_db_paths(db_args: List[str], db_dir: Optional[str]) -> List[Path]:
-    paths: List[Path] = []
+def _collect_db_paths(db_args: list[str], db_dir: str | None) -> list[Path]:
+    paths: list[Path] = []
 
     for raw in db_args:
         p = Path(raw)
@@ -86,7 +86,7 @@ def _collect_db_paths(db_args: List[str], db_dir: Optional[str]) -> List[Path]:
     return sorted(set(paths))
 
 
-def _load_metadata_row(game_meta: Dict[str, Any]) -> Dict[str, Any]:
+def _load_metadata_row(game_meta: dict[str, Any]) -> dict[str, Any]:
     raw = game_meta.get("metadata_json")
     if not raw:
         return {}
@@ -102,12 +102,12 @@ def find_candidates_in_db(
     min_moves: int,
     require_clean_invariants: bool,
     require_pie_rule: bool,
-    board_type_filter: Optional[str],
-    num_players_filter: Optional[int],
-    termination_filter: Optional[str],
-) -> List[CandidateGame]:
+    board_type_filter: str | None,
+    num_players_filter: int | None,
+    termination_filter: str | None,
+) -> list[CandidateGame]:
     db = GameReplayDB(str(db_path))
-    candidates: List[CandidateGame] = []
+    candidates: list[CandidateGame] = []
 
     with db._get_conn() as conn:
         rows = conn.execute(
@@ -149,7 +149,7 @@ def find_candidates_in_db(
         if not isinstance(inv, dict):
             inv = {}
         # Normalise keys to strings, values to ints
-        inv_clean: Dict[str, int] = {}
+        inv_clean: dict[str, int] = {}
         for k, v in inv.items():
             try:
                 inv_clean[str(k)] = int(v)
@@ -261,7 +261,7 @@ def main() -> None:
 
     require_clean_invariants = not args.no_invariant_filter
 
-    all_candidates: List[CandidateGame] = []
+    all_candidates: list[CandidateGame] = []
     for db_path in db_paths:
         print(f"[find_golden_candidates] Scanning {db_path}", file=sys.stderr)
         try:

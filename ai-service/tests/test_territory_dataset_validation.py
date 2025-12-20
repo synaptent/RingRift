@@ -24,7 +24,7 @@ from app.training.territory_dataset_validation import (  # type: ignore  # noqa:
 )
 
 
-def _make_minimal_game_state(board_type: BoardType = BoardType.SQUARE8) -> Dict[str, object]:
+def _make_minimal_game_state(board_type: BoardType = BoardType.SQUARE8) -> dict[str, object]:
     """Construct a minimal, JSON-serialisable GameState payload."""
     board = BoardState(type=board_type, size=8 if board_type == BoardType.SQUARE8 else 19)
     players = [
@@ -156,7 +156,7 @@ def test_iter_territory_dataset_errors_reports_line_numbers(tmp_path) -> None:
     assert all(line_no != 1 for line_no, _ in errors)
 
     # Multiple errors should be reported for the second line (missing required fields).
-    messages_for_second: List[str] = [msg for line_no, msg in errors if line_no == 2]
+    messages_for_second: list[str] = [msg for line_no, msg in errors if line_no == 2]
     assert messages_for_second, "Expected errors for line 2"
     # Validator only checks for missing required fields, not value validation
     assert any("game_state" in m for m in messages_for_second)

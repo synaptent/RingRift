@@ -25,7 +25,8 @@ import logging
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional, Union
+from typing import Optional, Union
+from collections.abc import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def get_elo_db_path() -> Path:
     return UNIFIED_ELO_DB
 
 
-def count_games(db_path: Union[str, Path], config_key: Optional[str] = None) -> int:
+def count_games(db_path: Union[str, Path], config_key: str | None = None) -> int:
     """Count games in a database.
 
     Args:

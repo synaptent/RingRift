@@ -61,7 +61,7 @@ from app.game_engine import GameEngine
 from app.rules.history_validation import validate_canonical_config_for_game
 
 
-def _build_env() -> Dict[str, str]:
+def _build_env() -> dict[str, str]:
     env = os.environ.copy()
     # Ensure PYTHONPATH includes ai-service root when invoked from repo root.
     # Prepend absolute AI_SERVICE_ROOT if missing so relative PYTHONPATH values
@@ -81,7 +81,7 @@ def _build_env() -> Dict[str, str]:
 
 
 def _run_cmd(
-    cmd: List[str],
+    cmd: list[str],
     cwd: Path | None = None,
     *,
     capture_output: bool = True,
@@ -118,7 +118,7 @@ def _run_cmd(
 
 
 def _run_cmd_tee(
-    cmd: List[str],
+    cmd: list[str],
     cwd: Path | None = None,
     *,
     max_output_lines: int = 5000,
@@ -175,7 +175,7 @@ def _count_games_in_db_ro(db_path: Path) -> int | None:
         conn.close()
 
 
-def collect_db_stats(db_path: Path) -> Dict[str, Any]:
+def collect_db_stats(db_path: Path) -> dict[str, Any]:
     """Collect lightweight aggregate stats from a GameReplayDB.
 
     This intentionally uses direct SQLite queries (not GameReplayDB replay) so
@@ -243,7 +243,7 @@ def run_selfplay_and_parity(
     include_training_data_jsonl: bool = False,
     distributed_job_timeout_seconds: int = 0,
     distributed_fetch_timeout_seconds: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Delegate to run_canonical_selfplay_parity_gate.py to:
       - run a small canonical self-play soak, and
@@ -359,7 +359,7 @@ def run_selfplay_and_parity(
             timeout_seconds=parity_timeout_seconds,
         )
 
-    parity_summary: Dict[str, Any]
+    parity_summary: dict[str, Any]
     if summary_path.exists():
         try:
             with summary_path.open("r", encoding="utf-8") as f:
@@ -394,10 +394,10 @@ def run_selfplay_and_parity(
 
 
 def merge_distributed_dbs(
-    source_dbs: List[Path],
+    source_dbs: list[Path],
     dest_db: Path,
     reset_db: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Merge per-host distributed self-play DBs into *dest_db*.
 
     When reset_db is True and dest_db exists, we archive the existing DB
@@ -437,7 +437,7 @@ def merge_distributed_dbs(
     }
 
 
-def run_canonical_history_check(db_path: Path) -> Dict[str, Any]:
+def run_canonical_history_check(db_path: Path) -> dict[str, Any]:
     """Run strict trace-mode replay validation over all games in the DB.
 
     This is a stronger gate than checking stored (phase, move_type) pairs,
@@ -457,7 +457,7 @@ def _run_canonical_history_check(
     db_path: Path,
     max_games: int | None,
     stop_after_first_failure: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Inner implementation of canonical history check with optional limits."""
     db = GameReplayDB(str(db_path))
 
@@ -468,7 +468,7 @@ def _run_canonical_history_check(
     if max_games is not None and max_games >= 0:
         game_ids = game_ids[:max_games]
 
-    issues_by_game: Dict[str, List[Dict[str, Any]]] = {}
+    issues_by_game: dict[str, list[dict[str, Any]]] = {}
 
     if game_ids:
         print(
@@ -519,7 +519,7 @@ def _run_canonical_history_check(
     non_canonical_games = len(issues_by_game)
 
     # For brevity, surface at most a few sample issues.
-    sample_issues: Dict[str, Any] = {}
+    sample_issues: dict[str, Any] = {}
     for gid, issues in list(issues_by_game.items())[:5]:
         sample_issues[gid] = issues[:5]
 
@@ -530,7 +530,7 @@ def _run_canonical_history_check(
     }
 
 
-def run_canonical_config_check(db_path: Path) -> Dict[str, Any]:
+def run_canonical_config_check(db_path: Path) -> dict[str, Any]:
     """Validate initial-state canonical configuration for every game."""
     return _run_canonical_config_check(
         db_path=db_path,
@@ -544,7 +544,7 @@ def _run_canonical_config_check(
     db_path: Path,
     max_games: int | None,
     stop_after_first_failure: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Inner implementation of canonical config check with optional limits."""
     db = GameReplayDB(str(db_path))
 
@@ -555,7 +555,7 @@ def _run_canonical_config_check(
     if max_games is not None and max_games >= 0:
         game_ids = game_ids[:max_games]
 
-    issues_by_game: Dict[str, List[Dict[str, Any]]] = {}
+    issues_by_game: dict[str, list[dict[str, Any]]] = {}
 
     if game_ids:
         print(
@@ -590,7 +590,7 @@ def _run_canonical_config_check(
     games_checked = len(game_ids)
     non_canonical_games = len(issues_by_game)
 
-    sample_issues: Dict[str, Any] = {}
+    sample_issues: dict[str, Any] = {}
     for gid, issues in list(issues_by_game.items())[:5]:
         sample_issues[gid] = issues[:5]
 
@@ -665,7 +665,7 @@ def run_fe_territory_fixtures(board_type: str) -> bool:
     return True
 
 
-def run_anm_invariants(board_type: str) -> Dict[str, Any]:
+def run_anm_invariants(board_type: str) -> dict[str, Any]:
     """
     Run the ANM parity + invariant tests for the given board_type.
 
@@ -727,7 +727,7 @@ def run_anm_invariants(board_type: str) -> Dict[str, Any]:
 
     passed_flag = proc.returncode == 0
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "board_type": board_type,
         "passed": bool(passed_flag),
         "returncode": int(proc.returncode),
@@ -748,7 +748,7 @@ def run_anm_invariants(board_type: str) -> Dict[str, Any]:
     return result
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     # Use unified argument parser from SelfplayConfig
     parser = create_argument_parser(
         description=(
@@ -917,7 +917,7 @@ def main(argv: List[str] | None = None) -> int:
     passed_gate = bool(parity_summary.get("passed_canonical_parity_gate"))
     parity_rc = int(parity_summary.get("soak_returncode", 0) or 0)
 
-    merge_result: Dict[str, Any] | None = None
+    merge_result: dict[str, Any] | None = None
     if hosts:
         checked_paths = [
             Path(p)
@@ -941,8 +941,8 @@ def main(argv: List[str] | None = None) -> int:
 
     base_ok = passed_gate and parity_rc == 0 and db_path.exists() and merge_ok
 
-    canonical_history: Dict[str, Any] = {}
-    canonical_config: Dict[str, Any] = {}
+    canonical_history: dict[str, Any] = {}
+    canonical_config: dict[str, Any] = {}
     games_checked = 0
     non_canonical = 0
     config_non_canonical = 0
@@ -993,7 +993,7 @@ def main(argv: List[str] | None = None) -> int:
 
     db_stats = collect_db_stats(db_path)
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "board_type": board_type,
         "num_players": num_players,
         "db_path": str(db_path),
@@ -1011,7 +1011,7 @@ def main(argv: List[str] | None = None) -> int:
     }
 
     # Optional post-soak analysis (requires JSONL logs with move history).
-    analysis_payload: Dict[str, Any] | None = None
+    analysis_payload: dict[str, Any] | None = None
     if run_analyses and num_games > 0:
         jsonl_path_str = parity_summary.get("soak_log_jsonl_path")
         jsonl_path = (

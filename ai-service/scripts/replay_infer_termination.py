@@ -56,14 +56,14 @@ BOARD_TYPE_STR_MAP = {
 class ReplayResult:
     """Result of replaying a game."""
     success: bool
-    termination_reason: Optional[str] = None
-    winner: Optional[int] = None
-    final_phase: Optional[str] = None
-    error: Optional[str] = None
+    termination_reason: str | None = None
+    winner: int | None = None
+    final_phase: str | None = None
+    error: str | None = None
     moves_replayed: int = 0
 
 
-def get_board_type(game: dict[str, Any]) -> Optional[BoardType]:
+def get_board_type(game: dict[str, Any]) -> BoardType | None:
     """Get BoardType enum from game data."""
     # Try board_type string first
     if "board_type" in game:
@@ -107,7 +107,7 @@ def get_num_players(game: dict[str, Any]) -> int:
     return 2
 
 
-def convert_move_format(move: dict[str, Any], engine: GameEngine) -> Optional[dict[str, Any]]:
+def convert_move_format(move: dict[str, Any], engine: GameEngine) -> dict[str, Any] | None:
     """Convert JSONL move format to GameEngine format."""
     move_type = move.get("type", "")
 

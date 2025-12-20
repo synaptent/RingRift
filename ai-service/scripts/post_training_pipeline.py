@@ -65,15 +65,15 @@ class TrainingRun:
 class PipelineResult:
     """Result of the post-training pipeline."""
 
-    training_runs: List[TrainingRun]
-    merged_weights_path: Optional[str]
+    training_runs: list[TrainingRun]
+    merged_weights_path: str | None
     validation_passed: bool
     promoted: bool
-    promoted_path: Optional[str]
+    promoted_path: str | None
     report: dict
 
 
-def find_training_runs(training_dir: str) -> List[TrainingRun]:
+def find_training_runs(training_dir: str) -> list[TrainingRun]:
     """Find all completed training runs in a directory."""
     runs = []
 
@@ -120,7 +120,7 @@ def find_training_runs(training_dir: str) -> List[TrainingRun]:
 
 
 def merge_weights(
-    runs: List[TrainingRun],
+    runs: list[TrainingRun],
     output_path: str,
     num_players: int,
 ) -> str:
@@ -165,7 +165,7 @@ def validate_weights(
     num_players: int,
     num_games: int,
     min_win_rate: float = 0.52,
-) -> Tuple[bool, dict]:
+) -> tuple[bool, dict]:
     """Validate weights against defaults using the validation script."""
     print(f"\nValidating weights ({num_games} games, {num_players} players)...")
 
@@ -200,7 +200,7 @@ def promote_weights(
 
 
 def run_pipeline(
-    training_dirs: Dict[int, str],
+    training_dirs: dict[int, str],
     validation_games: int = 50,
     min_win_rate: float = 0.52,
     output_dir: str = "data",
@@ -224,9 +224,9 @@ def run_pipeline(
     print("POST-TRAINING PIPELINE")
     print("=" * 60)
 
-    all_runs: List[TrainingRun] = []
-    validation_results: Dict[int, dict] = {}
-    merged_paths: Dict[int, str] = {}
+    all_runs: list[TrainingRun] = []
+    validation_results: dict[int, dict] = {}
+    merged_paths: dict[int, str] = {}
     all_passed = True
 
     for num_players, training_dir in sorted(training_dirs.items()):
@@ -393,7 +393,7 @@ def main():
     args = parser.parse_args()
 
     # Build training_dirs map
-    training_dirs: Dict[int, str] = {}
+    training_dirs: dict[int, str] = {}
 
     if args.training_dir:
         training_dirs[args.num_players] = args.training_dir

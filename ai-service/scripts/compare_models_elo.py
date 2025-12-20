@@ -48,12 +48,12 @@ logger = get_logger(__name__)
 class MatchResult:
     """Result of a single game."""
     game_id: int
-    winner: Optional[int]  # 1 = model_a, 2 = model_b, None = draw
+    winner: int | None  # 1 = model_a, 2 = model_b, None = draw
     moves: int
     time_seconds: float
     model_a_color: int  # Which player model_a was (1 or 2)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -70,11 +70,11 @@ class ComparisonResult:
     draws: int
     model_a_win_rate: float
     elo_difference: float
-    confidence_interval: Tuple[float, float]
+    confidence_interval: tuple[float, float]
     avg_game_length: float
     total_time: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["confidence_interval"] = list(self.confidence_interval)
         return result
@@ -110,7 +110,7 @@ class EloCalculator:
         wins: int,
         total: int,
         confidence: float = 0.95,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """Calculate Wilson score confidence interval for win rate."""
         if total == 0:
             return (0.0, 1.0)
@@ -258,7 +258,7 @@ class ModelComparator:
         logger.info(f"  MCTS simulations: {self.mcts_simulations}")
 
         start_time = time.time()
-        results: List[MatchResult] = []
+        results: list[MatchResult] = []
 
         # Alternate colors for fairness
         game_configs = [
@@ -279,10 +279,10 @@ class ModelComparator:
 
     def _run_parallel(
         self,
-        game_configs: List[Tuple[int, int]],
-    ) -> List[MatchResult]:
+        game_configs: list[tuple[int, int]],
+    ) -> list[MatchResult]:
         """Run games in parallel."""
-        results: List[MatchResult] = []
+        results: list[MatchResult] = []
 
         with ProcessPoolExecutor(max_workers=self.parallel_games) as executor:
             futures = {
@@ -325,10 +325,10 @@ class ModelComparator:
 
     def _run_sequential(
         self,
-        game_configs: List[Tuple[int, int]],
-    ) -> List[MatchResult]:
+        game_configs: list[tuple[int, int]],
+    ) -> list[MatchResult]:
         """Run games sequentially."""
-        results: List[MatchResult] = []
+        results: list[MatchResult] = []
 
         for game_id, model_a_player in game_configs:
             try:
@@ -360,7 +360,7 @@ class ModelComparator:
 
     def _compute_statistics(
         self,
-        results: List[MatchResult],
+        results: list[MatchResult],
         total_time: float,
     ) -> ComparisonResult:
         """Compute final statistics from game results."""

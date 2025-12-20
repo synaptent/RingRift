@@ -105,7 +105,7 @@ def calibrate_elo_from_gauntlet(
     return max(200, min(2400, calibrated_elo))
 
 
-def parse_config_from_path(model_path: str) -> Optional[Tuple[str, int]]:
+def parse_config_from_path(model_path: str) -> tuple[str, int] | None:
     """Extract board_type and num_players from model path.
 
     Handles patterns like:
@@ -139,7 +139,7 @@ def parse_config_from_path(model_path: str) -> Optional[Tuple[str, int]]:
     return None
 
 
-def load_gauntlet_results(path: Path = GAUNTLET_RESULTS_FILE) -> List[Dict[str, Any]]:
+def load_gauntlet_results(path: Path = GAUNTLET_RESULTS_FILE) -> list[dict[str, Any]]:
     """Load gauntlet results from JSON file."""
     if not path.exists():
         logger.warning(f"Gauntlet results file not found: {path}")
@@ -152,11 +152,11 @@ def load_gauntlet_results(path: Path = GAUNTLET_RESULTS_FILE) -> List[Dict[str, 
 
 
 def process_gauntlet_results(
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     db: EloDatabase,
-    config_filter: Optional[str] = None,
+    config_filter: str | None = None,
     dry_run: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Process gauntlet results and update Elo database.
 
     Args:

@@ -42,10 +42,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
 
 
-HeuristicWeights = Dict[str, float]
+HeuristicWeights = dict[str, float]
 
 
-def get_num_players_from_path(path: str) -> Optional[int]:
+def get_num_players_from_path(path: str) -> int | None:
     """Try to determine number of players from file path or run metadata.
 
     Looks for:
@@ -90,7 +90,7 @@ def get_num_players_from_path(path: str) -> Optional[int]:
     return None
 
 
-def load_weights_file(path: str) -> Tuple[HeuristicWeights, float, int, dict]:
+def load_weights_file(path: str) -> tuple[HeuristicWeights, float, int, dict]:
     """Load weights from a best_weights.json or checkpoint file.
 
     Returns:
@@ -112,7 +112,7 @@ def load_weights_file(path: str) -> Tuple[HeuristicWeights, float, int, dict]:
     return weights, fitness, num_players, data
 
 
-def expand_glob_patterns(patterns: List[str]) -> List[str]:
+def expand_glob_patterns(patterns: list[str]) -> list[str]:
     """Expand glob patterns to actual file paths."""
     paths = []
     for pattern in patterns:
@@ -124,10 +124,10 @@ def expand_glob_patterns(patterns: List[str]) -> List[str]:
 
 
 def merge_weights_average(
-    weight_files: List[str],
+    weight_files: list[str],
     mode: str = "equal",
-    expected_num_players: Optional[int] = None,
-) -> Tuple[HeuristicWeights, int, dict]:
+    expected_num_players: int | None = None,
+) -> tuple[HeuristicWeights, int, dict]:
     """Merge multiple weight files using averaging.
 
     IMPORTANT: All weight files must be from runs with the same number of players.
@@ -147,7 +147,7 @@ def merge_weights_average(
     if not weight_files:
         raise ValueError("No weight files provided")
 
-    all_weights: List[Tuple[HeuristicWeights, float, int, str]] = []
+    all_weights: list[tuple[HeuristicWeights, float, int, str]] = []
 
     for path in weight_files:
         try:
@@ -216,10 +216,10 @@ def merge_weights_average(
 
 
 def create_player_specific_profiles(
-    weights_2p: Optional[List[str]],
-    weights_3p: Optional[List[str]],
-    weights_4p: Optional[List[str]],
-) -> Tuple[Dict[str, HeuristicWeights], dict]:
+    weights_2p: list[str] | None,
+    weights_3p: list[str] | None,
+    weights_4p: list[str] | None,
+) -> tuple[dict[str, HeuristicWeights], dict]:
     """Create player-count-specific weight profiles.
 
     Each player count's weights are merged separately, ensuring no cross-
@@ -233,7 +233,7 @@ def create_player_specific_profiles(
     Returns:
         Tuple of (profiles dict, metadata)
     """
-    profiles: Dict[str, HeuristicWeights] = {}
+    profiles: dict[str, HeuristicWeights] = {}
     metadata: dict = {
         "timestamp": datetime.now().isoformat(),
         "profiles": {},

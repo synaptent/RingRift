@@ -47,7 +47,7 @@ def _canonicalize_status(status: str | None) -> str:
     return s
 
 
-def find_selfplay_dbs() -> List[Path]:
+def find_selfplay_dbs() -> list[Path]:
     """Find selfplay database files."""
     root = REPO_ROOT
     data_dir = root / "ai-service" / "data" / "games"
@@ -60,7 +60,7 @@ def find_selfplay_dbs() -> List[Path]:
     return dbs
 
 
-def get_territory_moves(db_path: Path, limit: int = 50) -> List[Tuple[str, int, str, str]]:
+def get_territory_moves(db_path: Path, limit: int = 50) -> list[tuple[str, int, str, str]]:
     """Get territory processing moves from a database.
 
     Returns list of (game_id, move_number, move_type, move_json) tuples.
@@ -106,7 +106,7 @@ def get_game_board_type(db_path: Path, game_id: str) -> str:
         conn.close()
 
 
-def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> Optional[StateSummary]:
+def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> StateSummary | None:
     """Summarize state AFTER move_index is applied."""
     try:
         state = db.get_state_at_move(game_id, move_index)
@@ -135,7 +135,7 @@ def generate_fixture(
     move_type: str,
     move_json: str,
     output_dir: Path,
-) -> Optional[Path]:
+) -> Path | None:
     """Generate a single parity fixture file."""
 
     # Open database

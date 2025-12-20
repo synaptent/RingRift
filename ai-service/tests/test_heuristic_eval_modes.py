@@ -40,7 +40,7 @@ import scripts.run_cmaes_optimization as cmaes  # type: ignore  # noqa: E402
 import scripts.run_self_play_soak as soak  # type: ignore  # noqa: E402
 
 
-TIER2_KEYS: List[str] = [
+TIER2_KEYS: list[str] = [
     "line_potential",
     "line_connectivity",
     "territory_closure",
@@ -94,7 +94,7 @@ def test_tier2_methods_called_in_full_mode_and_skipped_in_light(
 ) -> None:
     """Tier-2 structural features must be gated by eval_mode."""
     # Track call counts per Tier-2 method.
-    call_counts: Dict[str, int] = {
+    call_counts: dict[str, int] = {
         key: 0 for key in TIER2_KEYS
     }
 
@@ -191,13 +191,13 @@ def test_evaluate_fitness_uses_board_based_heuristic_mode(
     The CMA-ES/GA fitness harness must select heuristic_eval_mode based
     on board type using TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.
     """
-    recorded_modes: List[str | None] = []
+    recorded_modes: list[str | None] = []
 
     original_create = cmaes.create_heuristic_ai_with_weights
 
     def _spy_create(
         player_number: int,
-        weights: Dict[str, float],
+        weights: dict[str, float],
         *,
         difficulty: int = 5,
         randomness: float = 0.0,
@@ -283,9 +283,9 @@ def test_soak_mixed_ai_pool_uses_board_based_heuristic_mode(
     TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD when constructing HeuristicAI
     instances, mirroring the CMA-ES/GA fitness harness behaviour.
     """
-    recorded_modes: List[str | None] = []
+    recorded_modes: list[str | None] = []
 
-    def _fake_get_profile(_difficulty: int) -> Dict[str, Any]:
+    def _fake_get_profile(_difficulty: int) -> dict[str, Any]:
         # Force all sampled AIs to be Heuristic so we always exercise the
         # heuristic_eval_mode plumbing.
         return {

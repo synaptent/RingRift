@@ -83,7 +83,7 @@ DEFAULT_WEIGHTS = {
 def load_weights_from_profile(
     weights_file: str,
     profile_name: str,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Load heuristic weights from a CMA-ES profile file.
 
     Args:
@@ -220,19 +220,19 @@ def run_hybrid_selfplay(
     seed: int = 42,
     use_numba: bool = True,
     engine_mode: str = "heuristic-only",
-    p2_engine_mode: Optional[str] = None,  # Different engine for player 2 (asymmetric matches)
-    p3_engine_mode: Optional[str] = None,  # Different engine for player 3 (3-4 player games)
-    p4_engine_mode: Optional[str] = None,  # Different engine for player 4 (4 player games)
-    weights: Optional[Dict[str, float]] = None,
+    p2_engine_mode: str | None = None,  # Different engine for player 2 (asymmetric matches)
+    p3_engine_mode: str | None = None,  # Different engine for player 3 (3-4 player games)
+    p4_engine_mode: str | None = None,  # Different engine for player 4 (4 player games)
+    weights: dict[str, float] | None = None,
     mix_ratio: float = 0.8,
-    record_db: Optional[str] = None,
+    record_db: str | None = None,
     lean_db: bool = False,
     enforce_canonical_history: bool = True,
-    parity_mode: Optional[str] = None,
+    parity_mode: str | None = None,
     mcts_sims: int = 100,
     nnue_blend: float = 0.5,
-    nn_model_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    nn_model_id: str | None = None,
+) -> dict[str, Any]:
     """Run hybrid GPU-accelerated self-play.
 
     Args:
@@ -383,7 +383,7 @@ def run_hybrid_selfplay(
                     else:
                         self._legal_moves = engine.get_valid_moves(real_state, self._current_player)
 
-                def get_legal_moves(self) -> List[int]:
+                def get_legal_moves(self) -> list[int]:
                     """Return indices [0, 1, 2, ...] for legal moves."""
                     return list(range(len(self._legal_moves)))
 
@@ -446,7 +446,7 @@ def run_hybrid_selfplay(
                     self.engine = engine
                     self.board_size = board_size
 
-                def evaluate(self, state: GameStateAdapter) -> Tuple[List[float], float]:
+                def evaluate(self, state: GameStateAdapter) -> tuple[list[float], float]:
                     """Return uniform policy over legal moves and heuristic value.
 
                     Policy indices match the legal move indices from GameStateAdapter.
@@ -642,9 +642,9 @@ def run_hybrid_selfplay(
     total_time = 0.0
     wins_by_player = {i: 0 for i in range(1, num_players + 1)}
     draws = 0
-    victory_type_counts: Dict[str, int] = {}  # Track victory type distribution
-    stalemate_by_tiebreaker: Dict[str, int] = {}  # Track which tiebreaker resolved stalemates
-    game_lengths: List[int] = []  # Track individual game lengths for detailed stats
+    victory_type_counts: dict[str, int] = {}  # Track victory type distribution
+    stalemate_by_tiebreaker: dict[str, int] = {}  # Track which tiebreaker resolved stalemates
+    game_lengths: list[int] = []  # Track individual game lengths for detailed stats
     game_records = []
 
     games_file = os.path.join(output_dir, "games.jsonl")

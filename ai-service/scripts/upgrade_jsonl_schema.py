@@ -55,7 +55,7 @@ STALEMATE_TIEBREAKER_TO_TERMINATION = {
 }
 
 
-def infer_board_type(game: Dict[str, Any]) -> str:
+def infer_board_type(game: dict[str, Any]) -> str:
     """Infer board_type from available fields."""
     # Check if already present
     if "board_type" in game:
@@ -100,7 +100,7 @@ def infer_board_type(game: Dict[str, Any]) -> str:
     return "unknown"
 
 
-def infer_termination_reason(game: Dict[str, Any]) -> str:
+def infer_termination_reason(game: dict[str, Any]) -> str:
     """Infer termination_reason from available fields."""
     # Check if already present in new format
     if "termination_reason" in game:
@@ -137,7 +137,7 @@ def infer_termination_reason(game: Dict[str, Any]) -> str:
     return "status:unknown"
 
 
-def upgrade_game(game: Dict[str, Any]) -> Dict[str, Any]:
+def upgrade_game(game: dict[str, Any]) -> dict[str, Any]:
     """Upgrade a single game record to new schema."""
     upgraded = game.copy()
 

@@ -119,7 +119,7 @@ def record_peer_success(peer_host: str) -> None:
         get_host_breaker().record_success(peer_host)
 
 
-def record_peer_failure(peer_host: str, error: Optional[Exception] = None) -> None:
+def record_peer_failure(peer_host: str, error: Exception | None = None) -> None:
     """Record failed communication with a peer.
 
     This increments the failure count and may trip the circuit breaker.
@@ -137,10 +137,10 @@ async def peer_request(
     method: str,
     url: str,
     peer_host: str,
-    headers: Optional[Dict[str, str]] = None,
-    json: Optional[Dict[str, Any]] = None,
-    timeout: Optional[float] = None,
-) -> Optional[Dict[str, Any]]:
+    headers: dict[str, str] | None = None,
+    json: dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any] | None:
     """Make a circuit-breaker-protected request to a peer.
 
     This function wraps HTTP requests with circuit breaker protection,

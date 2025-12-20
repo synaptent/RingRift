@@ -37,7 +37,8 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class TransferConfig:
         chunk_size_mb: Size of chunks for chunked transfer
         bandwidth_limit: Bandwidth limit in KB/s (0 = unlimited)
     """
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     ssh_user: str = "root"
     ssh_port: int = 22
     connect_timeout: int = 30
@@ -79,7 +80,7 @@ class TransferConfig:
     chunk_size_mb: int = 10
     bandwidth_limit: int = 0
 
-    def get_ssh_options(self) -> List[str]:
+    def get_ssh_options(self) -> list[str]:
         """Get SSH command options."""
         opts = DEFAULT_SSH_OPTIONS.copy()
         opts.extend(["-o", f"ConnectTimeout={self.connect_timeout}"])
@@ -165,7 +166,7 @@ def get_remote_checksum(
     remote_path: str,
     config: TransferConfig,
     algorithm: str = "md5",
-) -> Optional[str]:
+) -> str | None:
     """Get checksum of a remote file.
 
     Args:
@@ -218,7 +219,7 @@ def scp_push(
     port: int,
     remote_path: str,
     config: TransferConfig,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> TransferResult:
     """Push a file to a remote host using SCP.
 
@@ -421,7 +422,7 @@ def rsync_push(
     remote_path: str,
     config: TransferConfig,
     delete: bool = False,
-    exclude: Optional[List[str]] = None,
+    exclude: list[str] | None = None,
 ) -> TransferResult:
     """Push files to remote using rsync.
 
@@ -541,7 +542,7 @@ def rsync_pull(
     local_path: Union[str, Path],
     config: TransferConfig,
     delete: bool = False,
-    exclude: Optional[List[str]] = None,
+    exclude: list[str] | None = None,
 ) -> TransferResult:
     """Pull files from remote using rsync.
 
@@ -720,9 +721,9 @@ def copy_local(
 
 def compress_file(
     source: Union[str, Path],
-    dest: Optional[Union[str, Path]] = None,
+    dest: Union[str, Path] | None = None,
     level: int = 6,
-) -> Tuple[Path, int]:
+) -> tuple[Path, int]:
     """Compress a file using gzip.
 
     Args:
@@ -745,8 +746,8 @@ def compress_file(
 
 def decompress_file(
     source: Union[str, Path],
-    dest: Optional[Union[str, Path]] = None,
-) -> Tuple[Path, int]:
+    dest: Union[str, Path] | None = None,
+) -> tuple[Path, int]:
     """Decompress a gzipped file.
 
     Args:

@@ -138,7 +138,7 @@ MODEL_SOURCES, SYNC_TARGETS = _load_hosts_from_config()
 # Model Discovery
 # =============================================================================
 
-def get_local_models() -> List[Dict]:
+def get_local_models() -> list[dict]:
     """Get list of local model files with metadata."""
     models = []
     for model_file in MODELS_DIR.glob("*.pth"):
@@ -162,7 +162,7 @@ def _compute_md5(file_path: Path, chunk_size: int = 8192) -> str:
     return md5.hexdigest()
 
 
-def get_latest_model(board_type: Optional[str] = None) -> Optional[Dict]:
+def get_latest_model(board_type: str | None = None) -> dict | None:
     """Get the latest model, optionally filtered by board type."""
     models = get_local_models()
     if board_type:
@@ -170,7 +170,7 @@ def get_latest_model(board_type: Optional[str] = None) -> Optional[Dict]:
     return models[0] if models else None
 
 
-def probe_source(source: Dict) -> Tuple[str, bool, float]:
+def probe_source(source: dict) -> tuple[str, bool, float]:
     """Probe a model source for availability and latency."""
     import time
     import urllib.request
@@ -188,7 +188,7 @@ def probe_source(source: Dict) -> Tuple[str, bool, float]:
         return name, False, float("inf")
 
 
-def get_best_sources(count: int = 3) -> List[Dict]:
+def get_best_sources(count: int = 3) -> list[dict]:
     """Get the best available model sources sorted by latency."""
     results = []
     with ThreadPoolExecutor(max_workers=len(MODEL_SOURCES)) as executor:
@@ -208,7 +208,7 @@ def get_best_sources(count: int = 3) -> List[Dict]:
 # =============================================================================
 
 def download_with_aria2(
-    urls: List[str],
+    urls: list[str],
     output_path: Path,
     config: SyncConfig,
 ) -> bool:
@@ -261,11 +261,11 @@ def download_with_aria2(
 
 
 def sync_model_to_node(
-    model: Dict,
-    target: Dict,
-    sources: List[Dict],
+    model: dict,
+    target: dict,
+    sources: list[dict],
     config: SyncConfig,
-) -> Tuple[str, bool, str]:
+) -> tuple[str, bool, str]:
     """Sync a model to a target node."""
     name = target["name"]
     host = target["host"]
@@ -352,7 +352,7 @@ def cmd_status():
         print(f"  {s['name']:<20} {s['host']:<18} {status}")
 
 
-def cmd_sync_to_all(config: SyncConfig, model_name: Optional[str] = None):
+def cmd_sync_to_all(config: SyncConfig, model_name: str | None = None):
     """Sync models to all target nodes."""
     logger.info("=" * 70)
     logger.info("SYNCING MODELS TO ALL NODES")

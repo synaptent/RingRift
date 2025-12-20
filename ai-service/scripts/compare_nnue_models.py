@@ -27,7 +27,7 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 @dataclass
 class GameResult:
-    winner: Optional[int]  # None for draw
+    winner: int | None  # None for draw
     moves: int
     duration: float
     model_a_player: int
@@ -118,7 +118,7 @@ def run_comparison(
     num_games: int = 100,
     board_type: str = "square8",
     num_players: int = 2,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a comparison tournament between two NNUE models."""
     print(f"\nNNUE Model Comparison")
     print("=" * 60)
@@ -148,7 +148,7 @@ def run_comparison(
 
     # Run games
     print(f"\nPlaying {num_games} games...")
-    results: List[GameResult] = []
+    results: list[GameResult] = []
     model_a_wins = 0
     model_b_wins = 0
     draws = 0

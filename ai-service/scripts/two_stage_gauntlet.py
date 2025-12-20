@@ -107,7 +107,7 @@ class WilsonScore:
         else:
             return 1.645  # 90%
 
-    def interval(self) -> Tuple[float, float]:
+    def interval(self) -> tuple[float, float]:
         """Return (lower, upper) Wilson score interval."""
         if self.total == 0:
             return (0.0, 1.0)
@@ -209,9 +209,9 @@ def play_game(
     num_players: int = 2,
     model_plays_first: bool = True,
     record_games: bool = True,
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     mcts_difficulty: int = 3,
-) -> Optional[int]:
+) -> int | None:
     """Play a single game, optionally record to database, return winner or None for error.
 
     Args:
@@ -333,7 +333,7 @@ def _record_game(
     db_path: str,
     initial_state: "GameState",
     final_state: "GameState",
-    moves: List[Tuple["Move", "GameState", "GameState"]],
+    moves: list[tuple["Move", "GameState", "GameState"]],
     model_name: str,
     model_type: str,
     opponent_type: str,
@@ -388,12 +388,12 @@ def _record_game(
 
 
 def run_stage1_for_model(
-    model: Dict[str, Any],
+    model: dict[str, Any],
     board_type: BoardType,
     num_players: int,
     games_per_baseline: int = 10,
     early_exit_threshold: float = 0.3,
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     mcts_difficulty: int = 3,
 ) -> ModelResult:
     """Run stage 1 screening for a model.
@@ -470,7 +470,7 @@ def run_stage2_for_model(
     result: ModelResult,
     board_type: BoardType,
     games_per_baseline: int = 50,
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     mcts_difficulty: int = 3,
 ) -> ModelResult:
     """Run stage 2 deep evaluation for a model that passed stage 1."""
@@ -509,7 +509,7 @@ def run_stage2_for_model(
 
 
 def run_two_stage_gauntlet(
-    models: List[Dict[str, Any]],
+    models: list[dict[str, Any]],
     board_type: BoardType,
     num_players: int,
     stage1_games: int = 10,
@@ -519,7 +519,7 @@ def run_two_stage_gauntlet(
     num_shards: int = 1,
     record_games: bool = True,
     mcts_difficulty: int = 3,
-) -> List[ModelResult]:
+) -> list[ModelResult]:
     """Run two-stage gauntlet with parallelization.
 
     Args:
@@ -619,7 +619,7 @@ def run_two_stage_gauntlet(
     return results
 
 
-def save_stage1_results(results: List[ModelResult], board_type: BoardType, num_players: int, shard: int):
+def save_stage1_results(results: list[ModelResult], board_type: BoardType, num_players: int, shard: int):
     """Save stage 1 results to file."""
     filename = STAGE1_DIR / f"{board_type.value}_{num_players}p_shard{shard}.json"
     data = {
@@ -633,7 +633,7 @@ def save_stage1_results(results: List[ModelResult], board_type: BoardType, num_p
         json.dump(data, f, indent=2)
 
 
-def save_stage2_results(results: List[ModelResult], board_type: BoardType, num_players: int, shard: int):
+def save_stage2_results(results: list[ModelResult], board_type: BoardType, num_players: int, shard: int):
     """Save stage 2 results to file."""
     filename = STAGE2_DIR / f"{board_type.value}_{num_players}p_shard{shard}.json"
     data = {
@@ -647,7 +647,7 @@ def save_stage2_results(results: List[ModelResult], board_type: BoardType, num_p
         json.dump(data, f, indent=2)
 
 
-def aggregate_results(board_type: str, num_players: int) -> List[ModelResult]:
+def aggregate_results(board_type: str, num_players: int) -> list[ModelResult]:
     """Aggregate results from all shards."""
     all_results = []
 
@@ -676,7 +676,7 @@ def promote_gauntlet_winners(
     threshold: float = 0.70,
     top_n: int = 3,
     dry_run: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Promote top gauntlet performers to production.
 
     Args:
@@ -785,7 +785,7 @@ def promote_gauntlet_winners(
 def discover_models_for_gauntlet(
     board_type: str,
     num_players: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Discover models for gauntlet."""
     models_dir = AI_SERVICE_ROOT / "models"
 

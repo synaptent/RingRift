@@ -27,7 +27,8 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
+from collections.abc import Callable, Iterable, Sequence
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -51,7 +52,7 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("run_ssh_distributed_tournament")
 
 
-Matchup = Tuple[str, str]
+Matchup = tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ def _normalise_tier_name(tier: str) -> str:
     return f"D{int(cleaned)}"
 
 
-def parse_tiers_spec(spec: str) -> List[str]:
+def parse_tiers_spec(spec: str) -> list[str]:
     """Parse a comma list (D1,D2) or range (D1-D10)."""
     raw = spec.strip()
     if not raw:
@@ -94,7 +95,7 @@ def parse_tiers_spec(spec: str) -> List[str]:
         raise ValueError("tiers must be non-empty")
     # De-dup while preserving order.
     seen = set()
-    result: List[str] = []
+    result: list[str] = []
     for t in tiers:
         if t not in seen:
             result.append(t)
@@ -102,10 +103,10 @@ def parse_tiers_spec(spec: str) -> List[str]:
     return result
 
 
-def enumerate_matchups(tiers: Sequence[str]) -> List[Matchup]:
+def enumerate_matchups(tiers: Sequence[str]) -> list[Matchup]:
     normalized = [_normalise_tier_name(t) for t in tiers]
     sorted_tiers = sorted(normalized, key=lambda t: int(t[1:]))
-    matchups: List[Matchup] = []
+    matchups: list[Matchup] = []
     for i, tier_a in enumerate(sorted_tiers):
         for tier_b in sorted_tiers[i + 1 :]:
             matchups.append((tier_a, tier_b))
@@ -160,12 +161,12 @@ def assign_matchups_to_worker_slots(
     matchups: Sequence[Matchup],
     worker_slots: Sequence[WorkerSlot],
     cost_fn: Callable[[Matchup], float],
-) -> Dict[WorkerSlot, List[Matchup]]:
+) -> dict[WorkerSlot, list[Matchup]]:
     if not worker_slots:
         raise ValueError("worker_slots must be non-empty")
 
-    loads: Dict[WorkerSlot, float] = {slot: 0.0 for slot in worker_slots}
-    assignments: Dict[WorkerSlot, List[Matchup]] = {slot: [] for slot in worker_slots}
+    loads: dict[WorkerSlot, float] = {slot: 0.0 for slot in worker_slots}
+    assignments: dict[WorkerSlot, list[Matchup]] = {slot: [] for slot in worker_slots}
 
     for matchup in sorted(matchups, key=cost_fn, reverse=True):
         chosen = min(worker_slots, key=lambda s: loads[s])
@@ -201,10 +202,10 @@ def build_remote_tournament_command(
     max_moves: int,
     wilson_confidence: float,
     worker_label: str,
-    nn_model_id: Optional[str],
+    nn_model_id: str | None,
     require_neural_net: bool,
 ) -> str:
-    cmd: List[str] = [
+    cmd: list[str] = [
         "python",
         "scripts/run_distributed_tournament.py",
         "--tiers",
@@ -250,7 +251,7 @@ def _board_to_board_type(board: str) -> BoardType:
     raise ValueError(f"Unknown board: {board!r}")
 
 
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run a difficulty-tier tournament across SSH hosts"
     )
@@ -386,18 +387,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def _select_hosts(
-    all_hosts: Dict[str, HostConfig],
+    all_hosts: dict[str, HostConfig],
     *,
-    selected: Optional[Iterable[str]],
+    selected: Iterable[str] | None,
     include_nonready: bool,
-) -> Dict[str, HostConfig]:
+) -> dict[str, HostConfig]:
     if selected:
         selected_set = {name.strip() for name in selected if name.strip()}
         hosts = {k: v for k, v in all_hosts.items() if k in selected_set}
     else:
         hosts = dict(all_hosts)
 
-    filtered: Dict[str, HostConfig] = {}
+    filtered: dict[str, HostConfig] = {}
     for name, cfg in hosts.items():
         status = str(cfg.properties.get("status") or "").strip().lower()
         if include_nonready or not status or status == "ready":
@@ -409,11 +410,11 @@ def _select_hosts(
 
 
 def _build_worker_slots(
-    hosts: Dict[str, HostConfig],
+    hosts: dict[str, HostConfig],
     *,
-    max_parallel_per_host: Optional[int],
-) -> List[WorkerSlot]:
-    slots: List[WorkerSlot] = []
+    max_parallel_per_host: int | None,
+) -> list[WorkerSlot]:
+    slots: list[WorkerSlot] = []
     for name, cfg in hosts.items():
         count = int(cfg.max_parallel_jobs or 1)
         if max_parallel_per_host is not None:
@@ -423,7 +424,7 @@ def _build_worker_slots(
     return slots
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
 
     tiers = parse_tiers_spec(args.tiers)
@@ -447,7 +448,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     required_gb = BOARD_MEMORY_REQUIREMENTS.get(
         ("hexagonal" if args.board == "hex" else args.board), 8
     )
-    eligible_hosts: Dict[str, HostConfig] = {}
+    eligible_hosts: dict[str, HostConfig] = {}
     for name, cfg in hosts.items():
         if cfg.memory_gb is not None and int(cfg.memory_gb) < int(required_gb):
             logger.info(
@@ -536,10 +537,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"Failed to create {remote_run_dir!r} on {host_name}: {result.stderr}"
             )
 
-    def run_slot(slot: WorkerSlot) -> List[Path]:
+    def run_slot(slot: WorkerSlot) -> list[Path]:
         cfg = eligible_hosts[slot.host_name]
         executor = SSHExecutor(cfg)
-        fetched: List[Path] = []
+        fetched: list[Path] = []
         tasks = assignments.get(slot, [])
         for tier_a, tier_b in tasks:
             matchup_id = f"{tier_a}_vs_{tier_b}"
@@ -563,7 +564,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 require_neural_net=args.require_neural_net,
             )
 
-            last_error: Optional[str] = None
+            last_error: str | None = None
             for attempt in range(max(1, int(args.retries))):
                 logger.info(f"[{slot.id}] {matchup_id} (attempt {attempt + 1})")
                 result = executor.run(remote_cmd, timeout=int(args.job_timeout_sec))
@@ -593,7 +594,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Execute all worker slots concurrently.
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    shard_paths: List[Path] = []
+    shard_paths: list[Path] = []
     with ThreadPoolExecutor(max_workers=len(worker_slots)) as pool:
         futures = {pool.submit(run_slot, slot): slot for slot in worker_slots}
         for future in as_completed(futures):
@@ -603,7 +604,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # Aggregate checkpoints into one report.
     combined_matches = []
-    completed_matchups: List[Matchup] = []
+    completed_matchups: list[Matchup] = []
     for path in sorted(shard_paths):
         with open(path, "r", encoding="utf-8") as f:
             state = TournamentState.from_dict(json.load(f))

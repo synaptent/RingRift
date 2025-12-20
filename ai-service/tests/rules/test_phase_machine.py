@@ -396,7 +396,7 @@ def test_forced_elimination_rotates_player_correctly():
     After FE, the turn ends and rotates to the next player.
     """
     state = _make_minimal_state(GamePhase.FORCED_ELIMINATION, current_player=1)
-    
+
     # Ensure player 1 has stacks (needed for FE to be valid)
     from app.models import RingStack
     stack_pos = Position(x=3, y=3)
@@ -407,7 +407,7 @@ def test_forced_elimination_rotates_player_correctly():
         capHeight=2,
         controllingPlayer=1,
     )
-    
+
     # Create a FORCED_ELIMINATION move from player 1
     move = Move(
         id="fe1",
@@ -418,10 +418,10 @@ def test_forced_elimination_rotates_player_correctly():
         thinkTime=0,
         moveNumber=1,
     )
-    
+
     inp = PhaseTransitionInput(game_state=state, last_move=move, trace_mode=False)
     advance_phases(inp)
-    
+
     # After player 1's FE, it should be player 2's turn in RING_PLACEMENT
     assert state.current_player == 2, (
         f"Expected current_player=2 after player 1's FE, got {state.current_player}"
@@ -441,12 +441,12 @@ def test_forced_elimination_skips_eliminated_players():
     This test ensures the rotation after FE properly skips eliminated players.
     """
     state = _make_minimal_state(GamePhase.FORCED_ELIMINATION, current_player=1)
-    
+
     # Make player 2 eliminated (no rings in hand, no stacks)
     p2 = next(p for p in state.players if p.player_number == 2)
     p2.rings_in_hand = 0
     p2.eliminated_rings = 18  # All rings eliminated
-    
+
     # Player 1 still has a stack (needed for FE)
     from app.models import RingStack
     stack_pos = Position(x=3, y=3)
@@ -457,7 +457,7 @@ def test_forced_elimination_skips_eliminated_players():
         capHeight=2,
         controllingPlayer=1,
     )
-    
+
     move = Move(
         id="fe1",
         type=MoveType.FORCED_ELIMINATION,
@@ -467,10 +467,10 @@ def test_forced_elimination_skips_eliminated_players():
         thinkTime=0,
         moveNumber=1,
     )
-    
+
     inp = PhaseTransitionInput(game_state=state, last_move=move, trace_mode=False)
     advance_phases(inp)
-    
+
     # In a 2-player game with player 2 eliminated, player 1 should get the next turn.
     # But since player 1 just finished their turn, and player 2 is eliminated,
     # the game should either:

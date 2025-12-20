@@ -94,7 +94,7 @@ DEFAULT_CONFIG = {
 class DataAggregator:
     """Centralized data aggregation service."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self._running = False
         self._shutdown_event = asyncio.Event()
@@ -215,7 +215,7 @@ class DataAggregator:
             logger.error(f"Cluster sync error: {e}")
             return 0
 
-    async def run_s3_sync(self) -> Dict[str, int]:
+    async def run_s3_sync(self) -> dict[str, int]:
         """Sync data to AWS S3.
 
         Returns dict with upload/delete counts.
@@ -304,7 +304,7 @@ class DataAggregator:
             logger.error(f"S3 sync error for {local_path}: {e}")
             return 0, 0
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get aggregator status."""
         agg_config = self.config.get('aggregator', {})
         local_storage = agg_config.get('local_storage', {})
@@ -404,7 +404,7 @@ class DataAggregator:
         self._shutdown_event.set()
 
 
-def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
+def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """Load configuration from file or use defaults."""
     if config_path and config_path.exists():
         with open(config_path) as f:

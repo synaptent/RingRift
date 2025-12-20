@@ -26,7 +26,8 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Tuple
+from collections.abc import Mapping
 
 import numpy as np
 
@@ -47,7 +48,7 @@ from scripts.run_cmaes_optimization import (  # type: ignore  # noqa: E402
 )
 
 
-ProbeResult = Dict[str, Any]
+ProbeResult = dict[str, Any]
 
 
 def _compute_l2(
@@ -70,13 +71,13 @@ def _compute_l2(
     return float(np.linalg.norm(cand_vec - base_vec))
 
 
-def _parse_board_list(raw: str) -> List[BoardType]:
+def _parse_board_list(raw: str) -> list[BoardType]:
     """Parse a comma-separated list of board names into BoardType values."""
     names = [name.strip().lower() for name in raw.split(",") if name.strip()]
     if not names:
         raise SystemExit("At least one board must be specified via --boards")
 
-    boards: List[BoardType] = []
+    boards: list[BoardType] = []
     for name in names:
         try:
             boards.append(BOARD_NAME_TO_TYPE[name])
@@ -92,14 +93,14 @@ def _run_probes_for_candidate(
     candidate: HeuristicWeights,
     baseline: HeuristicWeights,
     *,
-    boards: List[BoardType],
+    boards: list[BoardType],
     games_per_eval: int,
     eval_mode: str,
     state_pool_id: str,
     eval_randomness: float,
     seed: int,
     max_moves: int = 200,
-) -> List[ProbeResult]:
+) -> list[ProbeResult]:
     """Evaluate one candidate profile against the baseline on all boards.
 
     This function routes all evaluation through
@@ -108,13 +109,13 @@ def _run_probes_for_candidate(
     harness.
     """
 
-    per_board_stats: Dict[BoardType, Dict[str, Any]] = {}
+    per_board_stats: dict[BoardType, dict[str, Any]] = {}
 
     def _debug_callback(
         _candidate_w: HeuristicWeights,
         _baseline_w: HeuristicWeights,
         board_type: BoardType,
-        stats: Dict[str, Any],
+        stats: dict[str, Any],
     ) -> None:
         # One callback invocation per candidate/board; record the latest
         # stats for this board.
@@ -140,7 +141,7 @@ def _run_probes_for_candidate(
     )
 
     weight_l2_default = _compute_l2(candidate, baseline)
-    rows: List[ProbeResult] = []
+    rows: list[ProbeResult] = []
 
     for board in boards:
         stats = per_board_stats.get(board, {})
@@ -194,11 +195,11 @@ def _format_row(row: ProbeResult) -> str:
 def _export_weights(
     out_dir: str,
     profiles: Mapping[str, HeuristicWeights],
-) -> List[str]:
+) -> list[str]:
     """Write weight JSON files for each profile and return their paths."""
 
     os.makedirs(out_dir, exist_ok=True)
-    written: List[str] = []
+    written: list[str] = []
     for name, weights in profiles.items():
         payload = {
             "weights": weights,
@@ -214,7 +215,7 @@ def _export_weights(
     return written
 
 
-def main(argv: List[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=("Probe heuristic CMA-ES/GA plateau behaviour using the shared " "multi-board evaluation harness."),
     )
@@ -290,7 +291,7 @@ def main(argv: List[str] | None = None) -> None:
     scaled5: HeuristicWeights = {k: float(baseline[k] * 5.0) for k in HEURISTIC_WEIGHT_KEYS}
 
     rng = np.random.default_rng(args.seed)
-    near_profiles: List[Tuple[str, HeuristicWeights]] = []
+    near_profiles: list[tuple[str, HeuristicWeights]] = []
     for i in range(args.near_count):
         deltas = rng.normal(
             loc=0.0,
@@ -303,7 +304,7 @@ def main(argv: List[str] | None = None) -> None:
         near_profiles.append((f"near_{i}", weights))
 
     # Export weight profiles for downstream policy-equivalence diagnostics.
-    profiles_to_export: Dict[str, HeuristicWeights] = {"baseline": baseline}
+    profiles_to_export: dict[str, HeuristicWeights] = {"baseline": baseline}
     profiles_to_export["zero"] = zero
     profiles_to_export["scaled5"] = scaled5
     for name, weights in near_profiles:
@@ -327,7 +328,7 @@ def main(argv: List[str] | None = None) -> None:
     )
 
     # Order of candidates: baseline, zero, scaled5, then near-baseline set.
-    candidates: List[Tuple[str, HeuristicWeights]] = [
+    candidates: list[tuple[str, HeuristicWeights]] = [
         ("baseline", baseline),
         ("zero", zero),
         ("scaled5", scaled5),

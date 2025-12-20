@@ -60,12 +60,12 @@ class ModelStats:
     draws: int
     board_type: str
     num_players: int
-    created_at: Optional[datetime]
+    created_at: datetime | None
     is_canonical: bool
     size_mb: float
 
 
-def get_model_elo_stats(db_path: Path) -> Dict[str, ModelStats]:
+def get_model_elo_stats(db_path: Path) -> dict[str, ModelStats]:
     """Get Elo statistics for all models from the unified database."""
     if not db_path.exists():
         print(f"Warning: Elo database not found at {db_path}")
@@ -148,7 +148,7 @@ def get_model_elo_stats(db_path: Path) -> Dict[str, ModelStats]:
     return stats
 
 
-def get_canonical_models() -> Set[str]:
+def get_canonical_models() -> set[str]:
     """Get set of canonical model filenames that should never be pruned."""
     canonical = set()
 
@@ -199,12 +199,12 @@ def get_canonical_models() -> Set[str]:
 
 
 def get_models_to_prune(
-    stats: Dict[str, ModelStats],
-    canonical: Set[str],
+    stats: dict[str, ModelStats],
+    canonical: set[str],
     min_elo: float = DEFAULT_MIN_ELO,
     min_games: int = DEFAULT_MIN_GAMES,
     min_age_days: int = DEFAULT_MIN_AGE_DAYS,
-) -> List[ModelStats]:
+) -> list[ModelStats]:
     """Determine which models should be pruned."""
     to_prune = []
     now = datetime.now()
@@ -234,10 +234,10 @@ def get_models_to_prune(
 
 
 def prune_models(
-    models: List[ModelStats],
+    models: list[ModelStats],
     archive: bool = False,
     dry_run: bool = False,
-) -> Tuple[int, float]:
+) -> tuple[int, float]:
     """Prune the specified models.
 
     Returns (count_pruned, space_freed_mb).
@@ -271,7 +271,7 @@ def prune_models(
     return count, space_mb
 
 
-def print_stats(stats: Dict[str, ModelStats], canonical: Set[str]):
+def print_stats(stats: dict[str, ModelStats], canonical: set[str]):
     """Print model statistics."""
     if not stats:
         print("No model statistics available.")

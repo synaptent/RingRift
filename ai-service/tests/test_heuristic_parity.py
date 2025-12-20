@@ -47,7 +47,7 @@ _HEURISTIC_FIXTURE_DIR = _REPO_ROOT / "tests" / "fixtures" / "heuristic" / "v1"
 _SIMPLE_STACKS_FIXTURE = _HEURISTIC_FIXTURE_DIR / "square8_2p_simple_stacks.v1.json"
 
 
-def _load_fixture(path: Path) -> Dict[str, Any]:
+def _load_fixture(path: Path) -> dict[str, Any]:
     if not path.exists():
         pytest.skip(f"Heuristic fixture not found at {path}")
 
@@ -55,13 +55,13 @@ def _load_fixture(path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
-def _build_board_from_fixture(snapshot: Dict[str, Any]) -> BoardState:
+def _build_board_from_fixture(snapshot: dict[str, Any]) -> BoardState:
     board_data = snapshot["board"]
 
     board_type = BoardType(board_data["type"])
     size = int(board_data["size"])
 
-    stacks: Dict[str, RingStack] = {}
+    stacks: dict[str, RingStack] = {}
     for key, entry in board_data.get("stacks", {}).items():
         parts = [int(p) for p in key.split(",")]
         if len(parts) == 2:
@@ -92,7 +92,7 @@ def _build_board_from_fixture(snapshot: Dict[str, Any]) -> BoardState:
     )
 
 
-def _build_players_from_fixture(snapshot: Dict[str, Any]) -> list[Player]:
+def _build_players_from_fixture(snapshot: dict[str, Any]) -> list[Player]:
     players: list[Player] = []
     for entry in snapshot.get("players", []):
         num = int(entry["playerNumber"])
@@ -115,7 +115,7 @@ def _build_players_from_fixture(snapshot: Dict[str, Any]) -> list[Player]:
     return players
 
 
-def _build_game_state_from_fixture_state(state_entry: Dict[str, Any]) -> GameState:
+def _build_game_state_from_fixture_state(state_entry: dict[str, Any]) -> GameState:
     game_state_snapshot = state_entry["gameState"]
 
     board = _build_board_from_fixture(game_state_snapshot)
@@ -172,7 +172,7 @@ def test_python_heuristic_respects_orderings(fixture_path: Path) -> None:
     base_profile_id = data.get("profileId", "heuristic_v1_balanced")
 
     # Index states by id for quick lookup.
-    states_by_id: Dict[str, Dict[str, Any]] = {
+    states_by_id: dict[str, dict[str, Any]] = {
         s["id"]: s for s in data.get("states", [])
     }
 

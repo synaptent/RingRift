@@ -160,18 +160,18 @@ def test_run_full_tier_gating_demo_with_mocks(tmp_path, monkeypatch) -> None:
         run_dir: str,
         seed: int | None,
         num_games_override: int | None,
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         assert tier == tier_value
         assert candidate_id == candidate_id_value
         rd = Path(run_dir)
-        eval_payload: Dict[str, Any] = {
+        eval_payload: dict[str, Any] = {
             "tier": tier_value,
             "board_type": "square8",
             "num_players": 2,
             "overall_pass": True,
             "metrics": {"win_rate_vs_baseline": 0.8},
         }
-        plan_payload: Dict[str, Any] = {
+        plan_payload: dict[str, Any] = {
             "tier": tier_value,
             "board_type": "square8",
             "num_players": 2,
@@ -311,17 +311,17 @@ def test_run_full_tier_gating_rejects_when_perf_fails(
         run_dir: str,
         seed: int | None,
         num_games_override: int | None,
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         assert tier == tier_value
         assert candidate_id == candidate_id_value
-        eval_payload: Dict[str, Any] = {
+        eval_payload: dict[str, Any] = {
             "tier": tier_value,
             "board_type": "square8",
             "num_players": 2,
             "overall_pass": True,
             "metrics": {"win_rate_vs_baseline": 0.8},
         }
-        plan_payload: Dict[str, Any] = {
+        plan_payload: dict[str, Any] = {
             "tier": tier_value,
             "board_type": "square8",
             "num_players": 2,
@@ -441,17 +441,17 @@ def test_run_full_tier_gating_skips_perf_when_no_perf_flag(
         run_dir: str,
         seed: int | None,
         num_games_override: int | None,
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         assert tier == tier_value
         assert candidate_id == candidate_id_value
-        eval_payload: Dict[str, Any] = {
+        eval_payload: dict[str, Any] = {
             "tier": tier_value,
             "board_type": "square8",
             "num_players": 2,
             "overall_pass": True,
             "metrics": {"win_rate_vs_baseline": 0.75},
         }
-        plan_payload: Dict[str, Any] = {
+        plan_payload: dict[str, Any] = {
             "tier": tier_value,
             "board_type": "square8",
             "num_players": 2,

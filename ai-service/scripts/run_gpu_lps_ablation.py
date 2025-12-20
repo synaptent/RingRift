@@ -80,31 +80,31 @@ class GPUExperimentConfig:
     num_games: int
     board_type: str
     num_players: int
-    lps_rounds_values: List[int]
-    rings_per_player_values: List[Optional[int]]  # None = board default
+    lps_rounds_values: list[int]
+    rings_per_player_values: list[int | None]  # None = board default
     batch_size: int
     seed: int
-    output_dir: Optional[str]
+    output_dir: str | None
 
 
 @dataclass
 class GPUExperimentResults:
     """Aggregated results from GPU experiment run."""
-    config: Dict[str, Any]
-    results_by_condition: Dict[str, Dict[str, Any]]
-    raw_results: List[Dict[str, Any]]
+    config: dict[str, Any]
+    results_by_condition: dict[str, dict[str, Any]]
+    raw_results: list[dict[str, Any]]
 
 
 def run_gpu_condition(
     board_size: int,
     num_players: int,
     lps_rounds: int,
-    rings_per_player: Optional[int],
+    rings_per_player: int | None,
     num_games: int,
     batch_size: int,
     device: torch.device,
     seed: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a single experimental condition using GPU parallel games.
 
     Returns dict with:
@@ -191,8 +191,8 @@ def run_gpu_experiment(config: GPUExperimentConfig) -> GPUExperimentResults:
 
     board_size = BOARD_SIZE_MAP.get(config.board_type, 8)
 
-    all_results: List[Dict[str, Any]] = []
-    results_by_condition: Dict[str, Dict[str, Any]] = {}
+    all_results: list[dict[str, Any]] = []
+    results_by_condition: dict[str, dict[str, Any]] = {}
 
     for lps_rounds in config.lps_rounds_values:
         for rings_per_player in config.rings_per_player_values:
@@ -274,7 +274,7 @@ def print_comparison_table(results: GPUExperimentResults) -> None:
         print(f"{cond:<30} {territory:>9.1f}% {elimination:>11.1f}% {lps:>9.1f}% {timeout:>9.1f}% {stats['avg_move_count']:>10.1f}")
 
 
-def parse_rings_value(val: str) -> Optional[int]:
+def parse_rings_value(val: str) -> int | None:
     """Parse a rings-per-player value from CLI.
 
     - 'default', '0', or empty string -> None (use default from board config)

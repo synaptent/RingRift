@@ -124,8 +124,8 @@ class AlertConfig:
     alert_cooldown_minutes: int = 30             # Don't repeat same alert
 
     # Webhooks (from environment or config)
-    slack_webhook_url: Optional[str] = None
-    pagerduty_routing_key: Optional[str] = None
+    slack_webhook_url: str | None = None
+    pagerduty_routing_key: str | None = None
 
     def __post_init__(self):
         self.slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL", self.slack_webhook_url)
@@ -135,7 +135,7 @@ class AlertConfig:
 @dataclass
 class AlertState:
     """Persistent alert state to prevent alert spam."""
-    last_alerts: Dict[str, str] = field(default_factory=dict)  # alert_key -> timestamp
+    last_alerts: dict[str, str] = field(default_factory=dict)  # alert_key -> timestamp
 
     def can_alert(self, key: str, cooldown_minutes: int) -> bool:
         """Check if we can send an alert (respects cooldown)."""
@@ -148,11 +148,11 @@ class AlertState:
         """Record that an alert was sent."""
         self.last_alerts[key] = datetime.now().isoformat()
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {"last_alerts": self.last_alerts}
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "AlertState":
+    def from_dict(cls, data: dict) -> "AlertState":
         return cls(last_alerts=data.get("last_alerts", {}))
 
 
@@ -361,7 +361,7 @@ def check_local_disk() -> HealthCheck:
     )
 
 
-def run_all_checks(config: AlertConfig) -> List[HealthCheck]:
+def run_all_checks(config: AlertConfig) -> list[HealthCheck]:
     """Run all health checks."""
     return [
         check_p2p_network(config),

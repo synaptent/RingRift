@@ -122,7 +122,7 @@ def device():
 
 
 @pytest.fixture(scope="session")
-def available_databases() -> List[Path]:
+def available_databases() -> list[Path]:
     """Find available test databases."""
     ai_service_root = Path(__file__).parent.parent.parent
 
@@ -165,7 +165,7 @@ def compare_evaluations(
     state: GameState,
     device,
     tolerance: float = SCORE_TOLERANCE,
-) -> Tuple[bool, str, dict]:
+) -> tuple[bool, str, dict]:
     """Compare CPU and GPU evaluations for all players.
 
     Returns:

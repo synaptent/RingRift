@@ -136,7 +136,7 @@ VECTOR_TO_BUNDLE = {
 }
 
 
-def get_original_assertions(vector_id: str) -> Dict[str, Any]:
+def get_original_assertions(vector_id: str) -> dict[str, Any]:
     """Get the original assertions from the JSON file for reference.
 
     Args:
@@ -163,7 +163,7 @@ def get_original_assertions(vector_id: str) -> Dict[str, Any]:
     return {}
 
 
-def regenerate_vector(vector_id: str) -> Dict[str, Any]:
+def regenerate_vector(vector_id: str) -> dict[str, Any]:
     """Regenerate a single vector by executing it and capturing the output.
 
     Args:
@@ -256,7 +256,7 @@ def regenerate_vector(vector_id: str) -> Dict[str, Any]:
     return new_assertions
 
 
-def update_vector_in_bundle(bundle_path: Path, vector_id: str, new_assertions: Dict[str, Any]):
+def update_vector_in_bundle(bundle_path: Path, vector_id: str, new_assertions: dict[str, Any]):
     """Update a vector's assertions in its bundle file.
 
     Args:

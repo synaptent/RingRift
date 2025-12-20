@@ -46,7 +46,7 @@ SELFPLAY_FAILURES_DIR = Path(__file__).parent.parent.parent / "logs" / "selfplay
 RESULTS_FAILURES_DIR = Path(__file__).parent.parent.parent / "results" / "failures"
 
 
-def load_failure_snapshot(path: Path) -> Optional[GameState]:
+def load_failure_snapshot(path: Path) -> GameState | None:
     """Load a failure snapshot and return the GameState."""
     if not path.exists():
         return None
@@ -236,7 +236,7 @@ class TestForcedEliminationMultipleSnapshots:
     """
 
     @pytest.fixture
-    def failure_snapshots(self) -> List[Path]:
+    def failure_snapshots(self) -> list[Path]:
         """Collect all available failure snapshots."""
         snapshots = []
 

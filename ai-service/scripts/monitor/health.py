@@ -26,14 +26,14 @@ class HealthCheckResult:
     """Result of a health check."""
     status: HealthStatus
     message: str
-    details: Optional[str] = None
+    details: str | None = None
 
 
 @dataclass
 class ClusterHealth:
     """Overall cluster health assessment."""
     status: HealthStatus
-    checks: List[HealthCheckResult]
+    checks: list[HealthCheckResult]
     summary: str
 
 

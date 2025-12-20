@@ -26,7 +26,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Iterable, Sequence
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = AI_SERVICE_ROOT.parent
@@ -59,7 +60,7 @@ TOURNAMENT_HOLDOUT_SUBSTRINGS = (
 class GateFailure:
     kind: str  # structural | semantic | config | history | holdout | filtered_out
     reason: str
-    details: Dict[str, Any]
+    details: dict[str, Any]
 
 
 def _resolve_path(raw: str) -> Path:
@@ -69,7 +70,7 @@ def _resolve_path(raw: str) -> Path:
     return (REPO_ROOT / p).resolve()
 
 
-def _build_env() -> Dict[str, str]:
+def _build_env() -> dict[str, str]:
     env = os.environ.copy()
     pythonpath = env.get("PYTHONPATH", "")
     parts = [p for p in pythonpath.split(os.pathsep) if p]
@@ -90,11 +91,11 @@ def _connect_sqlite(db_path: Path, *, readonly: bool) -> sqlite3.Connection:
     return sqlite3.connect(str(db_path), timeout=60.0)
 
 
-def _normalize_source(value: Optional[str]) -> str:
+def _normalize_source(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def _is_holdout_source(source: Optional[str], substrings: Sequence[str]) -> bool:
+def _is_holdout_source(source: str | None, substrings: Sequence[str]) -> bool:
     norm = _normalize_source(source)
     if not norm:
         return False
@@ -104,17 +105,17 @@ def _is_holdout_source(source: Optional[str], substrings: Sequence[str]) -> bool
 def _list_games(
     db_path: Path,
     *,
-    board_type: Optional[str],
-    num_players: Optional[int],
+    board_type: str | None,
+    num_players: int | None,
     require_completed: bool,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     conn = _connect_sqlite(db_path, readonly=True)
     try:
         query = (
             "SELECT game_id, board_type, num_players, game_status, source "
             "FROM games WHERE 1=1"
         )
-        params: List[Any] = []
+        params: list[Any] = []
         if board_type:
             query += " AND board_type = ?"
             params.append(board_type)
@@ -124,7 +125,7 @@ def _list_games(
         if require_completed:
             query += " AND game_status = 'completed'"
         rows = conn.execute(query, params).fetchall()
-        result: Dict[str, Dict[str, Any]] = {}
+        result: dict[str, dict[str, Any]] = {}
         for game_id, bt, np, status, source in rows:
             result[str(game_id)] = {
                 "game_id": str(game_id),
@@ -162,8 +163,8 @@ def _run_parity_summary(
     db_path: Path,
     *,
     work_dir: Path,
-    include_game_ids_file: Optional[Path] = None,
-) -> Dict[str, Any]:
+    include_game_ids_file: Path | None = None,
+) -> dict[str, Any]:
     summary_path = work_dir / f"parity_summary.{db_path.stem}.{uuid.uuid4().hex}.json"
     cmd = [
         sys.executable,
@@ -202,8 +203,8 @@ def _run_parity_summary(
         raise RuntimeError(f"Failed to parse parity summary JSON: {summary_path}: {e}") from e
 
 
-def _extract_gate_failures(parity_summary: Dict[str, Any]) -> Dict[str, GateFailure]:
-    failures: Dict[str, GateFailure] = {}
+def _extract_gate_failures(parity_summary: dict[str, Any]) -> dict[str, GateFailure]:
+    failures: dict[str, GateFailure] = {}
 
     for entry in parity_summary.get("structural_issues", []) or []:
         game_id = str(entry.get("game_id", ""))
@@ -242,7 +243,7 @@ def _extract_gate_failures(parity_summary: Dict[str, Any]) -> Dict[str, GateFail
 def _validate_single_config(
     db_path: Path,
     game_id: str,
-) -> Tuple[str, Optional[GateFailure]]:
+) -> tuple[str, GateFailure | None]:
     """Validate a single game's config. Thread-safe - opens its own DB connection."""
     try:
         db = GameReplayDB(str(db_path))
@@ -266,8 +267,8 @@ def _extract_noncanonical_config_failures(
     db_path: Path,
     game_ids: Iterable[str],
     parallel_workers: int = 1,
-) -> Dict[str, GateFailure]:
-    failures: Dict[str, GateFailure] = {}
+) -> dict[str, GateFailure]:
+    failures: dict[str, GateFailure] = {}
     game_id_list = list(game_ids)
 
     if not game_id_list:
@@ -331,7 +332,7 @@ def _extract_noncanonical_config_failures(
 def _validate_single_history(
     db_path: Path,
     game_id: str,
-) -> Tuple[str, Optional[GateFailure]]:
+) -> tuple[str, GateFailure | None]:
     """Validate a single game's history. Thread-safe - opens its own DB connection."""
     try:
         db = GameReplayDB(str(db_path))
@@ -358,8 +359,8 @@ def _extract_noncanonical_history_failures(
     db_path: Path,
     game_ids: Iterable[str],
     parallel_workers: int = 1,
-) -> Dict[str, GateFailure]:
-    failures: Dict[str, GateFailure] = {}
+) -> dict[str, GateFailure]:
+    failures: dict[str, GateFailure] = {}
     game_id_list = list(game_ids)
 
     if not game_id_list:
@@ -424,7 +425,7 @@ def _extract_noncanonical_history_failures(
     return failures
 
 
-def _select_existing_game_ids(db_path: Path, game_ids: Sequence[str]) -> Set[str]:
+def _select_existing_game_ids(db_path: Path, game_ids: Sequence[str]) -> set[str]:
     """Return the subset of `game_ids` already present in `db_path`."""
     if not game_ids:
         return set()
@@ -436,7 +437,7 @@ def _select_existing_game_ids(db_path: Path, game_ids: Sequence[str]) -> Set[str
 
     conn = _connect_sqlite(db_path, readonly=True)
     try:
-        found: Set[str] = set()
+        found: set[str] = set()
         batch_size = 500
         for i in range(0, len(game_ids), batch_size):
             batch = list(game_ids[i : i + batch_size])
@@ -467,7 +468,7 @@ def _table_exists(conn: sqlite3.Connection, db_name: str, table: str) -> bool:
     return row is not None
 
 
-def _table_columns(conn: sqlite3.Connection, db_name: str, table: str) -> List[str]:
+def _table_columns(conn: sqlite3.Connection, db_name: str, table: str) -> list[str]:
     rows = conn.execute(f"PRAGMA {db_name}.table_info({table})").fetchall()
     # rows: (cid, name, type, notnull, dflt_value, pk)
     return [str(r[1]) for r in rows]
@@ -478,12 +479,12 @@ def _copy_game_rows(
     dest_conn: sqlite3.Connection,
     src_alias: str,
     game_ids: Sequence[str],
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Copy rows for the given game_ids from src_alias into main DB.
 
     Returns per-table inserted row counts (best-effort).
     """
-    tables: List[Tuple[str, str]] = [
+    tables: list[tuple[str, str]] = [
         ("games", "game_id"),
         ("game_players", "game_id"),
         ("game_initial_state", "game_id"),
@@ -493,7 +494,7 @@ def _copy_game_rows(
         ("game_history_entries", "game_id"),
     ]
 
-    inserted: Dict[str, int] = {}
+    inserted: dict[str, int] = {}
     dest_conn.execute("PRAGMA foreign_keys=OFF")
 
     for table, key_col in tables:
@@ -535,7 +536,7 @@ def _attach_copy_detach(
     dest_db: Path,
     src_db: Path,
     game_ids: Sequence[str],
-) -> Dict[str, int]:
+) -> dict[str, int]:
     if not game_ids:
         return {}
 
@@ -557,13 +558,13 @@ def build_pool(
     *,
     input_dbs: Sequence[Path],
     output_db: Path,
-    holdout_db: Optional[Path],
-    quarantine_db: Optional[Path],
-    board_type: Optional[str],
-    num_players: Optional[int],
+    holdout_db: Path | None,
+    quarantine_db: Path | None,
+    board_type: str | None,
+    num_players: int | None,
     require_completed: bool,
     holdout_source_substrings: Sequence[str],
-    report_json: Optional[Path],
+    report_json: Path | None,
     recheck_existing: bool,
     parallel_workers: int = 1,
 ) -> int:
@@ -578,7 +579,7 @@ def build_pool(
     if quarantine_db is not None and quarantine_db.resolve() == output_db.resolve():
         raise SystemExit("--quarantine-db must be different from --output-db")
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "timestamp": time.time(),
         "board_type": board_type,
         "num_players": num_players,
@@ -612,10 +613,10 @@ def build_pool(
                 continue
 
             candidate_ids = sorted(games.keys())
-            skipped_existing: Set[str] = set()
+            skipped_existing: set[str] = set()
             pending_ids = candidate_ids
             if not recheck_existing:
-                already_seen: Set[str] = set()
+                already_seen: set[str] = set()
                 already_seen.update(_select_existing_game_ids(output_db, candidate_ids))
                 if holdout_db is not None:
                     already_seen.update(_select_existing_game_ids(holdout_db, candidate_ids))
@@ -666,10 +667,10 @@ def build_pool(
             for game_id, failure in history_failures.items():
                 failures.setdefault(game_id, failure)
 
-            training_ids: List[str] = []
-            holdout_ids: List[str] = []
-            failed_training_ids: List[str] = []
-            failed_holdout_ids: List[str] = []
+            training_ids: list[str] = []
+            holdout_ids: list[str] = []
+            failed_training_ids: list[str] = []
+            failed_holdout_ids: list[str] = []
 
             pending_set = set(pending_ids)
             for game_id, meta in games.items():
@@ -744,7 +745,7 @@ def build_pool(
     return 0
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input-db",
@@ -838,7 +839,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
-    input_dbs: List[Path] = []
+    input_dbs: list[Path] = []
     for raw in args.input_db or []:
         input_dbs.append(_resolve_path(raw))
 
@@ -860,14 +861,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     report_json = _resolve_path(args.report_json) if args.report_json else None
 
     # De-dupe and avoid ingesting the output/holdout/quarantine DBs as inputs.
-    excluded: Set[Path] = {output_db.resolve()}
+    excluded: set[Path] = {output_db.resolve()}
     if holdout_db is not None:
         excluded.add(holdout_db.resolve())
     if quarantine_db is not None:
         excluded.add(quarantine_db.resolve())
 
-    uniq_inputs: List[Path] = []
-    seen_paths: Set[Path] = set()
+    uniq_inputs: list[Path] = []
+    seen_paths: set[Path] = set()
     for path in input_dbs:
         resolved = path.resolve()
         if resolved in excluded or resolved in seen_paths:
@@ -891,8 +892,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[INFO] Including tournament games in training pool (removed holdout filters: {TOURNAMENT_HOLDOUT_SUBSTRINGS})")
 
     # De-duplicate while preserving order.
-    seen: Set[str] = set()
-    holdout_source_substrings: List[str] = []
+    seen: set[str] = set()
+    holdout_source_substrings: list[str] = []
     for s in substrings:
         if s in seen:
             continue

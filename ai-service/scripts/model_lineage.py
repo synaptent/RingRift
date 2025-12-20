@@ -37,13 +37,13 @@ class ModelMetadata:
     model_hash: str  # SHA256 of model file
     board_type: str
     num_players: int
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     architecture: str = "unknown"
     created_at: str = ""
-    training_config: Dict[str, Any] = field(default_factory=dict)
-    training_data: Dict[str, Any] = field(default_factory=dict)
-    performance: Dict[str, Any] = field(default_factory=dict)
-    tags: List[str] = field(default_factory=list)
+    training_config: dict[str, Any] = field(default_factory=dict)
+    training_data: dict[str, Any] = field(default_factory=dict)
+    performance: dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
 
 
 def compute_file_hash(path: Path) -> str:
@@ -120,11 +120,11 @@ def register_model(
     model_path: str,
     board_type: str,
     num_players: int,
-    parent_id: Optional[str] = None,
+    parent_id: str | None = None,
     architecture: str = "unknown",
-    training_config: Optional[Dict] = None,
-    training_data: Optional[Dict] = None,
-    tags: Optional[List[str]] = None,
+    training_config: dict | None = None,
+    training_data: dict | None = None,
+    tags: list[str] | None = None,
 ) -> str:
     """Register a model in the lineage database.
 
@@ -186,7 +186,7 @@ def update_performance(
     model_id: str,
     metric_name: str,
     metric_value: float,
-    context: Optional[str] = None,
+    context: str | None = None,
 ) -> None:
     """Record a performance metric for a model."""
     init_lineage_db()
@@ -218,7 +218,7 @@ def update_performance(
     conn.close()
 
 
-def get_model_metadata(model_id: str) -> Optional[ModelMetadata]:
+def get_model_metadata(model_id: str) -> ModelMetadata | None:
     """Get metadata for a model."""
     if not LINEAGE_DB_PATH.exists():
         return None
@@ -252,7 +252,7 @@ def get_model_metadata(model_id: str) -> Optional[ModelMetadata]:
     )
 
 
-def get_model_ancestry(model_id: str, max_depth: int = 10) -> List[str]:
+def get_model_ancestry(model_id: str, max_depth: int = 10) -> list[str]:
     """Get the ancestry chain of a model (parent, grandparent, etc.)."""
     if not LINEAGE_DB_PATH.exists():
         return []
@@ -279,7 +279,7 @@ def get_model_ancestry(model_id: str, max_depth: int = 10) -> List[str]:
     return ancestry
 
 
-def get_model_descendants(model_id: str) -> List[str]:
+def get_model_descendants(model_id: str) -> list[str]:
     """Get all models that descend from this model."""
     if not LINEAGE_DB_PATH.exists():
         return []
@@ -337,7 +337,7 @@ def print_lineage_tree(model_id: str) -> None:
     print()
 
 
-def export_lineage_report(output_path: Optional[str] = None) -> Dict:
+def export_lineage_report(output_path: str | None = None) -> dict:
     """Export a comprehensive lineage report."""
     if not LINEAGE_DB_PATH.exists():
         return {"models": [], "stats": {}}
@@ -391,7 +391,7 @@ def export_lineage_report(output_path: Optional[str] = None) -> Dict:
     return report
 
 
-def find_by_hash(model_hash: str) -> Optional[str]:
+def find_by_hash(model_hash: str) -> str | None:
     """Find a model by its file hash."""
     if not LINEAGE_DB_PATH.exists():
         return None

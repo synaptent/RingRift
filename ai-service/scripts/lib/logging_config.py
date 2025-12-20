@@ -36,7 +36,7 @@ class JsonFormatter(logging.Formatter):
         include_level: bool = True,
         include_name: bool = True,
         include_pathname: bool = False,
-        extra_fields: Optional[Dict[str, Any]] = None,
+        extra_fields: dict[str, Any] | None = None,
     ):
         super().__init__()
         self.include_timestamp = include_timestamp
@@ -46,7 +46,7 @@ class JsonFormatter(logging.Formatter):
         self.extra_fields = extra_fields or {}
 
     def format(self, record: logging.LogRecord) -> str:
-        log_data: Dict[str, Any] = {}
+        log_data: dict[str, Any] = {}
 
         if self.include_timestamp:
             log_data["timestamp"] = datetime.utcnow().isoformat() + "Z"
@@ -103,8 +103,8 @@ class ColoredFormatter(logging.Formatter):
 
     def __init__(
         self,
-        fmt: Optional[str] = None,
-        datefmt: Optional[str] = None,
+        fmt: str | None = None,
+        datefmt: str | None = None,
         use_colors: bool = True,
     ):
         if fmt is None:
@@ -133,9 +133,9 @@ class MetricsLogger:
         self.name = name
         self.log_interval = log_interval
         self.logger = logging.getLogger(f"metrics.{name}")
-        self.metrics: Dict[str, Any] = {}
-        self.counters: Dict[str, int] = {}
-        self.timers: Dict[str, float] = {}
+        self.metrics: dict[str, Any] = {}
+        self.counters: dict[str, int] = {}
+        self.timers: dict[str, float] = {}
         self.last_log_time = time.time()
 
     def set(self, name: str, value: Any) -> None:
@@ -173,7 +173,7 @@ class MetricsLogger:
         }
         self.logger.info("Metrics snapshot", extra=data)
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """Get all metrics as a dictionary."""
         return {
             "metrics": self.metrics.copy(),
@@ -188,7 +188,7 @@ class TimerContext:
     def __init__(self, metrics_logger: MetricsLogger, name: str):
         self.metrics_logger = metrics_logger
         self.name = name
-        self.start_time: Optional[float] = None
+        self.start_time: float | None = None
 
     def __enter__(self) -> "TimerContext":
         self.start_time = time.time()
@@ -202,12 +202,12 @@ class TimerContext:
 
 def setup_logging(
     level: Union[str, int] = "INFO",
-    log_file: Optional[Union[str, Path]] = None,
+    log_file: Union[str, Path] | None = None,
     json_logs: bool = False,
     log_to_console: bool = True,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
-    extra_fields: Optional[Dict[str, Any]] = None,
+    extra_fields: dict[str, Any] | None = None,
 ) -> logging.Logger:
     """Set up logging configuration.
 

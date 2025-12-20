@@ -68,8 +68,8 @@ class DeploymentRecord:
     board_type: str
     num_players: int
     deployment_time: str
-    evaluation_result: Optional[Dict[str, Any]]
-    deployed_to: List[str]
+    evaluation_result: dict[str, Any] | None
+    deployed_to: list[str]
     promoted: bool
     notes: str = ""
 
@@ -81,7 +81,7 @@ class EvaluationResult:
     games_played: int
     baseline_model: str
     passed: bool
-    details: Dict[str, Any]
+    details: dict[str, Any]
 
 
 def compute_model_hash(model_path: Path) -> str:
@@ -93,7 +93,7 @@ def compute_model_hash(model_path: Path) -> str:
     return sha256.hexdigest()[:16]
 
 
-def load_deployment_log() -> List[DeploymentRecord]:
+def load_deployment_log() -> list[DeploymentRecord]:
     """Load deployment history."""
     if not DEPLOYMENT_LOG.exists():
         return []
@@ -106,14 +106,14 @@ def load_deployment_log() -> List[DeploymentRecord]:
         return []
 
 
-def save_deployment_log(records: List[DeploymentRecord]) -> None:
+def save_deployment_log(records: list[DeploymentRecord]) -> None:
     """Save deployment history."""
     data = [asdict(r) for r in records]
     with open(DEPLOYMENT_LOG, "w") as f:
         json.dump(data, f, indent=2)
 
 
-def find_latest_model(board_type: str, num_players: int, model_type: str = "nnue") -> Optional[Path]:
+def find_latest_model(board_type: str, num_players: int, model_type: str = "nnue") -> Path | None:
     """Find the latest trained model for given configuration."""
     if model_type == "nnue":
         model_dir = NNUE_DIR
@@ -140,7 +140,7 @@ def find_latest_model(board_type: str, num_players: int, model_type: str = "nnue
 
 def evaluate_model(
     model_path: Path,
-    baseline_path: Optional[Path],
+    baseline_path: Path | None,
     board_type: str,
     num_players: int,
     games: int = 50
@@ -247,9 +247,9 @@ def deploy_to_sandbox(model_path: Path, board_type: str, num_players: int) -> bo
 
 def deploy_to_cluster(
     model_path: Path,
-    hosts: List[str],
+    hosts: list[str],
     remote_path: str = "~/ringrift/ai-service/models/nnue/"
-) -> Dict[str, bool]:
+) -> dict[str, bool]:
     """Deploy model to cluster nodes via SSH."""
     results = {}
 
@@ -275,7 +275,7 @@ def deploy_to_cluster(
     return results
 
 
-def get_cluster_hosts() -> List[str]:
+def get_cluster_hosts() -> list[str]:
     """Get list of cluster hosts from distributed_hosts.yaml."""
     import yaml
 
@@ -338,7 +338,7 @@ def trigger_retraining(
 
 
 def run_deployment_pipeline(
-    model_path: Optional[Path],
+    model_path: Path | None,
     board_type: str,
     num_players: int,
     skip_eval: bool = False,

@@ -91,7 +91,7 @@ class ExpertEBMODataset(Dataset):
 
         return action
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         # Get positive sample
         board = self.features[idx]
         globals_vec = self.globals[idx]
@@ -120,7 +120,7 @@ def train_epoch(
     device: torch.device,
     config: EBMOConfig,
     epoch: int,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Train for one epoch."""
     model.train()
     total_loss = 0.0
@@ -194,7 +194,7 @@ def validate(
     dataloader: DataLoader,
     device: torch.device,
     config: EBMOConfig,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Validate model."""
     model.eval()
     total_loss = 0.0

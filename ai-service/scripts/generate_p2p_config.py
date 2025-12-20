@@ -35,7 +35,7 @@ except ImportError:
 from scripts.lib.paths import CONFIG_DIR
 
 
-def load_distributed_hosts(config_path: Optional[Path] = None) -> Dict:
+def load_distributed_hosts(config_path: Path | None = None) -> dict:
     """Load distributed_hosts.yaml."""
     if config_path is None:
         config_path = CONFIG_DIR / "distributed_hosts.yaml"
@@ -47,7 +47,7 @@ def load_distributed_hosts(config_path: Optional[Path] = None) -> Dict:
         return yaml.safe_load(f) or {}
 
 
-def get_voters(hosts: Dict) -> List[str]:
+def get_voters(hosts: dict) -> list[str]:
     """Extract voter node IDs from hosts config."""
     voters = []
     for node_id, cfg in hosts.items():
@@ -62,7 +62,7 @@ def get_voters(hosts: Dict) -> List[str]:
     return sorted(voters)
 
 
-def get_peer_urls(hosts: Dict, port: int = 8770) -> List[str]:
+def get_peer_urls(hosts: dict, port: int = 8770) -> list[str]:
     """Generate peer URLs from hosts config."""
     peers = []
     for node_id, cfg in hosts.items():
@@ -84,7 +84,7 @@ def get_peer_urls(hosts: Dict, port: int = 8770) -> List[str]:
     return sorted(set(peers))
 
 
-def get_voter_peer_urls(hosts: Dict, port: int = 8770) -> List[str]:
+def get_voter_peer_urls(hosts: dict, port: int = 8770) -> list[str]:
     """Generate peer URLs only for voter nodes."""
     voters = set(get_voters(hosts))
     peers = []
@@ -102,7 +102,7 @@ def get_voter_peer_urls(hosts: Dict, port: int = 8770) -> List[str]:
     return sorted(set(peers))
 
 
-def update_node_conf(path: Path, peers: List[str]) -> None:
+def update_node_conf(path: Path, peers: list[str]) -> None:
     """Update node.conf with P2P_PEERS variable."""
     if not path.exists():
         raise FileNotFoundError(f"node.conf not found: {path}")

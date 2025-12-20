@@ -142,7 +142,7 @@ def _build_env_summary(
     board: str,
     num_players: int,
     seed: int | None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return a JSON-serialisable snapshot of TrainingEnvConfig.
 
     The snapshot is intentionally normalised to use the Enum *name* for
@@ -168,10 +168,10 @@ def _build_env_summary(
 def _run_d2_training(
     args: argparse.Namespace,
     candidate_id: str,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Tier-specific training stub for D2 (heuristic baseline)."""
     seed = args.seed or 1
-    training_params: Dict[str, Any] = {
+    training_params: dict[str, Any] = {
         "mode": "heuristic_stub_demo" if args.demo else "heuristic_stub",
         "trainer": "heuristic_cmaes",
         "tier_spec_id": "sq8_heuristic_baseline_v1",
@@ -184,7 +184,7 @@ def _run_d2_training(
         "seed": seed,
     }
 
-    metrics: Dict[str, Any] = {
+    metrics: dict[str, Any] = {
         "training_steps": 0,
         "loss": None,
         "extra": {
@@ -205,12 +205,12 @@ def _run_d2_training(
 def _run_d4_training(
     args: argparse.Namespace,
     candidate_id: str,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Tier-specific training stub for D4 (minimax search persona)."""
     seed = args.seed or 1
     # In the current implementation we treat D4 primarily as a search-
     # configuration tuning problem rather than heavy self-play.
-    training_params: Dict[str, Any] = {
+    training_params: dict[str, Any] = {
         "mode": "search_persona_demo" if args.demo else "search_persona",
         "persona_id": candidate_id,
         "heuristic_profile_id": "heuristic_v1_2p",
@@ -219,7 +219,7 @@ def _run_d4_training(
         "enable_pruning": True,
         "seed": seed,
     }
-    metrics: Dict[str, Any] = {
+    metrics: dict[str, Any] = {
         "training_steps": 0,
         "loss": None,
         "extra": {
@@ -233,7 +233,7 @@ def _run_neural_tier_training(
     args: argparse.Namespace,
     candidate_id: str,
     tier_name: str,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Shared helper for D6/D8 neural tiers.
 
     In demo mode this simply records a minimal TrainConfig snapshot without
@@ -257,7 +257,7 @@ def _run_neural_tier_training(
     else:
         logical_difficulty = None
 
-    training_params: Dict[str, Any] = {
+    training_params: dict[str, Any] = {
         "mode": "neural_demo" if args.demo else "neural_full",
         "train_config": {
             # Normalise to Enum name (e.g. "SQUARE8") for consistency with
@@ -273,7 +273,7 @@ def _run_neural_tier_training(
         "logical_difficulty": logical_difficulty,
     }
 
-    metrics: Dict[str, Any] = {
+    metrics: dict[str, Any] = {
         "training_steps": 0,
         "loss": None,
         "extra": {},
@@ -370,7 +370,7 @@ def _update_status_json(
 ) -> None:
     """Create or update a lightweight status.json for the run directory."""
     status_path = os.path.join(run_dir, "status.json")
-    status: Dict[str, Any] = {}
+    status: dict[str, Any] = {}
     if os.path.exists(status_path):
         try:
             with open(status_path, "r", encoding="utf-8") as f:
@@ -528,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
     else:  # pragma: no cover - guarded above
         raise SystemExit(f"Unsupported tier {tier_name!r}.")
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "tier": tier_name,
         "board": args.board,
         "num_players": args.num_players,

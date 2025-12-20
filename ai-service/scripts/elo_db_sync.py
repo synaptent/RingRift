@@ -84,7 +84,7 @@ except ImportError:
     USE_UNIFIED_HOSTS = False
 
 
-def load_hosts_config() -> Dict[str, Any]:
+def load_hosts_config() -> dict[str, Any]:
     """Load cluster hosts from distributed_hosts.yaml."""
     # Prefer unified hosts module
     if USE_UNIFIED_HOSTS:
@@ -132,7 +132,7 @@ def load_hosts_config() -> Dict[str, Any]:
         return {}
 
 
-def get_coordinator_address() -> Tuple[str, int]:
+def get_coordinator_address() -> tuple[str, int]:
     """Get coordinator address from config or use environment variable.
 
     Priority:
@@ -201,7 +201,7 @@ def get_coordinator_address() -> Tuple[str, int]:
         return None, DEFAULT_PORT
 
 
-def get_all_sync_targets() -> List[Dict[str, Any]]:
+def get_all_sync_targets() -> list[dict[str, Any]]:
     """Get all nodes that should receive Elo sync."""
     hosts = load_hosts_config()
     targets = []
@@ -245,7 +245,7 @@ def check_aria2_available() -> bool:
     return shutil.which("aria2c") is not None
 
 
-def pull_with_aria2(sources: List[str], output_path: Path, timeout: int = ARIA2_TIMEOUT) -> bool:
+def pull_with_aria2(sources: list[str], output_path: Path, timeout: int = ARIA2_TIMEOUT) -> bool:
     """Pull database using aria2 with multiple sources for parallel download."""
     if not sources:
         return False
@@ -300,7 +300,7 @@ def get_node_db_url(ip: str, port: int = DEFAULT_PORT) -> str:
     return f"http://{ip}:{port}/db"
 
 
-def discover_available_sources(timeout: int = 5) -> List[str]:
+def discover_available_sources(timeout: int = 5) -> list[str]:
     """Discover all available Elo database sources in the cluster."""
     targets = get_all_sync_targets()
     available = []
@@ -335,7 +335,7 @@ def get_db_hash(db_path: Path) -> str:
     return hashlib.md5(f"{count}:{max_ts}".encode()).hexdigest()
 
 
-def get_new_matches(db_path: Path, since_timestamp: float) -> List[Dict]:
+def get_new_matches(db_path: Path, since_timestamp: float) -> list[dict]:
     """Get matches added since a timestamp."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -367,7 +367,7 @@ def save_sync_timestamp(ts: float):
         json.dump(state, f)
 
 
-def calculate_elo(winner_elo: float, loser_elo: float, k: float = 32, draw: bool = False) -> Tuple[float, float]:
+def calculate_elo(winner_elo: float, loser_elo: float, k: float = 32, draw: bool = False) -> tuple[float, float]:
     """Calculate new Elo ratings after a match."""
     expected_winner = 1 / (1 + 10 ** ((loser_elo - winner_elo) / 400))
     expected_loser = 1 - expected_winner
@@ -382,7 +382,7 @@ def calculate_elo(winner_elo: float, loser_elo: float, k: float = 32, draw: bool
     return new_winner, new_loser
 
 
-def merge_matches_into_db(db_path: Path, new_matches: List[Dict]):
+def merge_matches_into_db(db_path: Path, new_matches: list[dict]):
     """Merge new matches into database and recalculate Elo.
 
     Uses explicit transaction to ensure atomicity - if anything fails,
@@ -749,7 +749,7 @@ def run_worker(coordinator: str, interval: int, db_path: Path, port: int = DEFAU
 # Cluster-Wide Operations
 # ============================================
 
-def get_node_status(target: Dict[str, Any], timeout: int = 5) -> Dict[str, Any]:
+def get_node_status(target: dict[str, Any], timeout: int = 5) -> dict[str, Any]:
     """Get sync status from a single node."""
     ip = target['ip']
     port = target.get('port', DEFAULT_PORT)
@@ -778,7 +778,7 @@ def get_node_status(target: Dict[str, Any], timeout: int = 5) -> Dict[str, Any]:
     return result
 
 
-def cluster_sync_status(db_path: Path) -> Dict[str, Any]:
+def cluster_sync_status(db_path: Path) -> dict[str, Any]:
     """Get Elo sync status across all cluster nodes."""
     targets = get_all_sync_targets()
 
@@ -823,7 +823,7 @@ def cluster_sync_status(db_path: Path) -> Dict[str, Any]:
     }
 
 
-def print_cluster_status(status: Dict[str, Any]):
+def print_cluster_status(status: dict[str, Any]):
     """Print cluster sync status in a formatted table."""
     print("\n=== Elo Sync Cluster Status ===\n")
 
@@ -832,7 +832,7 @@ def print_cluster_status(status: Dict[str, Any]):
     print(f"Hash: {local['db_hash']}\n")
 
     # Group by hash to identify divergence
-    hash_groups: Dict[str, List[str]] = {}
+    hash_groups: dict[str, list[str]] = {}
     reachable_count = 0
 
     for node in status['nodes']:

@@ -68,7 +68,7 @@ class CleanupResult:
     reason: str
 
 
-def get_disk_usage(path: str = "/") -> Tuple[int, int, float]:
+def get_disk_usage(path: str = "/") -> tuple[int, int, float]:
     """Get disk usage stats. Returns (used_bytes, total_bytes, percent_used).
 
     Uses unified resource_guard utilities when available for consistent
@@ -102,7 +102,7 @@ def format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f}PB"
 
 
-def find_old_files(directory: str, max_age_days: int, patterns: List[str]) -> List[Path]:
+def find_old_files(directory: str, max_age_days: int, patterns: list[str]) -> list[Path]:
     """Find files older than max_age_days matching patterns."""
     cutoff = time.time() - (max_age_days * 86400)
     old_files = []
@@ -120,7 +120,7 @@ def find_old_files(directory: str, max_age_days: int, patterns: List[str]) -> Li
     return old_files
 
 
-def find_large_files(directory: str, min_size_mb: int = 100) -> List[Tuple[Path, int]]:
+def find_large_files(directory: str, min_size_mb: int = 100) -> list[tuple[Path, int]]:
     """Find files larger than min_size_mb."""
     min_size = min_size_mb * 1024 * 1024
     large_files = []
@@ -144,7 +144,7 @@ def find_large_files(directory: str, min_size_mb: int = 100) -> List[Tuple[Path,
     return sorted(large_files, key=lambda x: x[1], reverse=True)
 
 
-def cleanup_temp_files(dry_run: bool = False) -> List[CleanupResult]:
+def cleanup_temp_files(dry_run: bool = False) -> list[CleanupResult]:
     """Clean up temporary files."""
     results = []
 
@@ -187,7 +187,7 @@ def cleanup_temp_files(dry_run: bool = False) -> List[CleanupResult]:
     return results
 
 
-def cleanup_old_logs(ringrift_path: str, max_age_days: int = 3, dry_run: bool = False) -> List[CleanupResult]:
+def cleanup_old_logs(ringrift_path: str, max_age_days: int = 3, dry_run: bool = False) -> list[CleanupResult]:
     """Clean up old log files."""
     results = []
     log_dirs = [
@@ -218,7 +218,7 @@ def cleanup_old_logs(ringrift_path: str, max_age_days: int = 3, dry_run: bool = 
 
 
 def cleanup_selfplay_data(ringrift_path: str, max_age_days: int = 7,
-                          keep_min_gb: float = 1.0, dry_run: bool = False) -> List[CleanupResult]:
+                          keep_min_gb: float = 1.0, dry_run: bool = False) -> list[CleanupResult]:
     """Clean up old selfplay data, keeping minimum amount for training."""
     results = []
     selfplay_dir = os.path.join(ringrift_path, "ai-service/data/selfplay")
@@ -277,7 +277,7 @@ def cleanup_large_noncanonical_game_dbs(
     *,
     dry_run: bool = False,
     min_size_mb: int = 256,
-) -> List[CleanupResult]:
+) -> list[CleanupResult]:
     """Clean up large non-canonical SQLite DBs under ai-service/data/games.
 
     This is specifically to protect small-disk nodes (e.g. Vast.ai 16GB overlay)
@@ -288,7 +288,7 @@ def cleanup_large_noncanonical_game_dbs(
     - Only deletes DBs matching selfplay-ish patterns
     - Only deletes when size >= min_size_mb
     """
-    results: List[CleanupResult] = []
+    results: list[CleanupResult] = []
     games_dir = Path(ringrift_path) / "ai-service" / "data" / "games"
     if not games_dir.exists():
         return results
@@ -392,14 +392,14 @@ def deduplicate_synced_databases(
     ringrift_path: str,
     *,
     dry_run: bool = False,
-) -> List[CleanupResult]:
+) -> list[CleanupResult]:
     """Remove duplicate databases in synced/ that already exist in selfplay.db.
 
     Strategy: Games that have been merged into selfplay.db are safe to remove
     from the intermediate synced/ directories. This preserves unique data while
     removing redundant copies.
     """
-    results: List[CleanupResult] = []
+    results: list[CleanupResult] = []
     games_dir = Path(ringrift_path) / "ai-service" / "data" / "games"
     selfplay_db = games_dir / "selfplay.db"
     synced_dir = games_dir / "synced"
@@ -449,7 +449,7 @@ def cleanup_old_synced_game_bundles(
     *,
     keep_latest: int = 2,
     dry_run: bool = False,
-) -> List[CleanupResult]:
+) -> list[CleanupResult]:
     """Prune large synced game bundle directories under ai-service/data/games.
 
     Strategy:
@@ -458,7 +458,7 @@ def cleanup_old_synced_game_bundles(
 
     This is safer than blindly deleting and preserves unique data.
     """
-    results: List[CleanupResult] = []
+    results: list[CleanupResult] = []
     games_dir = Path(ringrift_path) / "ai-service" / "data" / "games"
     if not games_dir.exists():
         return results
@@ -525,7 +525,7 @@ def cleanup_old_synced_game_bundles(
     return results
 
 
-def cleanup_venv_cache(ringrift_path: str, dry_run: bool = False) -> List[CleanupResult]:
+def cleanup_venv_cache(ringrift_path: str, dry_run: bool = False) -> list[CleanupResult]:
     """Clean up Python cache in venv."""
     results = []
     cache_dirs = [
@@ -553,7 +553,7 @@ def cleanup_venv_cache(ringrift_path: str, dry_run: bool = False) -> List[Cleanu
     return results
 
 
-def cleanup_deprecated_data(ringrift_path: str, dry_run: bool = False) -> List[CleanupResult]:
+def cleanup_deprecated_data(ringrift_path: str, dry_run: bool = False) -> list[CleanupResult]:
     """Clean up deprecated data directories."""
     results = []
     deprecated_dirs = [

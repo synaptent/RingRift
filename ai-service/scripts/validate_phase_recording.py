@@ -45,7 +45,7 @@ MANDATORY_RECORD_PHASES = [
 ]
 
 # Map of phases to valid move types (aligned with game_engine.py _assert_phase_move_invariant)
-PHASE_TO_VALID_MOVE_TYPES: Dict[GamePhase, Set[str]] = {
+PHASE_TO_VALID_MOVE_TYPES: dict[GamePhase, set[str]] = {
     GamePhase.RING_PLACEMENT: {"place_ring", "skip_placement", "no_placement_action"},
     GamePhase.MOVEMENT: {
         "move_stack", "move_ring", "build_stack",  # build_stack is legacy alias
@@ -86,7 +86,7 @@ class PhaseViolation:
     reason: str
 
 
-def infer_phase_from_move_type(move_type: str) -> Optional[str]:
+def infer_phase_from_move_type(move_type: str) -> str | None:
     """Infer the phase from move type when phase field is not set."""
     move_type_lower = move_type.lower()
 
@@ -114,12 +114,12 @@ def infer_phase_from_move_type(move_type: str) -> Optional[str]:
     return None
 
 
-def validate_game_phase_recording(game_id: str, moves: List[dict], num_players: int) -> List[PhaseViolation]:
+def validate_game_phase_recording(game_id: str, moves: list[dict], num_players: int) -> list[PhaseViolation]:
     """Validate that a game adheres to phase recording invariants."""
     violations = []
 
     # Track phase records per player per turn
-    turn_records: Dict[Tuple[int, int], Dict[str, List[dict]]] = defaultdict(lambda: defaultdict(list))
+    turn_records: dict[tuple[int, int], dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
 
     current_turn = 1
     current_player = 1
@@ -183,7 +183,7 @@ def validate_game_phase_recording(game_id: str, moves: List[dict], num_players: 
     return violations
 
 
-def validate_database(db_path: Path) -> Tuple[int, int, List[PhaseViolation]]:
+def validate_database(db_path: Path) -> tuple[int, int, list[PhaseViolation]]:
     """Validate all games in a database. Returns (total_games, valid_games, all_violations)."""
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row

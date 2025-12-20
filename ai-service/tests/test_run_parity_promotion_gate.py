@@ -24,7 +24,7 @@ def _make_formatted(
     win_rate: float,
     ci: tuple[float, float],
     piece_advantage: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build a minimal ``format_results_json``-like payload."""
     return {
         "config": {
@@ -138,7 +138,7 @@ def test_main_uses_matrix_stub_and_writes_report(tmp_path, monkeypatch) -> None:
         checkpoint2: str | None,
         cmaes_weights: str | None,
         minimax_depth: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         # Minimal format_results_json-like structure.
         return _make_formatted(
             board=spec.board_key,

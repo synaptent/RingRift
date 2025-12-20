@@ -74,16 +74,16 @@ class MatchResult:
     """Result of a single game between two AI configurations."""
     tier_a: str
     tier_b: str
-    winner: Optional[int]  # 1 for A, 2 for B, None for draw
+    winner: int | None  # 1 for A, 2 for B, None for draw
     game_length: int
     duration_sec: float
     worker: str
     game_id: str
     timestamp: str
-    seed: Optional[int] = None
-    game_index: Optional[int] = None
+    seed: int | None = None
+    game_index: int | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tier_a": self.tier_a,
             "tier_b": self.tier_b,
@@ -114,7 +114,7 @@ class TierStats:
             return 0.0
         return (self.wins + 0.5 * self.draws) / self.games_played
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tier": self.tier,
             "wins": self.wins,
@@ -133,15 +133,15 @@ class TournamentState:
     started_at: str
     board_type: str
     games_per_matchup: int
-    tiers: List[str]
+    tiers: list[str]
     base_seed: int = 1
     think_time_scale: float = 1.0
-    nn_model_id: Optional[str] = None
-    matches: List[MatchResult] = field(default_factory=list)
-    tier_stats: Dict[str, TierStats] = field(default_factory=dict)
-    completed_matchups: List[Tuple[str, str]] = field(default_factory=list)
+    nn_model_id: str | None = None
+    matches: list[MatchResult] = field(default_factory=list)
+    tier_stats: dict[str, TierStats] = field(default_factory=dict)
+    completed_matchups: list[tuple[str, str]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tournament_id": self.tournament_id,
             "started_at": self.started_at,
@@ -157,7 +157,7 @@ class TournamentState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TournamentState":
+    def from_dict(cls, data: dict[str, Any]) -> "TournamentState":
         state = cls(
             tournament_id=data["tournament_id"],
             started_at=data["started_at"],
@@ -201,7 +201,7 @@ def update_elo(
     rating_b: float,
     score_a: float,
     k: float = 32.0,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Update Elo ratings after a match (local calculation only)."""
     expected_a = expected_score(rating_a, rating_b)
     expected_b = 1.0 - expected_a
@@ -216,7 +216,7 @@ def update_elo(
 def persist_match_to_unified_elo(
     tier_a: str,
     tier_b: str,
-    winner: Optional[int],
+    winner: int | None,
     board_type: str,
     num_players: int,
     tournament_id: str,
@@ -290,7 +290,7 @@ def create_ai_for_tier(
     board_type: BoardType,
     num_players: int,
     think_time_scale: float = 1.0,
-    nn_model_id: Optional[str] = None,
+    nn_model_id: str | None = None,
 ) -> Any:
     """Create an AI instance for the given difficulty tier.
 
@@ -304,8 +304,8 @@ def create_ai_for_tier(
         randomness = 0.5
         think_time_ms = 150
         use_neural_net = False
-        heuristic_profile_id: Optional[str] = None
-        ladder_model_id: Optional[str] = None
+        heuristic_profile_id: str | None = None
+        ladder_model_id: str | None = None
     else:
         ladder = get_ladder_tier_config(difficulty, board_type, num_players)
         ai_type = ladder.ai_type
@@ -319,7 +319,7 @@ def create_ai_for_tier(
 
     # CNN policy/value nets are only used by MCTS/Descent. Minimax's NNUE
     # evaluator selects checkpoints via its own board-aware default path.
-    effective_nn_model_id: Optional[str] = None
+    effective_nn_model_id: str | None = None
     if use_neural_net and ai_type in {AIType.MCTS, AIType.DESCENT}:
         effective_nn_model_id = nn_model_id or ladder_model_id
 
@@ -345,9 +345,9 @@ def run_single_game(
     seed: int,
     max_moves: int = 10000,
     worker_name: str = "local",
-    game_index: Optional[int] = None,
+    game_index: int | None = None,
     think_time_scale: float = 1.0,
-    nn_model_id: Optional[str] = None,
+    nn_model_id: str | None = None,
     fail_fast: bool = False,
     num_players: int = 2,
     filler_ai_type: str = "Random",
@@ -362,16 +362,16 @@ def run_single_game(
 
     Winner is reported as 1 if tier_a won, 2 if tier_b won, None for filler/draw.
     """
-    def _tiebreak_winner(final_state: Any) -> Optional[int]:
+    def _tiebreak_winner(final_state: Any) -> int | None:
         players = getattr(final_state, "players", None) or []
         if not players:
             return None
 
-        territory_counts: Dict[int, int] = {}
+        territory_counts: dict[int, int] = {}
         for p_id in final_state.board.collapsed_spaces.values():
             territory_counts[int(p_id)] = territory_counts.get(int(p_id), 0) + 1
 
-        marker_counts: Dict[int, int] = {int(p.player_number): 0 for p in players}
+        marker_counts: dict[int, int] = {int(p.player_number): 0 for p in players}
         for marker in final_state.board.markers.values():
             owner = int(marker.player)
             marker_counts[owner] = marker_counts.get(owner, 0) + 1
@@ -416,7 +416,7 @@ def run_single_game(
     )
 
     # Map player numbers to their AIs
-    ai_map: Dict[int, Any] = {1: ai_a, 2: ai_b}
+    ai_map: dict[int, Any] = {1: ai_a, 2: ai_b}
 
     # Create filler AIs for 3-4 player games
     filler_ai_class = RandomAI if filler_ai_type == "Random" else HeuristicAI
@@ -430,7 +430,7 @@ def run_single_game(
         ai_map[p_num] = filler_ai_class(p_num, filler_config)
 
     move_count = 0
-    winner_override: Optional[int] = None
+    winner_override: int | None = None
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = state.current_player
         current_ai = ai_map.get(current_player)
@@ -470,7 +470,7 @@ def run_single_game(
         actual_winner = _tiebreak_winner(state)
 
     # Convert to tier winner (1=tier_a, 2=tier_b, None=filler/draw)
-    tier_winner: Optional[int] = None
+    tier_winner: int | None = None
     if actual_winner == 1:
         tier_winner = 1  # tier_a won
     elif actual_winner == 2:
@@ -500,22 +500,22 @@ class DistributedTournament:
 
     def __init__(
         self,
-        tiers: List[str],
+        tiers: list[str],
         games_per_matchup: int = 50,
         board_type: BoardType = BoardType.SQUARE8,
         max_workers: int = 8,
         output_dir: str = "results/tournaments",
-        resume_file: Optional[str] = None,
-        checkpoint_path: Optional[str] = None,
-        nn_model_id: Optional[str] = None,
+        resume_file: str | None = None,
+        checkpoint_path: str | None = None,
+        nn_model_id: str | None = None,
         base_seed: int = 1,
         think_time_scale: float = 1.0,
         max_moves: int = 10000,
         confidence: float = 0.95,
-        report_path: Optional[str] = None,
-        worker_label: Optional[str] = None,
+        report_path: str | None = None,
+        worker_label: str | None = None,
         fail_fast: bool = False,
-        tournament_id: Optional[str] = None,
+        tournament_id: str | None = None,
         num_players: int = 2,
         filler_ai_type: str = "Random",
         filler_difficulty: int = 1,
@@ -565,7 +565,7 @@ class DistributedTournament:
             for tier_b in self.tiers[i+1:]:
                 self.all_matchups.append((tier_a, tier_b))
 
-    def _get_pending_matchups(self) -> List[Tuple[str, str]]:
+    def _get_pending_matchups(self) -> list[tuple[str, str]]:
         completed = set(self.state.completed_matchups)
         return [m for m in self.all_matchups if m not in completed]
 
@@ -619,7 +619,7 @@ class DistributedTournament:
         tier_a: str,
         tier_b: str,
         worker_name: str = "local",
-    ) -> List[MatchResult]:
+    ) -> list[MatchResult]:
         results = []
         base_seed = hash(
             (tier_a, tier_b, self.state.base_seed, self.board_type.value)
@@ -670,7 +670,7 @@ class DistributedTournament:
 
         return results
 
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         pending = self._get_pending_matchups()
         total_matchups = len(pending)
 
@@ -735,11 +735,11 @@ class DistributedTournament:
 
         return report
 
-    def generate_report(self, duration: float) -> Dict[str, Any]:
+    def generate_report(self, duration: float) -> dict[str, Any]:
         tiers = list(self.tiers)
         matches = list(self.state.matches)
 
-        def _canonical_match_key(result: MatchResult) -> Tuple[str, str, Optional[int]]:
+        def _canonical_match_key(result: MatchResult) -> tuple[str, str, int | None]:
             """Return ordered matchup key and winner in that orientation."""
             a, b = result.tier_a, result.tier_b
             if _tier_to_difficulty(a) <= _tier_to_difficulty(b):
@@ -752,7 +752,7 @@ class DistributedTournament:
             return (b, a, winner)
 
         # Aggregate W/L/D per tier (order-independent).
-        stats_by_tier: Dict[str, TierStats] = {t: TierStats(tier=t) for t in tiers}
+        stats_by_tier: dict[str, TierStats] = {t: TierStats(tier=t) for t in tiers}
         for m in matches:
             stats_a = stats_by_tier.setdefault(m.tier_a, TierStats(tier=m.tier_a))
             stats_b = stats_by_tier.setdefault(m.tier_b, TierStats(tier=m.tier_b))
@@ -770,8 +770,8 @@ class DistributedTournament:
 
         # Deterministic Elo: replay results in a fixed order, independent of
         # worker scheduling. (We keep k=32 to match the legacy harness.)
-        elo_by_tier: Dict[str, float] = {t: 1500.0 for t in tiers}
-        matchup_results: Dict[Tuple[str, str], List[MatchResult]] = {}
+        elo_by_tier: dict[str, float] = {t: 1500.0 for t in tiers}
+        matchup_results: dict[tuple[str, str], list[MatchResult]] = {}
         for m in matches:
             a, b, winner = _canonical_match_key(m)
             canonical = MatchResult(
@@ -821,7 +821,7 @@ class DistributedTournament:
             reverse=True,
         )
 
-        def _count_pair(tier: str, opp: str) -> Tuple[int, int, int]:
+        def _count_pair(tier: str, opp: str) -> tuple[int, int, int]:
             """Return (wins, losses, draws) for `tier` vs `opp`."""
             wins = sum(
                 1
@@ -846,7 +846,7 @@ class DistributedTournament:
             )
             return (wins, losses, draws)
 
-        h2h: Dict[str, Dict[str, str]] = {}
+        h2h: dict[str, dict[str, str]] = {}
         for tier in tiers:
             h2h[tier] = {}
             for opp in tiers:
@@ -856,7 +856,7 @@ class DistributedTournament:
                 wins, losses, draws = _count_pair(tier, opp)
                 h2h[tier][opp] = f"{wins}-{losses}-{draws}"
 
-        matchup_stats: List[Dict[str, Any]] = []
+        matchup_stats: list[dict[str, Any]] = []
         for i, tier_a in enumerate(tiers):
             for tier_b in tiers[i + 1 :]:
                 wins_a, losses_a, draws = _count_pair(tier_a, tier_b)
@@ -1099,10 +1099,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def _preflight_neural_checkpoints(
-    tiers: List[str],
+    tiers: list[str],
     board_type: BoardType,
     *,
-    nn_model_id: Optional[str],
+    nn_model_id: str | None,
     think_time_scale: float,
 ) -> None:
     """Fail-fast preflight to ensure neural tiers can load their checkpoints."""

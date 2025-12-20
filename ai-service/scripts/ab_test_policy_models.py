@@ -64,7 +64,7 @@ logger = setup_script_logging("ab_test_policy_models")
 class MatchResult:
     """Result of a single match."""
     game_id: str
-    winner: Optional[int]  # 1 or 2, None for draw
+    winner: int | None  # 1 or 2, None for draw
     model_a_player: int  # Which player number model A was
     model_b_player: int
     num_moves: int
@@ -93,7 +93,7 @@ class ABTestResults:
     draw_rate: float = 0.0
 
     # Statistical analysis
-    confidence_interval_95: Tuple[float, float] = (0.0, 0.0)
+    confidence_interval_95: tuple[float, float] = (0.0, 0.0)
     p_value: float = 1.0
     significant_at_95: bool = False
 
@@ -103,7 +103,7 @@ class ABTestResults:
     avg_model_b_think_time: float = 0.0
 
     # Individual match results
-    matches: List[Dict[str, Any]] = field(default_factory=list)
+    matches: list[dict[str, Any]] = field(default_factory=list)
 
     def compute_statistics(self):
         """Compute win rates and statistical significance."""
@@ -156,7 +156,7 @@ class ABTestResults:
 
 def create_mcts_ai(
     player_number: int,
-    policy_model_path: Optional[str],
+    policy_model_path: str | None,
     think_time_ms: int = 500,
     board_type: BoardType = BoardType.SQUARE8,
     policy_temperature: float = 2.0,
@@ -297,7 +297,7 @@ def play_match(
 
 def run_ab_test(
     model_a_path: str,
-    model_b_path: Optional[str],
+    model_b_path: str | None,
     num_games: int,
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
@@ -379,12 +379,12 @@ def run_ab_test(
 
 def run_multi_time_test(
     model_a_path: str,
-    model_b_path: Optional[str],
+    model_b_path: str | None,
     num_games: int,
     board_type: BoardType,
-    think_times: List[int],
+    think_times: list[int],
     max_moves: int = 300,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
     policy_temperature: float = 2.0,
     prior_uniform_mix: float = 0.3,
 ) -> int:

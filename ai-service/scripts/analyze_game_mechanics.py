@@ -90,8 +90,8 @@ class GameStats:
     forced_elimination_moves: int = 0
     forced_elimination_opportunities: int = 0
     overtakes: int = 0
-    winner: Optional[int] = None
-    victory_type: Optional[str] = None
+    winner: int | None = None
+    victory_type: str | None = None
 
 
 @dataclass
@@ -291,7 +291,7 @@ def analyze_game(game: dict, game_index: int) -> GameStats:
     return stats
 
 
-def analyze_jsonl_file(filepath: Path, limit: Optional[int] = None, verbose: bool = False) -> AnalysisStats:
+def analyze_jsonl_file(filepath: Path, limit: int | None = None, verbose: bool = False) -> AnalysisStats:
     """Analyze a single JSONL file."""
     stats = AnalysisStats()
 

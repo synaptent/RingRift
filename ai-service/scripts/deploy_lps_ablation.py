@@ -90,11 +90,11 @@ class HostConfig:
         return f"{self.user}@{self.host}"
 
     @property
-    def ssh_args(self) -> List[str]:
+    def ssh_args(self) -> list[str]:
         return ["-p", str(self.port), "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30"]
 
 
-def run_ssh(host: HostConfig, cmd: str, timeout: int = 300) -> Tuple[int, str, str]:
+def run_ssh(host: HostConfig, cmd: str, timeout: int = 300) -> tuple[int, str, str]:
     """Run SSH command and return (returncode, stdout, stderr)."""
     full_cmd = ["ssh"] + host.ssh_args + [host.ssh_target, cmd]
     try:
@@ -111,7 +111,7 @@ def run_ssh(host: HostConfig, cmd: str, timeout: int = 300) -> Tuple[int, str, s
         return -1, "", str(e)
 
 
-def run_rsync(host: HostConfig, local_path: str, remote_path: str) -> Tuple[int, str, str]:
+def run_rsync(host: HostConfig, local_path: str, remote_path: str) -> tuple[int, str, str]:
     """Run rsync to deploy files."""
     rsync_cmd = [
         "rsync", "-avz", "--delete",
@@ -135,7 +135,7 @@ def run_rsync(host: HostConfig, local_path: str, remote_path: str) -> Tuple[int,
         return -1, "", str(e)
 
 
-def deploy_via_tarball(host: HostConfig) -> Tuple[str, bool, str]:
+def deploy_via_tarball(host: HostConfig) -> tuple[str, bool, str]:
     """Deploy code via tarball (more reliable for restricted SSH connections)."""
     import tempfile
     print(f"  Deploying to {host.host}:{host.port} (via tarball)...")
@@ -205,7 +205,7 @@ def deploy_via_tarball(host: HostConfig) -> Tuple[str, bool, str]:
     return host.ssh_target, True, "Deployed (tarball)"
 
 
-def check_host(host: HostConfig) -> Tuple[str, bool, str]:
+def check_host(host: HostConfig) -> tuple[str, bool, str]:
     """Check if host is reachable."""
     print(f"  Checking {host.host}:{host.port}...")
     rc, stdout, stderr = run_ssh(host, "echo ok", timeout=15)
@@ -214,7 +214,7 @@ def check_host(host: HostConfig) -> Tuple[str, bool, str]:
     return host.ssh_target, False, stderr or "Connection failed"
 
 
-def deploy_to_host(host: HostConfig) -> Tuple[str, bool, str]:
+def deploy_to_host(host: HostConfig) -> tuple[str, bool, str]:
     """Deploy code to a single host."""
     print(f"  Deploying to {host.host}:{host.port}...")
 
@@ -242,12 +242,12 @@ def deploy_to_host(host: HostConfig) -> Tuple[str, bool, str]:
 def run_experiment_on_host(
     host: HostConfig,
     board_type: str,
-    lps_rounds: List[int],
-    rings_values: List[str],
+    lps_rounds: list[int],
+    rings_values: list[str],
     num_games: int,
     engine_mode: str,
     seed: int,
-) -> Tuple[str, bool, str]:
+) -> tuple[str, bool, str]:
     """Run ablation experiment on a single host."""
     print(f"  Running on {host.host}:{host.port} ({board_type})...")
 
@@ -282,7 +282,7 @@ def run_experiment_on_host(
     return host.ssh_target, True, "Completed (no results file found)"
 
 
-def collect_results(hosts: List[HostConfig]) -> Dict[str, any]:
+def collect_results(hosts: list[HostConfig]) -> dict[str, any]:
     """Collect results from all hosts."""
     LOCAL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 

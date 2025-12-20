@@ -62,7 +62,7 @@ def check_nn_quality_gate(
     quality_threshold: float,
     num_games: int = 20,
     max_moves: int = 10000,
-) -> Tuple[bool, float]:
+) -> tuple[bool, float]:
     """Run a quick tournament to check if NN model meets quality threshold.
 
     This gates CMA-ES optimization on NN quality to avoid optimizing heuristics
@@ -190,7 +190,7 @@ def get_profile_key(board: str, num_players: int) -> str:
     return f"heuristic_v1_{board_abbrev}_{num_players}p"
 
 
-def load_trained_profiles(profiles_path: str) -> Dict[str, Any]:
+def load_trained_profiles(profiles_path: str) -> dict[str, Any]:
     """Load the trained heuristic profiles JSON."""
     if not os.path.exists(profiles_path):
         return {
@@ -204,21 +204,21 @@ def load_trained_profiles(profiles_path: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def save_trained_profiles(profiles: Dict[str, Any], profiles_path: str) -> None:
+def save_trained_profiles(profiles: dict[str, Any], profiles_path: str) -> None:
     """Save the trained heuristic profiles JSON."""
     os.makedirs(os.path.dirname(profiles_path) or ".", exist_ok=True)
     with open(profiles_path, "w", encoding="utf-8") as f:
         json.dump(profiles, f, indent=2)
 
 
-def load_checkpoint_fitness(checkpoint_path: str) -> Tuple[float, Dict[str, float]]:
+def load_checkpoint_fitness(checkpoint_path: str) -> tuple[float, dict[str, float]]:
     """Load fitness and weights from a checkpoint file."""
     with open(checkpoint_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data.get("fitness", 0.0), data.get("weights", {})
 
 
-def find_latest_checkpoint(checkpoint_dir: str) -> Optional[Tuple[int, str]]:
+def find_latest_checkpoint(checkpoint_dir: str) -> tuple[int, str] | None:
     """Find the latest checkpoint in a directory.
 
     Returns (generation, path) or None.
@@ -244,7 +244,7 @@ def find_latest_checkpoint(checkpoint_dir: str) -> Optional[Tuple[int, str]]:
     return (latest_gen, latest_path) if latest_path else None
 
 
-def extract_fitness_history(checkpoint_dir: str) -> List[Tuple[int, float]]:
+def extract_fitness_history(checkpoint_dir: str) -> list[tuple[int, float]]:
     """Extract fitness progression from all checkpoints."""
     history = []
     if not os.path.exists(checkpoint_dir):
@@ -266,7 +266,7 @@ def extract_fitness_history(checkpoint_dir: str) -> List[Tuple[int, float]]:
 
 
 def detect_plateau(
-    fitness_history: List[Tuple[int, float]],
+    fitness_history: list[tuple[int, float]],
     plateau_generations: int = 5,
     improvement_threshold: float = 0.01,
 ) -> bool:
@@ -294,25 +294,25 @@ def run_cmaes_iteration(
     games_per_eval: int,
     state_pool_id: str,
     output_dir: str,
-    baseline_path: Optional[str] = None,
+    baseline_path: str | None = None,
     seed: int = 42,
-    max_moves: Optional[int] = None,  # Auto-calculated if not specified
+    max_moves: int | None = None,  # Auto-calculated if not specified
     eval_randomness: float = 0.02,
     progress_interval_sec: int = 30,
     no_record: bool = False,
     sigma: float = 0.5,
-    inject_profiles: Optional[List[str]] = None,
+    inject_profiles: list[str] | None = None,
     # GPU acceleration options
     gpu: bool = False,
     gpu_batch_size: int = 128,
     # Distributed mode options
     distributed: bool = False,
-    workers: Optional[str] = None,
+    workers: str | None = None,
     discover_workers: bool = False,
     min_workers: int = 1,
     mode: str = "local",
-    selfplay_data_dir: Optional[str] = None,
-) -> Tuple[str, int]:
+    selfplay_data_dir: str | None = None,
+) -> tuple[str, int]:
     """Run a single CMA-ES iteration.
 
     Returns (run_dir, return_code).
@@ -407,7 +407,7 @@ def run_cmaes_iteration(
 
 
 def update_baseline(
-    best_weights: Dict[str, float],
+    best_weights: dict[str, float],
     best_fitness: float,
     iteration: int,
     run_id: str,
@@ -491,29 +491,29 @@ def run_iterative_pipeline(
     num_players: int,
     generations_per_iter: int,
     max_iterations: int,
-    improvement_threshold: Optional[float],
+    improvement_threshold: float | None,
     plateau_generations: int,
     population_size: int,
     games_per_eval: int,
     output_dir: str,
     profiles_path: str,
-    state_pool_id: Optional[str] = None,
+    state_pool_id: str | None = None,
     seed: int = 42,
-    max_moves: Optional[int] = None,  # Auto-calculated if not specified
+    max_moves: int | None = None,  # Auto-calculated if not specified
     eval_randomness: float = 0.02,
     no_record: bool = False,
     sigma: float = 0.5,
-    inject_profiles: Optional[List[str]] = None,
+    inject_profiles: list[str] | None = None,
     # GPU acceleration options
     gpu: bool = False,
     gpu_batch_size: int = 128,
     # Distributed mode options
     distributed: bool = False,
-    workers: Optional[str] = None,
+    workers: str | None = None,
     discover_workers: bool = False,
     min_workers: int = 1,
     mode: str = "local",
-    selfplay_data_dir: Optional[str] = None,
+    selfplay_data_dir: str | None = None,
 ) -> None:
     """Run the iterative CMA-ES pipeline."""
 
@@ -545,7 +545,7 @@ def run_iterative_pipeline(
         "improvement_threshold": improvement_threshold,
     }
 
-    baseline_path: Optional[str] = None
+    baseline_path: str | None = None
     best_overall_fitness = baseline_fitness
 
     print(f"\n{'#'*60}")

@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def load_source_model(model_path: str) -> Dict:
+def load_source_model(model_path: str) -> dict:
     """Load source model state dict."""
     checkpoint = torch.load(model_path, map_location="cpu")
     if "state_dict" in checkpoint:
@@ -55,7 +55,7 @@ def load_source_model(model_path: str) -> Dict:
         return checkpoint
 
 
-def get_transferable_layers(state_dict: Dict) -> Dict:
+def get_transferable_layers(state_dict: dict) -> dict:
     """Extract layers that can be transferred across board types.
 
     Early convolutional layers (feature extractors) are typically transferable
@@ -77,7 +77,7 @@ def create_transfer_model(
     source_path: str,
     target_board: str,
     freeze_backbone: bool = True,
-) -> Dict:
+) -> dict:
     """Create a model for target board type using source weights.
 
     Args:
@@ -184,7 +184,7 @@ class TransferDataset(Dataset):
     def __len__(self) -> int:
         return len(self.features)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         return (
             torch.from_numpy(self.features[idx]).float(),
             torch.from_numpy(self.globals[idx]).float(),
@@ -194,10 +194,10 @@ class TransferDataset(Dataset):
 
 
 def transfer_backbone_weights(
-    source_state: Dict,
+    source_state: dict,
     target_model: nn.Module,
     freeze_backbone: bool = True,
-) -> Tuple[int, int, List[str]]:
+) -> tuple[int, int, list[str]]:
     """Transfer backbone weights from source to target model.
 
     Args:
@@ -254,7 +254,7 @@ def run_transfer_experiment(
     batch_size: int = 128,
     freeze_epochs: int = 5,
     num_players: int = 2,
-) -> Dict:
+) -> dict:
     """Run a transfer learning experiment with actual fine-tuning.
 
     Args:

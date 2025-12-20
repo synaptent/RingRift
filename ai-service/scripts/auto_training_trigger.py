@@ -47,7 +47,7 @@ TRAINING_CONFIGS = [
 ]
 
 
-def http_get(url: str, timeout: int = 15) -> Optional[dict]:
+def http_get(url: str, timeout: int = 15) -> dict | None:
     """Make HTTP GET request and return JSON."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -57,7 +57,7 @@ def http_get(url: str, timeout: int = 15) -> Optional[dict]:
         return None
 
 
-def http_post(url: str, data: dict, timeout: int = 15) -> Optional[dict]:
+def http_post(url: str, data: dict, timeout: int = 15) -> dict | None:
     """Make HTTP POST request and return JSON."""
     try:
         req = urllib.request.Request(
@@ -73,17 +73,17 @@ def http_post(url: str, data: dict, timeout: int = 15) -> Optional[dict]:
         return None
 
 
-def get_local_health() -> Optional[dict]:
+def get_local_health() -> dict | None:
     """Get local P2P node health."""
     return http_get(f"http://localhost:{P2P_PORT}/health")
 
 
-def get_cluster_status() -> Optional[dict]:
+def get_cluster_status() -> dict | None:
     """Get full cluster status from local P2P node."""
     return http_get(f"http://localhost:{P2P_PORT}/status")
 
 
-def find_idle_gpu_nodes(status: dict) -> List[Tuple[str, float, str]]:
+def find_idle_gpu_nodes(status: dict) -> list[tuple[str, float, str]]:
     """Find GPU nodes with low utilization.
 
     Returns: List of (node_id, gpu_percent, gpu_name) tuples
@@ -127,7 +127,7 @@ def find_idle_gpu_nodes(status: dict) -> List[Tuple[str, float, str]]:
     return idle_nodes
 
 
-def trigger_training(board_type: str, num_players: int) -> Optional[dict]:
+def trigger_training(board_type: str, num_players: int) -> dict | None:
     """Trigger a training job via the local P2P API."""
     url = f"http://localhost:{P2P_PORT}/training/start"
     data = {

@@ -35,10 +35,10 @@ from app.models import AIType, BoardType
 @dataclass(frozen=True)
 class _CheckpointLoadResult:
     ok: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
-def _resolve_latest_checkpoint(models_dir: Path, model_id: str) -> Optional[Path]:
+def _resolve_latest_checkpoint(models_dir: Path, model_id: str) -> Path | None:
     patterns = [
         f"{model_id}.pth",
         f"{model_id}_mps.pth",
@@ -80,7 +80,7 @@ def _try_load_checkpoint(path: Path) -> _CheckpointLoadResult:
         return _CheckpointLoadResult(ok=False, error=f"{type(exc).__name__}: {exc}")
 
 
-def _parse_board(value: Optional[str]) -> Optional[BoardType]:
+def _parse_board(value: str | None) -> BoardType | None:
     if not value:
         return None
     key = value.strip().lower()
@@ -135,7 +135,7 @@ def main(argv: list[str]) -> int:
     tiers = list_ladder_tiers(board_type=board_type, num_players=num_players)
     base_combos = sorted({(t.board_type, t.num_players) for t in tiers}, key=lambda x: (x[0].value, x[1]))
 
-    rows: list[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     missing_profiles = 0
     missing_nnue = 0
     missing_nn = 0
@@ -168,7 +168,7 @@ def main(argv: list[str]) -> int:
             continue
 
         eff = get_effective_ladder_config(base.difficulty, base.board_type, base.num_players)
-        artifacts: Dict[str, Any] = {}
+        artifacts: dict[str, Any] = {}
 
         if eff.heuristic_profile_id:
             available = eff.heuristic_profile_id in HEURISTIC_WEIGHT_PROFILES
@@ -197,7 +197,7 @@ def main(argv: list[str]) -> int:
             exists = checkpoint is not None
             if not exists:
                 missing_nn += 1
-            neural_artifact: Dict[str, Any] = {
+            neural_artifact: dict[str, Any] = {
                 "model_id": eff.model_id,
                 "chosen": str(checkpoint) if checkpoint is not None else None,
                 "exists": exists,

@@ -40,17 +40,17 @@ STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 DEFAULT_STATE = {"completed_trainings": [], "pending_elo": []}
 
 
-def load_state() -> Dict:
+def load_state() -> dict:
     """Load watcher state."""
     return load_json_state(STATE_FILE, default=DEFAULT_STATE)
 
 
-def save_state(state: Dict) -> None:
+def save_state(state: dict) -> None:
     """Save watcher state."""
     save_json_state(STATE_FILE, state)
 
 
-def parse_log_for_completion(log_path: Path) -> Optional[Dict]:
+def parse_log_for_completion(log_path: Path) -> dict | None:
     """Parse training log to check if training completed."""
     if not log_path.exists():
         return None
@@ -97,7 +97,7 @@ def parse_log_for_completion(log_path: Path) -> Optional[Dict]:
     return None
 
 
-def check_training_logs() -> List[Dict]:
+def check_training_logs() -> list[dict]:
     """Check all training logs for completed trainings."""
     completed = []
 
@@ -170,7 +170,7 @@ def check_system_load() -> float:
         return 0.0
 
 
-def run_check(state: Dict) -> Dict:
+def run_check(state: dict) -> dict:
     """Run a single check iteration."""
     # Find newly completed trainings
     completed = check_training_logs()

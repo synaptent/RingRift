@@ -59,10 +59,10 @@ class DistillationJob:
     num_players: int
     output_path: Path
     started_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     success: bool = False
-    metrics: Optional[Dict] = None
-    error: Optional[str] = None
+    metrics: dict | None = None
+    error: str | None = None
 
 
 def detect_board_config(model_path: Path) -> tuple[str, int]:
@@ -277,8 +277,8 @@ class DistillationDaemon:
         self.models_dir = AI_SERVICE_ROOT / "models"
         self.promoted_dir = self.models_dir / "promoted"
         self.gauntlet_promoted_dir = self.models_dir / "gauntlet_promoted"
-        self.known_models: Dict[str, str] = {}  # path -> hash
-        self.jobs: List[DistillationJob] = []
+        self.known_models: dict[str, str] = {}  # path -> hash
+        self.jobs: list[DistillationJob] = []
 
         # Also watch for "best" models
         self.best_model_patterns = [
@@ -315,7 +315,7 @@ class DistillationDaemon:
         except Exception as e:
             logger.warning(f"Failed to save state: {e}")
 
-    def _find_models_to_distill(self) -> List[Path]:
+    def _find_models_to_distill(self) -> list[Path]:
         """Find new models that need distillation."""
         models_to_distill = []
 
@@ -346,7 +346,7 @@ class DistillationDaemon:
 
         return models_to_distill
 
-    def process_model(self, model_path: Path) -> Optional[DistillationJob]:
+    def process_model(self, model_path: Path) -> DistillationJob | None:
         """Process a single model for distillation."""
         board_type, num_players = detect_board_config(model_path)
 
@@ -366,7 +366,7 @@ class DistillationDaemon:
         self.jobs.append(job)
         return job
 
-    def check_once(self) -> List[DistillationJob]:
+    def check_once(self) -> list[DistillationJob]:
         """Run a single check for new models."""
         models = self._find_models_to_distill()
 

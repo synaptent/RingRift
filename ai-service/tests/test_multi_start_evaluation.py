@@ -45,7 +45,7 @@ from scripts.run_cmaes_optimization import (  # type: ignore  # noqa: E402
 )
 
 
-def _write_temp_state_pool(states: List[GameState]) -> str:
+def _write_temp_state_pool(states: list[GameState]) -> str:
     """Write a small JSONL state pool to a temporary file.
 
     Returns
@@ -80,7 +80,7 @@ def test_multi_start_baseline_vs_baseline_square8(games_per_eval: int) -> None:
     # Build a tiny pool of Square8 GameStates using the shared training env.
     env = RingRiftEnv(BoardType.SQUARE8)
     base_state = env.reset()
-    states: List[GameState] = [base_state]
+    states: list[GameState] = [base_state]
 
     # Take a single legal move (if available) to obtain a non-trivial mid-game
     # snapshot as a second entry in the pool.

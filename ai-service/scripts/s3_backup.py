@@ -49,7 +49,7 @@ INCLUDE_PATTERNS = {
 EXCLUDE_PATTERNS = ["*.tmp", "*.log", "__pycache__"]
 
 
-def run_command(cmd: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+def run_command(cmd: list[str], dry_run: bool = False) -> tuple[bool, str]:
     """Run a command and return success status and output."""
     if dry_run:
         print(f"  DRY RUN: {' '.join(cmd)}")
@@ -73,7 +73,7 @@ def get_file_hash(filepath: Path) -> str:
     return hash_md5.hexdigest()
 
 
-def list_s3_objects(prefix: str) -> Dict[str, dict]:
+def list_s3_objects(prefix: str) -> dict[str, dict]:
     """List objects in S3 with metadata."""
     cmd = [
         "aws", "s3api", "list-objects-v2",
@@ -95,9 +95,9 @@ def list_s3_objects(prefix: str) -> Dict[str, dict]:
 def sync_to_s3(
     local_path: Path,
     s3_prefix: str,
-    include_patterns: List[str],
+    include_patterns: list[str],
     dry_run: bool = False
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Sync local directory to S3."""
     if not local_path.exists():
         print(f"  Warning: {local_path} does not exist, skipping")
@@ -143,7 +143,7 @@ def sync_to_s3(
     return uploaded, deleted
 
 
-def backup_models(dry_run: bool = False) -> Dict[str, int]:
+def backup_models(dry_run: bool = False) -> dict[str, int]:
     """Backup all models to S3."""
     print("\n=== Backing up Models ===")
     stats = {"uploaded": 0, "deleted": 0}
@@ -160,7 +160,7 @@ def backup_models(dry_run: bool = False) -> Dict[str, int]:
     return stats
 
 
-def backup_databases(dry_run: bool = False) -> Dict[str, int]:
+def backup_databases(dry_run: bool = False) -> dict[str, int]:
     """Backup game databases to S3."""
     print("\n=== Backing up Game Databases ===")
 
@@ -179,7 +179,7 @@ def backup_databases(dry_run: bool = False) -> Dict[str, int]:
     return {"uploaded": uploaded, "deleted": deleted}
 
 
-def backup_state(dry_run: bool = False) -> Dict[str, int]:
+def backup_state(dry_run: bool = False) -> dict[str, int]:
     """Backup state files (promotion history, etc.)."""
     print("\n=== Backing up State Files ===")
 
@@ -229,7 +229,7 @@ def restore_from_s3(
     s3_prefix: str,
     local_path: Path,
     dry_run: bool = False
-) -> Tuple[int, str]:
+) -> tuple[int, str]:
     """Restore files from S3 to local."""
     cmd = [
         "aws", "s3", "sync",

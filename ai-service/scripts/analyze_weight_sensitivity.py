@@ -97,7 +97,7 @@ def analyze_sensitivity_results(
     results_path: str,
     positive_threshold: float = 0.55,
     negative_threshold: float = 0.45,
-) -> List[WeightClassification]:
+) -> list[WeightClassification]:
     """Analyze sensitivity test results and classify all weights.
 
     Args:
@@ -112,7 +112,7 @@ def analyze_sensitivity_results(
         data = json.load(f)
 
     results = data.get("results", [])
-    classifications: List[WeightClassification] = []
+    classifications: list[WeightClassification] = []
 
     for result in results:
         weight_name = result["weight"]
@@ -134,9 +134,9 @@ def analyze_sensitivity_results(
 
 
 def generate_cmaes_seed_weights(
-    classifications: List[WeightClassification],
+    classifications: list[WeightClassification],
     include_noise: bool = False,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Generate CMA-ES seed weights from classifications.
 
     Args:
@@ -147,7 +147,7 @@ def generate_cmaes_seed_weights(
     Returns:
         Dictionary of weight name -> CMA-ES seed value
     """
-    weights: Dict[str, float] = {}
+    weights: dict[str, float] = {}
 
     for c in classifications:
         if c.classification == "noise" and not include_noise:
@@ -165,7 +165,7 @@ def generate_cmaes_seed_weights(
     return weights
 
 
-def print_classification_report(classifications: List[WeightClassification]) -> None:
+def print_classification_report(classifications: list[WeightClassification]) -> None:
     """Print a formatted classification report."""
     print("\n" + "=" * 80)
     print("WEIGHT CLASSIFICATION REPORT")

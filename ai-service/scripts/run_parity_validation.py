@@ -43,8 +43,8 @@ def validate_database(
     db_path: Path,
     mode: str = "canonical",
     progress_every: int = 100,
-    max_games: Optional[int] = None,
-) -> Dict[str, Any]:
+    max_games: int | None = None,
+) -> dict[str, Any]:
     """Validate all games in a database.
 
     Args:

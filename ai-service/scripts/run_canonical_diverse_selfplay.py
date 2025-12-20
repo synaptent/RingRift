@@ -82,7 +82,7 @@ class CanonicalSelfplayConfig:
     output_dir: Path = field(default_factory=lambda: Path("data/games"))
 
 
-def get_current_game_counts() -> Dict[str, int]:
+def get_current_game_counts() -> dict[str, int]:
     """Get current game counts from databases."""
     counts = {}
     games_dir = AI_SERVICE_ROOT / "data" / "games"
@@ -112,7 +112,7 @@ def get_current_game_counts() -> Dict[str, int]:
     return counts
 
 
-def get_priority_configs(underrepresented_only: bool = False) -> List[Tuple[str, Dict]]:
+def get_priority_configs(underrepresented_only: bool = False) -> list[tuple[str, dict]]:
     """Get configs sorted by priority (most underrepresented first)."""
     counts = get_current_game_counts()
 
@@ -138,9 +138,9 @@ def get_priority_configs(underrepresented_only: bool = False) -> List[Tuple[str,
 
 def build_selfplay_command(
     config: CanonicalSelfplayConfig,
-    ai_matchup: Tuple[str, str],
+    ai_matchup: tuple[str, str],
     num_games: int,
-) -> List[str]:
+) -> list[str]:
     """Build command to run selfplay with specific AI matchup."""
     player1_ai, player2_ai = ai_matchup
 
@@ -172,9 +172,9 @@ def build_selfplay_command(
 
 def run_selfplay_batch(
     config: CanonicalSelfplayConfig,
-    matchups: List[Tuple[str, str]],
+    matchups: list[tuple[str, str]],
     games_per_matchup: int = 10,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Run selfplay for multiple AI matchups."""
     results = {}
 
@@ -212,7 +212,7 @@ def run_selfplay_batch(
     return results
 
 
-def get_diverse_matchups(include_experimental: bool = True) -> List[Tuple[str, str]]:
+def get_diverse_matchups(include_experimental: bool = True) -> list[tuple[str, str]]:
     """Generate diverse AI matchups for training."""
     matchups = []
 

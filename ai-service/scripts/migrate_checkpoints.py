@@ -77,13 +77,13 @@ class CheckpointInfo:
     """Information about a checkpoint file."""
     path: Path
     is_legacy: bool
-    model_class: Optional[str] = None
-    architecture_version: Optional[str] = None
+    model_class: str | None = None
+    architecture_version: str | None = None
     size_bytes: int = 0
-    created_at: Optional[datetime] = None
-    error: Optional[str] = None
+    created_at: datetime | None = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "path": str(self.path),
             "is_legacy": self.is_legacy,
@@ -99,12 +99,12 @@ class CheckpointInfo:
 class MigrationResult:
     """Result of a migration operation."""
     source_path: Path
-    output_path: Optional[Path] = None
+    output_path: Path | None = None
     success: bool = False
     skipped: bool = False
-    skip_reason: Optional[str] = None
-    error: Optional[str] = None
-    metadata: Optional[ModelMetadata] = None
+    skip_reason: str | None = None
+    error: str | None = None
+    metadata: ModelMetadata | None = None
 
 
 @dataclass
@@ -117,9 +117,9 @@ class MigrationReport:
     migrated_count: int = 0
     skipped_count: int = 0
     error_count: int = 0
-    results: List[MigrationResult] = field(default_factory=list)
+    results: list[MigrationResult] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp,
             "total_files": self.total_files,
@@ -156,11 +156,11 @@ def infer_model_class(path: Path) -> str:
 
 
 def infer_config_from_state_dict(
-    state_dict: Dict[str, torch.Tensor],
+    state_dict: dict[str, torch.Tensor],
     model_class: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Infer model config from state dict tensor shapes."""
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
 
     # Extract num_filters from first conv layer
     if "conv1.weight" in state_dict:
@@ -225,7 +225,7 @@ def migrate_checkpoint(
     source_path: Path,
     output_path: Path,
     model_class: str,
-    config: Optional[Dict[str, Any]],
+    config: dict[str, Any] | None,
     manager: ModelVersionManager,
     dry_run: bool = False,
 ) -> MigrationResult:
@@ -275,7 +275,7 @@ def migrate_checkpoint(
         architecture_version = MODEL_VERSIONS.get(model_class, "v1.0.0")
 
         # Create metadata
-        training_info: Dict[str, Any] = {
+        training_info: dict[str, Any] = {
             "migrated_from": str(source_path),
             "migration_date": datetime.now(timezone.utc).isoformat(),
             "original_size_bytes": source_path.stat().st_size,
@@ -298,7 +298,7 @@ def migrate_checkpoint(
         )
 
         # Create versioned checkpoint
-        versioned_checkpoint: Dict[str, Any] = {
+        versioned_checkpoint: dict[str, Any] = {
             manager.STATE_DICT_KEY: state_dict,
             manager.METADATA_KEY: metadata.to_dict(),
         }
@@ -337,7 +337,7 @@ def migrate_checkpoint(
 def scan_checkpoints(
     input_dir: Path,
     recursive: bool = True,
-) -> List[Path]:
+) -> list[Path]:
     """Scan directory for checkpoint files."""
     pattern = "**/*.pth" if recursive else "*.pth"
     paths = list(input_dir.glob(pattern))
@@ -354,9 +354,9 @@ def scan_checkpoints(
 
 def run_migration(
     input_dir: Path,
-    output_dir: Optional[Path],
-    model_class: Optional[str],
-    config: Optional[Dict[str, Any]],
+    output_dir: Path | None,
+    model_class: str | None,
+    config: dict[str, Any] | None,
     in_place: bool,
     dry_run: bool,
     recursive: bool,
@@ -377,7 +377,7 @@ def run_migration(
         return report
 
     # Analyze each checkpoint
-    checkpoint_infos: List[CheckpointInfo] = []
+    checkpoint_infos: list[CheckpointInfo] = []
     for path in checkpoint_paths:
         info = analyze_checkpoint(path, manager)
         checkpoint_infos.append(info)

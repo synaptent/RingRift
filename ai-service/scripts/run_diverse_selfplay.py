@@ -116,8 +116,8 @@ class DiverseSelfplayConfig:
     board_type: str
     num_players: int
     games_per_matchup: int = 50
-    max_moves: Optional[int] = None  # Auto-calculated from board_type/num_players
-    output_dir: Optional[Path] = None
+    max_moves: int | None = None  # Auto-calculated from board_type/num_players
+    output_dir: Path | None = None
     gpu_id: int = 0
     batch_size: int = 32
 
@@ -142,7 +142,7 @@ class DiverseSelfplayConfig:
     # Matchup distribution weights
     # Higher weight = more games of this type
     # Robust training: increase strong_vs_weak for better value semantics learning
-    matchup_weights: Dict[str, float] = field(default_factory=lambda: {
+    matchup_weights: dict[str, float] = field(default_factory=lambda: {
         "nnue_vs_nnue": 0.10,        # NNUE self-play (reduced)
         "nn_vs_nn": 0.20,            # NN-based AI battles
         "nnue_vs_nn": 0.15,          # Cross NN/NNUE matches
@@ -151,7 +151,7 @@ class DiverseSelfplayConfig:
     })
 
 
-def get_diverse_matchups(config: DiverseSelfplayConfig) -> List[MatchupConfig]:
+def get_diverse_matchups(config: DiverseSelfplayConfig) -> list[MatchupConfig]:
     """Generate diverse matchup configurations based on weights."""
     matchups = []
 
@@ -290,7 +290,7 @@ def run_matchup_games(
     config: DiverseSelfplayConfig,
     matchup: MatchupConfig,
     num_games: int
-) -> Tuple[bool, int, str]:
+) -> tuple[bool, int, str]:
     """Run games for a specific matchup configuration.
 
     Returns:
@@ -353,7 +353,7 @@ def run_matchup_games(
         return False, 0, str(output_dir)
 
 
-async def run_diverse_selfplay(config: DiverseSelfplayConfig) -> Dict[str, Any]:
+async def run_diverse_selfplay(config: DiverseSelfplayConfig) -> dict[str, Any]:
     """Run diverse selfplay generation."""
     results = {
         "config": f"{config.board_type}_{config.num_players}p",

@@ -45,7 +45,7 @@ from app.models import BoardType
 from app.training.export_cache import get_export_cache
 
 
-BOARD_TYPE_MAP: Dict[str, BoardType] = {
+BOARD_TYPE_MAP: dict[str, BoardType] = {
     "square8": BoardType.SQUARE8,
     "square19": BoardType.SQUARE19,
     "hex8": BoardType.HEX8,
@@ -54,15 +54,15 @@ BOARD_TYPE_MAP: Dict[str, BoardType] = {
 
 
 def load_games_from_db(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: BoardType,
     num_players: int,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
     require_completed: bool = False,
-    min_moves: Optional[int] = None,
-    max_moves: Optional[int] = None,
+    min_moves: int | None = None,
+    max_moves: int | None = None,
     require_moves: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Load games from database(s) into memory for parallel processing.
 
@@ -134,20 +134,20 @@ def load_games_from_db(
 
 
 def export_parallel(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: BoardType,
     num_players: int,
     output_path: str,
     *,
-    num_workers: Optional[int] = None,
+    num_workers: int | None = None,
     encoder_version: str = "v3",
     history_length: int = 3,
     feature_version: int = 2,
     sample_every: int = 1,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
     require_completed: bool = False,
-    min_moves: Optional[int] = None,
-    max_moves: Optional[int] = None,
+    min_moves: int | None = None,
+    max_moves: int | None = None,
     use_board_aware_encoding: bool = False,
     require_moves: bool = True,
     use_cache: bool = False,

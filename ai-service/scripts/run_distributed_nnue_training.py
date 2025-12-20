@@ -91,7 +91,7 @@ logger = setup_script_logging("run_distributed_nnue_training")
 VALID_MODES = ["local", "lan", "aws", "hybrid"]
 
 
-def get_hosts_for_mode(mode: str, hosts_config: Dict[str, HostConfig]) -> List[str]:
+def get_hosts_for_mode(mode: str, hosts_config: dict[str, HostConfig]) -> list[str]:
     """Get list of host names based on deployment mode.
 
     Args:
@@ -105,8 +105,8 @@ def get_hosts_for_mode(mode: str, hosts_config: Dict[str, HostConfig]) -> List[s
         return []
 
     # Categorize hosts as LAN or AWS based on configuration
-    lan_hosts: List[str] = []
-    aws_hosts: List[str] = []
+    lan_hosts: list[str] = []
+    aws_hosts: list[str] = []
 
     for name, host in hosts_config.items():
         # AWS hosts typically have ssh_user set (e.g., "ubuntu") or /home/ in work_dir
@@ -130,7 +130,7 @@ def get_hosts_for_mode(mode: str, hosts_config: Dict[str, HostConfig]) -> List[s
     return []
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Distributed NNUE training for RingRift",
@@ -278,10 +278,10 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def collect_remote_databases(
-    hosts: List[str],
+    hosts: list[str],
     db_pattern: str,
     local_dir: str,
-) -> List[str]:
+) -> list[str]:
     """Collect databases from remote hosts.
 
     Args:
@@ -348,9 +348,9 @@ def collect_remote_databases(
 
 def run_remote_training(
     host_name: str,
-    db_paths: List[str],
+    db_paths: list[str],
     args: argparse.Namespace,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run NNUE training on a remote host.
 
     Args:
@@ -467,9 +467,9 @@ def run_remote_training(
 
 
 def run_local_training(
-    db_paths: List[str],
+    db_paths: list[str],
     args: argparse.Namespace,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run NNUE training locally.
 
     Args:
@@ -538,7 +538,7 @@ def run_local_training(
     return report
 
 
-def select_training_host(board_type: str, mode: str = "lan") -> Optional[str]:
+def select_training_host(board_type: str, mode: str = "lan") -> str | None:
     """Select the best host for training based on memory requirements and mode.
 
     Args:
@@ -586,7 +586,7 @@ def select_training_host(board_type: str, mode: str = "lan") -> Optional[str]:
     return eligible[0]
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     args = parse_args(argv)
 
@@ -595,7 +595,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     os.makedirs(output_dir, exist_ok=True)
 
     # Collect local databases
-    db_paths: List[str] = []
+    db_paths: list[str] = []
     for pattern in args.db:
         expanded = glob.glob(pattern)
         if expanded:

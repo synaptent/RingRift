@@ -24,7 +24,7 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 def find_best_source_model(
     board_type: str,
     num_players: int = 2,
-) -> Optional[Path]:
+) -> Path | None:
     """Find the best model for a given board type."""
     models_dir = AI_SERVICE_ROOT / "models"
 

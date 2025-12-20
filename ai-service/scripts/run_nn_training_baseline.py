@@ -90,7 +90,7 @@ def _parse_board(board: str) -> BoardType:
     raise SystemExit(f"Unsupported board {board!r}; valid options: square8, square19, hexagonal")
 
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the NN baseline training script."""
     parser = argparse.ArgumentParser(
         description=(
@@ -333,7 +333,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def _build_model_id(
     board_type: BoardType,
     num_players: int,
-    explicit: Optional[str],
+    explicit: str | None,
 ) -> str:
     """Derive a simple model_id for the baseline run."""
     if explicit:
@@ -353,13 +353,13 @@ def _build_model_id(
     return f"{prefix}_{num_players}p_nn_baseline_{ts}"
 
 
-def _write_report(path: str, payload: Dict[str, Any]) -> None:
+def _write_report(path: str, payload: dict[str, Any]) -> None:
     """Write nn_training_report.json with pretty formatting."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     # Model hygiene: validate and clean up corrupted models at startup
@@ -537,7 +537,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     created_at = datetime.now(timezone.utc).isoformat()
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "board": args.board,
         "num_players": num_players,
         "mode": mode,

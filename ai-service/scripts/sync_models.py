@@ -216,23 +216,23 @@ class ModelInfo:
     size_bytes: int
     mtime: float
     model_type: str  # "nn" or "nnue"
-    md5_hash: Optional[str] = None
-    board_type: Optional[str] = None
-    num_players: Optional[int] = None
-    version: Optional[str] = None
+    md5_hash: str | None = None
+    board_type: str | None = None
+    num_players: int | None = None
+    version: str | None = None
 
 
 @dataclass
 class HostModelInventory:
     """Model inventory for a single host."""
     host_name: str
-    nn_models: Set[str] = field(default_factory=set)
-    nnue_models: Set[str] = field(default_factory=set)
-    model_hashes: Dict[str, str] = field(default_factory=dict)
+    nn_models: set[str] = field(default_factory=set)
+    nnue_models: set[str] = field(default_factory=set)
+    model_hashes: dict[str, str] = field(default_factory=dict)
     work_dir: str = ""
     reachable: bool = False
-    error: Optional[str] = None
-    last_updated: Optional[str] = None
+    error: str | None = None
+    last_updated: str | None = None
 
     def total_models(self) -> int:
         return len(self.nn_models) + len(self.nnue_models)
@@ -241,15 +241,15 @@ class HostModelInventory:
 @dataclass
 class ClusterModelState:
     """Aggregated model state across the cluster."""
-    all_nn_models: Set[str] = field(default_factory=set)
-    all_nnue_models: Set[str] = field(default_factory=set)
-    model_hashes: Dict[str, str] = field(default_factory=dict)  # name -> md5
-    host_inventories: Dict[str, HostModelInventory] = field(default_factory=dict)
-    canonical_models: Dict[str, str] = field(default_factory=dict)  # config_key -> model_name
-    last_sync: Optional[str] = None
-    sync_errors: List[str] = field(default_factory=list)
+    all_nn_models: set[str] = field(default_factory=set)
+    all_nnue_models: set[str] = field(default_factory=set)
+    model_hashes: dict[str, str] = field(default_factory=dict)  # name -> md5
+    host_inventories: dict[str, HostModelInventory] = field(default_factory=dict)
+    canonical_models: dict[str, str] = field(default_factory=dict)  # config_key -> model_name
+    last_sync: str | None = None
+    sync_errors: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "all_nn_models": sorted(self.all_nn_models),
             "all_nnue_models": sorted(self.all_nnue_models),
@@ -272,7 +272,7 @@ class ClusterModelState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "ClusterModelState":
+    def from_dict(cls, data: dict) -> "ClusterModelState":
         state = cls(
             all_nn_models=set(data.get("all_nn_models", [])),
             all_nnue_models=set(data.get("all_nnue_models", [])),
@@ -319,7 +319,7 @@ def compute_file_md5(path: Path, chunk_size: int = 8192) -> str:
     return md5.hexdigest()
 
 
-def load_model_hashes() -> Dict[str, str]:
+def load_model_hashes() -> dict[str, str]:
     """Load cached model hashes."""
     if MODEL_HASHES_PATH.exists():
         with open(MODEL_HASHES_PATH) as f:
@@ -327,14 +327,14 @@ def load_model_hashes() -> Dict[str, str]:
     return {}
 
 
-def save_model_hashes(hashes: Dict[str, str]):
+def save_model_hashes(hashes: dict[str, str]):
     """Save model hashes to cache."""
     MODEL_HASHES_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(MODEL_HASHES_PATH, "w") as f:
         json.dump(hashes, f, indent=2)
 
 
-def get_local_model_hash(model_name: str, model_type: str = "nn") -> Optional[str]:
+def get_local_model_hash(model_name: str, model_type: str = "nn") -> str | None:
     """Get hash of local model, computing if not cached."""
     hashes = load_model_hashes()
     cache_key = f"{model_type}:{model_name}"
@@ -368,7 +368,7 @@ def get_local_model_hash(model_name: str, model_type: str = "nn") -> Optional[st
 # Model Name Parsing
 # ============================================
 
-def parse_model_name(name: str) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+def parse_model_name(name: str) -> tuple[str | None, int | None, str | None]:
     """Extract board_type, num_players, version from model name."""
     board_type = None
     num_players = None
@@ -405,7 +405,7 @@ def parse_model_name(name: str) -> Tuple[Optional[str], Optional[int], Optional[
 # Local Model Discovery
 # ============================================
 
-def get_local_models() -> Tuple[Set[str], Set[str], Dict[str, ModelInfo]]:
+def get_local_models() -> tuple[set[str], set[str], dict[str, ModelInfo]]:
     """Get all NN and NNUE models from local machine with metadata."""
     nn_models = set()
     nnue_models = set()
@@ -495,7 +495,7 @@ def get_remote_models(host: HostConfig) -> HostModelInventory:
 # Cluster Scanning
 # ============================================
 
-def scan_cluster(hosts: Dict[str, HostConfig], max_workers: int = 10) -> ClusterModelState:
+def scan_cluster(hosts: dict[str, HostConfig], max_workers: int = 10) -> ClusterModelState:
     """Scan all hosts in parallel to build cluster model state."""
     state = ClusterModelState()
 
@@ -564,7 +564,7 @@ def sync_model_to_host(
     model_name: str,
     model_type: str = "nn",
     dry_run: bool = False,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Sync a single model to a remote host."""
     if HAS_STORAGE_PROVIDER and not should_sync_to_node(host.name):
         record_nfs_skip("models")
@@ -648,7 +648,7 @@ def collect_model_from_host(
     model_name: str,
     model_type: str = "nn",
     dry_run: bool = False,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Collect a model from a remote host to local."""
     if HAS_STORAGE_PROVIDER and not should_sync_to_node(host.name):
         record_nfs_skip("models")
@@ -728,13 +728,13 @@ def collect_model_from_host(
             release_sync_lock(host.name)
 
 
-def load_cluster_cull_manifests(hosts: Dict[str, HostConfig]) -> Set[str]:
+def load_cluster_cull_manifests(hosts: dict[str, HostConfig]) -> set[str]:
     """Load cull manifests from all hosts and merge them.
 
     Returns combined set of all culled model IDs across the cluster.
     This ensures culled models don't get re-synced.
     """
-    culled_ids: Set[str] = set()
+    culled_ids: set[str] = set()
 
     # Load local manifest
     local_manifest = LOCAL_MODELS_DIR / "cull_manifest.json"
@@ -777,10 +777,10 @@ def load_cluster_cull_manifests(hosts: Dict[str, HostConfig]) -> Set[str]:
 
 def sync_missing_models(
     state: ClusterModelState,
-    hosts: Dict[str, HostConfig],
+    hosts: dict[str, HostConfig],
     dry_run: bool = False,
     collect_first: bool = True,
-) -> Tuple[int, int, List[str]]:
+) -> tuple[int, int, list[str]]:
     """Sync missing models across the cluster with deduplication.
 
     Args:
@@ -941,7 +941,7 @@ def sync_models_after_training(model_path: Path, model_type: str = "nn") -> bool
     return success_count > 0
 
 
-def get_canonical_model_for_config(board_type: str, num_players: int, model_type: str = "nn") -> Optional[Path]:
+def get_canonical_model_for_config(board_type: str, num_players: int, model_type: str = "nn") -> Path | None:
     """Get the canonical model for a specific configuration.
 
     Used by orchestrators to determine which model to use.

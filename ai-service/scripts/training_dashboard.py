@@ -45,13 +45,13 @@ CONFIGS = [
 ]
 
 
-def get_config_stats() -> List[Dict[str, Any]]:
+def get_config_stats() -> list[dict[str, Any]]:
     """Get comprehensive stats for all configs."""
     stats = []
-    
+
     for board_type, num_players in CONFIGS:
         key = f"{board_type}_{num_players}p"
-        
+
         # Count models
         model_count = 0
         board_short = board_type[:3] if board_type != "hexagonal" else "hex"
@@ -60,7 +60,7 @@ def get_config_stats() -> List[Dict[str, Any]]:
             name = model_file.stem.lower()
             if any(p in name for p in patterns):
                 model_count += 1
-        
+
         # Get ELO
         elo_best, elo_avg, elo_games = 0.0, 0.0, 0
         if UNIFIED_ELO_DB.exists():
@@ -77,7 +77,7 @@ def get_config_stats() -> List[Dict[str, Any]]:
                 conn.close()
             except Exception:
                 pass
-        
+
         # Get holdout count
         holdout_count = 0
         if HOLDOUT_DB.exists():
@@ -90,7 +90,7 @@ def get_config_stats() -> List[Dict[str, Any]]:
                 conn.close()
             except Exception:
                 pass
-        
+
         # Get promoted model
         promoted = None
         if PROMOTION_FILE.exists():
@@ -101,7 +101,7 @@ def get_config_stats() -> List[Dict[str, Any]]:
                     promoted = data["models"][key].get("model_id", "")[:25]
             except Exception:
                 pass
-        
+
         stats.append({
             "config": key,
             "board_type": board_type,
@@ -113,15 +113,15 @@ def get_config_stats() -> List[Dict[str, Any]]:
             "holdout": holdout_count,
             "promoted": promoted or "-",
         })
-    
+
     return stats
 
 
-def get_elo_history(board_type: str, num_players: int, days: int = 7) -> List[Tuple[str, float]]:
+def get_elo_history(board_type: str, num_players: int, days: int = 7) -> list[tuple[str, float]]:
     """Get ELO history for a config."""
     if not UNIFIED_ELO_DB.exists():
         return []
-    
+
     try:
         conn = sqlite3.connect(UNIFIED_ELO_DB)
         cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
@@ -136,48 +136,48 @@ def get_elo_history(board_type: str, num_players: int, days: int = 7) -> List[Tu
         return []
 
 
-def sparkline(values: List[float], width: int = 20) -> str:
+def sparkline(values: list[float], width: int = 20) -> str:
     """Create ASCII sparkline from values."""
     if not values:
         return "─" * width
-    
+
     chars = "▁▂▃▄▅▆▇█"
     min_val, max_val = min(values), max(values)
     if max_val == min_val:
         return "▄" * min(len(values), width)
-    
+
     # Sample if too many values
     if len(values) > width:
         step = len(values) / width
         values = [values[int(i * step)] for i in range(width)]
-    
+
     result = ""
     for v in values:
         idx = int((v - min_val) / (max_val - min_val) * (len(chars) - 1))
         result += chars[idx]
-    
+
     return result
 
 
-def print_dashboard(stats: List[Dict[str, Any]]):
+def print_dashboard(stats: list[dict[str, Any]]):
     """Print terminal dashboard."""
     print("\n" + "═" * 80)
     print("  🎮 RingRift AI Training Dashboard")
     print("  " + datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"))
     print("═" * 80)
-    
+
     # Summary
     total_models = sum(s["models"] for s in stats)
     total_holdout = sum(s["holdout"] for s in stats)
     avg_elo = sum(s["elo_best"] for s in stats if s["elo_best"] > 0) / max(1, sum(1 for s in stats if s["elo_best"] > 0))
-    
+
     print(f"\n  📊 Summary: {total_models} models | {total_holdout:,} holdout games | Avg Best ELO: {avg_elo:.0f}")
-    
+
     # Per-config table
     print("\n  ┌─────────────┬────────┬──────────┬──────────┬─────────┬──────────────────────────┐")
     print("  │ Config      │ Models │ ELO Best │ ELO Avg  │ Holdout │ Promoted                 │")
     print("  ├─────────────┼────────┼──────────┼──────────┼─────────┼──────────────────────────┤")
-    
+
     for s in stats:
         config = s["config"][:11].ljust(11)
         models = str(s["models"]).rjust(6)
@@ -185,11 +185,11 @@ def print_dashboard(stats: List[Dict[str, Any]]):
         elo_avg = f"{s['elo_avg']:.0f}".rjust(8) if s["elo_avg"] > 0 else "    -   "
         holdout = str(s["holdout"]).rjust(7)
         promoted = s["promoted"][:24].ljust(24)
-        
+
         print(f"  │ {config} │ {models} │ {elo_best} │ {elo_avg} │ {holdout} │ {promoted} │")
-    
+
     print("  └─────────────┴────────┴──────────┴──────────┴─────────┴──────────────────────────┘")
-    
+
     # ELO Trends
     print("\n  📈 ELO Trends (7 days):")
     for s in stats:
@@ -200,11 +200,11 @@ def print_dashboard(stats: List[Dict[str, Any]]):
                 trend = sparkline(values, 20)
                 config = s["config"][:11].ljust(11)
                 print(f"    {config}: {trend} ({values[0]:.0f} → {values[-1]:.0f})")
-    
+
     print("\n" + "═" * 80)
 
 
-def generate_html(stats: List[Dict[str, Any]]) -> str:
+def generate_html(stats: list[dict[str, Any]]) -> str:
     """Generate HTML dashboard."""
     html = """<!DOCTYPE html>
 <html>
@@ -263,7 +263,7 @@ def generate_html(stats: List[Dict[str, Any]]) -> str:
             <td>{s['promoted']}</td>
         </tr>
 """
-    
+
     html += """    </table>
 </body>
 </html>"""
@@ -277,9 +277,9 @@ def main():
     parser.add_argument("--output", type=str, help="Output file path")
     parser.add_argument("--watch", action="store_true", help="Auto-refresh mode")
     parser.add_argument("--interval", type=int, default=30, help="Refresh interval")
-    
+
     args = parser.parse_args()
-    
+
     if args.watch:
         import time
         while True:
@@ -289,7 +289,7 @@ def main():
             time.sleep(args.interval)
     else:
         stats = get_config_stats()
-        
+
         if args.json:
             output = json.dumps(stats, indent=2)
         elif args.html:
@@ -297,7 +297,7 @@ def main():
         else:
             print_dashboard(stats)
             return
-        
+
         if args.output:
             with open(args.output, 'w') as f:
                 f.write(output)

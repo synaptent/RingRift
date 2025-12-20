@@ -42,7 +42,7 @@ def log(msg: str):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
-def _load_peers_from_config() -> List[str]:
+def _load_peers_from_config() -> list[str]:
     """Load P2P peer endpoints from config file."""
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
     if not config_path.exists():
@@ -69,7 +69,7 @@ def _load_peers_from_config() -> List[str]:
         return []
 
 
-def check_p2p_health(port: int = 8770, timeout: int = 30) -> Optional[dict]:
+def check_p2p_health(port: int = 8770, timeout: int = 30) -> dict | None:
     """Check if local P2P orchestrator is healthy."""
     try:
         url = f"http://localhost:{port}/health"
@@ -175,7 +175,7 @@ def stop_p2p():
         log(f"Warning: Error stopping P2P: {e}")
 
 
-def start_p2p(node_id: str, port: int, peers: List[str], ringrift_path: str):
+def start_p2p(node_id: str, port: int, peers: list[str], ringrift_path: str):
     """Start the P2P orchestrator."""
     if is_systemd_service_available():
         # Use systemctl for systemd-managed service

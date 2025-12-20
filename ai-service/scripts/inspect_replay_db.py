@@ -39,7 +39,7 @@ except Exception:  # pragma: no cover - defensive fallback
     classify_game_structure = None  # type: ignore[assignment]
 
 
-def _parse_board_type(name: Optional[str]) -> Optional[BoardType]:
+def _parse_board_type(name: str | None) -> BoardType | None:
     if not name:
         return None
     name = name.lower()
@@ -72,11 +72,11 @@ def _print_stats(db: GameReplayDB) -> None:
     print()
 
 
-def _format_row(cols: List[str], widths: List[int]) -> str:
+def _format_row(cols: list[str], widths: list[int]) -> str:
     return "  ".join(col.ljust(w) for col, w in zip(cols, widths))
 
 
-def _print_games_table(games: List[Dict[str, Any]]) -> None:
+def _print_games_table(games: list[dict[str, Any]]) -> None:
     if not games:
         print("No games matched the specified filters.")
         return
@@ -93,7 +93,7 @@ def _print_games_table(games: List[Dict[str, Any]]) -> None:
         "created_at",
     ]
 
-    rows: List[List[str]] = []
+    rows: list[list[str]] = []
     for g in games:
         rows.append(
             [
@@ -214,7 +214,7 @@ def main() -> None:
 
     board_type = _parse_board_type(args.board_type)
 
-    filters: Dict[str, Any] = {
+    filters: dict[str, Any] = {
         "board_type": board_type,
         "num_players": args.num_players,
         "winner": args.winner,
@@ -228,7 +228,7 @@ def main() -> None:
 
     games = db.query_games(**filters)
 
-    structure_by_game: Dict[str, str] = {}
+    structure_by_game: dict[str, str] = {}
     if args.classify_structure and classify_game_structure is not None:
         for meta in games:
             game_id = meta.get("game_id")
@@ -241,7 +241,7 @@ def main() -> None:
             structure_by_game[game_id] = structure
 
     if args.json:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "db_path": os.path.abspath(db_path),
             "filters": {
                 "board_type": args.board_type,

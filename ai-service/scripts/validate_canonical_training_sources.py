@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-def _parse_registry(registry_path: Path) -> Dict[str, Dict[str, str]]:
+def _parse_registry(registry_path: Path) -> dict[str, dict[str, str]]:
     """Parse TRAINING_DATA_REGISTRY.md and return DB info keyed by filename.
 
     Returns a dict like:
@@ -42,7 +42,7 @@ def _parse_registry(registry_path: Path) -> Dict[str, Dict[str, str]]:
         return {}
 
     content = registry_path.read_text(encoding="utf-8")
-    result: Dict[str, Dict[str, str]] = {}
+    result: dict[str, dict[str, str]] = {}
 
     # Match markdown table rows with format:
     # | `db_name.db` | board | players | **status** | gate_summary | notes |
@@ -76,7 +76,7 @@ def _parse_registry(registry_path: Path) -> Dict[str, Dict[str, str]]:
 
 def _load_gate_summary(
     registry_dir: Path, gate_summary_name: str
-) -> Optional[Dict]:
+) -> dict | None:
     """Load a gate summary JSON file relative to the registry directory."""
     if not gate_summary_name or gate_summary_name == "-":
         return None
@@ -93,10 +93,10 @@ def _load_gate_summary(
 
 def validate_canonical_sources(
     registry_path: Path,
-    db_paths: List[Path],
+    db_paths: list[Path],
     *,
-    allowed_statuses: Optional[List[str]] = None,
-) -> Dict:
+    allowed_statuses: list[str] | None = None,
+) -> dict:
     """Validate that all referenced DBs have allowed canonical status.
 
     Args:
@@ -116,8 +116,8 @@ def validate_canonical_sources(
     # Normalize to lowercase
     allowed_statuses = [s.lower() for s in allowed_statuses]
 
-    problems: List[str] = []
-    checked: List[str] = []
+    problems: list[str] = []
+    checked: list[str] = []
 
     # Parse the registry
     registry_info = _parse_registry(registry_path)
@@ -169,7 +169,7 @@ def validate_canonical_sources(
     }
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Validate canonical training sources against registry"

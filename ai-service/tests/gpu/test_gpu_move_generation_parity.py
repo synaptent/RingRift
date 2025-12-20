@@ -64,7 +64,7 @@ pytestmark = [
 # =============================================================================
 
 
-def get_cpu_placement_positions(state, player: int) -> Set[Tuple[int, int]]:
+def get_cpu_placement_positions(state, player: int) -> set[tuple[int, int]]:
     """Get all valid placement positions from CPU engine."""
     moves = GameEngine.get_valid_moves(state, player)
     return {
@@ -74,7 +74,7 @@ def get_cpu_placement_positions(state, player: int) -> Set[Tuple[int, int]]:
     }
 
 
-def get_cpu_movement_moves(state, player: int) -> Set[Tuple[Tuple[int, int], Tuple[int, int]]]:
+def get_cpu_movement_moves(state, player: int) -> set[tuple[tuple[int, int], tuple[int, int]]]:
     """Get all valid movement moves from CPU engine."""
     moves = GameEngine.get_valid_moves(state, player)
     return {
@@ -84,7 +84,7 @@ def get_cpu_movement_moves(state, player: int) -> Set[Tuple[Tuple[int, int], Tup
     }
 
 
-def get_cpu_capture_moves(state, player: int) -> Set[Tuple[Tuple[int, int], Tuple[int, int]]]:
+def get_cpu_capture_moves(state, player: int) -> set[tuple[tuple[int, int], tuple[int, int]]]:
     """Get all valid capture moves from CPU engine."""
     moves = GameEngine.get_valid_moves(state, player)
     return {
@@ -94,7 +94,7 @@ def get_cpu_capture_moves(state, player: int) -> Set[Tuple[Tuple[int, int], Tupl
     }
 
 
-def get_gpu_placement_positions(batch_state: BatchGameState, player: int) -> Set[Tuple[int, int]]:
+def get_gpu_placement_positions(batch_state: BatchGameState, player: int) -> set[tuple[int, int]]:
     """Get all valid placement positions from GPU batch state.
 
     This is a simplified version that checks empty positions where player can place.

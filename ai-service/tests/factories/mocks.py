@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock
 
 __all__ = [
@@ -26,9 +27,9 @@ class MockModel:
     board_type: str = "square8"
     num_players: int = 2
     elo: float = 1500.0
-    checkpoint_path: Optional[str] = None
+    checkpoint_path: str | None = None
 
-    def predict(self, state: Any) -> Dict[str, Any]:
+    def predict(self, state: Any) -> dict[str, Any]:
         """Mock prediction."""
         return {
             "policy": [0.1] * 10,
@@ -39,7 +40,7 @@ class MockModel:
         """Mock evaluation."""
         return 0.5
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model_id": self.model_id,
             "board_type": self.board_type,
@@ -54,7 +55,7 @@ class MockCoordinator:
     """Mock coordinator for testing."""
     name: str = "test_coordinator"
     is_active: bool = True
-    events: List[Dict[str, Any]] = field(default_factory=list)
+    events: list[dict[str, Any]] = field(default_factory=list)
 
     async def start(self) -> None:
         """Mock start."""
@@ -64,11 +65,11 @@ class MockCoordinator:
         """Mock stop."""
         self.is_active = False
 
-    async def emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
+    async def emit_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Mock event emission."""
         self.events.append({"type": event_type, "data": data})
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status."""
         return {
             "name": self.name,
@@ -81,8 +82,8 @@ class MockEventBus:
     """Mock event bus for testing event-driven code."""
 
     def __init__(self):
-        self.subscribers: Dict[str, List[Callable]] = {}
-        self.published_events: List[Dict[str, Any]] = []
+        self.subscribers: dict[str, list[Callable]] = {}
+        self.published_events: list[dict[str, Any]] = []
 
     def subscribe(self, event_type: str, handler: Callable) -> None:
         """Subscribe to an event type."""
@@ -95,7 +96,7 @@ class MockEventBus:
         if event_type in self.subscribers:
             self.subscribers[event_type].remove(handler)
 
-    async def publish(self, event_type: str, data: Dict[str, Any]) -> None:
+    async def publish(self, event_type: str, data: dict[str, Any]) -> None:
         """Publish an event."""
         self.published_events.append({"type": event_type, "data": data})
 
@@ -123,9 +124,9 @@ class MockAsyncContext:
     def __init__(
         self,
         return_value: Any = None,
-        on_enter: Optional[Callable] = None,
-        on_exit: Optional[Callable] = None,
-        raise_on_exit: Optional[Exception] = None,
+        on_enter: Callable | None = None,
+        on_exit: Callable | None = None,
+        raise_on_exit: Exception | None = None,
     ):
         self.return_value = return_value
         self.on_enter = on_enter
@@ -181,7 +182,7 @@ def create_mock_model(
     board_type: str = "square8",
     num_players: int = 2,
     elo: float = 1500.0,
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
 ) -> MockModel:
     """Create a mock model for testing.
 

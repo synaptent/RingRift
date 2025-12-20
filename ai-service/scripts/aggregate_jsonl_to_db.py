@@ -87,7 +87,7 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("aggregate_jsonl_to_db")
 
 
-def compute_game_hash(record: Dict[str, Any]) -> str:
+def compute_game_hash(record: dict[str, Any]) -> str:
     """Compute a deterministic hash for deduplication.
 
     Uses seed + board_type + num_players + first few moves to identify
@@ -112,7 +112,7 @@ def compute_game_hash(record: Dict[str, Any]) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:32]
 
 
-def parse_jsonl_record(record: Dict[str, Any], source: str, filepath: str) -> Optional[Dict[str, Any]]:
+def parse_jsonl_record(record: dict[str, Any], source: str, filepath: str) -> dict[str, Any] | None:
     """Parse a JSONL record into normalized format.
 
     Returns None if the record is invalid or incomplete.
@@ -175,10 +175,10 @@ def parse_jsonl_record(record: Dict[str, Any], source: str, filepath: str) -> Op
 
 def scan_aggregated_directory(
     input_dir: Path,
-    sources: Optional[List[str]] = None,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-) -> List[Tuple[Path, str]]:
+    sources: list[str] | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
+) -> list[tuple[Path, str]]:
     """Scan directory recursively for JSONL files.
 
     Returns list of (filepath, source_name) tuples.
@@ -229,7 +229,7 @@ def scan_aggregated_directory(
     return results
 
 
-def get_existing_hashes(db_path: Path) -> Set[str]:
+def get_existing_hashes(db_path: Path) -> set[str]:
     """Get set of game hashes already in the database."""
     hashes = set()
 
@@ -256,10 +256,10 @@ def get_existing_hashes(db_path: Path) -> Set[str]:
 
 
 def import_to_database(
-    records: List[Dict[str, Any]],
+    records: list[dict[str, Any]],
     db_path: Path,
     dry_run: bool = False,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Import parsed records to GameReplayDB.
 
     Returns statistics dict.
@@ -369,7 +369,7 @@ def import_to_database(
 def _create_placeholder_state(
     board_type: str,
     num_players: int,
-    seed: Optional[int],
+    seed: int | None,
 ) -> GameState:
     """Create a minimal placeholder initial state."""
     # Map board type string to enum and size
@@ -438,7 +438,7 @@ def _create_placeholder_state(
     )
 
 
-def _parse_moves(moves_data: List[Any], initial_state: GameState) -> List[Move]:
+def _parse_moves(moves_data: list[Any], initial_state: GameState) -> list[Move]:
     """Parse moves from JSONL format to Move objects.
 
     IMPORTANT: This function preserves ALL move fields from the JSONL data,
@@ -498,7 +498,7 @@ def _parse_moves(moves_data: List[Any], initial_state: GameState) -> List[Move]:
 
 def _create_final_state(
     initial_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
     winner: int,
     termination_reason: str,
 ) -> GameState:
@@ -596,7 +596,7 @@ def main():
 
     # Parse all records
     all_records = []
-    records_by_source: Dict[str, int] = {}
+    records_by_source: dict[str, int] = {}
 
     for filepath, source in jsonl_files:
         is_compressed = is_gzip_file(filepath)

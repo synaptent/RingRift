@@ -63,14 +63,14 @@ class ClusterHost:
     name: str
     ssh_host: str
     ssh_user: str = "root"
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     ssh_port: int = 22
     ringrift_path: str = "~/ringrift"
-    venv_activate: Optional[str] = None
+    venv_activate: str | None = None
     status: str = "ready"
     memory_gb: int = 0  # System memory in GB (0 = unknown)
 
-    def ssh_cmd_prefix(self) -> List[str]:
+    def ssh_cmd_prefix(self) -> list[str]:
         """Build SSH command prefix for this host."""
         cmd = ["ssh", "-o", "ConnectTimeout=30", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no"]
         if self.ssh_key:
@@ -89,7 +89,7 @@ class TournamentConfig:
     num_players: int
     num_games: int
     output_path: str
-    seed: Optional[int] = None
+    seed: int | None = None
 
 
 @dataclass
@@ -101,7 +101,7 @@ class TournamentResult:
     games_completed: int
     samples_generated: int
     duration_sec: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +129,7 @@ DEFAULT_GAMES_PER_CONFIG = {
 # Host Management
 # ---------------------------------------------------------------------------
 
-def load_cluster_hosts(config_path: Optional[str] = None) -> List[ClusterHost]:
+def load_cluster_hosts(config_path: str | None = None) -> list[ClusterHost]:
     """Load cluster hosts from distributed_hosts.yaml."""
     try:
         import yaml
@@ -198,7 +198,7 @@ async def check_host_available(host: ClusterHost, timeout: int = 10) -> bool:
         return False
 
 
-async def filter_available_hosts(hosts: List[ClusterHost]) -> List[ClusterHost]:
+async def filter_available_hosts(hosts: list[ClusterHost]) -> list[ClusterHost]:
     """Filter to only available hosts."""
     logger.info(f"Checking {len(hosts)} hosts for availability...")
 
@@ -385,7 +385,7 @@ async def run_tournament_remote(host: ClusterHost, config: TournamentConfig) -> 
         )
 
 
-def parse_selfplay_output(output: str) -> Tuple[int, int]:
+def parse_selfplay_output(output: str) -> tuple[int, int]:
     """Parse games_completed and samples_generated from selfplay output."""
     games_completed = 0
     samples_generated = 0
@@ -410,9 +410,9 @@ def parse_selfplay_output(output: str) -> Tuple[int, int]:
 # ---------------------------------------------------------------------------
 
 async def run_tournament_round_distributed(
-    configs: List[TournamentConfig],
-    hosts: List[ClusterHost],
-) -> List[TournamentResult]:
+    configs: list[TournamentConfig],
+    hosts: list[ClusterHost],
+) -> list[TournamentResult]:
     """Run tournaments distributed across hosts in parallel."""
 
     if not hosts:
@@ -428,10 +428,10 @@ async def run_tournament_round_distributed(
     logger.info(f"Running {len(configs)} tournaments across {len(available_hosts)} hosts")
 
     # Create task queue
-    results: List[TournamentResult] = []
+    results: list[TournamentResult] = []
     pending_configs = list(configs)
-    running_tasks: Dict[asyncio.Task, Tuple[ClusterHost, TournamentConfig]] = {}
-    host_busy: Dict[str, bool] = {h.name: False for h in available_hosts}
+    running_tasks: dict[asyncio.Task, tuple[ClusterHost, TournamentConfig]] = {}
+    host_busy: dict[str, bool] = {h.name: False for h in available_hosts}
 
     while pending_configs or running_tasks:
         # Start new tasks on idle hosts
@@ -474,7 +474,7 @@ async def run_tournament_round_distributed(
     return results
 
 
-def run_tournament_round_local(configs: List[TournamentConfig]) -> List[TournamentResult]:
+def run_tournament_round_local(configs: list[TournamentConfig]) -> list[TournamentResult]:
     """Run tournaments locally (sequential)."""
     results = []
     for config in configs:
@@ -488,12 +488,12 @@ def run_tournament_round_local(configs: List[TournamentConfig]) -> List[Tourname
 # ---------------------------------------------------------------------------
 
 def build_tournament_configs(
-    board_types: List[str],
-    player_counts: List[int],
-    games_per_config: Optional[int],
+    board_types: list[str],
+    player_counts: list[int],
+    games_per_config: int | None,
     output_base: str,
-    seed: Optional[int] = None,
-) -> List[TournamentConfig]:
+    seed: int | None = None,
+) -> list[TournamentConfig]:
     """Build list of tournament configurations."""
     configs = []
 
@@ -518,7 +518,7 @@ def build_tournament_configs(
     return configs
 
 
-def print_summary(results: List[TournamentResult]) -> None:
+def print_summary(results: list[TournamentResult]) -> None:
     """Print summary of tournament results."""
     print("\n" + "=" * 80)
     print("TOURNAMENT ROUND SUMMARY")

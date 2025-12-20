@@ -99,7 +99,7 @@ VECTOR_CATEGORIES = [
 ]
 
 
-def load_vector_file(category: str) -> Optional[TestVectorBundle]:
+def load_vector_file(category: str) -> TestVectorBundle | None:
     """Load test vectors for a specific category (legacy helper)."""
     filepath = VECTORS_DIR / f"{category}.vectors.json"
     if not filepath.exists():
@@ -111,7 +111,7 @@ def load_vector_file(category: str) -> Optional[TestVectorBundle]:
     return TestVectorBundle(data)
 
 
-def load_all_vectors() -> List[TestVector]:
+def load_all_vectors() -> list[TestVector]:
     """Load all test vectors from all v2 bundles.
 
     Rather than relying on a hard-coded category list, this loader now
@@ -121,7 +121,7 @@ def load_all_vectors() -> List[TestVector]:
     automatically included in Python contract tests without requiring
     manual updates to VECTOR_CATEGORIES.
     """
-    all_vectors: List[TestVector] = []
+    all_vectors: list[TestVector] = []
 
     if not VECTORS_DIR.exists():
         return all_vectors
@@ -135,13 +135,13 @@ def load_all_vectors() -> List[TestVector]:
     return all_vectors
 
 
-def get_vector_ids() -> List[str]:
+def get_vector_ids() -> list[str]:
     """Get all vector IDs for parametrization."""
     vectors = load_all_vectors()
     return [v.id for v in vectors]
 
 
-def get_vector_by_id(vector_id: str) -> Optional[TestVector]:
+def get_vector_by_id(vector_id: str) -> TestVector | None:
     """Get a specific vector by ID."""
     vectors = load_all_vectors()
     for v in vectors:
@@ -161,8 +161,8 @@ class ValidationResult:
     def __init__(self, vector_id: str):
         self.vector_id = vector_id
         self.passed = True
-        self.failures: List[str] = []
-        self.warnings: List[str] = []
+        self.failures: list[str] = []
+        self.warnings: list[str] = []
 
     def add_failure(self, message: str) -> None:
         """Add a failure message."""
@@ -648,10 +648,10 @@ def test_contract_vector(vector: TestVector):
 # ============================================================================
 
 
-def run_all_vectors_directly() -> Dict[str, Any]:
+def run_all_vectors_directly() -> dict[str, Any]:
     """Run all vectors and return summary (for debugging)."""
     vectors = load_all_vectors()
-    results: Dict[str, Any] = {
+    results: dict[str, Any] = {
         "total": len(vectors),
         "passed": 0,
         "failed": 0,

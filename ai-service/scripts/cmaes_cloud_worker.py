@@ -86,10 +86,10 @@ class WorkerStats:
     total_games_played: int = 0
     total_evaluation_time_sec: float = 0.0
     start_time: datetime = field(default_factory=datetime.now)
-    last_task_time: Optional[datetime] = None
-    current_task_id: Optional[str] = None
+    last_task_time: datetime | None = None
+    current_task_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         uptime = (datetime.now() - self.start_time).total_seconds()
         return {
             "tasks_completed": self.tasks_completed,
@@ -108,7 +108,7 @@ WORKER_STATS = WorkerStats()
 SHUTDOWN_REQUESTED = threading.Event()
 
 # State pool cache
-STATE_POOL_CACHE: Dict[str, List[GameState]] = {}
+STATE_POOL_CACHE: dict[str, list[GameState]] = {}
 STATE_POOL_CACHE_LOCK = threading.RLock()
 
 
@@ -121,7 +121,7 @@ def get_cached_state_pool(
     board_type: BoardType,
     num_players: int,
     pool_id: str,
-) -> List[GameState]:
+) -> list[GameState]:
     """Get a state pool from cache or load it."""
     cache_key = f"{board_type.value}_{num_players}p_{pool_id}"
 
@@ -146,7 +146,7 @@ def get_cached_state_pool(
     return pool
 
 
-def preload_pools(pool_specs: List[str]) -> None:
+def preload_pools(pool_specs: list[str]) -> None:
     """Pre-load specified state pools into cache."""
     for spec in pool_specs:
         try:

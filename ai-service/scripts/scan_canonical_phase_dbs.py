@@ -48,7 +48,7 @@ from typing import Any, Dict, List, Set
 from scripts.check_canonical_phase_history import check_db
 
 
-def load_model_registry(path: Path) -> Dict[str, Any]:
+def load_model_registry(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"models": []}
     with path.open("r", encoding="utf-8") as f:
@@ -65,16 +65,16 @@ def scan_databases(
     root: Path,
     pattern: str,
     delete_bad_dbs: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     db_paths = sorted(root.glob(pattern))
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "root": str(root),
         "pattern": pattern,
         "databases": [],
         "bad_databases": [],
         "ok_databases": [],
     }
-    bad_db_set: Set[str] = set()
+    bad_db_set: set[str] = set()
 
     for db_path in db_paths:
         db_str = str(db_path)
@@ -100,13 +100,13 @@ def scan_databases(
 
 def scan_models(
     registry_path: Path,
-    bad_db_set: Set[str],
+    bad_db_set: set[str],
     delete_bad_models: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     registry = load_model_registry(registry_path)
     models = registry.get("models", [])
 
-    bad_models: List[Dict[str, Any]] = []
+    bad_models: list[dict[str, Any]] = []
     for entry in models:
         # Accept either "path" or "model_path"
         model_path = entry.get("path") or entry.get("model_path")
@@ -118,7 +118,7 @@ def scan_models(
         if not source_set & bad_db_set:
             continue
 
-        bad_entry: Dict[str, Any] = {
+        bad_entry: dict[str, Any] = {
             "id": entry.get("id"),
             "path": model_path,
             "training_sources": list(source_set),
@@ -140,7 +140,7 @@ def scan_models(
     }
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Scan replay DBs for canonical phase-history compliance and optionally delete bad DBs/models."
     )
@@ -174,9 +174,9 @@ def main(argv: List[str] | None = None) -> int:
 
     root = Path(args.root)
     db_result = scan_databases(root, args.pattern, delete_bad_dbs=args.delete_bad_dbs)
-    bad_db_set: Set[str] = db_result["bad_db_set"]
+    bad_db_set: set[str] = db_result["bad_db_set"]
 
-    model_report: Dict[str, Any] = {}
+    model_report: dict[str, Any] = {}
     if args.model_registry:
         registry_path = Path(args.model_registry)
         model_report = scan_models(

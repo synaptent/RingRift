@@ -38,10 +38,10 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run_cmd(
-    cmd: List[str],
+    cmd: list[str],
     *,
     cwd: Path = AI_SERVICE_ROOT,
-    env_overrides: Optional[Dict[str, str]] = None,
+    env_overrides: dict[str, str] | None = None,
 ) -> int:
     env = os.environ.copy()
     if env_overrides:
@@ -79,7 +79,7 @@ def _train_one(
     batch_size: int,
     learning_rate: float,
     seed: int,
-    checkpoint_dir: Optional[Path],
+    checkpoint_dir: Path | None,
     checkpoint_interval: int,
 ) -> int:
     cmd = [
@@ -172,7 +172,7 @@ def _maybe_rebuild_canonical_dataset(
     *,
     board_type: str,
     num_players: int,
-    db_path: Optional[Path],
+    db_path: Path | None,
     output_path: Path,
     allow_pending_gate: bool,
     legacy_maxn_encoding: bool,
@@ -202,7 +202,7 @@ def _maybe_rebuild_canonical_dataset(
     return _run_cmd(cmd, env_overrides=env_overrides)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train v2 and v3 models and run an evaluation match.")
     parser.add_argument(
         "--board-type",

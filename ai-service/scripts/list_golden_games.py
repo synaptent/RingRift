@@ -45,7 +45,7 @@ def main() -> None:
         print(f"[list_golden_games] No fixtures directory at {fixtures_dir}", file=sys.stderr)
         sys.exit(0)
 
-    db_paths: List[Path] = sorted(fixtures_dir.glob("*.db"))
+    db_paths: list[Path] = sorted(fixtures_dir.glob("*.db"))
     if not db_paths:
         print(f"[list_golden_games] No *.db files found under {fixtures_dir}", file=sys.stderr)
         sys.exit(0)

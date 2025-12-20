@@ -58,7 +58,7 @@ class MatchResult:
     algo1: str
     algo2: str
     think_time_ms: int
-    winner: Optional[str]  # "algo1", "algo2", "draw"
+    winner: str | None  # "algo1", "algo2", "draw"
     game_length: int
     duration_sec: float
     algo1_time_total: float  # Total think time for algo1
@@ -80,7 +80,7 @@ class BenchmarkResult:
     avg_duration_sec: float
 
 
-def get_best_model_id(board_type: BoardType, num_players: int = 2) -> Optional[str]:
+def get_best_model_id(board_type: BoardType, num_players: int = 2) -> str | None:
     """Get the best model ID for a board/player configuration.
 
     Args:
@@ -317,13 +317,13 @@ def play_game(
 
 
 def run_benchmark(
-    algorithms: List[str],
-    think_times: List[int],
+    algorithms: list[str],
+    think_times: list[int],
     games_per_matchup: int,
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     verbose: bool = False,
-) -> List[BenchmarkResult]:
+) -> list[BenchmarkResult]:
     """Run full benchmark between all algorithm pairs.
 
     Args:
@@ -428,14 +428,14 @@ def run_benchmark(
     return results
 
 
-def print_summary(results: List[BenchmarkResult]) -> None:
+def print_summary(results: list[BenchmarkResult]) -> None:
     """Print a summary of benchmark results."""
     print("\n" + "="*70)
     print("BENCHMARK SUMMARY")
     print("="*70)
 
     # Group by think time
-    by_think_time: Dict[int, List[BenchmarkResult]] = {}
+    by_think_time: dict[int, list[BenchmarkResult]] = {}
     for r in results:
         if r.think_time_ms not in by_think_time:
             by_think_time[r.think_time_ms] = []
@@ -461,8 +461,8 @@ def print_summary(results: List[BenchmarkResult]) -> None:
                   f"→ {winner} (+{win_margin})")
 
     # Overall algorithm rankings (sum of wins across all matchups)
-    algo_total_wins: Dict[str, int] = {}
-    algo_total_games: Dict[str, int] = {}
+    algo_total_wins: dict[str, int] = {}
+    algo_total_games: dict[str, int] = {}
 
     for r in results:
         for algo, wins in [(r.algo1, r.algo1_wins), (r.algo2, r.algo2_wins)]:
@@ -493,7 +493,7 @@ def print_summary(results: List[BenchmarkResult]) -> None:
         print(f"\n  RECOMMENDED for Ultimate difficulty: {best_algo}")
 
 
-def save_results(results: List[BenchmarkResult], output_path: Path) -> None:
+def save_results(results: list[BenchmarkResult], output_path: Path) -> None:
     """Save benchmark results to JSON file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -45,7 +45,7 @@ TEST_TIMEOUT_SECONDS = 60
 MAX_MOVES_SAFETY_LIMIT = 250
 
 
-def _build_mixed_ai_pool(game_index: int) -> Dict[int, BaseAI]:
+def _build_mixed_ai_pool(game_index: int) -> dict[int, BaseAI]:
     """Construct a per-game pool of AIs mirroring generate_territory_dataset.
 
     We deliberately set think_time_ms=0 so that these stability runs do not
@@ -90,7 +90,7 @@ def _build_mixed_ai_pool(game_index: int) -> Dict[int, BaseAI]:
 
     game_rng = random.Random(42 + game_index)
 
-    ai_by_player: Dict[int, BaseAI] = {}
+    ai_by_player: dict[int, BaseAI] = {}
 
     # We construct AIs lazily per player once we see the initial GameState,
     # because the set of active player_numbers can vary with N-player mode.

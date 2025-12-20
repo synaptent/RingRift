@@ -73,13 +73,13 @@ DEFAULT_STAGES = [
 
 def run_training_stage(
     stage: CurriculumStage,
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
     output_dir: Path,
-    pretrained_path: Optional[str] = None,
-    extra_args: Optional[List[str]] = None,
-) -> Tuple[str, Dict[str, Any]]:
+    pretrained_path: str | None = None,
+    extra_args: list[str] | None = None,
+) -> tuple[str, dict[str, Any]]:
     """Run a single curriculum stage.
 
     Returns:
@@ -139,14 +139,14 @@ def run_training_stage(
 
 
 def run_curriculum_training(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
     output_dir: Path,
-    stages: List[CurriculumStage],
-    skip_stages: Optional[List[str]] = None,
-    extra_args: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    stages: list[CurriculumStage],
+    skip_stages: list[str] | None = None,
+    extra_args: list[str] | None = None,
+) -> dict[str, Any]:
     """Run full curriculum training.
 
     Returns:

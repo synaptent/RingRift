@@ -48,8 +48,8 @@ logger = logging.getLogger("generate_search_labeled")
 
 def extract_mcts_quality_labels(
     mcts_ai: GumbelMCTSAI,
-    valid_moves: List,
-) -> List[Tuple[int, float, float]]:
+    valid_moves: list,
+) -> list[tuple[int, float, float]]:
     """Extract move quality labels from MCTS search results.
 
     Returns:
@@ -102,7 +102,7 @@ def generate_labeled_samples_mcts(
     mcts_simulations: int = 100,
     min_moves_per_game: int = 10,
     max_moves_per_game: int = 100,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Generate training samples using Gumbel MCTS for quality labels.
 
     Returns:
@@ -232,7 +232,7 @@ def generate_labeled_samples_heuristic(
     evaluator_difficulty: int = 5,
     min_moves_per_game: int = 10,
     max_moves_per_game: int = 100,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Generate training samples with heuristic-based quality labels (fallback)."""
     engine = GameEngine()
     nn = NeuralNetAI(1, AIConfig(difficulty=5))

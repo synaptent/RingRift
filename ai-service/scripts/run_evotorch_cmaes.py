@@ -87,7 +87,7 @@ WEIGHT_NAMES = list(DEFAULT_WEIGHTS.keys())
 NUM_WEIGHTS = len(WEIGHT_NAMES)
 
 
-def weights_to_tensor(weights: Dict[str, float], device: torch.device) -> torch.Tensor:
+def weights_to_tensor(weights: dict[str, float], device: torch.device) -> torch.Tensor:
     """Convert weight dict to torch tensor."""
     return torch.tensor(
         [weights.get(name, DEFAULT_WEIGHTS[name]) for name in WEIGHT_NAMES],
@@ -96,7 +96,7 @@ def weights_to_tensor(weights: Dict[str, float], device: torch.device) -> torch.
     )
 
 
-def tensor_to_weights(tensor: torch.Tensor) -> Dict[str, float]:
+def tensor_to_weights(tensor: torch.Tensor) -> dict[str, float]:
     """Convert torch tensor to weight dict."""
     values = tensor.detach().cpu().numpy()
     # Ensure values is 1D array
@@ -125,8 +125,8 @@ class HeuristicOptimizationProblem(Problem):
         num_players: int = 2,
         games_per_eval: int = 50,
         max_moves: int = 500,
-        baseline_weights: Optional[Dict[str, float]] = None,
-        device: Optional[torch.device] = None,
+        baseline_weights: dict[str, float] | None = None,
+        device: torch.device | None = None,
     ):
         """Initialize the optimization problem.
 
@@ -217,7 +217,7 @@ class HeuristicOptimizationProblem(Problem):
         self.total_games += self.games_per_eval
         return win_rate
 
-    def _fallback_evaluate(self, weights: Dict[str, float]) -> float:
+    def _fallback_evaluate(self, weights: dict[str, float]) -> float:
         """Simple fallback evaluation when GPU runner unavailable."""
         # Compare weight magnitudes as rough fitness proxy
         candidate_sum = sum(abs(v) for v in weights.values())
@@ -264,9 +264,9 @@ def run_evotorch_cmaes(
     output_dir: str,
     sigma: float = 0.5,
     max_moves: int = 500,
-    baseline_weights: Optional[Dict[str, float]] = None,
+    baseline_weights: dict[str, float] | None = None,
     seed: int = 42,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run GPU-native CMA-ES optimization using EvoTorch.
 
     Args:

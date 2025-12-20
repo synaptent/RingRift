@@ -62,7 +62,7 @@ class CalibrationTierAggregate:
 
     tier: str
     difficulty: int
-    segments: List[CalibrationSegmentAggregate]
+    segments: list[CalibrationSegmentAggregate]
 
 
 @dataclass
@@ -71,8 +71,8 @@ class CalibrationAggregateRoot:
 
     board: str
     num_players: int
-    window: Dict[str, Any]
-    tiers: List[CalibrationTierAggregate]
+    window: dict[str, Any]
+    tiers: list[CalibrationTierAggregate]
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ class TierCalibrationThresholds:
 # Thresholds are keyed by tier name; they currently apply to all segments
 # for that tier and can be refined in future if segment-specific bands are
 # needed.
-TIER_THRESHOLDS: Dict[str, TierCalibrationThresholds] = {
+TIER_THRESHOLDS: dict[str, TierCalibrationThresholds] = {
     "D2": TierCalibrationThresholds(
         target_low=0.25,
         target_high=0.70,
@@ -122,7 +122,7 @@ TIER_THRESHOLDS: Dict[str, TierCalibrationThresholds] = {
 }
 
 
-def _load_json_file(path: Path) -> Dict[str, Any]:
+def _load_json_file(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -165,7 +165,7 @@ def load_calibration_aggregates(path: str) -> CalibrationAggregateRoot:
     if not isinstance(raw_tiers, list):
         raise CalibrationInputError("tiers must be a list.")
 
-    tiers: List[CalibrationTierAggregate] = []
+    tiers: list[CalibrationTierAggregate] = []
     for entry in raw_tiers:
         if not isinstance(entry, dict):
             raise CalibrationInputError("Each tier entry must be an object.")
@@ -184,7 +184,7 @@ def load_calibration_aggregates(path: str) -> CalibrationAggregateRoot:
         if not isinstance(raw_segments, list):
             raise CalibrationInputError(f"segments for tier {tier_name} must be a list.")
 
-        segments: List[CalibrationSegmentAggregate] = []
+        segments: list[CalibrationSegmentAggregate] = []
         for seg in raw_segments:
             if not isinstance(seg, dict):
                 raise CalibrationInputError("Each segment entry must be an object.")
@@ -245,7 +245,7 @@ def _classify_segment(
     tier_name: str,
     segment: CalibrationSegmentAggregate,
     min_sample_size: int,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Return (sample_ok, status) for a calibration segment.
 
     status ∈ {"too_hard", "too_easy", "in_band", "inconclusive"}.
@@ -281,7 +281,7 @@ def _classify_segment(
     return True, "inconclusive"
 
 
-def _build_ladder_view(cfg: LadderTierConfig) -> Dict[str, Any]:
+def _build_ladder_view(cfg: LadderTierConfig) -> dict[str, Any]:
     if isinstance(cfg.ai_type, AIType):
         ai_type_value = cfg.ai_type.value
     else:
@@ -295,9 +295,9 @@ def _build_ladder_view(cfg: LadderTierConfig) -> Dict[str, Any]:
 
 def _select_latest_promoted_candidate(
     tier_name: str,
-    ladder_model_id: Optional[str],
-    registry: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    ladder_model_id: str | None,
+    registry: dict[str, Any],
+) -> dict[str, Any] | None:
     """Return the most recent gated_promote candidate for the ladder model."""
 
     tiers = registry.get("tiers") or {}
@@ -325,11 +325,11 @@ def _select_latest_promoted_candidate(
 
 def _load_eval_and_perf_for_candidate(
     run_dir: Path,
-) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Best-effort loading of tier_eval_result.json and perf reports."""
 
-    eval_payload: Optional[Dict[str, Any]] = None
-    perf_payload: Optional[Dict[str, Any]] = None
+    eval_payload: dict[str, Any] | None = None
+    perf_payload: dict[str, Any] | None = None
 
     eval_path = run_dir / "tier_eval_result.json"
     if eval_path.exists():
@@ -376,8 +376,8 @@ def _load_eval_and_perf_for_candidate(
 
 
 def _build_evaluation_view(
-    eval_payload: Optional[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
+    eval_payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     if not eval_payload:
         return None
 
@@ -395,8 +395,8 @@ def _build_evaluation_view(
 
 
 def _build_perf_view(
-    perf_payload: Optional[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
+    perf_payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     if not perf_payload:
         return None
 
@@ -412,10 +412,10 @@ def _build_perf_view(
 
 def _summarise_tier(
     tier_agg: CalibrationTierAggregate,
-    registry: Dict[str, Any],
+    registry: dict[str, Any],
     eval_root: Path,
     min_sample_size: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Join a single tier's calibration aggregates with ladder and registry."""
 
     tier_name = tier_agg.tier
@@ -440,12 +440,12 @@ def _summarise_tier(
         registry=registry,
     )
 
-    candidate_source_run_dir: Optional[str] = None
+    candidate_source_run_dir: str | None = None
     if latest_candidate is not None:
         candidate_source_run_dir = latest_candidate.get("source_run_dir")
 
-    eval_view: Optional[Dict[str, Any]] = None
-    perf_view: Optional[Dict[str, Any]] = None
+    eval_view: dict[str, Any] | None = None
+    perf_view: dict[str, Any] | None = None
     if candidate_source_run_dir:
         run_dir = Path(eval_root) / Path(candidate_source_run_dir)
         eval_payload, perf_payload = _load_eval_and_perf_for_candidate(run_dir)
@@ -453,11 +453,11 @@ def _summarise_tier(
         perf_view = _build_perf_view(perf_payload)
 
     # Per-segment calibration status.
-    segment_entries: List[Dict[str, Any]] = []
-    too_easy_segments: List[str] = []
-    too_hard_segments: List[str] = []
-    in_band_segments: List[str] = []
-    inconclusive_segments: List[str] = []
+    segment_entries: list[dict[str, Any]] = []
+    too_easy_segments: list[str] = []
+    too_hard_segments: list[str] = []
+    in_band_segments: list[str] = []
+    inconclusive_segments: list[str] = []
 
     for seg in tier_agg.segments:
         sample_ok, status = _classify_segment(tier_name, seg, min_sample_size)
@@ -498,7 +498,7 @@ def _summarise_tier(
         overall_status = "inconclusive"
 
     # Short human-readable notes.
-    notes_parts: List[str] = []
+    notes_parts: list[str] = []
     if too_easy_segments:
         segs = ", ".join(sorted(too_easy_segments))
         notes_parts.append(f"Segments {segs} appear too easy vs target bands.")
@@ -520,7 +520,7 @@ def _summarise_tier(
         "notes": " ".join(notes_parts),
     }
 
-    registry_view: Dict[str, Any] = {}
+    registry_view: dict[str, Any] = {}
     if registry_current is not None:
         registry_view["current"] = registry_current
     if latest_candidate is not None:
@@ -543,11 +543,11 @@ def _summarise_tier(
 
 def build_calibration_summary(
     aggregates: CalibrationAggregateRoot,
-    registry: Dict[str, Any],
+    registry: dict[str, Any],
     eval_root: str,
-    window_label: Optional[str],
+    window_label: str | None,
     min_sample_size: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Construct the top-level summary JSON structure."""
 
     window = dict(aggregates.window or {})
@@ -560,7 +560,7 @@ def build_calibration_summary(
 
     eval_root_path = Path(eval_root)
 
-    tier_summaries: List[Dict[str, Any]] = []
+    tier_summaries: list[dict[str, Any]] = []
     for tier_agg in aggregates.tiers:
         tier_summaries.append(
             _summarise_tier(
@@ -571,7 +571,7 @@ def build_calibration_summary(
             )
         )
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "board": aggregates.board,
         "num_players": aggregates.num_players,
         "window": window,
@@ -580,7 +580,7 @@ def build_calibration_summary(
     return summary
 
 
-def _format_bool_pass(value: Optional[bool]) -> str:
+def _format_bool_pass(value: bool | None) -> str:
     if value is True:
         return "PASS"
     if value is False:
@@ -588,7 +588,7 @@ def _format_bool_pass(value: Optional[bool]) -> str:
     return "N/A"
 
 
-def build_markdown_report(summary: Dict[str, Any]) -> str:
+def build_markdown_report(summary: dict[str, Any]) -> str:
     """Render a concise Markdown report from the summary JSON payload."""
 
     board = summary.get("board", "square8")
@@ -605,7 +605,7 @@ def build_markdown_report(summary: Dict[str, Any]) -> str:
     else:
         window_str = ""
 
-    lines: List[str] = []
+    lines: list[str] = []
     header = f"## Calibration summary \u2013 {board} {num_players}-player"
     if window_str:
         header += f", window {window_str}"
@@ -682,7 +682,7 @@ def build_markdown_report(summary: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Analyze Square-8 2-player difficulty calibration aggregates and "
@@ -750,7 +750,7 @@ def _ensure_parent_dir(path: Path) -> None:
         parent.mkdir(parents=True, exist_ok=True)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     try:

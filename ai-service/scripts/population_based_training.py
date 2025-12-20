@@ -73,12 +73,12 @@ DEFAULT_READY_THRESHOLD = 0.8  # Fraction of interval before eligible for exploi
 class PopulationMember:
     """A single member of the PBT population."""
     member_id: str
-    hyperparams: Dict[str, float]
-    model_path: Optional[str] = None
+    hyperparams: dict[str, float]
+    model_path: str | None = None
     performance: float = 0.0  # Current Elo or evaluation metric
     steps: int = 0
     generations: int = 0
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     created_at: str = ""
     last_exploit_step: int = 0
 
@@ -89,17 +89,17 @@ class PBTState:
     run_id: str
     board_type: str
     num_players: int
-    population: List[PopulationMember]
-    tunable_params: List[str]
+    population: list[PopulationMember]
+    tunable_params: list[str]
     total_steps: int = 0
     exploit_interval: int = DEFAULT_EXPLOIT_INTERVAL
     best_performance: float = 0.0
-    best_hyperparams: Dict[str, float] = field(default_factory=dict)
-    history: List[Dict[str, Any]] = field(default_factory=list)
+    best_hyperparams: dict[str, float] = field(default_factory=dict)
+    history: list[dict[str, Any]] = field(default_factory=list)
     created_at: str = ""
 
 
-def sample_hyperparameter(name: str, current: Optional[float] = None, perturb: bool = False) -> float:
+def sample_hyperparameter(name: str, current: float | None = None, perturb: bool = False) -> float:
     """Sample or perturb a hyperparameter value.
 
     Args:
@@ -144,10 +144,10 @@ def sample_hyperparameter(name: str, current: Optional[float] = None, perturb: b
 
 def create_population(
     population_size: int,
-    tunable_params: List[str],
+    tunable_params: list[str],
     board_type: str,
     num_players: int,
-) -> List[PopulationMember]:
+) -> list[PopulationMember]:
     """Create initial population with random hyperparameters."""
     population = []
 
@@ -169,10 +169,10 @@ def create_population(
 
 
 def exploit(
-    population: List[PopulationMember],
+    population: list[PopulationMember],
     member: PopulationMember,
     exploit_fraction: float = 0.2,
-) -> Optional[PopulationMember]:
+) -> PopulationMember | None:
     """Exploit: potentially copy weights from a better performer.
 
     Returns the member to copy from, or None if no exploitation.
@@ -195,7 +195,7 @@ def exploit(
     return None
 
 
-def explore(hyperparams: Dict[str, float], tunable_params: List[str]) -> Dict[str, float]:
+def explore(hyperparams: dict[str, float], tunable_params: list[str]) -> dict[str, float]:
     """Explore: perturb hyperparameters."""
     new_hyperparams = copy.deepcopy(hyperparams)
 

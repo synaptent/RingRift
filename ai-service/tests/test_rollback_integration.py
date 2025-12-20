@@ -41,16 +41,16 @@ class MockNotificationHook(NotificationHook):
     """Test hook that records all notifications."""
 
     def __init__(self):
-        self.events: List[Dict[str, Any]] = []
+        self.events: list[dict[str, Any]] = []
 
-    def on_regression_detected(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_regression_detected(self, model_id: str, status: dict[str, Any]) -> None:
         self.events.append({
             "type": "regression_detected",
             "model_id": model_id,
             "status": status,
         })
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         self.events.append({
             "type": "at_risk",
             "model_id": model_id,
@@ -75,8 +75,8 @@ class MockEloService:
     """Mock Elo service for testing."""
 
     def __init__(self):
-        self.ratings: Dict[str, Dict] = {}
-        self.history: Dict[str, List[Dict]] = {}
+        self.ratings: dict[str, dict] = {}
+        self.history: dict[str, list[dict]] = {}
 
     def set_rating(
         self,
@@ -110,8 +110,8 @@ class MockModelRegistry:
     """Mock model registry for testing."""
 
     def __init__(self):
-        self.models: Dict[str, str] = {}  # model_id -> stage
-        self.history: List[Dict] = []
+        self.models: dict[str, str] = {}  # model_id -> stage
+        self.history: list[dict] = []
 
     def promote_model(self, model_id: str, stage):
         """Promote a model to a stage."""

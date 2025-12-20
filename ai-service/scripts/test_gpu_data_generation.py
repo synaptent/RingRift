@@ -53,7 +53,7 @@ class GPUDataGenTester:
 
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
-        self.results: List[TestResult] = []
+        self.results: list[TestResult] = []
 
         # Detect GPU
         self.device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -442,7 +442,7 @@ class GPUDataGenTester:
     def test_gpu_memory_usage(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        batch_sizes: List[int] = [10, 20, 50],
+        batch_sizes: list[int] = [10, 20, 50],
     ) -> bool:
         """Test GPU memory usage at different batch sizes."""
         self._log(f"\n=== Test: GPU Memory Usage ===")

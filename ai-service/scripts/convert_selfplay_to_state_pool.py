@@ -32,14 +32,14 @@ from app.rules.default_engine import DefaultRulesEngine
 from app.training.generate_data import create_initial_state
 
 
-def parse_position(pos_data: Optional[Dict[str, Any]]) -> Optional[Position]:
+def parse_position(pos_data: dict[str, Any] | None) -> Position | None:
     """Convert position dict to Position object."""
     if pos_data is None:
         return None
     return Position(x=pos_data["x"], y=pos_data["y"], z=pos_data.get("z"))
 
 
-def parse_move(move_data: Dict[str, Any], move_idx: int = 0) -> Move:
+def parse_move(move_data: dict[str, Any], move_idx: int = 0) -> Move:
     """Convert move dict to Move object."""
     from datetime import datetime, timezone
     move_type = MoveType(move_data["type"])
@@ -56,10 +56,10 @@ def parse_move(move_data: Dict[str, Any], move_idx: int = 0) -> Move:
 
 
 def extract_states_from_game(
-    game: Dict[str, Any],
-    sample_moves: List[int],
+    game: dict[str, Any],
+    sample_moves: list[int],
     engine: DefaultRulesEngine,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Extract states at specified move numbers from a game.
 
     Returns list of state snapshots in eval pool format.

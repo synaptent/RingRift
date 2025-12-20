@@ -151,7 +151,7 @@ def run_export(
     return export_main(argv)
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build NPZ training datasets from canonical_* GameReplayDBs.")
     parser.add_argument(
         "--board-type",

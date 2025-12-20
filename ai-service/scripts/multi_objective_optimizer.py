@@ -84,7 +84,7 @@ class ParetoPoint:
     gpu_hours: float
     efficiency: float  # Elo per GPU hour
     is_pareto_optimal: bool = True
-    dominated_by: List[str] = field(default_factory=list)
+    dominated_by: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -100,8 +100,8 @@ class AllocationRecommendation:
 @dataclass
 class OptimizationResult:
     """Results of multi-objective optimization."""
-    pareto_frontier: List[ParetoPoint]
-    recommendations: List[AllocationRecommendation]
+    pareto_frontier: list[ParetoPoint]
+    recommendations: list[AllocationRecommendation]
     total_budget: float
     allocated_budget: float
     expected_total_elo_gain: float
@@ -118,7 +118,7 @@ GPU_COST_PER_HOUR_USD = {
 }
 
 
-def load_training_history(db_path: Path) -> List[TrainingMetrics]:
+def load_training_history(db_path: Path) -> list[TrainingMetrics]:
     """Load training history from database."""
     if not db_path.exists():
         logger.warning(f"Database not found: {db_path}")
@@ -161,14 +161,14 @@ def load_training_history(db_path: Path) -> List[TrainingMetrics]:
     return metrics
 
 
-def compute_pareto_frontier(metrics: List[TrainingMetrics]) -> List[ParetoPoint]:
+def compute_pareto_frontier(metrics: list[TrainingMetrics]) -> list[ParetoPoint]:
     """Compute Pareto frontier from training metrics.
 
     A point is Pareto optimal if no other point is better in all objectives
     (higher Elo and lower GPU cost).
     """
     # Group by config and get best results
-    config_best: Dict[str, Tuple[float, float]] = {}  # config -> (max_elo, min_gpu_hours)
+    config_best: dict[str, tuple[float, float]] = {}  # config -> (max_elo, min_gpu_hours)
 
     for m in metrics:
         if m.config not in config_best:
@@ -232,10 +232,10 @@ def estimate_marginal_elo_gain(
 
 
 def allocate_budget(
-    pareto_points: List[ParetoPoint],
+    pareto_points: list[ParetoPoint],
     total_budget: float,
     strategy: str = "balanced",
-) -> List[AllocationRecommendation]:
+) -> list[AllocationRecommendation]:
     """Allocate GPU budget across configs.
 
     Strategies:
@@ -331,7 +331,7 @@ def allocate_budget(
     return sorted(recommendations, key=lambda r: -r.expected_elo_gain)
 
 
-def print_pareto_analysis(pareto_points: List[ParetoPoint]):
+def print_pareto_analysis(pareto_points: list[ParetoPoint]):
     """Print Pareto frontier analysis."""
     print("\n" + "=" * 70)
     print("PARETO FRONTIER ANALYSIS")
@@ -362,7 +362,7 @@ def print_pareto_analysis(pareto_points: List[ParetoPoint]):
 
 
 def print_recommendations(
-    recommendations: List[AllocationRecommendation],
+    recommendations: list[AllocationRecommendation],
     total_budget: float,
 ):
     """Print allocation recommendations."""
@@ -409,7 +409,7 @@ def analyze_training_roi(db_path: Path):
     print("=" * 70)
 
     # Group by config
-    config_metrics: Dict[str, List[TrainingMetrics]] = {}
+    config_metrics: dict[str, list[TrainingMetrics]] = {}
     for m in metrics:
         if m.config not in config_metrics:
             config_metrics[m.config] = []
@@ -443,7 +443,7 @@ def analyze_training_roi(db_path: Path):
 
 def run_optimization(
     db_path: Path,
-    configs: List[str],
+    configs: list[str],
     budget: float,
     strategy: str = "efficiency",
 ) -> OptimizationResult:

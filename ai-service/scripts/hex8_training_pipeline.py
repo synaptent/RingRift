@@ -140,7 +140,7 @@ def get_local_game_count(db_path: Path) -> int:
         return 0
 
 
-def get_remote_game_count(node_name: str, config: Dict) -> int:
+def get_remote_game_count(node_name: str, config: dict) -> int:
     """Get number of completed games from a remote database using Python."""
     ssh_host = config["ssh_host"]
     db_path = config["db_path"]
@@ -182,7 +182,7 @@ def get_remote_game_count(node_name: str, config: Dict) -> int:
         return 0
 
 
-def collect_game_counts() -> Dict[str, int]:
+def collect_game_counts() -> dict[str, int]:
     """Collect game counts from all sources."""
     counts = {}
 
@@ -196,7 +196,7 @@ def collect_game_counts() -> Dict[str, int]:
     return counts
 
 
-def rsync_remote_db(node_name: str, config: Dict, dest_dir: Path) -> Optional[Path]:
+def rsync_remote_db(node_name: str, config: dict, dest_dir: Path) -> Path | None:
     """Rsync a remote database to local destination."""
     ssh_host = config["ssh_host"]
     db_path = config["db_path"]
@@ -228,7 +228,7 @@ def rsync_remote_db(node_name: str, config: Dict, dest_dir: Path) -> Optional[Pa
         return None
 
 
-def consolidate_databases(db_paths: List[Path], output_path: Path) -> int:
+def consolidate_databases(db_paths: list[Path], output_path: Path) -> int:
     """Consolidate multiple SQLite databases into one."""
     if output_path.exists():
         output_path.unlink()
@@ -444,7 +444,7 @@ def monitor_and_train():
             time.sleep(POLL_INTERVAL_SECONDS)
 
 
-async def _collect_via_sync_coordinator() -> List[Path]:
+async def _collect_via_sync_coordinator() -> list[Path]:
     """Collect databases using SyncCoordinator with fallback transport methods."""
     collected = []
     try:

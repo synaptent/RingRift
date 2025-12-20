@@ -86,7 +86,7 @@ def _make_minimal_state() -> GameState:
     )
 
 
-def _get_counter_value(counter, labels: Dict[str, str]) -> float:
+def _get_counter_value(counter, labels: dict[str, str]) -> float:
     """Return the current value for a Counter with the given label set.
 
     Prometheus client libraries may expose Counter samples either under the
@@ -107,7 +107,7 @@ def _get_counter_value(counter, labels: Dict[str, str]) -> float:
     return 0.0
 
 
-def _get_histogram_count(histogram, labels: Dict[str, str]) -> float:
+def _get_histogram_count(histogram, labels: dict[str, str]) -> float:
     """Return the current count for a Histogram with the given label set."""
     metric_name = f"{histogram._name}_count"  # type: ignore[attr-defined]
     for metric in histogram.collect():
@@ -127,7 +127,7 @@ client = TestClient(app)
 def test_ai_move_success_increments_metrics() -> None:
     """Successful /ai/move calls increment requests and latency metrics."""
     state = _make_minimal_state()
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "game_state": jsonable_encoder(state, by_alias=True),
         "player_number": 1,
         "difficulty": 1,
@@ -172,7 +172,7 @@ def test_observe_ai_move_start_normalises_labels() -> None:
 def test_ai_move_error_increments_error_metrics_and_surfaces_detail() -> None:
     """Failing /ai/move calls increment error metrics and return clear detail."""
     state = _make_minimal_state()
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "game_state": jsonable_encoder(state, by_alias=True),
         "player_number": 1,
         "difficulty": 1,

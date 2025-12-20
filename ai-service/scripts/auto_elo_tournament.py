@@ -79,7 +79,7 @@ def send_slack_message(message: str, alert_type: str = "info"):
         return False
 
 
-def get_recent_models(n: int = 10) -> List[Path]:
+def get_recent_models(n: int = 10) -> list[Path]:
     """Get the N most recently modified model files."""
     if not MODELS_DIR.exists():
         return []
@@ -90,7 +90,7 @@ def get_recent_models(n: int = 10) -> List[Path]:
     return pth_files[:n]
 
 
-def get_elo_ratings(db_path: Path) -> Dict[str, float]:
+def get_elo_ratings(db_path: Path) -> dict[str, float]:
     """Get current ELO ratings from database."""
     if not db_path.exists():
         return {}
@@ -108,7 +108,7 @@ def get_elo_ratings(db_path: Path) -> Dict[str, float]:
         return {}
 
 
-def get_last_tournament_time(db_path: Path) -> Optional[datetime]:
+def get_last_tournament_time(db_path: Path) -> datetime | None:
     """Get timestamp of last tournament from database."""
     if not db_path.exists():
         return None
@@ -134,7 +134,7 @@ def run_tournament(
     top_n: int = 5,
     games: int = 5,
     dry_run: bool = False,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Run ELO tournament and return (success, message)."""
 
     # Get pre-tournament ratings for comparison
@@ -213,7 +213,7 @@ def run_tournament(
         return False, f"Tournament error: {e}"
 
 
-def should_run_tournament(db_path: Path, min_hours: float = 2) -> Tuple[bool, str]:
+def should_run_tournament(db_path: Path, min_hours: float = 2) -> tuple[bool, str]:
     """Check if enough time has passed since last tournament."""
     last_time = get_last_tournament_time(db_path)
 

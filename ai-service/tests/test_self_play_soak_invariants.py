@@ -20,7 +20,7 @@ import scripts.run_self_play_soak as soak  # type: ignore  # noqa: E402
 
 
 def test_summarise_aggregates_invariant_counts() -> None:
-    records: List[soak.GameRecord] = [
+    records: list[soak.GameRecord] = [
         soak.GameRecord(
             index=0,
             num_players=2,
@@ -47,7 +47,7 @@ def test_summarise_aggregates_invariant_counts() -> None:
         ),
     ]
 
-    samples: List[Dict[str, object]] = [{"dummy": True}]
+    samples: list[dict[str, object]] = [{"dummy": True}]
     summary = soak._summarise(records, samples)
 
     assert summary["total_games"] == 2
@@ -72,7 +72,7 @@ def test_summarise_includes_swap_rule_metrics() -> None:
       correct pie-rule semantics, but may be >1 if multiple swaps somehow
       occurred due to bugs).
     """
-    records: List[soak.GameRecord] = [
+    records: list[soak.GameRecord] = [
         soak.GameRecord(
             index=0,
             num_players=2,
@@ -133,7 +133,7 @@ def test_summarise_includes_swap_rule_metrics() -> None:
 
 def test_summarise_swap_metrics_with_zero_games() -> None:
     """Swap metrics should be 0 when there are no games."""
-    records: List[soak.GameRecord] = []
+    records: list[soak.GameRecord] = []
     summary = soak._summarise(records, None)
 
     assert summary["swap_sides_total_moves"] == 0
@@ -151,8 +151,8 @@ def test_record_invariant_violation_counts_and_samples_capped() -> None:
             self.current_phase = GamePhase.RING_PLACEMENT
 
     state = DummyState()
-    per_game: Dict[str, int] = {}
-    samples: List[Dict[str, object]] = []
+    per_game: dict[str, int] = {}
+    samples: list[dict[str, object]] = []
 
     for i in range(soak.MAX_INVARIANT_VIOLATION_SAMPLES + 5):
         soak._record_invariant_violation(  # type: ignore[arg-type]
@@ -184,8 +184,8 @@ def test_record_invariant_violation_emits_python_metrics() -> None:
             self.current_phase = GamePhase.RING_PLACEMENT
 
     state = DummyState()
-    per_game: Dict[str, int] = {}
-    samples: List[Dict[str, object]] = []
+    per_game: dict[str, int] = {}
+    samples: list[dict[str, object]] = []
 
     soak._record_invariant_violation(  # type: ignore[arg-type]
         "S_INVARIANT_DECREASED",
@@ -217,7 +217,7 @@ def test_record_invariant_violation_emits_python_metrics() -> None:
 
 def test_has_anomalies_detects_invariant_and_engine_anomalies() -> None:
     """_has_anomalies should only flag hard invariant/engine anomalies."""
-    normal_records: List[soak.GameRecord] = [
+    normal_records: list[soak.GameRecord] = [
         soak.GameRecord(
             index=0,
             num_players=2,
@@ -244,7 +244,7 @@ def test_has_anomalies_detects_invariant_and_engine_anomalies() -> None:
         ),
     ]
 
-    anomalous_records: List[soak.GameRecord] = [
+    anomalous_records: list[soak.GameRecord] = [
         soak.GameRecord(
             index=2,
             num_players=2,
@@ -295,11 +295,11 @@ def test_python_strict_profile_overrides_defaults(
     tmp_path,
 ) -> None:
     """Verify python-strict profile sets expected configuration values."""
-    captured_args: Dict[str, object] = {}
+    captured_args: dict[str, object] = {}
 
     def fake_run(
         args: object,
-    ) -> Tuple[List[soak.GameRecord], List[Dict[str, object]]]:
+    ) -> tuple[list[soak.GameRecord], list[dict[str, object]]]:
         captured_args["args"] = args
         return [], []
 
@@ -331,7 +331,7 @@ def test_python_strict_profile_overrides_defaults(
 
 
 def test_build_healthcheck_summary_includes_invariants_and_samples() -> None:
-    records: List[soak.GameRecord] = [
+    records: list[soak.GameRecord] = [
         soak.GameRecord(
             index=0,
             num_players=2,
@@ -358,7 +358,7 @@ def test_build_healthcheck_summary_includes_invariants_and_samples() -> None:
         ),
     ]
 
-    samples: List[Dict[str, object]] = [
+    samples: list[dict[str, object]] = [
         {
             "type": "S_INVARIANT_DECREASED",
             "invariant_id": "INV-S-MONOTONIC",
@@ -405,11 +405,11 @@ def test_ai_healthcheck_profile_cli_writes_summary_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    captured_args: Dict[str, object] = {}
+    captured_args: dict[str, object] = {}
 
     def fake_run_healthcheck(
         args: object,
-    ) -> Tuple[List[soak.GameRecord], Dict[str, object]]:
+    ) -> tuple[list[soak.GameRecord], dict[str, object]]:
         captured_args["args"] = args
         rec = soak.GameRecord(
             index=0,
@@ -423,7 +423,7 @@ def test_ai_healthcheck_profile_cli_writes_summary_json(
             termination_reason="status:finished",
             invariant_violations_by_type={},
         )
-        summary: Dict[str, object] = {
+        summary: dict[str, object] = {
             "profile": "ai-healthcheck",
             "board_types": ["square8", "square19", "hexagonal"],
             "engine_pairs": ["mixed_(light)_2p"],

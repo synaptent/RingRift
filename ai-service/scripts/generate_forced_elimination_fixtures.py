@@ -102,7 +102,7 @@ def _make_game_state(
     )
 
 
-def _block_all_positions(state: GameState, except_positions: List[Position]) -> None:
+def _block_all_positions(state: GameState, except_positions: list[Position]) -> None:
     """Collapse all board positions except specified ones."""
     except_keys = {p.to_key() for p in except_positions}
     for x in range(state.board.size):
@@ -113,7 +113,7 @@ def _block_all_positions(state: GameState, except_positions: List[Position]) -> 
                 state.board.collapsed_spaces[key] = 2  # Enemy territory
 
 
-def generate_fixture_from_vector(vector: Dict[str, Any], fixture_id: str) -> Dict[str, Any]:
+def generate_fixture_from_vector(vector: dict[str, Any], fixture_id: str) -> dict[str, Any]:
     """Convert a contract vector to a parity fixture."""
     input_data = vector["input"]
     move_data = input_data["move"]
@@ -175,11 +175,11 @@ def generate_synthetic_fixture(
     description: str,
     board_type: BoardType,
     num_players: int,
-    stack_configs: List[Dict[str, Any]],
-    player_rings_in_hand: Dict[int, int],
-    player_eliminated: Dict[int, int] = None,
+    stack_configs: list[dict[str, Any]],
+    player_rings_in_hand: dict[int, int],
+    player_eliminated: dict[int, int] = None,
     current_phase: GamePhase = GamePhase.MOVEMENT,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate a synthetic FE fixture."""
     state = _make_game_state(
         board_type=board_type,
@@ -277,7 +277,7 @@ def generate_synthetic_fixture(
     }
 
 
-def get_synthetic_scenarios() -> List[Dict[str, Any]]:
+def get_synthetic_scenarios() -> list[dict[str, Any]]:
     """Get list of synthetic FE scenarios to generate."""
     scenarios = [
         # Single trapped stack scenarios

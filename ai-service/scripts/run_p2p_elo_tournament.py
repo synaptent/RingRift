@@ -159,13 +159,13 @@ class TournamentState:
     tournament_id: str
     board_type: str = "square8"
     num_players: int = 2
-    agents: List[str] = field(default_factory=list)
+    agents: list[str] = field(default_factory=list)
     games_per_pairing: int = 2
     total_matches: int = 0
     completed_matches: int = 0
-    pending_matches: List[Tuple[str, str]] = field(default_factory=list)
-    results: List[MatchResult] = field(default_factory=list)
-    ratings: Dict[str, float] = field(default_factory=dict)
+    pending_matches: list[tuple[str, str]] = field(default_factory=list)
+    results: list[MatchResult] = field(default_factory=list)
+    ratings: dict[str, float] = field(default_factory=dict)
     status: str = "pending"  # pending, running, completed, failed
     started_at: float = 0.0
     completed_at: float = 0.0
@@ -182,18 +182,18 @@ class P2PEloTournament:
         board_type: str = "square8",
         num_players: int = 2,
         games_per_pairing: int = 2,
-        elo_db_path: Optional[Path] = None,
+        elo_db_path: Path | None = None,
     ):
         self.leader_host = leader_host
         self.leader_port = leader_port
         self.board_type = board_type
         self.num_players = num_players
         self.games_per_pairing = games_per_pairing
-        self.nodes: List[P2PNode] = []
-        self.state: Optional[TournamentState] = None
+        self.nodes: list[P2PNode] = []
+        self.state: TournamentState | None = None
         self.elo_db_path = elo_db_path or (AI_SERVICE_ROOT / "data" / "elo_leaderboard.db")
 
-    async def discover_nodes(self) -> List[P2PNode]:
+    async def discover_nodes(self) -> list[P2PNode]:
         """Discover all healthy P2P nodes via the leader."""
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
@@ -242,7 +242,7 @@ class P2PEloTournament:
             print(f"[Tournament] Error discovering nodes: {e}")
             return []
 
-    def generate_round_robin_matchups(self, agents: List[str]) -> List[Tuple[str, str]]:
+    def generate_round_robin_matchups(self, agents: list[str]) -> list[tuple[str, str]]:
         """Generate all pairings for round-robin tournament."""
         matchups = []
         for i, a in enumerate(agents):
@@ -261,7 +261,7 @@ class P2PEloTournament:
         agent_a: str,
         agent_b: str,
         match_id: str,
-    ) -> Optional[MatchResult]:
+    ) -> MatchResult | None:
         """Run a single match on a remote node via P2P API."""
         try:
             # Use longer timeout for neural network matches
@@ -312,7 +312,7 @@ class P2PEloTournament:
         agent_a: str,
         agent_b: str,
         match_id: str,
-    ) -> Optional[MatchResult]:
+    ) -> MatchResult | None:
         """Run a single match locally (fallback when no nodes available)."""
         try:
             # Import here to avoid circular imports
@@ -353,13 +353,13 @@ class P2PEloTournament:
             print(f"[Tournament] Error running local match: {e}")
             return None
 
-    def calculate_elo_ratings(self, results: List[MatchResult]) -> Dict[str, float]:
+    def calculate_elo_ratings(self, results: list[MatchResult]) -> dict[str, float]:
         """Calculate Elo ratings from match results."""
         k_factor = ELO_K_FACTOR
         initial_rating = INITIAL_ELO_RATING
 
         # Collect all unique agents
-        agents: Set[str] = set()
+        agents: set[str] = set()
         for r in results:
             agents.add(r.agent_a)
             agents.add(r.agent_b)
@@ -389,7 +389,7 @@ class P2PEloTournament:
 
         return ratings
 
-    def save_ratings_to_db(self, ratings: Dict[str, float], results: List[MatchResult]):
+    def save_ratings_to_db(self, ratings: dict[str, float], results: list[MatchResult]):
         """Save Elo ratings to the leaderboard database."""
         self.elo_db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -455,7 +455,7 @@ class P2PEloTournament:
 
     async def run_tournament(
         self,
-        agents: List[str],
+        agents: list[str],
         max_parallel: int = 10,
         use_distributed: bool = True,
     ) -> TournamentState:
@@ -485,7 +485,7 @@ class P2PEloTournament:
             await self.discover_nodes()
             print(f"[Tournament] Found {len(self.nodes)} P2P nodes")
 
-        results: List[MatchResult] = []
+        results: list[MatchResult] = []
 
         # Run matches in parallel
         if use_distributed and len(self.nodes) > 0:
@@ -692,7 +692,7 @@ async def main():
 
         # Create model configs for tournament
         # Models are configured as neural net agents with checkpoint paths
-        model_configs: Dict[str, Dict[str, Any]] = {}
+        model_configs: dict[str, dict[str, Any]] = {}
         for m in models:
             model_configs[m.name] = {
                 "ai_type": "descent",  # Use descent AI for NN models

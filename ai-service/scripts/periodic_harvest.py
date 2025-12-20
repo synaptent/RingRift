@@ -75,10 +75,10 @@ class HarvestResult:
     new_unique_games: int
     total_accumulated: int
     training_triggered: bool
-    training_pid: Optional[int]
-    error: Optional[str]
+    training_pid: int | None
+    error: str | None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -237,7 +237,7 @@ class PeriodicHarvester:
         Returns:
             Tuple of (new_unique_count, total_count)
         """
-        seen_ids: Set[str] = set()
+        seen_ids: set[str] = set()
         accumulated_file = self.config.accumulated_file
         temp_file = accumulated_file.with_suffix(".tmp")
 
@@ -284,7 +284,7 @@ class PeriodicHarvester:
         total_count = existing_count + new_count
         return new_count, total_count
 
-    def _trigger_training(self) -> Optional[int]:
+    def _trigger_training(self) -> int | None:
         """Trigger training with accumulated data.
 
         Returns:

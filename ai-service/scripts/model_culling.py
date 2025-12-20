@@ -64,7 +64,7 @@ class CullResult:
     total_models: int
     kept: int
     archived: int
-    archived_paths: List[str]
+    archived_paths: list[str]
     threshold: int
     keep_fraction: float
 
@@ -84,7 +84,7 @@ def discover_models_for_config(
     models_dir: Path,
     board_type: str,
     num_players: int,
-) -> List[ModelInfo]:
+) -> list[ModelInfo]:
     """Discover all model files for a specific configuration.
 
     Matches patterns like:
@@ -127,9 +127,9 @@ def discover_models_for_config(
 
 
 def get_models_with_elo(
-    models: List[ModelInfo],
+    models: list[ModelInfo],
     db: EloDatabase,
-) -> List[ModelInfo]:
+) -> list[ModelInfo]:
     """Enrich model info with Elo ratings from database."""
     for model in models:
         rating = db.get_rating(
@@ -150,7 +150,7 @@ def check_config_status(
     num_players: int,
     cull_threshold: int = DEFAULT_CULL_THRESHOLD,
     keep_fraction: float = DEFAULT_KEEP_FRACTION,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Check culling status for a specific config."""
     config_key = f"{board_type}_{num_players}p"
 
@@ -310,9 +310,9 @@ def cull_all_configs(
     db_path: Path = ELO_DB_PATH,
     cull_threshold: int = DEFAULT_CULL_THRESHOLD,
     keep_fraction: float = DEFAULT_KEEP_FRACTION,
-    config_filter: Optional[str] = None,
+    config_filter: str | None = None,
     dry_run: bool = False,
-) -> List[CullResult]:
+) -> list[CullResult]:
     """Cull models across all configs (or specific config)."""
     db = EloDatabase(db_path)
     results = []

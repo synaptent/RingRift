@@ -53,7 +53,8 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
+from collections.abc import Callable
 
 import numpy as np
 import time
@@ -153,7 +154,7 @@ except ImportError:
 VALID_MODES = ["local", "lan", "aws", "hybrid"]
 
 
-def get_hosts_for_mode(mode: str, hosts_config: Dict[str, "HostConfig"]) -> List[str]:
+def get_hosts_for_mode(mode: str, hosts_config: dict[str, "HostConfig"]) -> list[str]:
     """Get list of host names based on deployment mode.
 
     Args:
@@ -166,8 +167,8 @@ def get_hosts_for_mode(mode: str, hosts_config: Dict[str, "HostConfig"]) -> List
     if mode == "local":
         return []
 
-    lan_hosts: List[str] = []
-    aws_hosts: List[str] = []
+    lan_hosts: list[str] = []
+    aws_hosts: list[str] = []
 
     for name, host in hosts_config.items():
         # Classify host as AWS or LAN based on config hints
@@ -190,7 +191,7 @@ def get_hosts_for_mode(mode: str, hosts_config: Dict[str, "HostConfig"]) -> List
     return []
 
 
-def get_worker_urls_from_hosts(host_names: List[str]) -> List[str]:
+def get_worker_urls_from_hosts(host_names: list[str]) -> list[str]:
     """Get worker HTTP URLs for the specified hosts.
 
     Args:
@@ -214,7 +215,7 @@ QUEUE_DISTRIBUTED_AVAILABLE = DISTRIBUTED_AVAILABLE
 
 
 FitnessDebugCallback = Callable[
-    [HeuristicWeights, HeuristicWeights, BoardType, Dict[str, Any]],
+    [HeuristicWeights, HeuristicWeights, BoardType, dict[str, Any]],
     None,
 ]
 
@@ -223,10 +224,10 @@ FitnessDebugCallback = Callable[
 # This list is kept in lockstep with HEURISTIC_WEIGHT_KEYS defined in
 # app.ai.heuristic_weights so that all optimisation tooling shares a single
 # source of truth for the weight vector layout.
-WEIGHT_KEYS: List[str] = list(HEURISTIC_WEIGHT_KEYS)
+WEIGHT_KEYS: list[str] = list(HEURISTIC_WEIGHT_KEYS)
 
 # Map CLI board names to BoardType enums for evaluation wiring.
-BOARD_NAME_TO_TYPE: Dict[str, BoardType] = {
+BOARD_NAME_TO_TYPE: dict[str, BoardType] = {
     "square8": BoardType.SQUARE8,
     "square19": BoardType.SQUARE19,
     "hex": BoardType.HEXAGONAL,
@@ -276,8 +277,8 @@ def create_heuristic_ai_with_weights(
     *,
     difficulty: int = 5,
     randomness: float = 0.0,
-    rng_seed: Optional[int] = None,
-    heuristic_eval_mode: Optional[str] = None,
+    rng_seed: int | None = None,
+    heuristic_eval_mode: str | None = None,
 ) -> HeuristicAI:
     """Create a HeuristicAI instance with custom weights applied.
 
@@ -402,12 +403,12 @@ def play_single_game_from_state(
     max_moves: int = 10000,
     *,
     randomness: float = 0.0,
-    rng_seed_base: Optional[int] = None,
-    heuristic_eval_mode: Optional[str] = None,
-    per_move_callback: Optional[Callable[[int], None]] = None,
-    game_db: Optional[GameReplayDB] = None,
-    game_metadata: Optional[Dict[str, Any]] = None,
-) -> Tuple[int, int]:
+    rng_seed_base: int | None = None,
+    heuristic_eval_mode: str | None = None,
+    per_move_callback: Callable[[int], None] | None = None,
+    game_db: GameReplayDB | None = None,
+    game_metadata: dict[str, Any] | None = None,
+) -> tuple[int, int]:
     """Play a single game from a provided initial :class:`GameState`.
 
     This helper is shared by both the classic initial-position evaluation
@@ -419,8 +420,8 @@ def play_single_game_from_state(
     # Derive per-player RNG seeds in a deterministic but side-independent way.
     use_randomness = randomness > 0.0
     if use_randomness and rng_seed_base is not None:
-        candidate_seed: Optional[int] = rng_seed_base
-        opponent_seed: Optional[int] = rng_seed_base + 1
+        candidate_seed: int | None = rng_seed_base
+        opponent_seed: int | None = rng_seed_base + 1
     else:
         candidate_seed = None
         opponent_seed = None
@@ -450,7 +451,7 @@ def play_single_game_from_state(
     game_state = initial_state
     rules_engine = DefaultRulesEngine()
     move_count = 0
-    moves_played: List[Move] = []  # Collect moves for recording
+    moves_played: list[Move] = []  # Collect moves for recording
 
     while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = game_state.current_player
@@ -517,11 +518,11 @@ def play_single_game(
     max_moves: int = 2000,
     *,
     randomness: float = 0.0,
-    rng_seed_base: Optional[int] = None,
-    heuristic_eval_mode: Optional[str] = None,
-    game_db: Optional[GameReplayDB] = None,
-    game_metadata: Optional[Dict[str, Any]] = None,
-) -> Tuple[int, int]:
+    rng_seed_base: int | None = None,
+    heuristic_eval_mode: str | None = None,
+    game_db: GameReplayDB | None = None,
+    game_metadata: dict[str, Any] | None = None,
+) -> tuple[int, int]:
     """Play a single game between candidate and baseline weights.
 
     This thin wrapper constructs a fresh initial state for the given board
@@ -551,17 +552,17 @@ def evaluate_fitness(
     verbose: bool = False,
     *,
     opponent_mode: str = "baseline-only",
-    incumbent_weights: Optional[HeuristicWeights] = None,
+    incumbent_weights: HeuristicWeights | None = None,
     max_moves: int = 2000,
-    debug_hook: Optional[Callable[[Dict[str, Any]], None]] = None,
+    debug_hook: Callable[[dict[str, Any]], None] | None = None,
     eval_mode: str = "initial-only",
-    state_pool_id: Optional[str] = None,
+    state_pool_id: str | None = None,
     eval_randomness: float = 0.0,
-    seed: Optional[int] = None,
-    debug_callback: Optional[FitnessDebugCallback] = None,
-    progress_reporter: Optional[ProgressReporter] = None,
-    game_db: Optional[GameReplayDB] = None,
-    recording_context: Optional[Dict[str, Any]] = None,
+    seed: int | None = None,
+    debug_callback: FitnessDebugCallback | None = None,
+    progress_reporter: ProgressReporter | None = None,
+    game_db: GameReplayDB | None = None,
+    recording_context: dict[str, Any] | None = None,
 ) -> float:
     """Evaluate fitness of candidate weights against one or more opponents.
 
@@ -634,7 +635,7 @@ def evaluate_fitness(
 
     # Only track timing when progress reporting is enabled to avoid
     # overhead on hot evaluation paths.
-    start_time: Optional[float] = None
+    start_time: float | None = None
     if progress_reporter is not None:
         start_time = time.time()
 
@@ -677,7 +678,7 @@ def evaluate_fitness(
 
     # Build opponent schedule
     if opponent_mode == "baseline-only":
-        opponents: List[HeuristicWeights] = [baseline_weights] * games_per_eval
+        opponents: list[HeuristicWeights] = [baseline_weights] * games_per_eval
     elif opponent_mode == "baseline-plus-incumbent":
         # Use incumbent if provided; otherwise fall back to baseline
         # for early generations.
@@ -695,7 +696,7 @@ def evaluate_fitness(
     else:
         raise ValueError(f"Unknown opponent_mode: {opponent_mode!r}")
 
-    pool_states: Optional[List[GameState]] = None
+    pool_states: list[GameState] | None = None
     pool_id = state_pool_id or "v1"
     if eval_mode == "multi-start":
         pool_states = load_state_pool(
@@ -720,7 +721,7 @@ def evaluate_fitness(
 
         if eval_mode == "initial-only":
             # Build game metadata for recording
-            game_record_metadata_init: Optional[Dict[str, Any]] = None
+            game_record_metadata_init: dict[str, Any] | None = None
             if game_db is not None:
                 game_record_metadata_init = {
                     "source": "cmaes",
@@ -749,7 +750,7 @@ def evaluate_fitness(
             base_state = pool_states[i % len(pool_states)]
             initial_state = base_state.model_copy(deep=True)
 
-            move_progress_callback: Optional[Callable[[int], None]] = None
+            move_progress_callback: Callable[[int], None] | None = None
             if progress_reporter is not None and start_time is not None:
 
                 def _per_move_progress_callback(
@@ -782,7 +783,7 @@ def evaluate_fitness(
                 move_progress_callback = _per_move_progress_callback
 
             # Build game metadata for recording
-            game_record_metadata: Optional[Dict[str, Any]] = None
+            game_record_metadata: dict[str, Any] | None = None
             if game_db is not None:
                 game_record_metadata = {
                     "source": "cmaes",
@@ -871,7 +872,7 @@ def evaluate_fitness(
         )
 
     # Aggregate per-candidate evaluation statistics for optional diagnostics.
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "wins": wins,
         "draws": draws,
         "losses": losses,
@@ -908,23 +909,23 @@ def evaluate_fitness_over_boards(
     candidate_weights: HeuristicWeights,
     baseline_weights: HeuristicWeights,
     games_per_eval: int,
-    boards: List[BoardType],
+    boards: list[BoardType],
     *,
     opponent_mode: str = "baseline-only",
     max_moves: int = 200,
     verbose: bool = False,
-    debug_hook: Optional[Callable[[Dict[str, Any]], None]] = None,
+    debug_hook: Callable[[dict[str, Any]], None] | None = None,
     eval_mode: str = "initial-only",
-    state_pool_id: Optional[str] = None,
-    seed: Optional[int] = None,
+    state_pool_id: str | None = None,
+    seed: int | None = None,
     eval_randomness: float = 0.0,
-    debug_callback: Optional[FitnessDebugCallback] = None,
-    progress_label: Optional[str] = None,
-    progress_interval_sec: Optional[float] = None,
+    debug_callback: FitnessDebugCallback | None = None,
+    progress_label: str | None = None,
+    progress_interval_sec: float | None = None,
     enable_eval_progress: bool = True,
-    game_db: Optional[GameReplayDB] = None,
-    recording_context: Optional[Dict[str, Any]] = None,
-) -> Tuple[float, Dict[BoardType, float]]:
+    game_db: GameReplayDB | None = None,
+    recording_context: dict[str, Any] | None = None,
+) -> tuple[float, dict[BoardType, float]]:
     """Evaluate candidate fitness averaged over multiple board types.
 
     This helper is a thin wrapper over :func:`evaluate_fitness` that evaluates
@@ -939,14 +940,14 @@ def evaluate_fitness_over_boards(
     if not boards:
         raise ValueError("boards must contain at least one BoardType")
 
-    per_board_fitness: Dict[BoardType, float] = {}
+    per_board_fitness: dict[BoardType, float] = {}
 
     for idx, board_type in enumerate(boards):
         board_seed = None if seed is None else seed + idx * 10_000
 
         # Optional per-board progress reporter. When enabled, we track
         # progress at the game level for this (candidate, board) pair.
-        board_progress: Optional[ProgressReporter] = None
+        board_progress: ProgressReporter | None = None
         if progress_label is not None and enable_eval_progress:
             context = f"{progress_label} | board={board_type.value}"
             if progress_interval_sec is None:
@@ -961,12 +962,12 @@ def evaluate_fitness_over_boards(
             )
 
         def _tag_stats(
-            stats: Dict[str, Any],
+            stats: dict[str, Any],
             *,
             _board_type: BoardType = board_type,
             _board_index: int = idx,
-            _board_seed: Optional[int] = board_seed,
-        ) -> Dict[str, Any]:
+            _board_seed: int | None = board_seed,
+        ) -> dict[str, Any]:
             tagged = dict(stats)
             tagged["board_type"] = _board_type
             tagged["board_index"] = _board_index
@@ -976,7 +977,7 @@ def evaluate_fitness_over_boards(
         if debug_hook is not None:
 
             def board_debug_hook(
-                stats: Dict[str, Any],
+                stats: dict[str, Any],
                 *,
                 _tag=_tag_stats,
             ) -> None:
@@ -991,7 +992,7 @@ def evaluate_fitness_over_boards(
                 candidate_w: HeuristicWeights,
                 baseline_w: HeuristicWeights,
                 bt: BoardType,
-                stats: Dict[str, Any],
+                stats: dict[str, Any],
                 *,
                 _tag=_tag_stats,
             ) -> None:
@@ -1029,11 +1030,11 @@ def evaluate_fitness_multiplayer(
     baseline_weights: HeuristicWeights,
     num_players: int,
     games_per_eval: int,
-    boards: List[BoardType],
+    boards: list[BoardType],
     state_pool_id: str = "v1",
-    seed: Optional[int] = None,
-    game_db: Optional[GameReplayDB] = None,
-    recording_context: Optional[Dict[str, Any]] = None,
+    seed: int | None = None,
+    game_db: GameReplayDB | None = None,
+    recording_context: dict[str, Any] | None = None,
 ) -> float:
     """Minimal rank-based fitness for 3p/4p heuristic evaluation.
 
@@ -1090,7 +1091,7 @@ def evaluate_fitness_multiplayer(
     rng = np.random.default_rng(seed)
 
     # Preload pools for each board so that we can reuse them across games.
-    pools: Dict[BoardType, List[GameState]] = {}
+    pools: dict[BoardType, list[GameState]] = {}
     for board in boards:
         states = load_state_pool(
             board_type=board,
@@ -1131,7 +1132,7 @@ def evaluate_fitness_multiplayer(
             "full",
         )
 
-        ai_by_player: Dict[int, HeuristicAI] = {}
+        ai_by_player: dict[int, HeuristicAI] = {}
         for p in game_state.players:
             weights = candidate_weights if p.player_number == candidate_player_number else baseline_weights
             ai_by_player[p.player_number] = create_heuristic_ai_with_weights(
@@ -1144,7 +1145,7 @@ def evaluate_fitness_multiplayer(
 
         # Track initial state and moves for recording
         initial_state = game_state.model_copy(deep=True)
-        moves_list: List[Move] = []
+        moves_list: list[Move] = []
 
         moves_played = 0
         while game_state.game_status == GameStatus.ACTIVE and moves_played < 500:
@@ -1237,8 +1238,8 @@ def evaluate_fitness_gpu(
     games_per_eval: int,
     batch_size: int = 64,
     max_moves: int = 2000,
-    seed: Optional[int] = None,
-) -> Tuple[float, Dict[str, Any]]:
+    seed: int | None = None,
+) -> tuple[float, dict[str, Any]]:
     """GPU-accelerated fitness evaluation using ParallelGameRunner.
 
     Runs multiple games in parallel on GPU. In each game, both players use
@@ -1289,7 +1290,7 @@ def evaluate_fitness_gpu(
 
     # Convert HeuristicWeights to GPU runner format
     # The GPU runner uses a simplified weight dict
-    def to_gpu_weights(weights: HeuristicWeights) -> Dict[str, float]:
+    def to_gpu_weights(weights: HeuristicWeights) -> dict[str, float]:
         """Convert HeuristicWeights to GPU runner weight format."""
         return {
             "stack_count": weights.get("stackControlBonus", 1.0),
@@ -1426,10 +1427,10 @@ def run_axis_aligned_multiplayer_eval(
     profiles_dir: str,
     baseline_weights: HeuristicWeights,
     num_players: int,
-    boards: List[BoardType],
+    boards: list[BoardType],
     state_pool_id: str,
     games_per_eval: int,
-    seed: Optional[int],
+    seed: int | None,
     output_path: str,
     include_baseline: bool = True,
 ) -> None:
@@ -1440,7 +1441,7 @@ def run_axis_aligned_multiplayer_eval(
     provided baseline weights. It writes a JSON summary to ``output_path``.
     """
     baseline_keys = set(baseline_weights.keys())
-    profiles: List[AxisAlignedProfile] = []
+    profiles: list[AxisAlignedProfile] = []
 
     if not os.path.isdir(profiles_dir):
         raise ValueError("Axis-aligned profiles dir does not exist or is not a directory: " f"{profiles_dir!r}")
@@ -1499,7 +1500,7 @@ def run_axis_aligned_multiplayer_eval(
             ),
         )
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for profile in profiles:
         raw_score = evaluate_fitness_multiplayer(
             candidate_weights=profile.weights,
@@ -1524,7 +1525,7 @@ def run_axis_aligned_multiplayer_eval(
     results.sort(key=lambda r: r["fitness"], reverse=True)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "meta": {
             "mode": "axis_aligned_multiplayer",
             "num_players": num_players,
@@ -1566,8 +1567,8 @@ def load_weights_from_file(path: str) -> HeuristicWeights:
 def save_weights_to_file(
     weights: HeuristicWeights,
     path: str,
-    generation: Optional[int] = None,
-    fitness: Optional[float] = None,
+    generation: int | None = None,
+    fitness: float | None = None,
 ) -> None:
     """Save weights to a JSON file.
 
@@ -1700,7 +1701,7 @@ class AxisAlignedProfile:
 
     id: str
     weights: HeuristicWeights
-    meta: Dict[str, Any]
+    meta: dict[str, Any]
     is_baseline: bool = False
 
 
@@ -1713,18 +1714,18 @@ class CMAESConfig:
     games_per_eval: int
     sigma: float
     output_path: str
-    baseline_path: Optional[str]
+    baseline_path: str | None
     board_type: BoardType
-    checkpoint_dir: Optional[str]
-    seed: Optional[int] = None
+    checkpoint_dir: str | None
+    seed: int | None = None
     max_moves: int = 200
     opponent_mode: str = "baseline-only"
-    run_id: Optional[str] = None
-    run_dir: Optional[str] = None
-    resume_from: Optional[str] = None
+    run_id: str | None = None
+    run_dir: str | None = None
+    resume_from: str | None = None
     eval_mode: str = "initial-only"
-    state_pool_id: Optional[str] = None
-    eval_boards: Optional[List[BoardType]] = None
+    state_pool_id: str | None = None
+    eval_boards: list[BoardType] | None = None
     eval_randomness: float = 0.0
     # Number of players for the evaluation games. 2 uses the standard
     # 2-player evaluation loop; 3 or 4 uses evaluate_fitness_multiplayer().
@@ -1746,14 +1747,14 @@ class CMAESConfig:
     record_games: bool = True
     # Optional list of JSON profile file paths to inject into the initial
     # CMA-ES population. Useful for seeding with known-good weights.
-    inject_profiles: Optional[List[str]] = None
+    inject_profiles: list[str] | None = None
     # Distributed evaluation mode settings for local Mac cluster
     distributed: bool = False
-    workers: Optional[List[str]] = None  # List of worker URLs (host:port)
+    workers: list[str] | None = None  # List of worker URLs (host:port)
     discover_workers: bool = False  # Auto-discover workers via Bonjour
     min_workers: int = 1  # Minimum workers required to start
     # Queue-based distributed evaluation for cloud deployment
-    queue_backend: Optional[str] = None  # None, "redis", or "sqs"
+    queue_backend: str | None = None  # None, "redis", or "sqs"
     queue_timeout: float = 600.0  # Timeout for collecting queue results
     # Deployment mode for host selection (local, lan, aws, hybrid)
     mode: str = "local"
@@ -1816,7 +1817,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
 
     # Persist run metadata (additive JSON; schema is backward-compatible)
     run_meta_path = os.path.join(run_dir, "run_meta.json")
-    run_meta: Dict[str, object] = {
+    run_meta: dict[str, object] = {
         "run_id": run_id,
         "created_at": datetime.now().isoformat(),
         "generations": config.generations,
@@ -1847,8 +1848,8 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
 
     # Initialize game recording database if enabled
     # Combines CLI --no-record flag with RINGRIFT_RECORD_SELFPLAY_GAMES env var
-    game_db: Optional[GameReplayDB] = None
-    game_db_path: Optional[str] = None
+    game_db: GameReplayDB | None = None
+    game_db_path: str | None = None
     recording_enabled = should_record_games(cli_no_record=not config.record_games)
     if recording_enabled:
         game_db_path = os.path.join(run_dir, "games.db")
@@ -2003,8 +2004,8 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     )
 
     # Initialize distributed evaluator if requested (HTTP or queue-based)
-    distributed_evaluator: Optional[Any] = None
-    queue_evaluator: Optional[Any] = None
+    distributed_evaluator: Any | None = None
+    queue_evaluator: Any | None = None
 
     # Queue-based distributed evaluation (for cloud deployment)
     if config.queue_backend:
@@ -2041,7 +2042,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             )
 
         # Get worker list
-        worker_urls: List[str] = []
+        worker_urls: list[str] = []
         if config.workers:
             workers = parse_manual_workers(",".join(config.workers))
             worker_urls = [w.url for w in workers]
@@ -2112,8 +2113,8 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         solutions = es.ask()
 
         # Evaluate fitness for each candidate (negate for minimization)
-        fitnesses: List[float] = []
-        gen_fitnesses: List[float] = []
+        fitnesses: list[float] = []
+        gen_fitnesses: list[float] = []
         verbose_eval = generation == 1  # Debug first generation
 
         # Incumbent (B1) is the best-known weights at the *start* of
@@ -2121,7 +2122,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         incumbent_for_generation = best_weights if config.opponent_mode == "baseline-plus-incumbent" else None
 
         boards_for_eval = eval_boards
-        candidate_per_board_fitness: List[Dict[BoardType, float]] = []
+        candidate_per_board_fitness: list[dict[BoardType, float]] = []
 
         # Queue-based distributed evaluation (for cloud deployment)
         if queue_evaluator is not None:
@@ -2227,7 +2228,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                 if config.debug_plateau:
 
                     def cmaes_debug_hook(
-                        stats: Dict[str, Any],
+                        stats: dict[str, Any],
                         *,
                         _generation: int = generation,
                         _idx: int = idx,
@@ -2246,7 +2247,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                     cmaes_debug_hook = None  # type: ignore[assignment]
 
                 # Build recording context for this candidate evaluation
-                recording_context: Optional[Dict[str, Any]] = None
+                recording_context: dict[str, Any] | None = None
                 if game_db is not None:
                     recording_context = {
                         "run_id": run_id,
@@ -2402,7 +2403,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
 
         # Save generation summary
         summary_path = os.path.join(generation_summaries_dir, f"generation_{generation:03d}.json")
-        summary_payload: Dict[str, object] = {
+        summary_payload: dict[str, object] = {
             "generation": generation,
             "population_size": config.population_size,
             "games_per_eval": config.games_per_eval,
@@ -2810,7 +2811,7 @@ def main():
     if not raw_names:
         raise ValueError("At least one board must be specified in --eval-boards")
 
-    eval_boards: List[BoardType] = []
+    eval_boards: list[BoardType] = []
     for name in raw_names:
         try:
             eval_boards.append(BOARD_NAME_TO_TYPE[name])

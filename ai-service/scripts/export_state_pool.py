@@ -51,14 +51,14 @@ from app.models import BoardType, GameState  # noqa: E402
 
 def export_states_from_db(
     db_path: str,
-    sample_moves: List[int],
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    sample_moves: list[int],
+    board_type: str | None = None,
+    num_players: int | None = None,
     min_game_length: int = 0,
-    max_states: Optional[int] = None,
+    max_states: int | None = None,
     winners_only: bool = False,
-    source_filter: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    source_filter: str | None = None,
+) -> list[dict[str, Any]]:
     """Extract game states from a recorded game database.
 
     Parameters
@@ -89,11 +89,11 @@ def export_states_from_db(
         raise FileNotFoundError(f"Database not found: {db_path}")
 
     db = GameReplayDB(db_path)
-    states: List[Dict[str, Any]] = []
+    states: list[dict[str, Any]] = []
 
     # Build query to list games
     query = "SELECT game_id, board_type, num_players, total_moves, winner, source FROM games WHERE 1=1"
-    params: List[Any] = []
+    params: list[Any] = []
 
     if board_type:
         # Handle "hex" and "hexagonal" as equivalent
@@ -245,7 +245,7 @@ def main():
         print(f"Source filter: {args.source}")
     print()
 
-    all_states: List[Dict[str, Any]] = []
+    all_states: list[dict[str, Any]] = []
 
     for db_path in args.db:
         try:

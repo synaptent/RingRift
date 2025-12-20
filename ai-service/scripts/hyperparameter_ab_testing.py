@@ -126,14 +126,14 @@ class Experiment:
     baseline_value: Any
     variant_value: Any
     status: str = "pending"  # pending, training, testing, completed, failed
-    baseline_model_path: Optional[str] = None
-    variant_model_path: Optional[str] = None
-    ab_test_id: Optional[str] = None
-    winner: Optional[str] = None  # "baseline", "variant", "tie"
+    baseline_model_path: str | None = None
+    variant_model_path: str | None = None
+    ab_test_id: str | None = None
+    winner: str | None = None  # "baseline", "variant", "tie"
     confidence: float = 0.0
     games_played: int = 0
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
     notes: str = ""
 
 
@@ -185,8 +185,8 @@ def create_experiment(
     name: str,
     board_type: str,
     num_players: int,
-    baseline_model: Optional[str] = None,
-) -> Optional[Experiment]:
+    baseline_model: str | None = None,
+) -> Experiment | None:
     """Create a new hyperparameter experiment."""
     if name not in EXPERIMENT_DEFINITIONS:
         print(f"Unknown experiment: {name}")
@@ -258,7 +258,7 @@ def create_experiment(
     return experiment
 
 
-def train_variant_model(experiment: Experiment) -> Optional[str]:
+def train_variant_model(experiment: Experiment) -> str | None:
     """Train a model with the variant hyperparameter."""
     defn = EXPERIMENT_DEFINITIONS[experiment.name]
 
@@ -306,7 +306,7 @@ def train_variant_model(experiment: Experiment) -> Optional[str]:
     return None
 
 
-def create_ab_test_for_experiment(experiment: Experiment) -> Optional[str]:
+def create_ab_test_for_experiment(experiment: Experiment) -> str | None:
     """Create an A/B test comparing baseline and variant models."""
     if not experiment.baseline_model_path or not experiment.variant_model_path:
         print("Missing model paths for A/B test")
@@ -343,7 +343,7 @@ def create_ab_test_for_experiment(experiment: Experiment) -> Optional[str]:
         return None
 
 
-def check_experiment_status(experiment_id: str) -> Optional[Dict[str, Any]]:
+def check_experiment_status(experiment_id: str) -> dict[str, Any] | None:
     """Check the status of an experiment's A/B test."""
     conn = get_db_connection()
     row = conn.execute("SELECT * FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
@@ -417,7 +417,7 @@ def update_experiment_from_ab_test(experiment_id: str):
     conn.close()
 
 
-def get_experiment_recommendations(board_type: str, num_players: int) -> List[Dict[str, Any]]:
+def get_experiment_recommendations(board_type: str, num_players: int) -> list[dict[str, Any]]:
     """Get recommended hyperparameter settings based on experiment results."""
     conn = get_db_connection()
 
@@ -479,7 +479,7 @@ def run_experiment(
     name: str,
     board_type: str,
     num_players: int,
-    baseline_model: Optional[str] = None,
+    baseline_model: str | None = None,
 ) -> bool:
     """Run a complete hyperparameter experiment."""
     # Create experiment
@@ -530,7 +530,7 @@ def run_experiment(
     return True
 
 
-def list_experiments(status: Optional[str] = None) -> List[Dict]:
+def list_experiments(status: str | None = None) -> list[dict]:
     """List all experiments."""
     conn = get_db_connection()
 

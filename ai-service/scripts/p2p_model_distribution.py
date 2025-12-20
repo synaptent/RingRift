@@ -89,7 +89,7 @@ def bdecode(data: bytes) -> Any:
     if BENCODE_AVAILABLE:
         return bencodepy.decode(data)
 
-    def decode_next(data: bytes, idx: int) -> Tuple[Any, int]:
+    def decode_next(data: bytes, idx: int) -> tuple[Any, int]:
         if data[idx:idx+1] == b'i':
             # Integer
             end = data.index(b'e', idx)
@@ -131,7 +131,7 @@ PIECE_SIZE = 256 * 1024  # 256 KB pieces (good for model files)
 BT_PORT = 51413  # Default BitTorrent port
 
 
-def get_tailscale_ip() -> Optional[str]:
+def get_tailscale_ip() -> str | None:
     """Get the local Tailscale IP address."""
     try:
         result = subprocess.run(
@@ -145,7 +145,7 @@ def get_tailscale_ip() -> Optional[str]:
     return None
 
 
-def list_models(models_dir: Path) -> List[str]:
+def list_models(models_dir: Path) -> list[str]:
     """List all .pth model files in directory."""
     return sorted([f.name for f in models_dir.glob("*.pth")])
 
@@ -156,7 +156,7 @@ class TorrentCreator:
     def __init__(
         self,
         piece_size: int = PIECE_SIZE,
-        trackers: Optional[List[str]] = None,
+        trackers: list[str] | None = None,
         comment: str = "RingRift model distribution",
     ):
         self.piece_size = piece_size
@@ -167,8 +167,8 @@ class TorrentCreator:
         self,
         models_dir: Path,
         output_path: Path,
-        web_seeds: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        web_seeds: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Create a torrent file for all models in directory.
 
         Args:
@@ -263,9 +263,9 @@ class TorrentCreator:
 def create_torrent_file(
     models_dir: Path,
     output_path: Path,
-    trackers: Optional[List[str]] = None,
-    web_seeds: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    trackers: list[str] | None = None,
+    web_seeds: list[str] | None = None,
+) -> dict[str, Any]:
     """Create a .torrent file for models.
 
     For trackerless operation (DHT-only), omit trackers.
@@ -327,7 +327,7 @@ def seed_torrent(
 def download_via_bittorrent(
     torrent_path: Path,
     dest_dir: Path,
-    seeders: Optional[List[str]] = None,
+    seeders: list[str] | None = None,
     port: int = BT_PORT,
     enable_dht: bool = True,
     web_seed_fallback: bool = True,
@@ -388,12 +388,12 @@ def download_via_bittorrent(
 
 
 def sync_between_nodes(
-    nodes: List[str],
+    nodes: list[str],
     models_dir: str,
-    torrent_dir: Optional[str] = None,
+    torrent_dir: str | None = None,
     http_port: int = 8765,
     bt_port: int = BT_PORT,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Sync models between multiple nodes using BitTorrent swarm.
 
     Creates a hybrid HTTP+BitTorrent distribution:
@@ -517,7 +517,7 @@ def sync_between_nodes(
         }
 
 
-def generate_urls(source_ip: str, port: int, models: List[str]) -> List[str]:
+def generate_urls(source_ip: str, port: int, models: list[str]) -> list[str]:
     """Generate download URLs for all models."""
     return [f"http://{source_ip}:{port}/{model}" for model in models]
 
@@ -555,7 +555,7 @@ def download_models(
     dest_dir: Path,
     connections: int = 16,
     max_concurrent: int = 5,
-    models_filter: Optional[List[str]] = None
+    models_filter: list[str] | None = None
 ):
     """Download models using aria2c with multiple connections."""
 

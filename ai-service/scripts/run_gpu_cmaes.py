@@ -78,12 +78,12 @@ WEIGHT_NAMES = list(DEFAULT_WEIGHTS.keys())
 NUM_WEIGHTS = len(WEIGHT_NAMES)
 
 
-def weights_to_vector(weights: Dict[str, float]) -> np.ndarray:
+def weights_to_vector(weights: dict[str, float]) -> np.ndarray:
     """Convert weight dict to numpy vector."""
     return np.array([weights.get(name, DEFAULT_WEIGHTS[name]) for name in WEIGHT_NAMES])
 
 
-def vector_to_weights(vec: np.ndarray) -> Dict[str, float]:
+def vector_to_weights(vec: np.ndarray) -> dict[str, float]:
     """Convert numpy vector to weight dict."""
     return {name: float(vec[i]) for i, name in enumerate(WEIGHT_NAMES)}
 
@@ -102,9 +102,9 @@ class GPUFitnessEvaluator:
         num_players: int = 2,
         games_per_eval: int = 50,
         max_moves: int = 10000,
-        device: Optional[torch.device] = None,
-        baseline_weights: Optional[Dict[str, float]] = None,
-        board_type: Optional[str] = None,
+        device: torch.device | None = None,
+        baseline_weights: dict[str, float] | None = None,
+        board_type: str | None = None,
     ):
         self.board_size = board_size
         self.num_players = num_players
@@ -127,7 +127,7 @@ class GPUFitnessEvaluator:
         self.total_games = 0
         self.total_time = 0.0
 
-    def evaluate(self, candidate_weights: Dict[str, float]) -> float:
+    def evaluate(self, candidate_weights: dict[str, float]) -> float:
         """Evaluate a candidate's fitness against baseline."""
         start = time.time()
 
@@ -149,8 +149,8 @@ class GPUFitnessEvaluator:
 
     def evaluate_population(
         self,
-        population: List[np.ndarray],
-    ) -> Tuple[List[float], Dict[str, Any]]:
+        population: list[np.ndarray],
+    ) -> tuple[list[float], dict[str, Any]]:
         """Evaluate an entire population in parallel-ish manner.
 
         For now, evaluates sequentially but could be parallelized across
@@ -196,7 +196,7 @@ class MultiGPUFitnessEvaluator:
         num_players: int = 2,
         games_per_eval: int = 50,
         max_moves: int = 10000,
-        baseline_weights: Optional[Dict[str, float]] = None,
+        baseline_weights: dict[str, float] | None = None,
     ):
         self.devices = get_all_cuda_devices()
         if not self.devices:
@@ -218,8 +218,8 @@ class MultiGPUFitnessEvaluator:
 
     def evaluate_population(
         self,
-        population: List[np.ndarray],
-    ) -> Tuple[List[float], Dict[str, Any]]:
+        population: list[np.ndarray],
+    ) -> tuple[list[float], dict[str, Any]]:
         """Evaluate population distributed across GPUs."""
         import concurrent.futures
 
@@ -275,10 +275,10 @@ def run_gpu_cmaes(
     output_dir: str,
     sigma: float = 0.5,
     max_moves: int = 10000,
-    baseline_weights: Optional[Dict[str, float]] = None,
+    baseline_weights: dict[str, float] | None = None,
     multi_gpu: bool = False,
     seed: int = 42,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run GPU-accelerated CMA-ES optimization.
 
     Args:

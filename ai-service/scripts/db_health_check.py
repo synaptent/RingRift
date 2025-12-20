@@ -59,11 +59,11 @@ REQUIRED_TABLES = {
 class DBHealthChecker:
     """Database health checker and repair utility."""
 
-    def __init__(self, quarantine_dir: Optional[Path] = None):
+    def __init__(self, quarantine_dir: Path | None = None):
         self.quarantine_dir = quarantine_dir or QUARANTINE_DIR
-        self.results: Dict[str, Dict[str, Any]] = {}
+        self.results: dict[str, dict[str, Any]] = {}
 
-    def check_integrity(self, db_path: Path) -> Tuple[bool, str]:
+    def check_integrity(self, db_path: Path) -> tuple[bool, str]:
         """Run SQLite integrity check."""
         try:
             conn = sqlite3.connect(str(db_path))
@@ -79,7 +79,7 @@ class DBHealthChecker:
         except Exception as e:
             return False, f"Error: {e}"
 
-    def check_schema(self, db_path: Path) -> Tuple[bool, List[str]]:
+    def check_schema(self, db_path: Path) -> tuple[bool, list[str]]:
         """Check if database has required tables."""
         try:
             conn = sqlite3.connect(str(db_path))
@@ -110,7 +110,7 @@ class DBHealthChecker:
         """Get database file size in bytes."""
         return db_path.stat().st_size if db_path.exists() else 0
 
-    def attempt_repair(self, db_path: Path) -> Tuple[bool, str]:
+    def attempt_repair(self, db_path: Path) -> tuple[bool, str]:
         """Attempt to repair a corrupted database."""
         try:
             # Create backup first
@@ -176,7 +176,7 @@ class DBHealthChecker:
         return quarantine_path
 
     def check_database(self, db_path: Path, repair: bool = False,
-                       quarantine: bool = False) -> Dict[str, Any]:
+                       quarantine: bool = False) -> dict[str, Any]:
         """Perform full health check on a database."""
         result = {
             "path": str(db_path),
@@ -247,9 +247,9 @@ class DBHealthChecker:
 
         return result
 
-    def check_all_databases(self, data_dir: Optional[Path] = None,
+    def check_all_databases(self, data_dir: Path | None = None,
                             repair: bool = False,
-                            quarantine: bool = False) -> Dict[str, Dict[str, Any]]:
+                            quarantine: bool = False) -> dict[str, dict[str, Any]]:
         """Check all databases in data directory."""
         if data_dir is None:
             data_dir = DATA_DIR

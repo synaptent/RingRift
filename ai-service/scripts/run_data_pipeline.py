@@ -70,7 +70,7 @@ class SyncSource:
     name: str
     host: str  # user@hostname format
     remote_path: str  # Remote comprehensive selfplay directory
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     ssh_port: int = 22
 
 
@@ -78,19 +78,19 @@ class SyncSource:
 class PipelineStats:
     """Statistics from a pipeline run."""
 
-    sync_started: Optional[str] = None
-    sync_completed: Optional[str] = None
-    sources_synced: Dict[str, bool] = field(default_factory=dict)
+    sync_started: str | None = None
+    sync_completed: str | None = None
+    sources_synced: dict[str, bool] = field(default_factory=dict)
     total_jsonl_lines: int = 0
     games_imported: int = 0
     games_skipped_duplicate: int = 0
-    aggregation_completed: Optional[str] = None
+    aggregation_completed: str | None = None
     cmaes_triggered: bool = False
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 # Default sync sources - loaded from config/distributed_hosts.yaml
-def load_sync_sources_from_config() -> List[SyncSource]:
+def load_sync_sources_from_config() -> list[SyncSource]:
     """Load sync sources from distributed_hosts.yaml."""
     import yaml
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
@@ -125,7 +125,7 @@ class DataPipeline:
         aggregated_dir: str = "ai-service/data/selfplay/aggregated",
         output_db_dir: str = "ai-service/data/games",
         comprehensive_dir: str = "ai-service/data/selfplay/comprehensive",
-        sync_sources: Optional[List[SyncSource]] = None,
+        sync_sources: list[SyncSource] | None = None,
         dry_run: bool = False,
     ):
         self.aggregated_dir = Path(aggregated_dir)
@@ -224,7 +224,7 @@ class DataPipeline:
             logger.warning(f"  Local: ERROR - {e}")
             return False
 
-    def sync_all_sources(self) -> Dict[str, bool]:
+    def sync_all_sources(self) -> dict[str, bool]:
         """Sync from all configured sources.
 
         Returns dict mapping source name to success status.
@@ -253,7 +253,7 @@ class DataPipeline:
 
         return results
 
-    def count_jsonl_lines(self) -> Dict[str, int]:
+    def count_jsonl_lines(self) -> dict[str, int]:
         """Count JSONL lines per source for reporting."""
         counts = {}
 
@@ -275,12 +275,12 @@ class DataPipeline:
 
     def run_chunked_conversion(
         self,
-        input_dir: Optional[Path] = None,
-        output_dir: Optional[Path] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        input_dir: Path | None = None,
+        output_dir: Path | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         workers: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run chunked JSONL to SQLite conversion.
 
         This uses the chunked_jsonl_converter.py for robust handling of
@@ -365,11 +365,11 @@ class DataPipeline:
 
     def aggregate_to_database(
         self,
-        output_db: Optional[str] = None,
-        sources: Optional[List[str]] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        output_db: str | None = None,
+        sources: list[str] | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> dict[str, Any]:
         """Run JSONL to SQLite aggregation.
 
         Returns aggregation statistics.
@@ -511,9 +511,9 @@ class DataPipeline:
         convert: bool = True,
         aggregate: bool = True,
         cmaes: bool = False,
-        sources: Optional[List[str]] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        sources: list[str] | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         workers: int = 2,
     ) -> PipelineStats:
         """Run the complete data pipeline.

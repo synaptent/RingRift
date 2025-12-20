@@ -53,11 +53,11 @@ class RecoveryConditionStats:
     one_condition_met: int = 0
     zero_conditions_met: int = 0
     # Detailed breakdowns
-    condition_combos: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    condition_combos: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     # Track near-misses (3 conditions met)
-    near_misses: List[Dict] = field(default_factory=list)
+    near_misses: list[dict] = field(default_factory=list)
     # Track actual recovery-eligible states
-    eligible_states: List[Dict] = field(default_factory=list)
+    eligible_states: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -75,10 +75,10 @@ class GameStats:
     max_buried_rings_seen: int
     min_rings_in_hand_seen: int
     max_markers_seen: int
-    error: Optional[str] = None
+    error: str | None = None
 
 
-def analyze_player_recovery_conditions(state: GameState, player: int) -> Dict[str, Any]:
+def analyze_player_recovery_conditions(state: GameState, player: int) -> dict[str, Any]:
     """Analyze recovery eligibility conditions for a player (RR-CANON-R110)."""
     board = state.board
     player_state = next((p for p in state.players if p.player_number == player), None)
@@ -126,7 +126,7 @@ def get_bookkeeping_move(state, player):
 
 
 def replay_and_analyze_game(
-    game_data: Dict,
+    game_data: dict,
     game_file: str,
     game_index: int,
     stats: RecoveryConditionStats,
@@ -293,7 +293,7 @@ def replay_and_analyze_game(
     return game_stats
 
 
-def load_games_from_file(filepath: Path) -> List[Dict]:
+def load_games_from_file(filepath: Path) -> list[dict]:
     """Load games from a JSONL file, skipping invalid lines."""
     games = []
     with open(filepath, 'r') as f:
@@ -333,7 +333,7 @@ def main():
 
     # Aggregate stats
     stats = RecoveryConditionStats()
-    all_game_stats: List[GameStats] = []
+    all_game_stats: list[GameStats] = []
     total_games = 0
     games_with_fe = 0
     games_with_recovery = 0
@@ -462,7 +462,7 @@ def main():
 
     # Save results to JSON
     if args.output:
-        error_samples: List[Dict[str, Any]] = []
+        error_samples: list[dict[str, Any]] = []
         for gs in all_game_stats:
             if gs.error:
                 error_samples.append(

@@ -47,7 +47,8 @@ from urllib.parse import urlparse
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Generator, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
+from collections.abc import Generator
 
 if TYPE_CHECKING:
     from app.coordination.queue_populator import QueuePopulator
@@ -673,8 +674,8 @@ class WebhookNotifier:
         self.min_level = self.LEVELS.get(
             os.environ.get("RINGRIFT_ALERT_LEVEL", "warning").lower(), 2
         )
-        self._session: Optional[ClientSession] = None
-        self._last_alert: Dict[str, float] = {}  # Throttle repeated alerts
+        self._session: ClientSession | None = None
+        self._last_alert: dict[str, float] = {}  # Throttle repeated alerts
         self._throttle_seconds = 300  # 5 minutes between duplicate alerts
 
     async def _get_session(self) -> ClientSession:
@@ -696,7 +697,7 @@ class WebhookNotifier:
         title: str,
         message: str,
         level: str = "warning",
-        fields: Dict[str, str] = None,
+        fields: dict[str, str] = None,
         node_id: str = "",
     ):
         """Send an alert to configured webhooks.
@@ -790,12 +791,12 @@ class P2POrchestrator:
         node_id: str,
         host: str = "0.0.0.0",
         port: int = DEFAULT_PORT,
-        known_peers: List[str] = None,
-        relay_peers: List[str] = None,
+        known_peers: list[str] = None,
+        relay_peers: list[str] = None,
         ringrift_path: str = None,
-        advertise_host: Optional[str] = None,
-        advertise_port: Optional[int] = None,
-        auth_token: Optional[str] = None,
+        advertise_host: str | None = None,
+        advertise_port: int | None = None,
+        auth_token: str | None = None,
         require_auth: bool = False,
         storage_type: str = "auto",  # "disk", "ramdrive", or "auto"
         sync_to_disk_interval: int = 300,  # Sync ramdrive to disk every N seconds
@@ -805,13 +806,13 @@ class P2POrchestrator:
         self.port = port
         self.known_peers = known_peers or []
         # Peers that should always receive relay heartbeats (for NAT-blocked nodes)
-        self.relay_peers: Set[str] = set(relay_peers or [])
+        self.relay_peers: set[str] = set(relay_peers or [])
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
 
         # Storage configuration: "disk", "ramdrive", or "auto" (detected)
         self.sync_to_disk_interval = sync_to_disk_interval
         self.ramdrive_path = "/dev/shm/ringrift/data"  # Standard ramdrive location
-        self.ramdrive_syncer: Optional[RamdriveSyncer] = None
+        self.ramdrive_syncer: RamdriveSyncer | None = None
 
         # Resolve "auto" storage type based on system resources
         if storage_type == "auto":
@@ -878,7 +879,7 @@ class P2POrchestrator:
         # - env: RINGRIFT_P2P_VOTERS="node-a,node-b,..."
         # - ai-service/config/distributed_hosts.yaml: per-host `p2p_voter: true`
         self.voter_config_source: str = "none"  # env|config|state|learned|none
-        self.voter_node_ids: List[str] = self._load_voter_node_ids()
+        self.voter_node_ids: list[str] = self._load_voter_node_ids()
         # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
         self.voter_quorum_size: int = min(VOTER_MIN_QUORUM, len(self.voter_node_ids)) if self.voter_node_ids else 0
         if self.voter_node_ids:
@@ -889,17 +890,17 @@ class P2POrchestrator:
 
         # Node state
         self.role = NodeRole.FOLLOWER
-        self.leader_id: Optional[str] = None
+        self.leader_id: str | None = None
         self.verbose = bool(os.environ.get("RINGRIFT_P2P_VERBOSE", "").strip())
-        self.peers: Dict[str, NodeInfo] = {}
-        self.local_jobs: Dict[str, ClusterJob] = {}
-        self.active_jobs: Dict[str, Dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
+        self.peers: dict[str, NodeInfo] = {}
+        self.local_jobs: dict[str, ClusterJob] = {}
+        self.active_jobs: dict[str, dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
 
         # Distributed job state tracking (leader-only)
-        self.distributed_cmaes_state: Dict[str, DistributedCMAESState] = {}
-        self.distributed_tournament_state: Dict[str, DistributedTournamentState] = {}
-        self.ssh_tournament_runs: Dict[str, SSHTournamentRun] = {}
-        self.improvement_loop_state: Dict[str, ImprovementLoopState] = {}
+        self.distributed_cmaes_state: dict[str, DistributedCMAESState] = {}
+        self.distributed_tournament_state: dict[str, DistributedTournamentState] = {}
+        self.ssh_tournament_runs: dict[str, SSHTournamentRun] = {}
+        self.improvement_loop_state: dict[str, ImprovementLoopState] = {}
         # Limit CPU-heavy CMA-ES local evaluations to avoid runaway process
         # explosions that can starve the orchestrator (especially on relay hubs).
         try:
@@ -912,28 +913,28 @@ class P2POrchestrator:
         # Tournament match semaphore - limit concurrent Elo calibration matches to prevent OOM
         # Each match can potentially load neural networks which use significant memory
         # NOTE: Set to None here, created lazily in async context to avoid event loop issues
-        self._tournament_match_semaphore: Optional[asyncio.Semaphore] = None
+        self._tournament_match_semaphore: asyncio.Semaphore | None = None
 
         # Phase 2: Distributed data sync state
-        self.local_data_manifest: Optional[NodeDataManifest] = None
-        self.cluster_data_manifest: Optional[ClusterDataManifest] = None  # Leader-only
+        self.local_data_manifest: NodeDataManifest | None = None
+        self.cluster_data_manifest: ClusterDataManifest | None = None  # Leader-only
         self.manifest_collection_interval = 300.0  # Collect manifests every 5 minutes
         self.last_manifest_collection = 0.0
 
         # Dashboard/selfplay stats history (leader-only). Stored in-memory to
         # enable lightweight throughput charts without adding DB migrations.
-        self.selfplay_stats_history: List[Dict[str, Any]] = []
+        self.selfplay_stats_history: list[dict[str, Any]] = []
         self.selfplay_stats_history_max_samples: int = 288  # ~24h @ 5-min cadence
 
         # Canonical gate jobs (leader-only): dashboard-triggered runs of
         # scripts/generate_canonical_selfplay.py.
-        self.canonical_gate_jobs: Dict[str, Dict[str, Any]] = {}
+        self.canonical_gate_jobs: dict[str, dict[str, Any]] = {}
         self.canonical_gate_jobs_lock = threading.RLock()
 
         # Phase 2: P2P rsync coordination state
-        self.active_sync_jobs: Dict[str, DataSyncJob] = {}
-        self.current_sync_plan: Optional[ClusterSyncPlan] = None  # Leader-only
-        self.pending_sync_requests: List[Dict[str, Any]] = []  # Requests from non-leader nodes
+        self.active_sync_jobs: dict[str, DataSyncJob] = {}
+        self.current_sync_plan: ClusterSyncPlan | None = None  # Leader-only
+        self.pending_sync_requests: list[dict[str, Any]] = []  # Requests from non-leader nodes
         self.sync_in_progress = False
         self.last_sync_time = 0.0
         self.auto_sync_interval = 600.0  # Auto-sync every 10 minutes when data is missing
@@ -941,23 +942,23 @@ class P2POrchestrator:
         # Training node priority sync state (leader-only)
         self.training_sync_interval = TRAINING_SYNC_INTERVAL
         self.last_training_sync_time = 0.0
-        self.training_nodes_cache: List[str] = []  # Cached list of top GPU nodes
+        self.training_nodes_cache: list[str] = []  # Cached list of top GPU nodes
         self.training_nodes_cache_time = 0.0
-        self.games_synced_to_training: Dict[str, int] = {}  # node_id -> last synced game count
+        self.games_synced_to_training: dict[str, int] = {}  # node_id -> last synced game count
 
         # Circuit breaker for fault-tolerant peer communication
         self._circuit_registry = get_circuit_registry()
 
         # Phase 3: Training pipeline state (leader-only)
-        self.training_jobs: Dict[str, TrainingJob] = {}
+        self.training_jobs: dict[str, TrainingJob] = {}
         self.training_thresholds: TrainingThresholds = TrainingThresholds()
         self.last_training_check: float = 0.0
         self.training_check_interval: float = 300.0  # Check every 5 minutes
-        self.games_at_last_nnue_train: Dict[str, int] = {}  # board_type -> game_count
-        self.games_at_last_cmaes_train: Dict[str, int] = {}
+        self.games_at_last_nnue_train: dict[str, int] = {}  # board_type -> game_count
+        self.games_at_last_cmaes_train: dict[str, int] = {}
 
         # Phase 5: Automated improvement cycle manager (leader-only)
-        self.improvement_cycle_manager: Optional['ImprovementCycleManager'] = None
+        self.improvement_cycle_manager: 'ImprovementCycleManager' | None = None
         if HAS_IMPROVEMENT_MANAGER:
             try:
                 self.improvement_cycle_manager = ImprovementCycleManager(
@@ -970,7 +971,7 @@ class P2POrchestrator:
         self.last_improvement_cycle_check: float = 0.0
 
         # P2P-integrated monitoring (leader starts Prometheus/Grafana)
-        self.monitoring_manager: Optional['MonitoringManager'] = None
+        self.monitoring_manager: 'MonitoringManager' | None = None
         if HAS_P2P_MONITORING:
             try:
                 self.monitoring_manager = MonitoringManager(
@@ -1004,20 +1005,20 @@ class P2POrchestrator:
 
         # === CRITICAL SELF-IMPROVEMENT LOOP METRICS ===
         # Training progress tracking (populated by training callbacks)
-        self.training_metrics: Dict[str, Dict[str, float]] = {}  # config -> {loss, val_loss, epoch}
+        self.training_metrics: dict[str, dict[str, float]] = {}  # config -> {loss, val_loss, epoch}
 
         # Selfplay throughput tracking
-        self.selfplay_throughput: Dict[str, float] = {}  # config -> games/hour
+        self.selfplay_throughput: dict[str, float] = {}  # config -> games/hour
 
         # Cost efficiency metrics
-        self.cost_metrics: Dict[str, float] = {
+        self.cost_metrics: dict[str, float] = {
             "gpu_hours_total": 0.0,
             "estimated_cost_usd": 0.0,
             "elo_per_gpu_hour": 0.0,
         }
 
         # Promotion quality metrics
-        self.promotion_metrics: Dict[str, Any] = {
+        self.promotion_metrics: dict[str, Any] = {
             "success_rate": 0.0,
             "avg_elo_gain": 0.0,
             "rejections": {},  # reason -> count
@@ -1027,15 +1028,15 @@ class P2POrchestrator:
 
         # LEARNED LESSONS - Stuck job detection (leader-only)
         # Track when each node's GPU first went idle with running jobs
-        self.gpu_idle_since: Dict[str, float] = {}  # node_id -> timestamp when GPU went idle
+        self.gpu_idle_since: dict[str, float] = {}  # node_id -> timestamp when GPU went idle
 
         # A/B Testing Framework - Compare models head-to-head with statistical significance
         # Key: test_id (UUID), Value: ABTestState dict
-        self.ab_tests: Dict[str, Dict[str, Any]] = {}
+        self.ab_tests: dict[str, dict[str, Any]] = {}
         self.ab_test_lock = threading.RLock()
 
         # Elo Sync Manager - Keeps unified_elo.db consistent across cluster
-        self.elo_sync_manager: Optional[EloSyncManager] = None
+        self.elo_sync_manager: EloSyncManager | None = None
         if HAS_ELO_SYNC:
             try:
                 db_path = Path(self.ringrift_path) / "ai-service" / "data" / "unified_elo.db"
@@ -1049,11 +1050,11 @@ class P2POrchestrator:
                 logger.error(f"Failed to initialize EloSyncManager: {e}")
 
         # Queue Populator - Maintains 50+ work items until 2000 Elo target met
-        self._queue_populator: Optional["QueuePopulator"] = None
+        self._queue_populator: "QueuePopulator" | None = None
 
         # PFSP (Prioritized Fictitious Self-Play) opponent pool (leader-only)
         # Maintains a pool of historical models weighted by difficulty for diverse training
-        self.pfsp_pools: Dict[str, Any] = {}  # config_key -> PFSPOpponentPool
+        self.pfsp_pools: dict[str, Any] = {}  # config_key -> PFSPOpponentPool
         if HAS_PFSP:
             try:
                 for config_key in ["square8_2p", "square8_4p", "hex8_2p", "hexagonal_2p"]:
@@ -1069,8 +1070,8 @@ class P2POrchestrator:
 
         # CMA-ES Auto-Tuner (leader-only)
         # Automatically triggers hyperparameter optimization when Elo plateaus
-        self.cmaes_auto_tuners: Dict[str, Any] = {}  # config_key -> CMAESAutoTuner
-        self.last_cmaes_elo: Dict[str, float] = {}  # config_key -> last recorded Elo
+        self.cmaes_auto_tuners: dict[str, Any] = {}  # config_key -> CMAESAutoTuner
+        self.last_cmaes_elo: dict[str, float] = {}  # config_key -> last recorded Elo
         if HAS_PFSP and CMAESAutoTuner:
             try:
                 for config_key in ["square8_2p", "square8_4p", "hex8_2p", "hexagonal_2p"]:
@@ -1132,21 +1133,21 @@ class P2POrchestrator:
         self.voter_grant_expires: float = 0.0
 
         # Job completion tracking for auto-restart
-        self.completed_jobs: Dict[str, float] = {}  # node_id -> last job completion time
-        self.jobs_started_at: Dict[str, Dict[str, float]] = {}  # node_id -> {job_id: start_time}
+        self.completed_jobs: dict[str, float] = {}  # node_id -> last job completion time
+        self.jobs_started_at: dict[str, dict[str, float]] = {}  # node_id -> {job_id: start_time}
 
         # NAT/relay support (for nodes without inbound connectivity).
         # NAT-blocked nodes poll a relay endpoint for commands; the leader enqueues
         # commands keyed by node_id.
         self.last_inbound_heartbeat: float = 0.0
         self.last_relay_heartbeat: float = 0.0
-        self.relay_command_queue: Dict[str, List[Dict[str, Any]]] = {}
-        self.pending_relay_acks: Set[str] = set()
-        self.pending_relay_results: List[Dict[str, Any]] = []
-        self.relay_command_attempts: Dict[str, int] = {}
+        self.relay_command_queue: dict[str, list[dict[str, Any]]] = {}
+        self.pending_relay_acks: set[str] = set()
+        self.pending_relay_results: list[dict[str, Any]] = []
+        self.relay_command_attempts: dict[str, int] = {}
 
         # SAFEGUARDS - Rate limiting and coordinator integration (added 2025-12-15)
-        self.spawn_timestamps: List[float] = []  # Timestamps of recent process spawns
+        self.spawn_timestamps: list[float] = []  # Timestamps of recent process spawns
         self.agent_mode = AGENT_MODE_ENABLED
         self.coordinator_url = COORDINATOR_URL
         self.last_coordinator_check: float = 0.0
@@ -1177,7 +1178,7 @@ class P2POrchestrator:
             logger.info(f"Auth: disabled (set {AUTH_TOKEN_ENV} to enable)")
 
         # Hybrid transport for HTTP/SSH fallback (self-healing Vast connectivity)
-        self.hybrid_transport: Optional['HybridTransport'] = None
+        self.hybrid_transport: 'HybridTransport' | None = None
         if HAS_HYBRID_TRANSPORT:
             try:
                 self.hybrid_transport = get_hybrid_transport()
@@ -1264,7 +1265,7 @@ class P2POrchestrator:
     # SAFEGUARDS - Load, rate limiting, and coordinator integration
     # =========================================================================
 
-    def _check_spawn_rate_limit(self) -> Tuple[bool, str]:
+    def _check_spawn_rate_limit(self) -> tuple[bool, str]:
         """Check if we're within the spawn rate limit.
 
         SAFEGUARD: Prevents runaway process spawning by limiting spawns per minute.
@@ -1314,7 +1315,7 @@ class P2POrchestrator:
             self.coordinator_available = False
             return False
 
-    def _can_spawn_process(self, reason: str = "job") -> Tuple[bool, str]:
+    def _can_spawn_process(self, reason: str = "job") -> tuple[bool, str]:
         """Combined safeguard check before spawning any process.
 
         SAFEGUARD: Checks load average, rate limit, and agent mode.
@@ -1413,7 +1414,7 @@ class P2POrchestrator:
             return f"{branch}@{commit}"
         return commit or "unknown"
 
-    def _git_cmd(self, *args: str) -> List[str]:
+    def _git_cmd(self, *args: str) -> list[str]:
         safe_dir = getattr(self, "_git_safe_directory", "") or os.path.abspath(self.ringrift_path)
         return ["git", "-c", f"safe.directory={safe_dir}", *args]
 
@@ -1497,7 +1498,7 @@ class P2POrchestrator:
 
         return int(self.port)
 
-    def _load_voter_node_ids(self) -> List[str]:
+    def _load_voter_node_ids(self) -> list[str]:
         """Load the set of P2P voter node_ids (for quorum-based leadership).
 
         If no voters are configured, returns an empty list and quorum checks are
@@ -1525,7 +1526,7 @@ class P2POrchestrator:
             return []
 
         hosts = data.get("hosts", {}) or {}
-        voters: List[str] = []
+        voters: list[str] = []
         for node_id, cfg in hosts.items():
             if not isinstance(cfg, dict):
                 continue
@@ -1542,7 +1543,7 @@ class P2POrchestrator:
         self.voter_config_source = "config" if voters else "none"
         return voters
 
-    def _maybe_adopt_voter_node_ids(self, voter_node_ids: List[str], *, source: str) -> bool:
+    def _maybe_adopt_voter_node_ids(self, voter_node_ids: list[str], *, source: str) -> bool:
         """Adopt/override the voter set when it's not explicitly configured via env.
 
         This is a convergence mechanism: some nodes may boot without local
@@ -1707,7 +1708,7 @@ class P2POrchestrator:
                 return True
         return False
 
-    def _get_eligible_voters(self) -> List[str]:
+    def _get_eligible_voters(self) -> list[str]:
         """Get list of nodes eligible to be voters (GPU nodes with good health)."""
         with self.peers_lock:
             peers = dict(self.peers)
@@ -1865,7 +1866,7 @@ class P2POrchestrator:
 
         return True
 
-    async def _acquire_voter_lease_quorum(self, lease_id: str, duration: int) -> Optional[float]:
+    async def _acquire_voter_lease_quorum(self, lease_id: str, duration: int) -> float | None:
         """Acquire/renew an exclusive leader lease from a quorum of voters.
 
         Returns the effective lease expiry timestamp if a quorum granted the
@@ -1884,7 +1885,7 @@ class P2POrchestrator:
         duration = max(10, min(int(duration), int(LEADER_LEASE_DURATION * 2)))
 
         acks = 0
-        lease_ttls: List[float] = []
+        lease_ttls: list[float] = []
 
         # Self-grant (as a voter).
         if self.node_id in voter_ids:
@@ -1926,7 +1927,7 @@ class P2POrchestrator:
                             ttl_raw = data.get("lease_ttl_seconds")
                             if ttl_raw is None:
                                 ttl_raw = data.get("ttl_seconds")
-                            ttl_val: Optional[float] = None
+                            ttl_val: float | None = None
                             if ttl_raw is not None:
                                 try:
                                     ttl_val = float(ttl_raw)
@@ -1949,7 +1950,7 @@ class P2POrchestrator:
         effective_ttl = max(10.0, min(float(duration), float(effective_ttl)))
         return now + float(effective_ttl)
 
-    async def _determine_leased_leader_from_voters(self) -> Optional[str]:
+    async def _determine_leased_leader_from_voters(self) -> str | None:
         """Return the current lease-holder as reported by a quorum of voters.
 
         This is a read-only reconciliation step used to resolve split-brain once
@@ -1967,7 +1968,7 @@ class P2POrchestrator:
             quorum = min(VOTER_MIN_QUORUM, len(voter_ids))
 
         now = time.time()
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
 
         # Include local voter state.
         if self.node_id in voter_ids:
@@ -2001,7 +2002,7 @@ class P2POrchestrator:
                         ttl_raw = (data or {}).get("lease_ttl_seconds")
                         if ttl_raw is None:
                             ttl_raw = (data or {}).get("ttl_seconds")
-                        ttl_val: Optional[float] = None
+                        ttl_val: float | None = None
                         if ttl_raw is not None:
                             try:
                                 ttl_val = float(ttl_raw)
@@ -2030,7 +2031,7 @@ class P2POrchestrator:
         # Deterministic: if multiple satisfy quorum (shouldn't), pick highest node_id.
         return sorted(winners)[-1]
 
-    async def _query_arbiter_for_leader(self) -> Optional[str]:
+    async def _query_arbiter_for_leader(self) -> str | None:
         """Query the arbiter for the authoritative leader when voter quorum fails.
 
         The arbiter is a reliably-reachable node that maintains its view of
@@ -2077,7 +2078,7 @@ class P2POrchestrator:
 
         return None
 
-    def _parse_peer_address(self, peer_addr: str) -> Tuple[str, str, int]:
+    def _parse_peer_address(self, peer_addr: str) -> tuple[str, str, int]:
         """Parse `--peers` entries.
 
         Supports:
@@ -2133,7 +2134,7 @@ class P2POrchestrator:
 
         return f"{scheme}://{host}:{port}{path}"
 
-    def _urls_for_peer(self, peer: NodeInfo, path: str) -> List[str]:
+    def _urls_for_peer(self, peer: NodeInfo, path: str) -> list[str]:
         """Return candidate URLs for reaching a peer.
 
         Includes both the observed reachable endpoint (`host`/`port`) and the
@@ -2142,7 +2143,7 @@ class P2POrchestrator:
         (public IP vs overlay networks like Tailscale, port-mapped listeners).
         """
         scheme = (getattr(peer, "scheme", None) or "http").lower()
-        urls: List[str] = []
+        urls: list[str] = []
 
         def _add(host: Any, port: Any) -> None:
             try:
@@ -2182,12 +2183,12 @@ class P2POrchestrator:
 
         return urls
 
-    def _auth_headers(self) -> Dict[str, str]:
+    def _auth_headers(self) -> dict[str, str]:
         if not self.auth_token:
             return {}
         return {"Authorization": f"Bearer {self.auth_token}"}
 
-    def _get_leader_peer(self) -> Optional[NodeInfo]:
+    def _get_leader_peer(self) -> NodeInfo | None:
         if self._is_leader():
             return self.self_info
 
@@ -2235,7 +2236,7 @@ class P2POrchestrator:
         candidate_urls = self._urls_for_peer(leader, request.raw_path)
         if not candidate_urls:
             candidate_urls = [self._url_for_peer(leader, request.raw_path)]
-        forward_headers: Dict[str, str] = {}
+        forward_headers: dict[str, str] = {}
         for h in ("Authorization", "X-RingRift-Auth", "Content-Type"):
             if h in request.headers:
                 forward_headers[h] = request.headers[h]
@@ -2259,7 +2260,7 @@ class P2POrchestrator:
                     ) as resp:
                         payload = await resp.read()
                         content_type = resp.headers.get("Content-Type")
-                        headers: Dict[str, str] = {}
+                        headers: dict[str, str] = {}
                         if content_type:
                             headers["Content-Type"] = content_type
                         headers["X-RingRift-Proxied-By"] = self.node_id
@@ -2480,7 +2481,7 @@ class P2POrchestrator:
             raw_voters = state_rows.get("voter_node_ids")
             if raw_voters and not (getattr(self, "voter_node_ids", []) or []):
                 if str(getattr(self, "voter_config_source", "none") or "none") == "none":
-                    voters: List[str] = []
+                    voters: list[str] = []
                     try:
                         parsed = json.loads(raw_voters)
                         if isinstance(parsed, list):
@@ -2564,7 +2565,7 @@ class P2POrchestrator:
                 conn.close()
 
     # Class-level metrics buffer for batched writes (5% speedup)
-    _metrics_buffer: List[Tuple] = []
+    _metrics_buffer: list[tuple] = []
     _metrics_buffer_lock = threading.Lock()
     _metrics_last_flush: float = 0.0
     _metrics_flush_interval: float = 30.0  # Flush every 30 seconds
@@ -2576,7 +2577,7 @@ class P2POrchestrator:
         value: float,
         board_type: str = None,
         num_players: int = None,
-        metadata: Dict[str, Any] = None,
+        metadata: dict[str, Any] = None,
     ):
         """Record a metric to the history table for observability.
 
@@ -2641,7 +2642,7 @@ class P2POrchestrator:
         num_players: int = None,
         hours: float = 24,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get metrics history for a specific metric type."""
         conn = None
         try:
@@ -2654,7 +2655,7 @@ class P2POrchestrator:
                 FROM metrics_history
                 WHERE metric_type = ? AND timestamp > ?
             """
-            params: List[Any] = [metric_type, since]
+            params: list[Any] = [metric_type, since]
 
             if board_type:
                 query += " AND board_type = ?"
@@ -2684,7 +2685,7 @@ class P2POrchestrator:
             if conn:
                 conn.close()
 
-    def get_metrics_summary(self, hours: float = 24) -> Dict[str, Any]:
+    def get_metrics_summary(self, hours: float = 24) -> dict[str, Any]:
         """Get summary of all metrics over the specified time period."""
         conn = None
         try:
@@ -2700,7 +2701,7 @@ class P2POrchestrator:
                 GROUP BY metric_type
             """, (since,))
 
-            summary: Dict[str, Any] = {}
+            summary: dict[str, Any] = {}
             for row in cursor.fetchall():
                 summary[row[0]] = {
                     "count": row[1],
@@ -2772,7 +2773,7 @@ class P2POrchestrator:
             info.reported_port = int(self.port)
         return info
 
-    def _detect_gpu(self) -> Tuple[bool, str]:
+    def _detect_gpu(self) -> tuple[bool, str]:
         """Detect if GPU is available and its name."""
         try:
             # Try nvidia-smi
@@ -2953,7 +2954,7 @@ class P2POrchestrator:
             logger.info("Disabling Tailscale-priority mode (connectivity recovered)")
             self._tailscale_priority = False
 
-    def _tailscale_urls_for_voter(self, voter: "NodeInfo", path: str) -> List[str]:
+    def _tailscale_urls_for_voter(self, voter: "NodeInfo", path: str) -> list[str]:
         """Return Tailscale-exclusive URLs for voter communication.
 
         For election/lease operations between voter nodes, NAT-blocked public IPs
@@ -2963,7 +2964,7 @@ class P2POrchestrator:
         Falls back to regular `_urls_for_peer()` if no Tailscale IP is available.
         """
         scheme = (getattr(voter, "scheme", None) or "http").lower()
-        urls: List[str] = []
+        urls: list[str] = []
 
         voter_id = str(getattr(voter, "node_id", "") or "").strip()
         port = 0
@@ -3016,7 +3017,7 @@ class P2POrchestrator:
         """
         return (time.time() - self.start_time) < STARTUP_JSONL_GRACE_PERIOD_SECONDS
 
-    def _get_resource_usage(self) -> Dict[str, float]:
+    def _get_resource_usage(self) -> dict[str, float]:
         """Get current resource usage."""
         result = {
             "cpu_percent": 0.0,
@@ -3109,7 +3110,7 @@ class P2POrchestrator:
 
         return result
 
-    def _detect_local_external_work(self) -> Dict[str, bool]:
+    def _detect_local_external_work(self) -> dict[str, bool]:
         """Detect external work running on this node (not tracked by P2P orchestrator).
 
         This detects:
@@ -3152,7 +3153,7 @@ class P2POrchestrator:
 
         return result
 
-    def _get_diversity_metrics(self) -> Dict[str, Any]:
+    def _get_diversity_metrics(self) -> dict[str, Any]:
         """Get diversity tracking metrics for monitoring."""
         metrics = dict(self.diversity_metrics)
         metrics["uptime_seconds"] = time.time() - metrics.get("last_reset", time.time())
@@ -3176,7 +3177,7 @@ class P2POrchestrator:
 
         return metrics
 
-    def _track_selfplay_diversity(self, config: Dict[str, Any]):
+    def _track_selfplay_diversity(self, config: dict[str, Any]):
         """Track diversity metrics for a scheduled selfplay game."""
         # Track engine mode
         engine_mode = config.get("engine_mode", "unknown")
@@ -3210,7 +3211,7 @@ class P2POrchestrator:
                 self.diversity_metrics["games_by_difficulty"][diff_key] = 0
             self.diversity_metrics["games_by_difficulty"][diff_key] += 1
 
-    def _count_local_jobs(self) -> Tuple[int, int]:
+    def _count_local_jobs(self) -> tuple[int, int]:
         """Count running selfplay and training jobs on this node."""
         def _pid_alive(pid: int) -> bool:
             try:
@@ -3224,10 +3225,10 @@ class P2POrchestrator:
                 return False
 
         # Primary source of truth: jobs we started and are tracking.
-        selfplay_pids: Set[str] = set()
-        training_pids: Set[str] = set()
+        selfplay_pids: set[str] = set()
+        training_pids: set[str] = set()
 
-        stale_job_ids: List[str] = []
+        stale_job_ids: list[str] = []
         try:
             with self.jobs_lock:
                 jobs_snapshot = list(self.local_jobs.items())
@@ -3401,7 +3402,7 @@ class P2POrchestrator:
             logger.info(f"Data directory not found: {data_dir}")
             return manifest
 
-        files: List[DataFileInfo] = []
+        files: list[DataFileInfo] = []
 
         def _count_jsonl_games(file_path: Path, file_size_bytes: int) -> int:
             """Count or estimate lines in a JSONL file.
@@ -3549,7 +3550,7 @@ class P2POrchestrator:
             logger.error(f"hashing file {file_path}: {e}")
             return ""
 
-    async def _request_peer_manifest(self, peer_info: NodeInfo) -> Optional[NodeDataManifest]:
+    async def _request_peer_manifest(self, peer_info: NodeInfo) -> NodeDataManifest | None:
         """Request data manifest from a peer node."""
         try:
             # Keep manifest requests snappy: these are advisory and should not
@@ -3596,7 +3597,7 @@ class P2POrchestrator:
             logger.error(f"Failed to save manifest cache: {e}")
             return False
 
-    def _load_manifest_from_cache(self, max_age_seconds: int = 300) -> Optional[NodeDataManifest]:
+    def _load_manifest_from_cache(self, max_age_seconds: int = 300) -> NodeDataManifest | None:
         """DECENTRALIZED: Load manifest from disk cache if fresh enough.
 
         Returns cached manifest if it exists and is not too old, otherwise None.
@@ -3690,7 +3691,7 @@ class P2POrchestrator:
         # Compute cluster-wide statistics
         cluster_manifest.total_nodes = len(cluster_manifest.node_manifests)
 
-        all_files: Set[str] = set()
+        all_files: set[str] = set()
         for node_id, node_manifest in cluster_manifest.node_manifests.items():
             cluster_manifest.total_files += node_manifest.total_files
             cluster_manifest.total_size_bytes += node_manifest.total_size_bytes
@@ -3726,7 +3727,7 @@ class P2POrchestrator:
     # Phase 2: P2P Rsync Coordination Methods
     # ============================================
 
-    def _generate_sync_plan(self) -> Optional[ClusterSyncPlan]:
+    def _generate_sync_plan(self) -> ClusterSyncPlan | None:
         """
         Leader generates a sync plan from the cluster manifest.
         Identifies which files are missing from which nodes and creates sync jobs.
@@ -3803,7 +3804,7 @@ class P2POrchestrator:
 
         try:
             # Group jobs by target node for efficiency
-            jobs_by_target: Dict[str, List[DataSyncJob]] = {}
+            jobs_by_target: dict[str, list[DataSyncJob]] = {}
             for job in self.current_sync_plan.sync_jobs:
                 if job.target_node not in jobs_by_target:
                     jobs_by_target[job.target_node] = []
@@ -3885,7 +3886,7 @@ class P2POrchestrator:
                 timeout = ClientTimeout(total=600)
                 async with get_client_session(timeout) as session:
                     result = None
-                    last_err: Optional[str] = None
+                    last_err: str | None = None
                     for url in self._urls_for_peer(target_peer, "/sync/pull"):
                         try:
                             async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
@@ -3939,10 +3940,10 @@ class P2POrchestrator:
         source_host: str,
         source_port: int,
         source_node_id: str,
-        files: List[str],
-        source_reported_host: Optional[str] = None,
-        source_reported_port: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        files: list[str],
+        source_reported_host: str | None = None,
+        source_reported_port: int | None = None,
+    ) -> dict[str, Any]:
         """
         Handle incoming request to pull files from a source node.
         Pulls files over the P2P HTTP channel to avoid SSH/rsync dependencies.
@@ -3964,14 +3965,14 @@ class P2POrchestrator:
 
         bytes_transferred = 0
         files_completed = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Multi-path sources: prefer observed endpoint but allow a self-reported
         # endpoint (e.g. Tailscale) when the public route fails.
-        candidate_sources: List[Tuple[str, int]] = []
-        seen_sources: Set[Tuple[str, int]] = set()
+        candidate_sources: list[tuple[str, int]] = []
+        seen_sources: set[tuple[str, int]] = set()
 
-        def _add_source(host: Optional[str], port: Optional[int]) -> None:
+        def _add_source(host: str | None, port: int | None) -> None:
             if not host:
                 return
             h = str(host).strip()
@@ -4014,12 +4015,12 @@ class P2POrchestrator:
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 tmp_path = dest_path.with_name(dest_path.name + ".partial")
 
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 success = False
 
                 for host, base_port in candidate_sources:
                     # Back-compat: if caller passed an SSH-like port (22), try DEFAULT_PORT too.
-                    ports_to_try: List[int] = []
+                    ports_to_try: list[int] = []
                     try:
                         ports_to_try.append(int(base_port))
                     except Exception:
@@ -4082,7 +4083,7 @@ class P2POrchestrator:
             "bytes_transferred": bytes_transferred,
         }
 
-    async def start_cluster_sync(self) -> Dict[str, Any]:
+    async def start_cluster_sync(self) -> dict[str, Any]:
         """
         Leader initiates a full cluster data sync.
         Returns status of the sync operation.
@@ -4115,7 +4116,7 @@ class P2POrchestrator:
     # Training Node Priority Sync
     # ============================================
 
-    def _get_training_primary_nodes(self, count: int = TRAINING_NODE_COUNT) -> List[NodeInfo]:
+    def _get_training_primary_nodes(self, count: int = TRAINING_NODE_COUNT) -> list[NodeInfo]:
         """Get the top N nodes by GPU power for training priority.
 
         Returns nodes sorted by GPU processing power (highest first).
@@ -4139,7 +4140,7 @@ class P2POrchestrator:
         # Return top N
         return gpu_nodes[:count]
 
-    def _get_training_nodes_ranked(self) -> List[Dict[str, Any]]:
+    def _get_training_nodes_ranked(self) -> list[dict[str, Any]]:
         """Get all GPU nodes with their power rankings for dashboard display."""
         with self.peers_lock:
             all_nodes = list(self.peers.values())
@@ -4167,7 +4168,7 @@ class P2POrchestrator:
     # CPU Node Priority for Data Processing
     # ============================================
 
-    def _get_cpu_primary_nodes(self, count: int = 3) -> List[NodeInfo]:
+    def _get_cpu_primary_nodes(self, count: int = 3) -> list[NodeInfo]:
         """Get the top N nodes by CPU power for CPU-intensive tasks.
 
         Returns nodes sorted by CPU processing power (highest first).
@@ -4190,7 +4191,7 @@ class P2POrchestrator:
         # Return top N
         return cpu_nodes[:count]
 
-    def _get_cpu_nodes_ranked(self) -> List[Dict[str, Any]]:
+    def _get_cpu_nodes_ranked(self) -> list[dict[str, Any]]:
         """Get all nodes with their CPU power rankings for dashboard display."""
         with self.peers_lock:
             all_nodes = list(self.peers.values())
@@ -4218,7 +4219,7 @@ class P2POrchestrator:
     # Task-Specific Node Selection
     # ============================================
 
-    def _get_best_gpu_node_for_training(self) -> Optional[NodeInfo]:
+    def _get_best_gpu_node_for_training(self) -> NodeInfo | None:
         """Get the best GPU node for neural network training.
 
         Prioritizes:
@@ -4255,7 +4256,7 @@ class P2POrchestrator:
         candidates.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
         return candidates[0] if candidates else None
 
-    def _get_best_cpu_node_for_gauntlet(self) -> Optional[NodeInfo]:
+    def _get_best_cpu_node_for_gauntlet(self) -> NodeInfo | None:
         """Get the best CPU node for gauntlet/tournament work.
 
         Prioritizes Vast instances with high CPU count (200+ vCPUs).
@@ -4296,7 +4297,7 @@ class P2POrchestrator:
         model_id: str,
         baseline_id: str,
         games_per_side: int = 4
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Dispatch gauntlet evaluation to a CPU-rich node.
 
         This ensures gauntlets run on Vast instances with high CPU count
@@ -4354,7 +4355,7 @@ class P2POrchestrator:
         """Check if source node needs disk cleanup after sync."""
         return node.disk_percent >= DISK_CLEANUP_THRESHOLD
 
-    async def _cleanup_synced_files(self, node_id: str, files: List[str]) -> bool:
+    async def _cleanup_synced_files(self, node_id: str, files: list[str]) -> bool:
         """Delete synced files from source node to free disk space.
 
         Only called after successful sync to training nodes.
@@ -4379,7 +4380,7 @@ class P2POrchestrator:
 
             timeout = ClientTimeout(total=60)
             async with get_client_session(timeout) as session:
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(node, "/cleanup/files"):
                     try:
                         async with session.post(
@@ -4403,7 +4404,7 @@ class P2POrchestrator:
             logger.error(f"Failed to cleanup files on {node_id}: {e}")
         return False
 
-    async def _sync_selfplay_to_training_nodes(self) -> Dict[str, Any]:
+    async def _sync_selfplay_to_training_nodes(self) -> dict[str, Any]:
         """Sync selfplay data to training primary nodes.
 
         This is called periodically by the leader to ensure training nodes
@@ -4442,7 +4443,7 @@ class P2POrchestrator:
             return {"success": False, "error": "Failed to collect cluster manifest"}
 
         # Track source nodes that need cleanup after sync
-        sources_to_cleanup: Dict[str, List[str]] = {}  # node_id -> list of synced files
+        sources_to_cleanup: dict[str, list[str]] = {}  # node_id -> list of synced files
 
         # Find selfplay files that training nodes don't have
         sync_jobs_created = 0
@@ -4901,7 +4902,7 @@ class P2POrchestrator:
                     logger.error(f"Failed to spawn background converter: {e}")
 
         # Group files by board type
-        board_type_files: Dict[str, List[Tuple[Path, str]]] = {}
+        board_type_files: dict[str, list[tuple[Path, str]]] = {}
         for jsonl_file, file_size, file_key in files_this_cycle:
             path_str = str(jsonl_file).lower()
             if "hex" in path_str:
@@ -5196,7 +5197,7 @@ class P2POrchestrator:
         logger.info(f"Data management loop started (interval: {DATA_MANAGEMENT_INTERVAL}s)")
 
         # Track active export jobs
-        active_exports: Dict[str, float] = {}  # path -> start_time
+        active_exports: dict[str, float] = {}  # path -> start_time
 
         while self.running:
             try:
@@ -5808,7 +5809,7 @@ class P2POrchestrator:
     # Git Auto-Update Methods
     # ============================================
 
-    def _get_local_git_commit(self) -> Optional[str]:
+    def _get_local_git_commit(self) -> str | None:
         """Get the current local git commit hash."""
         try:
             result = subprocess.run(
@@ -5822,7 +5823,7 @@ class P2POrchestrator:
             logger.error(f"Failed to get local git commit: {e}")
         return None
 
-    def _get_local_git_branch(self) -> Optional[str]:
+    def _get_local_git_branch(self) -> str | None:
         """Get the current local git branch name."""
         try:
             result = subprocess.run(
@@ -5836,7 +5837,7 @@ class P2POrchestrator:
             logger.error(f"Failed to get local git branch: {e}")
         return None
 
-    def _get_remote_git_commit(self) -> Optional[str]:
+    def _get_remote_git_commit(self) -> str | None:
         """Fetch and get the remote branch's latest commit hash."""
         try:
             # First fetch to update remote refs
@@ -5861,7 +5862,7 @@ class P2POrchestrator:
             logger.error(f"Failed to get remote git commit: {e}")
         return None
 
-    def _check_for_updates(self) -> Tuple[bool, Optional[str], Optional[str]]:
+    def _check_for_updates(self) -> tuple[bool, str | None, str | None]:
         """Check if there are updates available from GitHub.
 
         Returns: (has_updates, local_commit, remote_commit)
@@ -5948,7 +5949,7 @@ class P2POrchestrator:
 
         return stopped
 
-    async def _perform_git_update(self) -> Tuple[bool, str]:
+    async def _perform_git_update(self) -> tuple[bool, str]:
         """Perform git pull to update the codebase.
 
         Returns: (success, message)
@@ -6048,7 +6049,7 @@ class P2POrchestrator:
             data = await request.json()
             incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
             if incoming_voters:
-                voters_list: List[str] = []
+                voters_list: list[str] = []
                 if isinstance(incoming_voters, list):
                     voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
                 elif isinstance(incoming_voters, str):
@@ -6159,7 +6160,7 @@ class P2POrchestrator:
         conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
         effective_leader = self._get_leader_peer()
 
-        peers: Dict[str, Any] = {}
+        peers: dict[str, Any] = {}
         for node_id, info in ((p.node_id, p) for p in peers_snapshot):
             d = info.to_dict()
             d["endpoint_conflict"] = self._endpoint_key(info) in conflict_keys
@@ -6820,7 +6821,7 @@ class P2POrchestrator:
             is_renewal = data.get("lease_renewal", False)
             incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
             if incoming_voters:
-                voters_list: List[str] = []
+                voters_list: list[str] = []
                 if isinstance(incoming_voters, list):
                     voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
                 elif isinstance(incoming_voters, str):
@@ -7571,7 +7572,7 @@ class P2POrchestrator:
             logger.info(f"Relay heartbeat from {peer_info.node_id} (real IP: {real_ip})")
 
             # Apply relay ACKs/results and return any queued commands.
-            commands_to_send: List[Dict[str, Any]] = []
+            commands_to_send: list[dict[str, Any]] = []
             async with AsyncLockWrapper(self.relay_lock):
                 queue = list(self.relay_command_queue.get(peer_info.node_id, []))
                 now = time.time()
@@ -8263,8 +8264,8 @@ class P2POrchestrator:
     async def _execute_gauntlet_batch(
         self,
         config_key: str,
-        tasks: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        tasks: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Execute a batch of gauntlet games.
 
         Args:
@@ -8341,11 +8342,11 @@ class P2POrchestrator:
 
     async def _execute_single_gauntlet_game(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         board_type: str,
         num_players: int,
         model_dir: Path,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a single gauntlet game.
 
         Args:
@@ -8395,7 +8396,7 @@ class P2POrchestrator:
         board_type: str,
         num_players: int,
         model_dir: Path,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Synchronously run a single gauntlet game.
 
         This runs in a thread pool executor. Uses GameExecutor for consistent
@@ -9529,7 +9530,7 @@ print(wins / total)
         agent_b_config: dict,
         board_type_str: str,
         num_players: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Synchronous wrapper for playing an Elo match.
 
         Uses a lightweight implementation for simple AI types (random, heuristic, minimax)
@@ -9723,7 +9724,7 @@ print(wins / total)
             run_id = job_id
 
             hosts = data.get("hosts")
-            hosts_spec: Optional[str] = None
+            hosts_spec: str | None = None
             if isinstance(hosts, list):
                 hosts_spec = ",".join(str(h).strip() for h in hosts if str(h).strip())
             elif isinstance(hosts, str) and hosts.strip():
@@ -9741,7 +9742,7 @@ print(wins / total)
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = str(log_dir / f"{run_id}.log")
 
-            cmd: List[str] = [
+            cmd: list[str] = [
                 sys.executable,
                 "scripts/run_ssh_distributed_tournament.py",
                 "--tiers", tiers,
@@ -10718,7 +10719,7 @@ print(json.dumps(result))
 
     async def _run_local_selfplay(
         self, job_id: str, num_games: int, board_type: str,
-        num_players: int, model_path: Optional[str], output_dir: str
+        num_players: int, model_path: str | None, output_dir: str
     ):
         """Run selfplay locally using subprocess."""
         import sys
@@ -10992,7 +10993,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Phase 3: Training Pipeline Integration Methods
     # ============================================
 
-    def _check_training_readiness(self) -> List[Dict[str, Any]]:
+    def _check_training_readiness(self) -> list[dict[str, Any]]:
         """Check cluster data manifest for training readiness.
 
         Returns list of training jobs that should be triggered based on
@@ -11088,7 +11089,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return jobs_to_start
 
-    def _find_running_training_job(self, job_type: str, config_key: str) -> Optional[TrainingJob]:
+    def _find_running_training_job(self, job_type: str, config_key: str) -> TrainingJob | None:
         """Find a running training job of the given type for the config."""
         with self.training_lock:
             for job in self.training_jobs.values():
@@ -11098,7 +11099,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     return job
         return None
 
-    def _find_resumable_training_job(self, job_type: str, config_key: str) -> Optional[TrainingJob]:
+    def _find_resumable_training_job(self, job_type: str, config_key: str) -> TrainingJob | None:
         """Find a failed/interrupted training job with a valid checkpoint.
 
         TRAINING CHECKPOINTING: When a training job fails or is interrupted,
@@ -11118,7 +11119,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     return job
         return None
 
-    async def _dispatch_training_job(self, job_config: Dict[str, Any]) -> Optional[TrainingJob]:
+    async def _dispatch_training_job(self, job_config: dict[str, Any]) -> TrainingJob | None:
         """Dispatch a training job to an appropriate worker.
 
         Finds a GPU node for NNUE training, or any available node for CMA-ES.
@@ -11189,7 +11190,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 if job.status in ("pending", "queued", "running") and job.worker_node
             }
 
-        worker_node: Optional[NodeInfo] = None
+        worker_node: NodeInfo | None = None
         if job_type == "nnue":
             # NNUE training prefers accelerator nodes (CUDA/MPS).
             # Exclude nodes already running training to enable parallel training across configs
@@ -11252,7 +11253,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "resume_checkpoint": resume_checkpoint,
                     "resume_epoch": resume_epoch,
                 }
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(worker_node, endpoint):
                     try:
                         async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
@@ -11358,7 +11359,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             return
 
         # Find board types with enough local data
-        game_counts_by_type: Dict[str, int] = {}
+        game_counts_by_type: dict[str, int] = {}
         for file_info in getattr(local_manifest, "files", []) or []:
             board_type = getattr(file_info, "board_type", "")
             num_players = getattr(file_info, "num_players", 2)
@@ -11485,7 +11486,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Find GPU worker for training
             gpu_worker = None
-            candidates: List[NodeInfo] = []
+            candidates: list[NodeInfo] = []
             with self.peers_lock:
                 candidates.extend([p for p in self.peers.values() if p.is_gpu_node() and p.is_healthy()])
             if self.self_info.is_gpu_node() and self.self_info.is_healthy():
@@ -11560,7 +11561,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             # Send to worker
             timeout = ClientTimeout(total=30)
             async with get_client_session(timeout) as session:
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(worker_node, "/training/nnue/start"):
                     try:
                         async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
@@ -11801,7 +11802,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # POST-TRAINING GAUNTLET: Immediate evaluation after training
     # =========================================================================
 
-    def _get_median_model(self, config_key: str) -> Optional[str]:
+    def _get_median_model(self, config_key: str) -> str | None:
         """Get the median-rated model for a config from ELO database.
 
         Returns the model_id at the 50th percentile by rating, or None if
@@ -12016,7 +12017,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 board_tokens = ["hexagonal", "hex"]
             players_token = f"_{int(num_players)}p"
 
-            candidate_dbs: List[Path] = []
+            candidate_dbs: list[Path] = []
             for pattern in ("selfplay/**/*.db", "games/**/*.db"):
                 for db_path in data_dir.glob(pattern):
                     if not db_path.is_file():
@@ -12718,7 +12719,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             logger.info(f"[CMA-ES] Auto-tuning check error for {config_key}: {e}")
 
-    def get_pfsp_opponent(self, config_key: str) -> Optional[str]:
+    def get_pfsp_opponent(self, config_key: str) -> str | None:
         """Get a PFSP-sampled opponent model for selfplay.
 
         Returns path to an opponent model sampled from the PFSP pool,
@@ -12879,7 +12880,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.info(f"Selfplay boost error: {e}")
 
     async def _propagate_cmaes_weights(
-        self, board_type: str, num_players: int, weights: Dict[str, float]
+        self, board_type: str, num_players: int, weights: dict[str, float]
     ):
         """Propagate new CMA-ES weights to selfplay workers.
 
@@ -14244,14 +14245,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         games_per_node: int,
         seed: int,
         include_gpu_nodes: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start canonical selfplay on healthy nodes in the cluster.
 
         Canonical selfplay is CPU-bound. By default, prefer CPU-only nodes so GPU
         machines remain available for GPU-utilizing tasks (training/hybrid selfplay).
         """
         job_id = f"pipeline-selfplay-{int(time.time())}"
-        healthy_nodes: List[Tuple[str, NodeInfo]] = []
+        healthy_nodes: list[tuple[str, NodeInfo]] = []
         with self.peers_lock:
             for peer_id, peer in self.peers.items():
                 if peer.is_alive() and peer.is_healthy():
@@ -14350,7 +14351,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.info(f"Canonical selfplay job {job_id} error: {e}")
 
     async def _start_parity_validation_pipeline(self, board_type: str, num_players: int,
-                                                db_paths: Optional[List[str]]) -> Dict[str, Any]:
+                                                db_paths: list[str] | None) -> dict[str, Any]:
         """Start parity validation on the leader node."""
         job_id = f"pipeline-parity-{int(time.time())}"
         asyncio.create_task(self._run_parity_validation(job_id, board_type, num_players, db_paths))
@@ -14359,7 +14360,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         return {"success": True, "job_id": job_id, "message": "Parity validation started"}
 
     async def _run_parity_validation(self, job_id: str, board_type: str, num_players: int,
-                                     db_paths: Optional[List[str]]):
+                                     db_paths: list[str] | None):
         """Run parity validation."""
         try:
             if not db_paths:
@@ -14398,7 +14399,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             self._pipeline_status["error"] = str(e)
 
     async def _start_npz_export_pipeline(self, board_type: str, num_players: int,
-                                         output_dir: str) -> Dict[str, Any]:
+                                         output_dir: str) -> dict[str, Any]:
         """Start NPZ export on the leader node."""
         job_id = f"pipeline-npz-{int(time.time())}"
         asyncio.create_task(self._run_npz_export(job_id, board_type, num_players, output_dir))
@@ -14445,7 +14446,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             self._pipeline_status["status"] = "failed"
             self._pipeline_status["error"] = str(e)
 
-    def _get_auth_headers(self) -> Dict[str, str]:
+    def _get_auth_headers(self) -> dict[str, str]:
         """Get authentication headers for peer requests."""
         return {"Authorization": f"Bearer {self.auth_token}"} if self.auth_token else {}
 
@@ -14478,7 +14479,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             leader_id = effective_leader_id or last_known_leader_id
 
             # Collect peer info (dashboard-oriented shape)
-            peers_info: List[Dict[str, Any]] = []
+            peers_info: list[dict[str, Any]] = []
             include_retired = request.query.get("include_retired") == "1"
             with self.peers_lock:
                 peers_snapshot = dict(self.peers)
@@ -14523,7 +14524,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             # Collect local job info
             with self.jobs_lock:
                 jobs_snapshot = list(self.local_jobs.values())
-            jobs_info: List[Dict[str, Any]] = [
+            jobs_info: list[dict[str, Any]] = [
                 {
                     "job_id": job.job_id,
                     "job_type": job.job_type.value if hasattr(job.job_type, "value") else str(job.job_type),
@@ -14539,7 +14540,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             ]
 
             # Collect training job info
-            training_info: List[Dict[str, Any]] = []
+            training_info: list[dict[str, Any]] = []
             with self.training_lock:
                 for job_id, job in self.training_jobs.items():
                     training_info.append(
@@ -14567,7 +14568,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 # Don't block on manifest collection - return what we have
                 # local_manifest may be None during startup, which is fine
 
-            manifest_info: Dict[str, Dict[str, Any]] = {}
+            manifest_info: dict[str, dict[str, Any]] = {}
             if cluster_manifest and getattr(cluster_manifest, "node_manifests", None):
                 for node_id, node_manifest in cluster_manifest.node_manifests.items():
                     board_types = sorted(
@@ -14661,14 +14662,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             if not self._is_leader() and request.query.get("local") != "1":
                 return await self._proxy_to_leader(request)
 
-            payload: Dict[str, Any] = {}
+            payload: dict[str, Any] = {}
             try:
                 payload = await request.json()
             except Exception:
                 payload = {}
 
             node_ids_raw = payload.get("node_ids") or payload.get("nodes") or []
-            node_ids: List[str] = []
+            node_ids: list[str] = []
             if isinstance(node_ids_raw, str):
                 node_ids = [t.strip() for t in node_ids_raw.split(",") if t.strip()]
             elif isinstance(node_ids_raw, list):
@@ -14683,7 +14684,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             with self.peers_lock:
                 peers_by_id = dict(self.peers)
 
-            targets: List[NodeInfo] = []
+            targets: list[NodeInfo] = []
 
             def should_include_peer(peer: NodeInfo) -> bool:
                 if peer.node_id == self.node_id:
@@ -14702,11 +14703,11 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     if should_include_peer(peer):
                         targets.append(peer)
 
-            results: List[Dict[str, Any]] = []
+            results: list[dict[str, Any]] = []
             timeout = ClientTimeout(total=timeout_seconds)
             async with get_client_session(timeout) as session:
                 for peer in sorted(targets, key=lambda p: p.node_id):
-                    peer_payload: Dict[str, Any] = {
+                    peer_payload: dict[str, Any] = {
                         "node_id": peer.node_id,
                         "status": "online" if peer.is_alive() else "offline",
                         "success": False,
@@ -14718,7 +14719,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         results.append(peer_payload)
                         continue
 
-                    last_error: Optional[str] = None
+                    last_error: str | None = None
                     for url in self._urls_for_peer(peer, "/git/update"):
                         peer_payload["attempted_urls"].append(url)
                         try:
@@ -14746,7 +14747,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
                     results.append(peer_payload)
 
-            self_update: Optional[Dict[str, Any]] = None
+            self_update: dict[str, Any] | None = None
             update_self = bool(include_self and (not node_ids or self.node_id in node_ids))
             if update_self:
                 has_updates, local_commit, remote_commit = self._check_for_updates()
@@ -14794,7 +14795,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 local_manifest = self.local_data_manifest
                 history = list(self.selfplay_stats_history)
 
-            by_board_type: Dict[str, Dict[str, Any]] = {}
+            by_board_type: dict[str, dict[str, Any]] = {}
             total_selfplay_games = 0
             manifest_collected_at = 0.0
 
@@ -14804,7 +14805,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 manifest_collected_at = float(cluster_manifest.collected_at or 0.0)
             elif local_manifest:
                 manifest_collected_at = float(local_manifest.collected_at or 0.0)
-                totals: Dict[str, int] = {}
+                totals: dict[str, int] = {}
                 for f in getattr(local_manifest, "files", []) or []:
                     if getattr(f, "file_type", "") != "selfplay":
                         continue
@@ -15161,7 +15162,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             return web.json_response([{"error": str(e)}])
 
-    async def _get_victory_type_stats(self) -> Dict[Tuple[str, int, str], int]:
+    async def _get_victory_type_stats(self) -> dict[tuple[str, int, str], int]:
         """Aggregate victory types from recent game data.
 
         Returns dict mapping (board_type, num_players, victory_type) -> count.
@@ -15184,7 +15185,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         if self._is_in_startup_grace_period():
             return {}
 
-        stats: Dict[Tuple[str, int, str], int] = defaultdict(int)
+        stats: dict[tuple[str, int, str], int] = defaultdict(int)
 
         # Scan recent game files (last 24 hours)
         ai_root = Path(self.ringrift_path) / "ai-service"
@@ -15223,7 +15224,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return dict(stats)
 
-    async def _get_game_analytics_cached(self) -> Dict[str, Any]:
+    async def _get_game_analytics_cached(self) -> dict[str, Any]:
         """Get game analytics with caching (5 min TTL)."""
         import json
         from collections import defaultdict
@@ -15250,9 +15251,9 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             ai_root / "data" / "selfplay",
         ]
 
-        game_lengths: Dict[str, List[int]] = defaultdict(list)
-        games_by_hour: Dict[str, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
-        opening_moves: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        game_lengths: dict[str, list[int]] = defaultdict(list)
+        games_by_hour: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        opening_moves: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
         for data_dir in data_dirs:
             if not data_dir.exists():
@@ -15303,7 +15304,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         setattr(self, cache_time_key, now)
         return analytics
 
-    async def _get_training_metrics_cached(self) -> Dict[str, Any]:
+    async def _get_training_metrics_cached(self) -> dict[str, Any]:
         """Get training metrics with caching (2 min TTL)."""
         import re
 
@@ -15352,7 +15353,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         setattr(self, cache_time_key, now)
         return metrics
 
-    async def _get_holdout_metrics_cached(self) -> Dict[str, Any]:
+    async def _get_holdout_metrics_cached(self) -> dict[str, Any]:
         """Get holdout validation metrics with caching (5 min TTL)."""
         import sqlite3
 
@@ -15439,7 +15440,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         setattr(self, cache_time_key, now)
         return metrics
 
-    async def _get_mcts_stats_cached(self) -> Dict[str, Any]:
+    async def _get_mcts_stats_cached(self) -> dict[str, Any]:
         """Get MCTS search statistics with caching (2 min TTL)."""
         import json
         import re
@@ -15551,7 +15552,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Feature 1: Tournament Matchup Analysis
     # =========================================================================
 
-    async def _get_matchup_matrix_cached(self) -> Dict[str, Any]:
+    async def _get_matchup_matrix_cached(self) -> dict[str, Any]:
         """Get head-to-head matchup statistics with caching (5 min TTL)."""
         import sqlite3
         from collections import defaultdict
@@ -15590,7 +15591,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             """, (now - 86400 * 7,)).fetchall()  # Last 7 days
 
             # Build matchup stats
-            h2h: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0, "draws": 0}))
+            h2h: dict[str, dict[str, dict[str, int]]] = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0, "draws": 0}))
             models = set()
             config_stats = defaultdict(lambda: {"total_matches": 0, "avg_game_length": [], "avg_duration": []})
 
@@ -15666,7 +15667,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Feature 2: Model Lineage Tracking
     # =========================================================================
 
-    async def _get_model_lineage_cached(self) -> Dict[str, Any]:
+    async def _get_model_lineage_cached(self) -> dict[str, Any]:
         """Get model lineage and ancestry with caching (10 min TTL)."""
         import re
 
@@ -15766,7 +15767,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Feature 3: Data Quality Metrics
     # =========================================================================
 
-    async def _get_data_quality_cached(self) -> Dict[str, Any]:
+    async def _get_data_quality_cached(self) -> dict[str, Any]:
         """Get data quality metrics with caching (5 min TTL)."""
         import json
         from collections import defaultdict
@@ -15912,7 +15913,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Feature 4: Training Efficiency Dashboard
     # =========================================================================
 
-    async def _get_training_efficiency_cached(self) -> Dict[str, Any]:
+    async def _get_training_efficiency_cached(self) -> dict[str, Any]:
         """Get training efficiency metrics with caching (5 min TTL)."""
         import sqlite3
         import re
@@ -16032,7 +16033,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Feature 5: Automated Model Rollback
     # =========================================================================
 
-    async def _check_rollback_conditions(self) -> Dict[str, Any]:
+    async def _check_rollback_conditions(self) -> dict[str, Any]:
         """Check if any models should be rolled back based on metrics."""
         rollback_status = {"candidates": [], "recent_rollbacks": [], "config_status": {}}
 
@@ -16104,7 +16105,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return rollback_status
 
-    async def _execute_rollback(self, config: str, dry_run: bool = False) -> Dict[str, Any]:
+    async def _execute_rollback(self, config: str, dry_run: bool = False) -> dict[str, Any]:
         """Execute a rollback for the given config by restoring previous model.
 
         Args:
@@ -16265,7 +16266,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return result
 
-    async def _auto_rollback_check(self) -> List[Dict[str, Any]]:
+    async def _auto_rollback_check(self) -> list[dict[str, Any]]:
         """Automatically check and execute rollbacks for critical candidates.
 
         Returns list of executed rollbacks.
@@ -16295,7 +16296,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Feature 6: Distributed Selfplay Autoscaling
     # =========================================================================
 
-    async def _get_autoscaling_metrics(self) -> Dict[str, Any]:
+    async def _get_autoscaling_metrics(self) -> dict[str, Any]:
         """Get metrics for autoscaling decisions."""
         # Autoscaling thresholds tuned for 46-node cluster
         # These can be overridden via environment variables
@@ -16421,7 +16422,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             stats = await self._get_victory_type_stats()
 
             # Group by config for table display
-            config_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            config_stats: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
             for (board_type, num_players, victory_type), count in stats.items():
                 # Apply filters
                 if board_type_filter and board_type != board_type_filter:
@@ -16836,7 +16837,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             await asyncio.sleep(PULL_INTERVAL)
 
-    async def _claim_work_from_leader(self, capabilities: List[str]) -> Optional[Dict[str, Any]]:
+    async def _claim_work_from_leader(self, capabilities: list[str]) -> dict[str, Any] | None:
         """Claim work from the leader's work queue."""
         if not self.leader_id or self.leader_id == self.node_id:
             return None
@@ -16863,7 +16864,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return None
 
-    async def _execute_claimed_work(self, work_item: Dict[str, Any]) -> bool:
+    async def _execute_claimed_work(self, work_item: dict[str, Any]) -> bool:
         """Execute a claimed work item locally."""
         work_type = work_item.get("work_type", "")
         config = work_item.get("config", {})
@@ -16913,7 +16914,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.error(f"Error executing work {work_id}: {e}")
             return False
 
-    async def _report_work_result(self, work_item: Dict[str, Any], success: bool) -> None:
+    async def _report_work_result(self, work_item: dict[str, Any], success: bool) -> None:
         """Report work completion/failure to the leader."""
         if not self.leader_id or self.leader_id == self.node_id:
             return
@@ -16999,7 +17000,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         logger.info(f"Idle detection loop started (interval={IDLE_CHECK_INTERVAL}s, threshold={IDLE_GPU_THRESHOLD}%)")
 
         # Track how long each node has been idle (for grace period)
-        idle_since: Dict[str, float] = {}
+        idle_since: dict[str, float] = {}
 
         while self.running:
             try:
@@ -17819,10 +17820,10 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             ]
 
             # Aggregation containers
-            game_lengths: Dict[str, List[int]] = defaultdict(list)
-            victory_types: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-            games_by_hour: Dict[str, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
-            opening_moves: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            game_lengths: dict[str, list[int]] = defaultdict(list)
+            victory_types: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            games_by_hour: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+            opening_moves: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
             total_games = 0
 
             for data_dir in data_dirs:
@@ -18484,7 +18485,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
     # ==================== A/B Testing Framework ====================
 
-    def _calculate_ab_test_stats(self, test_id: str) -> Dict[str, Any]:
+    def _calculate_ab_test_stats(self, test_id: str) -> dict[str, Any]:
         """Calculate statistical significance for an A/B test."""
         import math
 
@@ -18530,7 +18531,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Wilson score confidence interval for statistical significance
             # Using normal approximation for simplicity
-            def wilson_ci(wins: int, n: int, z: float = 1.96) -> Tuple[float, float]:
+            def wilson_ci(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
                 if n == 0:
                     return (0.0, 1.0)
                 p = wins / n
@@ -19148,7 +19149,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             "hexagonal": "hex",
         }.get(board_type, board_type)
 
-    def _canonical_gate_paths(self, board_type: str, num_players: int) -> Tuple[Path, Path]:
+    def _canonical_gate_paths(self, board_type: str, num_players: int) -> tuple[Path, Path]:
         """Compute canonical DB + gate summary paths (leader-side conventions)."""
         slug = self._canonical_slug_for_board(board_type)
         suffix = "" if int(num_players) == 2 else f"_{int(num_players)}p"
@@ -19181,7 +19182,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             ai_root = Path(self.ringrift_path) / "ai-service"
             games_dir = (ai_root / "data" / "games").resolve()
-            summaries: List[Dict[str, Any]] = []
+            summaries: list[dict[str, Any]] = []
 
             for path in sorted(games_dir.glob("db_health.canonical_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
                 try:
@@ -19298,7 +19299,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 return await self._proxy_to_leader(request)
 
             logs_dir = self._canonical_gate_log_dir()
-            entries: List[Dict[str, Any]] = []
+            entries: list[dict[str, Any]] = []
             if logs_dir.exists():
                 paths = sorted(
                     logs_dir.glob("*.log"),
@@ -19376,7 +19377,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             returncode = -1
 
         finished_at = time.time()
-        gate_summary: Dict[str, Any] | None = None
+        gate_summary: dict[str, Any] | None = None
         try:
             if summary_path.exists():
                 gate_summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -20163,7 +20164,7 @@ print(json.dumps({{
             except Exception:
                 pass  # Don't fail heartbeat if optimizer unavailable
 
-    async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http", timeout: int = 10) -> Optional[NodeInfo]:
+    async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http", timeout: int = 10) -> NodeInfo | None:
         """Send heartbeat to a peer and return their info.
 
         Args:
@@ -20203,7 +20204,7 @@ print(json.dumps({{
                         data = await resp.json()
                         incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
                         if incoming_voters:
-                            voters_list: List[str] = []
+                            voters_list: list[str] = []
                             if isinstance(incoming_voters, list):
                                 voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
                             elif isinstance(incoming_voters, str):
@@ -20244,8 +20245,8 @@ print(json.dumps({{
         # coordinator makes clusters brittle. Also bootstrap from any
         # previously-seen directly-reachable peers so nodes can re-join after
         # restarts even if the original seed goes offline.
-        known_seed_peers: List[str] = [p for p in (self.known_peers or []) if p]
-        discovered_seed_peers: List[str] = []
+        known_seed_peers: list[str] = [p for p in (self.known_peers or []) if p]
+        discovered_seed_peers: list[str] = []
 
         with self.peers_lock:
             peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
@@ -20275,8 +20276,8 @@ print(json.dumps({{
             if rh and rp:
                 discovered_seed_peers.append(f"{scheme}://{rh}:{rp}")
 
-        seen: Set[str] = set()
-        seed_peers: List[str] = []
+        seen: set[str] = set()
+        seed_peers: list[str] = []
         ki = 0
         di = 0
         while ki < len(known_seed_peers) or di < len(discovered_seed_peers):
@@ -20326,7 +20327,7 @@ print(json.dumps({{
 
                     incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
                     if incoming_voters:
-                        voters_list: List[str] = []
+                        voters_list: list[str] = []
                         if isinstance(incoming_voters, list):
                             voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
                         elif isinstance(incoming_voters, str):
@@ -20388,7 +20389,7 @@ print(json.dumps({{
             self._save_state()
         return imported_any
 
-    async def _send_relay_heartbeat(self, relay_url: str) -> Dict[str, Any]:
+    async def _send_relay_heartbeat(self, relay_url: str) -> dict[str, Any]:
         """Send heartbeat via relay endpoint for NAT-blocked nodes.
 
         This is used when the peer URL is HTTPS (indicating a relay/proxy endpoint)
@@ -20421,7 +20422,7 @@ print(json.dumps({{
 
                     incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
                     if incoming_voters:
-                        voters_list: List[str] = []
+                        voters_list: list[str] = []
                         if isinstance(incoming_voters, list):
                             voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
                         elif isinstance(incoming_voters, str):
@@ -20476,7 +20477,7 @@ print(json.dumps({{
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    async def _execute_relay_commands(self, commands: List[Dict[str, Any]]) -> None:
+    async def _execute_relay_commands(self, commands: list[dict[str, Any]]) -> None:
         """Execute relay commands (polling mode for NAT-blocked nodes)."""
         now = time.time()
         for cmd in commands:
@@ -20750,7 +20751,7 @@ print(json.dumps({{
                 if getattr(self.self_info, "nat_blocked", False):
                     now = time.time()
                     if now - self.last_relay_heartbeat >= RELAY_HEARTBEAT_INTERVAL:
-                        relay_urls: List[str] = []
+                        relay_urls: list[str] = []
                         leader_peer = self._get_leader_peer()
                         if leader_peer and leader_peer.node_id != self.node_id:
                             relay_urls.append(f"{leader_peer.scheme}://{leader_peer.host}:{leader_peer.port}")
@@ -20760,7 +20761,7 @@ print(json.dumps({{
                             except Exception:
                                 continue
                             relay_urls.append(f"{scheme}://{host}:{port}")
-                        seen: Set[str] = set()
+                        seen: set[str] = set()
                         relay_urls = [u for u in relay_urls if not (u in seen or seen.add(u))]
 
                         for relay_url in relay_urls:
@@ -21255,7 +21256,7 @@ print(json.dumps({{
             # Never let dashboard bookkeeping break manifest collection.
             return
 
-    def _endpoint_key(self, info: NodeInfo) -> Optional[Tuple[str, str, int]]:
+    def _endpoint_key(self, info: NodeInfo) -> tuple[str, str, int] | None:
         """Return the normalized reachable endpoint key for a peer (scheme, host, port)."""
         host = str(getattr(info, "host", "") or "").strip()
         if not host:
@@ -21284,9 +21285,9 @@ print(json.dumps({{
                 host, port = reported_host, reported_port
         return (scheme, host, port)
 
-    def _endpoint_conflict_keys(self, peers: List[NodeInfo]) -> Set[Tuple[str, str, int]]:
+    def _endpoint_conflict_keys(self, peers: list[NodeInfo]) -> set[tuple[str, str, int]]:
         """Compute endpoint keys that are shared by >1 node (NAT/port collisions)."""
-        counts: Dict[Tuple[str, str, int], int] = {}
+        counts: dict[tuple[str, str, int], int] = {}
         for p in peers:
             # Ignore dead peers: stale node_ids can linger after restarts and would
             # otherwise permanently mark the live node as "conflicted".
@@ -21376,7 +21377,7 @@ print(json.dumps({{
     def _is_leader_eligible(
         self,
         peer: NodeInfo,
-        conflict_keys: Set[Tuple[str, str, int]],
+        conflict_keys: set[tuple[str, str, int]],
         *,
         require_alive: bool = True,
     ) -> bool:
@@ -21988,8 +21989,8 @@ print(json.dumps({{
             return
 
         # Find files we're missing that peers have (with prioritization)
-        files_to_sync: Dict[str, List[tuple]] = {}  # peer_id -> [(file, priority)]
-        file_hashes: Dict[str, str] = {}  # file_path -> hash (for dedup tracking)
+        files_to_sync: dict[str, list[tuple]] = {}  # peer_id -> [(file, priority)]
+        file_hashes: dict[str, str] = {}  # file_path -> hash (for dedup tracking)
         last_sync_time = getattr(self, "_last_successful_p2p_sync", 0)
 
         for peer_id, peer_manifest in peer_manifests.items():
@@ -22153,7 +22154,7 @@ print(json.dumps({{
 
         # Check peer manifests for models we're missing
         peer_manifests = getattr(self, "_gossip_peer_manifests", {})
-        missing_models: Dict[str, List[str]] = {}
+        missing_models: dict[str, list[str]] = {}
 
         for peer_id, peer_manifest in peer_manifests.items():
             if peer_id == self.node_id:
@@ -22264,7 +22265,7 @@ print(json.dumps({{
             return
 
         # Find training databases we're missing or have smaller versions of
-        missing_dbs: Dict[str, List[tuple]] = {}  # peer_id -> [(db_path, size)]
+        missing_dbs: dict[str, list[tuple]] = {}  # peer_id -> [(db_path, size)]
 
         for peer_id, peer_manifest in peer_manifests.items():
             if peer_id == self.node_id:
@@ -22473,7 +22474,7 @@ print(json.dumps({{
                 except Exception:
                     pass
 
-    def _get_gossip_known_states(self) -> Dict[str, dict]:
+    def _get_gossip_known_states(self) -> dict[str, dict]:
         """Get known states about other nodes to propagate via gossip."""
         known = {}
         gossip_states = getattr(self, "_gossip_peer_states", {})
@@ -22772,7 +22773,7 @@ print(json.dumps({{
     # relying on a leader, using gossip to share training state cluster-wide.
     # =========================================================================
 
-    def _get_local_active_training_configs(self) -> List[dict]:
+    def _get_local_active_training_configs(self) -> list[dict]:
         """Get list of training configs currently running on this node.
 
         DISTRIBUTED TRAINING: Share what training this node is doing so other
@@ -22801,7 +22802,7 @@ print(json.dumps({{
                         })
         return active_configs
 
-    def _get_cluster_active_training_configs(self) -> Dict[str, List[str]]:
+    def _get_cluster_active_training_configs(self) -> dict[str, list[str]]:
         """Get all active training configs across the cluster via gossip.
 
         DISTRIBUTED TRAINING COORDINATION: Query gossip state to see what
@@ -22810,7 +22811,7 @@ print(json.dumps({{
 
         Returns: { config_key -> [list of node_ids training that config] }
         """
-        cluster_configs: Dict[str, List[str]] = {}
+        cluster_configs: dict[str, list[str]] = {}
 
         # Include our own training
         for config in self._get_local_active_training_configs():
@@ -22841,7 +22842,7 @@ print(json.dumps({{
 
         return cluster_configs
 
-    def _is_config_being_trained_cluster_wide(self, config_key: str) -> Tuple[bool, List[str]]:
+    def _is_config_being_trained_cluster_wide(self, config_key: str) -> tuple[bool, list[str]]:
         """Check if a config is already being trained somewhere in the cluster.
 
         DISTRIBUTED TRAINING: Before starting training for a config, check if
@@ -23690,8 +23691,8 @@ print(json.dumps({{
 
     def _init_data_deduplication(self):
         """Initialize data deduplication tracking."""
-        self._synced_file_hashes: Set[str] = set()  # Hash -> synced
-        self._known_game_ids: Set[str] = set()  # Game IDs we have
+        self._synced_file_hashes: set[str] = set()  # Hash -> synced
+        self._known_game_ids: set[str] = set()  # Game IDs we have
         self._dedup_stats = {
             "files_skipped": 0,
             "games_skipped": 0,
@@ -23734,7 +23735,7 @@ print(json.dumps({{
         with self._dedup_lock:
             return file_hash in self._synced_file_hashes
 
-    def _record_game_ids(self, game_ids: List[str]):
+    def _record_game_ids(self, game_ids: list[str]):
         """Record game IDs as known for deduplication.
 
         GAME ID TRACKING: Track game IDs we have to avoid syncing
@@ -23749,7 +23750,7 @@ print(json.dumps({{
         with self._dedup_lock:
             self._known_game_ids.update(game_ids)
 
-    def _filter_unknown_games(self, game_ids: List[str]) -> List[str]:
+    def _filter_unknown_games(self, game_ids: list[str]) -> list[str]:
         """Filter out game IDs we already have.
 
         Args:
@@ -23834,14 +23835,14 @@ print(json.dumps({{
 
     def _init_distributed_tournament_scheduling(self):
         """Initialize distributed tournament scheduling state."""
-        self._tournament_proposals: Dict[str, dict] = {}  # proposal_id -> proposal
-        self._tournament_votes: Dict[str, Dict[str, str]] = {}  # proposal_id -> {node_id: vote}
-        self._active_tournaments_gossip: Dict[str, dict] = {}  # tournament_id -> state
+        self._tournament_proposals: dict[str, dict] = {}  # proposal_id -> proposal
+        self._tournament_votes: dict[str, dict[str, str]] = {}  # proposal_id -> {node_id: vote}
+        self._active_tournaments_gossip: dict[str, dict] = {}  # tournament_id -> state
         self._last_tournament_check = 0
         self._tournament_coordination_lock = threading.Lock()
 
     def _propose_tournament(self, board_type: str = "square8", num_players: int = 2,
-                           agent_ids: List[str] = None, games_per_pairing: int = 2) -> dict:
+                           agent_ids: list[str] = None, games_per_pairing: int = 2) -> dict:
         """Create a tournament proposal for gossip-based coordination.
 
         DISTRIBUTED TOURNAMENT: Instead of requiring leader, any node can propose
@@ -24907,7 +24908,7 @@ print(json.dumps({{
 
         return min(5, boost)  # Cap at +5
 
-    def _pick_weighted_selfplay_config(self, node) -> Optional[Dict[str, Any]]:
+    def _pick_weighted_selfplay_config(self, node) -> dict[str, Any] | None:
         """Pick a selfplay config weighted by priority and node capabilities.
 
         PRIORITY-BASED SCHEDULING: Combines static priority with dynamic
@@ -25292,7 +25293,7 @@ print(json.dumps({{
             logger.error(f"Error dispatching work to {peer.node_id}: {e}")
             return False
 
-    async def _schedule_diverse_selfplay_on_node(self, node_id: str) -> Optional[dict]:
+    async def _schedule_diverse_selfplay_on_node(self, node_id: str) -> dict | None:
         """Schedule a diverse/hybrid selfplay job on a specific node.
 
         Uses HYBRID mode (CPU rules + GPU eval) for 100% rule fidelity.
@@ -25521,7 +25522,7 @@ print(json.dumps({{
 
         return int(max(1, target_selfplay))
 
-    def _get_hybrid_job_targets(self, node: NodeInfo) -> Dict[str, int]:
+    def _get_hybrid_job_targets(self, node: NodeInfo) -> dict[str, int]:
         """Get separate GPU and CPU-only selfplay job targets for hybrid mode.
 
         For high-CPU nodes with limited GPU VRAM (like Vast hosts), this enables:
@@ -25591,7 +25592,7 @@ print(json.dumps({{
         return True
 
 
-    async def _check_cluster_balance(self) -> Dict[str, Any]:
+    async def _check_cluster_balance(self) -> dict[str, Any]:
         """Check and rebalance jobs across the cluster.
 
         This method identifies:
@@ -25748,7 +25749,7 @@ print(json.dumps({{
 
             # Load shedding: when a node is under memory/disk pressure, ask it to
             # stop excess selfplay jobs so it can recover (prevents OOM + disk-full).
-            pressure_reasons: List[str] = []
+            pressure_reasons: list[str] = []
             if node.memory_percent >= MEMORY_WARNING_THRESHOLD:
                 pressure_reasons.append("memory")
             if node.disk_percent >= DISK_WARNING_THRESHOLD:
@@ -26167,7 +26168,7 @@ print(json.dumps({{
                 return
             timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
             async with get_client_session(timeout) as session:
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(node, "/cleanup"):
                     try:
                         async with session.post(url, json={}, headers=self._auth_headers()) as resp:
@@ -26183,7 +26184,7 @@ print(json.dumps({{
         except Exception as e:
             logger.error(f"Failed to request cleanup from {node.node_id}: {e}")
 
-    async def _reduce_local_selfplay_jobs(self, target_selfplay_jobs: int, *, reason: str) -> Dict[str, Any]:
+    async def _reduce_local_selfplay_jobs(self, target_selfplay_jobs: int, *, reason: str) -> dict[str, Any]:
         """Best-effort: stop excess selfplay jobs on this node (load shedding).
 
         Used when disk/memory pressure is high: we want the node to recover and
@@ -26218,7 +26219,7 @@ print(json.dumps({{
             }
 
         with self.jobs_lock:
-            running: List[Tuple[str, ClusterJob]] = [
+            running: list[tuple[str, ClusterJob]] = [
                 (job_id, job)
                 for job_id, job in self.local_jobs.items()
                 if job.status == "running"
@@ -26261,7 +26262,7 @@ print(json.dumps({{
                 import shutil
 
                 if shutil.which("pgrep"):
-                    pids: List[int] = []
+                    pids: list[int] = []
                     for pattern in (
                         "run_self_play_soak.py",
                         "run_gpu_selfplay.py",
@@ -26331,7 +26332,7 @@ print(json.dumps({{
 
         timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
         async with get_client_session(timeout) as session:
-            last_err: Optional[str] = None
+            last_err: str | None = None
             payload = {"target_selfplay_jobs": target, "reason": reason}
             for url in self._urls_for_peer(node, "/reduce_selfplay"):
                 try:
@@ -26354,8 +26355,8 @@ print(json.dumps({{
         logger.info("Restarting stuck local selfplay jobs...")
         try:
             # Kill tracked selfplay jobs (avoid broad pkill patterns).
-            jobs_to_clear: List[str] = []
-            pids_to_kill: Set[int] = set()
+            jobs_to_clear: list[str] = []
+            pids_to_kill: set[int] = set()
             with self.jobs_lock:
                 for job_id, job in self.local_jobs.items():
                     if job.job_type not in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY):
@@ -26424,7 +26425,7 @@ print(json.dumps({{
                 return
             timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
             async with get_client_session(timeout) as session:
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(node, "/restart_stuck_jobs"):
                     try:
                         async with session.post(url, json={}, headers=self._auth_headers()) as resp:
@@ -26450,10 +26451,10 @@ print(json.dumps({{
         board_type: str = "square8",
         num_players: int = 2,
         engine_mode: str = "descent-only",
-        job_id: Optional[str] = None,
-        cuda_visible_devices: Optional[str] = None,
-        export_params: Optional[Dict[str, Any]] = None,
-    ) -> Optional[ClusterJob]:
+        job_id: str | None = None,
+        cuda_visible_devices: str | None = None,
+        export_params: dict[str, Any] | None = None,
+    ) -> ClusterJob | None:
         """Start a job on the local node.
 
         SAFEGUARD: Checks coordination safeguards before spawning.
@@ -26510,7 +26511,7 @@ print(json.dumps({{
 
                 # Memory-safety defaults for large boards.
                 num_games = 1000
-                extra_args: List[str] = []
+                extra_args: list[str] = []
                 if board_type in ("square19", "hexagonal"):
                     num_games = 200 if board_type == "square19" else 100
                     extra_args.extend(["--memory-constrained"])
@@ -26608,7 +26609,7 @@ print(json.dumps({{
 
                 # CPU-only jobs can handle more games per batch
                 num_games = 2000
-                extra_args: List[str] = []
+                extra_args: list[str] = []
                 if board_type in ("square19", "hexagonal"):
                     num_games = 400 if board_type == "square19" else 200
                     extra_args.extend(["--memory-constrained"])
@@ -27077,7 +27078,7 @@ print(json.dumps({{
 
             timeout = ClientTimeout(total=30)
             async with get_client_session(timeout) as session:
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(node, "/start_job"):
                     try:
                         async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
@@ -27149,7 +27150,7 @@ print(json.dumps({{
                     "num_players": num_players,
                     "engine_mode": engine_mode,
                 }
-                last_err: Optional[str] = None
+                last_err: str | None = None
                 for url in self._urls_for_peer(node, "/start_job"):
                     try:
                         async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
@@ -27169,7 +27170,7 @@ print(json.dumps({{
         except Exception as e:
             logger.error(f"Failed to request remote job from {node.node_id}: {e}")
 
-    def _enqueue_relay_command(self, node_id: str, cmd_type: str, payload: Dict[str, Any]) -> Optional[str]:
+    def _enqueue_relay_command(self, node_id: str, cmd_type: str, payload: dict[str, Any]) -> str | None:
         """Leader-side: enqueue a command for a NAT-blocked node to pull."""
         now = time.time()
         cmd_type = str(cmd_type)
@@ -27212,8 +27213,8 @@ print(json.dumps({{
         self,
         peer: NodeInfo,
         cmd_type: str,
-        payload: Dict[str, Any],
-    ) -> Optional[str]:
+        payload: dict[str, Any],
+    ) -> str | None:
         """Enqueue a relay command for `peer`, forwarding via its relay hub when needed.
 
         Default behavior: NAT-blocked nodes poll the leader's `/relay/heartbeat`
@@ -27240,7 +27241,7 @@ print(json.dumps({{
             if relay_peer:
                 timeout = ClientTimeout(total=10)
                 async with get_client_session(timeout) as session:
-                    last_err: Optional[str] = None
+                    last_err: str | None = None
                     for url in self._urls_for_peer(relay_peer, "/relay/enqueue"):
                         try:
                             async with session.post(

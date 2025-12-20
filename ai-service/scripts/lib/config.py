@@ -40,7 +40,7 @@ class TrainingConfig:
     """Training hyperparameters and settings."""
     # Learning rate
     learning_rate: float = 0.0003
-    fine_tune_lr: Optional[float] = None
+    fine_tune_lr: float | None = None
     lr_scheduler: str = "cosine"
     warmup_epochs: int = 5
 
@@ -66,7 +66,7 @@ class TrainingConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrainingConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "TrainingConfig":
         """Create config from dictionary."""
         model_data = {}
         config_data = {}
@@ -82,7 +82,7 @@ class TrainingConfig:
         config_data["model"] = ModelConfig(**model_data) if model_data else ModelConfig()
         return cls(**config_data)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result = asdict(self)
         # Flatten model config for backwards compatibility
@@ -130,17 +130,17 @@ class ConfigManager:
     DEFAULT_HP_PATH = Path("config/hyperparameters.json")
     ENV_PREFIX = "RINGRIFT_"
 
-    def __init__(self, hp_path: Optional[Path] = None):
+    def __init__(self, hp_path: Path | None = None):
         """Initialize config manager.
 
         Args:
             hp_path: Path to hyperparameters.json (uses default if not specified)
         """
         self.hp_path = hp_path or self.DEFAULT_HP_PATH
-        self._cache: Dict[str, TrainingConfig] = {}
-        self._raw_config: Optional[Dict] = None
+        self._cache: dict[str, TrainingConfig] = {}
+        self._raw_config: dict | None = None
 
-    def _load_hp_file(self) -> Dict[str, Any]:
+    def _load_hp_file(self) -> dict[str, Any]:
         """Load hyperparameters.json file."""
         if self._raw_config is not None:
             return self._raw_config
@@ -159,7 +159,7 @@ class ConfigManager:
     def get_config(
         self,
         config_key: str,
-        override: Optional[Dict[str, Any]] = None,
+        override: dict[str, Any] | None = None,
     ) -> TrainingConfig:
         """Get training configuration for a board/player config.
 
@@ -200,7 +200,7 @@ class ConfigManager:
 
         return config
 
-    def _apply_env_overrides(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_env_overrides(self, config: dict[str, Any]) -> dict[str, Any]:
         """Apply environment variable overrides."""
         env_mappings = {
             "LEARNING_RATE": ("learning_rate", float),
@@ -225,7 +225,7 @@ class ConfigManager:
 
         return result
 
-    def get_all_configs(self) -> Dict[str, TrainingConfig]:
+    def get_all_configs(self) -> dict[str, TrainingConfig]:
         """Get all defined configurations."""
         hp_data = self._load_hp_file()
         configs = {}
@@ -242,7 +242,7 @@ class ConfigManager:
 
 
 # Global config manager instance
-_config_manager: Optional[ConfigManager] = None
+_config_manager: ConfigManager | None = None
 
 
 def get_config_manager() -> ConfigManager:
@@ -255,7 +255,7 @@ def get_config_manager() -> ConfigManager:
 
 def get_config(
     config_key: str,
-    override: Optional[Dict[str, Any]] = None,
+    override: dict[str, Any] | None = None,
 ) -> TrainingConfig:
     """Get training configuration for a config key.
 

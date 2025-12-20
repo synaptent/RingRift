@@ -28,7 +28,7 @@ def test_cmaes_heuristic_smoke(monkeypatch) -> None:
     * Fitness is computed from the candidate vector only.
     * No game engine or eval-pool IO is involved.
     """
-    calls: List[float] = []
+    calls: list[float] = []
 
     def fake_evaluate_heuristic_candidate(
         tier_spec,

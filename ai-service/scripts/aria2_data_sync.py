@@ -71,7 +71,7 @@ except Exception:
     get_storage_provider = None
 
 
-def _resolve_storage_paths() -> Tuple[List[Path], Path, Path, List[Path]]:
+def _resolve_storage_paths() -> tuple[list[Path], Path, Path, list[Path]]:
     if get_storage_provider:
         provider = get_storage_provider()
         selfplay_dir = provider.selfplay_dir
@@ -84,7 +84,7 @@ def _resolve_storage_paths() -> Tuple[List[Path], Path, Path, List[Path]]:
         models_dir = ROOT / "models"
         elo_db_paths = [DATA_DIR / "unified_elo.db"]
 
-    games_dirs: List[Path] = []
+    games_dirs: list[Path] = []
     for candidate in [DATA_DIR / "games", selfplay_dir]:
         if candidate not in games_dirs:
             games_dirs.append(candidate)
@@ -162,8 +162,8 @@ class DataFile:
     size_bytes: int
     mtime: float
     category: str  # 'games', 'models', 'training', 'elo', 'logs'
-    checksum: Optional[str] = None
-    sources: List[str] = field(default_factory=list)
+    checksum: str | None = None
+    sources: list[str] = field(default_factory=list)
 
     @property
     def age_hours(self) -> float:
@@ -175,9 +175,9 @@ class NodeDataInventory:
     """Data inventory for a node."""
     url: str
     hostname: str = ""
-    files: Dict[str, DataFile] = field(default_factory=dict)
+    files: dict[str, DataFile] = field(default_factory=dict)
     reachable: bool = False
-    last_check: Optional[str] = None
+    last_check: str | None = None
     total_size_mb: float = 0
 
     def add_file(self, f: DataFile):
@@ -188,8 +188,8 @@ class NodeDataInventory:
 @dataclass
 class SyncPlan:
     """Plan for syncing data between nodes."""
-    files_to_download: List[DataFile] = field(default_factory=list)
-    files_to_skip: List[str] = field(default_factory=list)
+    files_to_download: list[DataFile] = field(default_factory=list)
+    files_to_skip: list[str] = field(default_factory=list)
     total_size_mb: float = 0
     estimated_time_min: float = 0
 
@@ -229,7 +229,7 @@ def build_local_inventory() -> NodeDataInventory:
     )
 
     # Scan game databases (prefer data/games, then selfplay DBs)
-    seen_game_names: Set[str] = set()
+    seen_game_names: set[str] = set()
     for games_dir in GAMES_DIRS:
         if not games_dir.exists():
             continue
@@ -330,7 +330,7 @@ class DataHTTPHandler(http.server.SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
-    def serve_file(self, base_dirs: List[Path], filename: str):
+    def serve_file(self, base_dirs: list[Path], filename: str):
         """Serve a specific file from a directory."""
         for base_dir in base_dirs:
             filepath = base_dir / filename
@@ -362,7 +362,7 @@ class DataHTTPHandler(http.server.SimpleHTTPRequestHandler):
         inventory = build_local_inventory()
 
         categories = {cat: [] for cat in ["games", "models", "training", "elo"]}
-        files_map: Dict[str, Dict[str, Any]] = {}
+        files_map: dict[str, dict[str, Any]] = {}
 
         for path, f in inventory.files.items():
             entry = {
@@ -429,7 +429,7 @@ def run_data_server(port: int = DEFAULT_DATA_PORT):
 # Node Discovery
 # ============================================
 
-def check_data_node(url: str, timeout: int = 10) -> Optional[NodeDataInventory]:
+def check_data_node(url: str, timeout: int = 10) -> NodeDataInventory | None:
     """Check if a data node is reachable and get its inventory."""
     inventory = NodeDataInventory(url=url)
 
@@ -459,7 +459,7 @@ def check_data_node(url: str, timeout: int = 10) -> Optional[NodeDataInventory]:
     return inventory
 
 
-def discover_data_sources(source_urls: List[str]) -> Dict[str, NodeDataInventory]:
+def discover_data_sources(source_urls: list[str]) -> dict[str, NodeDataInventory]:
     """Discover all available data sources in parallel."""
     logger.info(f"Discovering {len(source_urls)} data sources...")
     inventories = {}
@@ -485,9 +485,9 @@ def discover_data_sources(source_urls: List[str]) -> Dict[str, NodeDataInventory
     return inventories
 
 
-def aggregate_sources(inventories: Dict[str, NodeDataInventory]) -> Dict[str, DataFile]:
+def aggregate_sources(inventories: dict[str, NodeDataInventory]) -> dict[str, DataFile]:
     """Aggregate files from all sources, collecting multiple sources per file."""
-    all_files: Dict[str, DataFile] = {}
+    all_files: dict[str, DataFile] = {}
 
     for url, inv in inventories.items():
         if not inv.reachable:
@@ -527,11 +527,11 @@ def check_aria2() -> bool:
 
 def download_with_aria2(
     file_path: str,
-    sources: List[str],
+    sources: list[str],
     output_dir: Path,
     connections: int = ARIA2_CONNECTIONS,
     split: int = ARIA2_SPLIT,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Download a file using aria2c with multiple sources."""
     if not sources:
         return False, "No sources available"
@@ -584,7 +584,7 @@ def download_with_aria2(
 
 
 def generate_aria2_input_file(
-    files: List[DataFile],
+    files: list[DataFile],
     output_path: Path,
     base_dir: Path,
 ) -> int:
@@ -618,7 +618,7 @@ def batch_download_aria2(
     input_file: Path,
     connections: int = ARIA2_CONNECTIONS,
     max_concurrent: int = 5,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Run batch download using aria2c input file."""
     if not input_file.exists():
         return 0, 0
@@ -662,10 +662,10 @@ def batch_download_aria2(
 # ============================================
 
 def plan_sync(
-    remote_files: Dict[str, DataFile],
+    remote_files: dict[str, DataFile],
     local_inventory: NodeDataInventory,
-    categories: Optional[List[str]] = None,
-    max_age_hours: Optional[float] = None,
+    categories: list[str] | None = None,
+    max_age_hours: float | None = None,
     newer_only: bool = True,
 ) -> SyncPlan:
     """Plan which files to download."""
@@ -705,11 +705,11 @@ def plan_sync(
 
 
 def sync_data(
-    source_urls: List[str],
-    categories: Optional[List[str]] = None,
-    max_age_hours: Optional[float] = None,
+    source_urls: list[str],
+    categories: list[str] | None = None,
+    max_age_hours: float | None = None,
     dry_run: bool = False,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Sync data from cluster sources."""
     if not check_aria2():
         logger.error("aria2c not found. Install with: apt install aria2")
@@ -762,7 +762,7 @@ def sync_data(
     return success, failure
 
 
-def sync_games(source_urls: List[str], max_age_hours: float = 168, dry_run: bool = False):
+def sync_games(source_urls: list[str], max_age_hours: float = 168, dry_run: bool = False):
     """Sync selfplay game databases."""
     return sync_data(
         source_urls,
@@ -772,7 +772,7 @@ def sync_games(source_urls: List[str], max_age_hours: float = 168, dry_run: bool
     )
 
 
-def sync_models(source_urls: List[str], dry_run: bool = False):
+def sync_models(source_urls: list[str], dry_run: bool = False):
     """Sync model files."""
     return sync_data(
         source_urls,
@@ -781,7 +781,7 @@ def sync_models(source_urls: List[str], dry_run: bool = False):
     )
 
 
-def sync_training(source_urls: List[str], max_age_hours: float = 24, dry_run: bool = False):
+def sync_training(source_urls: list[str], max_age_hours: float = 24, dry_run: bool = False):
     """Sync training data."""
     return sync_data(
         source_urls,
@@ -791,7 +791,7 @@ def sync_training(source_urls: List[str], max_age_hours: float = 24, dry_run: bo
     )
 
 
-def cluster_sync(source_urls: List[str], dry_run: bool = False):
+def cluster_sync(source_urls: list[str], dry_run: bool = False):
     """Full cluster sync - models and recent data."""
     logger.info("=== Full Cluster Sync ===")
 
@@ -858,7 +858,7 @@ def main():
 
     args = parser.parse_args()
 
-    def get_sources(args_sources: Optional[str]) -> List[str]:
+    def get_sources(args_sources: str | None) -> list[str]:
         if args_sources:
             return [s.strip() for s in args_sources.split(",")]
         return CLUSTER_DATA_SOURCES

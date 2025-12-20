@@ -41,9 +41,9 @@ logger = get_logger(__name__)
 class ValidationResult:
     """Result of a validation check."""
     is_valid: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    info: Dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    info: dict[str, Any] = field(default_factory=dict)
 
     def add_error(self, message: str) -> None:
         """Add an error and mark as invalid."""
@@ -61,7 +61,7 @@ class ValidationResult:
         self.warnings.extend(other.warnings)
         self.info.update(other.info)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "is_valid": self.is_valid,
             "errors": self.errors,
@@ -184,8 +184,8 @@ def validate_jsonl_file(
         line_count = 0
         valid_games = 0
         invalid_lines = []
-        board_types: Set[str] = set()
-        num_players_set: Set[int] = set()
+        board_types: set[str] = set()
+        num_players_set: set[int] = set()
 
         with open(file_path) as f:
             for i, line in enumerate(f):
@@ -238,7 +238,7 @@ def validate_jsonl_file(
     return result
 
 
-def _validate_game_record(game: Dict[str, Any], result: ValidationResult) -> None:
+def _validate_game_record(game: dict[str, Any], result: ValidationResult) -> None:
     """Validate a single game record structure."""
     required_fields = ["board_type", "num_players", "moves"]
     recommended_fields = ["game_id", "winner", "victory_type"]
@@ -383,7 +383,7 @@ def validate_training_config(config_key: str) -> ValidationResult:
 class DataValidator:
     """Comprehensive data validation for training setup."""
 
-    def __init__(self, base_dir: Optional[Path] = None):
+    def __init__(self, base_dir: Path | None = None):
         """Initialize validator.
 
         Args:
@@ -474,7 +474,7 @@ class DataValidator:
 
         return result
 
-    def validate_all_configs(self) -> Dict[str, ValidationResult]:
+    def validate_all_configs(self) -> dict[str, ValidationResult]:
         """Validate all known configurations.
 
         Returns:

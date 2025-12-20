@@ -73,7 +73,7 @@ def _load_hosts_from_config():
 SOURCE_NODES = _load_hosts_from_config() or []
 
 
-def get_vast_instances() -> List[Dict]:
+def get_vast_instances() -> list[dict]:
     """Get running Vast instances."""
     try:
         result = subprocess.run(
@@ -93,7 +93,7 @@ def get_vast_instances() -> List[Dict]:
         return []
 
 
-def find_latest_models(source_host: str, source_user: str, max_age_hours: float = 24) -> List[str]:
+def find_latest_models(source_host: str, source_user: str, max_age_hours: float = 24) -> list[str]:
     """Find latest models on a source node."""
     try:
         result = subprocess.run([
@@ -108,11 +108,11 @@ def find_latest_models(source_host: str, source_user: str, max_age_hours: float 
 
 def distribute_model_to_instance(
     model_path: str,
-    source_urls: List[str],
+    source_urls: list[str],
     target_host: str,
     target_port: int,
     target_name: str,
-) -> Tuple[str, bool, str]:
+) -> tuple[str, bool, str]:
     """Distribute a model to a single Vast instance using aria2."""
     model_name = os.path.basename(model_path)
 
@@ -166,9 +166,9 @@ fi
 
 
 def distribute_models(
-    model_paths: List[str],
+    model_paths: list[str],
     max_parallel: int = 8,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Distribute models to all Vast instances."""
     instances = get_vast_instances()
     if not instances:

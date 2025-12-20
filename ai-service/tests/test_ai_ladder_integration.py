@@ -116,7 +116,7 @@ def test_ai_move_uses_ladder_config_overrides(monkeypatch) -> None:
         _fake_get_ladder_tier_config,
     )
 
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     def _fake_create_ai_instance(ai_type, player_number, config):
         captured["ai_type"] = ai_type
@@ -200,7 +200,7 @@ def test_ai_move_threads_ladder_neural_settings(monkeypatch) -> None:
     )
     monkeypatch.setattr(main_mod, "_should_cache_ai", lambda *_args, **_kwargs: False)
 
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     def _fake_create_ai_instance(ai_type, player_number, config):
         captured["ai_type"] = ai_type

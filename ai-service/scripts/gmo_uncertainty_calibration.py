@@ -71,7 +71,7 @@ def collect_predictions(
     num_games: int = 100,
     device: str = "cpu",
     num_players: int = 2,
-) -> List[UncertaintyRecord]:
+) -> list[UncertaintyRecord]:
     """Collect GMO predictions and actual outcomes.
 
     Plays games and records:
@@ -176,7 +176,7 @@ def collect_predictions(
     return records
 
 
-def compute_calibration_metrics(records: List[UncertaintyRecord]) -> Dict:
+def compute_calibration_metrics(records: list[UncertaintyRecord]) -> dict:
     """Compute calibration metrics from prediction records."""
     if not records:
         return {}
@@ -253,7 +253,7 @@ def compute_calibration_metrics(records: List[UncertaintyRecord]) -> Dict:
     }
 
 
-def print_calibration_report(metrics: Dict) -> None:
+def print_calibration_report(metrics: dict) -> None:
     """Print formatted calibration report."""
     print("\n" + "="*60)
     print("UNCERTAINTY CALIBRATION REPORT")
@@ -292,7 +292,7 @@ def print_calibration_report(metrics: Dict) -> None:
         print(f"{bin_stat['bin']:<6} {bin_stat['confidence']:<12.3f} {bin_stat['accuracy']:<12.3f} {bin_stat['count']:<8}")
 
 
-def create_calibration_plot(metrics: Dict, output_path: Path) -> None:
+def create_calibration_plot(metrics: dict, output_path: Path) -> None:
     """Create calibration plot (requires matplotlib)."""
     try:
         import matplotlib.pyplot as plt

@@ -91,8 +91,8 @@ class DistillationResult:
     """Results of distillation training."""
     teacher_path: str
     student_path: str
-    student_config: Dict[str, Any]
-    distillation_config: Dict[str, Any]
+    student_config: dict[str, Any]
+    distillation_config: dict[str, Any]
     final_loss: float
     teacher_accuracy: float
     student_accuracy: float
@@ -166,7 +166,7 @@ class StudentModel(nn.Module):
         self.value_head = nn.Linear(hidden_size, 1)
         self.policy_head = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass returning value and policy outputs."""
         features = self.backbone(x)
         value = self.value_head(features)
@@ -183,8 +183,8 @@ class EnsembleTeacher(nn.Module):
 
     def __init__(
         self,
-        models: List[nn.Module],
-        weights: Optional[List[float]] = None,
+        models: list[nn.Module],
+        weights: list[float] | None = None,
     ):
         super().__init__()
         self.models = nn.ModuleList(models)
@@ -252,7 +252,7 @@ def load_ensemble_models(
     ensemble_path: Path,
     model_class: type,
     device: torch.device,
-) -> Tuple[nn.Module, Dict[str, Any]]:
+) -> tuple[nn.Module, dict[str, Any]]:
     """Load ensemble model as teacher.
 
     Supports two formats:
@@ -297,12 +297,12 @@ def count_parameters(model: nn.Module) -> int:
 
 def generate_distillation_data(
     teacher_model: nn.Module,
-    db_paths: List[Path],
+    db_paths: list[Path],
     board_type: str,
     num_players: int,
     max_samples: int = 50000,
     device: torch.device = torch.device("cpu"),
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate distillation data by running teacher on positions.
 
     Returns:
@@ -338,10 +338,10 @@ def generate_distillation_data(
 def train_distillation(
     teacher_model: nn.Module,
     student_model: nn.Module,
-    train_data: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    train_data: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     config: DistillationConfig,
     device: torch.device = torch.device("cpu"),
-) -> Dict[str, List[float]]:
+) -> dict[str, list[float]]:
     """Train student model via distillation.
 
     Returns:
@@ -407,7 +407,7 @@ def run_distillation(
     teacher_path: Path,
     student_config: StudentConfig,
     distillation_config: DistillationConfig,
-    db_paths: List[Path],
+    db_paths: list[Path],
     board_type: str,
     num_players: int,
     output_dir: Path,

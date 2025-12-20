@@ -32,7 +32,7 @@ except ImportError:
     get_elo_service = None
 
 
-def export_curriculum_weights(weights: Dict[str, float]) -> bool:
+def export_curriculum_weights(weights: dict[str, float]) -> bool:
     """Export curriculum weights to JSON file for P2P orchestrator consumption.
 
     Phase 3.1: This allows the P2P orchestrator to prioritize selfplay jobs
@@ -62,7 +62,7 @@ def export_curriculum_weights(weights: Dict[str, float]) -> bool:
         return False
 
 
-def load_curriculum_weights() -> Dict[str, float]:
+def load_curriculum_weights() -> dict[str, float]:
     """Load curriculum weights from JSON file.
 
     Used by P2P orchestrator to read curriculum priorities.
@@ -91,13 +91,13 @@ class AdaptiveCurriculum:
         self.config = config
         self.state = state
         self.event_bus = event_bus
-        self.feedback: Optional["PipelineFeedbackController"] = None
+        self.feedback: "PipelineFeedbackController" | None = None
 
     def set_feedback_controller(self, feedback: "PipelineFeedbackController"):
         """Set the feedback controller for curriculum adjustments."""
         self.feedback = feedback
 
-    async def rebalance_weights(self) -> Dict[str, float]:
+    async def rebalance_weights(self) -> dict[str, float]:
         """Recompute training weights based on Elo performance."""
         if not self.config.adaptive:
             return {}

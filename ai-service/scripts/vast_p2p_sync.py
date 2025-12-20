@@ -116,7 +116,7 @@ PREFERRED_GPUS = [
 ]
 
 # Vast instance ID to Tailscale IP mapping (discovered dynamically)
-VAST_TAILSCALE_IPS: Dict[int, str] = {}
+VAST_TAILSCALE_IPS: dict[int, str] = {}
 
 
 @dataclass
@@ -146,7 +146,7 @@ class P2PNode:
     gpu_name: str
 
 
-def get_vast_instances() -> List[VastInstance]:
+def get_vast_instances() -> list[VastInstance]:
     """Get active Vast instances from vastai CLI."""
     try:
         result = subprocess.run(
@@ -186,7 +186,7 @@ def get_vast_instances() -> List[VastInstance]:
         return []
 
 
-def get_p2p_nodes() -> List[P2PNode]:
+def get_p2p_nodes() -> list[P2PNode]:
     """Get nodes from P2P network."""
     p2p_leader = _load_p2p_leader_from_config()
     if not p2p_leader:
@@ -228,7 +228,7 @@ def get_p2p_nodes() -> List[P2PNode]:
         return []
 
 
-def get_vast_tailscale_ip(instance: VastInstance) -> Optional[str]:
+def get_vast_tailscale_ip(instance: VastInstance) -> str | None:
     """Get Tailscale IP for a Vast instance via SSH."""
     if instance.id in VAST_TAILSCALE_IPS:
         return VAST_TAILSCALE_IPS[instance.id]
@@ -251,9 +251,9 @@ def get_vast_tailscale_ip(instance: VastInstance) -> Optional[str]:
     return None
 
 
-def match_vast_to_p2p(vast_instances: List[VastInstance], p2p_nodes: List[P2PNode]) -> Dict[int, P2PNode]:
+def match_vast_to_p2p(vast_instances: list[VastInstance], p2p_nodes: list[P2PNode]) -> dict[int, P2PNode]:
     """Match Vast instances to P2P nodes by various criteria."""
-    matches: Dict[int, P2PNode] = {}
+    matches: dict[int, P2PNode] = {}
 
     for inst in vast_instances:
         # Try matching by Tailscale IP
@@ -455,7 +455,7 @@ curl -s http://localhost:8770/health | head -c 200
         return False
 
 
-def check_p2p_running(instance: VastInstance) -> Tuple[bool, int]:
+def check_p2p_running(instance: VastInstance) -> tuple[bool, int]:
     """Check if P2P is running on instance. Returns (is_running, selfplay_jobs)."""
     try:
         result = subprocess.run(
@@ -472,7 +472,7 @@ def check_p2p_running(instance: VastInstance) -> Tuple[bool, int]:
     return False, 0
 
 
-def update_distributed_hosts_yaml(instances: List[VastInstance]) -> int:
+def update_distributed_hosts_yaml(instances: list[VastInstance]) -> int:
     """Update distributed_hosts.yaml with current Vast instance info."""
     try:
         import yaml
@@ -548,7 +548,7 @@ def search_gpu_offers(
     max_price: float = 0.10,
     min_reliability: float = 0.95,
     limit: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Search for available GPU offers using vastai CLI."""
     try:
         # Build query - vastai uses a query language
@@ -574,8 +574,8 @@ def create_vast_instance(
     offer_id: int,
     disk_gb: int = 50,
     use_bid: bool = False,
-    bid_price: Optional[float] = None,
-) -> Optional[str]:
+    bid_price: float | None = None,
+) -> str | None:
     """Create a new Vast instance from an offer."""
     try:
         args = [
@@ -676,7 +676,7 @@ def stop_vast_instance(instance_id: int) -> bool:
         return False
 
 
-def deprovision_instances(instance_ids: List[int], destroy: bool = True) -> int:
+def deprovision_instances(instance_ids: list[int], destroy: bool = True) -> int:
     """Deprovision multiple Vast.ai instances.
 
     Args:
@@ -769,7 +769,7 @@ def sync_code_to_instance(instance: VastInstance) -> bool:
 async def provision_instances_async(
     count: int = 1,
     max_total_hourly: float = 0.50,
-) -> Tuple[int, List[str]]:
+) -> tuple[int, list[str]]:
     """Async wrapper for provision_instances.
 
     Args:
@@ -795,7 +795,7 @@ async def provision_instances_async(
 
 
 async def deprovision_instances_async(
-    instance_ids: List[int],
+    instance_ids: list[int],
     destroy: bool = True,
 ) -> int:
     """Async wrapper for deprovision_instances.
@@ -816,7 +816,7 @@ async def deprovision_instances_async(
     )
 
 
-async def get_vast_instances_async() -> List[VastInstance]:
+async def get_vast_instances_async() -> list[VastInstance]:
     """Async wrapper for get_vast_instances."""
     import asyncio
 
@@ -824,7 +824,7 @@ async def get_vast_instances_async() -> List[VastInstance]:
     return await loop.run_in_executor(None, get_vast_instances)
 
 
-async def get_p2p_nodes_async() -> List[P2PNode]:
+async def get_p2p_nodes_async() -> list[P2PNode]:
     """Async wrapper for get_p2p_nodes."""
     import asyncio
 
@@ -832,7 +832,7 @@ async def get_p2p_nodes_async() -> List[P2PNode]:
     return await loop.run_in_executor(None, get_p2p_nodes)
 
 
-def get_node_to_vast_mapping() -> Dict[str, int]:
+def get_node_to_vast_mapping() -> dict[str, int]:
     """Get mapping from P2P node_id to Vast instance_id.
 
     This is needed for deprovisioning by node_id (as the orchestrator knows
@@ -853,7 +853,7 @@ def get_node_to_vast_mapping() -> Dict[str, int]:
     return result
 
 
-async def get_node_to_vast_mapping_async() -> Dict[str, int]:
+async def get_node_to_vast_mapping_async() -> dict[str, int]:
     """Async wrapper for get_node_to_vast_mapping."""
     import asyncio
 
@@ -861,7 +861,7 @@ async def get_node_to_vast_mapping_async() -> Dict[str, int]:
     return await loop.run_in_executor(None, get_node_to_vast_mapping)
 
 
-def get_vast_instance_costs() -> Dict[int, float]:
+def get_vast_instance_costs() -> dict[int, float]:
     """Get hourly costs for all Vast instances.
 
     Returns:
@@ -871,7 +871,7 @@ def get_vast_instance_costs() -> Dict[int, float]:
     return {inst.id: inst.hourly_cost for inst in instances}
 
 
-async def get_vast_instance_costs_async() -> Dict[int, float]:
+async def get_vast_instance_costs_async() -> dict[int, float]:
     """Async wrapper for get_vast_instance_costs."""
     import asyncio
 

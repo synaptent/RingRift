@@ -22,18 +22,18 @@ class MockPosition:
     x: int
     y: int
 
-    def to_dict(self) -> Dict[str, int]:
+    def to_dict(self) -> dict[str, int]:
         return {"x": self.x, "y": self.y}
 
 
 @dataclass
 class MockMove:
     """Mock move for testing."""
-    from_pos: Optional[MockPosition] = None
-    to_pos: Optional[MockPosition] = None
+    from_pos: MockPosition | None = None
+    to_pos: MockPosition | None = None
     action_type: str = "move"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "from": self.from_pos.to_dict() if self.from_pos else None,
             "to": self.to_pos.to_dict() if self.to_pos else None,
@@ -50,10 +50,10 @@ class MockGameState:
     turn_number: int = 1
     phase: str = "placement"
     game_over: bool = False
-    winner: Optional[int] = None
-    board: Dict[str, Any] = field(default_factory=dict)
+    winner: int | None = None
+    board: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "board_type": self.board_type,
             "num_players": self.num_players,
@@ -84,12 +84,12 @@ class MockGameRecord:
     game_id: str = "test_game_1"
     board_type: str = "square8"
     num_players: int = 2
-    moves: List[MockMove] = field(default_factory=list)
-    winner: Optional[int] = None
+    moves: list[MockMove] = field(default_factory=list)
+    winner: int | None = None
     total_turns: int = 0
     duration_seconds: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "game_id": self.game_id,
             "board_type": self.board_type,
@@ -108,7 +108,7 @@ def create_game_state(
     turn_number: int = 1,
     phase: str = "placement",
     game_over: bool = False,
-    winner: Optional[int] = None,
+    winner: int | None = None,
     **kwargs: Any,
 ) -> MockGameState:
     """Create a mock game state for testing.
@@ -161,8 +161,8 @@ def create_board_config(
 
 
 def create_move(
-    from_x: Optional[int] = None,
-    from_y: Optional[int] = None,
+    from_x: int | None = None,
+    from_y: int | None = None,
     to_x: int = 0,
     to_y: int = 0,
     action_type: str = "move",
@@ -194,7 +194,7 @@ def create_game_record(
     board_type: str = "square8",
     num_players: int = 2,
     num_moves: int = 10,
-    winner: Optional[int] = 0,
+    winner: int | None = 0,
     duration_seconds: float = 60.0,
 ) -> MockGameRecord:
     """Create a mock game record for testing.

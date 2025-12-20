@@ -43,7 +43,7 @@ IDLE_CHECK_MINUTES = 30
 MIN_WORKERS_REQUIRED = 1
 
 
-def run_vastai_command(args: List[str], timeout: int = 30) -> Tuple[bool, str]:
+def run_vastai_command(args: list[str], timeout: int = 30) -> tuple[bool, str]:
     """Run a vastai CLI command."""
     try:
         result = subprocess.run(
@@ -61,7 +61,7 @@ def run_vastai_command(args: List[str], timeout: int = 30) -> Tuple[bool, str]:
         return False, str(e)
 
 
-def get_all_instances() -> List[Dict]:
+def get_all_instances() -> list[dict]:
     """Get all Vast instances (running and stopped)."""
     success, output = run_vastai_command(["show", "instances", "--raw"])
     if not success:
@@ -75,7 +75,7 @@ def get_all_instances() -> List[Dict]:
         return []
 
 
-def get_instance_details(instance_id: str) -> Optional[Dict]:
+def get_instance_details(instance_id: str) -> dict | None:
     """Get detailed info for a single instance."""
     success, output = run_vastai_command(["show", "instance", instance_id, "--raw"])
     if success:
@@ -108,7 +108,7 @@ def stop_instance(instance_id: str) -> bool:
     return success
 
 
-def send_keepalive(instance: Dict) -> Tuple[str, bool, str]:
+def send_keepalive(instance: dict) -> tuple[str, bool, str]:
     """Send keepalive to an instance to prevent idle termination."""
     inst_id = str(instance.get("id", "unknown"))
     status = instance.get("actual_status", "unknown")
@@ -133,7 +133,7 @@ def send_keepalive(instance: Dict) -> Tuple[str, bool, str]:
     return inst_id, False, output
 
 
-def check_instance_health(instance: Dict) -> Dict:
+def check_instance_health(instance: dict) -> dict:
     """Check health of a single instance."""
     inst_id = str(instance.get("id", "unknown"))
     status = instance.get("actual_status", "unknown")
@@ -212,7 +212,7 @@ print(total)
     return health
 
 
-def restart_workers_on_instance(instance: Dict) -> bool:
+def restart_workers_on_instance(instance: dict) -> bool:
     """Restart selfplay workers on an instance."""
     inst_id = str(instance.get("id", "unknown"))
     host = instance.get("ssh_host")
@@ -256,7 +256,7 @@ def restart_workers_on_instance(instance: Dict) -> bool:
     return False
 
 
-def sync_code_on_instance(instance: Dict) -> bool:
+def sync_code_on_instance(instance: dict) -> bool:
     """Sync git code on an instance."""
     inst_id = str(instance.get("id", "unknown"))
     host = instance.get("ssh_host")
@@ -278,7 +278,7 @@ def sync_code_on_instance(instance: Dict) -> bool:
     return False
 
 
-def run_status_check() -> List[Dict]:
+def run_status_check() -> list[dict]:
     """Check status of all instances."""
     logger.info("=" * 70)
     logger.info("VAST.AI KEEPALIVE STATUS CHECK")

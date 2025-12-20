@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 def get_late_game_positions(
     db_path: Path,
     min_move_number: int = 100,
-    max_positions: Optional[int] = None,
-) -> List[Dict[str, Any]]:
+    max_positions: int | None = None,
+) -> list[dict[str, Any]]:
     """Extract late-game positions from a game database.
 
     Handles multiple database schemas:
@@ -175,7 +175,7 @@ def get_late_game_positions(
 
 
 def save_eval_pool(
-    positions: List[Dict[str, Any]],
+    positions: list[dict[str, Any]],
     output_dir: Path,
     pool_name: str = "hex_late_game",
 ) -> Path:
@@ -201,7 +201,7 @@ def save_eval_pool(
 
 
 def save_training_npz(
-    positions: List[Dict[str, Any]],
+    positions: list[dict[str, Any]],
     output_path: Path,
     board_type: str = "hex8",
 ) -> Path:
@@ -242,7 +242,7 @@ def save_training_npz(
     return output_path
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Extract late-game hex positions for training/eval"
     )

@@ -68,7 +68,7 @@ def aggregate():
         if imported > 0:
             print(f"  {os.path.basename(jsonl_file)}: +{imported}")
             total_imported += imported
-    
+
     # Print stats
     print(f"\nTotal imported: {total_imported}")
     print("\nDatabase totals:")
@@ -76,7 +76,7 @@ def aggregate():
         print(f"  {row[0]} {row[1]}p: {row[2]}")
     total = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
     print(f"TOTAL: {total}")
-    
+
     conn.close()
     return total
 

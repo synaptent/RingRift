@@ -62,7 +62,7 @@ def get_disk_usage_percent(path: str = None) -> float:
         return 100.0  # Assume full on error to be safe
 
 
-def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
+def check_disk_has_capacity(threshold: float = None) -> tuple[bool, float]:
     """Check if disk has capacity below threshold for data sync.
 
     Uses unified resource_guard utilities when available for consistent
@@ -79,7 +79,7 @@ def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
     return (current < threshold, current)
 
 
-def check_all_resources() -> Tuple[bool, str]:
+def check_all_resources() -> tuple[bool, str]:
     """Check if all resources (CPU, memory, disk) are within limits.
 
     Uses unified 80% max utilization thresholds from resource_guard.

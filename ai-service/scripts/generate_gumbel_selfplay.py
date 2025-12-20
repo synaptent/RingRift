@@ -85,7 +85,7 @@ def find_move_index(move, legal_moves: list) -> int:
     return -1
 
 
-def serialize_state(state) -> Dict[str, Any]:
+def serialize_state(state) -> dict[str, Any]:
     """Serialize GameState to JSON-compatible dict."""
     data = state.model_dump() if hasattr(state, 'model_dump') else state.dict()
     # Convert datetime objects to ISO strings
@@ -95,7 +95,7 @@ def serialize_state(state) -> Dict[str, Any]:
     return data
 
 
-def serialize_move(move, mcts_policy: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+def serialize_move(move, mcts_policy: dict[str, float] | None = None) -> dict[str, Any]:
     """Serialize a Move object to a JSON-compatible dict."""
     move_data = {
         "type": move.type.value,
@@ -115,10 +115,10 @@ def serialize_move(move, mcts_policy: Optional[Dict[str, float]] = None) -> Dict
 
 def generate_game(
     env: RingRiftEnv,
-    ai_players: Dict[int, GumbelMCTSAI],
+    ai_players: dict[int, GumbelMCTSAI],
     game_idx: int,
     max_moves: int = 500,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Generate a single game with Gumbel MCTS visit distributions.
 
     Per RR-CANON-R075, this records ALL moves including bookkeeping moves

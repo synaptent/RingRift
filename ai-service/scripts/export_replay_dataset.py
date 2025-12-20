@@ -81,7 +81,7 @@ from app.training.encoding import get_encoder_for_board_type
 from app.training.export_cache import get_export_cache
 
 
-BOARD_TYPE_MAP: Dict[str, BoardType] = {
+BOARD_TYPE_MAP: dict[str, BoardType] = {
     "square8": BoardType.SQUARE8,
     "square19": BoardType.SQUARE19,
     "hex8": BoardType.HEX8,
@@ -90,7 +90,7 @@ BOARD_TYPE_MAP: Dict[str, BoardType] = {
 
 
 def _enforce_canonical_db_policy(
-    db_paths: List[str],
+    db_paths: list[str],
     output_path: str,
     *,
     allow_noncanonical: bool,
@@ -174,9 +174,9 @@ def build_encoder(
 def encode_state_with_history(
     encoder: NeuralNetAI,
     state: GameState,
-    history_frames: List[np.ndarray],
+    history_frames: list[np.ndarray],
     history_length: int,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Encode a GameState + history into (stacked_features, globals_vec).
 
@@ -290,7 +290,7 @@ def compute_multi_player_values(
     final_state: GameState,
     num_players: int,
     max_players: int = 4,
-) -> List[float]:
+) -> list[float]:
     """
     Compute value vector for all player positions.
 
@@ -335,7 +335,7 @@ def compute_multi_player_values(
     player_scores.sort(key=lambda x: x[1], reverse=True)
 
     # Build rank lookup: player_number -> rank (1-indexed)
-    player_ranks: Dict[int, int] = {}
+    player_ranks: dict[int, int] = {}
     for rank, (player_num, _) in enumerate(player_scores, start=1):
         player_ranks[player_num] = rank
 
@@ -357,7 +357,7 @@ def compute_multi_player_values(
 
 
 def export_replay_dataset_multi(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: BoardType,
     num_players: int,
     output_path: str,
@@ -365,13 +365,13 @@ def export_replay_dataset_multi(
     history_length: int = 3,
     feature_version: int = 2,
     sample_every: int = 1,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
     require_completed: bool = False,
-    min_moves: Optional[int] = None,
-    max_moves: Optional[int] = None,
-    max_move_index: Optional[int] = None,
+    min_moves: int | None = None,
+    max_moves: int | None = None,
+    max_move_index: int | None = None,
     use_rank_aware_values: bool = True,
-    parity_fixtures_dir: Optional[str] = None,
+    parity_fixtures_dir: str | None = None,
     exclude_recovery: bool = False,
     use_board_aware_encoding: bool = False,
     append: bool = False,
@@ -410,17 +410,17 @@ def export_replay_dataset_multi(
         feature_version=feature_version,
     )
 
-    features_list: List[np.ndarray] = []
-    globals_list: List[np.ndarray] = []
-    values_list: List[float] = []
-    values_mp_list: List[np.ndarray] = []
-    num_players_list: List[int] = []
-    policy_indices_list: List[np.ndarray] = []
-    policy_values_list: List[np.ndarray] = []
-    move_numbers_list: List[int] = []
-    total_game_moves_list: List[int] = []
-    phases_list: List[str] = []
-    victory_types_list: List[str] = []  # For victory-type-balanced sampling
+    features_list: list[np.ndarray] = []
+    globals_list: list[np.ndarray] = []
+    values_list: list[float] = []
+    values_mp_list: list[np.ndarray] = []
+    num_players_list: list[int] = []
+    policy_indices_list: list[np.ndarray] = []
+    policy_values_list: list[np.ndarray] = []
+    move_numbers_list: list[int] = []
+    total_game_moves_list: list[int] = []
+    phases_list: list[str] = []
+    victory_types_list: list[str] = []  # For victory-type-balanced sampling
 
     # Track seen game_ids for deduplication across databases
     seen_game_ids: set = set()
@@ -430,7 +430,7 @@ def export_replay_dataset_multi(
     games_skipped_recovery = 0
 
     # Build query filters
-    query_filters: Dict[str, Any] = {
+    query_filters: dict[str, Any] = {
         "board_type": board_type,
         "num_players": num_players,
         "require_moves": require_moves,
@@ -441,7 +441,7 @@ def export_replay_dataset_multi(
         query_filters["max_moves"] = max_moves
 
     # Optional parity cutoffs
-    parity_cutoffs: Dict[str, int] = {}
+    parity_cutoffs: dict[str, int] = {}
     if parity_fixtures_dir:
         fixtures_path = os.path.abspath(parity_fixtures_dir)
         if os.path.isdir(fixtures_path):
@@ -549,7 +549,7 @@ def export_replay_dataset_multi(
                     games_skipped_recovery += 1
                     continue
 
-            max_safe_move_index: Optional[int] = None
+            max_safe_move_index: int | None = None
             if parity_cutoffs:
                 cutoff = parity_cutoffs.get(game_id)
                 if cutoff is not None:
@@ -568,8 +568,8 @@ def export_replay_dataset_multi(
             num_players_in_game = len(initial_state.players)
 
             # Collect samples first, then compute values after we have final state
-            game_samples: List[Tuple[np.ndarray, np.ndarray, int, int, str]] = []
-            history_frames: List[np.ndarray] = []
+            game_samples: list[tuple[np.ndarray, np.ndarray, int, int, str]] = []
+            history_frames: list[np.ndarray] = []
             samples_before = len(features_list)
 
             # Use incremental state updates instead of replaying from scratch for each move.
@@ -794,13 +794,13 @@ def export_replay_dataset(
     history_length: int = 3,
     feature_version: int = 2,
     sample_every: int = 1,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
     require_completed: bool = False,
-    min_moves: Optional[int] = None,
-    max_moves: Optional[int] = None,
-    max_move_index: Optional[int] = None,
+    min_moves: int | None = None,
+    max_moves: int | None = None,
+    max_move_index: int | None = None,
     use_rank_aware_values: bool = True,
-    parity_fixtures_dir: Optional[str] = None,
+    parity_fixtures_dir: str | None = None,
     exclude_recovery: bool = False,
     use_board_aware_encoding: bool = False,
     append: bool = False,
@@ -838,7 +838,7 @@ def export_replay_dataset(
     )
 
 
-def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Export NN training samples from existing GameReplayDB replays.",
     )
@@ -1036,7 +1036,7 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
     board_type = BOARD_TYPE_MAP[args.board_type]

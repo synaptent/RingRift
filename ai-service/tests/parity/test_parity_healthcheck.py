@@ -16,7 +16,7 @@ from scripts.run_parity_healthcheck import (  # type: ignore  # noqa: E402
 
 def test_parity_healthcheck_summary_aggregates_mismatches() -> None:
     """_summarise_parity_results should aggregate basic mismatch stats."""
-    results: List[ParityCaseResult] = [
+    results: list[ParityCaseResult] = [
         ParityCaseResult(
             suite="contract_vectors_v2",
             case_id="vec-001",
@@ -79,21 +79,21 @@ def test_parity_healthcheck_cli_writes_summary_json_without_failing(
     tmp_path,
 ) -> None:
     """CLI should write summary JSON and exit cleanly when no mismatches."""
-    captured_args: Dict[str, object] = {}
+    captured_args: dict[str, object] = {}
 
     def fake_run(
         args: object,
-    ) -> Tuple[List[ParityCaseResult], Dict[str, object]]:
+    ) -> tuple[list[ParityCaseResult], dict[str, object]]:
         captured_args["args"] = args
         # No mismatches in this synthetic run.
-        results: List[ParityCaseResult] = [
+        results: list[ParityCaseResult] = [
             ParityCaseResult(
                 suite="contract_vectors_v2",
                 case_id="vec-001",
                 mismatch_type=None,
             ),
         ]
-        summary: Dict[str, object] = {
+        summary: dict[str, object] = {
             "profile": getattr(args, "profile", "parity-healthcheck"),
             "suites": ["contract_vectors_v2"],
             "total_cases": 1,
@@ -146,8 +146,8 @@ def test_parity_healthcheck_cli_respects_fail_on_mismatch(
 
     def fake_run(
         args: object,
-    ) -> Tuple[List[ParityCaseResult], Dict[str, object]]:
-        results: List[ParityCaseResult] = [
+    ) -> tuple[list[ParityCaseResult], dict[str, object]]:
+        results: list[ParityCaseResult] = [
             ParityCaseResult(
                 suite="contract_vectors_v2",
                 case_id="vec-001",
@@ -155,7 +155,7 @@ def test_parity_healthcheck_cli_respects_fail_on_mismatch(
                 details="synthetic mismatch",
             ),
         ]
-        summary: Dict[str, object] = {
+        summary: dict[str, object] = {
             "profile": getattr(args, "profile", "parity-healthcheck"),
             "suites": ["contract_vectors_v2"],
             "total_cases": 1,

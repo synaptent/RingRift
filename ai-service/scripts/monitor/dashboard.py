@@ -33,14 +33,14 @@ class ClusterStatus:
     """Overall cluster status."""
     total_nodes: int = 0
     online_nodes: int = 0
-    leader: Optional[str] = None
-    nodes: List[NodeStatus] = field(default_factory=list)
+    leader: str | None = None
+    nodes: list[NodeStatus] = field(default_factory=list)
     total_selfplay_jobs: int = 0
     total_training_jobs: int = 0
     avg_gpu_util: float = 0.0
 
 
-def get_node_status(host: str, port: int = 8770, timeout: int = 5) -> Optional[Dict]:
+def get_node_status(host: str, port: int = 8770, timeout: int = 5) -> dict | None:
     """Get status from a single node's P2P orchestrator endpoint."""
     import urllib.request
     import urllib.error

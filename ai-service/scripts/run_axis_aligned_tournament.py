@@ -73,7 +73,7 @@ DEFAULT_PROFILES_DIR = os.path.join("logs", "axis_aligned", "profiles")
 DEFAULT_RESULTS_DIR = os.path.join("logs", "axis_aligned", "results")
 
 
-BOARD_NAME_TO_TYPE: Dict[str, BoardType] = {
+BOARD_NAME_TO_TYPE: dict[str, BoardType] = {
     "square8": BoardType.SQUARE8,
     "square19": BoardType.SQUARE19,
     "hex": BoardType.HEXAGONAL,
@@ -86,7 +86,7 @@ class Participant:
 
     id: str
     weights: HeuristicWeights
-    meta: Dict[str, Any]
+    meta: dict[str, Any]
     is_baseline: bool = False
 
 
@@ -95,7 +95,7 @@ def _create_heuristic_ai_with_weights(
     weights: HeuristicWeights,
     *,
     difficulty: int = 5,
-    rng_seed: Optional[int] = None,
+    rng_seed: int | None = None,
 ) -> HeuristicAI:
     """Create a HeuristicAI instance with custom weights applied.
 
@@ -121,7 +121,7 @@ def _create_heuristic_ai_with_weights(
 
 def _create_game_state(
     board_type: BoardType,
-    seed: Optional[int],
+    seed: int | None,
 ) -> GameState:
     """Create an initial GameState for self-play on the given board.
 
@@ -195,7 +195,7 @@ def play_single_game_pair(
     p1_weights: HeuristicWeights,
     p2_weights: HeuristicWeights,
     seed: int,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Play a single game between two heuristic weight profiles.
 
     Parameters
@@ -274,7 +274,7 @@ def play_single_game_pair(
 def load_axis_aligned_participants(
     profiles_dir: str,
     include_baseline: bool = False,
-) -> List[Participant]:
+) -> list[Participant]:
     """Discover axis-aligned profiles under ``profiles_dir``.
 
     Each JSON file is expected to have the schema::
@@ -298,7 +298,7 @@ def load_axis_aligned_participants(
     When ``include_baseline`` is true, an additional baseline participant
     using :data:`BASE_V1_BALANCED_WEIGHTS` is prepended.
     """
-    participants: List[Participant] = []
+    participants: list[Participant] = []
 
     if not os.path.isdir(profiles_dir):
         raise FileNotFoundError("Profiles dir does not exist or is not a directory: " f"{profiles_dir!r}")
@@ -363,7 +363,7 @@ def load_axis_aligned_participants(
 
 
 def _update_pair_stats(
-    agg: Dict[str, Dict[str, Dict[str, Any]]],
+    agg: dict[str, dict[str, dict[str, Any]]],
     board_label: str,
     id_i: str,
     id_j: str,
@@ -395,15 +395,15 @@ def _update_pair_stats(
 
 
 def run_axis_aligned_tournament(
-    participants: List[Participant],
-    board_names: List[str],
+    participants: list[Participant],
+    board_names: list[str],
     *,
     games_per_pair: int,
     max_moves: int,
     base_seed: int,
     profiles_dir: str,
     include_baseline: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the axis-aligned tournament and return the JSON-serialisable
     payload.
     """
@@ -413,7 +413,7 @@ def run_axis_aligned_tournament(
         raise ValueError("games_per_pair must be > 0")
 
     # Resolve board types from CLI names.
-    boards: List[Tuple[str, BoardType]] = []
+    boards: list[tuple[str, BoardType]] = []
     for name in board_names:
         if name not in BOARD_NAME_TO_TYPE:
             raise ValueError(f"Unknown board name {name!r}; expected one of " f"{sorted(BOARD_NAME_TO_TYPE.keys())}")
@@ -423,7 +423,7 @@ def run_axis_aligned_tournament(
     n_players = len(participants)
     n_pairs = n_players * (n_players - 1) // 2
 
-    agg_results: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    agg_results: dict[str, dict[str, dict[str, Any]]] = {}
     global_game_index = 0
 
     # Calculate total games across all boards
@@ -525,7 +525,7 @@ def run_axis_aligned_tournament(
 
     created_at = datetime.now(timezone.utc).isoformat() + "Z"
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "meta": {
             "created_at": created_at,
             "seed": base_seed,
@@ -548,7 +548,7 @@ def run_axis_aligned_tournament(
     return payload
 
 
-def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run an axis-aligned heuristic tournament between diagnostic " "profiles and an optional baseline."
@@ -605,7 +605,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
 
     boards = [b.strip() for b in args.boards.split(",") if b.strip()]

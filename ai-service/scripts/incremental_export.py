@@ -56,7 +56,7 @@ from app.models import BoardType
 
 
 # JSONL source directories (same as multi_config_training_loop.py)
-CONFIG_JSONL_DIRS: Dict[Tuple[str, int], List[str]] = {
+CONFIG_JSONL_DIRS: dict[tuple[str, int], list[str]] = {
     ("square8", 2): [
         "data/selfplay/canonical",
         "data/games",
@@ -81,7 +81,7 @@ CONFIG_JSONL_DIRS: Dict[Tuple[str, int], List[str]] = {
 }
 
 
-def find_jsonl_files(base_dir: str, paths: List[str]) -> List[Path]:
+def find_jsonl_files(base_dir: str, paths: list[str]) -> list[Path]:
     """Find all JSONL files in the given paths."""
     jsonl_files = []
     for path in paths:
@@ -98,7 +98,7 @@ def scan_game_ids_from_jsonl(
     board_type: str,
     num_players: int,
     max_lines: int = 50000,
-) -> Set[str]:
+) -> set[str]:
     """Scan a JSONL file for game IDs matching the config."""
     game_ids = set()
 
@@ -147,25 +147,25 @@ def scan_game_ids_from_jsonl(
 
 def process_new_games_from_jsonl(
     jsonl_path: Path,
-    new_game_ids: Set[str],
+    new_game_ids: set[str],
     encoder,
     board_type: BoardType,
     board_type_str: str,
     num_players: int,
     sample_every: int,
     history_length: int,
-) -> Tuple[
-    List[np.ndarray],  # features
-    List[np.ndarray],  # globals
-    List[float],       # values
-    List[np.ndarray],  # values_mp
-    List[int],         # num_players_list
-    List[np.ndarray],  # policy_indices
-    List[np.ndarray],  # policy_values
-    List[int],         # move_numbers
-    List[int],         # total_game_moves
-    List[str],         # phases
-    List[str],         # processed_game_ids
+) -> tuple[
+    list[np.ndarray],  # features
+    list[np.ndarray],  # globals
+    list[float],       # values
+    list[np.ndarray],  # values_mp
+    list[int],         # num_players_list
+    list[np.ndarray],  # policy_indices
+    list[np.ndarray],  # policy_values
+    list[int],         # move_numbers
+    list[int],         # total_game_moves
+    list[str],         # phases
+    list[str],         # processed_game_ids
     int,               # positions_extracted
 ]:
     """Process only new games from a JSONL file."""
@@ -287,7 +287,7 @@ def run_incremental_export(
     logger.info(f"Found {len(jsonl_files)} JSONL files")
 
     # Scan for all game IDs
-    all_game_ids: Set[str] = set()
+    all_game_ids: set[str] = set()
     for jsonl_path in jsonl_files:
         ids = scan_game_ids_from_jsonl(jsonl_path, board_type, num_players)
         all_game_ids.update(ids)

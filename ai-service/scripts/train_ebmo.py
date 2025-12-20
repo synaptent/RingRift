@@ -86,7 +86,7 @@ logging.basicConfig(
 logger = logging.getLogger("train_ebmo")
 
 
-def find_training_data(data_dir: str, pattern: str = "*.npz") -> List[Path]:
+def find_training_data(data_dir: str, pattern: str = "*.npz") -> list[Path]:
     """Find all training data files in directory."""
     data_path = Path(data_dir)
     if not data_path.exists():
@@ -106,7 +106,7 @@ def find_training_data(data_dir: str, pattern: str = "*.npz") -> List[Path]:
     return files
 
 
-def load_npz_data(file_path: Path) -> Optional[Dict[str, np.ndarray]]:
+def load_npz_data(file_path: Path) -> dict[str, np.ndarray] | None:
     """Load and validate NPZ data file."""
     try:
         data = np.load(file_path, allow_pickle=True)
@@ -123,10 +123,10 @@ def load_npz_data(file_path: Path) -> Optional[Dict[str, np.ndarray]]:
 
 
 def convert_npz_to_ebmo_format(
-    npz_data: Dict[str, np.ndarray],
+    npz_data: dict[str, np.ndarray],
     board_size: int = 8,
     num_negatives: int = 7,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Convert standard NPZ training data to EBMO format.
 
     Args:
@@ -230,10 +230,10 @@ class CombinedEBMODataset(Dataset):
 
     def __init__(
         self,
-        npz_files: List[Path],
+        npz_files: list[Path],
         board_size: int = 8,
         num_negatives: int = 7,
-        max_samples_per_file: Optional[int] = None,
+        max_samples_per_file: int | None = None,
     ):
         self.board_size = board_size
         self.num_negatives = num_negatives
@@ -288,7 +288,7 @@ class CombinedEBMODataset(Dataset):
     def __len__(self) -> int:
         return len(self.board_features)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         return {
             'board_features': torch.from_numpy(self.board_features[idx]),
             'global_features': torch.from_numpy(self.global_features[idx]),
@@ -305,7 +305,7 @@ def train_epoch(
     device: torch.device,
     epoch: int,
     config: EBMOConfig,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Train for one epoch."""
     model.train()
 
@@ -394,7 +394,7 @@ def validate(
     dataloader: DataLoader,
     device: torch.device,
     config: EBMOConfig,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Validate model."""
     model.eval()
 
@@ -455,7 +455,7 @@ def save_checkpoint(
     model: EBMONetwork,
     optimizer: optim.Optimizer,
     epoch: int,
-    metrics: Dict[str, float],
+    metrics: dict[str, float],
     output_path: Path,
     config: EBMOConfig,
 ):

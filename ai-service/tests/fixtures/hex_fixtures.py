@@ -33,7 +33,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -78,7 +79,7 @@ class HexCoord:
         """Get the implicit s coordinate (q + r + s = 0)."""
         return -self.q - self.r
 
-    def to_cube(self) -> Tuple[int, int, int]:
+    def to_cube(self) -> tuple[int, int, int]:
         """Convert to cube coordinates (x, y, z)."""
         return (self.q, self.r, self.s)
 
@@ -87,7 +88,7 @@ class HexCoord:
         """Create from cube coordinates."""
         return cls(q=x, r=y)
 
-    def to_offset(self, size: int) -> Tuple[int, int]:
+    def to_offset(self, size: int) -> tuple[int, int]:
         """Convert to offset (x, y) coordinates for board storage.
 
         Args:
@@ -119,7 +120,7 @@ class HexCoord:
                 abs(self.q + self.r - other.q - other.r) +
                 abs(self.r - other.r)) // 2
 
-    def neighbors(self) -> List['HexCoord']:
+    def neighbors(self) -> list['HexCoord']:
         """Get the 6 neighboring hex coordinates."""
         return [
             HexCoord(self.q + 1, self.r),
@@ -188,10 +189,10 @@ D6_SYMMETRIES = D6_ROTATIONS + D6_REFLECTIONS
 
 
 def apply_symmetry_to_board(
-    stacks: Dict[str, RingStack],
+    stacks: dict[str, RingStack],
     symmetry_fn: Callable[[HexCoord], HexCoord],
     size: int,
-) -> Dict[str, RingStack]:
+) -> dict[str, RingStack]:
     """Apply a D6 symmetry operation to board stacks.
 
     Args:
@@ -222,7 +223,7 @@ def verify_d6_symmetry(
     evaluate_fn: Callable[[GameState], float],
     state: GameState,
     tolerance: float = 1e-6,
-) -> Dict[str, bool]:
+) -> dict[str, bool]:
     """Verify that an evaluation function respects D6 symmetry.
 
     For a function to respect D6 symmetry, it should return the same
@@ -368,7 +369,7 @@ def create_hex_game_state(
 
 
 def create_hex_board_with_stacks(
-    stacks: Dict[HexCoord, List[int]],
+    stacks: dict[HexCoord, list[int]],
     size: int = 11,
     num_players: int = 2,
     board_type: BoardType = BoardType.HEXAGONAL,
@@ -433,10 +434,10 @@ def create_hex_board_with_stacks(
 
 
 def create_hex_training_sample(
-    features_shape: Tuple[int, ...] = (10, 21, 21),
+    features_shape: tuple[int, ...] = (10, 21, 21),
     policy_size: int = 64,
     seed: int = 42,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """Create a synthetic hex training sample for testing.
 
     Args:
@@ -465,7 +466,7 @@ def hex_center_position(size: int = 11) -> HexCoord:
     return HexCoord(0, 0)
 
 
-def hex_corner_positions(size: int = 11) -> List[HexCoord]:
+def hex_corner_positions(size: int = 11) -> list[HexCoord]:
     """Get the 6 corner coordinates of a hex board."""
     # For a hex board of radius r, corners are at distance r from center
     r = size - 1
@@ -479,7 +480,7 @@ def hex_corner_positions(size: int = 11) -> List[HexCoord]:
     ]
 
 
-def hex_edge_midpoints(size: int = 11) -> List[HexCoord]:
+def hex_edge_midpoints(size: int = 11) -> list[HexCoord]:
     """Get the midpoint of each edge of the hex board.
 
     For a hex board of radius r, returns 6 edge midpoints
@@ -539,7 +540,7 @@ def hex_state_symmetric() -> GameState:
 
 
 @pytest.fixture
-def hex_training_sample() -> Dict[str, np.ndarray]:
+def hex_training_sample() -> dict[str, np.ndarray]:
     """Synthetic hex training sample."""
     return create_hex_training_sample()
 
@@ -551,6 +552,6 @@ def hex_coord_origin() -> HexCoord:
 
 
 @pytest.fixture
-def hex_coords_ring_1() -> List[HexCoord]:
+def hex_coords_ring_1() -> list[HexCoord]:
     """All hex coordinates at distance 1 from origin."""
     return HexCoord(0, 0).neighbors()

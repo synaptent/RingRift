@@ -58,13 +58,13 @@ from app.models import BoardType, Move, MoveType, Position, BoardState
 @dataclass
 class MockAIConfig:
     """Mock AI config for testing."""
-    nn_model_id: Optional[str] = None
+    nn_model_id: str | None = None
     allow_fresh_weights: bool = True
     history_length: int = 3
     feature_version: int = 1
-    nn_state_dict: Optional[dict] = None
-    rng_seed: Optional[int] = 42
-    board_type: Optional[str] = None
+    nn_state_dict: dict | None = None
+    rng_seed: int | None = 42
+    board_type: str | None = None
     num_players: int = 2
 
 

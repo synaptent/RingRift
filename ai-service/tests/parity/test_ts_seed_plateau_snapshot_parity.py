@@ -49,7 +49,7 @@ SEED18_SNAPSHOT = PARITY_DIR / "square8_2p_seed18_plateau.snapshot.json"
 SEED1_SNAPSHOT = PARITY_DIR / "square8_2p_seed1_plateau.snapshot.json"
 
 
-def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
+def _build_board_from_snapshot(snapshot: dict[str, Any]) -> BoardState:
     """Hydrate a Python BoardState from a TS ComparableSnapshot.
 
     This focuses on the fields that ComparableSnapshot cares about:
@@ -71,7 +71,7 @@ def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
     else:
         raise AssertionError(f"Unsupported boardType for plateau snapshot: {board_type}")
 
-    stacks: Dict[str, RingStack] = {}
+    stacks: dict[str, RingStack] = {}
     for entry in snapshot.get("stacks", []):
         key = entry["key"]
         parts = [int(p) for p in key.split(",")]
@@ -93,7 +93,7 @@ def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
         )
         stacks[key] = stack
 
-    markers: Dict[str, Any] = {}
+    markers: dict[str, Any] = {}
     for entry in snapshot.get("markers", []):
         key = entry["key"]
         parts = [int(p) for p in key.split(",")]
@@ -110,7 +110,7 @@ def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
 
         markers[key] = MarkerInfo(player=entry["player"], position=pos, type="regular")
 
-    collapsed_spaces: Dict[str, int] = {}
+    collapsed_spaces: dict[str, int] = {}
     for entry in snapshot.get("collapsedSpaces", []):
         collapsed_spaces[entry["key"]] = entry["player"]
 
@@ -126,7 +126,7 @@ def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
     )
 
 
-def _build_players_from_snapshot(snapshot: Dict[str, Any]) -> List[Player]:
+def _build_players_from_snapshot(snapshot: dict[str, Any]) -> list[Player]:
     """Hydrate minimal Player models from a TS ComparableSnapshot.
 
     TS ComparableSnapshot exports only playerNumber, type, ringsInHand,
@@ -135,7 +135,7 @@ def _build_players_from_snapshot(snapshot: Dict[str, Any]) -> List[Player]:
     stub with deterministic defaults that do not affect parity.
     """
 
-    players: List[Player] = []
+    players: list[Player] = []
     for entry in snapshot.get("players", []):
         num = entry["playerNumber"]
         players.append(
@@ -158,7 +158,7 @@ def _build_players_from_snapshot(snapshot: Dict[str, Any]) -> List[Player]:
     return players
 
 
-def _build_game_state_from_snapshot(snapshot: Dict[str, Any]) -> GameState:
+def _build_game_state_from_snapshot(snapshot: dict[str, Any]) -> GameState:
     """Construct a Python GameState equivalent to a TS ComparableSnapshot.
 
     This fills in non-snapshot fields with benign defaults while ensuring
@@ -203,7 +203,7 @@ def _build_game_state_from_snapshot(snapshot: Dict[str, Any]) -> GameState:
     )
 
 
-def _python_comparable_snapshot(label: str, state: GameState) -> Dict[str, Any]:
+def _python_comparable_snapshot(label: str, state: GameState) -> dict[str, Any]:
     """Build a Python-side ComparableSnapshot dict that mirrors TS shape.
 
     Field names and ordering are chosen to match tests/utils/stateSnapshots.ts
@@ -223,7 +223,7 @@ def _python_comparable_snapshot(label: str, state: GameState) -> Dict[str, Any]:
     ]
     players.sort(key=lambda p: p["playerNumber"])
 
-    stacks: List[Dict[str, Any]] = []
+    stacks: list[dict[str, Any]] = []
     for key, stack in state.board.stacks.items():
         # Python uses [bottom→top] ring order, TS uses [top→bottom]
         # Reverse when generating TS-comparable snapshot
@@ -238,12 +238,12 @@ def _python_comparable_snapshot(label: str, state: GameState) -> Dict[str, Any]:
         )
     stacks.sort(key=lambda s: s["key"])
 
-    markers: List[Dict[str, Any]] = []
+    markers: list[dict[str, Any]] = []
     for key, marker in state.board.markers.items():
         markers.append({"key": key, "player": marker.player})
     markers.sort(key=lambda m: m["key"])
 
-    collapsed_spaces: List[Dict[str, Any]] = []
+    collapsed_spaces: list[dict[str, Any]] = []
     for key, owner in state.board.collapsed_spaces.items():
         collapsed_spaces.append({"key": key, "player": owner})
     collapsed_spaces.sort(key=lambda c: c["key"])
@@ -263,7 +263,7 @@ def _python_comparable_snapshot(label: str, state: GameState) -> Dict[str, Any]:
     }
 
 
-def _normalise_for_comparison(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+def _normalise_for_comparison(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Normalise snapshots to match TS snapshotsEqual semantics.
 
     We drop the `label` field and rely on sorted collections to ensure
@@ -291,7 +291,7 @@ def test_ts_vs_python_plateau_snapshots(fixture_path: Path) -> None:
         )
 
     with fixture_path.open("r", encoding="utf-8") as f:
-        ts_snapshot: Dict[str, Any] = json.load(f)
+        ts_snapshot: dict[str, Any] = json.load(f)
 
     state = _build_game_state_from_snapshot(ts_snapshot)
     py_snapshot = _python_comparable_snapshot(ts_snapshot.get("label", "py"), state)

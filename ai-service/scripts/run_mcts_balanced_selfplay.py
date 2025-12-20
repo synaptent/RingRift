@@ -42,7 +42,7 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("run_mcts_balanced_selfplay")
 
 
-def _serialize_move(move) -> Dict[str, Any]:
+def _serialize_move(move) -> dict[str, Any]:
     """Serialize a Move object to a JSON-compatible dict."""
     return {
         "player": move.player,
@@ -59,7 +59,7 @@ def play_mcts_game(
     seed: int = None,
     max_moves: int = 10000,
     randomness: float = 0.15,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Play a single game with MCTS-only players.
 
     Returns game record dict with moves, winner, and metadata.
@@ -165,7 +165,7 @@ def run_selfplay(
     mcts_iterations: int = 400,
     base_seed: int = 42,
     randomness: float = 0.15,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run multiple MCTS self-play games and save results."""
 
     output_dir.mkdir(parents=True, exist_ok=True)

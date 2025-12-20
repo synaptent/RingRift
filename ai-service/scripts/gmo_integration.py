@@ -115,7 +115,7 @@ def register_gmo_in_elo(
 
 def create_gmo_ai(
     player_number: int,
-    checkpoint_path: Optional[Path] = None,
+    checkpoint_path: Path | None = None,
     device: str = "cpu",
 ) -> GMOAI:
     """Create a GMO AI instance."""
@@ -146,8 +146,8 @@ def play_game(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 500,
-    initial_state: Optional[GameState] = None,
-) -> Tuple[Optional[int], List[Dict], int]:
+    initial_state: GameState | None = None,
+) -> tuple[int | None, list[dict], int]:
     """Play a single game between two AIs.
 
     Returns:
@@ -204,11 +204,11 @@ def play_game(
 def run_selfplay(
     num_games: int = 100,
     output_dir: Path = GMO_SELFPLAY_DATA,
-    checkpoint_path: Optional[Path] = GMO_CHECKPOINT,
+    checkpoint_path: Path | None = GMO_CHECKPOINT,
     device: str = "cpu",
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
-) -> Dict:
+) -> dict:
     """Run GMO self-play games to generate training data.
 
     Emits JSONL records compatible with app.training.train_gmo
@@ -309,7 +309,7 @@ def train_on_selfplay(
     lr: float = 0.001,
     checkpoint_path: Path = GMO_CHECKPOINT,
     device: str = "cpu",
-) -> Dict:
+) -> dict:
     """Train GMO on self-play data.
 
     Filters to records that include initial_state + moves for train_gmo.
@@ -396,11 +396,11 @@ def train_on_selfplay(
 
 def evaluate_against_baselines(
     num_games: int = 50,
-    checkpoint_path: Optional[Path] = GMO_CHECKPOINT,
+    checkpoint_path: Path | None = GMO_CHECKPOINT,
     device: str = "cpu",
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
-) -> Dict:
+) -> dict:
     """Evaluate GMO against baseline AIs."""
     baselines = {
         "random": lambda p: RandomAI(player_number=p, config=AIConfig(difficulty=1)),
@@ -467,7 +467,7 @@ def run_pipeline(
     epochs: int = 20,
     iterations: int = 3,
     device: str = "cpu",
-) -> Dict:
+) -> dict:
     """Run full GMO self-play training pipeline.
 
     Iteratively:

@@ -31,14 +31,14 @@ class RunSummary:
     num_games: int
     epochs: int
     eval_games: int
-    descent_loss: Optional[float]
-    mcts_loss: Optional[float]
-    descent_vs_heuristic: Optional[float]
-    mcts_vs_heuristic: Optional[float]
-    descent_vs_mcts: Optional[float]
+    descent_loss: float | None
+    mcts_loss: float | None
+    descent_vs_heuristic: float | None
+    mcts_vs_heuristic: float | None
+    descent_vs_mcts: float | None
 
 
-def load_run(results_path: Path) -> Optional[RunSummary]:
+def load_run(results_path: Path) -> RunSummary | None:
     try:
         with results_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
@@ -50,7 +50,7 @@ def load_run(results_path: Path) -> Optional[RunSummary]:
     mcts = data.get("mcts", {})
     cmp_ = data.get("comparison", {})
 
-    def _get_win_rate(section: dict, key: str) -> Optional[float]:
+    def _get_win_rate(section: dict, key: str) -> float | None:
         sub = section.get(key)
         if not isinstance(sub, dict):
             return None
@@ -75,8 +75,8 @@ def load_run(results_path: Path) -> Optional[RunSummary]:
     )
 
 
-def find_runs(root: Path) -> List[RunSummary]:
-    runs: List[RunSummary] = []
+def find_runs(root: Path) -> list[RunSummary]:
+    runs: list[RunSummary] = []
     for results_path in root.rglob("results.json"):
         summary = load_run(results_path)
         if summary is not None:
@@ -84,13 +84,13 @@ def find_runs(root: Path) -> List[RunSummary]:
     return runs
 
 
-def format_pct(x: Optional[float]) -> str:
+def format_pct(x: float | None) -> str:
     if x is None:
         return "   n/a "
     return f"{x*100:6.1f}%"
 
 
-def format_loss(x: Optional[float]) -> str:
+def format_loss(x: float | None) -> str:
     if x is None:
         return "  n/a "
     return f"{x:6.3f}"
@@ -115,7 +115,7 @@ def main() -> None:
     args = parser.parse_args()
 
     roots = [Path(r).resolve() for r in args.root]
-    all_runs: List[RunSummary] = []
+    all_runs: list[RunSummary] = []
     for root in roots:
         if not root.exists():
             print(f"[warn] root {root} does not exist, skipping")

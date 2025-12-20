@@ -113,7 +113,7 @@ DEFAULT_WEIGHTS = {
 }
 
 
-def _parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> Move:
+def _parse_move(move_dict: dict[str, Any], move_number: int, timestamp: str) -> Move:
     """Parse a move dict into a Move object."""
     move_type_str = move_dict.get("type", "unknown")
 
@@ -191,9 +191,9 @@ def _get_board_type(board_str: str) -> BoardType:
 
 
 def _expand_gpu_moves_to_canonical(
-    moves: List[Move],
+    moves: list[Move],
     initial_state: GameState,
-) -> Tuple[List[Move], GameState]:
+) -> tuple[list[Move], GameState]:
     """Expand GPU simplified moves to canonical moves with phase handling.
 
     GPU moves are coarse-grained (place_ring, move_stack, overtaking_capture, recovery_slide).
@@ -425,7 +425,7 @@ def _expand_gpu_moves_to_canonical(
 def load_weights_from_profile(
     weights_file: str,
     profile_name: str,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Load heuristic weights from a profile file."""
     if not os.path.exists(weights_file):
         logger.warning(f"Weights file not found: {weights_file}, using defaults")
@@ -468,24 +468,24 @@ class GPUSelfPlayGenerator:
         num_players: int = 2,
         batch_size: int = 256,
         max_moves: int = 10000,
-        device: Optional[torch.device] = None,
-        weights: Optional[Dict[str, float]] = None,
+        device: torch.device | None = None,
+        weights: dict[str, float] | None = None,
         engine_mode: str = "heuristic-only",
         shadow_validation: bool = False,
         shadow_sample_rate: float = 0.05,
         shadow_threshold: float = 0.001,
         lps_victory_rounds: int = 3,
-        rings_per_player: Optional[int] = None,
-        board_type: Optional[str] = None,
+        rings_per_player: int | None = None,
+        board_type: str | None = None,
         use_heuristic_selection: bool = False,
         weight_noise: float = 0.0,
         use_policy: bool = False,
-        policy_model_path: Optional[str] = None,
+        policy_model_path: str | None = None,
         temperature: float = 1.0,
         noise_scale: float = 0.1,
         min_game_length: int = 0,
         random_opening_moves: int = 0,
-        temperature_mix: Optional[str] = None,
+        temperature_mix: str | None = None,
     ):
         self.board_size = board_size
         self.num_players = num_players
@@ -626,8 +626,8 @@ class GPUSelfPlayGenerator:
 
     def generate_batch(
         self,
-        seed: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        seed: int | None = None,
+    ) -> dict[str, Any]:
         """Generate a batch of games.
 
         Returns dict with:
@@ -681,10 +681,10 @@ class GPUSelfPlayGenerator:
     def generate_games(
         self,
         num_games: int,
-        output_file: Optional[str] = None,
-        output_db: Optional[str] = None,
+        output_file: str | None = None,
+        output_db: str | None = None,
         progress_interval: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate multiple batches of games.
 
         Args:
@@ -727,7 +727,7 @@ class GPUSelfPlayGenerator:
 
         # Buffered write for better I/O performance (flush every N records)
         WRITE_BUFFER_SIZE = 100  # Records before flush - balances throughput vs data safety
-        write_buffer: List[str] = []
+        write_buffer: list[str] = []
 
         def flush_write_buffer():
             """Flush accumulated records to file."""
@@ -829,7 +829,7 @@ class GPUSelfPlayGenerator:
 
         return all_records
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get aggregated statistics."""
         total_decided = sum(self.wins_by_player.values())
 
@@ -881,25 +881,25 @@ def run_gpu_selfplay(
     output_dir: str,
     batch_size: int = 256,
     max_moves: int = 10000,
-    weights: Optional[Dict[str, float]] = None,
+    weights: dict[str, float] | None = None,
     engine_mode: str = "heuristic-only",
     seed: int = 42,
     shadow_validation: bool = False,
     shadow_sample_rate: float = 0.05,
     shadow_threshold: float = 0.001,
     lps_victory_rounds: int = 3,
-    rings_per_player: Optional[int] = None,
-    output_db: Optional[str] = None,
+    rings_per_player: int | None = None,
+    output_db: str | None = None,
     use_heuristic_selection: bool = False,
     weight_noise: float = 0.0,
     use_policy: bool = False,
-    policy_model_path: Optional[str] = None,
+    policy_model_path: str | None = None,
     temperature: float = 1.0,
     noise_scale: float = 0.1,
     min_game_length: int = 0,
     random_opening_moves: int = 0,
-    temperature_mix: Optional[str] = None,
-) -> Dict[str, Any]:
+    temperature_mix: str | None = None,
+) -> dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
     Args:

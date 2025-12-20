@@ -97,7 +97,7 @@ def get_training_data_path(config_key: str, suffix: str = ".npz") -> Path:
 def get_model_path(
     config_key: str,
     model_type: str = "nnue",
-    filename: Optional[str] = None,
+    filename: str | None = None,
 ) -> Path:
     """Get the model path for a config.
 
