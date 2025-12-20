@@ -539,10 +539,16 @@ class TournamentRunner:
             ai_instances.append(ai)
 
         # Play the game
+        # Note: Game uses 1-based player numbers but AI instances use 0-based indices
         move_count = 0
         while state.game_status == GameStatus.ACTIVE and move_count < self.max_moves:
             current_player = state.current_player
-            ai = ai_instances[current_player]
+            # Convert 1-based player number to 0-based index
+            ai_index = current_player - 1 if current_player > 0 else current_player
+            if ai_index < 0 or ai_index >= len(ai_instances):
+                logger.error(f"Invalid player index: {ai_index} (player={current_player})")
+                break
+            ai = ai_instances[ai_index]
 
             # Get valid moves for current player
             legal_moves = GameEngine.get_valid_moves(state, current_player)
