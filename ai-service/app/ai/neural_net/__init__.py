@@ -46,6 +46,22 @@ from app.ai._neural_net_legacy import (
     SQUARE8_TERRITORY_CLAIM_BASE,
     SQUARE8_SKIP_PLACEMENT_IDX,
     SQUARE8_SWAP_SIDES_IDX,
+    SQUARE8_NO_PLACEMENT_ACTION_IDX,
+    SQUARE8_NO_MOVEMENT_ACTION_IDX,
+    SQUARE8_SKIP_CAPTURE_IDX,
+    SQUARE8_NO_LINE_ACTION_IDX,
+    SQUARE8_NO_TERRITORY_ACTION_IDX,
+    SQUARE8_SKIP_TERRITORY_PROCESSING_IDX,
+    SQUARE8_FORCED_ELIMINATION_IDX,
+    # Square19 layout constants
+    SQUARE19_LINE_FORM_BASE,
+    SQUARE19_NO_PLACEMENT_ACTION_IDX,
+    SQUARE19_NO_MOVEMENT_ACTION_IDX,
+    SQUARE19_SKIP_CAPTURE_IDX,
+    SQUARE19_NO_LINE_ACTION_IDX,
+    SQUARE19_NO_TERRITORY_ACTION_IDX,
+    SQUARE19_SKIP_TERRITORY_PROCESSING_IDX,
+    SQUARE19_FORCED_ELIMINATION_IDX,
     # Hex8 constants
     HEX8_BOARD_SIZE,
     # Dataclasses
@@ -85,10 +101,12 @@ from app.ai._neural_net_legacy import (
     # Cache functions
     clear_model_cache,
     get_cached_model_count,
-    # Internal helpers (used by encoding module)
+    # Internal helpers (used by encoding module and tests)
     _to_canonical_xy,
     _from_canonical_xy,
     _pos_from_key,
+    _encode_move_square8,
+    _decode_move_square8,
 )
 
 __all__ = [
