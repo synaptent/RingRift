@@ -261,7 +261,7 @@ groups:
 job_defaults:
   selfplay:
     games_per_batch: 64
-    max_moves: 200
+    max_moves: 600 # Square8 theoretical max (600 moves ≈ 120 turns)
     ai_types: [gumbel_mcts, maxn]
     timeout_minutes: 30
 
