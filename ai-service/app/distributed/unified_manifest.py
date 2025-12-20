@@ -387,8 +387,14 @@ class DataManifest:
             "model_version": "TEXT",
             "created_at": "REAL",
         }
+        # Whitelist of allowed column names for schema migration (security)
+        allowed_columns = set(base_columns.keys()) | set(quality_columns.keys())
         for col, col_type in {**base_columns, **quality_columns}.items():
             if col not in existing_cols:
+                # Validate column name is alphanumeric/underscore only
+                if col not in allowed_columns or not col.replace("_", "").isalnum():
+                    logger.warning(f"Skipping invalid column name: {col}")
+                    continue
                 cursor.execute(f"ALTER TABLE synced_games ADD COLUMN {col} {col_type}")
 
         # Ensure indexes exist (safe on older DBs).

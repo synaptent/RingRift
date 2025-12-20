@@ -97,12 +97,20 @@ def run_online_training(
     checkpoint_path: str | None = None,
     num_games: int = 100,
     opponents: list[str] | None = None,
-    lr: float = 0.001,
-    buffer_size: int = 100,
+    lr: float = 0.0001,  # Lowered from 0.001 to prevent catastrophic forgetting
+    buffer_size: int = 500,  # Increased from 100 for more diverse replay
+    weight_decay: float = 0.01,  # L2 regularization
+    max_grad_norm: float = 1.0,  # Gradient clipping threshold
     save_every: int = 20,
     output_dir: str = "models/gmo",
 ) -> dict:
     """Run online/continuous learning training.
+
+    Uses regularization to prevent catastrophic forgetting:
+    - Lower learning rate (0.0001 default)
+    - Larger replay buffer (500 default)
+    - Weight decay (L2 regularization)
+    - Gradient clipping
 
     Args:
         checkpoint_path: Path to load initial checkpoint
@@ -110,6 +118,8 @@ def run_online_training(
         opponents: List of opponent types
         lr: Learning rate for online updates
         buffer_size: Experience replay buffer size
+        weight_decay: L2 regularization strength
+        max_grad_norm: Maximum gradient norm for clipping
         save_every: Save checkpoint every N games
         output_dir: Output directory for checkpoints
 
@@ -136,8 +146,13 @@ def run_online_training(
             gmo_ai.load_checkpoint(default_path)
             logger.info(f"Loaded checkpoint from {default_path}")
 
-    # Enable online learning
-    gmo_ai.enable_online_learning(lr=lr, buffer_size=buffer_size)
+    # Enable online learning with regularization
+    gmo_ai.enable_online_learning(
+        lr=lr,
+        buffer_size=buffer_size,
+        weight_decay=weight_decay,
+        max_grad_norm=max_grad_norm,
+    )
 
     # Create opponent pool
     opponent_pool = []
@@ -163,7 +178,7 @@ def run_online_training(
         )))
 
     logger.info(f"Online training: {num_games} games vs {[o[0] for o in opponent_pool]}")
-    logger.info(f"Learning rate: {lr}, Buffer size: {buffer_size}")
+    logger.info(f"lr={lr}, buffer={buffer_size}, weight_decay={weight_decay}, grad_clip={max_grad_norm}")
 
     # Training loop
     stats = {
@@ -281,10 +296,14 @@ def main():
                         help="Number of games to play")
     parser.add_argument("--opponents", type=str, default="random,heuristic",
                         help="Comma-separated list of opponents")
-    parser.add_argument("--lr", type=float, default=0.001,
-                        help="Learning rate")
-    parser.add_argument("--buffer", type=int, default=100,
-                        help="Replay buffer size")
+    parser.add_argument("--lr", type=float, default=0.0001,
+                        help="Learning rate (lowered to prevent forgetting)")
+    parser.add_argument("--buffer", type=int, default=500,
+                        help="Replay buffer size (increased for stability)")
+    parser.add_argument("--weight-decay", type=float, default=0.01,
+                        help="L2 regularization strength")
+    parser.add_argument("--grad-clip", type=float, default=1.0,
+                        help="Maximum gradient norm for clipping")
     parser.add_argument("--save-every", type=int, default=20,
                         help="Save checkpoint every N games")
     parser.add_argument("--output-dir", type=str, default="models/gmo",
@@ -298,6 +317,8 @@ def main():
         opponents=args.opponents.split(","),
         lr=args.lr,
         buffer_size=args.buffer,
+        weight_decay=args.weight_decay,
+        max_grad_norm=args.grad_clip,
         save_every=args.save_every,
         output_dir=args.output_dir,
     )

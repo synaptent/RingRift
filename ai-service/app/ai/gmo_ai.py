@@ -805,9 +805,11 @@ class GMOAI(BaseAI):
 
     def enable_online_learning(
         self,
-        lr: float = 0.001,
-        buffer_size: int = 100,
+        lr: float = 0.0001,  # Lowered from 0.001 to prevent catastrophic forgetting
+        buffer_size: int = 500,  # Increased from 100 for more diverse replay
         discount: float = 0.99,
+        weight_decay: float = 0.01,  # L2 regularization
+        max_grad_norm: float = 1.0,  # Gradient clipping threshold
     ) -> None:
         """Enable continuous learning during play.
 
@@ -815,10 +817,18 @@ class GMOAI(BaseAI):
         1. Record all moves during gameplay
         2. Update weights after each game based on outcome
 
+        Uses regularization techniques to prevent catastrophic forgetting:
+        - Lower learning rate (0.0001)
+        - Larger replay buffer (500)
+        - Weight decay (L2 regularization)
+        - Gradient clipping
+
         Args:
             lr: Learning rate for online updates
             buffer_size: Size of experience replay buffer
             discount: Temporal discount factor
+            weight_decay: L2 regularization strength
+            max_grad_norm: Maximum gradient norm for clipping
         """
         self._online_learner = OnlineLearner(
             state_encoder=self.state_encoder,
@@ -827,8 +837,13 @@ class GMOAI(BaseAI):
             lr=lr,
             buffer_size=buffer_size,
             discount=discount,
+            weight_decay=weight_decay,
+            max_grad_norm=max_grad_norm,
         )
-        logger.info(f"Online learning enabled (lr={lr}, buffer={buffer_size})")
+        logger.info(
+            f"Online learning enabled (lr={lr}, buffer={buffer_size}, "
+            f"weight_decay={weight_decay}, grad_clip={max_grad_norm})"
+        )
 
     def disable_online_learning(self) -> None:
         """Disable continuous learning."""
@@ -931,8 +946,14 @@ class OnlineLearner:
     3. Game-end: Update all moves with final outcome
     4. Hybrid: Combination of TD and outcome-based
 
-    Uses a small replay buffer to maintain stability while
-    allowing single-game updates.
+    Uses a replay buffer to maintain stability while allowing
+    single-game updates.
+
+    Regularization (added to prevent catastrophic forgetting):
+    - Weight decay: L2 regularization on all parameters
+    - Gradient clipping: Prevents exploding gradients
+    - Larger buffer: More diverse samples reduce overfitting
+    - Lower LR: Slower updates preserve learned knowledge
     """
 
     def __init__(
@@ -940,11 +961,13 @@ class OnlineLearner:
         state_encoder: StateEncoder,
         move_encoder: MoveEncoder,
         value_net: GMOValueNetWithUncertainty,
-        lr: float = 0.001,
+        lr: float = 0.0001,  # Lowered from 0.001 to prevent forgetting
         td_lambda: float = 0.9,
         discount: float = 0.99,
-        buffer_size: int = 100,
-        min_batch_size: int = 8,
+        buffer_size: int = 500,  # Increased from 100 for more diverse replay
+        min_batch_size: int = 16,  # Increased for more stable gradients
+        weight_decay: float = 0.01,  # L2 regularization
+        max_grad_norm: float = 1.0,  # Gradient clipping threshold
     ):
         self.state_encoder = state_encoder
         self.move_encoder = move_encoder
@@ -955,6 +978,8 @@ class OnlineLearner:
         self.discount = discount
         self.buffer_size = buffer_size
         self.min_batch_size = min_batch_size
+        self.weight_decay = weight_decay
+        self.max_grad_norm = max_grad_norm
 
         # Experience buffer (ring buffer)
         self.buffer: list[tuple[np.ndarray, Move, float]] = []
@@ -962,12 +987,13 @@ class OnlineLearner:
         # Current game trajectory
         self.trajectory: list[ExperienceSample] = []
 
-        # Optimizer for online updates
-        self.optimizer = torch.optim.Adam(
+        # Optimizer for online updates with weight decay
+        self.optimizer = torch.optim.AdamW(
             list(state_encoder.parameters()) +
             list(move_encoder.parameters()) +
             list(value_net.parameters()),
-            lr=lr
+            lr=lr,
+            weight_decay=weight_decay,
         )
 
         # Metrics
@@ -1044,6 +1070,15 @@ class OnlineLearner:
         self.optimizer.zero_grad()
         loss = nll_loss_with_uncertainty(current_value, current_log_var, target)
         loss.backward()
+
+        # Gradient clipping to prevent exploding gradients
+        all_params = (
+            list(self.state_encoder.parameters()) +
+            list(self.move_encoder.parameters()) +
+            list(self.value_net.parameters())
+        )
+        torch.nn.utils.clip_grad_norm_(all_params, self.max_grad_norm)
+
         self.optimizer.step()
 
         td_error = (target - current_value).item()
@@ -1105,6 +1140,15 @@ class OnlineLearner:
         self.optimizer.zero_grad()
         loss = nll_loss_with_uncertainty(pred_values, pred_log_vars, targets_tensor)
         loss.backward()
+
+        # Gradient clipping to prevent exploding gradients
+        all_params = (
+            list(self.state_encoder.parameters()) +
+            list(self.move_encoder.parameters()) +
+            list(self.value_net.parameters())
+        )
+        torch.nn.utils.clip_grad_norm_(all_params, self.max_grad_norm)
+
         self.optimizer.step()
 
         # Add to buffer for future updates
@@ -1175,6 +1219,15 @@ class OnlineLearner:
         self.optimizer.zero_grad()
         loss = nll_loss_with_uncertainty(pred_values, pred_log_vars, targets_tensor)
         loss.backward()
+
+        # Gradient clipping to prevent exploding gradients
+        all_params = (
+            list(self.state_encoder.parameters()) +
+            list(self.move_encoder.parameters()) +
+            list(self.value_net.parameters())
+        )
+        torch.nn.utils.clip_grad_norm_(all_params, self.max_grad_norm)
+
         self.optimizer.step()
 
         return loss.item()

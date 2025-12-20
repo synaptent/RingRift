@@ -122,6 +122,13 @@ def apply_pragmas(
         # Or with custom settings
         apply_pragmas(conn, custom_pragmas={"busy_timeout": 60000})
     """
+    # Whitelist of allowed PRAGMA names (security - prevents PRAGMA injection)
+    ALLOWED_PRAGMAS = frozenset({
+        "journal_mode", "busy_timeout", "synchronous", "wal_autocheckpoint",
+        "cache_size", "temp_store", "mmap_size", "page_size", "auto_vacuum",
+        "foreign_keys", "recursive_triggers", "secure_delete", "wal_checkpoint",
+    })
+
     # Get base profile
     profiles = {
         "standard": PragmaProfile.STANDARD,
@@ -135,8 +142,12 @@ def apply_pragmas(
     if custom_pragmas:
         pragmas.update(custom_pragmas)
 
-    # Execute PRAGMAs
+    # Execute PRAGMAs with validation
     for pragma, value in pragmas.items():
+        # Validate pragma name is in whitelist
+        if pragma not in ALLOWED_PRAGMAS:
+            logger.warning(f"Skipping disallowed PRAGMA: {pragma}")
+            continue
         try:
             conn.execute(f"PRAGMA {pragma}={value}")
         except sqlite3.OperationalError as e:

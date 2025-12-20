@@ -586,6 +586,9 @@ class SSHExecutor:
         proxy_parts = ["cloudflared", "access", "ssh", "--hostname", "%h"]
 
         # Add service token auth if configured (for non-interactive/automated use)
+        # NOTE: Service token secret is passed via command-line as per cloudflared docs.
+        # This is briefly visible in process listings. For higher security environments,
+        # consider using CLOUDFLARE_ACCESS_SERVICE_TOKEN_SECRET env var instead.
         if self.host.cloudflare_service_token_id and self.host.cloudflare_service_token_secret:
             proxy_parts.extend([
                 "--service-token-id", self.host.cloudflare_service_token_id,

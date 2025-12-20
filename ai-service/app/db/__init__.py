@@ -15,20 +15,18 @@ from app.db.parity_validator import (
     is_parity_validation_enabled,
     validate_game_parity,
 )
-from app.db.recording import (
-    GameRecorder,
-    cache_nnue_features_batch,
-    cache_nnue_features_for_game,
-    get_or_create_db,
-    record_completed_game,
-    record_completed_game_with_nnue_cache,
-    record_completed_game_with_parity_check,
-)
 from app.db.unified_recording import (
+    GameRecorder,
     RecordingConfig,
     RecordSource,
     UnifiedGameRecorder,
+    cache_nnue_features_batch,
+    cache_nnue_features_for_game,
+    get_or_create_db,
     get_unified_db,
+    record_completed_game,
+    record_completed_game_with_nnue_cache,
+    record_completed_game_with_parity_check,
     record_game_unified,
 )
 

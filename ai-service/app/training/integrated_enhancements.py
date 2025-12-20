@@ -552,6 +552,7 @@ class IntegratedTrainingManager:
 
         This is the torch tensor version for integration with train.py.
         Applies random augmentation per sample in the batch.
+        Uses GPU-accelerated transforms when possible.
 
         Args:
             features: Batch of board features (B, C, H, W) as torch tensor
@@ -564,26 +565,103 @@ class IntegratedTrainingManager:
             return features, policy_targets
 
         torch, _ = _get_torch_nn()
-        device = features.device
         batch_size = features.shape[0]
 
-        # Convert to numpy for augmentation
-        feat_np = features.cpu().numpy()
-        policy_np = policy_targets.cpu().numpy()
+        # Use GPU-accelerated D4 transforms for board features
+        # Pick a single random transform for the whole batch (faster)
+        t = self._augmentor.get_random_transform()
 
-        aug_features = np.zeros_like(feat_np)
-        aug_policy = np.zeros_like(policy_np)
+        # Apply board transform using PyTorch (stays on GPU)
+        aug_features = self._apply_gpu_board_transform(features, t, torch)
 
-        for i in range(batch_size):
-            t = self._augmentor.get_random_transform()
-            aug_features[i] = self._augmentor.transform_board(feat_np[i], t)
-            aug_policy[i] = self._augmentor.transform_dense_policy(policy_np[i], t)
+        # Use GPU-accelerated policy transform with precomputed index mapping
+        aug_policy = self._apply_gpu_policy_transform(policy_targets, t, torch)
 
-        # Convert back to torch tensors
-        aug_features_t = torch.from_numpy(aug_features).to(device)
-        aug_policy_t = torch.from_numpy(aug_policy).to(device)
+        return aug_features, aug_policy
 
-        return aug_features_t, aug_policy_t
+    def _get_policy_permutation(self, transform_id: int, policy_size: int, device: Any, torch: Any) -> Any:
+        """Get or compute the policy index permutation for a D4 transform.
+
+        Caches permutation tensors for reuse across batches.
+        """
+        cache_key = (transform_id, policy_size, str(device))
+
+        if not hasattr(self, '_policy_perm_cache'):
+            self._policy_perm_cache = {}
+
+        if cache_key not in self._policy_perm_cache:
+            # Compute the permutation using the augmentor
+            perm = np.arange(policy_size, dtype=np.int64)
+            for i in range(policy_size):
+                new_idx = self._augmentor.transformer.transform_move_index(i, transform_id)
+                if 0 <= new_idx < policy_size:
+                    perm[new_idx] = i  # Inverse mapping: new position -> old position
+            self._policy_perm_cache[cache_key] = torch.from_numpy(perm).to(device)
+
+        return self._policy_perm_cache[cache_key]
+
+    def _apply_gpu_policy_transform(self, policy: Any, transform_id: int, torch: Any) -> Any:
+        """Apply D4 transform to policy tensor using GPU.
+
+        Args:
+            policy: Tensor of shape (B, policy_size)
+            transform_id: D4 transform index 0-7
+            torch: PyTorch module
+
+        Returns:
+            Transformed policy tensor of same shape
+        """
+        if transform_id == 0:
+            return policy
+
+        device = policy.device
+        policy_size = policy.shape[1]
+
+        # Get cached permutation tensor
+        perm = self._get_policy_permutation(transform_id, policy_size, device, torch)
+
+        # Apply permutation using advanced indexing (all on GPU)
+        return policy[:, perm]
+
+    def _apply_gpu_board_transform(self, features: Any, transform_id: int, torch: Any) -> Any:
+        """Apply D4 symmetry transform to board features using GPU.
+
+        D4 transforms:
+        - 0: Identity
+        - 1: 90° CW rotation
+        - 2: 180° rotation
+        - 3: 270° CW rotation
+        - 4: Horizontal flip (left-right)
+        - 5: Vertical flip (up-down)
+        - 6: Main diagonal transpose
+        - 7: Anti-diagonal transpose
+
+        Args:
+            features: Tensor of shape (B, C, H, W)
+            transform_id: D4 transform index 0-7
+            torch: PyTorch module
+
+        Returns:
+            Transformed tensor of same shape
+        """
+        if transform_id == 0:
+            return features
+        elif transform_id == 1:  # 90° CW
+            return torch.rot90(features, -1, dims=(-2, -1))
+        elif transform_id == 2:  # 180°
+            return torch.rot90(features, 2, dims=(-2, -1))
+        elif transform_id == 3:  # 270° CW
+            return torch.rot90(features, 1, dims=(-2, -1))
+        elif transform_id == 4:  # Horizontal flip
+            return torch.flip(features, dims=(-1,))
+        elif transform_id == 5:  # Vertical flip
+            return torch.flip(features, dims=(-2,))
+        elif transform_id == 6:  # Main diagonal (transpose)
+            return features.transpose(-2, -1)
+        elif transform_id == 7:  # Anti-diagonal
+            return torch.flip(features.transpose(-2, -1), dims=(-2, -1))
+        else:
+            return features
 
     def compute_auxiliary_loss(
         self,

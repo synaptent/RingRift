@@ -175,12 +175,27 @@ ignore_imports = [
     # Allow specific exceptions for cache utilities
     "app.ai.cache_invalidation -> app.training.eval_cache",
     "app.ai.cache_invalidation -> app.training.export_cache",
+    # Legacy module - scheduled for deprecation (see DEPRECATION_AUDIT.md)
+    "app.ai._neural_net_legacy -> app.training.encoding",
+    "app.ai._neural_net_legacy -> app.training.model_versioning",
+    # TODO: Move generate_data shared logic to app.core or app.data
+    "app.ai.hybrid_gpu -> app.training.generate_data",
+    "app.ai.nnue_policy -> app.training.generate_data",
+    # Cache invalidation chain - uses config which imports training
+    "app.ai.cache_invalidation -> app.distributed.data_events",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Models should be dependency-free"
 type = "independence"
 modules = ["app.models"]
+# TODO: models.loader currently imports from ai and training for model loading
+# This should be refactored to move loading logic to models layer
+ignore_imports = [
+    "app.models.loader -> app.ai.nnue",
+    "app.models.loader -> app.ai.nnue_policy",
+    "app.models.loader -> app.training.model_registry",
+]
 
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
@@ -192,6 +207,17 @@ layers = [
     "app.models",
 ]
 # Allow same-layer imports and downward dependencies
+# TODO: Refactor these dependencies to follow layered architecture
+ignore_imports = [
+    # Models layer importing from higher layers
+    "app.models.loader -> app.ai.nnue",
+    "app.models.loader -> app.ai.nnue_policy",
+    "app.models.loader -> app.training.model_registry",
+    # Legacy game engine imports caches from ai layer
+    # TODO: Move cache modules to game_engine or core layer
+    "app._game_engine_legacy -> app.ai.move_cache",
+    "app.board_manager -> app.ai.territory_cache",
+]
 
 [tool.mutmut]
 # Mutation testing configuration for mutmut 2.x

@@ -85,6 +85,8 @@ except ImportError:
     dist = None
     DDP = None
 
+from app.utils.torch_utils import safe_load_checkpoint
+
 
 @dataclass
 class DistributedConfig:
@@ -267,7 +269,7 @@ class DistributedTrainer:
             return
         latest = checkpoints[-1]
         try:
-            checkpoint = torch.load(latest, map_location=self._get_device())
+            checkpoint = safe_load_checkpoint(latest, map_location=self._get_device(), warn_on_unsafe=False)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.step_count = checkpoint["step_count"]
             if self.optimizer and "optimizer_state_dict" in checkpoint:
