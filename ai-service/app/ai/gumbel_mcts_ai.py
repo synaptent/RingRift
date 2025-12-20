@@ -722,17 +722,14 @@ class GumbelMCTSAI(BaseAI):
             # Allocate budget evenly across remaining actions
             sims_per_action = max(1, budget_per_phase // len(remaining))
 
-            if use_batch:
-                # GPU path: Batch evaluate all actions' simulations at once
-                self._simulate_actions_batched(game_state, remaining, sims_per_action)
-            else:
-                # CPU path: Sequential evaluation
-                for action in remaining:
-                    value_sum = self._simulate_action(
-                        game_state, action.move, sims_per_action
-                    )
-                    action.visit_count += sims_per_action
-                    action.total_value += value_sum
+            # Always use tree-based search for proper MCTS exploration
+            # The batched version only does depth-1 evaluation without tree search
+            for action in remaining:
+                value_sum = self._simulate_action(
+                    game_state, action.move, sims_per_action
+                )
+                action.visit_count += sims_per_action
+                action.total_value += value_sum
 
             # Sort by completed Q-value and keep top half
             max_visits = max(a.visit_count for a in remaining)
@@ -749,7 +746,8 @@ class GumbelMCTSAI(BaseAI):
     ) -> float:
         """Simulate an action and return cumulative value.
 
-        Runs MCTS-style simulations from the state after taking the action.
+        Runs MCTS-style tree simulations from the state after taking the action.
+        Uses proper tree search with selection, expansion, evaluation, and backup.
 
         Args:
             game_state: Current game state.
@@ -765,35 +763,33 @@ class GumbelMCTSAI(BaseAI):
         # Apply the action
         undo = mstate.make_move(action)
 
+        # Check if terminal after action
+        if mstate.is_game_over():
+            winner = mstate.winner
+            if winner == self.player_number:
+                value = 1.0
+            elif winner is None:
+                value = 0.0
+            else:
+                value = -1.0
+            mstate.unmake_move(undo)
+            return value * num_sims
+
+        # Create root node for tree search from this position
+        root = GumbelNode(
+            move=action,
+            parent=None,
+            prior=1.0,
+            to_move_is_root=(mstate.current_player == self.player_number),
+        )
+
         total_value = 0.0
 
+        # Run tree simulations
         for _ in range(num_sims):
-            # Evaluate the resulting position with neural network
-            sim_state = mstate.to_immutable()
-
-            if sim_state.game_status == "completed":
-                # Terminal state - use game result
-                winner = sim_state.winner
-                if winner == self.player_number:
-                    value = 1.0
-                elif winner is None:
-                    value = 0.0  # Draw
-                else:
-                    value = -1.0
-            elif self.neural_net is not None:
-                # Use neural network value
-                try:
-                    values, _ = self.neural_net.evaluate_batch([sim_state])
-                    value = values[0] if values else 0.0
-
-                    # Adjust for perspective
-                    if sim_state.current_player != self.player_number:
-                        value = -value
-                except Exception:
-                    value = 0.0
-            else:
-                value = 0.0
-
+            # Clone state for each simulation (tree simulation modifies state)
+            sim_mstate = MutableGameState.from_immutable(mstate.to_immutable())
+            value = self._run_tree_simulation(sim_mstate, root, max_depth=10)
             total_value += value
 
         # Unmake the action

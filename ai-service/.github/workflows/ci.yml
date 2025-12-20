@@ -303,26 +303,43 @@ jobs:
 
       - name: Run mutation testing on critical modules
         run: |
-          # Run mutation testing on small, critical modules
+          # Run mutation testing on small, critical modules using mutmut
           # This validates that our tests actually catch bugs
+
+          MODULE="app/ai/neural_losses.py"
+          TEST_FILE="tests/unit/ai/test_neural_losses.py"
+
+          # Verify baseline test passes
+          echo "Running baseline test..."
+          python -m pytest "$TEST_FILE" -x -q --timeout=30
+
+          # Clean up any previous artifacts
+          rm -rf .mutmut-cache mutants
+
+          # Run mutmut (informational - doesn't block CI)
           mutmut run \
-            --paths-to-mutate=app/ai/neural_losses.py \
+            --paths-to-mutate="$MODULE" \
             --tests-dir=tests/ \
-            --runner="python -m pytest tests/unit/ai/test_neural_losses.py -x -q --tb=no" \
+            --runner="python -m pytest $TEST_FILE -x -q --tb=no --timeout=30" \
             --no-progress || true
 
           # Report results
           echo "=== Mutation Testing Results ==="
-          mutmut results
+          mutmut results || echo "No results available"
 
-          # Check survival rate (warn if >30% survive)
-          SURVIVED=$(mutmut results 2>/dev/null | grep -oP 'Survived: \K\d+' || echo "0")
-          TOTAL=$(mutmut results 2>/dev/null | grep -oP 'Total: \K\d+' || echo "1")
-          if [ "$TOTAL" -gt 0 ]; then
-            RATE=$((SURVIVED * 100 / TOTAL))
-            echo "Mutation survival rate: ${RATE}%"
-            if [ "$RATE" -gt 30 ]; then
-              echo "::warning::High mutation survival rate (${RATE}%) - consider adding more thorough tests"
+          # Calculate and report survival rate
+          RESULTS=$(mutmut results 2>/dev/null || echo "")
+          if [ -n "$RESULTS" ]; then
+            SURVIVED=$(echo "$RESULTS" | grep -oP 'Survived: \K\d+' || echo "0")
+            KILLED=$(echo "$RESULTS" | grep -oP 'Killed: \K\d+' || echo "0")
+            TOTAL=$((SURVIVED + KILLED))
+
+            if [ "$TOTAL" -gt 0 ]; then
+              KILL_RATE=$((KILLED * 100 / TOTAL))
+              echo "Kill rate: ${KILL_RATE}% ($KILLED/$TOTAL mutations killed)"
+              if [ "$KILL_RATE" -lt 70 ]; then
+                echo "::warning::Low mutation kill rate (${KILL_RATE}%) - consider adding more thorough tests"
+              fi
             fi
           fi
 
@@ -391,6 +408,28 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=40 \
             --timeout=120
+
+  performance-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'ai-service/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: Run performance regression tests
+        run: |
+          pytest tests/benchmarks/test_performance_regression.py -v --tb=short --timeout=120
 
   sanity-check:
     runs-on: ubuntu-latest

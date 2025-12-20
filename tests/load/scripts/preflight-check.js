@@ -37,15 +37,33 @@ const https = require('https');
 // Configuration
 // ============================================================================
 
+const userPoolSize = parseInt(process.env.LOADTEST_USER_POOL_SIZE || '0', 10);
+const userPoolPrefix = process.env.LOADTEST_USER_POOL_PREFIX || 'loadtest_user_';
+const userPoolDomain = process.env.LOADTEST_USER_POOL_DOMAIN || 'loadtest.local';
+const userPoolPassword = process.env.LOADTEST_USER_POOL_PASSWORD || 'LoadTestK6Pass123';
+const hasExplicitTestEmail = Object.prototype.hasOwnProperty.call(process.env, 'LOADTEST_EMAIL');
+const hasExplicitTestPassword = Object.prototype.hasOwnProperty.call(process.env, 'LOADTEST_PASSWORD');
+
+const defaultTestEmail = 'loadtest_user_1@loadtest.local';
+const poolTestEmail = `${userPoolPrefix}1@${userPoolDomain}`;
+
 const config = {
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
   aiServiceUrl: process.env.AI_SERVICE_URL || 'http://localhost:8001',
-  testEmail: process.env.LOADTEST_EMAIL || 'loadtest_user_1@loadtest.local',
-  testPassword: process.env.LOADTEST_PASSWORD || 'LoadTestK6Pass123',
-  userPoolSize: parseInt(process.env.LOADTEST_USER_POOL_SIZE || '0', 10),
-  userPoolPrefix: process.env.LOADTEST_USER_POOL_PREFIX || 'loadtest_user_',
-  userPoolDomain: process.env.LOADTEST_USER_POOL_DOMAIN || 'loadtest.local',
-  userPoolPassword: process.env.LOADTEST_USER_POOL_PASSWORD || 'LoadTestK6Pass123',
+  testEmail: hasExplicitTestEmail
+    ? process.env.LOADTEST_EMAIL
+    : userPoolSize > 0
+      ? poolTestEmail
+      : defaultTestEmail,
+  testPassword: hasExplicitTestPassword
+    ? process.env.LOADTEST_PASSWORD
+    : userPoolSize > 0
+      ? userPoolPassword
+      : 'LoadTestK6Pass123',
+  userPoolSize,
+  userPoolPrefix,
+  userPoolDomain,
+  userPoolPassword,
   seedUserPassword: process.env.LOADTEST_USER_PASSWORD,
   expectedVus: parseInt(process.env.LOADTEST_EXPECTED_VUS || '0', 10),
   expectedDurationSeconds: parseInt(
@@ -254,7 +272,9 @@ const checks = {
       }
     }
 
+    const shouldUsePool = config.userPoolSize > 0 || expectedVus > 1;
     if (
+      shouldUsePool &&
       config.seedUserPassword &&
       config.userPoolPassword &&
       config.seedUserPassword !== config.userPoolPassword

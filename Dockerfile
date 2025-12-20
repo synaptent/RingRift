@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig*.json ./
 COPY vite.config.ts ./
-COPY postcss.config.js ./
+COPY postcss.config.mjs ./
 COPY tailwind.config.js ./
 
 # Install dependencies (including devDependencies for build tools)

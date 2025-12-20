@@ -56,8 +56,10 @@ const normalizeIpKey = (ip: string | undefined | null): string => {
 //
 // The bypass is opt-in and requires BOTH:
 // - RATE_LIMIT_BYPASS_ENABLED=true in environment
-// - Request from a user matching RATE_LIMIT_BYPASS_USER_PATTERN
-//   OR request from an IP in RATE_LIMIT_BYPASS_IPS
+// - AND one of:
+//   - Request with valid X-RateLimit-Bypass-Token header matching RATE_LIMIT_BYPASS_TOKEN
+//   - Request from a user matching RATE_LIMIT_BYPASS_USER_PATTERN
+//   - Request from an IP in RATE_LIMIT_BYPASS_IPS
 //
 // =============================================================================
 
@@ -71,14 +73,32 @@ const isRateLimitBypassEnabled = (): boolean => {
 };
 
 /**
+ * Get the bypass token from environment.
+ * Returns null if bypass is disabled or token is not configured.
+ */
+const getBypassToken = (): string | null => {
+  if (!isRateLimitBypassEnabled()) return null;
+  const token = process.env.RATE_LIMIT_BYPASS_TOKEN;
+  // Token must be at least 16 characters for security
+  if (token && token.length >= 16) {
+    return token;
+  }
+  return null;
+};
+
+/**
  * Get the compiled regex pattern for load test user emails.
  * Returns null if bypass is disabled or pattern is invalid.
  */
 const getBypassUserPattern = (): RegExp | null => {
   if (!isRateLimitBypassEnabled()) return null;
-  // Default pattern: ^loadtest\..+@loadtest\.local$
-  // Matches: loadtest.user1@loadtest.local, loadtest.vu_42@loadtest.local
-  const pattern = process.env.RATE_LIMIT_BYPASS_USER_PATTERN || '^loadtest\\..+@loadtest\\.local$';
+  // Default pattern: ^loadtest[._].+@loadtest\.local$
+  // Matches both underscore and dot separators:
+  //   - loadtest.user1@loadtest.local
+  //   - loadtest_user_1@loadtest.local
+  //   - loadtest_vu_42@loadtest.local
+  const pattern =
+    process.env.RATE_LIMIT_BYPASS_USER_PATTERN || '^loadtest[._].+@loadtest\\.local$';
   try {
     return new RegExp(pattern);
   } catch {
@@ -111,7 +131,7 @@ const getBypassIPs = (): Set<string> => {
  */
 const logBypassTriggered = (
   req: Request,
-  reason: 'ip' | 'user_pattern',
+  reason: 'ip' | 'user_pattern' | 'bypass_token',
   identifier: string
 ): void => {
   const authReq = req as AuthenticatedRequest;
@@ -130,7 +150,11 @@ const logBypassTriggered = (
 /**
  * Check if a request should bypass rate limiting.
  *
- * Returns true for load test users or whitelisted IPs when bypass is enabled.
+ * Returns true when bypass is enabled AND one of:
+ * - Request has valid X-RateLimit-Bypass-Token header matching RATE_LIMIT_BYPASS_TOKEN
+ * - Request from a user matching RATE_LIMIT_BYPASS_USER_PATTERN
+ * - Request from an IP in RATE_LIMIT_BYPASS_IPS
+ *
  * All bypass events are logged for audit purposes.
  *
  * @param req - Express request object
@@ -139,6 +163,18 @@ const logBypassTriggered = (
  */
 export const shouldBypassRateLimit = (req: Request, logBypass: boolean = true): boolean => {
   if (!isRateLimitBypassEnabled()) return false;
+
+  // Check bypass token header first (most reliable for load tests)
+  const bypassToken = getBypassToken();
+  if (bypassToken) {
+    const headerToken = req.headers['x-ratelimit-bypass-token'] as string | undefined;
+    if (headerToken && headerToken === bypassToken) {
+      if (logBypass) {
+        logBypassTriggered(req, 'bypass_token', '(token)');
+      }
+      return true;
+    }
+  }
 
   // Check IP whitelist
   const normalizedIp = normalizeIpKey(req.ip);
@@ -402,11 +438,17 @@ export const initializeRateLimiters = (redis: RedisClientType | null) => {
   if (isRateLimitBypassEnabled()) {
     const isProduction = process.env.NODE_ENV === 'production';
     const level = isProduction ? 'error' : 'warn';
+    const bypassTokenConfigured = !!(
+      process.env.RATE_LIMIT_BYPASS_TOKEN &&
+      process.env.RATE_LIMIT_BYPASS_TOKEN.length >= 16
+    );
     logger[level](
       `SECURITY: Rate limit bypass is ENABLED. ${isProduction ? 'This is dangerous in production!' : 'Acceptable for testing only.'}`,
       {
         event: 'rate_limit_bypass_enabled',
-        bypassPattern: process.env.RATE_LIMIT_BYPASS_USER_PATTERN || 'loadtest.*@loadtest\\.local',
+        bypassTokenConfigured,
+        bypassPattern:
+          process.env.RATE_LIMIT_BYPASS_USER_PATTERN || '^loadtest[._].+@loadtest\\.local$',
         bypassIPs: process.env.RATE_LIMIT_BYPASS_IPS || '(none)',
         isProduction,
       }

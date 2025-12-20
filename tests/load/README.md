@@ -153,6 +153,18 @@ Auth refresh controls (optional):
 - `LOADTEST_AUTH_TOKEN_TTL_S` – default JWT TTL (seconds) when the API does not return `expiresIn`.
 - `LOADTEST_AUTH_REFRESH_WINDOW_S` – safety window before expiry to refresh a token.
 
+Preflight checks (recommended for long runs):
+
+- `npm run load:preflight -- --expected-vus 300 --expected-duration-s 1800`
+- Validates backend health, auth `expiresIn`/TTL alignment, and user pool sizing.
+- You can set `LOADTEST_EXPECTED_VUS` / `LOADTEST_EXPECTED_DURATION_S` instead of flags.
+- Runner scripts under `tests/load/scripts/` call this automatically unless `SKIP_PREFLIGHT_CHECKS=true`.
+
+Load-test user pool controls (optional):
+
+- `LOADTEST_USER_POOL_SIZE`, `LOADTEST_USER_POOL_PASSWORD`
+- `LOADTEST_USER_POOL_PREFIX`, `LOADTEST_USER_POOL_DOMAIN`
+
 ### Scenario 1: Game Creation (`game-creation.js`)
 
 **Purpose:** Validate game creation latency and throughput under load.

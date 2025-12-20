@@ -72,7 +72,7 @@ def multi_player_value_loss(
             dtype=torch.long,
         )
         if num_players_tensor.ndim == 0:
-            n = int(num_players_tensor.item())
+            n = None
             if n < 1 or n > max_players:
                 raise ValueError(
                     f"num_players must be in [1, {max_players}], got {n}."

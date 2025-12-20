@@ -18,6 +18,7 @@ set -euo pipefail
 #   K6_EXTRA_ARGS  - Additional arguments to pass to k6
 #   SKIP_CONFIRM   - Set to 'true' to skip the confirmation prompt
 #   SCENARIO_ID    - Scenario identifier/tag (default: BCAP_SQ8_3P_TARGET_100G_300P)
+#   SKIP_PREFLIGHT_CHECKS - Set to 'true' to skip extended preflight validation
 #   SKIP_WS_COMPANION - Set to 1/true to skip the WebSocket companion run
 #   SEED_LOADTEST_USERS - If 'true', seed load-test users before running (uses scripts/seed-loadtest-users.js)
 #   LOADTEST_USER_COUNT / LOADTEST_USER_DOMAIN / LOADTEST_USER_OFFSET / LOADTEST_USER_PASSWORD / LOADTEST_USER_ROLE - Seeding overrides
@@ -28,6 +29,8 @@ LOAD_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$(dirname "$LOAD_DIR")")"
 SCENARIO_ID_DEFAULT="BCAP_SQ8_3P_TARGET_100G_300P"
 SCENARIO_ID="${SCENARIO_ID:-$SCENARIO_ID_DEFAULT}"
+EXPECTED_VUS=300
+EXPECTED_DURATION_S=1800
 
 # Default to staging
 TARGET="${1:-staging}"
@@ -94,6 +97,7 @@ case "$TARGET" in
     echo "  STAGING_URL    URL for staging environment"
     echo "  K6_EXTRA_ARGS  Additional k6 arguments"
     echo "  SKIP_CONFIRM   Set to 'true' to skip confirmation prompt"
+    echo "  SKIP_PREFLIGHT_CHECKS  Skip extended preflight validation"
     echo ""
     echo "Duration: Approximately 30 minutes"
     echo "Resource Requirements: ~8GB RAM, 4+ CPU cores"
@@ -137,6 +141,17 @@ log_info "k6 version: $(k6 version)"
 # Pre-flight checks
 echo ""
 log_info "Running pre-flight checks..."
+
+# Extended preflight validation (auth TTL, pool sizing, etc.)
+if [[ "${SKIP_PREFLIGHT_CHECKS:-false}" != "true" ]]; then
+    log_info "Running extended preflight validation..."
+    BASE_URL="$BASE_URL" AI_SERVICE_URL="${AI_SERVICE_URL:-}" \
+        node "$LOAD_DIR/scripts/preflight-check.js" \
+        --expected-vus "$EXPECTED_VUS" \
+        --expected-duration-s "$EXPECTED_DURATION_S"
+else
+    log_warning "Skipping extended preflight checks (SKIP_PREFLIGHT_CHECKS=true)"
+fi
 
 # 1. Health check
 HEALTH_URL="$BASE_URL/health"

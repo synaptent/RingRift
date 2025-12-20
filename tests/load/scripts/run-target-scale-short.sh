@@ -15,6 +15,7 @@ set -euo pipefail
 #
 # Environment Variables:
 #   Same as run-target-scale.sh - see that file for full documentation.
+#   SKIP_PREFLIGHT_CHECKS - Set to 'true' to skip extended preflight validation
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +23,8 @@ LOAD_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$(dirname "$LOAD_DIR")")"
 SCENARIO_ID_DEFAULT="BCAP_SQ8_3P_TARGET_SHORT_100G_300P"
 SCENARIO_ID="${SCENARIO_ID:-$SCENARIO_ID_DEFAULT}"
+EXPECTED_VUS=300
+EXPECTED_DURATION_S=720
 
 # Default to staging
 TARGET="${1:-staging}"
@@ -78,6 +81,9 @@ case "$TARGET" in
     echo "  --local     Run against local development server (localhost:3001)"
     echo "  --staging   Run against staging environment (default)"
     echo "  --help      Show this help message"
+    echo ""
+    echo "Environment Variables:"
+    echo "  SKIP_PREFLIGHT_CHECKS  Skip extended preflight validation"
     exit 0
     ;;
   *)
@@ -116,6 +122,16 @@ log_info "k6 version: $(k6 version)"
 # Pre-flight checks
 echo ""
 log_info "Running pre-flight checks..."
+
+if [[ "${SKIP_PREFLIGHT_CHECKS:-false}" != "true" ]]; then
+    log_info "Running extended preflight validation..."
+    BASE_URL="$BASE_URL" AI_SERVICE_URL="${AI_SERVICE_URL:-}" \
+        node "$LOAD_DIR/scripts/preflight-check.js" \
+        --expected-vus "$EXPECTED_VUS" \
+        --expected-duration-s "$EXPECTED_DURATION_S"
+else
+    log_warning "Skipping extended preflight checks (SKIP_PREFLIGHT_CHECKS=true)"
+fi
 
 # Health check
 HEALTH_URL="$BASE_URL/health"

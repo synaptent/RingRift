@@ -51,6 +51,13 @@ This document tracks deprecated modules and their replacements as part of the co
 | `app/training/distributed.py`                        | DEPRECATED | `distributed_unified.py` | Old distributed training |
 | `app/training/advanced_training.py` (some functions) | PARTIAL    | Newer training modules   | Check specific functions |
 
+### Neural Network
+
+| Module                         | Status     | Replacement            | Notes                                |
+| ------------------------------ | ---------- | ---------------------- | ------------------------------------ |
+| `app/ai/_neural_net_legacy.py` | DEPRECATED | `nnue.py`, `nnue_policy.py` | CNN policy net, being phased out for NNUE |
+| `app/ai/neural_net/` (package) | DEPRECATED | `nnue_policy.py`       | Re-exports from legacy module        |
+
 ### Tournament/Elo
 
 | Module                             | Status | Replacement       | Notes               |

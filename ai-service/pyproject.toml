@@ -190,12 +190,15 @@ layers = [
 # Allow same-layer imports and downward dependencies
 
 [tool.mutmut]
-# Mutation testing configuration for mutmut 3.x
-# Run with: mutmut run
+# Mutation testing configuration for mutmut 2.x
+# Run with: mutmut run --paths-to-mutate=app/ai/neural_losses.py
 # View results: mutmut results
 
 # Source files to mutate (start with small, critical modules)
-source = "app/ai/neural_losses.py"
+paths_to_mutate = "app/ai/neural_losses.py"
 
-# Tests directory
-tests = "tests/unit/ai/test_neural_losses.py"
+# Tests to run for mutation detection
+runner = "python -m pytest tests/unit/ai/test_neural_losses.py -x -q --tb=no"
+
+# Skip mutations in these patterns
+dict_synonyms = "Struct, NamedStruct"

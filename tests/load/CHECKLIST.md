@@ -86,6 +86,11 @@ Use this checklist before running baseline or stress load tests to ensure accura
   cd tests/load && npm run validate:dry-run
   ```
 
+- [ ] **Preflight Checks** - Validate auth TTL + user pool sizing before long runs
+  ```bash
+  npm run load:preflight -- --expected-vus 300 --expected-duration-s 1800
+  ```
+
 ## Pre-Run Smoke Test
 
 Before running full baseline, verify with a quick smoke test:
@@ -115,7 +120,7 @@ npm run load:baseline:local
 npm run load:baseline:staging
 ```
 
-Note: The baseline (`npm run load:baseline:*`) and target-scale (`npm run load:target:*`) harness scripts perform a login pre-flight against `${BASE_URL}/api/auth/login` using the configured `LOADTEST_EMAIL` and `LOADTEST_PASSWORD`. If this login fails, the script aborts before starting k6 and will typically suggest running `npm run load:seed-users` and verifying staging auth environment variables (for example `JWT_SECRET`, `JWT_REFRESH_SECRET`) and network connectivity to `${BASE_URL}`.
+Note: The load-test runner scripts under `tests/load/scripts/` now run the extended preflight (`tests/load/scripts/preflight-check.js`) unless `SKIP_PREFLIGHT_CHECKS=true`. It validates login, token TTL/expiresIn, and user pool sizing, defaulting to pool credentials when `LOADTEST_EMAIL`/`LOADTEST_PASSWORD` are not set. If preflight fails, the script aborts and typically suggests seeding users (`npm run load:seed-users`) or fixing auth settings (for example `JWT_SECRET`, `JWT_REFRESH_SECRET`) and network connectivity to `${BASE_URL}`.
 
 ### Option 2: Direct script execution
 

@@ -16,6 +16,7 @@ set -euo pipefail
 #   STAGING_URL    - URL for staging environment (default: http://localhost:3000)
 #   MAX_VUS        - Maximum VUs to stress test to (default: 500)
 #   SKIP_CONFIRM   - Set to 'true' to skip the confirmation prompt
+#   SKIP_PREFLIGHT_CHECKS - Set to 'true' to skip extended preflight validation
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,6 +32,8 @@ SUMMARY_FILE="$RESULTS_DIR/stress_${TARGET}_${TIMESTAMP}_summary.json"
 
 # Maximum VUs for stress test - configurable
 MAX_VUS="${MAX_VUS:-500}"
+EXPECTED_VUS="$MAX_VUS"
+EXPECTED_DURATION_S=1800
 
 # Color output helpers
 RED='\033[0;31m'
@@ -83,6 +86,7 @@ case "$TARGET" in
     echo "  STAGING_URL    URL for staging environment"
     echo "  MAX_VUS        Maximum VUs to stress test to (default: 500)"
     echo "  SKIP_CONFIRM   Set to 'true' to skip confirmation prompt"
+    echo "  SKIP_PREFLIGHT_CHECKS  Skip extended preflight validation"
     echo ""
     echo "Duration: Approximately 30 minutes"
     exit 0
@@ -121,6 +125,16 @@ log_info "k6 version: $(k6 version)"
 # Pre-flight health check
 echo ""
 log_info "Running pre-flight checks..."
+
+if [[ "${SKIP_PREFLIGHT_CHECKS:-false}" != "true" ]]; then
+    log_info "Running extended preflight validation..."
+    BASE_URL="$BASE_URL" AI_SERVICE_URL="${AI_SERVICE_URL:-}" \
+        node "$LOAD_DIR/scripts/preflight-check.js" \
+        --expected-vus "$EXPECTED_VUS" \
+        --expected-duration-s "$EXPECTED_DURATION_S"
+else
+    log_warning "Skipping extended preflight checks (SKIP_PREFLIGHT_CHECKS=true)"
+fi
 
 HEALTH_URL="$BASE_URL/health"
 if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
