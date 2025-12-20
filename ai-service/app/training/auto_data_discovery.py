@@ -179,8 +179,8 @@ def discover_training_data(
     num_players: Optional[int] = None,
     target_games: int = 100000,
     min_quality: float = 0.0,
-    _prefer_recent: bool = True,
-    _prefer_high_elo: bool = True,
+    prefer_recent: bool = True,  # Reserved for future path-level sorting
+    prefer_high_elo: bool = True,  # Reserved for future path-level sorting
 ) -> DiscoveryResult:
     """Perform full automatic data discovery for training.
 
@@ -199,6 +199,10 @@ def discover_training_data(
     Returns:
         DiscoveryResult with paths and metadata
     """
+    # Reserved parameters for future path-level sorting
+    _ = prefer_recent
+    _ = prefer_high_elo
+
     import time
     start_time = time.time()
 
@@ -256,6 +260,8 @@ def get_high_quality_game_ids(
     limit: int = 10000,
     board_type: Optional[str] = None,
     num_players: Optional[int] = None,
+    prefer_recent: bool = True,
+    prefer_high_elo: bool = True,
 ) -> List[str]:
     """Get game IDs of high-quality games for training.
 
@@ -264,9 +270,11 @@ def get_high_quality_game_ids(
         limit: Maximum number of game IDs to return
         board_type: Filter by board type
         num_players: Filter by player count
+        prefer_recent: Prefer recently created games
+        prefer_high_elo: Prefer games from high-Elo players
 
     Returns:
-        List of game IDs sorted by quality score
+        List of game IDs sorted by specified criteria
     """
     if not HAS_DATA_CATALOG:
         return []
@@ -278,6 +286,8 @@ def get_high_quality_game_ids(
             max_games=limit,
             board_type=board_type,
             num_players=num_players,
+            prefer_recent=prefer_recent,
+            prefer_high_elo=prefer_high_elo,
         )
         return [g.game_id for g in games]
     except Exception as e:

@@ -33,13 +33,14 @@ from app.utils.paths import AI_SERVICE_ROOT
 try:
     from app.coordination import (
         TaskType,
-        can_spawn,
         register_running_task,
     )
+    from app.coordination.helpers import can_spawn_safe
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False
     TaskType = None
+    can_spawn_safe = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -124,10 +125,10 @@ class BackgroundSelfplayManager:
         max_moves = int(config.get("max_moves", 2000))  # Minimum 2000 for all boards
 
         # Check coordination before spawning (advisory)
-        if HAS_COORDINATION:
+        if HAS_COORDINATION and can_spawn_safe is not None:
             try:
                 node_id = socket.gethostname()
-                allowed, reason = can_spawn(TaskType.SELFPLAY, node_id)
+                allowed, reason = can_spawn_safe(TaskType.SELFPLAY, node_id)
                 if not allowed:
                     print(f"[background] Coordination warning: {reason}")
                     print("[background] Proceeding anyway (coordination is advisory)")

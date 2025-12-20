@@ -213,7 +213,7 @@ class EloService:
         if is_write and self._enforce_single_writer and OrchestratorRole is not None:
             # Check if tournament role is held (tournaments write to Elo DB)
             if has_role is not None and has_role(OrchestratorRole.TOURNAMENT_RUNNER):
-                holder_info = get_role_holder(OrchestratorRole.TOURNAMENT_RUNNER) if get_role_holder else None
+                holder_info = get_role_holder(OrchestratorRole.TOURNAMENT_RUNNER) if get_role_holder is not None else None
                 if holder_info and hasattr(holder_info, 'pid') and holder_info.pid != os.getpid():
                     raise RuntimeError(
                         f"Elo write blocked: TOURNAMENT_RUNNER role held by PID {holder_info.pid}. "
@@ -241,7 +241,7 @@ class EloService:
             return True, "No coordinator available"
 
         if has_role(OrchestratorRole.TOURNAMENT_RUNNER):
-            holder_info = get_role_holder(OrchestratorRole.TOURNAMENT_RUNNER) if get_role_holder else None
+            holder_info = get_role_holder(OrchestratorRole.TOURNAMENT_RUNNER) if get_role_holder is not None else None
             if holder_info and hasattr(holder_info, 'pid'):
                 if holder_info.pid == os.getpid():
                     return True, "This process holds TOURNAMENT_RUNNER role"

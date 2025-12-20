@@ -332,7 +332,7 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             values_mp = np.zeros((num_samples, config.max_players), dtype=np.float32)
             num_players_arr = np.full(num_samples, config.num_players, dtype=np.int32)
             for i, sample in enumerate(game_history):
-                values_mp[i, sample['player'] - 1] = sample['final_value']
+                values_mp[i, sample['player'] - 1] = sample['final_value']  # type: ignore[call-overload]
 
         # Auxiliary task targets (2025-12)
         # Game length: total moves in the game (same for all samples)

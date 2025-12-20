@@ -300,7 +300,7 @@ class TournamentOrchestrator:
         - CurriculumFeedback to adjust training priorities
         - RollbackManager to detect regressions
         """
-        if not HAS_EVENT_BUS or not emit_elo_updated:
+        if not HAS_EVENT_BUS or emit_elo_updated is None:
             return
 
         try:

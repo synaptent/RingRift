@@ -1076,7 +1076,7 @@ class LearningRateFinder:
 
         # Return LR slightly before the minimum gradient point
         suggested_idx = max(0, min_grad_idx - 2)
-        return self.lrs[suggested_idx]
+        return self.lrs[suggested_idx]  # type: ignore[call-overload]
 
     def plot(self, path: str) -> None:
         """Plot LR vs Loss curve and save to file."""

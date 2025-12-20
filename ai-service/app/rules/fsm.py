@@ -102,7 +102,7 @@ def _get_allowed_move_types_for_phase(phase: GamePhase) -> Set[str]:
         return set()
 
     contract = phase_move_contract()
-    allowed = contract.get(canonical_phase, ())  # type: ignore[arg-type]
+    allowed = contract.get(canonical_phase, ())  # type: ignore[call-overload]
     return set(allowed)
 
 

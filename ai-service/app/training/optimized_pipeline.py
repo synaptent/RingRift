@@ -383,7 +383,7 @@ class OptimizedTrainingPipeline:
         if config_key in self._active_locks:
             return True  # Already have lock
 
-        lock_timeout = LockDefaults.TRAINING_LOCK_TIMEOUT if LockDefaults else 7200
+        lock_timeout = LockDefaults.TRAINING_LOCK_TIMEOUT if LockDefaults is not None else 7200
         lock = DistributedLock(f"training:{config_key}", lock_timeout=lock_timeout)
         if lock.acquire(timeout=timeout, blocking=True):
             self._active_locks[config_key] = lock

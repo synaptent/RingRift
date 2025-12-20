@@ -1,239 +1,207 @@
-#!/usr/bin/env python
-"""Diagnose EBMO model behavior.
+#!/usr/bin/env python3
+"""Diagnose EBMO model behavior to understand poor performance."""
 
-Checks:
-1. Energy value distributions
-2. Whether optimization is working
-3. Move selection quality
-"""
-
-import os
 import sys
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import numpy as np
+from pathlib import Path
+
+from app.models import AIConfig, GameState
 from app.ai.ebmo_ai import EBMO_AI
-from app.ai.ebmo_network import EBMONetwork, EBMOConfig, ActionFeatureExtractor
-from app.ai.factory import AIFactory
-from app.models.core import AIType, AIConfig, BoardType
-from app.game_engine import GameEngine
-from app.training.generate_data import create_initial_state
+from app.ai.ebmo_network import EBMOConfig, load_ebmo_model
+from app.game.game import Game
 
 
 def diagnose_model(model_path: str):
-    """Run diagnostics on EBMO model."""
+    """Run diagnostic checks on EBMO model."""
     print(f"\n{'='*60}")
-    print(f"EBMO Model Diagnostics: {model_path}")
+    print(f"EBMO Model Diagnostics")
+    print(f"Model: {model_path}")
     print(f"{'='*60}\n")
 
+    # Check if model exists
+    if not Path(model_path).exists():
+        print(f"ERROR: Model not found at {model_path}")
+        return
+
     # Load model
-    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
-    print("Checkpoint keys:", list(checkpoint.keys()))
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    config = EBMOConfig()
+    network, info = load_ebmo_model(model_path, device, config)
+    network.eval()
 
-    if 'config' in checkpoint:
-        config_data = checkpoint['config']
-        print(f"Model config: {config_data}")
-        # Handle dict vs EBMOConfig object
-        if isinstance(config_data, dict):
-            config = EBMOConfig(**{k: v for k, v in config_data.items() if hasattr(EBMOConfig, k) or k in EBMOConfig.__dataclass_fields__})
-        else:
-            config = config_data
-    else:
-        config = EBMOConfig()
+    print("Model loaded successfully")
+    print(f"  Device: {device}")
+    print(f"  Info: {info}")
 
-    model = EBMONetwork(config)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
+    # Create AI instance
+    ai_config = AIConfig(difficulty=5)
+    ai = EBMO_AI(player_number=1, config=ai_config, model_path=model_path)
 
-    # Check model parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\nModel parameters: {total_params:,} total, {trainable_params:,} trainable")
+    # Create a fresh game
+    game = Game()
+    state = game.get_state()
 
-    # Check for NaN/Inf in weights
-    has_nan = False
-    has_inf = False
-    for name, param in model.named_parameters():
-        if torch.isnan(param).any():
-            print(f"  WARNING: NaN in {name}")
-            has_nan = True
-        if torch.isinf(param).any():
-            print(f"  WARNING: Inf in {name}")
-            has_inf = True
-
-    if not has_nan and not has_inf:
-        print("  All weights are finite (no NaN/Inf)")
-
-    # Check weight statistics
-    print("\nWeight statistics:")
-    for name, param in model.named_parameters():
-        if 'weight' in name:
-            print(f"  {name}: mean={param.mean().item():.4f}, std={param.std().item():.4f}, "
-                  f"min={param.min().item():.4f}, max={param.max().item():.4f}")
-
-    # Create a test game state
-    print("\n" + "="*60)
-    print("Testing on sample game state")
-    print("="*60 + "\n")
-
-    state = create_initial_state(board_type=BoardType.SQUARE8, num_players=2)
-    engine = GameEngine()
-
-    # Create EBMO AI
-    ebmo = EBMO_AI(
-        player_number=1,
-        config=AIConfig(difficulty=5),
-        model_path=model_path
-    )
+    print(f"\n--- Game State ---")
+    print(f"  Phase: {state.phase}")
+    print(f"  Current player: {state.current_player}")
 
     # Get valid moves
-    valid_moves = ebmo.get_valid_moves(state)
-    print(f"Valid moves at start: {len(valid_moves)}")
+    valid_moves = ai.get_valid_moves(state)
+    print(f"  Valid moves: {len(valid_moves)}")
 
-    # Encode state
-    with torch.no_grad():
-        state_embed = ebmo.network.encode_state_from_game(state, 1, ebmo.device)
-        print(f"\nState embedding shape: {state_embed.shape}")
-        print(f"State embedding stats: mean={state_embed.mean():.4f}, std={state_embed.std():.4f}")
+    if not valid_moves:
+        print("  No valid moves!")
+        return
 
-        # Encode all legal moves
-        legal_embeddings = ebmo._encode_legal_moves(valid_moves)
-        print(f"\nMove embeddings shape: {legal_embeddings.shape}")
-        print(f"Move embedding stats: mean={legal_embeddings.mean():.4f}, std={legal_embeddings.std():.4f}")
+    # Show first few moves
+    print("\n  Sample moves:")
+    for i, move in enumerate(valid_moves[:5]):
+        print(f"    {i}: {move.type.value} to=({move.to.x}, {move.to.y})")
 
-        # Compute energies for all moves
-        state_batch = state_embed.unsqueeze(0).expand(len(valid_moves), -1)
-        energies = ebmo.network.compute_energy(state_batch, legal_embeddings)
+    # Get move energies
+    print(f"\n--- Move Energies ---")
+    energies = ai.get_move_energies(state)
 
-        print(f"\nEnergy distribution for {len(valid_moves)} moves:")
-        print(f"  min: {energies.min().item():.4f}")
-        print(f"  max: {energies.max().item():.4f}")
-        print(f"  mean: {energies.mean().item():.4f}")
-        print(f"  std: {energies.std().item():.4f}")
-        print(f"  range: {(energies.max() - energies.min()).item():.4f}")
+    # Sort by energy
+    sorted_energies = sorted(energies.items(), key=lambda x: x[1])
 
-        # Check if energies are all the same (degenerate)
-        if energies.std().item() < 0.01:
-            print("\n  WARNING: Energy values are nearly identical!")
-            print("  This means the model can't distinguish between moves!")
+    print("  Top 5 lowest energy (best) moves:")
+    for i, (move_key, energy) in enumerate(sorted_energies[:5]):
+        print(f"    {i+1}. {move_key}: {energy:.4f}")
 
-        # Show top and bottom moves by energy
-        sorted_indices = energies.argsort()
-        print("\nTop 5 lowest energy (should be best) moves:")
-        for i in range(min(5, len(sorted_indices))):
-            idx = sorted_indices[i].item()
-            move = valid_moves[idx]
-            print(f"  {i+1}. {move.type.value} energy={energies[idx].item():.4f}")
+    print("\n  Top 5 highest energy (worst) moves:")
+    for i, (move_key, energy) in enumerate(sorted_energies[-5:]):
+        print(f"    {i+1}. {move_key}: {energy:.4f}")
 
-        print("\nTop 5 highest energy (should be worst) moves:")
-        for i in range(min(5, len(sorted_indices))):
-            idx = sorted_indices[-(i+1)].item()
-            move = valid_moves[idx]
-            print(f"  {i+1}. {move.type.value} energy={energies[idx].item():.4f}")
+    # Check energy distribution
+    energy_values = list(energies.values())
+    print(f"\n--- Energy Statistics ---")
+    print(f"  Min energy: {min(energy_values):.4f}")
+    print(f"  Max energy: {max(energy_values):.4f}")
+    print(f"  Mean energy: {np.mean(energy_values):.4f}")
+    print(f"  Std energy: {np.std(energy_values):.4f}")
+    print(f"  Range: {max(energy_values) - min(energy_values):.4f}")
 
-    # Test optimization on one move
-    print("\n" + "="*60)
-    print("Testing gradient descent optimization")
-    print("="*60 + "\n")
+    # Check if energies are discriminative
+    if np.std(energy_values) < 0.01:
+        print("\n  WARNING: Energy values have very low variance!")
+        print("  Model may not be discriminating between moves.")
 
-    init_move = valid_moves[0]
-    feature_extractor = ActionFeatureExtractor(8)
-    init_features = feature_extractor.extract_tensor([init_move], ebmo.device)
+    # Test what move the model selects
+    print(f"\n--- Move Selection Test ---")
+    selected_move = ai.select_move(state)
+    print(f"  Selected move: {selected_move.type.value}")
+    if selected_move.to:
+        print(f"    to: ({selected_move.to.x}, {selected_move.to.y})")
 
-    with torch.no_grad():
-        action_embed = ebmo.network.encode_action(init_features).squeeze(0)
-        init_energy = ebmo.network.compute_energy(
-            state_embed.unsqueeze(0),
-            action_embed.unsqueeze(0)
-        ).item()
-
-    print(f"Initial move: {init_move.type.value}")
-    print(f"Initial energy: {init_energy:.4f}")
-
-    # Run optimization
-    action_embed = action_embed.clone().detach().requires_grad_(True)
-    optimizer = torch.optim.Adam([action_embed], lr=0.1)
-
-    energies_during_opt = []
-    for step in range(100):
-        optimizer.zero_grad()
-        energy = ebmo.network.compute_energy(
-            state_embed.unsqueeze(0),
-            action_embed.unsqueeze(0)
-        )
-        energies_during_opt.append(energy.item())
-        energy.backward()
-        optimizer.step()
-
-    print(f"\nOptimization over 100 steps:")
-    print(f"  Start energy: {energies_during_opt[0]:.4f}")
-    print(f"  End energy: {energies_during_opt[-1]:.4f}")
-    print(f"  Change: {energies_during_opt[-1] - energies_during_opt[0]:.4f}")
-
-    if abs(energies_during_opt[-1] - energies_during_opt[0]) < 0.01:
-        print("\n  WARNING: Optimization didn't change energy much!")
-        print("  Gradients may be too small or model may be degenerate.")
-
-    # Check gradients
-    with torch.enable_grad():
-        action_test = legal_embeddings[0].clone().requires_grad_(True)
-        energy = ebmo.network.compute_energy(
-            state_embed.unsqueeze(0),
-            action_test.unsqueeze(0)
-        )
-        energy.backward()
-        grad_norm = action_test.grad.norm().item()
-        print(f"\nGradient norm at a legal move: {grad_norm:.6f}")
-
-        if grad_norm < 1e-6:
-            print("  WARNING: Gradients are vanishing!")
+    # Check if it's selecting skip moves
+    skip_types = {'skip_placement', 'skip_capture', 'no_placement_action'}
+    if selected_move.type.value in skip_types:
+        print(f"\n  WARNING: Model is selecting a SKIP move!")
+        print("  This could explain 0% win rate.")
 
     # Play a few moves and see what happens
-    print("\n" + "="*60)
-    print("Testing actual move selection")
-    print("="*60 + "\n")
+    print(f"\n--- Simulated Game (first 10 moves) ---")
+    test_game = Game()
+    ai1 = EBMO_AI(player_number=1, config=ai_config, model_path=model_path)
+    ai2 = EBMO_AI(player_number=2, config=ai_config, model_path=model_path)
 
-    # Compare with random and heuristic
-    random_ai = AIFactory.create(AIType.RANDOM, 2, AIConfig(difficulty=1))
-    heuristic_ai = AIFactory.create(AIType.HEURISTIC, 2, AIConfig(difficulty=5))
+    for i in range(10):
+        state = test_game.get_state()
+        current_ai = ai1 if state.current_player == 1 else ai2
 
-    # Play 3 moves with EBMO and show what it picks
-    test_state = create_initial_state(board_type=BoardType.SQUARE8, num_players=2)
-    for move_num in range(6):
-        current_player = test_state.current_player
-        if current_player == 1:
-            ai = ebmo
-            ai_name = "EBMO"
-        else:
-            ai = heuristic_ai
-            ai_name = "Heuristic"
-
-        move = ai.select_move(test_state)
+        move = current_ai.select_move(state)
         if move is None:
+            print(f"  Turn {i+1}: No move available")
             break
 
-        print(f"Move {move_num + 1} (Player {current_player} - {ai_name}): {move.type.value}")
+        print(f"  Turn {i+1} (P{state.current_player}): {move.type.value}", end="")
+        if move.to:
+            print(f" to ({move.to.x}, {move.to.y})")
+        else:
+            print()
 
-        test_state = engine.apply_move(test_state, move)
-
-        if test_state.winner is not None:
-            print(f"Game ended: Player {test_state.winner} wins")
+        # Apply move
+        result = test_game.apply_move(move)
+        if not result.success:
+            print(f"    ERROR: Move failed - {result.message}")
             break
 
-    print("\n" + "="*60)
-    print("Diagnosis complete")
-    print("="*60)
+    # Check model parameter statistics
+    print(f"\n--- Model Parameter Statistics ---")
+    total_params = 0
+    zero_params = 0
+    nan_params = 0
+
+    for name, param in network.named_parameters():
+        total_params += param.numel()
+        zero_params += (param == 0).sum().item()
+        nan_params += torch.isnan(param).sum().item()
+
+    print(f"  Total parameters: {total_params:,}")
+    print(f"  Zero parameters: {zero_params:,} ({100*zero_params/total_params:.2f}%)")
+    print(f"  NaN parameters: {nan_params:,}")
+
+    if nan_params > 0:
+        print("\n  CRITICAL: Model has NaN parameters!")
+
+    if zero_params / total_params > 0.5:
+        print("\n  WARNING: More than 50% of parameters are zero!")
+
+
+def compare_models(model1_path: str, model2_path: str):
+    """Compare energy distributions between two models."""
+    print(f"\n{'='*60}")
+    print(f"Model Comparison")
+    print(f"{'='*60}\n")
+
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    ai_config = AIConfig(difficulty=5)
+
+    ai1 = EBMO_AI(player_number=1, config=ai_config, model_path=model1_path)
+    ai2 = EBMO_AI(player_number=1, config=ai_config, model_path=model2_path)
+
+    # Create a game state
+    game = Game()
+    state = game.get_state()
+
+    # Get energies from both models
+    energies1 = ai1.get_move_energies(state)
+    energies2 = ai2.get_move_energies(state)
+
+    print(f"Model 1: {model1_path}")
+    vals1 = list(energies1.values())
+    print(f"  Energy range: [{min(vals1):.4f}, {max(vals1):.4f}]")
+    print(f"  Energy std: {np.std(vals1):.4f}")
+
+    print(f"\nModel 2: {model2_path}")
+    vals2 = list(energies2.values())
+    print(f"  Energy range: [{min(vals2):.4f}, {max(vals2):.4f}]")
+    print(f"  Energy std: {np.std(vals2):.4f}")
+
+    # Show selected moves
+    move1 = ai1.select_move(state)
+    move2 = ai2.select_move(state)
+
+    print(f"\nSelected moves:")
+    print(f"  Model 1: {move1.type.value}")
+    print(f"  Model 2: {move2.type.value}")
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="models/ebmo/ebmo_improved_best.pt")
-    args = parser.parse_args()
+    # Diagnose the improved model
+    improved_model = "models/ebmo/ebmo_improved_best.pt"
+    diagnose_model(improved_model)
 
-    diagnose_model(args.model)
+    # Check if original self-play model exists for comparison
+    original_model = "models/ebmo/ebmo_selfplay_best.pt"
+    if Path(original_model).exists():
+        print("\n" + "="*60)
+        print("Comparing with original self-play model")
+        print("="*60)
+        diagnose_model(original_model)
+        compare_models(improved_model, original_model)

@@ -1670,6 +1670,14 @@ class P2PBackend(OrchestratorBackend):
             error=result.get("error"),
         )
 
+    async def sync_models(
+        self,
+        model_paths: List[str],
+        target_workers: Optional[List[str]] = None,
+    ) -> Dict[str, bool]:
+        """Sync models is handled by P2P orchestrator - not needed."""
+        return {}
+
     async def sync_data(
         self,
         source_workers: Optional[List[str]] = None,
