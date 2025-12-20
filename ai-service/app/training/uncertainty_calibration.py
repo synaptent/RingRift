@@ -392,6 +392,160 @@ def run_calibration_study(
     return metrics
 
 
+def find_optimal_temperature(
+    samples: list[CalibrationSample],
+    temperatures: list[float] | None = None,
+) -> tuple[float, float]:
+    """Find optimal temperature scaling for uncertainty calibration.
+
+    Uses grid search to find temperature that gives coverage closest to 68%
+    for 1-sigma confidence intervals.
+
+    Args:
+        samples: Calibration samples with predictions and outcomes
+        temperatures: List of temperatures to try (default: [0.5, 1, 2, 5, 10, 20, 50])
+
+    Returns:
+        (optimal_temperature, best_coverage_error)
+    """
+    if temperatures is None:
+        # Common range for overconfident models (T > 1)
+        temperatures = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+
+    predictions = np.array([s.predicted_value for s in samples])
+    variances = np.array([s.predicted_variance for s in samples])
+    outcomes = np.array([s.actual_outcome for s in samples])
+
+    errors = np.abs(predictions - outcomes)
+
+    best_temp = 1.0
+    best_error = float('inf')
+
+    for temp in temperatures:
+        # Apply temperature scaling
+        calibrated_variance = variances * temp
+        calibrated_std = np.sqrt(np.maximum(calibrated_variance, 1e-6))
+
+        # Compute coverage
+        z_scores = errors / calibrated_std
+        coverage_1_sigma = np.mean(z_scores <= 1.0)
+
+        # Error from ideal 68% coverage
+        coverage_error = abs(coverage_1_sigma - 0.68)
+
+        if coverage_error < best_error:
+            best_error = coverage_error
+            best_temp = temp
+
+    return best_temp, best_error
+
+
+def run_temperature_calibration(
+    checkpoint_path: str | None = None,
+    num_games: int = 50,
+    opponent_type: str = "random",
+    output_dir: str = "data/calibration"
+) -> float:
+    """Run temperature calibration to find optimal uncertainty scaling.
+
+    Returns the optimal temperature that should be set in GMOConfig.calibration_temperature.
+
+    Args:
+        checkpoint_path: Path to GMO checkpoint
+        num_games: Number of games to collect calibration samples
+        opponent_type: Type of opponent
+        output_dir: Output directory
+
+    Returns:
+        Optimal calibration temperature
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Load GMO AI
+    ai_config = AIConfig(difficulty=6)
+    gmo_config = GMOConfig()
+    gmo_ai = GMOAI(player_number=1, config=ai_config, gmo_config=gmo_config)
+
+    if checkpoint_path:
+        gmo_ai.load_checkpoint(checkpoint_path)
+        logger.info(f"Loaded checkpoint from {checkpoint_path}")
+    else:
+        default_path = "models/gmo/gmo_best.pt"
+        if Path(default_path).exists():
+            gmo_ai.load_checkpoint(default_path)
+            logger.info(f"Loaded checkpoint from {default_path}")
+
+    # Create opponent
+    opponent_config = AIConfig(difficulty=2)
+    if opponent_type == "random":
+        opponent = AIFactory.create(AIType.RANDOM, player_number=2, config=opponent_config)
+    else:
+        opponent = AIFactory.create(AIType.HEURISTIC, player_number=2, config=opponent_config)
+
+    logger.info(f"Collecting calibration samples: {num_games} games vs {opponent_type}")
+
+    # Collect samples
+    all_samples = []
+    for game_id in range(num_games):
+        samples = collect_samples_from_game(gmo_ai, opponent, game_id)
+        all_samples.extend(samples)
+
+        if (game_id + 1) % 10 == 0:
+            logger.info(f"Game {game_id + 1}/{num_games}: {len(all_samples)} samples")
+
+    if not all_samples:
+        logger.error("No samples collected!")
+        return 1.0
+
+    logger.info(f"Total samples: {len(all_samples)}")
+
+    # Find optimal temperature
+    temperatures = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
+    optimal_temp, coverage_error = find_optimal_temperature(all_samples, temperatures)
+
+    logger.info("\n" + "=" * 60)
+    logger.info("TEMPERATURE CALIBRATION RESULTS")
+    logger.info("=" * 60)
+    logger.info(f"Optimal temperature: {optimal_temp}")
+    logger.info(f"Coverage error from 68% target: {coverage_error:.4f}")
+
+    # Show coverage at different temperatures
+    predictions = np.array([s.predicted_value for s in all_samples])
+    variances = np.array([s.predicted_variance for s in all_samples])
+    outcomes = np.array([s.actual_outcome for s in all_samples])
+    errors = np.abs(predictions - outcomes)
+
+    logger.info("\nTemperature sweep:")
+    for temp in temperatures:
+        calibrated_variance = variances * temp
+        calibrated_std = np.sqrt(np.maximum(calibrated_variance, 1e-6))
+        z_scores = errors / calibrated_std
+        coverage = np.mean(z_scores <= 1.0)
+        marker = " <-- OPTIMAL" if temp == optimal_temp else ""
+        logger.info(f"  T={temp:6.1f}: 1σ coverage = {100*coverage:.1f}%{marker}")
+
+    logger.info("\nTo use this calibration, set in your code:")
+    logger.info(f"  gmo_config = GMOConfig(calibration_temperature={optimal_temp})")
+
+    # Save results
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "checkpoint_path": checkpoint_path,
+        "num_games": num_games,
+        "num_samples": len(all_samples),
+        "optimal_temperature": optimal_temp,
+        "coverage_error": coverage_error,
+    }
+
+    results_file = output_path / f"temperature_calibration_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(results_file, "w") as f:
+        json.dump(results, f, indent=2)
+    logger.info(f"\nResults saved to {results_file}")
+
+    return optimal_temp
+
+
 def main():
     parser = argparse.ArgumentParser(description="GMO Uncertainty Calibration Study")
     parser.add_argument("--checkpoint", type=str, default=None,
@@ -403,15 +557,26 @@ def main():
                         help="Opponent type")
     parser.add_argument("--output-dir", type=str, default="data/calibration",
                         help="Output directory for results")
+    parser.add_argument("--calibrate", action="store_true",
+                        help="Find optimal temperature for uncertainty calibration")
 
     args = parser.parse_args()
 
-    run_calibration_study(
-        checkpoint_path=args.checkpoint,
-        num_games=args.games,
-        opponent_type=args.opponent,
-        output_dir=args.output_dir
-    )
+    if args.calibrate:
+        optimal_temp = run_temperature_calibration(
+            checkpoint_path=args.checkpoint,
+            num_games=args.games,
+            opponent_type=args.opponent,
+            output_dir=args.output_dir
+        )
+        print(f"\nOptimal temperature: {optimal_temp}")
+    else:
+        run_calibration_study(
+            checkpoint_path=args.checkpoint,
+            num_games=args.games,
+            opponent_type=args.opponent,
+            output_dir=args.output_dir
+        )
 
 
 if __name__ == "__main__":

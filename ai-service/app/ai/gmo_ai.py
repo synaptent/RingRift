@@ -77,6 +77,12 @@ class GMOConfig:
     dropout_rate: float = 0.1
     mc_samples: int = 10  # Number of dropout samples for uncertainty
 
+    # Uncertainty calibration
+    # Temperature > 1.0 increases uncertainty (for overconfident models)
+    # Temperature < 1.0 decreases uncertainty (for underconfident models)
+    # Use calibrate_uncertainty() to learn optimal temperature from data
+    calibration_temperature: float = 1.0
+
     # Novelty tracking
     novelty_memory_size: int = 1000
 
@@ -400,6 +406,7 @@ def estimate_uncertainty(
     move_embed: torch.Tensor,
     value_net: GMOValueNetWithUncertainty,
     n_samples: int = 10,
+    calibration_temperature: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Estimate value and uncertainty using MC Dropout.
 
@@ -408,11 +415,15 @@ def estimate_uncertainty(
         move_embed: Move embedding (requires_grad for optimization)
         value_net: Value network with dropout
         n_samples: Number of dropout samples
+        calibration_temperature: Temperature for uncertainty calibration.
+            - T > 1.0: Increases uncertainty (for overconfident models)
+            - T < 1.0: Decreases uncertainty (for underconfident models)
+            - T = 1.0: No calibration applied
 
     Returns:
         mean_value: Mean predicted value
         entropy: Entropy of value distribution
-        variance: Variance of predictions
+        variance: Calibrated variance of predictions
     """
     was_training = value_net.training
     value_net.train()  # Enable dropout
@@ -428,7 +439,11 @@ def estimate_uncertainty(
 
     values_tensor = torch.stack(values)
     mean_value = values_tensor.mean()
-    variance = values_tensor.var() + 1e-8  # Add small epsilon for stability
+    raw_variance = values_tensor.var() + 1e-8  # Add small epsilon for stability
+
+    # Apply temperature calibration: variance * T
+    # T > 1.0 increases variance (for overconfident models)
+    variance = raw_variance * calibration_temperature
 
     # Gaussian entropy: H = 0.5 * log(2 * pi * e * var)
     entropy = 0.5 * torch.log(2 * math.pi * math.e * variance)
@@ -462,9 +477,10 @@ def optimize_move_with_entropy(
     for step in range(config.optim_steps):
         optimizer.zero_grad()
 
-        # Estimate value and uncertainty
+        # Estimate value and uncertainty (with calibration)
         mean_value, _entropy, variance = estimate_uncertainty(
-            state_embed, move_embed, value_net, config.mc_samples
+            state_embed, move_embed, value_net, config.mc_samples,
+            calibration_temperature=config.calibration_temperature
         )
 
         # Anneal exploration over optimization steps
@@ -665,7 +681,8 @@ class GMOAI(BaseAI):
             with torch.no_grad():
                 mean_val, _entropy, var = estimate_uncertainty(
                     state_embed, move_embed, self.value_net,
-                    self.gmo_config.mc_samples
+                    self.gmo_config.mc_samples,
+                    calibration_temperature=self.gmo_config.calibration_temperature
                 )
                 novelty = self.novelty_tracker.compute_novelty(move_embed)
 
@@ -714,7 +731,8 @@ class GMOAI(BaseAI):
                     state_embed,
                     move_embeds[proj_idx],
                     self.value_net,
-                    self.gmo_config.mc_samples
+                    self.gmo_config.mc_samples,
+                    calibration_temperature=self.gmo_config.calibration_temperature
                 )
 
             final_score = final_value.item() + self.gmo_config.beta * math.sqrt(final_var.item())
@@ -785,7 +803,8 @@ class GMOAI(BaseAI):
                 move_embed = self.move_encoder.encode_move(move)
                 mean_val, _, var = estimate_uncertainty(
                     state_embed, move_embed, self.value_net,
-                    self.gmo_config.mc_samples
+                    self.gmo_config.mc_samples,
+                    calibration_temperature=self.gmo_config.calibration_temperature
                 )
                 predictions.append((mean_val.item(), var.item()))
 
