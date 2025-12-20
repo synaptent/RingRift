@@ -1170,12 +1170,13 @@ python -m app.training.train \
 
 ### Available Schedulers
 
-| Scheduler              | Description                   |
-| ---------------------- | ----------------------------- |
-| `none`                 | Constant learning rate        |
-| `step`                 | Step decay at fixed intervals |
-| `cosine`               | Cosine annealing to lr_min    |
-| `cosine-warm-restarts` | Cosine with periodic restarts |
+| Scheduler     | Description                   |
+| ------------- | ----------------------------- |
+| (default)     | Constant learning rate        |
+| `cosine`      | Cosine annealing to lr_min    |
+| `step`        | Step decay at fixed intervals |
+| `plateau`     | Reduce LR on loss plateau     |
+| `warmrestart` | Cosine with periodic restarts |
 
 ### Configuration
 

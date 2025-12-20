@@ -447,14 +447,14 @@ python scripts/run_hybrid_selfplay.py \
 
 ### Training CLI Arguments
 
-| Argument                    | Type  | Default | Description                              |
-| --------------------------- | ----- | ------- | ---------------------------------------- |
-| `--policy-label-smoothing`  | float | 0.0     | Label smoothing factor                   |
-| `--augment-hex-symmetry`    | flag  | False   | Enable D6 hex augmentation               |
-| `--warmup-epochs`           | int   | 0       | LR warmup epochs                         |
-| `--lr-scheduler`            | str   | none    | none, step, cosine, cosine-warm-restarts |
-| `--early-stopping-patience` | int   | 10      | Early stopping patience                  |
-| `--sampling-weights`        | str   | uniform | uniform, late_game, phase_emphasis       |
+| Argument                    | Type  | Default | Description                        |
+| --------------------------- | ----- | ------- | ---------------------------------- |
+| `--policy-label-smoothing`  | float | 0.0     | Label smoothing factor             |
+| `--augment-hex-symmetry`    | flag  | False   | Enable D6 hex augmentation         |
+| `--warmup-epochs`           | int   | 0       | LR warmup epochs                   |
+| `--lr-scheduler`            | str   | none    | cosine, step, plateau, warmrestart |
+| `--early-stopping-patience` | int   | 10      | Early stopping patience            |
+| `--sampling-weights`        | str   | uniform | uniform, late_game, phase_emphasis |
 
 ### Advanced Regularization
 

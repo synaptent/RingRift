@@ -28,7 +28,7 @@ triggers = TrainingTriggers()
 
 # Or with custom config
 triggers = TrainingTriggers(TriggerConfig(
-    freshness_threshold=500,
+    freshness_threshold=300,  # Optimized for faster feedback loops
     staleness_hours=6.0,
     min_win_rate=0.45,
 ))
@@ -54,7 +54,7 @@ if decision.should_train:
 
 | Parameter                 | Type  | Default | Description                             |
 | ------------------------- | ----- | ------- | --------------------------------------- |
-| `freshness_threshold`     | int   | 500     | New games needed to trigger             |
+| `freshness_threshold`     | int   | 300     | New games needed to trigger             |
 | `freshness_weight`        | float | 1.0     | Weight of freshness signal              |
 | `staleness_hours`         | float | 6.0     | Hours before config is "stale"          |
 | `staleness_weight`        | float | 0.8     | Weight of staleness signal              |
@@ -69,7 +69,7 @@ if decision.should_train:
 ```python
 config = TriggerConfig(
     # Data freshness
-    freshness_threshold=500,
+    freshness_threshold=300,  # Optimized for faster feedback loops
     freshness_weight=1.0,
 
     # Model staleness

@@ -263,7 +263,7 @@ python -m app.training.train \
     --epochs 100 \
     --batch-size 64 \
     --learning-rate 0.001 \
-    --lr-scheduler cosine-warm-restarts \
+    --lr-scheduler warmrestart \
     --lr-t0 10 \
     --lr-t-mult 2 \
     --warmup-epochs 5 \

@@ -36,7 +36,7 @@ Simplified 3-signal system for deciding when to train.
 
 | Signal                     | Description                   | Default Threshold | Weight |
 | -------------------------- | ----------------------------- | ----------------- | ------ |
-| **Data Freshness**         | New games since last training | 500 games         | 1.0    |
+| **Data Freshness**         | New games since last training | 300 games         | 1.0    |
 | **Model Staleness**        | Hours since last training     | 6 hours           | 0.8    |
 | **Performance Regression** | Win rate below threshold      | 0.45              | 1.5    |
 
@@ -47,7 +47,7 @@ from app.training.training_triggers import TrainingTriggers, TriggerConfig
 
 # Configure triggers
 config = TriggerConfig(
-    freshness_threshold=500,
+    freshness_threshold=300,  # Optimized for faster feedback
     staleness_hours=6.0,
     min_win_rate=0.45,
     min_interval_minutes=20,
@@ -76,7 +76,7 @@ config = TriggerConfig(
 
 | Parameter                 | Default | Description                         |
 | ------------------------- | ------- | ----------------------------------- |
-| `freshness_threshold`     | 500     | New games needed to trigger         |
+| `freshness_threshold`     | 300     | New games needed to trigger         |
 | `staleness_hours`         | 6.0     | Hours before config is "stale"      |
 | `min_win_rate`            | 0.45    | Below this triggers urgent training |
 | `min_interval_minutes`    | 20      | Minimum time between runs           |
@@ -280,7 +280,7 @@ All these modules integrate with `scripts/unified_ai_loop.py`:
 # config/unified_loop.yaml
 training:
   triggers:
-    freshness_threshold: 500
+    freshness_threshold: 300 # Optimized for faster feedback
     staleness_hours: 6
     min_win_rate: 0.45
 
@@ -299,7 +299,7 @@ training:
 
 | Variable                     | Default | Description           |
 | ---------------------------- | ------- | --------------------- |
-| `RINGRIFT_TRIGGER_FRESHNESS` | 500     | Games before training |
+| `RINGRIFT_TRIGGER_FRESHNESS` | 300     | Games before training |
 | `RINGRIFT_TRIGGER_STALENESS` | 6       | Hours before stale    |
 | `RINGRIFT_TRIGGER_MIN_WIN`   | 0.45    | Min win rate          |
 | `RINGRIFT_CALIBRATION_BINS`  | 10      | Calibration bins      |
