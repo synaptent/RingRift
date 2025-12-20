@@ -48,7 +48,9 @@ def parse_board_type(board_str: str) -> BoardType:
         return BoardType.SQUARE8
     elif "square19" in board_str or "sq19" in board_str:
         return BoardType.SQUARE19
-    elif "hex" in board_str:
+    elif "hex8" in board_str:
+        return BoardType.HEX8
+    elif "hex" in board_str or "hexagonal" in board_str:
         return BoardType.HEXAGONAL
     return BoardType.SQUARE8
 
@@ -177,7 +179,15 @@ def generate_game(
             move_count += 1
 
     # Build game record
-    board_size = 8 if env.board_type == BoardType.SQUARE8 else (19 if env.board_type == BoardType.SQUARE19 else 11)
+    # Use canonical sizes from BOARD_CONFIGS: sq8=8, sq19=19, hex8=9, hexagonal=13
+    if env.board_type == BoardType.SQUARE8:
+        board_size = 8
+    elif env.board_type == BoardType.SQUARE19:
+        board_size = 19
+    elif env.board_type == BoardType.HEX8:
+        board_size = 9
+    else:
+        board_size = 13  # hexagonal
     return {
         "game_id": f"gumbel_{env.board_type.value}_{env.num_players}p_{game_idx}_{int(time.time())}",
         "board_type": env.board_type.value,

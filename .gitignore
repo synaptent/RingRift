@@ -181,6 +181,8 @@ ai-service/data/games/
 ai-service/data/quality_games/
 ai-service/data/canonical/
 ai-service/data/gh200_sync/
+ai-service/data/iterative/
+ai-service/data/vs_heuristic/
 
 # Runtime ladder overrides / logs (local-only)
 ai-service/data/ladder_runtime_overrides.json

@@ -264,11 +264,11 @@ def enumerate_capture_moves_py(
 
             stack_at_pos = BoardManager.get_stack(pos, board)
             if stack_at_pos and stack_at_pos.stack_height > 0:
-                # Can only capture ENEMY stacks, not own stacks
-                if stack_at_pos.controlling_player != player:
-                    if attacker.cap_height >= stack_at_pos.cap_height:
-                        target_pos = pos
-                        steps_to_target = step
+                # Self-capture is legal per RR-CANON-R101/R102 and TS parity.
+                # Cap-height comparison: attacker.cap_height >= target.cap_height
+                if attacker.cap_height >= stack_at_pos.cap_height:
+                    target_pos = pos
+                    steps_to_target = step
                 # Any stack (own or enemy) blocks the ray
                 break
 

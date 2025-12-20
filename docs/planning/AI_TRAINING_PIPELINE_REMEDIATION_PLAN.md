@@ -619,11 +619,11 @@ The AI Training Pipeline Remediation is complete when:
 
 **Status:** ✅ CONFIG UPDATED (awaiting regeneration + gate re-run)
 
-**Context:** Large-board parity failures are territory-processing sensitive. To avoid masking a fast-path divergence during canonical gating, disable the fast territory cache for square19/hex selfplay until parity passes.
+**Context:** Large-board parity failures are territory-processing sensitive. To avoid masking a fast-path divergence during canonical gating, disable the fast territory cache for square19/hex selfplay until the canonical gate passes.
 
 **Actions Completed:**
 
-1. ✅ Set `RINGRIFT_USE_FAST_TERRITORY=false` for square19/hex in the canonical parity gate runner.
+1. ✅ Set `RINGRIFT_USE_FAST_TERRITORY=false` for square19/hex in the canonical gate runner.
 
 **Files Modified:**
 
@@ -637,7 +637,7 @@ The AI Training Pipeline Remediation is complete when:
 
 **Actions Completed:**
 
-1. ✅ Default `RINGRIFT_USE_MAKE_UNMAKE=true` for square19/hex in the canonical parity gate runner unless explicitly overridden.
+1. ✅ Default `RINGRIFT_USE_MAKE_UNMAKE=true` for square19/hex in the canonical gate runner unless explicitly overridden.
 
 **Files Modified:**
 
@@ -651,7 +651,7 @@ The AI Training Pipeline Remediation is complete when:
 
 **Actions Completed:**
 
-1. ✅ Forced `RINGRIFT_SKIP_PHASE_INVARIANT=0` in the canonical selfplay parity gate runner.
+1. ✅ Forced `RINGRIFT_SKIP_PHASE_INVARIANT=0` in the canonical selfplay gate runner.
 
 **Files Modified:**
 

@@ -491,8 +491,8 @@ class CompositeGauntlet:
             max_moves = 500  # Safety limit
 
             # Play game
-            while game_state.status == self._GameStatus.IN_PROGRESS and move_count < max_moves:
-                current_player = game_state.current_player_number
+            while game_state.game_status == self._GameStatus.ACTIVE and move_count < max_moves:
+                current_player = game_state.current_player
 
                 if current_player == 1:
                     ai = model_ai
@@ -510,7 +510,7 @@ class CompositeGauntlet:
 
             # Determine winner
             winner = None
-            if game_state.status == self._GameStatus.COMPLETED:
+            if game_state.game_status == self._GameStatus.COMPLETED:
                 if game_state.winner == 1:
                     winner = "model"
                 elif game_state.winner == 2:
@@ -594,6 +594,7 @@ class CompositeGauntlet:
                 config=self._AIConfig(
                     ai_type=self._AIType.RANDOM,
                     board_type=board_type_enum,
+                    difficulty=1,
                 ),
             )
         elif ai_type == "heuristic":
@@ -613,6 +614,7 @@ class CompositeGauntlet:
             config=self._AIConfig(
                 ai_type=self._AIType.RANDOM,
                 board_type=board_type_enum,
+                difficulty=1,
             ),
         )
 
