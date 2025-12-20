@@ -338,15 +338,19 @@ class CoordinatorBase(ABC):
     # Hooks for subclasses - override these
     async def _do_initialize(self) -> None:
         """Custom initialization logic. Override in subclass."""
+        ...
 
     async def _do_start(self) -> None:
         """Custom start logic. Override in subclass."""
+        ...
 
     async def _do_stop(self) -> None:
         """Custom stop logic. Override in subclass."""
+        ...
 
     async def _do_shutdown(self) -> None:
         """Custom shutdown/cleanup logic. Override in subclass."""
+        ...
 
 
 class SQLitePersistenceMixin:

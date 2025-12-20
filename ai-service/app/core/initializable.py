@@ -173,6 +173,7 @@ class Initializable(ABC):
 
         Override to implement cleanup. Default does nothing.
         """
+        ...
 
     def _set_dependency(self, name: str, instance: Any) -> None:
         """Set a resolved dependency (called by registry)."""

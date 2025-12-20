@@ -32,8 +32,8 @@ class TestProtocolImports:
 
     def test_type_aliases(self):
         """Test type aliases are defined."""
-        assert HashValue == int
-        assert PolicyIndex == int
+        assert HashValue is int
+        assert PolicyIndex is int
 
 
 class TestHashProviderProtocol:

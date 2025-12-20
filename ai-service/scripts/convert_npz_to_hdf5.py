@@ -278,7 +278,7 @@ def convert_npz_to_hdf5(
                         checksums_hdf5[key] = compute_array_checksum(np.asarray([val]))
                 elif arr.dtype.metadata and 'vlen' in arr.dtype.metadata:
                     vlen_type = arr.dtype.metadata['vlen']
-                    if vlen_type == str:
+                    if vlen_type is str:
                         # Variable-length string array - decode bytes if needed
                         strings = []
                         for i in range(len(arr)):
