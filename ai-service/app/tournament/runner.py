@@ -516,8 +516,8 @@ class TournamentRunner:
         """
         import time
 
-        from app.game_engine import GameEngine
-        from app.models import Move, MoveType, PhaseRequirementType
+        from app.game_engine import GameEngine, PhaseRequirementType
+        from app.models import Move, MoveType
         from app.training.initial_state import create_initial_state
 
         start_time = time.time()
@@ -652,7 +652,8 @@ class TournamentRunner:
             A Move object for the bookkeeping action, or None if unsupported
         """
         from datetime import datetime
-        from app.models import Move, MoveType, PhaseRequirementType
+        from app.game_engine import PhaseRequirementType
+        from app.models import Move, MoveType
 
         req_type = requirement.type
 

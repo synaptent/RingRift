@@ -99,6 +99,9 @@ data/models/cull_manifest.json
 # Model registry (trained heuristic weights from CMA-ES)
 data/model_registry/
 
+# Calibration study outputs (uncertainty calibration analysis)
+data/calibration/
+
 # Distilled policy data (large generated JSONL files)
 data/distilled/*.jsonl
 

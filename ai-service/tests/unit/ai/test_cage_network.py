@@ -195,8 +195,9 @@ class TestCAGENetwork:
 
         assert net.config == config
         assert isinstance(net.graph_encoder, GraphEncoder)
-        assert isinstance(net.constraint_net, ConstraintNetwork)
         assert isinstance(net.energy_head, CAGEEnergyHead)
+        # Constraint net is inside energy head
+        assert isinstance(net.energy_head.constraint_net, ConstraintNetwork)
 
     def test_encode_graph(self, network, config, device):
         """encode_graph should produce embeddings."""
@@ -301,8 +302,12 @@ class TestBoardToGraph:
 class TestIntegration:
     """Integration tests for CAGE network."""
 
-    def test_full_forward_pass(self, network, game_state, config, device):
+    def test_full_forward_pass(self, game_state, config, device):
         """Full forward pass from game state to move selection."""
+        # Create a fresh network for this test (primal_dual_optimize does internal backprop)
+        network = CAGENetwork(config).to(device)
+        network.eval()
+
         # Convert board to graph
         node_feat, edge_index, edge_attr = board_to_graph(
             game_state, player_number=1, board_size=config.board_size
@@ -311,18 +316,19 @@ class TestIntegration:
         edge_index = edge_index.to(device)
         edge_attr = edge_attr.to(device)
 
-        # Encode graph
-        _, graph_embed = network.encode_graph(node_feat, edge_index, edge_attr)
-        graph_embed = graph_embed.squeeze(0)
+        # Encode graph (with no_grad since we don't need gradients here)
+        with torch.no_grad():
+            _, graph_embed = network.encode_graph(node_feat, edge_index, edge_attr)
+            graph_embed = graph_embed.squeeze(0)
 
-        # Create dummy action features (5 moves, 14 features each)
-        num_moves = 5
-        action_features = torch.randn(num_moves, 14, device=device)
-        action_embeds = network.encode_action(action_features)
+            # Create dummy action features (5 moves, 14 features each)
+            num_moves = 5
+            action_features = torch.randn(num_moves, 14, device=device)
+            action_embeds = network.encode_action(action_features)
 
-        # Run optimization
+        # Run optimization (this creates its own computation graph internally)
         best_idx, best_energy = network.primal_dual_optimize(
-            graph_embed, action_embeds, num_steps=config.optim_steps
+            graph_embed.detach(), action_embeds.detach(), num_steps=config.optim_steps
         )
 
         assert 0 <= best_idx < num_moves
