@@ -2423,7 +2423,7 @@ _Note: The general rules for line formation and collapse, including the graduate
 ##### 16.9.4.5 Victory Conditions & Tiebreakers
 
 1. Ring Elimination Victory: Once your eliminated rings reach or exceed the victory threshold (two thirds of your starting rings plus one third of your opponents' combined starting rings), you win immediately
-2. Last Player Standing: If you satisfy the Last Player Standing condition from Section 13.3 (two consecutive full rounds in which only you ever have any legal real action and you take at least one in each round), then you win by Last Player Standing.
+2. Last Player Standing: If you satisfy the Last Player Standing condition from Section 13.3 (three consecutive full rounds in which only you ever have any legal real action and you take at least one in each round), then you win by Last Player Standing.
 3. Stalemate: If no moves are possible for any players, compare, in order:
    - Most collapsed spaces (indicating territorial control) first
    - Most Eliminated rings (including rings eliminated during gameplay **and** any rings remaining in hand at the point of stalemate) if still tied

@@ -55,6 +55,10 @@ except ImportError:
 AI_TYPE_CONFIGS_LIGHTWEIGHT = {
     "random": {"ai_type": "random", "difficulty": 1},
     "heuristic": {"ai_type": "heuristic", "difficulty": 5},
+    # Multiplayer search variants (no NN required)
+    "brs": {"ai_type": "brs", "difficulty": 4, "think_time_ms": 2000},
+    "maxn": {"ai_type": "maxn", "difficulty": 5, "think_time_ms": 3000},
+    "minimax": {"ai_type": "minimax", "difficulty": 4, "think_time_ms": 2000},
     # MCTS handles multi-move games well (no fixed depth limit)
     "mcts_100": {"ai_type": "mcts", "difficulty": 5, "use_neural_net": False, "mcts_iterations": 100},
     "mcts_200": {"ai_type": "mcts", "difficulty": 6, "use_neural_net": False, "mcts_iterations": 200},
@@ -67,7 +71,13 @@ AI_TYPE_CONFIGS_HEAVYWEIGHT = {
     "mcts_neural_high": {"ai_type": "mcts", "difficulty": 7, "use_neural_net": True, "mcts_iterations": 800},
     "policy_only": {"ai_type": "policy_only", "difficulty": 3, "policy_temperature": 0.5},
     "gumbel_mcts": {"ai_type": "gumbel_mcts", "difficulty": 7, "gumbel_num_sampled_actions": 16, "gumbel_simulation_budget": 100},
-    "descent": {"ai_type": "descent", "difficulty": 9},
+    "descent": {"ai_type": "descent", "difficulty": 6},
+    # Experimental gradient-based AIs
+    "ebmo": {"ai_type": "ebmo", "difficulty": 12, "think_time_ms": 3000},
+    "gmo": {"ai_type": "gmo", "difficulty": 13, "think_time_ms": 3000},
+    "ig_gmo": {"ai_type": "ig_gmo", "difficulty": 14, "think_time_ms": 3000},
+    # GPU-accelerated variants
+    "gpu_minimax": {"ai_type": "gpu_minimax", "difficulty": 15, "think_time_ms": 3000},
 }
 
 # Combined for reference

@@ -37,6 +37,9 @@ LOG_DIR = AI_SERVICE_ROOT / "logs"
 LOG_FILE = LOG_DIR / "vast_p2p_sync.log"
 CONFIG_FILE = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
 
+# SAFETY: Disable automatic instance termination to prevent data loss
+INSTANCE_TERMINATION_DISABLED = True
+
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(AI_SERVICE_ROOT))
@@ -614,6 +617,11 @@ def destroy_vast_instance(instance_id: int) -> bool:
     Returns:
         True if destruction was successful, False otherwise
     """
+    # Safety check: never destroy instances if disabled
+    if INSTANCE_TERMINATION_DISABLED:
+        logger.warning(f"[TERMINATION_DISABLED] Would destroy instance {instance_id} but termination is disabled")
+        return False
+
     try:
         result = subprocess.run(
             ['vastai', 'destroy', 'instance', str(instance_id)],
@@ -643,6 +651,11 @@ def stop_vast_instance(instance_id: int) -> bool:
     Returns:
         True if stop was successful, False otherwise
     """
+    # Safety check: never stop instances if termination is disabled
+    if INSTANCE_TERMINATION_DISABLED:
+        logger.warning(f"[TERMINATION_DISABLED] Would stop instance {instance_id} but termination is disabled")
+        return False
+
     try:
         result = subprocess.run(
             ['vastai', 'stop', 'instance', str(instance_id)],

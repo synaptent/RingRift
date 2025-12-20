@@ -221,6 +221,16 @@ CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
         "profile_id": "v3-cage-16-experimental",
         "use_neural_net": True,
     },
+    17: {
+        # GMO-MCTS: Hybrid combining GMO move priors with MCTS tree search
+        # Uses gradient-optimized embeddings as priors for MCTS exploration
+        # Combines GMO's fast move scoring with MCTS's lookahead
+        "ai_type": AIType.GMO_MCTS,
+        "randomness": 0.0,
+        "think_time_ms": 3000,
+        "profile_id": "v3-gmo-mcts-17-experimental",
+        "use_neural_net": True,
+    },
 }
 
 # Overrides for 3-4 player games where MaxN/BRS outperform Minimax
@@ -284,6 +294,7 @@ DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     14: "Experimental - IG-GMO (Information-Gain GMO)",
     15: "Experimental - GPU Minimax (GPU-accelerated)",
     16: "Experimental - CAGE (Constraint-Aware Graph Energy-based)",
+    17: "Experimental - GMO-MCTS (GMO-guided tree search)",
 }
 
 # Board types considered "large" (Minimax too slow)
@@ -535,6 +546,9 @@ class AIFactory:
         elif ai_type == AIType.GMO:
             from app.ai.gmo_ai import GMOAI
             ai_class = GMOAI
+        elif ai_type == AIType.GMO_MCTS:
+            from app.ai.gmo_mcts_hybrid import GMOMCTSHybrid
+            ai_class = GMOMCTSHybrid
         elif ai_type == AIType.IG_GMO:
             from app.ai.ig_gmo import IGGMO
             ai_class = IGGMO
@@ -813,6 +827,28 @@ class AIFactory:
             )
             from app.ai.ebmo_ai import EBMO_AI
             return EBMO_AI(player_number, config, model_path=model_path)
+
+        # GMO-MCTS Hybrid (uses GMO for move priors in MCTS tree search)
+        # Must check before "gmo" since "gmo_mcts" starts with "gmo_"
+        if agent_key == "gmo_mcts" or agent_key.startswith("gmo_mcts_"):
+            # Parse optional simulation count: gmo_mcts_100, gmo_mcts_200, etc.
+            num_simulations = 100
+            if "_" in agent_key and agent_key != "gmo_mcts":
+                try:
+                    parts = agent_key.split("_")
+                    if len(parts) >= 3:
+                        num_simulations = int(parts[2])
+                except (ValueError, IndexError):
+                    pass
+
+            config = AIConfig(
+                difficulty=7,
+                rng_seed=rng_seed,
+                nn_model_id=nn_model_id,
+            )
+            from app.ai.gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
+            hybrid_config = GMOMCTSConfig(num_simulations=num_simulations, device="cpu")
+            return GMOMCTSHybrid(player_number, config, hybrid_config=hybrid_config)
 
         # GMO AI (Gradient Move Optimization - entropy-guided gradient ascent)
         if agent_key == "gmo" or agent_key.startswith("gmo_"):

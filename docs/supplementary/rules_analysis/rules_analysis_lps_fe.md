@@ -45,7 +45,7 @@ This is crucial: FE removes **all consecutive top rings of your color** from a c
 ### Current Rule (FE is NOT a Real Action)
 
 - **Philosophy:** Distinguishes between **constructive agency** (placing, moving, capturing) and **destructive obligation** (being forced to consume one's own material to pass the turn).
-- **Effect:** Recognizes that a player who can _only_ self-destruct has effectively lost control of the board. If this state persists for two full rounds, the game acknowledges their defeat.
+- **Effect:** Recognizes that a player who can _only_ self-destruct has effectively lost control of the board. If this state persists for three full rounds, the game acknowledges their defeat.
 - **Chess Analogy:** Similar to _Zugzwang_, where being forced to move is a disadvantage. The current rule treats a player in permanent Zugzwang as defeated, rather than forcing the opponent to capture every last piece.
 
 ### Proposed Rule (FE IS a Real Action)

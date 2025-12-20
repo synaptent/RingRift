@@ -49,6 +49,9 @@ logger = setup_script_logging("vast_autoscaler")
 # Configuration
 # =============================================================================
 
+# SAFETY: Disable automatic instance termination to prevent data loss
+SCALE_DOWN_DISABLED = True
+
 @dataclass
 class ScalingConfig:
     """Autoscaling configuration."""
@@ -268,6 +271,11 @@ def create_instance(offer_id: int, disk_gb: int = 50) -> Optional[str]:
 
 def destroy_instance(instance_id: str) -> bool:
     """Destroy a Vast instance."""
+    # Safety check: never destroy instances if scale-down is disabled
+    if SCALE_DOWN_DISABLED:
+        logger.info(f"[SCALE_DOWN_DISABLED] Would destroy instance {instance_id} but termination is disabled")
+        return False
+
     try:
         result = subprocess.run(
             ["vastai", "destroy", "instance", instance_id],
@@ -281,6 +289,11 @@ def destroy_instance(instance_id: str) -> bool:
 
 def stop_instance(instance_id: str) -> bool:
     """Stop (but don't destroy) a Vast instance."""
+    # Safety check: never stop instances if scale-down is disabled
+    if SCALE_DOWN_DISABLED:
+        logger.info(f"[SCALE_DOWN_DISABLED] Would stop instance {instance_id} but termination is disabled")
+        return False
+
     try:
         result = subprocess.run(
             ["vastai", "stop", "instance", instance_id],
@@ -586,6 +599,11 @@ def execute_scale_up(config: ScalingConfig, state: ScalingState, dry_run: bool =
 
 def execute_scale_down(candidates: List[Dict], state: ScalingState, dry_run: bool = False) -> int:
     """Execute scale-down by stopping/destroying idle instances."""
+    # Safety check: never terminate instances if disabled
+    if SCALE_DOWN_DISABLED:
+        logger.info("[SCALE_DOWN_DISABLED] Instance termination is disabled - skipping scale-down")
+        return 0
+
     terminated = 0
 
     for candidate in candidates[:1]:  # Only terminate 1 at a time

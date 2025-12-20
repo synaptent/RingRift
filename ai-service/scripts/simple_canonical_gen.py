@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import random
 from app.game_engine import GameEngine
-from app.ai.heuristic_ai import HeuristicAI
-from app.models.core import AIConfig, BoardType, GameStatus
+from app.models.core import AIConfig, BoardType, GameStatus, MoveType
 from app.training.initial_state import create_initial_state
 
 
@@ -93,19 +93,37 @@ def save_game(conn, game_id, state, moves, board_type):
     conn.commit()
 
 
-def run_game(engine, ais, board_type, num_players):
-    """Run a single game."""
+def run_game_random(engine, board_type, num_players, rng_seed=None):
+    """Run a single game with random move selection (fast)."""
+    if rng_seed is not None:
+        random.seed(rng_seed)
+
     state = create_initial_state(board_type=board_type, num_players=num_players)
     moves = []
     move_count = 0
-    max_moves = 1000
+    max_moves = 2000  # Random games may need more moves
 
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
-        current_ai = ais[state.current_player]
-        move = current_ai.select_move(state)
-        if move is None:
+        player = state.current_player
+
+        # Get valid moves
+        valid_moves = GameEngine.get_valid_moves(state, player)
+
+        # Check for bookkeeping moves
+        req = GameEngine.get_phase_requirement(state, player)
+        bookkeeping = None
+        if req is not None:
+            bookkeeping = GameEngine.synthesize_bookkeeping_move(req, state)
+
+        # Select move
+        if not valid_moves and bookkeeping:
+            move = bookkeeping
+        elif valid_moves:
+            move = random.choice(valid_moves)
+        else:
             break
-        moves.append((state.current_player, move, state.current_phase))
+
+        moves.append((player, move, state.current_phase))
         state = engine.apply_move(state, move)
         move_count += 1
 
@@ -125,13 +143,11 @@ def main():
 
     conn = create_db(args.output)
     engine = GameEngine()
-    config = AIConfig(difficulty=2)
 
-    print(f"Generating {args.num_games} canonical {args.board_type} {args.num_players}p games...")
+    print(f"Generating {args.num_games} canonical {args.board_type} {args.num_players}p games (random)...", flush=True)
 
     for g in range(args.num_games):
-        ais = {p: HeuristicAI(p, config) for p in range(1, args.num_players + 1)}
-        state, moves = run_game(engine, ais, board_type, args.num_players)
+        state, moves = run_game_random(engine, board_type, args.num_players, rng_seed=g)
         game_id = str(uuid.uuid4())
         save_game(conn, game_id, state, moves, board_type)
 
