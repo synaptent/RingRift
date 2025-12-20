@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set

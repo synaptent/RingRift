@@ -617,24 +617,31 @@ class TournamentRunner:
         state: Any,  # GameState
         agent_ids: List[str],
     ) -> List[str]:
-        """Compute player rankings from final game state."""
+        """Compute player rankings from final game state.
+
+        Note: Game uses 1-based player numbers but agent_ids is 0-indexed.
+        """
         num_players = len(agent_ids)
 
         # If there's a winner, they're first
+        # Note: state.winner is 1-based, convert to 0-based index
         if state.winner is not None:
-            rankings = [agent_ids[state.winner]]
-            remaining = [
-                agent_ids[i] for i in range(num_players) if i != state.winner
-            ]
-            # Sort remaining by elimination order (last eliminated = higher rank)
-            # For now, just append them in reverse order
-            rankings.extend(reversed(remaining))
-            return rankings
+            winner_idx = state.winner - 1 if state.winner > 0 else state.winner
+            if 0 <= winner_idx < num_players:
+                rankings = [agent_ids[winner_idx]]
+                remaining = [
+                    agent_ids[i] for i in range(num_players) if i != winner_idx
+                ]
+                # Sort remaining by elimination order (last eliminated = higher rank)
+                # For now, just append them in reverse order
+                rankings.extend(reversed(remaining))
+                return rankings
 
         # For multiplayer without clear winner, rank by territory and rings
         player_scores = []
         for player_idx in range(num_players):
             # Score based on territory and rings (higher is better)
+            # state.players is indexed 0, 1, ... but player.player_number is 1, 2, ...
             player = state.players[player_idx] if player_idx < len(state.players) else None
             if player:
                 # More territory = better, fewer eliminated rings = better

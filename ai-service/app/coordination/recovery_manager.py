@@ -10,7 +10,7 @@ Extends CoordinatorBase for standardized lifecycle management and stats.
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 

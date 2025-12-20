@@ -5,7 +5,6 @@ This module provides queue-depth-based scaling that automatically provisions
 or deprovisions Vast.ai GPU instances based on pending work and idle nodes.
 """
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field

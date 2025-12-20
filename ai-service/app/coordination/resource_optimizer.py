@@ -42,11 +42,11 @@ import os
 import sqlite3
 import threading
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +56,7 @@ logger = logging.getLogger(__name__)
 
 # Import targets from resource_targets for consistency
 try:
-    from app.coordination.resource_targets import (
-        get_resource_targets,
-        UtilizationTargets,
-    )
+    from app.coordination.resource_targets import get_resource_targets
     _targets = get_resource_targets()
     TARGET_UTIL_MIN = _targets.cpu_min  # 60%
     TARGET_UTIL_MAX = _targets.cpu_max  # 80%
