@@ -347,6 +347,8 @@ k6 run \
   - `ws_move_stalled_total`
   - `ws_connection_success_rate`
   - `ws_handshake_success_rate`
+  - `ws_reconnect_attempts_total`
+  - `ws_reconnect_success_rate`
 
 This scenario is implemented in [`websocket-gameplay.js`](scenarios/websocket-gameplay.js:1) and follows the strategy described in [`LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md`](../../docs/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md:1) and the transport decision ADR [`PLAYER_MOVE_TRANSPORT_DECISION.md`](../../docs/PLAYER_MOVE_TRANSPORT_DECISION.md:1).
 
@@ -387,6 +389,9 @@ This scenario uses the same base variables as other WebSocket tests plus a few g
   - `GAME_MAX_MOVES` – Maximum moves per game before the scenario retires it (default `40`).
   - `GAME_MAX_LIFETIME_S` – Maximum lifetime of a single game in seconds before forced retirement (default `600`).
   - `VU_MAX_GAMES` – Maximum games per VU before it idles (default `3` in smoke mode, higher in throughput/target modes).
+  - `WS_RECONNECT_PROBABILITY` – Chance per connection to simulate a reconnect (default `0`, disabled).
+  - `WS_RECONNECT_MAX_PER_GAME` – Cap planned reconnects per game (default `1`).
+  - `WS_RECONNECT_DELAY_MS` – Delay before triggering a planned reconnect (default `1000`).
   - `ENABLE_WS_GAMEPLAY_THROUGHPUT` – Legacy boolean toggle. When set to a truthy value (for example `true`, `1`, `yes`, `on`) and `WS_GAMEPLAY_MODE` is not set, enables the throughput scenario alongside the default smoke configuration.
 
 **Example Commands:**
