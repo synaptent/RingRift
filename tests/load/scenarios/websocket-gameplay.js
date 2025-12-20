@@ -28,6 +28,14 @@ const moveSubmissionSlo =
 const connectionStabilitySlo =
   (perfEnv.websocket_gameplay && perfEnv.websocket_gameplay.connection_stability) ||
   thresholdsConfig.environments.staging.websocket_gameplay.connection_stability;
+const loadTestConfig =
+  thresholdsConfig.load_tests[THRESHOLD_ENV] || thresholdsConfig.load_tests.staging;
+const trueErrorRateTarget =
+  loadTestConfig &&
+  loadTestConfig.true_errors &&
+  typeof loadTestConfig.true_errors.rate === 'number'
+    ? loadTestConfig.true_errors.rate
+    : 0.005;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Metrics
@@ -211,7 +219,7 @@ export const options = {
 
     // True error rate: errors excluding auth (401) and rate limiting (429)
     // This provides the real application error rate for SLO validation.
-    true_errors_total: ['rate<0.005'], // Less than 0.5% true error rate
+    true_errors_total: [`rate<${trueErrorRateTarget}`],
   },
   tags: {
     scenario: 'websocket-gameplay',

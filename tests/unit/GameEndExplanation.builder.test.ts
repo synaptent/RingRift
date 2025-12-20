@@ -87,6 +87,9 @@ describe('buildGameEndExplanation', () => {
         ],
       },
       telemetryTags: ['anm_forced_elimination'],
+      teaching: {
+        teachingTopics: ['teaching.active_no_moves'],
+      },
       uxCopy: {
         shortSummaryKey: 'game_end.lps.short',
         detailedSummaryKey: 'game_end.lps.with_anm_fe.detailed',
@@ -96,6 +99,8 @@ describe('buildGameEndExplanation', () => {
     const explanation = buildGameEndExplanation(source);
 
     expect(explanation.weirdStateContext).toEqual(source.weirdStateContext);
+    expect(explanation.primaryConceptId).toBe(source.primaryConceptId);
+    expect(explanation.teaching).toEqual(source.teaching);
     expect(explanation.telemetry).toBeDefined();
 
     const telemetry = explanation.telemetry!;

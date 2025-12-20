@@ -17,6 +17,7 @@ import {
 } from '../../src/shared/engine/orchestration/turnOrchestrator';
 import type {
   GameState,
+  GameHistoryEntry,
   BoardType,
   BoardState,
   Move,
@@ -133,6 +134,27 @@ function createBaseState(boardType: BoardType = 'square8', numPlayers: number = 
     victoryThreshold: victoryThreshold[boardType],
     territoryVictoryThreshold: territoryVictoryThreshold[boardType],
   };
+}
+
+function addForcedEliminationHistory(state: GameState, actor: number = 1): void {
+  const entry: GameHistoryEntry = {
+    moveNumber: 1,
+    action: {
+      id: `forced-elimination-${actor}-1`,
+      type: 'forced_elimination',
+      player: actor,
+      to: { x: 0, y: 0 },
+    },
+    actor,
+    phaseBefore: 'forced_elimination',
+    phaseAfter: 'forced_elimination',
+    statusBefore: 'active',
+    statusAfter: 'active',
+    progressBefore: { markers: 0, collapsed: 0, eliminated: 0, S: 0 },
+    progressAfter: { markers: 0, collapsed: 0, eliminated: 1, S: 1 },
+  };
+
+  state.history = [entry];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -337,6 +359,44 @@ describe('GameEndExplanation for multi-phase turn scenarios', () => {
       const p1Score = explanation.scoreBreakdown!['P1'];
       const p2Score = explanation.scoreBreakdown!['P2'];
       expect(p1Score.markers).toBeGreaterThan(p2Score.markers);
+    });
+
+    it('adds ANM/FE weird-state context when stalemate follows forced elimination', () => {
+      const state = createBaseState('square8', 2);
+
+      state.board.stacks.clear();
+      state.players[0].ringsInHand = 0;
+      state.players[1].ringsInHand = 0;
+      state.players[0].eliminatedRings = 9;
+      state.players[1].eliminatedRings = 9;
+
+      addMarker(state.board, { x: 0, y: 0 }, 1);
+      addMarker(state.board, { x: 1, y: 0 }, 1);
+      addMarker(state.board, { x: 0, y: 1 }, 2);
+
+      addForcedEliminationHistory(state, 1);
+
+      const victory = toVictoryState(state);
+
+      expect(victory.isGameOver).toBe(true);
+      expect(victory.gameEndExplanation).toBeDefined();
+
+      const explanation = victory.gameEndExplanation!;
+      expect(explanation.outcomeType).toBe('structural_stalemate');
+
+      const reasonCodes = explanation.weirdStateContext?.reasonCodes || [];
+      expect(reasonCodes).toEqual(
+        expect.arrayContaining([
+          'STRUCTURAL_STALEMATE_TIEBREAK',
+          'ANM_MOVEMENT_FE_BLOCKED',
+          'FE_SEQUENCE_CURRENT_PLAYER',
+        ])
+      );
+
+      const rulesContexts = explanation.weirdStateContext?.rulesContextTags || [];
+      expect(new Set(rulesContexts)).toEqual(
+        new Set(['structural_stalemate', 'anm_forced_elimination'])
+      );
     });
   });
 

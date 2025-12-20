@@ -66,6 +66,10 @@ Post-run validation checklist:
 
 Target-scale run tracking:
 
+- **2025-12-20 (PV-08)**: Target-scale rerun with auth refresh + rate-limit bypass; all SLOs pass with zero true errors and zero rate-limit hits. The scenario's built-in stages capped at 100 VUs (CLI VUS=300 was ignored), so a full 300 VU clean run is still pending.
+  - Raw k6 JSON: `results/load-test/pv08-target-scale-20251220.json`
+  - Test log: `results/load-test/pv08-target-scale-20251220.log`
+  - Docker stats: `results/load-test/pv08-docker-stats-20251220.txt`
 - **2025-12-10**: Successfully completed 30-minute target-scale test with 300 VUs. Server remained stable with excellent latency (p95=53ms, p99=59ms). High error rate due to rate limiting (429) and token expiration (401) - both expected behaviors. See detailed analysis below.
   - Raw k6 JSON: `tests/load/results/target_scale_20251210_143608.json`
   - Analyzer summary: `tests/load/results/target_scale_20251210_143608_summary.json`
@@ -119,7 +123,7 @@ Latest staging baseline run for pipeline validation (smoke-level only, not targe
 | WebSocket Success  | >99%    | ~100%            | ⏳     | WS companion included in baseline; pending full run           |
 | Contract Failures  | 0       | 1\*              | ⚠️     | \*Token expiration, not true contract violation               |
 
-**Note (2025-12-10):** The high error rate in target-scale test reflects expected protective behaviors (rate limiting) and test infrastructure limitations (token expiration), not server capacity issues. Server demonstrated ability to handle 300 VUs with excellent latency. Auth refresh handling was added on 2025-12-19; rerun to capture clean error budgets.
+**Note (2025-12-10):** The high error rate in the 300 VU target-scale test reflects expected protective behaviors (rate limiting) and test infrastructure limitations (token expiration), not server capacity issues. Server demonstrated ability to handle 300 VUs with excellent latency. Auth refresh handling was added on 2025-12-19; PV-08 reran successfully at 100 VUs with clean error budgets. A full 300 VU clean run is still pending because the scenario stages currently cap VUs at 100.
 
 ### Staging Targets (from thresholds.json)
 
