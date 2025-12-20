@@ -366,9 +366,10 @@ class UnifiedEventRouter:
     async def _dispatch(
         self,
         event: RouterEvent,
-        _exclude_origin: bool = False,
+        exclude_origin: bool = False,
     ) -> None:
         """Dispatch event to router subscribers."""
+        _ = exclude_origin
         async with self._lock:
             # Track in history
             self._event_history.append(event)
@@ -400,9 +401,10 @@ class UnifiedEventRouter:
     def _dispatch_sync(
         self,
         event: RouterEvent,
-        _exclude_origin: bool = False,
+        exclude_origin: bool = False,
     ) -> None:
         """Synchronous dispatch for non-async contexts."""
+        _ = exclude_origin
         with self._sync_lock:
             # Track in history
             self._event_history.append(event)

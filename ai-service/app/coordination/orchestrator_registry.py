@@ -433,6 +433,14 @@ class OrchestratorRegistry:
         if self._heartbeat_thread:
             self._heartbeat_thread.join(timeout=5)
             self._heartbeat_thread = None
+        if self._my_id:
+            stale_time = datetime.now() - timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS + 1)
+            with self._get_conn() as conn:
+                conn.execute(
+                    'UPDATE orchestrators SET last_heartbeat = ? WHERE id = ?',
+                    (stale_time.isoformat(), self._my_id)
+                )
+                conn.commit()
 
     def _cleanup_stale_orchestrators(self):
         """Remove orchestrators that haven't sent heartbeat."""
