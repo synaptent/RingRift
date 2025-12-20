@@ -226,37 +226,85 @@ def main():
     parser.add_argument("--num-games", type=int, default=10, help="Games per pair")
     parser.add_argument("--board", type=str, default="square8", help="Board type")
     parser.add_argument("--output", type=str, default="results/elo_ratings.json", help="Output file")
+    parser.add_argument("--all-models", action="store_true", help="Test all model variants")
     args = parser.parse_args()
 
     board_type = BoardType.SQUARE8 if "square8" in args.board.lower() else BoardType.HEXAGONAL
 
     # Define players
-    players = [
-        Player(
-            name="heuristic",
-            ai_type="heuristic",
-            config={"difficulty": 5},
-        ),
-        Player(
-            name="policy_distilled",
-            ai_type="policy_only",
-            config={
-                "difficulty": 5,
-                "nn_model_id": "distilled_sq8_2p",
-                "temperature": 0.5,
-            },
-        ),
-        Player(
-            name="gumbel_distilled",
-            ai_type="gumbel_mcts",
-            config={
-                "difficulty": 5,
-                "nn_model_id": "distilled_sq8_2p",
-                "think_time": 500,
-                "num_simulations": 50,
-            },
-        ),
-    ]
+    if args.all_models:
+        players = [
+            Player(
+                name="heuristic",
+                ai_type="heuristic",
+                config={"difficulty": 5},
+            ),
+            Player(
+                name="policy_v1",
+                ai_type="policy_only",
+                config={
+                    "difficulty": 5,
+                    "nn_model_id": "distilled_sq8_2p",
+                    "temperature": 0.5,
+                },
+            ),
+            Player(
+                name="policy_v3",
+                ai_type="policy_only",
+                config={
+                    "difficulty": 5,
+                    "nn_model_id": "distilled_sq8_2p_v3",
+                    "temperature": 0.5,
+                },
+            ),
+            Player(
+                name="gumbel_v1",
+                ai_type="gumbel_mcts",
+                config={
+                    "difficulty": 5,
+                    "nn_model_id": "distilled_sq8_2p",
+                    "think_time": 500,
+                    "num_simulations": 50,
+                },
+            ),
+            Player(
+                name="gumbel_v3",
+                ai_type="gumbel_mcts",
+                config={
+                    "difficulty": 5,
+                    "nn_model_id": "distilled_sq8_2p_v3",
+                    "think_time": 500,
+                    "num_simulations": 50,
+                },
+            ),
+        ]
+    else:
+        players = [
+            Player(
+                name="heuristic",
+                ai_type="heuristic",
+                config={"difficulty": 5},
+            ),
+            Player(
+                name="policy_distilled",
+                ai_type="policy_only",
+                config={
+                    "difficulty": 5,
+                    "nn_model_id": "distilled_sq8_2p",
+                    "temperature": 0.5,
+                },
+            ),
+            Player(
+                name="gumbel_distilled",
+                ai_type="gumbel_mcts",
+                config={
+                    "difficulty": 5,
+                    "nn_model_id": "distilled_sq8_2p",
+                    "think_time": 500,
+                    "num_simulations": 50,
+                },
+            ),
+        ]
 
     elo_system = EloRating(k_factor=32.0)
 

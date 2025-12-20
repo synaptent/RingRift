@@ -209,8 +209,9 @@ ai-service/scripts/debug_move_*.py
 ai-service/scripts/minimal_*_debug.py
 ai-service/scripts/quick_*_test.py
 
-# Runtime alert state
+# Runtime state files
 ai-service/data/.elo_alert_state.json
+ai-service/data/.merge_state.json
 
 # Root-level hypothesis directory (Python property-based testing)
 .hypothesis/

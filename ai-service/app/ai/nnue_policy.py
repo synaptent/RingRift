@@ -1371,7 +1371,7 @@ def _process_game_batch(
             # Fall back to creating initial state from board_type
             if state is None:
                 try:
-                    from ..training.generate_data import create_initial_state
+                    from ..training.initial_state import create_initial_state
                     state = create_initial_state(board_type, config_dict.get('num_players', 2))
                 except Exception:
                     continue
@@ -1685,7 +1685,7 @@ class NNUEPolicyDataset(Dataset):
         from ..models import GameState, Move, MoveType
         from ..models.core import GamePhase
         from ..rules.default_engine import DefaultRulesEngine
-        from ..training.generate_data import create_initial_state
+        from ..training.initial_state import create_initial_state
 
         samples: list[NNUEPolicySample] = []
         DefaultRulesEngine()
