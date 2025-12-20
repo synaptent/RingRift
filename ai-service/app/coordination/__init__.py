@@ -1310,7 +1310,6 @@ async def _emit_coordinator_heartbeats(interval_seconds: float = 30.0) -> None:
     """
     import asyncio
     import logging
-    import time as _time
 
     logger = logging.getLogger(__name__)
 
