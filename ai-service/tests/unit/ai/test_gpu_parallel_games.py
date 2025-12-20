@@ -530,10 +530,12 @@ class TestParallelGameRunner:
 
     def test_run_games_short(self):
         """Test running a few game steps."""
+        # Force CPU to avoid MPS index_put_ dtype limitations
         runner = ParallelGameRunner(
             batch_size=4,
             board_size=8,
             num_players=2,
+            device=torch.device("cpu"),
         )
 
         # Run games with short limit

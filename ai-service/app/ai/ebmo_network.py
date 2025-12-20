@@ -755,6 +755,49 @@ class EBMONetwork(nn.Module):
         state_embed = self.encode_state(board_tensor, global_tensor)
         return state_embed.squeeze(0)
 
+    def predict_value(self, state_embed: torch.Tensor) -> torch.Tensor:
+        """Predict position value from state embedding.
+
+        Args:
+            state_embed: (B, state_embed_dim) or (state_embed_dim,)
+
+        Returns:
+            (B,) or scalar value in [-1, 1]
+        """
+        single = state_embed.dim() == 1
+        if single:
+            state_embed = state_embed.unsqueeze(0)
+
+        value = self.value_head(state_embed)
+
+        if single:
+            value = value.squeeze(0)
+
+        return value
+
+    def predict_value_from_game(
+        self,
+        game_state: GameState,
+        player_number: int,
+        device: Optional[torch.device] = None,
+    ) -> float:
+        """Predict value for a game state.
+
+        Args:
+            game_state: Game state to evaluate
+            player_number: Perspective player
+            device: Target device
+
+        Returns:
+            Value prediction in [-1, 1]
+        """
+        with torch.no_grad():
+            state_embed = self.encode_state_from_game(
+                game_state, player_number, device
+            )
+            value = self.predict_value(state_embed)
+            return value.item()
+
 
 # =============================================================================
 # Loss Functions
@@ -1035,6 +1078,22 @@ def ranking_loss_from_quality(
         return torch.tensor(0.0, device=energies.device)
 
     return torch.stack(losses).mean()
+
+
+def value_loss(
+    predicted_values: torch.Tensor,
+    target_outcomes: torch.Tensor,
+) -> torch.Tensor:
+    """Value prediction loss.
+
+    Args:
+        predicted_values: (B,) predicted values in [-1, 1]
+        target_outcomes: (B,) actual outcomes (+1 win, 0 draw, -1 loss)
+
+    Returns:
+        Scalar loss value (MSE)
+    """
+    return F.mse_loss(predicted_values, target_outcomes.float())
 
 
 # =============================================================================
