@@ -3,7 +3,7 @@
   "name": "RingRift SLO Definitions",
   "description": "Consolidated Service Level Objectives for load test verification. Derived from PROJECT_GOALS.md, STRATEGIC_ROADMAP.md, and thresholds.json",
   "version": "1.0.0",
-  "lastUpdated": "2025-12-07",
+  "lastUpdated": "2025-12-20",
 
   "slos": {
     "availability": {

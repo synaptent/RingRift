@@ -39,12 +39,12 @@ Establish a fully gated, cross-language training data pipeline that produces can
 
 The AI Training Pipeline was identified as the **weakest aspect** in the comprehensive project assessment post-Production Validation. Key blockers include:
 
-| Issue                      | Current State                                  | Target State                       |
-| -------------------------- | ---------------------------------------------- | ---------------------------------- |
-| Schema completeness        | Missing `game_moves` tables in large-board DBs | All DBs gateable with full schema  |
-| Training data volume       | ~100 games total                               | 10,000+ games per board type       |
-| Neural network performance | 75% win rate vs random                         | ≥90% win rate (matching heuristic) |
-| Parity gating              | Blocked for large boards                       | All DBs pass TS↔Python parity      |
+| Issue                      | Current State                                                         | Target State                       |
+| -------------------------- | --------------------------------------------------------------------- | ---------------------------------- |
+| Schema completeness        | Large-board DBs now include `game_moves`, but parity gate still fails | All DBs gateable with full schema  |
+| Training data volume       | ~100 games total                                                      | 10,000+ games per board type       |
+| Neural network performance | 75% win rate vs random                                                | ≥90% win rate (matching heuristic) |
+| Parity gating              | Blocked by phase invariant violations on large boards                 | All DBs pass TS↔Python parity      |
 
 ### Primary Risk
 
@@ -63,25 +63,25 @@ Cannot train production-quality neural models until the canonical data pipeline 
 
 ### 1.1 Database Schema Status
 
-| Database                  | Board Type | Games  | `game_moves` Table | Parity Gate | Status           |
-| ------------------------- | ---------- | ------ | ------------------ | ----------- | ---------------- |
-| `canonical_square8_2p.db` | square8    | 200    | ✅ Present         | ✅ PASS     | **canonical**    |
-| `canonical_square8_3p.db` | square8    | 2      | ✅ Present         | ✅ PASS     | **canonical**    |
-| `canonical_square8_4p.db` | square8    | 2      | ✅ Present         | ✅ PASS     | **canonical**    |
-| `canonical_square19.db`   | square19   | 16,081 | ❌ Missing         | ❌ BLOCKED  | **pending_gate** |
-| `canonical_hexagonal.db`  | hexagonal  | 25,203 | ❌ Missing         | ❌ BLOCKED  | **pending_gate** |
+| Database                  | Board Type | Games | `game_moves` Table | Parity Gate | Status           |
+| ------------------------- | ---------- | ----- | ------------------ | ----------- | ---------------- |
+| `canonical_square8_2p.db` | square8    | 200   | ✅ Present         | ✅ PASS     | **canonical**    |
+| `canonical_square8_3p.db` | square8    | 2     | ✅ Present         | ✅ PASS     | **canonical**    |
+| `canonical_square8_4p.db` | square8    | 2     | ✅ Present         | ✅ PASS     | **canonical**    |
+| `canonical_square19.db`   | square19   | 1     | ✅ Present         | ❌ FAIL     | **pending_gate** |
+| `canonical_hexagonal.db`  | hexagonal  | 1     | ✅ Present         | ❌ FAIL     | **pending_gate** |
 
-**Root Cause:** The large-board DBs (square19, hexagonal) were generated before the `game_moves` table was required for parity gating. The schema version is current (v9), but the table was not populated during generation.
+**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete, but parity gating fails due to phase invariant violations in generated move histories (for example forced elimination moves recorded while still in `territory_processing`).
 
 ### 1.2 Training Data Volume
 
-| Board Type   | Current     | Target (Baseline) | Target (Training) | Gap          |
-| ------------ | ----------- | ----------------- | ----------------- | ------------ |
-| square8 (2p) | 200         | ≥200              | ≥1,000            | 800 games    |
-| square8 (3p) | 2           | ≥32               | ≥500              | 498 games    |
-| square8 (4p) | 2           | ≥32               | ≥500              | 498 games    |
-| square19     | 0 (blocked) | ≥200              | ≥1,000            | 1,000+ games |
-| hexagonal    | 0 (blocked) | ≥200              | ≥1,000            | 1,000+ games |
+| Board Type   | Current         | Target (Baseline) | Target (Training) | Gap        |
+| ------------ | --------------- | ----------------- | ----------------- | ---------- |
+| square8 (2p) | 200             | ≥200              | ≥1,000            | 800 games  |
+| square8 (3p) | 2               | ≥32               | ≥500              | 498 games  |
+| square8 (4p) | 2               | ≥32               | ≥500              | 498 games  |
+| square19     | 1 (failed gate) | ≥200              | ≥1,000            | 999+ games |
+| hexagonal    | 1 (failed gate) | ≥200              | ≥1,000            | 999+ games |
 
 ### 1.3 Neural Network Performance
 
@@ -118,7 +118,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
                     ▼               ▼               ▼
             ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
             │ square8.db  │ │ square19.db │ │hexagonal.db │
-            │  ✅ PASS    │ │  ❌ BLOCKED │ │  ❌ BLOCKED │
+            │  ✅ PASS    │ │ ❌ PARITY   │ │ ❌ PARITY   │
             └─────────────┘ └─────────────┘ └─────────────┘
                     │               │               │
                     │               X               X
@@ -130,7 +130,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
             │ check_canonical_phase_history.py            │
             └─────────────────────────────────────────────┘
                                     │
-                                    X (blocked for large boards)
+                                    X (blocked by phase invariant errors)
                                     │
                                     ▼
             ┌─────────────────────────────────────────────┐
@@ -151,21 +151,21 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 ## 2. Problem Analysis
 
-### 2.1 Missing `game_moves` Table
+### 2.1 Parity Gate Failures (Phase Invariant Violations)
 
-**Background:** The parity gate (`check_ts_python_replay_parity.py`) requires the `game_moves` table to replay games move-by-move and compare TS vs Python engine states. Without this table, the gate cannot execute.
+**Background:** The parity gate now runs on large-board DBs (schema is complete), but TS replay fails due to phase/move invariant violations. Recent failures show `forced_elimination` moves applied while the `currentPhase` is still `territory_processing`, and canonical history validation caught `no_placement_action` in `territory_processing`.
 
 **Impact:**
 
-- Cannot validate canonical_square19.db (16,081 games)
-- Cannot validate canonical_hexagonal.db (25,203 games)
-- These datasets are unusable for training until regenerated
+- canonical_square19.db: parity gate fails on a forced-elimination move recorded in the wrong phase.
+- canonical_hexagonal.db: canonical history validation fails; parity gate also fails on forced elimination in `territory_processing`.
+- These datasets remain non-canonical and cannot be used for training until regeneration produces valid phase histories.
 
-**Root Cause Analysis:**
+**Root Cause Analysis (Hypothesis):**
 
-1. Large-board self-play was run using an older generator configuration
-2. The `game_moves` table requires `GameWriter.record_move()` to be called
-3. The generator may have used snapshot-only mode or an older schema
+1. Self-play generator/engine emits forced elimination without entering the `forced_elimination` phase.
+2. Phase transitions may be skipped or recorded out of order under long-running large-board games.
+3. The generator does not fail fast on invalid phase/move sequences, allowing invalid games into the DB.
 
 ### 2.2 Insufficient Training Data
 
@@ -202,27 +202,27 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 ### Phase 1: Schema & DB Fix
 
-#### AI-01: Diagnose Canonical DB Schema Issues
+#### AI-01: Diagnose Parity/Phase Invariant Failures
 
-| Attribute               | Value                                                                                                                                                                                                                                                |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task ID**             | AI-01                                                                                                                                                                                                                                                |
-| **Title**               | Diagnose canonical DB schema issues                                                                                                                                                                                                                  |
-| **Description**         | Inspect canonical_square19.db and canonical_hexagonal.db to identify exactly why the `game_moves` table is missing. Determine if the DBs can be patched or must be regenerated. Check schema version, table structures, and generator configuration. |
-| **Acceptance Criteria** | <ul><li>Schema version confirmed for each DB</li><li>Missing tables documented</li><li>Generator configuration that created the DBs identified</li><li>Decision made: patch vs regenerate</li></ul>                                                  |
-| **Key Files**           | <ul><li>`ai-service/app/db/game_replay.py`</li><li>`ai-service/data/games/canonical_square19.db`</li><li>`ai-service/data/games/canonical_hexagonal.db`</li></ul>                                                                                    |
-| **Diagnostic Commands** | `bash<br>cd ai-service<br>sqlite3 data/games/canonical_square19.db ".schema"<br>sqlite3 data/games/canonical_square19.db "SELECT name FROM sqlite_master WHERE type='table'"<br>`                                                                    |
-| **Dependencies**        | None                                                                                                                                                                                                                                                 |
-| **Recommended Mode**    | debug                                                                                                                                                                                                                                                |
+| Attribute               | Value                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Task ID**             | AI-01                                                                                                                                                                                                                                                                                                                   |
+| **Title**               | Diagnose parity/phase invariant failures in large-board DBs                                                                                                                                                                                                                                                             |
+| **Description**         | Inspect canonical_square19.db and canonical_hexagonal.db to confirm schema completeness and identify the failing move/phase invariants reported by parity + canonical history gates. Capture the exact move type + phase mismatch and decide whether the fix is in self-play generation, engine rules, or gate filters. |
+| **Acceptance Criteria** | <ul><li>Schema version confirmed for each DB</li><li>Failing move/phase invariants identified (e.g., forced_elimination in territory_processing)</li><li>Canonical history failure examples captured</li><li>Decision made: fix generator vs engine vs gate filter</li></ul>                                            |
+| **Key Files**           | <ul><li>`ai-service/app/db/game_replay.py`</li><li>`ai-service/data/games/canonical_square19.db`</li><li>`ai-service/data/games/canonical_hexagonal.db`</li></ul>                                                                                                                                                       |
+| **Diagnostic Commands** | `bash<br>cd ai-service<br>sqlite3 data/games/canonical_square19.db ".schema"<br>sqlite3 data/games/canonical_hexagonal.db ".schema"<br>cat data/games/db_health.canonical_square19.json<br>cat data/games/db_health.canonical_hexagonal.json<br>`                                                                       |
+| **Dependencies**        | None                                                                                                                                                                                                                                                                                                                    |
+| **Recommended Mode**    | debug                                                                                                                                                                                                                                                                                                                   |
 
-#### AI-02: Fix Schema and Regenerate Canonical DBs
+#### AI-02: Fix Phase Invariants and Regenerate Canonical DBs
 
 | Attribute               | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Task ID**             | AI-02                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Title**               | Fix schema and regenerate canonical DBs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| **Description**         | Regenerate canonical_square19.db and canonical_hexagonal.db using the canonical self-play generator with proper `game_moves` table population. Archive existing DBs before regeneration. Start with a small number of games (32-64) to verify the schema is correct.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **Acceptance Criteria** | <ul><li>Existing DBs archived with timestamp</li><li>New DBs created with `generate_canonical_selfplay.py`</li><li>`game_moves` table present in new DBs</li><li>At least 32 games per board type generated</li><li>Schema v9 verified</li></ul>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Title**               | Fix phase invariants and regenerate canonical DBs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Description**         | Address the phase invariant bug(s) in self-play generation (forced elimination or no-action moves recorded in the wrong phase). Regenerate canonical_square19.db and canonical_hexagonal.db with the canonical self-play generator. Archive existing DBs before regeneration. Start with a small number of games (32-64) to verify parity + canonical history gates pass.                                                                                                                                                                                                                                                                                                                                                                             |
+| **Acceptance Criteria** | <ul><li>Existing DBs archived with timestamp</li><li>New DBs created with `generate_canonical_selfplay.py`</li><li>`game_moves` table present in new DBs</li><li>At least 32 games per board type generated</li><li>Parity gate passes for both DBs</li><li>Canonical history validation passes</li></ul>                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | **Key Files**           | <ul><li>`ai-service/scripts/generate_canonical_selfplay.py`</li><li>`ai-service/TRAINING_DATA_REGISTRY.md`</li></ul>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **Commands**            | `bash<br>cd ai-service<br># Archive existing DBs<br>mv data/games/canonical_square19.db data/games/canonical_square19.db.pre_regen_$(date +%Y%m%d)<br>mv data/games/canonical_hexagonal.db data/games/canonical_hexagonal.db.pre_regen_$(date +%Y%m%d)<br><br># Regenerate with proper schema<br>PYTHONPATH=. python scripts/generate_canonical_selfplay.py \<br>  --board-type square19 \<br>  --num-games 32 \<br>  --db data/games/canonical_square19.db \<br>  --summary logs/db_health.canonical_square19.json<br><br>PYTHONPATH=. python scripts/generate_canonical_selfplay.py \<br>  --board-type hexagonal \<br>  --num-games 32 \<br>  --db data/games/canonical_hexagonal.db \<br>  --summary logs/db_health.canonical_hexagonal.json<br>` |
 | **Dependencies**        | AI-01                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -572,6 +572,83 @@ The AI Training Pipeline Remediation is complete when:
 
 ## Revision History
 
-| Version | Date       | Changes                          |
-| ------- | ---------- | -------------------------------- |
-| 1.0     | 2025-12-20 | Initial remediation plan created |
+| Version | Date       | Changes                                                          |
+| ------- | ---------- | ---------------------------------------------------------------- |
+| 1.0     | 2025-12-20 | Initial remediation plan created                                 |
+| 1.1     | 2025-12-20 | AI-02 (hexagonal): Schema regenerated, parity blocker identified |
+
+---
+
+## Task Execution Log
+
+### AI-02: Regenerate canonical_hexagonal.db (2025-12-20)
+
+**Status:** ⚠️ PARTIAL SUCCESS - Schema fixed, parity bug blocking further generation
+
+**Actions Completed:**
+
+1. ✅ Removed 0-byte placeholder file at `ai-service/data/canonical_hexagonal.db`
+2. ✅ Archived malformed DB to `ai-service/data/games/canonical_hexagonal.db.malformed.bak`
+3. ✅ Ran `generate_canonical_selfplay.py --board-type hexagonal --num-games 50`
+4. ✅ New DB created with correct schema v9 (all 9 tables present)
+5. ⚠️ Only 1 game recorded due to parity divergence on first game
+
+**Schema Verification:**
+
+```
+$ sqlite3 ai-service/data/games/canonical_hexagonal.db ".tables"
+game_choices          game_moves            game_state_snapshots
+game_history_entries  game_nnue_features    games
+game_initial_state    game_players          schema_metadata
+```
+
+**Data Verification:**
+
+- Games: 1
+- Moves: 1,104 (in `game_moves` table)
+- Health summary: `ai-service/data/games/db_health.canonical_hexagonal.json`
+
+**Blocking Issue Identified:**
+The parity gate fails with a **TS↔Python phase/move invariant violation**:
+
+```
+Phase/move invariant violated: cannot apply move type no_placement_action in phase territory_processing
+```
+
+**Root Cause:** Python's GameEngine emits `no_placement_action` moves during `territory_processing` phase. The TS engine rejects this as invalid - `no_placement_action` is only allowed in `ring_placement` phase.
+
+**Relevant Error (from health summary):**
+
+```json
+{
+  "canonical_history": {
+    "games_checked": 1,
+    "non_canonical_games": 1,
+    "sample_issues": {
+      "dff66903-cc1a-4807-8df4-1ecc3ae67d1e": [
+        {
+          "move_number": 865,
+          "move_type": "no_placement_action",
+          "phase_before": "territory_processing",
+          "reason": "RuntimeError: Phase/move invariant violated: cannot apply move type no_placement_action in phase territory_processing"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Next Steps (AI-03 Blocker):**
+The hexagonal parity gate is blocked by a cross-language phase/move invariant bug. Before AI-03 can proceed for hexagonal:
+
+1. Investigate Python GameEngine phase transition logic for hexagonal boards
+2. Fix the `no_placement_action` emission in `territory_processing` phase
+3. Re-run AI-02 for hexagonal after fix
+
+**Files Modified/Created:**
+
+- `ai-service/data/games/canonical_hexagonal.db.malformed.bak` (archived)
+- `ai-service/data/games/canonical_hexagonal.db` (new, with correct schema)
+- `ai-service/data/games/db_health.canonical_hexagonal.json` (health summary)
+- `ai-service/data/games/canonical_hexagonal.db.parity_gate.json` (parity gate output)
+- `ai-service/data/games/canonical_hexagonal.db.parity_summary.json` (parity summary)

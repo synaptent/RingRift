@@ -48,13 +48,15 @@ The following SLOs are derived from [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) §
 
 ### Critical Priority (Zero Tolerance)
 
-| SLO                  | Target                         | Measurement                          | Source           |
-| -------------------- | ------------------------------ | ------------------------------------ | ---------------- |
-| Service Availability | ≥99.9%                         | successful_requests / total_requests | PROJECT_GOALS.md |
-| Error Rate           | ≤1% (staging) / ≤0.5% (prod)   | http_req_failed rate                 | thresholds.json  |
-| True Error Rate      | ≤0.5% (staging) / ≤0.2% (prod) | true_errors_total / total_requests   | thresholds.json  |
-| Contract Failures    | 0                              | contract_failures_total              | thresholds.json  |
-| Lifecycle Mismatches | 0                              | id_lifecycle_mismatches_total        | thresholds.json  |
+| SLO                   | Target                         | Measurement                              | Source           |
+| --------------------- | ------------------------------ | ---------------------------------------- | ---------------- |
+| Service Availability  | ≥99.9%                         | 1 - (true_errors_total / total_requests) | PROJECT_GOALS.md |
+| Error Rate (filtered) | ≤1% (staging) / ≤0.5% (prod)   | true_errors_total / total_requests       | thresholds.json  |
+| True Error Rate       | ≤0.5% (staging) / ≤0.2% (prod) | true_errors_total / total_requests       | thresholds.json  |
+| Contract Failures     | 0                              | contract_failures_total                  | thresholds.json  |
+| Lifecycle Mismatches  | 0                              | id_lifecycle_mismatches_total            | thresholds.json  |
+
+**Note:** Raw `http_req_failed` remains visible in k6 outputs and analyzer summaries for diagnostics, but SLO gating uses the filtered `true_errors_total` classification to avoid auth/rate-limit noise.
 
 ### High Priority
 
@@ -216,7 +218,7 @@ node tests/load/scripts/verify-slos.js results.json --env production
 - **Impact:** Service unavailability or data corruption risk
 - **Action on Breach:** Immediate alert (PagerDuty)
 - **Error Budget:** 0.001% (practically zero tolerance)
-- **SLOs:** Availability, Error Rate, Contract Failures, Lifecycle Mismatches
+- **SLOs:** Availability, Error Rate (filtered), True Error Rate, Contract Failures, Lifecycle Mismatches
 
 ### High
 

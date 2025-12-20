@@ -384,7 +384,7 @@ At 300 VUs with 2-5s polling intervals:
 
 **Update (2025-12-19):** `concurrent-games.js` and `websocket-gameplay.js` now emit `auth_token_expired_total`, `rate_limit_hit_total`, and `true_errors_total`, and `verify-slos.js` computes `true_error_rate`. The k6 summary output also includes an auth/rate-limit breakdown.
 
-**Remaining gap:** Shift SLO gating to rely on `true_errors_total` instead of raw `http_req_failed`, and decide whether lightweight scenarios (e.g. `remote-smoke`) should emit classification counters if they become part of SLO validation.
+**Update (2025-12-20):** `verify-slos.js` now uses `true_errors_total` for availability/error-rate gating when classification counters are present, and annotates raw `http_req_failed` as diagnostic context. Remaining decision: whether lightweight scenarios (e.g. `remote-smoke`) should emit classification counters if they become part of SLO validation.
 
 ---
 
