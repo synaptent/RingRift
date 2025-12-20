@@ -406,6 +406,15 @@ def run_single_game(
     state = create_initial_state(board_type, num_players=num_players)
     engine = GameEngine()
 
+    # Capture initial state for training data if requested
+    initial_state_snapshot = None
+    move_history_list = []
+    if record_training_data:
+        try:
+            initial_state_snapshot = state.dict() if hasattr(state, 'dict') else None
+        except Exception:
+            initial_state_snapshot = None
+
     # Create main competing AIs (tier_a as P1, tier_b as P2)
     ai_a = create_ai_for_tier(
         tier_a,
@@ -462,6 +471,15 @@ def run_single_game(
                 # For simplicity in multiplayer, just use tiebreak
                 winner_override = _tiebreak_winner(state)
                 break
+
+            # Record move for training data if requested
+            if record_training_data and move is not None:
+                try:
+                    move_record = move.dict() if hasattr(move, 'dict') else {"raw": str(move)}
+                    move_history_list.append(move_record)
+                except Exception:
+                    pass
+
             state = engine.apply_move(state, move)
             move_count += 1
         except Exception as e:
@@ -488,6 +506,32 @@ def run_single_game(
         tier_winner = 2  # tier_b won
     # else: filler AI won or draw - tier_winner stays None
 
+    # Build game record for training if requested
+    game_record = None
+    if record_training_data:
+        winner_label = "draw"
+        if tier_winner == 1:
+            winner_label = "tier_a"
+        elif tier_winner == 2:
+            winner_label = "tier_b"
+
+        game_record = {
+            "game_id": game_id,
+            "board_type": board_type.name.lower(),
+            "num_players": num_players,
+            "winner": winner_label,
+            "winner_player": actual_winner,
+            "game_length": move_count,
+            "duration_sec": duration,
+            "moves": move_history_list,
+            "initial_state": initial_state_snapshot,
+            "tier_a": tier_a,
+            "tier_b": tier_b,
+            "source": "run_distributed_tournament",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "seed": seed,
+        }
+
     return MatchResult(
         tier_a=tier_a,
         tier_b=tier_b,
@@ -499,6 +543,7 @@ def run_single_game(
         timestamp=datetime.now(timezone.utc).isoformat(),
         seed=seed,
         game_index=game_index,
+        game_record=game_record,
     )
 
 
@@ -1105,6 +1150,17 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Difficulty level for filler AI (default: 1).",
+    )
+    parser.add_argument(
+        "--record-training-data",
+        action="store_true",
+        help="Record full game history for training data export to JSONL.",
+    )
+    parser.add_argument(
+        "--training-output",
+        type=str,
+        default=None,
+        help="Output path for training JSONL (default: data/training/distributed_tournament_{id}.jsonl).",
     )
     return parser.parse_args()
 
