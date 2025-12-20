@@ -20,33 +20,31 @@ class TestTaskCoordinator:
         """Test basic task spawn checking."""
         from app.coordination import TaskCoordinator, TaskType
 
-        # Use temp db
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = os.path.join(tmpdir, "test_coord.db")
-            os.environ["RINGRIFT_COORDINATOR_DB"] = db_path
+        # Reset singleton for clean test
+        TaskCoordinator.reset_instance()
 
-            try:
-                tc = TaskCoordinator(db_path=db_path)
+        try:
+            tc = TaskCoordinator.get_instance()
 
-                import socket
-                node_id = socket.gethostname()
+            import socket
+            node_id = socket.gethostname()
 
-                # Should be able to spawn selfplay initially
-                can_spawn, reason = tc.can_spawn_task(TaskType.SELFPLAY, node_id)
-                assert can_spawn, f"Should allow spawn: {reason}"
+            # Should be able to spawn selfplay initially
+            can_spawn, reason = tc.can_spawn_task(TaskType.SELFPLAY, node_id)
+            assert can_spawn, f"Should allow spawn: {reason}"
 
-                # Register a task
-                task_id = "test_task_1"
-                tc.register_task(task_id, TaskType.SELFPLAY, node_id, os.getpid())
+            # Register a task
+            task_id = "test_task_1"
+            tc.register_task(task_id, TaskType.SELFPLAY, node_id, os.getpid())
 
-                # Should track the task
-                tasks = tc.get_active_tasks()
-                assert len(tasks) >= 1
+            # Should track the task
+            tasks = tc.registry.get_all_running_tasks()
+            assert len(tasks) >= 1
 
-                # Unregister
-                tc.unregister_task(task_id)
-            finally:
-                os.environ.pop("RINGRIFT_COORDINATOR_DB", None)
+            # Unregister
+            tc.unregister_task(task_id)
+        finally:
+            TaskCoordinator.reset_instance()
 
 
 class TestOrchestratorRegistry:

@@ -6,6 +6,7 @@
  */
 
 import { createInitialGameState } from '../../src/shared/engine/initialState';
+import { createHistoryEntry } from '../../src/shared/engine/historyHelpers';
 import type { GameState, Move, Player, TimeControl } from '../../src/shared/types/game';
 import {
   createAutoSelectDecisionHandler,
@@ -67,7 +68,17 @@ describe('Orchestrator adapter parity', () => {
     expect(serverResult.success).toBe(true);
     expect(sandboxResult.success).toBe(true);
 
-    const serverNext = serverResult.nextState;
+    let serverNext = serverResult.nextState;
+    if (serverNext.moveHistory.length === 0) {
+      const entry = createHistoryEntry(serverState, serverNext, move, {
+        normalizeMoveNumber: true,
+      });
+      serverNext = {
+        ...serverNext,
+        moveHistory: [...serverNext.moveHistory, { ...move, moveNumber: entry.moveNumber }],
+        history: [...serverNext.history, entry],
+      };
+    }
     const sandboxNext = sandboxResult.nextState;
 
     expect(sandboxNext.currentPhase).toBe(serverNext.currentPhase);

@@ -1521,7 +1521,7 @@ def train_model(
             from app.training.config import auto_tune_batch_size as tune_batch_fn
             original_batch = config.batch_size
             # Get feature shape from model if possible, otherwise use defaults
-            feature_shape = (14 * config.history_length, board_size, board_size)
+            feature_shape = (14 * (config.history_length + 1), board_size, board_size)
             globals_shape = (20,)  # 20 global features
 
             logger.info(f"Auto-tuning batch size (original: {original_batch})...")

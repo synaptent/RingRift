@@ -704,8 +704,8 @@ class UnifiedTrainingOrchestrator:
             board_size = board_size_map.get(self.config.board_type, 8)
             history_length = 3  # Default history length
 
-            # Feature channels: 14 base * history_length (typical)
-            feature_shape = (14 * history_length, board_size, board_size)
+            # Feature channels: 14 base * (history_length + 1) frames (current + history)
+            feature_shape = (14 * (history_length + 1), board_size, board_size)
             globals_shape = (20,)  # 20 global features
             policy_size = board_size * board_size * 15  # Approximate policy size
 
