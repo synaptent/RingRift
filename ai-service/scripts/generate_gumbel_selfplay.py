@@ -203,7 +203,7 @@ def main():
         include_ramdrive=False,
     )
     # Add script-specific arguments
-    parser.add_argument("--output", "-o", type=str, required=True, help="Output JSONL file")
+    parser.add_argument("--output", type=str, required=True, help="Output JSONL file")
     parser.add_argument("--gumbel-sims", type=int, default=64, help="Gumbel MCTS simulations")
     parser.add_argument("--max-moves", type=int, default=500, help="Max moves per game")
     parser.add_argument("--model-id", type=str, default=None, help="Neural network model ID (e.g., ringrift_best_sq8_2p)")
