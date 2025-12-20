@@ -1,6 +1,7 @@
 # Local machine-specific files
 scripts/*.plist
 .coverage
+.coverage.*
 
 # Host configuration with private IPs and credentials (use .example files as templates)
 config/distributed_hosts.yaml

@@ -34,13 +34,16 @@ This document outlines an incremental strategy to achieve full GPU-accelerated g
 
 ### 1.1 GPU File Inventory
 
-| File                    | Lines  | Purpose                                    | Status                                                |
-| ----------------------- | ------ | ------------------------------------------ | ----------------------------------------------------- |
-| `gpu_kernels.py`        | ~804   | Move generation kernels, evaluation kernel | Partial - Python loops defeat parallelism (TEST-ONLY) |
-| `gpu_batch.py`          | ~917   | GPUHeuristicEvaluator, GPUBatchEvaluator   | Complete - 45-weight CMA-ES evaluation                |
-| `gpu_parallel_games.py` | ~2,615 | BatchGameState, ParallelGameRunner         | Partial - per-game loops, rule simplifications        |
-| `hybrid_gpu.py`         | ~822   | HybridGPUEvaluator - CPU rules + GPU eval  | Complete - safe path with 100% parity                 |
-| `numba_rules.py`        | ~900   | Numba JIT-compiled rule functions          | Complete - 10-50x faster than pure Python             |
+| File                      | Lines  | Purpose                                    | Status                                                |
+| ------------------------- | ------ | ------------------------------------------ | ----------------------------------------------------- |
+| `gpu_kernels.py`          | ~804   | Move generation kernels, evaluation kernel | Partial - Python loops defeat parallelism (TEST-ONLY) |
+| `gpu_batch.py`            | ~917   | GPUHeuristicEvaluator, GPUBatchEvaluator   | Complete - 45-weight CMA-ES evaluation                |
+| `gpu_parallel_games.py`   | ~900   | BatchGameState, ParallelGameRunner         | Partial - per-game loops, rule simplifications        |
+| `gpu_move_generation.py`  | ~1,650 | Batch move generation + BatchMoves         | Partial - move gen parity still in progress           |
+| `gpu_move_application.py` | ~1,250 | Apply placement/movement/capture/recovery  | Partial - rule simplifications remain                 |
+| `gpu_heuristic.py`        | ~540   | 45-weight heuristic evaluation             | ✅ Complete - vectorized scoring                      |
+| `hybrid_gpu.py`           | ~822   | HybridGPUEvaluator - CPU rules + GPU eval  | Complete - safe path with 100% parity                 |
+| `numba_rules.py`          | ~900   | Numba JIT-compiled rule functions          | Complete - 10-50x faster than pure Python             |
 
 > **Note:** `cuda_rules.py` (3,613 lines) was deleted 2025-12-11 - see GPU_ARCHITECTURE_SIMPLIFICATION.md
 

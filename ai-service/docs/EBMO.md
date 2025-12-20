@@ -311,14 +311,16 @@ config = AIConfig(
 
 ## Files
 
-| File                                   | Description                          |
-| -------------------------------------- | ------------------------------------ |
-| `app/ai/ebmo_network.py`               | Network architecture, loss functions |
-| `app/ai/ebmo_ai.py`                    | AI agent implementation              |
-| `app/training/ebmo_dataset.py`         | Dataset with contrastive sampling    |
-| `app/training/ebmo_trainer.py`         | Training loop                        |
-| `scripts/train_ebmo.py`                | Training script                      |
-| `scripts/generate_ebmo_expert_data.py` | Expert data generation               |
+| File                                      | Description                          |
+| ----------------------------------------- | ------------------------------------ |
+| `app/ai/ebmo_network.py`                  | Network architecture, loss functions |
+| `app/ai/ebmo_ai.py`                       | AI agent implementation              |
+| `app/training/ebmo_dataset.py`            | Dataset with contrastive sampling    |
+| `app/training/ebmo_trainer.py`            | Training loop                        |
+| `scripts/train_ebmo.py`                   | Training script                      |
+| `scripts/generate_ebmo_expert_data.py`    | Expert data generation               |
+| `scripts/generate_search_labeled_data.py` | Search-labeled data generation       |
+| `scripts/train_ebmo_quality.py`           | Quality-labeled training script      |
 
 ## Potential Advantages
 
