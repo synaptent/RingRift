@@ -86,14 +86,18 @@ from app.ai.neural_net.square_architectures import (
     RingRiftCNN_v2_Lite,
 )
 
+# Hex architectures - migrated to hex_architectures.py (Phase 2)
+from app.ai.neural_net.hex_architectures import (
+    HexNeuralNet_v2,
+    HexNeuralNet_v2_Lite,
+)
+
 # Classes and functions still in legacy module (to be migrated in Phase 2)
 from app.ai._neural_net_legacy import (
     _MODEL_CACHE,
     # Dataclasses
     DecodedPolicyIndex,
-    # Hex architectures
-    HexNeuralNet_v2,
-    HexNeuralNet_v2_Lite,
+    # Hex architectures (v3 still in legacy)
     HexNeuralNet_v3,
     HexNeuralNet_v3_Lite,
     # Main AI class
