@@ -411,19 +411,19 @@ class ConfigValidator:
                     warnings.append(f"safeguards.max_selfplay_processes={max_selfplay} is high")
 
                 # Check resource limit consistency with resource_guard
-                # The 80% limit should be consistent across codebase
+                # Keep thresholds aligned with the canonical resource_guard limits.
                 try:
                     from app.utils.resource_guard import LIMITS
                     if LIMITS:
                         # Verify consistency
                         if LIMITS.CPU_MAX_PERCENT != 80.0:
                             warnings.append(f"resource_guard.CPU_MAX_PERCENT={LIMITS.CPU_MAX_PERCENT} != 80%")
-                        if LIMITS.MEMORY_MAX_PERCENT != 80.0:
-                            warnings.append(f"resource_guard.MEMORY_MAX_PERCENT={LIMITS.MEMORY_MAX_PERCENT} != 80%")
+                        if LIMITS.MEMORY_MAX_PERCENT != 90.0:
+                            warnings.append(f"resource_guard.MEMORY_MAX_PERCENT={LIMITS.MEMORY_MAX_PERCENT} != 90%")
                         if LIMITS.GPU_MAX_PERCENT != 80.0:
                             warnings.append(f"resource_guard.GPU_MAX_PERCENT={LIMITS.GPU_MAX_PERCENT} != 80%")
-                        if LIMITS.DISK_MAX_PERCENT != 70.0:
-                            warnings.append(f"resource_guard.DISK_MAX_PERCENT={LIMITS.DISK_MAX_PERCENT} != 70%")
+                        if LIMITS.DISK_MAX_PERCENT != 95.0:
+                            warnings.append(f"resource_guard.DISK_MAX_PERCENT={LIMITS.DISK_MAX_PERCENT} != 95%")
                 except ImportError:
                     warnings.append("resource_guard module not available - cannot verify limits")
 

@@ -36,8 +36,8 @@ class TestResourceLimits:
 
     def test_disk_limits(self):
         """Verify disk limit values."""
-        assert LIMITS.DISK_MAX_PERCENT == 80.0
-        assert LIMITS.DISK_WARN_PERCENT == 75.0
+        assert LIMITS.DISK_MAX_PERCENT == 95.0
+        assert LIMITS.DISK_WARN_PERCENT == 90.0
 
     def test_cpu_limits(self):
         """Verify CPU limit values."""
@@ -94,7 +94,7 @@ class TestDiskUsage:
     @patch('app.utils.resource_guard.get_disk_usage')
     def test_check_disk_space_fails_on_percentage(self, mock_get_disk):
         """check_disk_space should return False when usage exceeds limit."""
-        mock_get_disk.return_value = (85.0, 50.0, 200.0)  # 85% used
+        mock_get_disk.return_value = (96.0, 50.0, 200.0)  # 96% used
         assert check_disk_space(required_gb=1.0, log_warning=False) is False
 
     @patch('app.utils.resource_guard.get_disk_usage')

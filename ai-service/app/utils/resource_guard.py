@@ -5,7 +5,8 @@ Do NOT use shutil.disk_usage(), psutil.virtual_memory(), or psutil.cpu_percent()
 directly in scripts. Use this module instead for consistent limits and metrics.
 
 Provides simple functions for scripts to check resource availability
-before performing operations. Enforces consistent 80% utilization limits.
+before performing operations. Enforces the shared resource limits below
+(CPU/GPU 80%, memory 90%, disk 95%).
 
 Usage:
     from app.utils.resource_guard import (
@@ -39,7 +40,7 @@ Usage:
     print(f"Max disk usage: {LIMITS.DISK_MAX_PERCENT}%")
 
 Why use this module:
-    - Consistent 80% utilization limits across all scripts
+    - Consistent resource utilization limits across all scripts
     - Prometheus metrics integration for monitoring
     - Graceful degradation support
     - Single source of truth for resource thresholds
@@ -201,15 +202,15 @@ if HAS_PROMETHEUS:
     )
 
 # ============================================
-# Resource Limits - 80% max utilization
+# Resource Limits - shared utilization thresholds
 # ============================================
 
 @dataclass(frozen=True)
 class ResourceLimits:
-    """Unified resource limits - 90% max utilization for disk."""
-    # Disk at 90% - increased from 80% to allow selfplay generation
-    DISK_MAX_PERCENT: float = 90.0
-    DISK_WARN_PERCENT: float = 85.0
+    """Unified resource limits (CPU/GPU 80%, memory 90%, disk 95%)."""
+    # Disk at 95% - increased to allow selfplay generation with low headroom
+    DISK_MAX_PERCENT: float = 95.0
+    DISK_WARN_PERCENT: float = 90.0
 
     # CPU/GPU/Memory at 80% hard limit
     CPU_MAX_PERCENT: float = 80.0
