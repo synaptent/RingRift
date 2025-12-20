@@ -158,18 +158,18 @@ groups:
           summary: 'Critical cluster memory usage'
           description: 'Memory utilization is {{ $value | printf "%.1f" }}%. Risk of OOM kills.'
 
-  # Resource guard alerts - match the 80% thresholds in resource_guard.py
+  # Resource guard alerts - conservative warnings relative to resource_guard limits
   - name: resource_guard_alerts
     rules:
-      # Disk at 70% limit (stricter threshold)
+      # Disk early warning thresholds (guard limit is higher)
       - alert: DiskApproachingLimit
         expr: ringrift_resource_disk_used_percent > 65
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: 'Disk approaching 70% limit'
-          description: 'Disk usage is {{ $value | printf "%.1f" }}% (limit: 70%). Graceful degradation will activate at 70%.'
+          summary: 'Disk usage elevated (early warning)'
+          description: 'Disk usage is {{ $value | printf "%.1f" }}% (guard limit: 95%). Early warning threshold to allow cleanup before degradation.'
 
       - alert: DiskAtLimit
         expr: ringrift_resource_disk_used_percent > 70
@@ -177,18 +177,18 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: 'Disk at/above 70% limit'
-          description: 'Disk usage is {{ $value | printf "%.1f" }}%. Graceful degradation is active. New selfplay jobs will be blocked.'
+          summary: 'Disk usage high (early warning threshold)'
+          description: 'Disk usage is {{ $value | printf "%.1f" }}% (guard limit: 95%). Clean up to avoid hitting the hard limit.'
 
-      # Memory at 80% limit
+      # Memory early warning thresholds (guard limit is higher)
       - alert: MemoryApproachingLimit
         expr: ringrift_resource_memory_used_percent > 75
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: 'Memory approaching 80% limit'
-          description: 'Memory usage is {{ $value | printf "%.1f" }}% (limit: 80%). Graceful degradation will activate at 80%.'
+          summary: 'Memory usage elevated (early warning)'
+          description: 'Memory usage is {{ $value | printf "%.1f" }}% (guard limit: 90%). Early warning threshold before degradation.'
 
       - alert: MemoryAtLimit
         expr: ringrift_resource_memory_used_percent > 80
@@ -196,8 +196,8 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: 'Memory at/above 80% limit'
-          description: 'Memory usage is {{ $value | printf "%.1f" }}%. Graceful degradation is active. Operations may be throttled.'
+          summary: 'Memory usage high (early warning threshold)'
+          description: 'Memory usage is {{ $value | printf "%.1f" }}% (guard limit: 90%). Reduce memory pressure to avoid throttling.'
 
       # CPU at 80% limit
       - alert: CPUApproachingLimit
