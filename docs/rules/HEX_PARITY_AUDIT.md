@@ -140,7 +140,7 @@ Replay fixture regression tests remain skipped until fresh radius-12 data exists
 
 ### High Priority
 
-1. **Generate Canonical Hex Database**: Create a proper `canonical_hex_r12.db` with radius-12 geometry and full parity validation.
+1. **Scale Canonical Hex Database**: Grow `canonical_hexagonal.db` toward volume targets and re-run parity/fixture gates once the dataset is larger.
 
 2. **Fix Python 3.10 Compatibility**: Update the `NotRequired` import to use `typing_extensions` for compatibility.
 
