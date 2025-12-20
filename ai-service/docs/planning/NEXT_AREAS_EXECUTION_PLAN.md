@@ -13,9 +13,9 @@
   - [x] Parity check (TS vs Python) - **PASSED** (5 games, 0 divergences)
   - [x] Canonical phase-history validation - **PASSED**
 - [x] Write `db_health.canonical_<board>.json` for each DB
-  - Created: `data/db_health/canonical_square19.json`
-  - Created: `data/db_health/canonical_hexagonal.json`
-  - Created: `data/db_health/canonical_square8.json`
+  - Created: `data/games/db_health.canonical_square19.json`
+  - Created: `data/games/db_health.canonical_hexagonal.json`
+  - Created: `data/games/db_health.canonical_square8.json`
 - [x] Update `TRAINING_DATA_REGISTRY.md` with `canonical_ok` status and provenance
 - [x] **FIXED: Phase transition parity bug (commit b8175468)**
 
@@ -26,17 +26,17 @@
 
 ### Lane 1 Progress Log
 
-| Date       | Board                    | Parity                             | Phase-History         | DB Health JSON           | Notes                                                          |
-| ---------- | ------------------------ | ---------------------------------- | --------------------- | ------------------------ | -------------------------------------------------------------- |
-| 2025-12-20 | **SCALE VERIFIED**       | **PASS (0/50 semantic)**           | OK                    | -                        | iter84: 190 games, sampled 50, 0 divergence                    |
-| 2025-12-20 | **PARITY FIX VERIFIED**  | **PASS (0 semantic divergence)**   | -                     | -                        | b8175468: `no_territory_action` inline phase transition fix    |
-| 2025-12-20 | selfplay.db (post-fix)   | PASS (0/10 semantic)               | 10 structural         | -                        | Structural issues are legacy data quality, not parity          |
-| 2025-12-20 | square8_2p               | FAIL (4/10 semantic divergence)    | FAIL (19+ violations) | canonical_square8.json   | Phase mismatch: Python=ring_placement, TS=territory_processing |
-| 2025-12-20 | jsonl_aggregated (mixed) | FAIL (5/20 semantic divergence)    | -                     | -                        | Same phase transition bug                                      |
-| 2025-12-20 | square19_2p              | FAIL (14/14 structural)            | N/A                   | canonical_square19.json  | Missing game_moves table (v1 schema)                           |
-| 2025-12-20 | hexagonal/selfplay.db    | FAIL (429/429 structural)          | N/A                   | canonical_hexagonal.json | Missing game_moves table (v1 schema)                           |
-| 2025-12-20 | staging/iter0_sq8_2p     | FAIL (151 semantic, 33 structural) | TBD                   | canonical_square8.json   | Pre-fix data + line detection bug - 71% semantic divergence    |
-| 2025-12-20 | canonical_test (fresh)   | PASS (0/20 semantic)               | 20 structural         | -                        | Phase fix works; structural issues = line detection bug        |
+| Date       | Board                    | Parity                             | Phase-History         | DB Health JSON                                | Notes                                                          |
+| ---------- | ------------------------ | ---------------------------------- | --------------------- | --------------------------------------------- | -------------------------------------------------------------- |
+| 2025-12-20 | **SCALE VERIFIED**       | **PASS (0/50 semantic)**           | OK                    | -                                             | iter84: 190 games, sampled 50, 0 divergence                    |
+| 2025-12-20 | **PARITY FIX VERIFIED**  | **PASS (0 semantic divergence)**   | -                     | -                                             | b8175468: `no_territory_action` inline phase transition fix    |
+| 2025-12-20 | selfplay.db (post-fix)   | PASS (0/10 semantic)               | 10 structural         | -                                             | Structural issues are legacy data quality, not parity          |
+| 2025-12-20 | square8_2p               | FAIL (4/10 semantic divergence)    | FAIL (19+ violations) | data/games/db_health.canonical_square8.json   | Phase mismatch: Python=ring_placement, TS=territory_processing |
+| 2025-12-20 | jsonl_aggregated (mixed) | FAIL (5/20 semantic divergence)    | -                     | -                                             | Same phase transition bug                                      |
+| 2025-12-20 | square19_2p              | FAIL (14/14 structural)            | N/A                   | data/games/db_health.canonical_square19.json  | Missing game_moves table (v1 schema)                           |
+| 2025-12-20 | hexagonal/selfplay.db    | FAIL (429/429 structural)          | N/A                   | data/games/db_health.canonical_hexagonal.json | Missing game_moves table (v1 schema)                           |
+| 2025-12-20 | staging/iter0_sq8_2p     | FAIL (151 semantic, 33 structural) | TBD                   | data/games/db_health.canonical_square8.json   | Pre-fix data + line detection bug - 71% semantic divergence    |
+| 2025-12-20 | canonical_test (fresh)   | PASS (0/20 semantic)               | 20 structural         | -                                             | Phase fix works; structural issues = line detection bug        |
 
 ### Critical Finding: Phase Transition Parity Bug - **RESOLVED**
 
