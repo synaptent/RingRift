@@ -405,7 +405,8 @@ class ModelPromoter:
             cmd = [
                 sys.executable,
                 str(AI_SERVICE_ROOT / "scripts" / "sync_models.py"),
-                "--push-promoted",
+                "--sync",
+                "--use-sync-coordinator",
             ]
 
             process = await asyncio.create_subprocess_exec(
