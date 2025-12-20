@@ -442,7 +442,6 @@ class BatchGameState:
                 CPUGamePhase.MOVEMENT: GamePhase.MOVEMENT,
                 CPUGamePhase.CAPTURE: GamePhase.CAPTURE,
                 CPUGamePhase.CHAIN_CAPTURE: GamePhase.CHAIN_CAPTURE,
-                CPUGamePhase.RECOVERY: GamePhase.RECOVERY,
                 CPUGamePhase.LINE_PROCESSING: GamePhase.LINE_PROCESSING,
                 CPUGamePhase.TERRITORY_PROCESSING: GamePhase.TERRITORY_PROCESSING,
                 CPUGamePhase.FORCED_ELIMINATION: GamePhase.FORCED_ELIMINATION,
@@ -501,7 +500,6 @@ class BatchGameState:
                         CPUGamePhase.MOVEMENT: GamePhase.MOVEMENT,
                         CPUGamePhase.CAPTURE: GamePhase.CAPTURE,
                         CPUGamePhase.CHAIN_CAPTURE: GamePhase.CHAIN_CAPTURE,
-                        CPUGamePhase.RECOVERY: GamePhase.RECOVERY,
                         CPUGamePhase.LINE_PROCESSING: GamePhase.LINE_PROCESSING,
                         CPUGamePhase.TERRITORY_PROCESSING: GamePhase.TERRITORY_PROCESSING,
                         CPUGamePhase.FORCED_ELIMINATION: GamePhase.FORCED_ELIMINATION,
@@ -633,7 +631,8 @@ class BatchGameState:
             GamePhase.END_TURN.value: CPUGamePhase.MOVEMENT,  # Legacy fallback
             GamePhase.CAPTURE.value: CPUGamePhase.CAPTURE,
             GamePhase.CHAIN_CAPTURE.value: CPUGamePhase.CHAIN_CAPTURE,
-            GamePhase.RECOVERY.value: CPUGamePhase.RECOVERY,
+            # Recovery is a movement-phase action in canonical rules.
+            GamePhase.RECOVERY.value: CPUGamePhase.MOVEMENT,
             GamePhase.FORCED_ELIMINATION.value: CPUGamePhase.FORCED_ELIMINATION,
             GamePhase.GAME_OVER.value: CPUGamePhase.GAME_OVER,
         }

@@ -83,7 +83,8 @@ _GPU_TO_CANONICAL_PHASE = {
     # Canonical phases (5-9)
     GamePhase.CAPTURE: "capture",
     GamePhase.CHAIN_CAPTURE: "chain_capture",
-    GamePhase.RECOVERY: "recovery",
+    # Recovery slides are recorded as movement-phase actions in canonical rules.
+    GamePhase.RECOVERY: "movement",
     GamePhase.FORCED_ELIMINATION: "forced_elimination",
     GamePhase.GAME_OVER: "game_over",
 }

@@ -1368,6 +1368,9 @@ class ParallelGameRunner:
         recovery_eligible = mask & (~controls_stack) & has_marker & (buried_for_current > 0)
 
         games_with_rings = mask & (rings_for_current_player > 0) & (~recovery_eligible)
+        # Games skipping placement: recovery-eligible (choosing to skip) or no rings
+        games_skip_placement = mask & recovery_eligible & (rings_for_current_player > 0)
+        games_no_placement = mask & (rings_for_current_player == 0) & (~recovery_eligible)
 
         # Games WITH rings: generate and apply placement moves
         if games_with_rings.any():
@@ -1386,10 +1389,55 @@ class ParallelGameRunner:
                 games_placed = games_with_rings & (moves.moves_per_game > 0)
                 mark_real_action_batch(self.state, games_placed)
 
+        # December 2025: Record explicit phase moves for canonical compliance
+        # Games skipping placement to enable recovery: skip_placement
+        if games_skip_placement.any():
+            self._record_skip_placement_moves(games_skip_placement)
+
+        # Games with no rings (and not recovery eligible): no_placement_action
+        if games_no_placement.any():
+            apply_no_action_moves_batch(self.state, games_no_placement)
+
         # Advance to MOVEMENT for this player's turn regardless of whether a
         # placement occurred (no legal placements, no rings in hand, or a
         # strategic skip to enable recovery).
         self.state.current_phase[mask] = GamePhase.MOVEMENT
+
+    def _record_skip_placement_moves(self, mask: torch.Tensor) -> None:
+        """Record skip_placement moves for canonical compliance.
+
+        Per canonical contract, when a player skips placement (e.g., to enable
+        recovery), an explicit skip_placement move must be recorded.
+
+        Args:
+            mask: Games where skip_placement should be recorded
+        """
+        from .gpu_game_types import MoveType
+
+        active_mask = mask & self.state.get_active_mask()
+        if not active_mask.any():
+            return
+
+        game_indices = torch.where(active_mask)[0]
+        players = self.state.current_player[game_indices]
+
+        for i, g in enumerate(game_indices.tolist()):
+            move_count = int(self.state.move_count[g].item())
+            if move_count >= self.state.max_history_moves:
+                continue
+
+            player = int(players[i].item())
+
+            # Record skip_placement (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
+            self.state.move_history[g, move_count, 0] = MoveType.SKIP_PLACEMENT
+            self.state.move_history[g, move_count, 1] = player
+            self.state.move_history[g, move_count, 2] = -1  # No position for skip
+            self.state.move_history[g, move_count, 3] = -1
+            self.state.move_history[g, move_count, 4] = -1
+            self.state.move_history[g, move_count, 5] = -1
+            self.state.move_history[g, move_count, 6] = GamePhase.RING_PLACEMENT
+
+            self.state.move_count[g] += 1
 
     def _step_movement_phase(
         self,
@@ -2105,7 +2153,8 @@ class ParallelGameRunner:
             state.move_history[g, move_count, 3] = from_x
             state.move_history[g, move_count, 4] = to_y
             state.move_history[g, move_count, 5] = to_x
-            state.move_history[g, move_count, 6] = GamePhase.RECOVERY
+            # Recovery is a movement-phase action in canonical rules.
+            state.move_history[g, move_count, 6] = GamePhase.MOVEMENT
 
         # Move marker from origin to destination
         state.marker_owner[g, from_y, from_x] = 0  # Clear origin

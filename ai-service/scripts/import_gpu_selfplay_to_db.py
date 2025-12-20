@@ -26,7 +26,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.db.game_replay import GameReplayDB
-from app.game_engine import GameEngine
+from app.game_engine import GameEngine, PhaseRequirementType
 from app.models import BoardType, GameState, Move, MoveType, Position
 from app.training.initial_state import create_initial_state
 
@@ -219,6 +219,51 @@ def get_board_type(board_str: str) -> BoardType:
     return board_map.get(board_str, BoardType.SQUARE8)
 
 
+def _fix_capture_target_from_board(move: Move, state: GameState) -> Move:
+    """Fix captureTarget for a capture move by scanning the actual board state.
+
+    GPU canonical export computes captureTarget as one step before landing, but this is
+    incorrect when the attacker lands multiple steps past the target. The correct target
+    is the first stack along the ray from from_pos toward to_pos.
+
+    Args:
+        move: The capture move with potentially incorrect capture_target
+        state: Current game state with board information
+
+    Returns:
+        Move with corrected capture_target, or original move if no fix needed
+    """
+    from app.board_manager import BoardManager
+
+    if not move.from_pos or not move.to:
+        return move
+
+    from_pos = move.from_pos
+    to_pos = move.to
+    board = state.board
+
+    # Compute direction
+    dy = 0 if to_pos.y == from_pos.y else (1 if to_pos.y > from_pos.y else -1)
+    dx = 0 if to_pos.x == from_pos.x else (1 if to_pos.x > from_pos.x else -1)
+
+    # Scan along the ray to find the first stack
+    dist = max(abs(to_pos.y - from_pos.y), abs(to_pos.x - from_pos.x))
+
+    for step in range(1, dist + 1):
+        check_y = from_pos.y + dy * step
+        check_x = from_pos.x + dx * step
+        check_pos = Position(x=check_x, y=check_y)
+
+        stack = BoardManager.get_stack(check_pos, board)
+        if stack is not None:
+            # Found the target - update move with correct capture_target
+            return move.model_copy(update={"capture_target": check_pos})
+
+    # No stack found along path - this shouldn't happen for valid captures
+    # Return original move and let apply_move handle the error
+    return move
+
+
 def _find_matching_candidate_move(
     candidates: list[Move],
     *,
@@ -356,8 +401,8 @@ def expand_gpu_jsonl_moves_to_canonical(
 
             # LINE_PROCESSING: Use GPU move if it's a line move, otherwise auto-generate
             if phase == GamePhase.LINE_PROCESSING:
-                if gpu_move.type in {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION}:
-                    break  # Let the main matching logic handle it
+                if gpu_move.type in {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.NO_LINE_ACTION}:
+                    break  # Let the main matching logic handle it (including explicit NO_LINE_ACTION from new GPU format)
                 auto_line(ts)
                 continue
             # TERRITORY_PROCESSING: Use GPU move if it's a territory move, otherwise auto-generate
@@ -366,6 +411,7 @@ def expand_gpu_jsonl_moves_to_canonical(
                     MoveType.CHOOSE_TERRITORY_OPTION,
                     MoveType.ELIMINATE_RINGS_FROM_STACK,
                     MoveType.SKIP_TERRITORY_PROCESSING,
+                    MoveType.NO_TERRITORY_ACTION,  # New GPU format includes explicit bookkeeping moves
                 }:
                     break  # Let the main matching logic handle it
                 auto_territory(ts)
@@ -390,11 +436,23 @@ def expand_gpu_jsonl_moves_to_canonical(
                 continue
 
             if phase == GamePhase.RING_PLACEMENT and gpu_move.type != MoveType.PLACE_RING:
-                # Prefer skip_placement when available to advance to movement.
+                # Prefer skip_placement or no_placement_action when available to advance to movement.
+                # This handles recovery-eligible players who have no rings to place.
                 candidates = GameEngine.get_valid_moves(state, player)
                 skip_moves = [m for m in candidates if m.type == MoveType.SKIP_PLACEMENT]
                 if skip_moves:
                     apply(skip_moves[0], ts)
+                    continue
+                # Try no_placement_action for recovery-eligible players
+                no_placement = [m for m in candidates if m.type == MoveType.NO_PLACEMENT_ACTION]
+                if no_placement:
+                    apply(no_placement[0], ts)
+                    continue
+                # Check phase requirement for no_placement_action
+                req = GameEngine.get_phase_requirement(state, player)
+                if req and req.type == PhaseRequirementType.NO_PLACEMENT_ACTION_REQUIRED:
+                    synthesized = GameEngine.synthesize_bookkeeping_move(req, state)
+                    apply(synthesized, ts)
                     continue
 
             if phase == GamePhase.FORCED_ELIMINATION and gpu_move.type != MoveType.FORCED_ELIMINATION:
@@ -424,14 +482,22 @@ def expand_gpu_jsonl_moves_to_canonical(
         if desired_type == MoveType.OVERTAKING_CAPTURE and state.current_phase == GamePhase.CHAIN_CAPTURE:
             desired_type = MoveType.CONTINUE_CAPTURE_SEGMENT
 
-        candidates = GameEngine.get_valid_moves(state, state.current_player)
-        matched = _find_matching_candidate_move(
-            candidates,
-            desired_type=desired_type,
-            from_pos=gpu_move.from_pos,
-            to_pos=gpu_move.to,
-            must_move_from_key=state.must_move_from_stack_key,
-        )
+        # Handle bookkeeping moves directly via phase requirements (they're not in get_valid_moves)
+        if desired_type in {MoveType.NO_LINE_ACTION, MoveType.NO_TERRITORY_ACTION, MoveType.NO_MOVEMENT_ACTION, MoveType.NO_PLACEMENT_ACTION}:
+            req = GameEngine.get_phase_requirement(state, state.current_player)
+            if req:
+                matched = GameEngine.synthesize_bookkeeping_move(req, state)
+            else:
+                matched = None
+        else:
+            candidates = GameEngine.get_valid_moves(state, state.current_player)
+            matched = _find_matching_candidate_move(
+                candidates,
+                desired_type=desired_type,
+                from_pos=gpu_move.from_pos,
+                to_pos=gpu_move.to,
+                must_move_from_key=state.must_move_from_stack_key,
+            )
         if matched is None:
             if verbose:
                 print(f"  [ERROR] No match for GPU move {gpu_idx}")
@@ -550,11 +616,19 @@ def import_game(
 
     if skip_expansion:
         # Random/CPU selfplay already has canonical moves with bookkeeping - replay to get final state
-        canonical_moves = moves
+        # GPU canonical export may have incorrect captureTarget (computed as one step back from landing),
+        # so we fix it by scanning the actual board state to find the first stack along the ray.
+        canonical_moves = []
         state = initial_state
         try:
             for move in moves:
-                state = GameEngine.apply_move(state, move)
+                # Fix captureTarget for capture moves by scanning the board
+                if move.type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT) and move.from_pos and move.to:
+                    fixed_move = _fix_capture_target_from_board(move, state)
+                else:
+                    fixed_move = move
+                canonical_moves.append(fixed_move)
+                state = GameEngine.apply_move(state, fixed_move)
             final_state = state
         except Exception as e:
             print(f"  Warning: Failed to replay moves for {game_id}: {e}")
