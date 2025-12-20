@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
-from typing import Any, Optional, Tuple, List, Dict, TYPE_CHECKING
+from typing import Any, Optional, Tuple, List, Dict
 
 logger = logging.getLogger(__name__)
 

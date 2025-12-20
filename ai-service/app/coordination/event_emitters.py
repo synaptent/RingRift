@@ -73,10 +73,7 @@ except ImportError:
 
 # Unified event router (preferred for cross-system routing)
 try:
-    from app.coordination.event_router import (
-        get_router as get_event_router,
-        EventSource,
-    )
+    from app.coordination.event_router import get_router as get_event_router
     HAS_EVENT_ROUTER = True
 except ImportError:
     HAS_EVENT_ROUTER = False

@@ -39,11 +39,10 @@ import sqlite3
 import socket
 import threading
 import time
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Default database location
 DEFAULT_EVENT_DB = Path("/tmp/ringrift_coordination/events.db")

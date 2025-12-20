@@ -24,18 +24,16 @@ Usage:
     coordinator.unregister_task(task_id)
 """
 
-import asyncio
 import fcntl
 import json
 import logging
 import os
-import signal
 import socket
 import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Callable
@@ -48,8 +46,6 @@ try:
         get_queue_monitor,
         QueueType,
         BackpressureLevel,
-        should_throttle_production,
-        should_stop_production,
         get_throttle_factor,
     )
     HAS_QUEUE_MONITOR = True
