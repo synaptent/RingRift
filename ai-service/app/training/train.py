@@ -27,24 +27,21 @@ Recommended Usage (December 2025):
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split, WeightedRandomSampler
+from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 import numpy as np
 import random
 import os
-import copy
 import argparse
 import glob
 import math
 import time
 import contextlib
 import json
-import signal
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import (
     Any,
-    Callable,
     Dict,
     List,
     Mapping,
@@ -103,20 +100,16 @@ except ImportError:
 from app.ai.neural_net import (
     RingRiftCNN_v2,
     RingRiftCNN_v3,
-    HexNeuralNet,
     HexNeuralNet_v2,
     HexNeuralNet_v3,
     HEX_BOARD_SIZE,
     HEX8_BOARD_SIZE,
-    P_HEX,
     MAX_PLAYERS,
     multi_player_value_loss,
     get_policy_size_for_board,
 )
 from app.training.config import TrainConfig, get_model_version_for_board
 from app.models import BoardType
-from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
-from app.training.hex_augmentation import HexSymmetryTransform
 from app.training.datasets import RingRiftDataset, WeightedRingRiftDataset
 from app.training.distributed import (  # noqa: E402
     setup_distributed,
@@ -137,10 +130,7 @@ from app.training.data_loader import (  # noqa: E402
     prefetch_loader,
 )
 from app.training.model_versioning import (  # noqa: E402
-    ModelVersionManager,
     save_model_checkpoint,
-    VersionMismatchError,
-    LegacyCheckpointError,
 )
 from app.training.seed_utils import seed_all
 from app.training.fault_tolerance import HeartbeatMonitor  # noqa: E402
