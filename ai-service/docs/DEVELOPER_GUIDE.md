@@ -355,12 +355,14 @@ profile = CANONICAL_DIFFICULTY_PROFILES[5]
 print(f"AI type: {profile['ai_type']}, simulations: {profile.get('simulations', 'N/A')}")
 ```
 
-**Difficulty Scale (2P small boards):**
+**Difficulty Scale:**
 
 | Level | AI Type       | Description                                  |
 | ----- | ------------- | -------------------------------------------- |
 | 1     | Random        | Pure random baseline                         |
 | 2     | Heuristic     | Shallow heuristic with randomness            |
+| 2-alt | BRS           | Best-Reply Search (all player counts)        |
+| 2-alt | MaxN          | Max-N search (all player counts)             |
 | 3     | Policy Only   | NN policy without search                     |
 | 4     | Minimax       | Paranoid minimax with heuristic eval         |
 | 5     | Minimax+NNUE  | Paranoid minimax with neural eval            |
@@ -376,12 +378,15 @@ print(f"AI type: {profile['ai_type']}, simulations: {profile.get('simulations', 
 | 15    | GPU Minimax   | GPU-accelerated minimax (CUDA/MPS)           |
 | 16    | CAGE          | Constraint-aware graph energy (experimental) |
 
-**Multiplayer Overrides (3-4P):**
+**Multiplayer Search Variants:**
 
-| Level | AI Type | Description                             |
-| ----- | ------- | --------------------------------------- |
-| 4     | BRS     | Best-Reply Search (faster, good for 3P) |
-| 5     | MaxN    | Max-N search (better for 4P)            |
+| AI Type | Description                                          |
+| ------- | ---------------------------------------------------- |
+| Minimax | Paranoid search (assumes opponents collude)          |
+| MaxN    | Each player maximizes own score (best for 4P)        |
+| BRS     | Best-Reply Search (greedy replies, faster than MaxN) |
+
+> BRS and MaxN perform ~equal to Heuristic in 2P benchmarks. Use MaxN for 4P, BRS for 3P.
 
 **Large Board Overrides (19x19+):**
 
