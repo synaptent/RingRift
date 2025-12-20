@@ -80,16 +80,19 @@ DB path: `data/games/distributed_soak_runs/distributed_soak_square19_3p_20251220
 
 ## Lane 3: Parity Hardening
 
-**Priority: NORMAL** - Core fix complete
+**Priority: HIGH** - Line detection bug blocking Lane 1
 
 - [x] **FIXED: Phase transition parity bug (commit b8175468)**
   - Root cause: `no_territory_action` case in `applyMoveWithChainInfo` did not advance phase/player
   - Fix: Handle phase transition inline (check forced_elimination, then rotate to next player)
   - Verified: semantic divergence 0 on post-fix data
+- [ ] **CRITICAL: Fix line detection parity bug**
+  - TS detects lines that Python doesn't, causing replay to fail at `place_ring` in `line_processing`
+  - Investigation needed in `lineDetection.ts` vs `board_manager.py:find_all_lines`
 - [ ] Add unit tests for territory detection (empty region semantics)
 - [ ] Add replay contract tests for `forced_elimination` and `no_territory_action` sequencing
 
-**Status:** Core fix deployed. Unit tests still pending.
+**Status:** Phase fix deployed. Line detection bug blocking further progress.
 
 ### NEW Finding: Line Detection Parity Bug (2025-12-20)
 
