@@ -369,8 +369,8 @@ def _collect_sync() -> dict[str, Any]:
         metrics["coordinators"]["RecoveryManager"] = stats
         update_coordinator_status("RecoveryManager", stats.get("status", "unknown"))
         update_recovery_stats(stats)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not collect RecoveryManager metrics (sync): {e}")
 
     try:
         from app.coordination.bandwidth_manager import get_bandwidth_manager
@@ -379,8 +379,8 @@ def _collect_sync() -> dict[str, Any]:
         metrics["coordinators"]["BandwidthManager"] = stats
         update_coordinator_status("BandwidthManager", stats.get("status", "unknown"))
         update_bandwidth_stats(stats)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not collect BandwidthManager metrics (sync): {e}")
 
     try:
         from app.coordination.sync_coordinator import SyncCoordinator
@@ -390,7 +390,7 @@ def _collect_sync() -> dict[str, Any]:
         update_coordinator_status("SyncCoordinator", stats.get("status", "unknown"))
         update_sync_stats(stats)
         SyncCoordinator.reset_instance()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not collect SyncCoordinator metrics (sync): {e}")
 
     return metrics

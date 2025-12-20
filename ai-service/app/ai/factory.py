@@ -211,6 +211,16 @@ CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
         "profile_id": "v3-gpuminimax-15-experimental",
         "use_neural_net": True,
     },
+    16: {
+        # CAGE: Constraint-Aware Graph Energy-based optimization
+        # Uses GNN for board encoding + primal-dual optimization for legality
+        # Combines graph representation with energy-based move selection
+        "ai_type": AIType.CAGE,
+        "randomness": 0.1,
+        "think_time_ms": 2000,
+        "profile_id": "v3-cage-16-experimental",
+        "use_neural_net": True,
+    },
 }
 
 # Overrides for 3-4 player games where MaxN/BRS outperform Minimax
@@ -273,6 +283,7 @@ DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     13: "Experimental - GMO (Gradient Move Optimization)",
     14: "Experimental - IG-GMO (Information-Gain GMO)",
     15: "Experimental - GPU Minimax (GPU-accelerated)",
+    16: "Experimental - CAGE (Constraint-Aware Graph Energy-based)",
 }
 
 # Board types considered "large" (Minimax too slow)
@@ -527,6 +538,9 @@ class AIFactory:
         elif ai_type == AIType.IG_GMO:
             from app.ai.ig_gmo import IGGMO
             ai_class = IGGMO
+        elif ai_type == AIType.CAGE:
+            from app.ai.cage_ai import CAGE_AI
+            ai_class = CAGE_AI
         else:
             raise ValueError(f"Unsupported AI type: {ai_type}")
 
@@ -818,6 +832,26 @@ class AIFactory:
             )
             from app.ai.ig_gmo import IGGMO
             return IGGMO(player_number, config)
+
+        # CAGE AI (Constraint-Aware Graph Energy-based optimization)
+        if agent_key == "cage" or agent_key.startswith("cage_"):
+            # Parse optional model path: cage_modelpath
+            model_path = None
+            if "_" in agent_lower:
+                try:
+                    parts = agent_lower.split("_", 1)
+                    if len(parts) > 1:
+                        model_path = parts[1]
+                except (ValueError, IndexError):
+                    pass
+
+            config = AIConfig(
+                difficulty=6,
+                rng_seed=rng_seed,
+                nn_model_id=nn_model_id,
+            )
+            from app.ai.cage_ai import CAGE_AI
+            return CAGE_AI(player_number, config, model_path=model_path)
 
         if agent_key.startswith("difficulty_") or agent_key.startswith("level_"):
             # Parse difficulty level: difficulty_5, level_7, etc.

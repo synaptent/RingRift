@@ -37,7 +37,11 @@ class EngineMode(str, Enum):
     DESCENT_ONLY = "descent-only"
     MAXN = "maxn"
     BRS = "brs"
-    GMO = "gmo"  # Gradient Move Optimization
+    # Experimental AI engine modes
+    GMO = "gmo"  # Gradient Move Optimization (entropy-guided gradient ascent)
+    EBMO = "ebmo"  # Energy-Based Move Optimization (gradient descent on action embeddings)
+    IG_GMO = "ig-gmo"  # Information-Gain GMO (MI-based exploration + GNN)
+    CAGE = "cage"  # Constraint-Aware Graph Energy-based optimization (GNN + primal-dual)
 
 
 class OutputFormat(str, Enum):

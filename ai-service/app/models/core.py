@@ -154,6 +154,7 @@ class AIType(str, Enum):
     EBMO = "ebmo"  # Energy-Based Move Optimization (gradient descent on action embeddings)
     GMO = "gmo"  # Gradient Move Optimization (entropy-guided gradient ascent in move embedding space)
     IG_GMO = "ig_gmo"  # Experimental: Information-Gain GMO (MI-based exploration + GNN)
+    CAGE = "cage"  # Constraint-Aware Graph Energy-based move optimization (GNN + primal-dual)
 
 
 class Position(BaseModel):

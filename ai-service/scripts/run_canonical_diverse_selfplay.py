@@ -46,9 +46,10 @@ ALL_AI_TYPES = [
     "policy-only",      # Direct policy network
 
     # Experimental AI types
-    "cage",             # CAGE AI (if available)
-    "ebmo",             # EBMO AI (if available)
-    "gmo",              # GMO AI (if available)
+    "cage",             # CAGE AI (Constraint-Aware Graph Energy-based)
+    "ebmo",             # EBMO AI (Energy-Based Move Optimization)
+    "gmo",              # GMO AI (Gradient Move Optimization)
+    "ig-gmo",           # IG-GMO AI (Information-Gain GMO)
 
     # Baseline opponents
     "heuristic-only",   # Pure heuristic

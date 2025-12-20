@@ -70,6 +70,11 @@ ENGINE_MODES = [
     "gumbel-mcts",      # Gumbel MCTS (AlphaZero style)
     "policy-only",      # Direct NN policy without search
     "heuristic-only",   # Baseline heuristic
+    # Experimental AI types
+    "gmo",              # Gradient Move Optimization
+    "ebmo",             # Energy-Based Move Optimization
+    "ig-gmo",           # Information-Gain GMO
+    "cage",             # Constraint-Aware Graph Energy-based
 ]
 
 # Weak opponents for asymmetric training
@@ -86,6 +91,14 @@ STRONG_OPPONENTS = [
     "nn-descent",
     "gumbel-mcts",
     "policy-only",
+]
+
+# Experimental opponents (novel architectures)
+EXPERIMENTAL_OPPONENTS = [
+    "gmo",              # Gradient Move Optimization
+    "ebmo",             # Energy-Based Move Optimization
+    "ig-gmo",           # Information-Gain GMO
+    "cage",             # Constraint-Aware Graph Energy-based
 ]
 
 

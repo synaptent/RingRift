@@ -73,3 +73,13 @@ PYTHONPATH=. python ai-service/scripts/check_ts_python_replay_parity.py \
 PYTHONPATH=. python ai-service/scripts/check_canonical_phase_history.py \
   --db <path_to_db>
 ```
+
+---
+
+## Background Tasks
+
+| Task       | PID   | Command                                                                               | Log                                | Started          |
+| ---------- | ----- | ------------------------------------------------------------------------------------- | ---------------------------------- | ---------------- |
+| Model Sync | 56000 | `sync_models.py --sync --use-sync-coordinator --config config/distributed_hosts.yaml` | `logs/sync_models_coordinator.log` | 2025-12-20 00:24 |
+
+Monitor: `tail -f logs/sync_models_coordinator.log`

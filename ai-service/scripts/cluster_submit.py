@@ -295,9 +295,15 @@ async def cmd_fill_idle(args) -> int:
     backend = get_slurm_backend()
     scheduler = get_scheduler()
 
-    idle_nodes = await backend.get_idle_nodes(
-        partition=SlurmPartition.GPU_SELFPLAY if args.partition == "gpu-selfplay" else None,
-    )
+    # Get idle nodes - optionally filter by partition if explicitly specified
+    partition_filter = None
+    if args.partition and args.partition != "all":
+        try:
+            partition_filter = SlurmPartition(args.partition)
+        except ValueError:
+            pass  # Unknown partition, don't filter
+
+    idle_nodes = await backend.get_idle_nodes(partition=partition_filter)
 
     if not idle_nodes:
         print("No idle nodes found.")
@@ -398,7 +404,7 @@ def main():
     fill_parser.add_argument("--players", "-p", type=int, default=2, help="Number of players")
     fill_parser.add_argument("--games", "-g", type=int, default=2000, help="Number of games")
     fill_parser.add_argument("--gpu", action="store_true", help="Use GPU selfplay")
-    fill_parser.add_argument("--partition", default="gpu-selfplay", help="Partition to fill")
+    fill_parser.add_argument("--partition", default="all", help="Partition to fill (default: all)")
     fill_parser.add_argument("--max-jobs", type=int, default=10, help="Max jobs to submit")
     fill_parser.add_argument("--dry-run", action="store_true", help="Don't actually submit")
 
