@@ -15,10 +15,14 @@ from app.rules.default_engine import DefaultRulesEngine  # noqa: E402
 from tests.rules.helpers import _make_base_game_state  # noqa: E402
 
 
-# Skip shadow contract tests when RINGRIFT_SKIP_SHADOW_CONTRACTS is set.
+# Skip shadow contract tests when shadow contracts are disabled (default).
+# Shadow contracts are ENABLED only when RINGRIFT_SKIP_SHADOW_CONTRACTS is
+# explicitly set to "0", "false", or "no". Otherwise they're skipped for perf.
+_shadow_env = os.environ.get("RINGRIFT_SKIP_SHADOW_CONTRACTS", "true").lower()
+_shadow_contracts_enabled = _shadow_env in {"0", "false", "no"}
 _skip_if_shadow_contracts_disabled = pytest.mark.skipif(
-    os.environ.get("RINGRIFT_SKIP_SHADOW_CONTRACTS") == "true",
-    reason="Shadow contracts disabled via RINGRIFT_SKIP_SHADOW_CONTRACTS",
+    not _shadow_contracts_enabled,
+    reason="Shadow contracts disabled (set RINGRIFT_SKIP_SHADOW_CONTRACTS=false to enable)",
 )
 
 
