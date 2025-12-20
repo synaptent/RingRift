@@ -7,9 +7,7 @@ Tests move generation functions per RR-CANON rules:
 - Recovery slide moves (R110-R115)
 """
 
-import pytest
 import torch
-import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 
