@@ -11,7 +11,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
-import { getValidToken } from '../auth/helpers.js';
+import { getValidToken, getBypassHeaders } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
 const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
@@ -20,6 +20,9 @@ const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
 export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
 export const capacityFailures = new Counter('capacity_failures_total');
+const authTokenExpired = new Counter('auth_token_expired_total');
+const rateLimitHit = new Counter('rate_limit_hit_total');
+const trueErrors = new Counter('true_errors_total');
 
 // Custom metrics
 const gameCreationErrors = new Counter('game_creation_errors');
@@ -35,6 +38,12 @@ const loadTestEnv =
 const authLoginHttp = perfEnv.http_api.auth_login;
 const gameCreationHttp = perfEnv.http_api.game_creation;
 const gameStateFetchHttp = perfEnv.http_api.game_state_fetch;
+const trueErrorRateTarget =
+  loadTestEnv &&
+  loadTestEnv.true_errors &&
+  typeof loadTestEnv.true_errors.rate === 'number'
+    ? loadTestEnv.true_errors.rate
+    : 0.005;
 
 // Test configuration aligned with thresholds.json SLOs
 export const options = {
@@ -84,6 +93,7 @@ export const options = {
       `count<=${loadTestEnv.id_lifecycle_mismatches_total.max}`,
     ],
     capacity_failures_total: [`rate<${loadTestEnv.capacity_failures_total.rate}`],
+    true_errors_total: [`rate<${trueErrorRateTarget}`],
   },
 
   // Test metadata
@@ -118,22 +128,37 @@ function parseCreateGameResponse(res) {
 function classifyCreateGameFailure(res, parsed) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
-    contractFailures.add(1);
+  if (res.status === 401) {
+    authTokenExpired.add(1);
     return;
   }
 
-  if (res.status === 429 || res.status >= 500) {
+  if (res.status === 429) {
+    rateLimitHit.add(1);
     capacityFailures.add(1);
+    return;
+  }
+
+  if (res.status === 400 || res.status === 403) {
+    contractFailures.add(1);
+    trueErrors.add(1);
+    return;
+  }
+
+  if (res.status >= 500) {
+    capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
   // 2xx but missing/malformed body or game object.
   if (res.status >= 200 && res.status < 300 && (!parsed.body || !parsed.game || !parsed.game.id)) {
     contractFailures.add(1);
+    trueErrors.add(1);
   }
 }
 
@@ -145,27 +170,43 @@ function classifyCreateGameFailure(res, parsed) {
 function classifyImmediateGetGameFailure(res, gameId) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
+    authTokenExpired.add(1);
+    return;
+  }
+
+  if (res.status === 429) {
+    rateLimitHit.add(1);
+    capacityFailures.add(1);
+    return;
+  }
+
+  if (res.status === 400 || res.status === 403) {
     contractFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
   if (res.status === 404) {
     idLifecycleMismatches.add(1);
+    trueErrors.add(1);
     return;
   }
 
-  if (res.status === 429 || res.status >= 500) {
+  if (res.status >= 500) {
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
   // 2xx but missing or mismatched ID.
   if (res.status >= 200 && res.status < 300) {
     contractFailures.add(1);
+    trueErrors.add(1);
   }
 }
 
@@ -207,10 +248,10 @@ export default function(data) {
     },
   });
 
-  const authHeaders = {
+  const authHeaders = getBypassHeaders({
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
-  };
+  });
 
   sleep(0.5);
 

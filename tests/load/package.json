@@ -4,6 +4,10 @@
   "description": "k6 load testing framework for RingRift production-scale validation",
   "private": true,
   "scripts": {
+    "seed:users": "node scripts/seed-users.js",
+    "seed:users:staging": "node scripts/seed-users.js --base-url https://staging.ringrift.ai --count 100",
+    "preflight": "node scripts/preflight-check.js",
+    "preflight:staging": "BASE_URL=https://staging.ringrift.ai node scripts/preflight-check.js --skip-ai",
     "test:smoke:game-creation": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/game-creation.js",
     "test:smoke:concurrent-games": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/concurrent-games.js",
     "test:smoke:player-moves": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/player-moves.js",

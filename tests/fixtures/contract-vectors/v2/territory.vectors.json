@@ -243,7 +243,7 @@
             }
           ],
           "currentPlayer": 2,
-          "currentPhase": "movement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -293,8 +293,7 @@
           "player2RingsInHand": 0,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Input phase is movement but move is eliminate_rings_from_stack. Vector needs phase correction."
+      }
     },
     {
       "id": "territory.forced_elimination.simple_hexagonal",
@@ -351,7 +350,7 @@
             }
           ],
           "currentPlayer": 2,
-          "currentPhase": "movement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -403,8 +402,7 @@
           "player2RingsInHand": 0,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Vector needs phase correction for eliminate_rings_from_stack move."
+      }
     },
     {
       "id": "territory.hex_region_then_elim.step1_region",
@@ -607,7 +605,7 @@
             }
           ],
           "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -657,8 +655,7 @@
           "player1TerritorySpaces": 3,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Vector needs phase correction for eliminate_rings_from_stack move."
+      }
     },
     {
       "id": "territory.square_region_then_elim.step1_region",
@@ -867,7 +864,7 @@
             }
           ],
           "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -915,8 +912,7 @@
           "player1TerritorySpaces": 4,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Vector needs phase correction for eliminate_rings_from_stack move."
+      }
     },
     {
       "id": "territory.square_two_regions_then_elim.step1_regionB",
@@ -1285,7 +1281,7 @@
             }
           ],
           "currentPlayer": 1,
-          "currentPhase": "ring_placement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -1333,8 +1329,7 @@
           "player1TerritorySpaces": 4,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Vector needs phase correction for eliminate_rings_from_stack move."
+      }
     },
     {
       "id": "territory.square19_two_regions_then_elim.step1_regionB",
@@ -1990,7 +1985,7 @@
             }
           ],
           "currentPlayer": 1,
-          "currentPhase": "ring_placement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -2038,8 +2033,7 @@
           "player1TerritorySpaces": 18,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Vector needs phase correction for eliminate_rings_from_stack move."
+      }
     },
     {
       "id": "territory.hex_two_regions_then_elim.step1_regionB",
@@ -2475,7 +2469,7 @@
             }
           ],
           "currentPlayer": 1,
-          "currentPhase": "ring_placement",
+          "currentPhase": "territory_processing",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
@@ -2525,8 +2519,7 @@
           "player1TerritorySpaces": 6,
           "player2EliminatedRings": 0
         }
-      },
-      "skip": "PHASE_MOVE_MISMATCH: Vector needs phase correction for eliminate_rings_from_stack move."
+      }
     }
   ]
 }

@@ -36,7 +36,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
-import { loginAndGetToken, getValidToken } from '../auth/helpers.js';
+import { loginAndGetToken, getValidToken, getBypassHeaders } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
 const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
@@ -46,6 +46,8 @@ export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
 export const capacityFailures = new Counter('capacity_failures_total');
 const authTokenExpired = new Counter('auth_token_expired_total');
+const rateLimitHit = new Counter('rate_limit_hit_total');
+const trueErrors = new Counter('true_errors_total');
 
  // Custom metrics aligned with STRATEGIC_ROADMAP metrics
  const moveSubmissionLatency = new Trend('move_submission_latency_ms');
@@ -73,6 +75,12 @@ const authTokenExpired = new Counter('auth_token_expired_total');
  const loadTestEnv =
    thresholdsConfig.load_tests[THRESHOLD_ENV] || thresholdsConfig.load_tests.staging;
  const moveSubmission = perfEnv.websocket_gameplay.move_submission;
+ const trueErrorRateTarget =
+   loadTestEnv &&
+   loadTestEnv.true_errors &&
+   typeof loadTestEnv.true_errors.rate === 'number'
+     ? loadTestEnv.true_errors.rate
+     : 0.005;
 
  // Test configuration
  const moveHarnessEnabledForThresholds = (() => {
@@ -146,11 +154,12 @@ const authTokenExpired = new Counter('auth_token_expired_total');
      // contract and capacity issues surface clearly regardless of whether the
      // HTTP move harness is enabled.
      contract_failures_total: [`count<=${loadTestEnv.contract_failures_total.max}`],
-     id_lifecycle_mismatches_total: [
-       `count<=${loadTestEnv.id_lifecycle_mismatches_total.max}`,
-     ],
-     capacity_failures_total: [`rate<${loadTestEnv.capacity_failures_total.rate}`],
-   },
+    id_lifecycle_mismatches_total: [
+      `count<=${loadTestEnv.id_lifecycle_mismatches_total.max}`,
+    ],
+    capacity_failures_total: [`rate<${loadTestEnv.capacity_failures_total.rate}`],
+    true_errors_total: [`rate<${trueErrorRateTarget}`],
+  },
  
    tags: {
      scenario: 'player-moves',
@@ -263,14 +272,14 @@ export default function (data) {
       `${baseUrl}${API_PREFIX}/games`,
       JSON.stringify(createPayload),
       {
-        headers: {
+        headers: getBypassHeaders({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-        },
+        }),
       }
     );
 
-    if (createRes.status === 401 || createRes.status === 403) {
+    if (createRes.status === 401) {
       authTokenExpired.add(1);
       const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-create-game');
       if (refreshedToken) {
@@ -279,10 +288,10 @@ export default function (data) {
           `${baseUrl}${API_PREFIX}/games`,
           JSON.stringify(createPayload),
           {
-            headers: {
+            headers: getBypassHeaders({
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
-            },
+            }),
           }
         );
       }
@@ -329,16 +338,16 @@ export default function (data) {
     // Get current game state
     const pollCountBefore = myGamePollCount;
     let stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: getBypassHeaders({ Authorization: `Bearer ${token}` }),
     });
 
-    if (stateRes.status === 401 || stateRes.status === 403) {
+    if (stateRes.status === 401) {
       authTokenExpired.add(1);
       const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-get-game');
       if (refreshedToken) {
         token = refreshedToken;
         stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: getBypassHeaders({ Authorization: `Bearer ${token}` }),
         });
       }
     }
@@ -450,15 +459,15 @@ export default function (data) {
         `${baseUrl}${API_PREFIX}/games/${myGameId}/moves`,
         JSON.stringify(movePayload),
         {
-          headers: {
+          headers: getBypassHeaders({
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
-          },
+          }),
           tags: { name: 'submit-move' },
         }
       );
 
-      if (moveRes.status === 401 || moveRes.status === 403) {
+      if (moveRes.status === 401) {
         authTokenExpired.add(1);
         const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-submit-move');
         if (refreshedToken) {
@@ -467,10 +476,10 @@ export default function (data) {
             `${baseUrl}${API_PREFIX}/games/${myGameId}/moves`,
             JSON.stringify(movePayload),
             {
-              headers: {
+              headers: getBypassHeaders({
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${token}`,
-              },
+              }),
               tags: { name: 'submit-move' },
             }
           );
@@ -559,34 +568,62 @@ function generateRandomMove(gameState) {
 function classifyCreateGameFailure(res, createdGameId) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
-    contractFailures.add(1);
+  if (res.status === 401) {
+    authTokenExpired.add(1);
     return;
   }
 
-  if (res.status === 429 || res.status >= 500) {
+  if (res.status === 429) {
+    rateLimitHit.add(1);
     capacityFailures.add(1);
+    return;
+  }
+
+  if (res.status === 400 || res.status === 403) {
+    contractFailures.add(1);
+    trueErrors.add(1);
+    return;
+  }
+
+  if (res.status >= 500) {
+    capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
   if (res.status >= 200 && res.status < 300 && !createdGameId) {
     contractFailures.add(1);
+    trueErrors.add(1);
   }
 }
 
 function classifyGameStateFailure(res, pollCountBefore) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
   const status = res.status;
 
-  if (status === 400 || status === 401 || status === 403) {
+  if (status === 401) {
+    authTokenExpired.add(1);
+    return;
+  }
+
+  if (status === 429) {
+    rateLimitHit.add(1);
+    capacityFailures.add(1);
+    return;
+  }
+
+  if (status === 400 || status === 403) {
     contractFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
@@ -595,27 +632,42 @@ function classifyGameStateFailure(res, pollCountBefore) {
     // but allow later 404s to represent normal cleanup.
     if (pollCountBefore < MAX_POLLS_PER_GAME / 4) {
       idLifecycleMismatches.add(1);
+      trueErrors.add(1);
     }
     return;
   }
 
-  if (status === 429 || status >= 500) {
+  if (status >= 500) {
     capacityFailures.add(1);
+    trueErrors.add(1);
   }
 }
 
 function classifyMoveFailure(res) {
   if (!res || res.status === 0 || res.error) {
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
   const status = res.status;
 
+  if (status === 401) {
+    authTokenExpired.add(1);
+    return;
+  }
+
+  if (status === 429) {
+    rateLimitHit.add(1);
+    capacityFailures.add(1);
+    return;
+  }
+
   if (status === 400 || status === 403) {
     // Move payloads are generated by the harness to conform to MoveSchema,
     // so 4xx responses here generally indicate a contract mismatch.
     contractFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
@@ -624,11 +676,13 @@ function classifyMoveFailure(res) {
     // the game has been cleaned up unexpectedly. We treat this as a capacity /
     // environment issue rather than a pure contract failure.
     capacityFailures.add(1);
+    trueErrors.add(1);
     return;
   }
 
-  if (status === 429 || status >= 500) {
+  if (status >= 500) {
     capacityFailures.add(1);
+    trueErrors.add(1);
   }
 }
 

@@ -43,6 +43,12 @@ const perfEnv =
   thresholdsConfig.environments[THRESHOLD_ENV] || thresholdsConfig.environments.staging;
 const loadTestEnv =
   thresholdsConfig.load_tests[THRESHOLD_ENV] || thresholdsConfig.load_tests.staging;
+const trueErrorRateTarget =
+  loadTestEnv &&
+  loadTestEnv.true_errors &&
+  typeof loadTestEnv.true_errors.rate === 'number'
+    ? loadTestEnv.true_errors.rate
+    : 0.005;
 
 const gameCreationHttp = perfEnv.http_api.game_creation;
 const gameStateFetchHttp = perfEnv.http_api.game_state_fetch;
@@ -135,7 +141,7 @@ export const options = {
 
     // True error rate: errors excluding auth (401) and rate limiting (429)
     // This provides the real application error rate for SLO validation.
-    true_errors_total: ['rate<0.005'], // Less than 0.5% true error rate
+    true_errors_total: [`rate<${trueErrorRateTarget}`],
   },
 
   tags: {

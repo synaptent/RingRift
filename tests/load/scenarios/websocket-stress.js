@@ -30,6 +30,9 @@ const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
 export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
 export const capacityFailures = new Counter('capacity_failures_total');
+const authTokenExpired = new Counter('auth_token_expired_total');
+const rateLimitHit = new Counter('rate_limit_hit_total');
+const trueErrors = new Counter('true_errors_total');
 
 // Custom metrics
 const wsConnections = new Gauge('websocket_connections_active');
@@ -119,6 +122,7 @@ export const options = {
         thresholdsConfig.load_tests.staging
       ).capacity_failures_total.rate}`,
     ],
+    true_errors_total: [`rate<${trueErrorRateTarget}`],
   },
   
   tags: {
@@ -158,6 +162,12 @@ const loadTestEnv =
   thresholdsConfig.load_tests[THRESHOLD_ENV] || thresholdsConfig.load_tests.staging;
 const connectionStability = perfEnv.websocket_gameplay.connection_stability;
 const websocketLoad = loadTestEnv.websocket;
+const trueErrorRateTarget =
+  loadTestEnv &&
+  loadTestEnv.true_errors &&
+  typeof loadTestEnv.true_errors.rate === 'number'
+    ? loadTestEnv.true_errors.rate
+    : 0.005;
 
 /**
  * Engine.IO packet types (prefix character)
@@ -618,20 +628,28 @@ function classifyWebSocketErrorPayload(payload) {
 
   switch (code) {
     case 'ACCESS_DENIED':
+      authTokenExpired.add(1);
+      break;
     case 'INVALID_PAYLOAD':
       // Misuse of the WebSocket/Socket.IO protocol or invalid auth token.
       contractFailures.add(1);
+      trueErrors.add(1);
       break;
     case 'RATE_LIMITED':
+      rateLimitHit.add(1);
+      capacityFailures.add(1);
+      break;
     case 'INTERNAL_ERROR':
       // Capacity or server-side failures.
       capacityFailures.add(1);
+      trueErrors.add(1);
       break;
     default:
       // Other codes (GAME_NOT_FOUND, MOVE_REJECTED, CHOICE_REJECTED,
       // DECISION_PHASE_TIMEOUT, etc.) are behavioural/game-level concerns and
       // are better covered by dedicated game-session load tests rather than
       // this pure transport scenario.
+      trueErrors.add(1);
       break;
   }
 }

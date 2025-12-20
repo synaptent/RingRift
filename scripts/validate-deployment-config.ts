@@ -539,12 +539,12 @@ function validateStagingEnv(stagingEnvPath: string): ValidationResult {
 
   const envVars = parseEnvExample(stagingEnvPath);
 
-  // Phase 1 Orchestrator Configuration Checks
+  // Phase 3+ Orchestrator Configuration Checks
+  // Note: ORCHESTRATOR_ROLLOUT_PERCENTAGE and ORCHESTRATOR_SHADOW_MODE_ENABLED
+  // were removed in Phase 3 - orchestrator is now permanently enabled at 100%
   const requiredConfig = {
     RINGRIFT_RULES_MODE: 'ts',
     ORCHESTRATOR_ADAPTER_ENABLED: 'true',
-    ORCHESTRATOR_ROLLOUT_PERCENTAGE: '100',
-    ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
   };
 
   for (const [key, expectedValue] of Object.entries(requiredConfig)) {
