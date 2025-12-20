@@ -32,9 +32,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.ai.neural_net import NeuralNetAI
 from app.game_engine import GameEngine
-from app.models import BoardType, GameState, Move, MoveType, Position
-from app.training.encoding import get_encoder_for_board_type
+from app.models import AIConfig, BoardType, GameState, Move, MoveType, Position
 from app.training.initial_state import create_initial_state
 
 logging.basicConfig(
@@ -92,6 +92,45 @@ def value_from_winner(winner: int | None, perspective: int, num_players: int) ->
     return 1.0 if winner == perspective else -0.5
 
 
+def create_encoder(board_type: BoardType, feature_version: int = 2) -> NeuralNetAI:
+    """Create a NeuralNetAI instance for encoding states."""
+    config = AIConfig(
+        difficulty=1,
+        think_time=0,
+        randomness=0.0,
+        nn_model_id=None,
+        allow_fresh_weights=True,
+        heuristic_eval_mode=None,
+        use_neural_net=True,
+    )
+    encoder = NeuralNetAI(player_number=1, config=config)
+    encoder.feature_version = int(feature_version)
+    encoder.board_size = {
+        BoardType.SQUARE8: 8,
+        BoardType.SQUARE19: 19,
+        BoardType.HEXAGONAL: 25,
+        BoardType.HEX8: 9,
+    }.get(board_type, 8)
+    return encoder
+
+
+def encode_state_with_history(
+    encoder: NeuralNetAI,
+    state: GameState,
+    history_frames: list[np.ndarray],
+    history_length: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Encode state with history frames stacked."""
+    features, globals_vec = encoder._extract_features(state)
+
+    hist = history_frames[::-1][:history_length]
+    while len(hist) < history_length:
+        hist.append(np.zeros_like(features))
+
+    stacked = np.concatenate([features, *hist], axis=0)
+    return stacked.astype(np.float32), globals_vec.astype(np.float32)
+
+
 def export_gumbel_kl_dataset(
     input_path: str,
     output_path: str,
@@ -107,7 +146,7 @@ def export_gumbel_kl_dataset(
     Returns:
         Statistics dict
     """
-    encoder = get_encoder_for_board_type(board_type, feature_version=feature_version)
+    encoder = create_encoder(board_type, feature_version=feature_version)
 
     features_list: list[np.ndarray] = []
     globals_list: list[np.ndarray] = []
@@ -187,10 +226,13 @@ def export_gumbel_kl_dataset(
 
                 perspective = state.current_player
 
-                # Encode current state
+                # Encode current state with history
                 try:
-                    features = encoder.encode_state(state, perspective)
-                    globals_vec = encoder.encode_globals(state, perspective)
+                    stacked, globals_vec = encode_state_with_history(
+                        encoder, state, history_buffer, history_length
+                    )
+                    # Get current frame for history buffer
+                    features, _ = encoder._extract_features(state)
                 except Exception as e:
                     logger.debug(f"Encoding failed: {e}")
                     try:
@@ -200,17 +242,10 @@ def export_gumbel_kl_dataset(
                         break
                     continue
 
-                # Update history buffer
+                # Update history buffer with current frame
                 history_buffer.append(features)
                 if len(history_buffer) > history_length:
                     history_buffer.pop(0)
-
-                # Stack history frames
-                while len(history_buffer) < history_length:
-                    # Pad with zeros at start
-                    history_buffer.insert(0, np.zeros_like(features))
-
-                stacked = np.concatenate(history_buffer, axis=0)
 
                 # Parse MCTS policy as soft targets
                 indices = []
