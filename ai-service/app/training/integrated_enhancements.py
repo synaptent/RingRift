@@ -565,7 +565,6 @@ class IntegratedTrainingManager:
             return features, policy_targets
 
         torch, _ = _get_torch_nn()
-        batch_size = features.shape[0]
 
         # Use GPU-accelerated D4 transforms for board features
         # Pick a single random transform for the whole batch (faster)
