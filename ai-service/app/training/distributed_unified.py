@@ -615,7 +615,7 @@ class UnifiedDistributedTrainer:
 
     def _try_resume(self):
         """Try to resume from latest checkpoint."""
-        torch, _, _ = _get_torch_distributed()
+        _torch, _, _ = _get_torch_distributed()
 
         checkpoints = sorted(self._checkpoint_dir.glob("checkpoint_*.pt"))
         if not checkpoints:

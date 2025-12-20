@@ -37,7 +37,6 @@ import math
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 
 from ..models import GameState, Move
 from ..utils.torch_utils import safe_load_checkpoint
@@ -106,7 +105,7 @@ class GMOPolicyProvider:
         checkpoint_path: str | Path,
         device: str = "cpu",
         gmo_config: GMOConfig | None = None,
-    ) -> "GMOPolicyProvider":
+    ) -> GMOPolicyProvider:
         """Create provider from saved GMO checkpoint.
 
         Args:

@@ -457,7 +457,7 @@ class SlurmBackend:
         # Create script via SSH using heredoc (no escaping needed)
         cmd = f"mkdir -p {self.nfs_base}/data/slurm/jobs && cat > {script_path} << 'SLURM_SCRIPT_EOF'\n{content}SLURM_SCRIPT_EOF\nchmod +x {script_path}"
 
-        rc, stdout, stderr = await self._ssh_command(cmd)
+        rc, _stdout, stderr = await self._ssh_command(cmd)
 
         if rc != 0:
             logger.error(f"[Slurm] Failed to upload script: {stderr}")
@@ -468,7 +468,7 @@ class SlurmBackend:
     async def cancel_job(self, job_id: int) -> bool:
         """Cancel a Slurm job."""
         cmd = f"scancel {job_id}"
-        rc, stdout, stderr = await self._ssh_command(cmd)
+        rc, _stdout, stderr = await self._ssh_command(cmd)
 
         if rc != 0:
             logger.error(f"[Slurm] scancel failed: {stderr}")

@@ -270,21 +270,21 @@ class Field(Generic[T]):
 
     def _coerce_value(self, value: Any) -> T:
         """Coerce value to the expected type."""
-        if self.type_ == bool:
+        if self.type_ is bool:
             if isinstance(value, str):
                 return value.lower() in ("true", "1", "yes", "on")  # type: ignore
             return bool(value)  # type: ignore
 
-        if self.type_ == int:
+        if self.type_ is int:
             return int(float(value))  # type: ignore
 
-        if self.type_ == float:
+        if self.type_ is float:
             return float(value)  # type: ignore
 
-        if self.type_ == str:
+        if self.type_ is str:
             return str(value)  # type: ignore
 
-        if self.type_ == Path:
+        if self.type_ is Path:
             return Path(value)  # type: ignore
 
         return self.type_(value)

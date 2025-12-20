@@ -218,7 +218,7 @@ def run_online_training(
         gmo_ai.player_number = gmo_player
 
         # Play game
-        winner, move_count = play_game_with_learning(
+        winner, _move_count = play_game_with_learning(
             gmo_ai, opponent, game_id, gmo_player=gmo_player
         )
 

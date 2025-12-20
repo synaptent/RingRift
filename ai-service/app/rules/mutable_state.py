@@ -1926,7 +1926,7 @@ class MutableGameState:
 
         if outside_stacks:
             # Eliminate cap from the first outside stack
-            chosen_key, chosen_stack = outside_stacks[0]
+            _chosen_key, chosen_stack = outside_stacks[0]
             cap_height = chosen_stack.cap_height
             for _ in range(cap_height):
                 self._make_eliminate_top_ring(

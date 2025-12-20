@@ -528,7 +528,7 @@ class ParallelEncoder:
             batch.append(game)
 
             if len(batch) >= batch_size:
-                samples, errors = self.encode_games_batch(
+                samples, _errors = self.encode_games_batch(
                     batch, num_players, show_progress=False
                 )
                 if callback:

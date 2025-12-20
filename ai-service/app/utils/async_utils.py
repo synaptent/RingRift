@@ -82,7 +82,7 @@ async def wait_all_background_tasks(timeout: float | None = None) -> None:
         return
 
     logger.info("Waiting for %d background tasks to complete...", len(_background_tasks))
-    done, pending = await asyncio.wait(
+    _done, pending = await asyncio.wait(
         _background_tasks,
         timeout=timeout,
         return_when=asyncio.ALL_COMPLETED,

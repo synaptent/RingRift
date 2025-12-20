@@ -215,7 +215,7 @@ def run_diversity_comparison(
     for config_name, gmo_config in configs:
         logger.info(f"\nTesting config: {config_name} (beta={gmo_config.beta}, gamma={gmo_config.gamma})")
 
-        moves, metrics = play_games_and_collect_data(
+        _moves, metrics = play_games_and_collect_data(
             gmo_config=gmo_config,
             num_games=num_games,
             checkpoint_path=checkpoint_path,

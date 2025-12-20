@@ -329,15 +329,15 @@ def _coerce_type(value: str, type_hint: type | None) -> Any:
                 break
 
     # Coerce to target type
-    if type_hint == bool:
+    if type_hint is bool:
         return value.lower() in ("true", "1", "yes")
-    elif type_hint == int:
+    elif type_hint is int:
         return int(value)
-    elif type_hint == float:
+    elif type_hint is float:
         return float(value)
-    elif type_hint == str:
+    elif type_hint is str:
         return value
-    elif type_hint == list or (origin and origin == list):
+    elif type_hint is list or (origin and origin is list):
         # Comma-separated values
         return [v.strip() for v in value.split(",")]
     else:
