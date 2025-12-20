@@ -68,6 +68,7 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -77,6 +78,10 @@ logger = logging.getLogger(__name__)
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState
+from app.training.canonical_sources import (
+    resolve_registry_path,
+    validate_canonical_sources,
+)
 from app.training.encoding import get_encoder_for_board_type
 from app.training.export_cache import get_export_cache
 
@@ -109,6 +114,35 @@ def _enforce_canonical_db_policy(
             f"{joined}\n"
             "Use --allow-noncanonical to override, or rename the output to avoid canonical_ prefix."
         )
+
+
+def _enforce_registry_canonical_sources(
+    db_paths: list[str],
+    *,
+    registry_path: str | None,
+    allow_noncanonical: bool,
+    allow_pending_gate: bool,
+) -> None:
+    if allow_noncanonical:
+        return
+
+    allowed_statuses = ["canonical", "pending_gate"] if allow_pending_gate else ["canonical"]
+    registry = resolve_registry_path(Path(registry_path) if registry_path else None)
+
+    result = validate_canonical_sources(
+        registry_path=registry,
+        db_paths=[Path(p) for p in db_paths],
+        allowed_statuses=allowed_statuses,
+    )
+    if result.get("ok"):
+        return
+
+    issues = "\n".join(f"- {issue}" for issue in result.get("problems", []))
+    raise SystemExit(
+        "[export-replay-dataset] Refusing to export from non-canonical DB(s):\n"
+        f"{issues}\n"
+        "Fix TRAINING_DATA_REGISTRY.md or pass --allow-noncanonical to override."
+    )
 
 
 def build_encoder(
@@ -1032,6 +1066,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "starts with canonical_. Use for legacy/experimental datasets only."
         ),
     )
+    parser.add_argument(
+        "--allow-pending-gate",
+        action="store_true",
+        help=(
+            "Allow DBs marked pending_gate in TRAINING_DATA_REGISTRY.md "
+            "(still requires gate summary to be canonical_ok when present)."
+        ),
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default=None,
+        help="Path to TRAINING_DATA_REGISTRY.md (default: repo root)",
+    )
     return parser.parse_args(argv)
 
 
@@ -1048,6 +1096,12 @@ def main(argv: list[str] | None = None) -> int:
         args.db_paths,
         args.output,
         allow_noncanonical=bool(args.allow_noncanonical),
+    )
+    _enforce_registry_canonical_sources(
+        args.db_paths,
+        registry_path=args.registry,
+        allow_noncanonical=bool(args.allow_noncanonical),
+        allow_pending_gate=bool(args.allow_pending_gate),
     )
 
     # Use parallel export if requested

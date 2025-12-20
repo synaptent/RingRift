@@ -31,8 +31,41 @@ os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
 
 from scripts.lib.cli import BOARD_TYPE_MAP
 from scripts.lib.logging_config import setup_script_logging
+from app.training.canonical_sources import (
+    resolve_registry_path,
+    validate_canonical_sources,
+)
 
 logger = setup_script_logging("db_to_training_npz")
+
+
+def _enforce_registry_canonical_sources(
+    db_path: Path,
+    *,
+    registry_path: str | None,
+    allow_noncanonical: bool,
+    allow_pending_gate: bool,
+) -> None:
+    if allow_noncanonical:
+        return
+
+    allowed_statuses = ["canonical", "pending_gate"] if allow_pending_gate else ["canonical"]
+    registry = resolve_registry_path(Path(registry_path) if registry_path else None)
+
+    result = validate_canonical_sources(
+        registry_path=registry,
+        db_paths=[db_path],
+        allowed_statuses=allowed_statuses,
+    )
+    if result.get("ok"):
+        return
+
+    issues = "\n".join(f"- {issue}" for issue in result.get("problems", []))
+    raise SystemExit(
+        "[db-to-training-npz] Refusing to export from non-canonical DB:\n"
+        f"{issues}\n"
+        "Fix TRAINING_DATA_REGISTRY.md or pass --allow-noncanonical to override."
+    )
 
 
 class HexEncoderWrapper:
@@ -215,6 +248,22 @@ def main():
     parser.add_argument("--sample-every", type=int, default=3, help="Sample every N moves")
     parser.add_argument("--max-games", type=int, default=None, help="Max games to process")
     parser.add_argument("--max-positions", type=int, default=500000, help="Max positions")
+    parser.add_argument(
+        "--allow-noncanonical",
+        action="store_true",
+        help="Allow exporting from non-canonical DBs for legacy/experimental runs.",
+    )
+    parser.add_argument(
+        "--allow-pending-gate",
+        action="store_true",
+        help="Allow DBs marked pending_gate in TRAINING_DATA_REGISTRY.md.",
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default=None,
+        help="Path to TRAINING_DATA_REGISTRY.md (default: repo root)",
+    )
 
     args = parser.parse_args()
 
@@ -222,6 +271,13 @@ def main():
     if not db_path.exists():
         logger.error(f"Database not found: {db_path}")
         return 1
+
+    _enforce_registry_canonical_sources(
+        db_path,
+        registry_path=args.registry,
+        allow_noncanonical=bool(args.allow_noncanonical),
+        allow_pending_gate=bool(args.allow_pending_gate),
+    )
 
     output_path = Path(args.output)
 
