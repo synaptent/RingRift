@@ -517,6 +517,7 @@ class TournamentRunner:
         import time
 
         from app.game_engine import GameEngine
+        from app.models import Move, MoveType, PhaseRequirementType
         from app.training.initial_state import create_initial_state
 
         start_time = time.time()
@@ -543,20 +544,33 @@ class TournamentRunner:
             current_player = state.current_player
             ai = ai_instances[current_player]
 
-            # Get AI move
+            # Get valid moves for current player
             legal_moves = GameEngine.get_valid_moves(state, current_player)
+
             if not legal_moves:
+                # No interactive moves - check for bookkeeping phase requirements
+                requirement = GameEngine.get_phase_requirement(state, current_player)
+                if requirement is not None:
+                    # Create appropriate bookkeeping move based on requirement type
+                    move = self._create_bookkeeping_move(requirement, current_player)
+                    if move is not None:
+                        state = GameEngine.apply_move(state, move)
+                        move_count += 1
+                        continue
+                # No moves and no requirement - game is stuck or ended
                 break
 
+            # Get AI move for interactive phase
             move = ai.get_best_move(state, legal_moves)
             if move is None:
                 # AI couldn't select a move, pick first legal move
-                if legal_moves:
-                    move = legal_moves[0]
-                else:
-                    break
+                move = legal_moves[0]
             state = GameEngine.apply_move(state, move)
             move_count += 1
+
+            # After each move, auto-process any bookkeeping requirements
+            # This handles transitions through LINE_PROCESSING, TERRITORY_PROCESSING, etc.
+            state = self._auto_process_bookkeeping(state, move_count)
 
         # Determine rankings based on elimination order or ring counts
         rankings = self._compute_rankings(state, match.agent_ids)
@@ -626,6 +640,86 @@ class TournamentRunner:
         # Sort by score descending
         player_scores.sort(key=lambda x: x[1], reverse=True)
         return [agent_ids[player_idx] for player_idx, _ in player_scores]
+
+    def _create_bookkeeping_move(self, requirement: Any, player: int) -> Optional[Any]:
+        """Create a bookkeeping move based on phase requirement.
+
+        Args:
+            requirement: PhaseRequirement from GameEngine.get_phase_requirement()
+            player: The player number
+
+        Returns:
+            A Move object for the bookkeeping action, or None if unsupported
+        """
+        from datetime import datetime
+        from app.models import Move, MoveType, PhaseRequirementType
+
+        req_type = requirement.type
+
+        # Map requirement types to move types
+        move_type_map = {
+            PhaseRequirementType.NO_PLACEMENT_ACTION_REQUIRED: MoveType.NO_PLACEMENT_ACTION,
+            PhaseRequirementType.NO_MOVEMENT_ACTION_REQUIRED: MoveType.NO_MOVEMENT_ACTION,
+            PhaseRequirementType.NO_LINE_ACTION_REQUIRED: MoveType.NO_LINE_ACTION,
+            PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED: MoveType.NO_TERRITORY_ACTION,
+            PhaseRequirementType.FORCED_ELIMINATION_REQUIRED: MoveType.FORCED_ELIMINATION,
+        }
+
+        move_type = move_type_map.get(req_type)
+        if move_type is None:
+            logger.warning(f"Unsupported phase requirement type: {req_type}")
+            return None
+
+        return Move(
+            id="bookkeeping",
+            type=move_type,
+            player=player,
+            timestamp=datetime.now(),
+        )
+
+    def _auto_process_bookkeeping(self, state: Any, move_count: int) -> Any:
+        """Auto-process bookkeeping phases until an interactive phase is reached.
+
+        This handles LINE_PROCESSING, TERRITORY_PROCESSING, and other non-interactive
+        phases by generating and applying the required bookkeeping moves.
+
+        Args:
+            state: Current game state
+            move_count: Current move count (for loop limiting)
+
+        Returns:
+            Updated game state after processing bookkeeping phases
+        """
+        from app.game_engine import GameEngine
+
+        max_bookkeeping_moves = 50  # Safety limit to prevent infinite loops
+
+        for _ in range(max_bookkeeping_moves):
+            if state.game_status != GameStatus.ACTIVE:
+                break
+
+            current_player = state.current_player
+
+            # Check if there are interactive moves available
+            legal_moves = GameEngine.get_valid_moves(state, current_player)
+            if legal_moves:
+                # Interactive moves exist - stop auto-processing
+                break
+
+            # No interactive moves - check for bookkeeping requirement
+            requirement = GameEngine.get_phase_requirement(state, current_player)
+            if requirement is None:
+                # No requirement and no moves - game may be stuck
+                break
+
+            # Create and apply bookkeeping move
+            move = self._create_bookkeeping_move(requirement, current_player)
+            if move is None:
+                break
+
+            state = GameEngine.apply_move(state, move)
+
+        return state
 
     def get_leaderboard(self) -> List[Tuple[str, float, Dict]]:
         """Get current leaderboard with ratings and stats.
