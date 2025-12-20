@@ -2110,16 +2110,16 @@ PV-14 completed on 2025-12-20 05:39 UTC. Comprehensive rate limiting documentati
 
 ### Deliverables
 
-| Deliverable | Status | Location |
-|-------------|--------|----------|
-| Rate limiting documentation created | ✅ Complete | `docs/operations/RATE_LIMITING.md` |
-| Purpose and behavior documented | ✅ Complete | §Overview |
-| All environment variables listed | ✅ Complete | §Environment Variables |
+| Deliverable                               | Status      | Location                             |
+| ----------------------------------------- | ----------- | ------------------------------------ |
+| Rate limiting documentation created       | ✅ Complete | `docs/operations/RATE_LIMITING.md`   |
+| Purpose and behavior documented           | ✅ Complete | §Overview                            |
+| All environment variables listed          | ✅ Complete | §Environment Variables               |
 | Production vs staging configuration table | ✅ Complete | §Production vs Staging Configuration |
-| Security requirements section | ✅ Complete | §Security Requirements |
-| Bypass mechanism documentation | ✅ Complete | §Bypass Mechanism for Load Testing |
-| Monitoring and alerting guidance | ✅ Complete | §Monitoring and Alerting |
-| Troubleshooting guide | ✅ Complete | §Troubleshooting |
+| Security requirements section             | ✅ Complete | §Security Requirements               |
+| Bypass mechanism documentation            | ✅ Complete | §Bypass Mechanism for Load Testing   |
+| Monitoring and alerting guidance          | ✅ Complete | §Monitoring and Alerting             |
+| Troubleshooting guide                     | ✅ Complete | §Troubleshooting                     |
 
 ### Document Structure
 
@@ -2154,34 +2154,34 @@ The Rate Limiting Configuration Guide includes:
 
 **Production vs Staging:**
 
-| Setting | Production | Staging |
-|---------|------------|---------|
-| `RATE_LIMIT_BYPASS_ENABLED` | `false` ❌ | `true` |
-| `RATE_LIMIT_BYPASS_TOKEN` | (empty) | `<secure-token>` |
-| Rate limit values | Standard defaults | Standard or elevated |
+| Setting                     | Production        | Staging              |
+| --------------------------- | ----------------- | -------------------- |
+| `RATE_LIMIT_BYPASS_ENABLED` | `false` ❌        | `true`               |
+| `RATE_LIMIT_BYPASS_TOKEN`   | (empty)           | `<secure-token>`     |
+| Rate limit values           | Standard defaults | Standard or elevated |
 
 **Endpoint-Specific Limits:**
 
-| Endpoint Type | Points | Duration | Purpose |
-|---------------|--------|----------|---------|
-| API (anon) | 50 | 60s | General API protection |
-| API (auth) | 200 | 60s | Higher limits for users |
-| Auth Login | 5 | 15min | Brute-force protection |
-| Game Moves | 100 | 60s | Active gameplay |
-| WebSocket | 10 | 60s | Connection limiting |
+| Endpoint Type | Points | Duration | Purpose                 |
+| ------------- | ------ | -------- | ----------------------- |
+| API (anon)    | 50     | 60s      | General API protection  |
+| API (auth)    | 200    | 60s      | Higher limits for users |
+| Auth Login    | 5      | 15min    | Brute-force protection  |
+| Game Moves    | 100    | 60s      | Active gameplay         |
+| WebSocket     | 10     | 60s      | Connection limiting     |
 
 ### Acceptance Criteria Evaluation
 
-| Criterion | Status | Evidence |
-|-----------|--------|----------|
-| Rate limit docs created at `docs/operations/RATE_LIMITING.md` | ✅ **PASS** | File created |
-| Purpose and behavior documented | ✅ **PASS** | §Overview section |
-| All environment variables described | ✅ **PASS** | 40+ variables in tables |
-| Production vs staging configuration | ✅ **PASS** | Side-by-side table |
-| Security considerations documented | ✅ **PASS** | Dedicated section with checklist |
-| Bypass token must NOT be set in production | ✅ **PASS** | Documented with ⚠️ warning |
-| Monitoring and alerting section | ✅ **PASS** | Prometheus queries, alerts |
-| Troubleshooting guide | ✅ **PASS** | 5 common issues with solutions |
+| Criterion                                                     | Status      | Evidence                         |
+| ------------------------------------------------------------- | ----------- | -------------------------------- |
+| Rate limit docs created at `docs/operations/RATE_LIMITING.md` | ✅ **PASS** | File created                     |
+| Purpose and behavior documented                               | ✅ **PASS** | §Overview section                |
+| All environment variables described                           | ✅ **PASS** | 40+ variables in tables          |
+| Production vs staging configuration                           | ✅ **PASS** | Side-by-side table               |
+| Security considerations documented                            | ✅ **PASS** | Dedicated section with checklist |
+| Bypass token must NOT be set in production                    | ✅ **PASS** | Documented with ⚠️ warning       |
+| Monitoring and alerting section                               | ✅ **PASS** | Prometheus queries, alerts       |
+| Troubleshooting guide                                         | ✅ **PASS** | 5 common issues with solutions   |
 
 ### Conclusion
 
@@ -2211,3 +2211,4 @@ The Rate Limiting Configuration Guide includes:
 | 1.7     | 2025-12-20 | **PV-11 completed. ✅ PASS (infrastructure) / ⚠️ PARTIAL (web app metrics).** Grafana dashboard validation completed. All 10 dashboards load without errors. Prometheus scraping AI cluster successfully (14+ nodes, 5108 selfplay games). AI Cluster dashboard shows live data (GPU utilization, selfplay jobs). Gap identified: Web app not instrumented for Prometheus (no prom-client, no /metrics endpoint). System Health dashboard panels show "No data" for HTTP/WebSocket. Non-blocking for v1.0 launch - k6 provides SLO data. |
 | 1.8     | 2025-12-20 | **PV-12 completed. ✅ PASS.** Production Validation Gate Checklist created at `docs/production/PRODUCTION_VALIDATION_GATE.md`. Document includes all validation criteria from PV-01 through PV-11, machine-parseable checkbox syntax, clear PASS/FAIL criteria, command references, and known gaps section. Production validation remediation plan (PV-01 through PV-12) is now complete.                                                                                                                                                |
 | 1.9     | 2025-12-20 | **PV-13 completed. ✅ PASS with known gap.** WebSocket Load Test Validation: reviewed `websocket-gameplay.js` (1356 lines), documented test coverage (connection, handshake, move RTT, stalls), identified Python AI service gap (heuristic AI runs locally, not via Python service). Gap is acceptable for v1.0 - AI service health validated in PV-10, heuristic AI is default. Future enhancement path documented (direct AI service test or minimax/mcts AI types).                                                                  |
+| 1.10    | 2025-12-20 | **PV-14 completed. ✅ PASS.** Rate Limit Documentation: created comprehensive `docs/operations/RATE_LIMITING.md` with all environment variables (40+), production vs staging configuration table, security requirements (bypass disabled in production), bypass mechanism documentation, monitoring/alerting guidance, and troubleshooting guide. **Production Validation Remediation Plan (PV-01 through PV-14) is now COMPLETE.**                                                                                                      |
