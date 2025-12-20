@@ -159,6 +159,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="data/games/*.db",
         help="Glob pattern for databases on remote hosts",
     )
+    parser.add_argument(
+        "--allow-noncanonical",
+        action="store_true",
+        help="Allow training from non-canonical DBs for legacy/experimental runs.",
+    )
+    parser.add_argument(
+        "--allow-pending-gate",
+        action="store_true",
+        help="Allow DBs marked pending_gate in TRAINING_DATA_REGISTRY.md.",
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default=None,
+        help="Path to TRAINING_DATA_REGISTRY.md (default: repo root)",
+    )
 
     # Remote execution
     parser.add_argument(
@@ -323,7 +339,9 @@ def collect_remote_databases(
         # Copy each database
         for remote_path in remote_paths:
             db_name = os.path.basename(remote_path)
-            local_path = os.path.join(local_dir, f"{host_name}_{db_name}")
+            host_dir = os.path.join(local_dir, host_name)
+            os.makedirs(host_dir, exist_ok=True)
+            local_path = os.path.join(host_dir, db_name)
 
             logger.info(f"Copying {remote_path} from {host_name}...")
 
@@ -347,6 +365,17 @@ def collect_remote_databases(
                 logger.error(f"Failed to copy {remote_path}: {e}")
 
     return collected
+
+
+def _canonical_flag_args(args: argparse.Namespace) -> list[str]:
+    flags: list[str] = []
+    if args.allow_noncanonical:
+        flags.append("--allow-noncanonical")
+    if args.allow_pending_gate:
+        flags.append("--allow-pending-gate")
+    if args.registry:
+        flags.extend(["--registry", args.registry])
+    return flags
 
 
 def run_remote_training(
@@ -418,6 +447,8 @@ def run_remote_training(
 
     if args.model_id:
         cmd_parts.extend(["--model-id", args.model_id])
+
+    cmd_parts.extend(_canonical_flag_args(args))
 
     cmd = " ".join(cmd_parts)
     logger.info(f"Remote command: {cmd}")
@@ -513,6 +544,8 @@ def run_local_training(
 
     if args.model_id:
         train_args.extend(["--model-id", args.model_id])
+
+    train_args.extend(_canonical_flag_args(args))
 
     if args.output_dir:
         train_args.extend(["--run-dir", args.output_dir])
@@ -621,6 +654,17 @@ def main(argv: list[str] | None = None) -> int:
     if not db_paths and not args.demo:
         logger.error("No databases found. Use --db, --collect-from, or --demo")
         return 1
+
+    if db_paths and not args.demo:
+        enforce_canonical_sources(
+            [Path(p) for p in db_paths],
+            registry_path=Path(args.registry) if args.registry else None,
+            allowed_statuses=["canonical", "pending_gate"]
+            if args.allow_pending_gate
+            else ["canonical"],
+            allow_noncanonical=args.allow_noncanonical,
+            error_prefix="run-distributed-nnue",
+        )
 
     # Determine where to run training
     if args.local:
