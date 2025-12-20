@@ -37,20 +37,41 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-benchmark
 
+      - name: Restore benchmark baseline
+        uses: actions/cache@v4
+        id: benchmark-cache
+        with:
+          path: ai-service/.benchmarks/
+          key: benchmark-baseline-${{ runner.os }}-py3.11
+
       - name: Run benchmarks
         env:
           # Skip shadow contract validation for 2-3x speedup in benchmarks
           RINGRIFT_SKIP_SHADOW_CONTRACTS: 'true'
         run: |
-          if [ "${{ inputs.benchmark_type }}" = "all" ]; then
-            pytest tests/benchmarks/ -v --benchmark-only --benchmark-autosave
-          elif [ "${{ inputs.benchmark_type }}" = "neural_net" ]; then
-            pytest tests/benchmarks/test_training_benchmarks.py::TestNeuralNetBenchmarks -v --benchmark-only
-          elif [ "${{ inputs.benchmark_type }}" = "training" ]; then
-            pytest tests/benchmarks/test_training_benchmarks.py::TestAdvancedTrainingBenchmarks -v --benchmark-only
-          elif [ "${{ inputs.benchmark_type }}" = "data_loading" ]; then
-            pytest tests/benchmarks/test_training_benchmarks.py::TestDataLoadingBenchmarks -v --benchmark-only
+          # Run benchmarks with comparison if baseline exists
+          COMPARE_FLAG=""
+          if [ -d ".benchmarks" ] && [ "$(ls -A .benchmarks 2>/dev/null)" ]; then
+            echo "Baseline found, will compare against previous run"
+            COMPARE_FLAG="--benchmark-compare"
           fi
+
+          if [ "${{ inputs.benchmark_type }}" = "all" ]; then
+            pytest tests/benchmarks/ -v --benchmark-only --benchmark-autosave $COMPARE_FLAG
+          elif [ "${{ inputs.benchmark_type }}" = "neural_net" ]; then
+            pytest tests/benchmarks/test_training_benchmarks.py::TestNeuralNetBenchmarks -v --benchmark-only $COMPARE_FLAG
+          elif [ "${{ inputs.benchmark_type }}" = "training" ]; then
+            pytest tests/benchmarks/test_training_benchmarks.py::TestAdvancedTrainingBenchmarks -v --benchmark-only $COMPARE_FLAG
+          elif [ "${{ inputs.benchmark_type }}" = "data_loading" ]; then
+            pytest tests/benchmarks/test_training_benchmarks.py::TestDataLoadingBenchmarks -v --benchmark-only $COMPARE_FLAG
+          fi
+
+      - name: Save benchmark baseline
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ai-service/.benchmarks/
+          key: benchmark-baseline-${{ runner.os }}-py3.11
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4

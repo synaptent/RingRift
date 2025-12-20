@@ -16,6 +16,17 @@ Architecture:
 Performance targets:
 - 10-100 games/sec on RTX 3090 (vs 1 game/sec CPU)
 - 50-500 games/sec on A100 / RTX 5090
+
+MPS (Apple Silicon) Performance Note:
+-------------------------------------
+MPS is currently ~100x SLOWER than CPU due to excessive CPU-GPU synchronization
+from .item() calls in the game loop. For Apple Silicon, use device="cpu" for
+game simulation. The CPU implementation uses vectorized numpy operations that
+are more efficient than MPS kernel launches for the small tensor operations
+in game state management.
+
+CUDA provides the expected speedups. MPS optimization would require eliminating
+~80 .item() calls and fully vectorizing all conditional logic.
 """
 
 from __future__ import annotations
