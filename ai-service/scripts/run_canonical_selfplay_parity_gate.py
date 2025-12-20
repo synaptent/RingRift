@@ -537,14 +537,14 @@ def main() -> None:
             args.board_type,
             "--num-players",
             str(args.num_players),
-            "--base-seed",
-            str(args.seed),
             "--difficulty-band",
             args.difficulty_band,
             "--max-parallel-per-host",
             "2",
             "--fetch-jsonl",
         ]
+        if args.seed is not None:
+            cmd += ["--base-seed", str(args.seed)]
         if not args.keep_distributed_remote_artifacts:
             cmd.append("--cleanup-remote")
         if args.distributed_job_timeout_seconds and args.distributed_job_timeout_seconds > 0:
