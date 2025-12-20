@@ -261,7 +261,7 @@ def run_hybrid_selfplay(
     )
     from app.game_engine import GameEngine
     from app.models import BoardType
-    from app.training.generate_data import create_initial_state
+    from app.training.initial_state import create_initial_state
 
     os.makedirs(output_dir, exist_ok=True)
     np.random.seed(seed)
@@ -1071,6 +1071,10 @@ def run_hybrid_selfplay(
                     record_failures += 1
                     logger.warning(f"[record-db] Failed to record game {game_idx}: {type(exc).__name__}: {exc}")
 
+            # Clear move cache between games to prevent stale cache entries
+            # causing infinite loops (esp. for hex boards with larger state spaces)
+            GameEngine.clear_cache()
+
             # Progress logging
             if (game_idx + 1) % 10 == 0:
                 elapsed = time.time() - start_time
@@ -1162,7 +1166,7 @@ def run_benchmark(board_type: str = "square8", num_players: int = 2):
     )
     from app.game_engine import GameEngine
     from app.models import BoardType
-    from app.training.generate_data import create_initial_state
+    from app.training.initial_state import create_initial_state
 
     logger.info("=" * 60)
     logger.info("BENCHMARK: CPU vs Hybrid GPU Evaluation")
