@@ -34,13 +34,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
 # Add project root to path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# Canonical DB gating
+from app.training.canonical_sources import enforce_canonical_sources
 
 # Unified logging setup
 from scripts.lib.logging_config import setup_script_logging
@@ -130,6 +131,10 @@ def train_nnue(
     db_paths: list[str],
     run_dir: str,
     force: bool = False,
+    *,
+    allow_noncanonical: bool = False,
+    allow_pending_gate: bool = False,
+    registry: str | None = None,
 ) -> bool:
     """Train NNUE model for a specific configuration.
 
@@ -159,6 +164,13 @@ def train_nnue(
         "--min-game-length", str(config.min_game_length),
         "--run-dir", run_dir,
     ]
+
+    if allow_noncanonical:
+        cmd.append("--allow-noncanonical")
+    if allow_pending_gate:
+        cmd.append("--allow-pending-gate")
+    if registry:
+        cmd.extend(["--registry", registry])
 
     logger.info(f"  Command: {' '.join(cmd[:5])}...")
 
@@ -218,6 +230,22 @@ def main(args: list[str] | None = None) -> int:
         help="Directory containing game databases",
     )
     parser.add_argument(
+        "--allow-noncanonical",
+        action="store_true",
+        help="Allow training from non-canonical DBs for legacy/experimental runs.",
+    )
+    parser.add_argument(
+        "--allow-pending-gate",
+        action="store_true",
+        help="Allow DBs marked pending_gate in TRAINING_DATA_REGISTRY.md.",
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default=None,
+        help="Path to TRAINING_DATA_REGISTRY.md (default: repo root)",
+    )
+    parser.add_argument(
         "--run-dir-base",
         default="runs/nnue_auto",
         help="Base directory for training runs",
@@ -234,6 +262,16 @@ def main(args: list[str] | None = None) -> int:
     if not db_paths:
         logger.error("No game databases found")
         return 1
+
+    enforce_canonical_sources(
+        [Path(p) for p in db_paths],
+        registry_path=Path(args.registry) if args.registry else None,
+        allowed_statuses=["canonical", "pending_gate"]
+        if args.allow_pending_gate
+        else ["canonical"],
+        allow_noncanonical=args.allow_noncanonical,
+        error_prefix="train-all-nnue",
+    )
 
     logger.info(f"Found {len(db_paths)} databases:")
     for db in db_paths[:5]:
@@ -292,7 +330,15 @@ def main(args: list[str] | None = None) -> int:
         run_dir = f"{args.run_dir_base}/{config.board_type}_{config.num_players}p_{timestamp}"
         os.makedirs(run_dir, exist_ok=True)
 
-        success = train_nnue(config, db_paths, run_dir, force=args.force)
+        success = train_nnue(
+            config,
+            db_paths,
+            run_dir,
+            force=args.force,
+            allow_noncanonical=args.allow_noncanonical,
+            allow_pending_gate=args.allow_pending_gate,
+            registry=args.registry,
+        )
         results[key] = "success" if success else "failed"
 
     # Summary
