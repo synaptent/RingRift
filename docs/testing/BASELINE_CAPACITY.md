@@ -167,6 +167,66 @@ Recording template (replace placeholders):
 
 After each run, if any SLO verifier fails, attach the SLO summary JSON and open a tracking issue with failing metrics and remediation plan before marking the table row as canonical.
 
+## Clean-Signal Rerun Runbook (Auth Refresh + AI-Heavy)
+
+Use this runbook when rerunning baseline, target-scale, and AI-heavy scenarios to minimize auth or rate-limit noise and capture clean SLO signal.
+
+### Pre-flight delta for clean runs
+
+- Ensure `k6`, `node`, and `jq` are installed (target-scale runner uses `jq`).
+- Seed load-test users and align passwords:
+  - Seeder uses `LOADTEST_USER_PASSWORD` (default `TestPassword123!`).
+  - k6 user pool uses `LOADTEST_USER_POOL_PASSWORD` (default `LoadTestK6Pass123`).
+  - Set both to the same value to avoid auth failures.
+- Use a user pool to avoid per-user rate limits:
+  - `LOADTEST_USER_POOL_SIZE=400` (or at least the peak VU count).
+- Optional staging-only rate limit bypass for load-test users:
+  - `RATE_LIMIT_BYPASS_ENABLED=true`
+  - `RATE_LIMIT_BYPASS_USER_PATTERN='loadtest.*@loadtest\\.local'`
+  - Disable the bypass after the run.
+- If JWT TTL differs from 15 minutes and the API does not return `expiresIn`, set:
+  - `LOADTEST_AUTH_TOKEN_TTL_S` (seconds)
+  - `LOADTEST_AUTH_REFRESH_WINDOW_S` (seconds, default 60)
+
+### Ready-to-run environment block
+
+```bash
+export STAGING_URL="https://staging.example.com"
+export WS_URL="wss://staging.example.com"
+export AI_SERVICE_URL="https://ai-staging.example.com"
+
+export LOADTEST_EMAIL="loadtest_user_1@loadtest.local"
+export LOADTEST_PASSWORD="TestPassword123!"
+
+export LOADTEST_USER_POOL_SIZE=400
+export LOADTEST_USER_POOL_PASSWORD="TestPassword123!"
+export LOADTEST_USER_POOL_PREFIX="loadtest_user_"
+export LOADTEST_USER_POOL_DOMAIN="loadtest.local"
+
+export RATE_LIMIT_BYPASS_ENABLED=true
+```
+
+### Clean-signal runs (staging)
+
+```bash
+SEED_LOADTEST_USERS=true tests/load/scripts/run-baseline.sh --staging
+npm run slo:verify tests/load/results/BCAP_STAGING_BASELINE_20G_60P_staging_<timestamp>.json -- --env staging
+
+SEED_LOADTEST_USERS=true tests/load/scripts/run-target-scale.sh --staging
+npm run slo:verify tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_staging_<timestamp>.json -- --env production
+npm run slo:verify tests/load/results/websocket_BCAP_SQ8_3P_TARGET_100G_300P_staging_<timestamp>.json -- --env production
+
+SEED_LOADTEST_USERS=true tests/load/scripts/run-ai-heavy.sh --staging
+npm run slo:verify tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_staging_<timestamp>.json -- --env staging
+npm run slo:verify tests/load/results/websocket_BCAP_SQ8_4P_AI_HEAVY_75G_300P_staging_<timestamp>.json -- --env staging
+```
+
+### Clean-signal acceptance checks
+
+- 401/429 responses should be near zero in the raw k6 output.
+- `contract_failures_total` and `id_lifecycle_mismatches_total` should be 0.
+- Record `_slo_report.json` artifacts next to the raw results and update the tables above.
+
 ## Target Scale Validation
 
 Target scale testing validates the system at full production capacity:
