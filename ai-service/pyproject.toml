@@ -134,6 +134,8 @@ ignore = [
     "SIM108", # Use ternary operator - reduces readability
     "UP007",  # Use X | Y for Union - keep Optional for clarity
     "RUF012", # Mutable class attributes - false positives with Pydantic
+    # TODO: Migrate to fire_and_forget() from app.utils.async_utils
+    "RUF006", # Asyncio dangling task - intentional fire-and-forget patterns
 ]
 
 # Allow fix for all enabled rules
