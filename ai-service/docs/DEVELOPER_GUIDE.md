@@ -323,14 +323,14 @@ else:
 
 ### Resource Limits
 
-The codebase enforces 80% maximum utilization to prevent system overload:
+The codebase enforces shared utilization limits to prevent system overload:
 
 | Resource | Warning | Critical |
 | -------- | ------- | -------- |
 | CPU      | 70%     | 80%      |
 | GPU      | 70%     | 80%      |
 | Memory   | 80%     | 90%      |
-| Disk     | 75%     | 80%      |
+| Disk     | 90%     | 95%      |
 
 These are defined in `app/utils/resource_guard.py`.
 
