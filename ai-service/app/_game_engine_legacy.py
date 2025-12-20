@@ -99,7 +99,7 @@ class PhaseRequirement:
     eligible_positions: list[Position]
 
 
-from .ai.zobrist import ZobristHash
+from .core.zobrist import ZobristHash
 from .rules.capture_chain import enumerate_capture_moves_py
 from .rules.core import count_rings_in_play_for_player, get_effective_line_length
 from .rules.geometry import BoardGeometry
