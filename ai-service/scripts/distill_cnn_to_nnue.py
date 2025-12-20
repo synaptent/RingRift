@@ -337,7 +337,7 @@ def extract_games_from_db(
                 try:
                     move_dict = json.loads(move_json_str)
                     # Normalize keys for compatibility
-                    if 'captureTarget' in move_dict and move_dict['captureTarget']:
+                    if move_dict.get('captureTarget'):
                         move_dict['capture_target'] = move_dict.pop('captureTarget')
                     moves.append(move_dict)
                 except json.JSONDecodeError:

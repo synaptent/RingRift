@@ -487,7 +487,7 @@ async def verify_elo_promotion_pipeline() -> dict[str, Any]:
                 results["elo_database_accessible"] = True
                 results["model_ratings_count"] = rows[0][0]
         except Exception as e:
-            results["errors"].append(f"EloService error: {str(e)}")
+            results["errors"].append(f"EloService error: {e!s}")
 
     # Check PromotionController
     if not HAS_PROMOTION_CONTROLLER:
@@ -498,7 +498,7 @@ async def verify_elo_promotion_pipeline() -> dict[str, Any]:
             controller = PromotionController(criteria=criteria)
             results["promotion_controller_available"] = True
         except Exception as e:
-            results["errors"].append(f"PromotionController error: {str(e)}")
+            results["errors"].append(f"PromotionController error: {e!s}")
 
     # Check for champions in the database
     if results["elo_service_available"] and results["elo_database_accessible"]:
@@ -520,7 +520,7 @@ async def verify_elo_promotion_pipeline() -> dict[str, Any]:
                     "games_played": row[4],
                 })
         except Exception as e:
-            results["errors"].append(f"Champion query error: {str(e)}")
+            results["errors"].append(f"Champion query error: {e!s}")
 
     # Check for promotion candidates
     if results["elo_service_available"] and results["elo_database_accessible"]:
@@ -544,7 +544,7 @@ async def verify_elo_promotion_pipeline() -> dict[str, Any]:
                     "games_played": row[4],
                 })
         except Exception as e:
-            results["errors"].append(f"Candidate query error: {str(e)}")
+            results["errors"].append(f"Candidate query error: {e!s}")
 
     # Summary
     results["pipeline_healthy"] = (

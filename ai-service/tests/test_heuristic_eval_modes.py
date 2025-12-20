@@ -93,9 +93,7 @@ def test_tier2_methods_called_in_full_mode_and_skipped_in_light(
 ) -> None:
     """Tier-2 structural features must be gated by eval_mode."""
     # Track call counts per Tier-2 method.
-    call_counts: dict[str, int] = {
-        key: 0 for key in TIER2_KEYS
-    }
+    call_counts: dict[str, int] = dict.fromkeys(TIER2_KEYS, 0)
 
     # Wrap each Tier-2 method to increment its counter.
     def _wrap(name: str):

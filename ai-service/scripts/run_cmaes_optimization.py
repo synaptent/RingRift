@@ -2150,7 +2150,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                 fitnesses.append(-fitness)
                 # For queue mode, we don't have per-board breakdown
                 # so use the aggregate fitness for all boards
-                per_board = {board: fitness for board in boards_for_eval}
+                per_board = dict.fromkeys(boards_for_eval, fitness)
                 candidate_per_board_fitness.append(per_board)
 
             # Log queue eval stats
@@ -2197,7 +2197,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                 fitnesses.append(-fitness)
                 # For distributed mode, we don't have per-board breakdown
                 # so use the aggregate fitness for all boards
-                per_board = {board: fitness for board in boards_for_eval}
+                per_board = dict.fromkeys(boards_for_eval, fitness)
                 candidate_per_board_fitness.append(per_board)
 
             # Log distributed eval stats
@@ -2308,7 +2308,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                     # We do not have per-board breakdown from the multi-player
                     # helper, so mirror the aggregate fitness across all boards
                     # for reporting purposes.
-                    per_board_fitness = {board: fitness for board in boards_for_eval}
+                    per_board_fitness = dict.fromkeys(boards_for_eval, fitness)
                 elif len(boards_for_eval) == 1:
                     board_type = boards_for_eval[0]
                     fitness = evaluate_fitness(

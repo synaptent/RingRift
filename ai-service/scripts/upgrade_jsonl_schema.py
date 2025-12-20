@@ -71,7 +71,7 @@ def infer_board_type(game: dict[str, Any]) -> str:
         return BOARD_SIZE_TO_TYPE[board_size]
 
     # Try to infer from moves (max coordinate)
-    if "moves" in game and game["moves"]:
+    if game.get("moves"):
         max_coord = 0
         for move in game["moves"]:
             if "to" in move:
@@ -152,7 +152,7 @@ def upgrade_game(game: dict[str, Any]) -> dict[str, Any]:
     if "num_players" not in upgraded:
         if "config" in game and "num_players" in game["config"]:
             upgraded["num_players"] = game["config"]["num_players"]
-        elif "moves" in game and game["moves"]:
+        elif game.get("moves"):
             # Infer from max player number in moves
             max_player = max(m.get("player", 1) for m in game["moves"] if "player" in m)
             upgraded["num_players"] = max_player

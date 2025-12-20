@@ -212,9 +212,8 @@ class TestTrainingErrorHandler:
             batch_reduction_factor=0.5,
         )
 
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256) as ctx:
-                raise RuntimeError("CUDA out of memory")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256) as ctx:
+            raise RuntimeError("CUDA out of memory")
 
         assert handler.recommended_batch_size == 128
         assert handler._oom_count == 1
@@ -227,16 +226,14 @@ class TestTrainingErrorHandler:
         )
 
         # First OOM
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256):
-                raise RuntimeError("CUDA out of memory")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
+            raise RuntimeError("CUDA out of memory")
 
         assert handler.recommended_batch_size == 128
 
         # Second OOM
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=128):
-                raise RuntimeError("CUDA out of memory")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=128):
+            raise RuntimeError("CUDA out of memory")
 
         assert handler.recommended_batch_size == 64
 
@@ -256,14 +253,12 @@ class TestTrainingErrorHandler:
         handler = TrainingErrorHandler(max_retries=2)
 
         # First failure
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256):
-                raise RuntimeError("Generic error")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
+            raise RuntimeError("Generic error")
 
         # Second failure
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256):
-                raise RuntimeError("Generic error")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
+            raise RuntimeError("Generic error")
 
         # Third failure - max exceeded
         with pytest.raises(NonRecoverableError, match="Max retries"):
@@ -275,9 +270,8 @@ class TestTrainingErrorHandler:
         handler = TrainingErrorHandler(max_retries=2)
 
         # First failure
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256):
-                raise RuntimeError("Generic error")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
+            raise RuntimeError("Generic error")
 
         assert handler._consecutive_failures == 1
 
@@ -288,9 +282,8 @@ class TestTrainingErrorHandler:
         assert handler._consecutive_failures == 0
 
         # Another failure - should not hit max
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256):
-                raise RuntimeError("Generic error")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
+            raise RuntimeError("Generic error")
 
         assert handler._consecutive_failures == 1
 
@@ -300,9 +293,8 @@ class TestTrainingErrorHandler:
 
         # Cause some OOMs
         for _ in range(2):
-            with pytest.raises(RecoverableError):
-                with handler.safe_training_step(batch_size=256):
-                    raise RuntimeError("CUDA out of memory")
+            with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
+                raise RuntimeError("CUDA out of memory")
 
         stats = handler.get_stats()
         assert stats["oom_count"] == 2

@@ -59,7 +59,7 @@ def is_gzip_file(filepath: Path) -> bool:
         with open(filepath, "rb") as f:
             magic = f.read(2)
             return magic == b'\x1f\x8b'  # Gzip magic number
-    except (IOError, OSError):
+    except OSError:
         return False
 
 

@@ -423,7 +423,7 @@ def cmd_compare(args):
     # Metrics comparison
     ma, mb = model_a.metrics, model_b.metrics
     print(f"\n{'Metrics':<20}")
-    print(f"{'  Elo':<20} {str(ma.elo or 'N/A'):<25} {str(mb.elo or 'N/A'):<25}")
+    print(f"{'  Elo':<20} {ma.elo or 'N/A'!s:<25} {mb.elo or 'N/A'!s:<25}")
 
     if ma.elo and mb.elo:
         diff = mb.elo - ma.elo

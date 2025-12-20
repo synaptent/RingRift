@@ -364,7 +364,7 @@ class P2PEloTournament:
             agents.add(r.agent_a)
             agents.add(r.agent_b)
 
-        ratings = {agent: initial_rating for agent in agents}
+        ratings = dict.fromkeys(agents, initial_rating)
 
         # Process each result in order
         for r in sorted(results, key=lambda x: x.timestamp):

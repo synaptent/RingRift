@@ -430,9 +430,7 @@ def main():
         print(f"    export RINGRIFT_TRAINED_HEURISTIC_PROFILES={os.path.abspath(result.promoted_path)}")
 
     # Exit code for CI/CD
-    if result.promoted:
-        sys.exit(0)
-    elif result.validation_passed and args.dry_run:
+    if result.promoted or (result.validation_passed and args.dry_run):
         sys.exit(0)
     else:
         sys.exit(1)

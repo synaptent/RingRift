@@ -86,7 +86,7 @@ class NodeState:
     """Track state for a node across checks."""
     last_game_count: int = 0
     stall_count: int = 0
-    last_check_time: Optional[datetime] = None
+    last_check_time: datetime | None = None
     is_healthy: bool = False
 
 

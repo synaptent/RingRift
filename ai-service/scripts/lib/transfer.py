@@ -737,9 +737,8 @@ def compress_file(
     source = Path(source)
     dest = Path(dest) if dest else source.with_suffix(source.suffix + ".gz")
 
-    with open(source, "rb") as f_in:
-        with gzip.open(dest, "wb", compresslevel=level) as f_out:
-            shutil.copyfileobj(f_in, f_out)
+    with open(source, "rb") as f_in, gzip.open(dest, "wb", compresslevel=level) as f_out:
+        shutil.copyfileobj(f_in, f_out)
 
     return dest, dest.stat().st_size
 
@@ -765,9 +764,8 @@ def decompress_file(
             dest = source.with_suffix(source.suffix + ".decompressed")
     dest = Path(dest)
 
-    with gzip.open(source, "rb") as f_in:
-        with open(dest, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
+    with gzip.open(source, "rb") as f_in, open(dest, "wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
 
     return dest, dest.stat().st_size
 

@@ -377,17 +377,7 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
     result: TierEvaluationResult
     eval_error: str | None = None
     if args.use_candidate_artifact and production_ladder is not None:
-        if candidate_artifact_present is False:
-            result = TierEvaluationResult(
-                tier_name=tier_config.tier_name,
-                board_type=tier_config.board_type,
-                num_players=tier_config.num_players,
-                candidate_id=str(args.candidate_model_id),
-                candidate_difficulty=tier_config.candidate_difficulty,
-                total_games=0,
-                overall_pass=False,
-            )
-        elif candidate_artifact_loaded is False:
+        if candidate_artifact_present is False or candidate_artifact_loaded is False:
             result = TierEvaluationResult(
                 tier_name=tier_config.tier_name,
                 board_type=tier_config.board_type,

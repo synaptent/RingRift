@@ -153,7 +153,7 @@ def get_termination_reason(state: GameState) -> str:
 
     if len(players_with_stacks) <= 1:
         # Check if others have any rings
-        active_rings = {p: 0 for p in range(1, state.max_players + 1)}
+        active_rings = dict.fromkeys(range(1, state.max_players + 1), 0)
         for stack in board.stacks.values():
             for ring in stack.rings:
                 active_rings[ring] += 1

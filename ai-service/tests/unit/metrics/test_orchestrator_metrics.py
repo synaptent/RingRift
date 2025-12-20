@@ -425,9 +425,8 @@ class TestTimePipelineStage:
         """Test timing failed pipeline stage."""
         from app.metrics.orchestrator import time_pipeline_stage
 
-        with pytest.raises(ValueError):
-            with time_pipeline_stage("test_stage"):
-                raise ValueError("Test error")
+        with pytest.raises(ValueError), time_pipeline_stage("test_stage"):
+            raise ValueError("Test error")
 
 
 # =============================================================================

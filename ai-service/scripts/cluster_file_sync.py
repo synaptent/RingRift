@@ -199,9 +199,8 @@ def chunked_transfer(
     if config.compress and not local_path.suffix == ".gz":
         compressed_path = local_path.with_suffix(local_path.suffix + ".gz")
         logger.info(f"Compressing {local_path.name}...")
-        with open(local_path, "rb") as f_in:
-            with gzip.open(compressed_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+        with open(local_path, "rb") as f_in, gzip.open(compressed_path, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
         transfer_path = compressed_path
         cleanup_compressed = True
     else:

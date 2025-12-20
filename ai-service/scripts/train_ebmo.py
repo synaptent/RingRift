@@ -147,8 +147,8 @@ def convert_npz_to_ebmo_format(
         globals_arr = np.zeros((len(features), 20), dtype=np.float32)
 
     # Get policy data for positive actions
-    pol_indices = npz_data.get('pol_indices', None)
-    pol_values = npz_data.get('pol_values', None)
+    pol_indices = npz_data.get('pol_indices')
+    pol_values = npz_data.get('pol_values')
 
     num_samples = len(features)
     action_dim = 14  # EBMO action dimension

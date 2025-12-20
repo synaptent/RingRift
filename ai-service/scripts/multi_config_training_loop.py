@@ -491,7 +491,7 @@ def get_export_settings_for_config(
 
 
 # Track last training count per config
-last_trained_counts: dict[tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
+last_trained_counts: dict[tuple[str, int], int] = dict.fromkeys(THRESHOLDS, 0)
 
 # Unified ELO database path
 UNIFIED_ELO_DB = os.path.join(DATA_DIR, "unified_elo.db")
@@ -708,7 +708,7 @@ def trigger_hp_tuning(board_type: str, num_players: int, trials: int = 20) -> bo
 
 def get_all_config_elos() -> dict[tuple[str, int], float]:
     """Get ELO ratings for all configs at once for efficiency."""
-    elos = {k: 1500.0 for k in THRESHOLDS}
+    elos = dict.fromkeys(THRESHOLDS, 1500.0)
 
     if not os.path.exists(UNIFIED_ELO_DB):
         return elos
@@ -906,7 +906,7 @@ def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int,
                         count += 1
                 except json.JSONDecodeError:
                     continue
-    except Exception as e:
+    except Exception:
         return 0, set()
 
     return count, game_ids
@@ -1067,7 +1067,7 @@ def count_games_with_moves(db_path: str, board_type: str, num_players: int) -> i
                 pass
         conn.close()
         return total
-    except Exception as e:
+    except Exception:
         return 0
 
 
@@ -1634,7 +1634,7 @@ def main():
     print("=" * 60, flush=True)
     print("Multi-Config Training Loop v7 (OPTIMIZED HP + ADAPTIVE CURRICULUM)", flush=True)
     print(f"Base dir: {BASE_DIR}", flush=True)
-    print("Configs: " + ", ".join(short_name(bt, np) for bt, np in THRESHOLDS.keys()), flush=True)
+    print("Configs: " + ", ".join(short_name(bt, np) for bt, np in THRESHOLDS), flush=True)
     print("=" * 60, flush=True)
 
     # Show advanced features status

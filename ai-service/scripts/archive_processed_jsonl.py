@@ -137,9 +137,8 @@ class JSONLArchiver:
         # Compress and archive
         archive_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(jsonl_path, "rb") as f_in:
-            with gzip.open(archive_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+        with open(jsonl_path, "rb") as f_in, gzip.open(archive_path, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
 
         compressed_size = archive_path.stat().st_size
 

@@ -221,7 +221,7 @@ def analyze_game(
             is_timeout=is_timeout,
         )
 
-    except Exception as e:
+    except Exception:
         return None
 
 

@@ -7283,7 +7283,7 @@ class UnifiedAILoop:
                                 from_stage="development", to_stage="archived"
                             ).inc()
 
-                except Exception as e:
+                except Exception:
                     # Skip individual model errors
                     continue
 

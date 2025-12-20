@@ -255,9 +255,8 @@ class TestAIDecisionContext:
 
     def test_exception_handling(self):
         """Context manager should record errors."""
-        with pytest.raises(ValueError):
-            with AIDecisionContext(auto_log=False) as ctx:
-                raise ValueError("Test error")
+        with pytest.raises(ValueError), AIDecisionContext(auto_log=False) as ctx:
+            raise ValueError("Test error")
 
         assert ctx.decision.error == "Test error"
 

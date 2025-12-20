@@ -434,7 +434,7 @@ def is_pareto_dominated(arch: Architecture, others: list[Architecture]) -> bool:
         if other.arch_id == arch.arch_id:
             continue
         # Multi-objective: performance (higher better), latency (lower better)
-        if other.performance >= arch.performance and other.latency_ms <= arch.latency_ms and other.performance > arch.performance or other.latency_ms < arch.latency_ms:
+        if (other.performance >= arch.performance and other.latency_ms <= arch.latency_ms and other.performance > arch.performance) or other.latency_ms < arch.latency_ms:
             return True
     return False
 

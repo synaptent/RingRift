@@ -125,7 +125,7 @@ def test_parity_healthcheck_cli_writes_summary_json_without_failing(
     # Ensure the helper saw the profile and summary file was written.
     args = captured_args.get("args")
     assert args is not None
-    assert getattr(args, "profile") == "parity-healthcheck"
+    assert args.profile == "parity-healthcheck"
 
     assert summary_path.exists()
     with summary_path.open("r", encoding="utf-8") as f:

@@ -211,7 +211,7 @@ def validate_database(db_path: Path) -> tuple[int, int, list[PhaseViolation]]:
                 for row in move_cursor:
                     move_data = dict(row)
                     # Parse JSON fields if present
-                    if "move_json" in move_data and move_data["move_json"]:
+                    if move_data.get("move_json"):
                         try:
                             move_data.update(json.loads(move_data["move_json"]))
                         except (json.JSONDecodeError, TypeError):
@@ -222,7 +222,7 @@ def validate_database(db_path: Path) -> tuple[int, int, list[PhaseViolation]]:
                 move_cursor = conn.execute("SELECT * FROM moves WHERE game_id = ? ORDER BY move_number", (game_id,))
                 for row in move_cursor:
                     move_data = dict(row)
-                    if "move_data" in move_data and move_data["move_data"]:
+                    if move_data.get("move_data"):
                         try:
                             move_data.update(json.loads(move_data["move_data"]))
                         except (json.JSONDecodeError, TypeError):

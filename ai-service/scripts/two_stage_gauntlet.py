@@ -318,13 +318,13 @@ def play_game(
                     model_player=model_player,
                     winner=winner,
                 )
-            except Exception as e:
+            except Exception:
                 # Don't fail the game if recording fails
                 pass
 
         return winner
 
-    except Exception as e:
+    except Exception:
         return None
 
 

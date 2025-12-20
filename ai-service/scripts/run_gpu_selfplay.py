@@ -571,7 +571,7 @@ class GPUSelfPlayGenerator:
         self.total_games = 0
         self.total_moves = 0
         self.total_time = 0.0
-        self.wins_by_player = {i: 0 for i in range(1, num_players + 1)}
+        self.wins_by_player = dict.fromkeys(range(1, num_players + 1), 0)
         self.draws = 0
 
         # Pre-compute initial state for training data compatibility

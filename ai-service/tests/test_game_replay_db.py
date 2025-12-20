@@ -331,16 +331,15 @@ class TestGameReplayDBCanonicalContract:
         # canonical phase↔MoveType contract.
         move = create_test_move(player=1, move_number=0)
 
-        with db._get_conn() as conn:
-            with pytest.raises(ValueError) as excinfo:
-                db._store_move_conn(
-                    conn,
-                    game_id=game_id,
-                    move_number=0,
-                    turn_number=0,
-                    move=move,
-                    phase="territory_processing",
-                )
+        with db._get_conn() as conn, pytest.raises(ValueError) as excinfo:
+            db._store_move_conn(
+                conn,
+                game_id=game_id,
+                move_number=0,
+                turn_number=0,
+                move=move,
+                phase="territory_processing",
+            )
 
         msg = str(excinfo.value)
         # The underlying history_contract should report a phase_move_mismatch.

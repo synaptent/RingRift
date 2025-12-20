@@ -97,7 +97,7 @@ def get_num_players(game: dict[str, Any]) -> int:
     if "config" in game and "num_players" in game["config"]:
         return game["config"]["num_players"]
     # Infer from moves
-    if "moves" in game and game["moves"]:
+    if game.get("moves"):
         max_player = max(
             (m.get("player", 1) for m in game["moves"] if isinstance(m, dict) and "player" in m),
             default=2

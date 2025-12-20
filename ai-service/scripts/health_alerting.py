@@ -351,7 +351,7 @@ def check_local_disk() -> HealthCheck:
                     message=f"Disk usage: {usage_pct}%",
                     value=usage_pct,
                 )
-    except Exception as e:
+    except Exception:
         pass
 
     return HealthCheck(

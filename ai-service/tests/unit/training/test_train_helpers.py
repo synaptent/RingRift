@@ -48,7 +48,7 @@ class TestFlattenHeuristicWeights:
 
     def test_flatten_preserves_key_order(self):
         """Test that key order is deterministic across multiple calls."""
-        profile = {key: 1.0 for key in HEURISTIC_WEIGHT_KEYS}
+        profile = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 1.0)
 
         keys1, _ = _flatten_heuristic_weights(profile)
         keys2, _ = _flatten_heuristic_weights(profile)
@@ -59,7 +59,7 @@ class TestFlattenHeuristicWeights:
     def test_flatten_missing_key_raises_error(self):
         """Test that missing keys raise KeyError with helpful message."""
         # Create profile missing a key
-        incomplete_profile = {key: 1.0 for key in list(HEURISTIC_WEIGHT_KEYS)[:-1]}
+        incomplete_profile = dict.fromkeys(list(HEURISTIC_WEIGHT_KEYS)[:-1], 1.0)
 
         with pytest.raises(KeyError) as exc_info:
             _flatten_heuristic_weights(incomplete_profile)
@@ -70,7 +70,7 @@ class TestFlattenHeuristicWeights:
 
     def test_flatten_extra_keys_ignored(self):
         """Test that extra keys in profile are ignored."""
-        profile = {key: 1.0 for key in HEURISTIC_WEIGHT_KEYS}
+        profile = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 1.0)
         profile["EXTRA_KEY_NOT_IN_SPEC"] = 999.0
 
         keys, values = _flatten_heuristic_weights(profile)
@@ -241,10 +241,9 @@ class TestTemporaryHeuristicProfile:
 
         assert test_profile_id not in HEURISTIC_WEIGHT_PROFILES
 
-        with pytest.raises(RuntimeError):
-            with temporary_heuristic_profile(test_profile_id, test_weights):
-                assert test_profile_id in HEURISTIC_WEIGHT_PROFILES
-                raise RuntimeError("Test exception")
+        with pytest.raises(RuntimeError), temporary_heuristic_profile(test_profile_id, test_weights):
+            assert test_profile_id in HEURISTIC_WEIGHT_PROFILES
+            raise RuntimeError("Test exception")
 
         # Should still be cleaned up
         assert test_profile_id not in HEURISTIC_WEIGHT_PROFILES
@@ -258,9 +257,8 @@ class TestTemporaryHeuristicProfile:
         HEURISTIC_WEIGHT_PROFILES[test_profile_id] = original_weights
 
         try:
-            with pytest.raises(ValueError):
-                with temporary_heuristic_profile(test_profile_id, temporary_weights):
-                    raise ValueError("Test error")
+            with pytest.raises(ValueError), temporary_heuristic_profile(test_profile_id, temporary_weights):
+                raise ValueError("Test error")
 
             # Should restore original
             assert HEURISTIC_WEIGHT_PROFILES[test_profile_id] == original_weights
@@ -447,9 +445,7 @@ class TestEvaluateHeuristicCandidate:
 
             # Register test-specific profile
             test_profile_id = "_test_base_profile_fitness"
-            HEURISTIC_WEIGHT_PROFILES[test_profile_id] = {
-                k: 1.0 for k in keys
-            }
+            HEURISTIC_WEIGHT_PROFILES[test_profile_id] = dict.fromkeys(keys, 1.0)
 
             # Update mock tier spec to use test profile
             tier_spec = HeuristicTierSpec(
@@ -494,9 +490,7 @@ class TestEvaluateHeuristicCandidate:
 
             # Register test-specific profile
             test_profile_id = "_test_base_profile_zero_games"
-            HEURISTIC_WEIGHT_PROFILES[test_profile_id] = {
-                k: 1.0 for k in keys
-            }
+            HEURISTIC_WEIGHT_PROFILES[test_profile_id] = dict.fromkeys(keys, 1.0)
 
             # Update mock tier spec to use test profile
             tier_spec = HeuristicTierSpec(
@@ -535,9 +529,7 @@ class TestEvaluateHeuristicCandidate:
 
             # Register test-specific profile
             test_profile_id = "_test_base_profile_override"
-            HEURISTIC_WEIGHT_PROFILES[test_profile_id] = {
-                k: 1.0 for k in keys
-            }
+            HEURISTIC_WEIGHT_PROFILES[test_profile_id] = dict.fromkeys(keys, 1.0)
 
             # Update mock tier spec to use test profile
             tier_spec = HeuristicTierSpec(

@@ -643,7 +643,7 @@ def run_hybrid_selfplay(
     total_games = 0
     total_moves = 0
     total_time = 0.0
-    wins_by_player = {i: 0 for i in range(1, num_players + 1)}
+    wins_by_player = dict.fromkeys(range(1, num_players + 1), 0)
     draws = 0
     victory_type_counts: dict[str, int] = {}  # Track victory type distribution
     stalemate_by_tiebreaker: dict[str, int] = {}  # Track which tiebreaker resolved stalemates

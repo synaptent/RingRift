@@ -176,7 +176,7 @@ def load_weights_from_profile(
     try:
         with open(weights_file) as f:
             data = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         print(
             f"[heuristic-weights] Warning: Failed to parse {weights_file}: {e}",
             file=sys.stderr,

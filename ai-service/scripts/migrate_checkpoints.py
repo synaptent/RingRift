@@ -168,7 +168,7 @@ def infer_config_from_state_dict(
 
     # Count residual blocks
     res_block_count = 0
-    for key in state_dict.keys():
+    for key in state_dict:
         if key.startswith("res_blocks.") and ".conv1.weight" in key:
             idx = int(key.split(".")[1])
             res_block_count = max(res_block_count, idx + 1)

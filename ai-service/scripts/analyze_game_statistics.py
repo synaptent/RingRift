@@ -236,7 +236,7 @@ def normalize_game(game: dict[str, Any], file_path: str = "") -> dict[str, Any]:
         elif "board_size" in game:
             board_size = game["board_size"]
             normalized["board_type"] = BOARD_SIZE_TO_TYPE.get(board_size, f"square{board_size}")
-        elif "moves" in game and game["moves"]:
+        elif game.get("moves"):
             max_coord = 0
             for move in game["moves"]:
                 if isinstance(move, dict) and "to" in move:
@@ -260,7 +260,7 @@ def normalize_game(game: dict[str, Any], file_path: str = "") -> dict[str, Any]:
         if "config" in game and "num_players" in game["config"]:
             normalized["num_players"] = game["config"]["num_players"]
             normalized["_inferred_num_players"] = False  # Found in config
-        elif "moves" in game and game["moves"]:
+        elif game.get("moves"):
             max_player = max(
                 (m.get("player", 1) for m in game["moves"] if isinstance(m, dict) and "player" in m),
                 default=2

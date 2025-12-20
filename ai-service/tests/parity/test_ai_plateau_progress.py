@@ -142,7 +142,7 @@ def test_ai_progress_from_plateau_snapshots(fixture_path: Path) -> None:
     # Final sanity: S should not have decreased overall, and if we
     # didn't finish, we should at least have made some progress.
     final_snap = BoardManager.compute_progress_snapshot(state)
-    assert final_snap.S >= initial_S
+    assert initial_S <= final_snap.S
 
     if state.game_status.name.lower() == "active":
         assert S_increased_at_least_once, (

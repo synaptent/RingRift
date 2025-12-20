@@ -349,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
         reason_dict: dict[str, Any] = reason if isinstance(reason, dict) else {}
         used = bool(reason_dict.get("use_candidate_artifact", False))
         present = bool(reason_dict.get("candidate_artifact_present", False))
-        loaded = reason_dict.get("candidate_artifact_loaded", None)
+        loaded = reason_dict.get("candidate_artifact_loaded")
 
         if not used:
             print(

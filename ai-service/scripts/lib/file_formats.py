@@ -64,7 +64,7 @@ def is_gzip_file(filepath: Union[str, Path]) -> bool:
         with open(filepath, "rb") as f:
             magic = f.read(2)
             return magic == b"\x1f\x8b"  # Gzip magic number
-    except (IOError, OSError):
+    except OSError:
         return False
 
 
@@ -403,7 +403,7 @@ def get_uncompressed_size_estimate(filepath: Union[str, Path]) -> int:
             f.seek(-4, 2)  # Seek to last 4 bytes
             size_bytes = f.read(4)
             return int.from_bytes(size_bytes, "little")
-    except (IOError, OSError):
+    except OSError:
         return filepath.stat().st_size
 
 

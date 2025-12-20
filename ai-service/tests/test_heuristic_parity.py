@@ -201,9 +201,5 @@ def test_python_heuristic_respects_orderings(fixture_path: Path) -> None:
         better_score = ai.evaluate_position(better_state)
         worse_score = ai.evaluate_position(worse_state)
 
-        msg = "Expected {better} > {worse} for profile {pid}".format(
-            better=better_id,
-            worse=worse_id,
-            pid=profile_id,
-        )
+        msg = f"Expected {better_id} > {worse_id} for profile {profile_id}"
         assert better_score > worse_score, msg

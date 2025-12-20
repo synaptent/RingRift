@@ -56,11 +56,10 @@ class TestSafeTransaction:
             conn.execute("INSERT INTO test VALUES (1, 'original')")
 
         # Try to update and fail
-        with pytest.raises(sqlite3.IntegrityError):
-            with safe_transaction(db_path) as conn:
-                conn.execute("UPDATE test SET value='updated' WHERE id=1")
-                # This will fail due to duplicate primary key
-                conn.execute("INSERT INTO test VALUES (1, 'duplicate')")
+        with pytest.raises(sqlite3.IntegrityError), safe_transaction(db_path) as conn:
+            conn.execute("UPDATE test SET value='updated' WHERE id=1")
+            # This will fail due to duplicate primary key
+            conn.execute("INSERT INTO test VALUES (1, 'duplicate')")
 
         # Verify original value is preserved (rollback worked)
         with safe_transaction(db_path) as conn:

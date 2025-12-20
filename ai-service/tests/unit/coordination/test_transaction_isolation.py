@@ -347,12 +347,11 @@ class TestTransactionIsolation:
         """Test transaction context manager rolls back on exception."""
         dest_path = tmp_path / "file.txt"
 
-        with pytest.raises(RuntimeError):
-            with isolation.transaction("host-a", "host-b", "games") as ctx:
-                op_id = ctx.add_operation("add", str(dest_path))
-                dest_path.write_text("content")
-                # Don't complete operation - will fail validation
-                raise RuntimeError("Test error")
+        with pytest.raises(RuntimeError), isolation.transaction("host-a", "host-b", "games") as ctx:
+            op_id = ctx.add_operation("add", str(dest_path))
+            dest_path.write_text("content")
+            # Don't complete operation - will fail validation
+            raise RuntimeError("Test error")
 
         # Transaction should be rolled back
         stats = isolation.get_transaction_stats()

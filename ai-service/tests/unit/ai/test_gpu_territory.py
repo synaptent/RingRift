@@ -115,7 +115,7 @@ class TestFindEligibleTerritoryCap:
         place_stack(state, 0, 5, 5, owner=1, height=3)
 
         # Exclude (3, 3)
-        result = _find_eligible_territory_cap(state, 0, player=1, 
+        result = _find_eligible_territory_cap(state, 0, player=1,
                                                excluded_positions={(3, 3)})
 
         assert result is not None

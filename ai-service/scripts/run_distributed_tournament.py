@@ -769,7 +769,7 @@ class DistributedTournament:
 
         # Deterministic Elo: replay results in a fixed order, independent of
         # worker scheduling. (We keep k=32 to match the legacy harness.)
-        elo_by_tier: dict[str, float] = {t: 1500.0 for t in tiers}
+        elo_by_tier: dict[str, float] = dict.fromkeys(tiers, 1500.0)
         matchup_results: dict[tuple[str, str], list[MatchResult]] = {}
         for m in matches:
             a, b, winner = _canonical_match_key(m)

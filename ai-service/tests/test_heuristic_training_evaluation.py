@@ -58,7 +58,7 @@ from scripts.run_cmaes_optimization import (  # type: ignore
 
 def _make_zero_profile(baseline: dict[str, float]) -> dict[str, float]:
     """Return an all-zero weight profile matching the baseline schema."""
-    return {k: 0.0 for k in baseline.keys()}
+    return dict.fromkeys(baseline.keys(), 0.0)
 
 
 def test_heuristic_weight_keys_are_canonical_and_complete() -> None:

@@ -164,7 +164,7 @@ def assign_matchups_to_worker_slots(
     if not worker_slots:
         raise ValueError("worker_slots must be non-empty")
 
-    loads: dict[WorkerSlot, float] = {slot: 0.0 for slot in worker_slots}
+    loads: dict[WorkerSlot, float] = dict.fromkeys(worker_slots, 0.0)
     assignments: dict[WorkerSlot, list[Matchup]] = {slot: [] for slot in worker_slots}
 
     for matchup in sorted(matchups, key=cost_fn, reverse=True):

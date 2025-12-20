@@ -33,12 +33,12 @@ from .alerting import (
 )
 
 __all__ = [
-    "get_cluster_status",
-    "print_cluster_status",
-    "get_node_status",
+    "AlertLevel",
+    "HealthStatus",
     "check_cluster_health",
     "check_node_health",
-    "HealthStatus",
+    "get_cluster_status",
+    "get_node_status",
+    "print_cluster_status",
     "send_alert",
-    "AlertLevel",
 ]

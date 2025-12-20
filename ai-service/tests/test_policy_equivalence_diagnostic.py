@@ -34,7 +34,7 @@ def test_compare_moves_on_states_baseline_vs_zero_profile() -> None:
     states = [state]
 
     baseline = dict(BASE_V1_BALANCED_WEIGHTS)
-    zero_profile = {k: 0.0 for k in baseline.keys()}
+    zero_profile = dict.fromkeys(baseline.keys(), 0.0)
 
     stats_diff = compare_moves_on_states(baseline, zero_profile, states)
 

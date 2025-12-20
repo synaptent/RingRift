@@ -86,11 +86,10 @@ class TestSetupDistributed:
             "MASTER_PORT": "29500",
         }
 
-        with mock.patch.dict(os.environ, env_vars, clear=False):
-            with mock.patch.object(
-                torch.cuda, "is_available", return_value=False
-            ):
-                setup_distributed()
+        with mock.patch.dict(os.environ, env_vars, clear=False), mock.patch.object(
+            torch.cuda, "is_available", return_value=False
+        ):
+            setup_distributed()
 
         mock_dist.init_process_group.assert_called_once()
         call_kwargs = mock_dist.init_process_group.call_args[1]
@@ -514,11 +513,10 @@ class TestGetDeviceForRank:
 
     def test_returns_cpu_when_no_gpu(self) -> None:
         """Test returns CPU when no GPU available."""
-        with mock.patch.object(torch.cuda, "is_available", return_value=False):
-            with mock.patch.object(
-                torch.backends.mps, "is_available", return_value=False
-            ):
-                device = get_device_for_rank()
+        with mock.patch.object(torch.cuda, "is_available", return_value=False), mock.patch.object(
+            torch.backends.mps, "is_available", return_value=False
+        ):
+            device = get_device_for_rank()
 
         assert device == torch.device("cpu")
 

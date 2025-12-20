@@ -282,13 +282,12 @@ class VastaiTerminationGuard:
                 "data_dir": self.config.data_dir,
             }
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.config.central_collector_url}/heartbeat",
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as resp:
-                    return resp.status == 200
+            async with aiohttp.ClientSession() as session, session.post(
+                f"{self.config.central_collector_url}/heartbeat",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                return resp.status == 200
 
         except ImportError:
             # aiohttp not available, skip heartbeat

@@ -210,7 +210,7 @@ class GPUDataGenTester:
                 # This is a soft check since augmentation complicates the pattern
                 passed = has_variety and total > 0
 
-            except Exception as e:
+            except Exception:
                 passed = False
                 wins, losses, draws = 0, 0, 0
                 win_rate, loss_rate = 0, 0
@@ -267,7 +267,7 @@ class GPUDataGenTester:
 
                 passed = in_range and num_samples > 0
 
-            except Exception as e:
+            except Exception:
                 passed = False
                 num_samples = 0
                 min_expected = 0

@@ -1072,7 +1072,7 @@ def update_elo_after_match(
                     config=config_key, model_id=model_b, new_elo=new_elo_b,
                     old_elo=old_elo_b, games_played=games_b, source=GAME_SOURCE_TAG
                 ))
-        except Exception as e:
+        except Exception:
             # Don't fail the match update if event emission fails
             pass
 

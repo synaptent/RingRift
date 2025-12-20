@@ -213,7 +213,7 @@ class TestSquare8PolicyLayout:
     def test_skip_placement_idx(self):
         """Test skip placement index is in special section."""
         assert SQUARE8_SKIP_PLACEMENT_IDX > SQUARE8_TERRITORY_CLAIM_BASE
-        assert SQUARE8_SKIP_PLACEMENT_IDX < POLICY_SIZE_8x8
+        assert POLICY_SIZE_8x8 > SQUARE8_SKIP_PLACEMENT_IDX
 
     def test_swap_sides_idx(self):
         """Test swap sides index follows skip placement."""
@@ -671,7 +671,7 @@ class TestCNNArchitectureConstants:
     def test_policy_sizes_ordered(self):
         """Test policy sizes are in expected order."""
         # HEX8 < SQUARE8 < SQUARE19 < HEXAGONAL
-        assert POLICY_SIZE_HEX8 < POLICY_SIZE_8x8
+        assert POLICY_SIZE_8x8 > POLICY_SIZE_HEX8
         assert POLICY_SIZE_8x8 < POLICY_SIZE_19x19
         assert POLICY_SIZE_19x19 < P_HEX
 

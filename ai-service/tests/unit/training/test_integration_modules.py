@@ -543,7 +543,7 @@ class TestExceptionIntegration:
             nonlocal call_count
             call_count += 1
             if call_count < 2:
-                raise IOError("Transient error")
+                raise OSError("Transient error")
             return True
 
         result = flaky_save()
@@ -582,9 +582,8 @@ class TestExceptionIntegration:
             training_error_context,
         )
 
-        with pytest.raises(TrainingError):
-            with training_error_context("test operation"):
-                raise ValueError("Something went wrong")
+        with pytest.raises(TrainingError), training_error_context("test operation"):
+            raise ValueError("Something went wrong")
 
 
 # =============================================================================

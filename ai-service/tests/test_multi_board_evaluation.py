@@ -63,7 +63,7 @@ class MultiBoardEvaluationTest(unittest.TestCase):
         evaluate_fitness_over_boards over multiple BoardType values.
         """
         baseline = dict(BASE_V1_BALANCED_WEIGHTS)
-        zero_profile = {k: 0.0 for k in baseline.keys()}
+        zero_profile = dict.fromkeys(baseline.keys(), 0.0)
 
         boards = [BoardType.SQUARE8, BoardType.SQUARE19, BoardType.HEXAGONAL]
 

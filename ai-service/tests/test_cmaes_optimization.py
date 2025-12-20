@@ -167,9 +167,7 @@ class TestHeuristicAICreation:
 
     def test_create_ai_with_custom_weights(self):
         """Test that custom weights are applied to the AI."""
-        custom_weights: HeuristicWeights = {
-            key: 99.0 for key in WEIGHT_KEYS
-        }
+        custom_weights: HeuristicWeights = dict.fromkeys(WEIGHT_KEYS, 99.0)
 
         ai = create_heuristic_ai_with_weights(1, custom_weights, difficulty=5)
 

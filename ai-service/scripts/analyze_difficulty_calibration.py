@@ -193,21 +193,13 @@ def load_calibration_aggregates(path: str) -> CalibrationAggregateRoot:
             human_win_rate = float(seg.get("human_win_rate", 0.0))
             if n_games < 0:
                 raise CalibrationInputError(
-                    "Segment {segment!r} in tier {tier} has negative "
-                    "n_games={n_games}.".format(
-                        segment=segment_name,
-                        tier=tier_name,
-                        n_games=n_games,
-                    )
+                    f"Segment {segment_name!r} in tier {tier_name} has negative "
+                    f"n_games={n_games}."
                 )
             if not (0.0 <= human_win_rate <= 1.0):
                 raise CalibrationInputError(
-                    "Segment {segment!r} in tier {tier} has invalid "
-                    "human_win_rate={win_rate}.".format(
-                        segment=segment_name,
-                        tier=tier_name,
-                        win_rate=human_win_rate,
-                    )
+                    f"Segment {segment_name!r} in tier {tier_name} has invalid "
+                    f"human_win_rate={human_win_rate}."
                 )
 
             difficulty_mean = float(seg.get("difficulty_mean", 0.0))

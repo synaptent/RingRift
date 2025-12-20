@@ -122,7 +122,7 @@ def validate_database(
                     "error": str(pve),
                 })
 
-        except Exception as e:
+        except Exception:
             results["games_with_replay_errors"] += 1
 
         results["total_games_checked"] += 1

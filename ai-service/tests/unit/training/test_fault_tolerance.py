@@ -200,9 +200,8 @@ class TestTrainingErrorHandler:
         """Test safe_training_step handles OOM."""
         handler = TrainingErrorHandler(min_batch_size=8, batch_reduction_factor=0.5)
 
-        with pytest.raises(RecoverableError):
-            with handler.safe_training_step(batch_size=256) as ctx:
-                raise RuntimeError("CUDA out of memory")
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256) as ctx:
+            raise RuntimeError("CUDA out of memory")
 
         assert handler.recommended_batch_size == 128
         assert handler._oom_count == 1
@@ -216,9 +215,8 @@ class TestTrainingErrorHandler:
             handler._consecutive_failures += 1
 
         # Third failure should be non-recoverable
-        with pytest.raises(NonRecoverableError):
-            with handler.safe_training_step(batch_size=256):
-                raise RuntimeError("Some error")
+        with pytest.raises(NonRecoverableError), handler.safe_training_step(batch_size=256):
+            raise RuntimeError("Some error")
 
     def test_reset_failure_count(self):
         """Test failure count resets on success."""

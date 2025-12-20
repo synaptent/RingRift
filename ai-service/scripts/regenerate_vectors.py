@@ -66,12 +66,7 @@ def complete_turn_phases(state):
             break
 
         # Only auto-inject for line and territory no-action phases
-        if requirement.type == PhaseRequirementType.NO_LINE_ACTION_REQUIRED:
-            bookkeeping = GameEngine.synthesize_bookkeeping_move(
-                requirement, state
-            )
-            state = GameEngine.apply_move(state, bookkeeping, trace_mode=True)
-        elif requirement.type == PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED:
+        if requirement.type == PhaseRequirementType.NO_LINE_ACTION_REQUIRED or requirement.type == PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED:
             bookkeeping = GameEngine.synthesize_bookkeeping_move(
                 requirement, state
             )

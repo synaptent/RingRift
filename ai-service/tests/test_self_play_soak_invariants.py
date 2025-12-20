@@ -321,13 +321,13 @@ def test_python_strict_profile_overrides_defaults(
 
     args = captured_args.get("args")
     assert args is not None
-    assert getattr(args, "num_games") == 6
-    assert getattr(args, "board_type") == "square8"
-    assert getattr(args, "engine_mode") == "mixed"
-    assert getattr(args, "num_players") == 2
-    assert getattr(args, "max_moves") == 10000  # Updated from 150
-    assert getattr(args, "gc_interval") == 5  # Default gc_interval (only set to 10 if explicitly 0)
-    assert getattr(args, "profile") == "python-strict"
+    assert args.num_games == 6
+    assert args.board_type == "square8"
+    assert args.engine_mode == "mixed"
+    assert args.num_players == 2
+    assert args.max_moves == 10000  # Updated from 150
+    assert args.gc_interval == 5  # Default gc_interval (only set to 10 if explicitly 0)
+    assert args.profile == "python-strict"
 
 
 def test_build_healthcheck_summary_includes_invariants_and_samples() -> None:
@@ -461,7 +461,7 @@ def test_ai_healthcheck_profile_cli_writes_summary_json(
     # Ensure the health-check profile was wired through to the helper.
     args = captured_args.get("args")
     assert args is not None
-    assert getattr(args, "profile") == "ai-healthcheck"
+    assert args.profile == "ai-healthcheck"
 
     # Summary JSON should have been written and contain invariant keys.
     assert summary_path.exists()

@@ -230,7 +230,7 @@ def test_state_action_parity(fixture_path: str) -> None:
             )
 
             snap = BoardManager.compute_progress_snapshot(next_state)
-            assert snap.S == ts_next["S"], (
+            assert ts_next["S"] == snap.S, (
                 f"S-invariant mismatch in {os.path.basename(fixture_path)}"
             )
 
@@ -445,7 +445,7 @@ def test_replay_ts_trace_fixtures_and_assert_python_state_parity() -> None:
             if ts_S is not None and not skip_hash_check:
                 snap = BoardManager.compute_progress_snapshot(state)
                 assert (
-                    snap.S == ts_S
+                    ts_S == snap.S
                 ), (
                     "S-invariant mismatch at step "
                     f"{idx} in {os.path.basename(path)}"

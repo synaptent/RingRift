@@ -59,7 +59,7 @@ def create_single_weight_profile(weight_key: str, value: float) -> dict[str, flo
 
 def create_zero_profile() -> dict[str, float]:
     """Create a profile with all weights set to zero."""
-    return {k: 0.0 for k in HEURISTIC_WEIGHT_KEYS}
+    return dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 0.0)
 
 
 @dataclass

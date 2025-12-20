@@ -263,7 +263,7 @@ def run_distillation(
         job.error = "Distillation timed out after 1 hour"
         logger.error(job.error)
     except Exception as e:
-        job.error = f"Distillation error: {str(e)}"
+        job.error = f"Distillation error: {e!s}"
         logger.exception(job.error)
 
     return job

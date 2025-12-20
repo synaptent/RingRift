@@ -393,7 +393,7 @@ def create_hex_board_with_stacks(
 
     # Convert HexCoord stacks to board format
     board_stacks = {}
-    rings_used = {i: 0 for i in range(1, num_players + 1)}
+    rings_used = dict.fromkeys(range(1, num_players + 1), 0)
 
     for coord, stack_list in stacks.items():
         x, y = coord.to_offset(size)

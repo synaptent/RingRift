@@ -482,7 +482,7 @@ class UniversalKeepalive:
                 logger.error(f"Health check error: {e}")
                 send_notification(
                     "keepalive_error",
-                    f"Keepalive daemon error on {self.node_id}: {str(e)}",
+                    f"Keepalive daemon error on {self.node_id}: {e!s}",
                     self.node_id,
                     severity="error"
                 )

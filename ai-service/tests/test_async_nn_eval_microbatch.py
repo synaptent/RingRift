@@ -23,8 +23,8 @@ class _DummyNeuralNet:
 
     def evaluate_batch(self, game_states, value_head=None):  # type: ignore[no-untyped-def]
         self._call_sizes.append(len(game_states))
-        values = [float(getattr(s, "tag")) for s in game_states]
-        policies = np.asarray([[float(getattr(s, "tag"))] for s in game_states], dtype=np.float32)
+        values = [float(s.tag) for s in game_states]
+        policies = np.asarray([[float(s.tag)] for s in game_states], dtype=np.float32)
         _ = value_head
         return values, policies
 
@@ -88,8 +88,8 @@ def test_async_neural_batcher_keeps_value_heads_separate(
             call_heads.append(value_head)
             # Encode head into output so we can assert routing.
             head = int(value_head) if value_head is not None else 0
-            values = [float(getattr(s, "tag")) + head * 100.0 for s in game_states]
-            policies = np.asarray([[float(getattr(s, "tag"))] for s in game_states], dtype=np.float32)
+            values = [float(s.tag) + head * 100.0 for s in game_states]
+            policies = np.asarray([[float(s.tag)] for s in game_states], dtype=np.float32)
             return values, policies
 
     nn = _ValueHeadNet()

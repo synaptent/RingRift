@@ -2067,7 +2067,7 @@ class P2POrchestrator:
                                 if leader_id:
                                     logger.info(f"Arbiter {base_url} reports leader: {leader_id}")
                                     return leader_id
-                    except Exception as e:
+                    except Exception:
                         # Try next arbiter
                         continue
         except Exception:
@@ -2123,10 +2123,7 @@ class P2POrchestrator:
         if rh and rp:
             # Prefer reported endpoints when the observed endpoint is loopback
             # (proxy/relay artifacts).
-            if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-                host, port = rh, rp
-            # Prefer mesh endpoints (Tailscale) when we also have a mesh address.
-            elif self._local_has_tailscale() and self._is_tailscale_host(rh):
+            if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"} or (self._local_has_tailscale() and self._is_tailscale_host(rh)):
                 host, port = rh, rp
 
         return f"{scheme}://{host}:{port}{path}"
@@ -3090,7 +3087,7 @@ class P2POrchestrator:
                         result["gpu_percent"] = max(gpu_utils)
                     if mem_percents:
                         result["gpu_memory_percent"] = max(mem_percents)
-            except Exception as e:
+            except Exception:
                 # Silently ignore nvidia-smi errors (not all nodes have GPUs)
                 pass
 
@@ -4320,7 +4317,7 @@ class P2POrchestrator:
                                 logger.info(f"Gauntlet dispatched to {cpu_node.node_id} "
                                       f"(cpu_power={cpu_node.cpu_power_score()})")
                                 return result
-                    except Exception as e:
+                    except Exception:
                         continue
 
             logger.error(f"Failed to dispatch gauntlet to {cpu_node.node_id}")
@@ -10089,9 +10086,9 @@ print(json.dumps(result))
 
         # Initialize ratings (using canonical constants from app.config.thresholds)
         ratings = {agent: float(INITIAL_ELO_RATING) for agent in state.agent_ids}
-        wins = {agent: 0 for agent in state.agent_ids}
-        losses = {agent: 0 for agent in state.agent_ids}
-        draws = {agent: 0 for agent in state.agent_ids}
+        wins = dict.fromkeys(state.agent_ids, 0)
+        losses = dict.fromkeys(state.agent_ids, 0)
+        draws = dict.fromkeys(state.agent_ids, 0)
 
         def expected_score(rating_a: float, rating_b: float) -> float:
             """Calculate expected score for player A against player B."""
@@ -16234,7 +16231,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             ))
 
         except Exception as e:
-            result["message"] = f"Rollback failed: {str(e)}"
+            result["message"] = f"Rollback failed: {e!s}"
 
         return result
 
@@ -17105,11 +17102,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             return
 
         # GPU selfplay uses batch processing - scale based on GPU power
-        if "GH200" in gpu_name.upper():
-            num_processes = 4
-            games_per_process = 10000
-            gpu_tier = "high"
-        elif "H100" in gpu_name.upper() or "H200" in gpu_name.upper():
+        if "GH200" in gpu_name.upper() or "H100" in gpu_name.upper() or "H200" in gpu_name.upper():
             num_processes = 4
             games_per_process = 10000
             gpu_tier = "high"
@@ -18332,7 +18325,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             optimizer = get_resource_optimizer()
             history = optimizer.get_utilization_history(node_id=node_id, hours=hours)
             return web.json_response(history)
-        except Exception as e:
+        except Exception:
             return web.json_response([])
 
     async def handle_webhook_test(self, request: web.Request) -> web.Response:
@@ -18701,9 +18694,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Check if test should conclude
             should_conclude = False
-            if stats.get("games_played", 0) >= target_games:
-                should_conclude = True
-            elif stats.get("statistically_significant") and stats.get("confidence", 0) >= confidence_threshold:
+            if stats.get("games_played", 0) >= target_games or (stats.get("statistically_significant") and stats.get("confidence", 0) >= confidence_threshold):
                 should_conclude = True
 
             if should_conclude:
@@ -20200,7 +20191,7 @@ print(json.dumps({{
                     else:
                         # Non-200 response is a failure
                         breaker.record_failure(target)
-        except Exception as e:
+        except Exception:
             # Record failure with circuit breaker
             breaker.record_failure(target)
         return None
@@ -20641,10 +20632,7 @@ print(json.dumps({{
                             # a /coordinator lease renewal after we discover it via
                             # heartbeat (prevents leaderless oscillation right after
                             # restarts/partitions).
-                            if prev_leader != info.node_id:
-                                self.leader_lease_id = ""
-                                self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
-                            elif not self._is_leader_lease_valid():
+                            if prev_leader != info.node_id or not self._is_leader_lease_valid():
                                 self.leader_lease_id = ""
                                 self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
                             self.role = NodeRole.FOLLOWER
@@ -20963,21 +20951,20 @@ print(json.dumps({{
         for peer_addr in self.known_peers:
             try:
                 scheme, host, port = self._parse_peer_address(peer_addr)
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{scheme}://{host}:{port}/relay/peers",
-                        timeout=aiohttp.ClientTimeout(total=5),
-                        headers=self._auth_headers()
-                    ) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            peers_data = data.get("peers", {})
-                            if voter_id in peers_data:
-                                peer_info = NodeInfo.from_dict(peers_data[voter_id])
-                                with self.peers_lock:
-                                    self.peers[voter_id] = peer_info
-                                logger.info(f"Discovered voter {voter_id} from {host}")
-                                return
+                async with aiohttp.ClientSession() as session, session.get(
+                    f"{scheme}://{host}:{port}/relay/peers",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                    headers=self._auth_headers()
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        peers_data = data.get("peers", {})
+                        if voter_id in peers_data:
+                            peer_info = NodeInfo.from_dict(peers_data[voter_id])
+                            with self.peers_lock:
+                                self.peers[voter_id] = peer_info
+                            logger.info(f"Discovered voter {voter_id} from {host}")
+                            return
             except Exception:
                 continue
 
@@ -21050,17 +21037,16 @@ print(json.dumps({{
         for peer in alive_peers[:5]:  # Probe up to 5 peers
             try:
                 peer_scheme = getattr(peer, "scheme", "http") or "http"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{peer_scheme}://{peer.host}:{peer.port}/health",
-                        timeout=aiohttp.ClientTimeout(total=5),
-                        headers=self._auth_headers()
-                    ) as resp:
-                        if resp.status == 200:
-                            # The peer would report our external IP if we had an endpoint for it
-                            # For now, just track connectivity
-                            data = await resp.json()
-                            external_ips.add(peer.host)  # Track which peers we can reach
+                async with aiohttp.ClientSession() as session, session.get(
+                    f"{peer_scheme}://{peer.host}:{peer.port}/health",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                    headers=self._auth_headers()
+                ) as resp:
+                    if resp.status == 200:
+                        # The peer would report our external IP if we had an endpoint for it
+                        # For now, just track connectivity
+                        data = await resp.json()
+                        external_ips.add(peer.host)  # Track which peers we can reach
             except Exception:
                 continue
 
@@ -21107,22 +21093,21 @@ print(json.dumps({{
 
             for host, port in endpoints_to_try:
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(
-                            f"{peer_scheme}://{host}:{port}/health",
-                            timeout=aiohttp.ClientTimeout(total=NAT_BLOCKED_PROBE_TIMEOUT),
-                            headers=self._auth_headers()
-                        ) as resp:
-                            if resp.status == 200:
-                                # Peer is reachable! Clear NAT-blocked status
-                                logger.info(f"NAT-blocked peer {peer.node_id} is now reachable at {host}:{port}")
-                                with self.peers_lock:
-                                    if peer.node_id in self.peers:
-                                        self.peers[peer.node_id].nat_blocked = False
-                                        self.peers[peer.node_id].nat_blocked_since = 0.0
-                                        self.peers[peer.node_id].host = host  # Update to working endpoint
-                                        self.peers[peer.node_id].consecutive_failures = 0
-                                break
+                    async with aiohttp.ClientSession() as session, session.get(
+                        f"{peer_scheme}://{host}:{port}/health",
+                        timeout=aiohttp.ClientTimeout(total=NAT_BLOCKED_PROBE_TIMEOUT),
+                        headers=self._auth_headers()
+                    ) as resp:
+                        if resp.status == 200:
+                            # Peer is reachable! Clear NAT-blocked status
+                            logger.info(f"NAT-blocked peer {peer.node_id} is now reachable at {host}:{port}")
+                            with self.peers_lock:
+                                if peer.node_id in self.peers:
+                                    self.peers[peer.node_id].nat_blocked = False
+                                    self.peers[peer.node_id].nat_blocked_since = 0.0
+                                    self.peers[peer.node_id].host = host  # Update to working endpoint
+                                    self.peers[peer.node_id].consecutive_failures = 0
+                            break
                 except Exception:
                     continue
 
@@ -21249,11 +21234,7 @@ print(json.dumps({{
             # Prefer the peer's self-reported advertised endpoint in that case so:
             # - endpoint conflict detection remains meaningful, and
             # - eligible leaders don't get filtered out as "conflicted".
-            if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-                host, port = reported_host, reported_port
-            # Prefer mesh endpoints (Tailscale) for conflict detection so multiple
-            # nodes behind the same public NAT don't collide on the same host:port.
-            elif self._is_tailscale_host(reported_host):
+            if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"} or self._is_tailscale_host(reported_host):
                 host, port = reported_host, reported_port
         return (scheme, host, port)
 
@@ -22734,7 +22715,7 @@ print(json.dumps({{
                                 return
                     except Exception:
                         continue
-        except Exception as e:
+        except Exception:
             pass  # Silent failure, will retry next cycle
 
     # =========================================================================
@@ -22956,7 +22937,7 @@ print(json.dumps({{
                         "games": row[2],
                     })
 
-        except Exception as e:
+        except Exception:
             # Silently fail - ELO summary is optional
             pass
 
@@ -25474,7 +25455,7 @@ print(json.dumps({{
             target_selfplay = max(2, target_selfplay - 1)
 
         # Scale UP only if both resources have headroom (gradual)
-        if not gpu_overloaded and not cpu_overloaded and current_jobs > 0 and (has_gpu and gpu_has_headroom and cpu_has_headroom) or (not has_gpu and cpu_has_headroom) and current_jobs < target_selfplay:
+        if (not gpu_overloaded and not cpu_overloaded and current_jobs > 0 and (has_gpu and gpu_has_headroom and cpu_has_headroom)) or ((not has_gpu and cpu_has_headroom) and current_jobs < target_selfplay):
             target_selfplay = min(target_selfplay, current_jobs + 2)
 
         # Resource pressure warnings
@@ -27268,12 +27249,12 @@ print(json.dumps({{
                             if peer_addr not in self.known_peers:
                                 self.known_peers.append(peer_addr)
                                 logger.info(f"Discovered peer: {msg.get('node_id')} at {peer_addr}")
-                except socket.timeout:
+                except TimeoutError:
                     pass
 
                 sock.close()
 
-            except Exception as e:
+            except Exception:
                 pass
 
             await asyncio.sleep(DISCOVERY_INTERVAL)

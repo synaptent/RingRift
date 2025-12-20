@@ -268,9 +268,7 @@ def replay_and_analyze_game(
                 new_candidates = []
                 for vm in candidates:
                     from_pos = getattr(vm, 'from_position', None) or getattr(vm, 'from_pos', None)
-                    if from_pos is None:
-                        new_candidates.append(vm)
-                    elif from_pos.x == from_x and from_pos.y == from_y:
+                    if from_pos is None or (from_pos.x == from_x and from_pos.y == from_y):
                         new_candidates.append(vm)
                 candidates = new_candidates
 
@@ -287,7 +285,7 @@ def replay_and_analyze_game(
             state = GameEngine.apply_move(state, matched_move, trace_mode=True)
             game_stats.moves_replayed += 1
         except Exception as e:
-            game_stats.error = f"Error at move {move_idx}: {str(e)}"
+            game_stats.error = f"Error at move {move_idx}: {e!s}"
             break
 
     return game_stats

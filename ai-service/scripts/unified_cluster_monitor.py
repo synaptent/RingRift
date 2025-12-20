@@ -26,8 +26,8 @@ __all__ = [
     "NodeHealth",
     "UnifiedClusterMonitor",
     "print_cluster_status",
-    "urlopen",
     "urllib",
+    "urlopen",
 ]
 
 

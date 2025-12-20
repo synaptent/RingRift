@@ -209,7 +209,7 @@ def main() -> None:
 
     # Define profiles
     baseline = dict(BASE_V1_BALANCED_WEIGHTS)
-    zero = {key: 0.0 for key in HEURISTIC_WEIGHT_KEYS}
+    zero = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 0.0)
 
     # Build canonical multi-board, multi-start evaluation kwargs.
     eval_cfg = build_training_eval_kwargs(

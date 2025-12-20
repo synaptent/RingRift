@@ -50,10 +50,9 @@ class TestAtomicWrite:
         file_path = tmp_path / "test.txt"
         file_path.write_text("original")
 
-        with pytest.raises(ValueError):
-            with atomic_write(file_path) as f:
-                f.write("new content")
-                raise ValueError("simulated error")
+        with pytest.raises(ValueError), atomic_write(file_path) as f:
+            f.write("new content")
+            raise ValueError("simulated error")
 
         # Original file should be unchanged
         assert file_path.read_text() == "original"
@@ -61,10 +60,9 @@ class TestAtomicWrite:
     def test_cleans_up_temp_file_on_error(self, tmp_path):
         file_path = tmp_path / "test.txt"
 
-        with pytest.raises(ValueError):
-            with atomic_write(file_path) as f:
-                f.write("content")
-                raise ValueError("simulated error")
+        with pytest.raises(ValueError), atomic_write(file_path) as f:
+            f.write("content")
+            raise ValueError("simulated error")
 
         # No temp files should remain
         temp_files = list(tmp_path.glob(".*test.txt*.tmp"))

@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> None:
     boards = _parse_board_list(args.boards)
     baseline: HeuristicWeights = dict(BASE_V1_BALANCED_WEIGHTS)
 
-    zero: HeuristicWeights = {k: 0.0 for k in HEURISTIC_WEIGHT_KEYS}
+    zero: HeuristicWeights = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 0.0)
     scaled5: HeuristicWeights = {k: float(baseline[k] * 5.0) for k in HEURISTIC_WEIGHT_KEYS}
 
     rng = np.random.default_rng(args.seed)

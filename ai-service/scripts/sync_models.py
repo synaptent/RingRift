@@ -1132,7 +1132,7 @@ def main():
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             lock_fd.write(str(os.getpid()))
             lock_fd.flush()
-        except (IOError, OSError):
+        except OSError:
             logger.warning("Another sync_models instance is already running, exiting")
             return 0  # Exit gracefully, not an error
 

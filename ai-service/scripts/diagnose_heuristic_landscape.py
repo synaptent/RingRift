@@ -39,7 +39,7 @@ from scripts.run_cmaes_optimization import evaluate_fitness  # type: ignore
 
 
 def _make_zero_weights() -> HeuristicWeights:
-    return {k: 0.0 for k in BASE_V1_BALANCED_WEIGHTS.keys()}
+    return dict.fromkeys(BASE_V1_BALANCED_WEIGHTS.keys(), 0.0)
 
 
 def _make_scaled_weights(scale: float) -> HeuristicWeights:

@@ -222,6 +222,5 @@ class TestDebugContext:
         assert x == 2
 
     def test_exception_propagates(self):
-        with pytest.raises(ValueError):
-            with debug_context("failing operation"):
-                raise ValueError("test")
+        with pytest.raises(ValueError), debug_context("failing operation"):
+            raise ValueError("test")

@@ -78,7 +78,7 @@ def extract_states_from_game(
     num_players = game.get("num_players", 2)
 
     # Initialize state
-    if "initial_state" in game and game["initial_state"]:
+    if game.get("initial_state"):
         state = GameState(**game["initial_state"])
     else:
         state = create_initial_state(board_type, num_players)

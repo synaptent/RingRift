@@ -613,7 +613,7 @@ def validate_model(model_path: Path) -> bool:
         with open(model_path, "rb") as f:
             header = f.read(16)
             return len(header) == 16
-    except (OSError, IOError):
+    except OSError:
         return False
 
 
@@ -931,7 +931,7 @@ def export_training_data(
             return False, output_path
 
     dataset_policy_target = str(config.get("dataset_policy_target", "played")).strip()
-    dataset_max_games = config.get("dataset_max_games", None)
+    dataset_max_games = config.get("dataset_max_games")
     legacy_maxn_encoding = bool(config.get("legacy_maxn_encoding", False))
     use_board_aware_encoding = board in {"square8", "square19"} and not legacy_maxn_encoding
 
@@ -957,7 +957,7 @@ def export_training_data(
         policy_search_think_time_ms = int(config.get("policy_search_think_time_ms", 50))
         policy_temperature = float(config.get("policy_temperature", 1.0))
 
-        nn_model_id = config.get("policy_nn_model_id", None)
+        nn_model_id = config.get("policy_nn_model_id")
         if nn_model_id is None:
             best_model = AI_SERVICE_ROOT / "models" / f"{board}_{players}p_best.pth"
             if best_model.exists():

@@ -71,7 +71,7 @@ def find_models_to_prune(scores: dict[str, float], threshold: float) -> list[Pat
             continue
 
         # Check if we have a score for this model
-        score = scores.get(name, None)
+        score = scores.get(name)
 
         if score is not None and score < threshold:
             to_prune.append(model_file)

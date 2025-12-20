@@ -562,15 +562,15 @@ def run_match_via_p2p(
                 error_json = json.loads(error_body)
                 last_error = f"HTTP {e.code}: {error_json.get('error', error_body[:100])}"
             except Exception:
-                last_error = f"HTTP {e.code}: {str(e)}"
+                last_error = f"HTTP {e.code}: {e!s}"
         except urllib.error.URLError as e:
             last_error = f"URL error: {e.reason}"
         except json.JSONDecodeError as e:
-            last_error = f"JSON decode error: {str(e)}"
+            last_error = f"JSON decode error: {e!s}"
         except TimeoutError:
             last_error = "Timeout (300s)"
         except Exception as e:
-            last_error = f"Exception: {type(e).__name__}: {str(e)}"
+            last_error = f"Exception: {type(e).__name__}: {e!s}"
 
         # Sleep briefly before retry
         if attempt < max_retries - 1:
@@ -727,7 +727,7 @@ def calculate_elo(results: list[MatchResult]) -> dict[str, float]:
         agents.add(r.agent_a)
         agents.add(r.agent_b)
 
-    ratings = {agent: initial_rating for agent in agents}
+    ratings = dict.fromkeys(agents, initial_rating)
 
     for r in sorted(results, key=lambda x: x.match_id):
         ra = ratings[r.agent_a]

@@ -323,7 +323,7 @@ def update_metrics():
         MODEL_ELO_IMPROVEMENT_24H.labels(config=config).set(total_improvement)
 
     # Count training iterations
-    for config in best_per_config.keys():
+    for config in best_per_config:
         iterations = count_training_iterations(config)
         TRAINING_ITERATIONS.labels(config=config).set(iterations)
 
@@ -397,7 +397,7 @@ def update_metrics():
     if HAS_RESOURCE_GUARD and update_resource_metrics is not None:
         try:
             update_resource_metrics()
-        except Exception as e:
+        except Exception:
             pass  # Silently ignore resource metric failures
 
 

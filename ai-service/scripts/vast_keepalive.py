@@ -430,7 +430,7 @@ def install_local_cron():
     print()
     print(cron_line)
     print()
-    print("Or run: (crontab -l 2>/dev/null; echo '{}') | crontab -".format(cron_line))
+    print(f"Or run: (crontab -l 2>/dev/null; echo '{cron_line}') | crontab -")
 
 
 def main():
