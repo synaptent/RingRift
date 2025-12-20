@@ -667,8 +667,10 @@ def apply_placement_moves_batch_vectorized(
     active_mask = state.get_active_mask()
 
     # Filter to games with valid moves
+    # Bug fix 2025-12-20: Check move_indices >= 0 to handle games that weren't
+    # selected for this move type (selection returns -1 for inactive games)
     has_moves = moves.moves_per_game > 0
-    valid_local_idx = move_indices < moves.moves_per_game
+    valid_local_idx = (move_indices >= 0) & (move_indices < moves.moves_per_game)
     process_mask = active_mask & has_moves & valid_local_idx
 
     if not process_mask.any():
@@ -861,8 +863,10 @@ def apply_movement_moves_batch_vectorized(
     active_mask = state.get_active_mask()
 
     # Filter to games with valid moves
+    # Bug fix 2025-12-20: Check move_indices >= 0 to handle games that weren't
+    # selected for this move type (selection returns -1 for inactive games)
     has_moves = moves.moves_per_game > 0
-    valid_local_idx = move_indices < moves.moves_per_game
+    valid_local_idx = (move_indices >= 0) & (move_indices < moves.moves_per_game)
     process_mask = active_mask & has_moves & valid_local_idx
 
     if not process_mask.any():
@@ -1139,8 +1143,10 @@ def apply_capture_moves_batch_vectorized(
     active_mask = state.get_active_mask()
 
     # Filter to games with valid moves
+    # Bug fix 2025-12-20: Check move_indices >= 0 to handle games that weren't
+    # selected for this move type (selection returns -1 for inactive games)
     has_moves = moves.moves_per_game > 0
-    valid_local_idx = move_indices < moves.moves_per_game
+    valid_local_idx = (move_indices >= 0) & (move_indices < moves.moves_per_game)
     process_mask = active_mask & has_moves & valid_local_idx
 
     if not process_mask.any():
