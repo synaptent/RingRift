@@ -307,6 +307,7 @@ def expand_gpu_jsonl_moves_to_canonical(
     gpu_moves: list[Move],
     initial_state: GameState,
     verbose: bool = False,
+    skip_invalid_moves: bool = False,
 ) -> tuple[list[Move], GameState]:
     """Expand GPU JSONL move histories into canonical phase-recorded moves.
 
@@ -389,7 +390,16 @@ def expand_gpu_jsonl_moves_to_canonical(
         # (line_formation, territory_claim) that do not map 1:1 to the canonical
         # per-phase move surface. Canonicalisation is driven by the CPU engine's
         # phase machine, so we ignore these markers here.
-        if gpu_move.type in {MoveType.LINE_FORMATION, MoveType.TERRITORY_CLAIM}:
+        #
+        # December 2025: Also skip GPU-generated skip_capture and skip_placement
+        # moves. We regenerate bookkeeping via phase requirements below to avoid
+        # duplicating skip moves in the canonical stream.
+        if gpu_move.type in {
+            MoveType.LINE_FORMATION,
+            MoveType.TERRITORY_CLAIM,
+            MoveType.SKIP_CAPTURE,
+            MoveType.SKIP_PLACEMENT,
+        }:
             continue
 
         # Advance through any implied phases until the GPU move becomes applicable.
@@ -502,6 +512,12 @@ def expand_gpu_jsonl_moves_to_canonical(
             if verbose:
                 print(f"  [ERROR] No match for GPU move {gpu_idx}")
                 print(f"         Candidates ({len(candidates)}): {[(c.type.value, c.from_pos, c.to) for c in candidates[:5]]}")
+            if skip_invalid_moves:
+                # Skip invalid GPU moves (e.g., GPU chain capture bugs)
+                # This allows importing games with minor GPU phase machine divergences
+                if verbose:
+                    print(f"  [SKIP] Skipping invalid GPU move {gpu_idx}")
+                continue
             raise RuntimeError(
                 "No matching candidate move "
                 f"(gpu_move_number={gpu_move.move_number}, gpu_player={gpu_move.player}, "
@@ -569,6 +585,7 @@ def import_game(
     source_file: str,
     verbose: bool = False,
     skip_expansion: bool = False,
+    skip_invalid_moves: bool = False,
 ) -> bool:
     """Import a single game record into the database.
 
@@ -635,7 +652,9 @@ def import_game(
             return False
     else:
         try:
-            canonical_moves, final_state = expand_gpu_jsonl_moves_to_canonical(moves, initial_state, verbose=verbose)
+            canonical_moves, final_state = expand_gpu_jsonl_moves_to_canonical(
+                moves, initial_state, verbose=verbose, skip_invalid_moves=skip_invalid_moves
+            )
         except Exception as e:
             print(f"  Warning: Failed to canonicalize moves for {game_id}: {e}")
             return False
@@ -693,8 +712,18 @@ def main():
         "--skip-expansion", action="store_true",
         help="Skip move expansion (use for random/CPU selfplay data that already has canonical moves)"
     )
+    parser.add_argument(
+        "--skip-invalid-moves", action="store_true",
+        help="Skip invalid GPU moves instead of failing (use for GPU data with phase machine bugs)"
+    )
 
     args = parser.parse_args()
+    if args.skip_invalid_moves:
+        print(
+            "[import] WARNING: --skip-invalid-moves can yield non-canonical histories. "
+            "Use only for legacy/experimental data.",
+            file=sys.stderr,
+        )
 
     if not os.path.exists(args.input):
         print(f"Error: Input file not found: {args.input}", file=sys.stderr)
@@ -725,7 +754,7 @@ def main():
                 games_failed += 1
                 continue
 
-            if import_game(db, record, source_file, verbose=args.verbose, skip_expansion=args.skip_expansion):
+            if import_game(db, record, source_file, verbose=args.verbose, skip_expansion=args.skip_expansion, skip_invalid_moves=args.skip_invalid_moves):
                 games_imported += 1
                 if games_imported % 50 == 0:
                     print(f"  Imported {games_imported} games...")

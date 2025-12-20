@@ -809,8 +809,12 @@ def generate_capture_moves_batch_vectorized(
     sd_dir_dy = dir_dy.expand(n_stacks, -1).reshape(-1)[valid_sd_indices]
     sd_dir_dx = dir_dx.expand(n_stacks, -1).reshape(-1)[valid_sd_indices]
 
-    # Min landing distance = max(stack_height, target_dist + 1)
-    sd_min_landing = torch.maximum(sd_height, sd_target_dist + 1)
+    # Landing distance constraints per RR-CANON-R100-R103:
+    # - Min landing = target_dist + 1 (must land past target)
+    # - Max landing = stack_height (can only move as far as rings in stack)
+    # If min > max, no valid capture is possible
+    sd_min_landing = sd_target_dist + 1
+    sd_max_landing = sd_height
 
     # Expand for all possible landing distances: (n_valid_sd, max_dist)
     landing_dists = torch.arange(1, max_dist + 1, device=device).view(1, -1)  # (1, max_dist)
@@ -821,6 +825,7 @@ def generate_capture_moves_batch_vectorized(
     sd_from_x_exp = sd_from_x.unsqueeze(1).expand(-1, max_dist)
     sd_target_dist.unsqueeze(1).expand(-1, max_dist)
     sd_min_landing_exp = sd_min_landing.unsqueeze(1).expand(-1, max_dist)
+    sd_max_landing_exp = sd_max_landing.unsqueeze(1).expand(-1, max_dist)
     sd_dir_dy_exp = sd_dir_dy.unsqueeze(1).expand(-1, max_dist)
     sd_dir_dx_exp = sd_dir_dx.unsqueeze(1).expand(-1, max_dist)
 
@@ -828,8 +833,9 @@ def generate_capture_moves_batch_vectorized(
     landing_y = sd_from_y_exp + sd_dir_dy_exp * landing_dists
     landing_x = sd_from_x_exp + sd_dir_dx_exp * landing_dists
 
-    # Filter 1: landing_dist >= min_landing_dist
-    valid_landing_dist = landing_dists >= sd_min_landing_exp
+    # Filter 1: landing_dist in valid range [min_landing, max_landing]
+    # This ensures: landing > target AND landing <= stack_height
+    valid_landing_dist = (landing_dists >= sd_min_landing_exp) & (landing_dists <= sd_max_landing_exp)
 
     # Filter 2: landing in bounds
     landing_in_bounds = (
@@ -1246,23 +1252,11 @@ def apply_single_chain_capture(
     """
     # Pre-extract game slice as numpy for efficient reading (avoid .item() calls)
     player = int(state.current_player[game_idx].item())
-    mc = int(state.move_count[game_idx].item())
     stack_owner_np = state.stack_owner[game_idx].cpu().numpy()
     stack_height_np = state.stack_height[game_idx].cpu().numpy()
     cap_height_np = state.cap_height[game_idx].cpu().numpy()
     marker_owner_np = state.marker_owner[game_idx].cpu().numpy()
     is_collapsed_np = state.is_collapsed[game_idx].cpu().numpy()
-
-    # Record in history - chain captures use CONTINUE_CAPTURE_SEGMENT and CHAIN_CAPTURE phase
-    if mc < state.max_history_moves:
-        state.move_history[game_idx, mc, 0] = MoveType.CONTINUE_CAPTURE_SEGMENT
-        state.move_history[game_idx, mc, 1] = player
-        state.move_history[game_idx, mc, 2] = from_y
-        state.move_history[game_idx, mc, 3] = from_x
-        state.move_history[game_idx, mc, 4] = to_y
-        state.move_history[game_idx, mc, 5] = to_x
-        state.move_history[game_idx, mc, 6] = GamePhase.CHAIN_CAPTURE
-    state.move_count[game_idx] += 1
 
     # Capture move representation:
     # - (from -> landing) is passed in as (to_y, to_x)
@@ -1274,6 +1268,7 @@ def apply_single_chain_capture(
     dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
     dist = max(abs(to_y - from_y), abs(to_x - from_x))
 
+    # Find target BEFORE recording to history (December 2025 bugfix)
     target_y = None
     target_x = None
     for step in range(1, dist):
@@ -1285,7 +1280,14 @@ def apply_single_chain_capture(
             break
 
     if target_y is None or target_x is None:
-        # Defensive fallback: treat as movement.
+        # No valid target found - this should not happen if generate_chain_capture_moves_from_position
+        # is working correctly. Log warning and return without recording invalid move.
+        import logging
+        logging.warning(
+            f"apply_single_chain_capture: No target found from ({from_y},{from_x}) to ({to_y},{to_x}) "
+            f"in game {game_idx}. This indicates a bug in chain capture generation."
+        )
+        # Still move the stack as a fallback, but don't record as capture
         state.stack_height[game_idx, to_y, to_x] = attacker_height
         state.stack_owner[game_idx, to_y, to_x] = player
         state.cap_height[game_idx, to_y, to_x] = min(attacker_cap_height, attacker_height)
@@ -1294,6 +1296,19 @@ def apply_single_chain_capture(
         state.cap_height[game_idx, from_y, from_x] = 0
         state.marker_owner[game_idx, from_y, from_x] = player
         return to_y, to_x
+
+    # Record in history AFTER verifying target exists (December 2025 bugfix)
+    # Chain captures use CONTINUE_CAPTURE_SEGMENT and CHAIN_CAPTURE phase
+    mc = int(state.move_count[game_idx].item())
+    if mc < state.max_history_moves:
+        state.move_history[game_idx, mc, 0] = MoveType.CONTINUE_CAPTURE_SEGMENT
+        state.move_history[game_idx, mc, 1] = player
+        state.move_history[game_idx, mc, 2] = from_y
+        state.move_history[game_idx, mc, 3] = from_x
+        state.move_history[game_idx, mc, 4] = to_y
+        state.move_history[game_idx, mc, 5] = to_x
+        state.move_history[game_idx, mc, 6] = GamePhase.CHAIN_CAPTURE
+    state.move_count[game_idx] += 1
 
     # Process markers along the full path excluding the implicit target cell.
     for step in range(1, dist):
