@@ -83,6 +83,7 @@ class EBMOConfig:
     projection_temperature: float = 0.3  # Lower for sharper projection
     project_every_n_steps: int = 10
     use_direct_eval: bool = True  # Skip gradient descent, directly evaluate all moves
+    skip_penalty: float = 5.0  # Energy penalty for skip/pass moves when alternatives exist
 
     # Training
     contrastive_temperature: float = 0.1

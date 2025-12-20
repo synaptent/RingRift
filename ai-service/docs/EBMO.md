@@ -219,6 +219,7 @@ class EBMOConfig:
     projection_temperature: float = 0.3
     project_every_n_steps: int = 10
     use_direct_eval: bool = True  # Skip gradient descent, score legal moves
+    skip_penalty: float = 5.0     # Penalize skip/pass moves when alternatives exist
 
     # Training
     contrastive_temperature: float = 0.1
@@ -233,7 +234,8 @@ class EBMOConfig:
 
 **Direct evaluation mode:** When `use_direct_eval=True`, EBMO skips gradient descent
 and directly scores every legal move, picking the lowest-energy option. Set it to
-`False` if you want the original gradient-descent projection pipeline.
+`False` if you want the original gradient-descent projection pipeline. `skip_penalty`
+adds an energy offset to skip/pass moves when non-skip alternatives exist.
 
 ### AIConfig Integration
 

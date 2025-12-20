@@ -281,6 +281,13 @@ class EBMO_AI(BaseAI):
 
         return best_move
 
+    # Skip/pass move types that should be penalized when other options exist
+    SKIP_MOVE_TYPES = {
+        'skip_placement', 'skip_capture', 'skip_territory_processing',
+        'no_placement_action', 'no_movement_action', 'no_line_action',
+        'no_territory_action', 'skip_recovery',
+    }
+
     def _direct_eval_move(
         self,
         state_embed: torch.Tensor,
@@ -304,6 +311,23 @@ class EBMO_AI(BaseAI):
             # Compute energy for all legal moves at once
             state_batch = state_embed.unsqueeze(0).expand(len(valid_moves), -1)
             energies = self.network.compute_energy(state_batch, legal_embeddings)
+
+            # Penalize skip/pass moves if there are non-skip alternatives
+            # This prevents the model from always choosing to pass
+            skip_penalty = getattr(self.ebmo_config, 'skip_penalty', 5.0)
+            if skip_penalty > 0:
+                has_non_skip = False
+                skip_indices = []
+                for i, move in enumerate(valid_moves):
+                    if move.type.value in self.SKIP_MOVE_TYPES:
+                        skip_indices.append(i)
+                    else:
+                        has_non_skip = True
+
+                # Only penalize skips if there are non-skip alternatives
+                if has_non_skip and skip_indices:
+                    for idx in skip_indices:
+                        energies[idx] += skip_penalty
 
             # Find move with lowest energy
             best_idx = energies.argmin().item()
