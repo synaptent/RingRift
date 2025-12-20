@@ -154,6 +154,29 @@ export const options = {
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
 const API_PREFIX = '/api';
 
+const BOARD_TYPES = ['square8', 'square19', 'hexagonal'];
+const AI_TYPES = new Set(['random', 'heuristic', 'minimax', 'mcts', 'descent']);
+const AI_MODES = new Set(['service', 'local_heuristic']);
+const LOADTEST_AI_MODE = AI_MODES.has(__ENV.LOADTEST_AI_MODE)
+  ? __ENV.LOADTEST_AI_MODE
+  : 'service';
+const LOADTEST_AI_TYPE = AI_TYPES.has(__ENV.LOADTEST_AI_TYPE)
+  ? __ENV.LOADTEST_AI_TYPE
+  : 'heuristic';
+const RAW_AI_DIFFICULTY = Number(__ENV.LOADTEST_AI_DIFFICULTY);
+const LOADTEST_AI_DIFFICULTY = Number.isFinite(RAW_AI_DIFFICULTY)
+  ? RAW_AI_DIFFICULTY
+  : 5;
+const LOADTEST_AI_COUNT = Number.isFinite(Number(__ENV.LOADTEST_AI_COUNT))
+  ? Number(__ENV.LOADTEST_AI_COUNT)
+  : null;
+const LOADTEST_MAX_PLAYERS = Number.isFinite(Number(__ENV.LOADTEST_MAX_PLAYERS))
+  ? Number(__ENV.LOADTEST_MAX_PLAYERS)
+  : null;
+const LOADTEST_BOARD_TYPE = BOARD_TYPES.includes(__ENV.LOADTEST_BOARD_TYPE)
+  ? __ENV.LOADTEST_BOARD_TYPE
+  : null;
+
 // Track created games per VU for state checking
 let myGameId = null;
 let myGamePollCount = 0;
@@ -361,13 +384,20 @@ function createGame(baseUrl, token) {
   // Step 1: Create a game (contributes to concurrent count) using the
   // canonical create-game payload shape from the API:
   //   { boardType, maxPlayers, isPrivate, timeControl, isRated, aiOpponents? }
-  const boardTypes = ['square8', 'square19', 'hexagonal'];
-  const boardType = boardTypes[__VU % boardTypes.length];
+  const boardType =
+    LOADTEST_BOARD_TYPE || BOARD_TYPES[__VU % BOARD_TYPES.length];
 
   const maxPlayersOptions = [2, 3, 4];
-  const maxPlayers = maxPlayersOptions[__VU % maxPlayersOptions.length];
+  const maxPlayers =
+    typeof LOADTEST_MAX_PLAYERS === 'number' && LOADTEST_MAX_PLAYERS >= 2
+      ? LOADTEST_MAX_PLAYERS
+      : maxPlayersOptions[__VU % maxPlayersOptions.length];
 
-  const aiCount = 1 + (__VU % 2); // 1-2 AI opponents
+  const rawAiCount =
+    typeof LOADTEST_AI_COUNT === 'number' && LOADTEST_AI_COUNT >= 0
+      ? LOADTEST_AI_COUNT
+      : 1 + (__VU % 2); // 1-2 AI opponents
+  const aiCount = Math.min(rawAiCount, Math.max(maxPlayers - 1, 0));
   const hasAI = aiCount > 0;
 
   const gameConfig = {
@@ -384,9 +414,9 @@ function createGame(baseUrl, token) {
     ...(hasAI && {
       aiOpponents: {
         count: aiCount,
-        difficulty: Array(aiCount).fill(5),
-        mode: 'service',
-        aiType: 'heuristic',
+        difficulty: Array(aiCount).fill(LOADTEST_AI_DIFFICULTY),
+        mode: LOADTEST_AI_MODE,
+        aiType: LOADTEST_AI_TYPE,
       },
     }),
   };

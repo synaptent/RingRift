@@ -85,6 +85,19 @@ const concurrentActiveGames = new Gauge('concurrent_active_games');
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
 const API_PREFIX = '/api';
 
+const AI_TYPES = new Set(['random', 'heuristic', 'minimax', 'mcts', 'descent']);
+const AI_MODES = new Set(['service', 'local_heuristic']);
+const LOADTEST_AI_MODE = AI_MODES.has(__ENV.LOADTEST_AI_MODE)
+  ? __ENV.LOADTEST_AI_MODE
+  : 'service';
+const LOADTEST_AI_TYPE = AI_TYPES.has(__ENV.LOADTEST_AI_TYPE)
+  ? __ENV.LOADTEST_AI_TYPE
+  : 'heuristic';
+const RAW_AI_DIFFICULTY = Number(__ENV.LOADTEST_AI_DIFFICULTY);
+const LOADTEST_AI_DIFFICULTY = Number.isFinite(RAW_AI_DIFFICULTY)
+  ? RAW_AI_DIFFICULTY
+  : 5;
+
 // WebSocket origin used for Socket.IO connections.
 // Defaults to BASE_URL with http(s) → ws(s) when WS_URL is not set.
 const WS_URL = (() => {
@@ -566,9 +579,9 @@ export default function (data) {
       isRated: false,
       aiOpponents: {
         count: 1,
-        difficulty: [5],
-        mode: 'service',
-        aiType: 'heuristic',
+        difficulty: [LOADTEST_AI_DIFFICULTY],
+        mode: LOADTEST_AI_MODE,
+        aiType: LOADTEST_AI_TYPE,
       },
     };
 

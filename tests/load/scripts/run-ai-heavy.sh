@@ -23,6 +23,8 @@ set -euo pipefail
 #   SKIP_PREFLIGHT_CHECKS - Set to 'true' to skip extended preflight validation
 #   SEED_LOADTEST_USERS - If 'true', seed load-test users before running (uses scripts/seed-loadtest-users.js)
 #   LOADTEST_USER_COUNT / LOADTEST_USER_DOMAIN / LOADTEST_USER_OFFSET / LOADTEST_USER_PASSWORD / LOADTEST_USER_ROLE - Seeding overrides
+#   LOADTEST_AI_MODE / LOADTEST_AI_TYPE / LOADTEST_AI_DIFFICULTY - AI config overrides
+#   LOADTEST_AI_COUNT / LOADTEST_MAX_PLAYERS / LOADTEST_BOARD_TYPE - Game config overrides
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +34,12 @@ PROJECT_ROOT="$(dirname "$(dirname "$LOAD_DIR")")"
 SCENARIO_ID="BCAP_SQ8_4P_AI_HEAVY_75G_300P"
 EXPECTED_VUS=75
 EXPECTED_DURATION_S=780
+AI_MODE="${LOADTEST_AI_MODE:-service}"
+AI_TYPE="${LOADTEST_AI_TYPE:-mcts}"
+AI_DIFFICULTY="${LOADTEST_AI_DIFFICULTY:-5}"
+AI_COUNT="${LOADTEST_AI_COUNT:-3}"
+MAX_PLAYERS="${LOADTEST_MAX_PLAYERS:-4}"
+BOARD_TYPE="${LOADTEST_BOARD_TYPE:-square8}"
 
 # Default to staging for this capacity probe
 TARGET="${1:-staging}"
@@ -39,6 +47,8 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_DIR="$LOAD_DIR/results"
 RESULT_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}.json"
 SUMMARY_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}_summary.json"
+AI_METRICS_BASELINE_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}_ai_metrics_baseline.txt"
+AI_METRICS_AFTER_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}_ai_metrics_after.txt"
 
 # Color output helpers
 RED='\033[0;31m'
@@ -62,6 +72,15 @@ log_warning() {
 
 log_error() {
     echo -e "${RED}❌${NC} $1"
+}
+
+summarize_ai_moves() {
+    local metrics_file="$1"
+    if [[ ! -f "$metrics_file" ]]; then
+        echo ""
+        return
+    fi
+    awk '/^ai_move_requests_total/ { sum += $2 } END { if (sum == "") sum = 0; printf "%d", sum }' "$metrics_file"
 }
 
 # Set base URL based on target
@@ -121,6 +140,8 @@ echo "╠═══════════════════════�
 echo "║  Target:        $TARGET"
 echo "║  Base URL:      $BASE_URL"
 echo "║  WS URL:        $WS_URL"
+echo "║  AI Profile:    mode=${AI_MODE} type=${AI_TYPE} diff=${AI_DIFFICULTY} count=${AI_COUNT}"
+echo "║  Game Config:   board=${BOARD_TYPE} maxPlayers=${MAX_PLAYERS}"
 echo "║  Results:       $(basename "$RESULT_FILE")"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
@@ -162,11 +183,25 @@ else
     exit 1
 fi
 
-AI_HEALTH_URL="${AI_SERVICE_URL:-http://localhost:8000}/health"
+AI_HEALTH_URL="${AI_SERVICE_URL:-http://localhost:8001}/health"
 if curl -sf "$AI_HEALTH_URL" > /dev/null 2>&1; then
     log_success "AI service is healthy"
 else
     log_warning "AI service not responding at $AI_HEALTH_URL (optional)"
+fi
+
+# Capture AI service metrics baseline (optional)
+AI_METRICS_URL="${AI_SERVICE_URL:-http://localhost:8001}/metrics"
+AI_METRICS_BASELINE_SUM=""
+if [[ "${SKIP_AI_METRICS_CHECK:-false}" != "true" ]]; then
+    if curl -sf "$AI_METRICS_URL" > "$AI_METRICS_BASELINE_FILE"; then
+        AI_METRICS_BASELINE_SUM="$(summarize_ai_moves "$AI_METRICS_BASELINE_FILE")"
+        log_info "AI service move requests (baseline): ${AI_METRICS_BASELINE_SUM:-0}"
+    else
+        log_warning "AI metrics not reachable at $AI_METRICS_URL; skipping baseline capture"
+    fi
+else
+    log_warning "Skipping AI metrics capture (SKIP_AI_METRICS_CHECK=true)"
 fi
 
 # Warning and confirmation
@@ -223,6 +258,12 @@ K6_ARGS=(
     "--env" "WS_URL=$WS_URL"
     "--env" "THRESHOLD_ENV=$THRESHOLD_ENV"
     "--env" "LOAD_PROFILE=target_scale"
+    "--env" "LOADTEST_AI_MODE=$AI_MODE"
+    "--env" "LOADTEST_AI_TYPE=$AI_TYPE"
+    "--env" "LOADTEST_AI_DIFFICULTY=$AI_DIFFICULTY"
+    "--env" "LOADTEST_AI_COUNT=$AI_COUNT"
+    "--env" "LOADTEST_MAX_PLAYERS=$MAX_PLAYERS"
+    "--env" "LOADTEST_BOARD_TYPE=$BOARD_TYPE"
     "--tag" "test=ai-heavy"
     "--tag" "scenario_id=$SCENARIO_ID"
     "--tag" "target=$TARGET"
@@ -266,6 +307,21 @@ START_TIME=$(date +%s)
 
 k6 run "${K6_ARGS[@]}" "$SCENARIO_FILE"
 K6_EXIT_CODE=$?
+
+# Capture AI service metrics after the run (optional)
+if [[ "${SKIP_AI_METRICS_CHECK:-false}" != "true" ]]; then
+    if curl -sf "$AI_METRICS_URL" > "$AI_METRICS_AFTER_FILE"; then
+        AI_METRICS_AFTER_SUM="$(summarize_ai_moves "$AI_METRICS_AFTER_FILE")"
+        if [[ -n "$AI_METRICS_BASELINE_SUM" ]]; then
+            AI_METRICS_DELTA=$((AI_METRICS_AFTER_SUM - AI_METRICS_BASELINE_SUM))
+            log_info "AI service move requests (after): ${AI_METRICS_AFTER_SUM} (delta: ${AI_METRICS_DELTA})"
+        else
+            log_info "AI service move requests (after): ${AI_METRICS_AFTER_SUM}"
+        fi
+    else
+        log_warning "AI metrics not reachable at $AI_METRICS_URL; skipping post-run capture"
+    fi
+fi
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

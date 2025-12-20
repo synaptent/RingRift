@@ -167,6 +167,15 @@ Load-test user pool controls (optional):
 - `LOADTEST_USER_POOL_SIZE`, `LOADTEST_USER_POOL_PASSWORD`
 - `LOADTEST_USER_POOL_PREFIX`, `LOADTEST_USER_POOL_DOMAIN`
 
+AI load overrides (optional):
+
+- `LOADTEST_AI_MODE` – `service` (default) or `local_heuristic`
+- `LOADTEST_AI_TYPE` – `random`, `heuristic` (default), `minimax`, `mcts`, `descent`
+- `LOADTEST_AI_DIFFICULTY` – numeric difficulty (default: 5)
+- `LOADTEST_AI_COUNT` – number of AI seats (scenario-specific caps apply)
+- `LOADTEST_MAX_PLAYERS` – force maxPlayers when creating games
+- `LOADTEST_BOARD_TYPE` – `square8`, `square19`, or `hexagonal`
+
 ### Scenario 1: Game Creation (`game-creation.js`)
 
 **Purpose:** Validate game creation latency and throughput under load.

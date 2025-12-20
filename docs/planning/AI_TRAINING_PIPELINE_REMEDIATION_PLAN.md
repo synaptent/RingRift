@@ -573,16 +573,17 @@ The AI Training Pipeline Remediation is complete when:
 
 ## Revision History
 
-| Version | Date       | Changes                                                                              |
-| ------- | ---------- | ------------------------------------------------------------------------------------ |
-| 1.0     | 2025-12-20 | Initial remediation plan created                                                     |
-| 1.1     | 2025-12-20 | AI-02 (hexagonal): Schema regenerated, parity blocker identified                     |
-| 1.2     | 2025-12-20 | Updated large-board status: schema complete, parity failures due to phase invariants |
-| 1.3     | 2025-12-20 | Aligned Python territory eligibility with canonical elimination rules (height-1 ok)  |
-| 1.4     | 2025-12-20 | Disabled fast territory detection for large-board canonical selfplay gates           |
-| 1.5     | 2025-12-20 | Forced phase/move invariant checks on canonical selfplay runs                        |
-| 1.6     | 2025-12-20 | Record actual phase-at-move-time in GameReplayDB for canonical validation            |
-| 1.7     | 2025-12-20 | Force trace-mode for canonical selfplay to prevent implicit ANM forced eliminations  |
+| Version | Date       | Changes                                                                                                                                                             |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2025-12-20 | Initial remediation plan created                                                                                                                                    |
+| 1.1     | 2025-12-20 | AI-02 (hexagonal): Schema regenerated, parity blocker identified                                                                                                    |
+| 1.2     | 2025-12-20 | Updated large-board status: schema complete, parity failures due to phase invariants                                                                                |
+| 1.3     | 2025-12-20 | Aligned Python territory eligibility with canonical elimination rules (height-1 ok)                                                                                 |
+| 1.4     | 2025-12-20 | Disabled fast territory detection for large-board canonical selfplay gates                                                                                          |
+| 1.5     | 2025-12-20 | Forced phase/move invariant checks on canonical selfplay runs                                                                                                       |
+| 1.6     | 2025-12-20 | Record actual phase-at-move-time in GameReplayDB for canonical validation                                                                                           |
+| 1.7     | 2025-12-20 | Force trace-mode for canonical selfplay to prevent implicit ANM forced eliminations                                                                                 |
+| 1.8     | 2025-12-20 | **AI-02c COMPLETE**: Fixed Python \_end_turn() and TS turnOrchestrator no_territory_action handling. Phase parity now works for hexagonal (0 semantic divergences). |
 
 ---
 
@@ -767,3 +768,63 @@ Before AI-03 can proceed for square19:
 
 1. Fix forced-elimination phase transition in self-play generation
 2. Re-run AI-02 for square19 after fix
+
+### AI-02c: Fix Python Phase Transition Timing Bug (2025-12-20)
+
+**Status:** ✅ COMPLETE - Phase parity fixed for hexagonal
+
+**Context:** AI-02b diagnosed a Python parity bug that blocked hexagonal (and potentially square19) canonical DB generation. The bug caused `no_placement_action` moves to be recorded with `territory_processing` phase metadata.
+
+**Root Cause Identified:**
+
+Two complementary bugs were discovered:
+
+1. **Python `_end_turn()` bug** (ai-service/app/\_game_engine_legacy.py lines 1436-1441):
+   - When all players are exhausted (no rings anywhere), the function didn't set `current_phase = RING_PLACEMENT`
+   - This left the phase in whatever state it was before turn rotation
+
+2. **TypeScript `turnOrchestrator.ts` bug** (lines 1517-1521):
+   - `no_territory_action` was NOT treated as a turn-ending move (unlike `skip_territory_processing`)
+   - This caused `processPostMovePhases()` to run after `applyMoveWithChainInfo()` for `no_territory_action`
+   - Inside `processPostMovePhases()`, lines 2609-2632 check if `currentPhase === 'ring_placement'` and transition to `line_processing`!
+   - Since `applyMoveWithChainInfo()` for `no_territory_action` already sets `currentPhase = 'ring_placement'` after rotating players, this caused TS to incorrectly go BACK to `line_processing`
+
+**Fixes Applied:**
+
+1. **Python fix** (already applied in previous AI-02 attempts):
+
+   ```python
+   # ai-service/app/_game_engine_legacy.py, lines 1436-1441
+   game_state.current_phase = GamePhase.RING_PLACEMENT
+   game_state.must_move_from_stack_key = None
+   ```
+
+2. **TypeScript fix** (new in AI-02c):
+   ```typescript
+   // src/shared/engine/orchestration/turnOrchestrator.ts, lines 1517-1523
+   // RR-PARITY-FIX-2025-12-20: no_territory_action IS turn-ending now that applyMoveWithChainInfo
+   // handles forced elimination check and turn rotation inline.
+   const isTurnEndingTerritoryMove =
+     move.type === 'skip_territory_processing' || move.type === 'no_territory_action';
+   ```
+
+**Test Results:**
+
+1. **Hexagonal selfplay (5 games):**
+   - `games_with_semantic_divergence: 0` ✅
+   - `games_completed: 4` (1 game hit unrelated invalid placement position)
+   - Phase parity bug FIXED
+
+2. **Square8 regression test (5 games):**
+   - `games_with_semantic_divergence: 0` ✅
+   - `games_with_structural_issues: 0` ✅
+   - `passed_canonical_parity_gate: true` ✅
+
+**Remaining Issue (Not AI-02c Scope):**
+
+One hexagonal game hit `Invalid placement position: (0, -12)` - this is an **out-of-bounds move generation bug** in Python AI, not a phase parity issue. This should be addressed separately.
+
+**Files Modified:**
+
+- `ai-service/app/_game_engine_legacy.py` (lines 1436-1441) - \_end_turn() phase setting
+- `src/shared/engine/orchestration/turnOrchestrator.ts` (lines 1517-1523) - isTurnEndingTerritoryMove flag

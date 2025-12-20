@@ -1394,6 +1394,12 @@ Investigation shows `AI_SERVICE_URL=http://ai-service:8001` is correctly configu
 2. Add AI service latency to Grafana dashboards
 3. Consider if heuristic AI should also route to Python for consistency
 
+#### Remediation Applied (2025-12-20)
+
+1. Added `LOADTEST_AI_*` overrides to `concurrent-games.js` and `websocket-gameplay.js` so AI mode/type/difficulty can be forced at runtime.
+2. Updated `run-ai-heavy.sh` to pin the AI-heavy probe to square8/4p with 3 AI seats and `aiType=mcts` in `service` mode by default.
+3. Next AI-heavy run should confirm AI service move requests via `/metrics` and capture the delta in the PV-09 report.
+
 ### Conclusion
 
 **PV-09 partially passes.** The WebSocket gameplay under AI-heavy load demonstrates excellent performance:
@@ -2212,3 +2218,4 @@ The Rate Limiting Configuration Guide includes:
 | 1.8     | 2025-12-20 | **PV-12 completed. ✅ PASS.** Production Validation Gate Checklist created at `docs/production/PRODUCTION_VALIDATION_GATE.md`. Document includes all validation criteria from PV-01 through PV-11, machine-parseable checkbox syntax, clear PASS/FAIL criteria, command references, and known gaps section. Production validation remediation plan (PV-01 through PV-12) is now complete.                                                                                                                                                |
 | 1.9     | 2025-12-20 | **PV-13 completed. ✅ PASS with known gap.** WebSocket Load Test Validation: reviewed `websocket-gameplay.js` (1356 lines), documented test coverage (connection, handshake, move RTT, stalls), identified Python AI service gap (heuristic AI runs locally, not via Python service). Gap is acceptable for v1.0 - AI service health validated in PV-10, heuristic AI is default. Future enhancement path documented (direct AI service test or minimax/mcts AI types).                                                                  |
 | 1.10    | 2025-12-20 | **PV-14 completed. ✅ PASS.** Rate Limit Documentation: created comprehensive `docs/operations/RATE_LIMITING.md` with all environment variables (40+), production vs staging configuration table, security requirements (bypass disabled in production), bypass mechanism documentation, monitoring/alerting guidance, and troubleshooting guide. **Production Validation Remediation Plan (PV-01 through PV-14) is now COMPLETE.**                                                                                                      |
+| 1.11    | 2025-12-20 | **PV-09 remediation wiring.** Added `LOADTEST_AI_*` overrides in AI-heavy scenarios and pinned the AI-heavy runner to `mode=service`, `aiType=mcts`, square8/4p/3-AI seats by default to exercise the Python AI service.                                                                                                                                                                                                                                                                                                                 |
