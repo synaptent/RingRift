@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from app.core.error_handler import retry_async, SSHError, RetryableError
+from app.core.error_handler import retry_async, RetryableError
 from app.utils.resource_guard import (
     can_proceed,
     wait_for_resources,
