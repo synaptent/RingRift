@@ -145,11 +145,10 @@ class NotificationManager:
         if len(self._notifications_this_hour) >= self.config.max_per_hour:
             return False
 
-        # Check interval
-        if now - self._last_notification_time < self.config.min_interval_seconds:
-            # Allow critical notifications to bypass interval
-            if severity != "critical":
-                return False
+        # Check interval (allow critical notifications to bypass)
+        if (now - self._last_notification_time < self.config.min_interval_seconds
+                and severity != "critical"):
+            return False
 
         return True
 

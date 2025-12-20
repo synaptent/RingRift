@@ -236,17 +236,16 @@ class DefaultRulesEngine(RulesEngine):
                 )
             ]
 
-        if not moves:
-            # No interactive moves – only attempt to synthesize bookkeeping
-            # moves when this player is actually on turn in an ACTIVE game.
-            if state.current_player == player:
-                game_status = state.game_status
-                status_str = (
-                    game_status.value
-                    if hasattr(game_status, "value")
-                    else str(game_status)
-                )
-                if status_str == GameStatus.ACTIVE.value:
+        # No interactive moves – only attempt to synthesize bookkeeping
+        # moves when this player is actually on turn in an ACTIVE game.
+        if not moves and state.current_player == player:
+            game_status = state.game_status
+            status_str = (
+                game_status.value
+                if hasattr(game_status, "value")
+                else str(game_status)
+            )
+            if status_str == GameStatus.ACTIVE.value:
                     requirement = GameEngine.get_phase_requirement(
                         state,
                         player,
