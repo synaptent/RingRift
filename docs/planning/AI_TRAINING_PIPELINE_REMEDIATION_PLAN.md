@@ -536,8 +536,8 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 ### Phase 1 Exit Criteria
 
-- [ ] AI-01: Schema issues diagnosed and documented
-- [ ] AI-02: Both large-board DBs regenerated with `game_moves` table
+- [ ] AI-01: Parity/phase invariant issues diagnosed and documented
+- [ ] AI-02: Both large-board DBs regenerated with schema-complete tables and no phase invariant violations
 - [ ] AI-03: Both DBs pass parity gate with `canonical_ok: true`
 
 ### Phase 2 Exit Criteria
@@ -572,10 +572,11 @@ The AI Training Pipeline Remediation is complete when:
 
 ## Revision History
 
-| Version | Date       | Changes                                                          |
-| ------- | ---------- | ---------------------------------------------------------------- |
-| 1.0     | 2025-12-20 | Initial remediation plan created                                 |
-| 1.1     | 2025-12-20 | AI-02 (hexagonal): Schema regenerated, parity blocker identified |
+| Version | Date       | Changes                                                                              |
+| ------- | ---------- | ------------------------------------------------------------------------------------ |
+| 1.0     | 2025-12-20 | Initial remediation plan created                                                     |
+| 1.1     | 2025-12-20 | AI-02 (hexagonal): Schema regenerated, parity blocker identified                     |
+| 1.2     | 2025-12-20 | Updated large-board status: schema complete, parity failures due to phase invariants |
 
 ---
 
@@ -652,3 +653,35 @@ The hexagonal parity gate is blocked by a cross-language phase/move invariant bu
 - `ai-service/data/games/db_health.canonical_hexagonal.json` (health summary)
 - `ai-service/data/games/canonical_hexagonal.db.parity_gate.json` (parity gate output)
 - `ai-service/data/games/canonical_hexagonal.db.parity_summary.json` (parity summary)
+
+### AI-02: Regenerate canonical_square19.db (2025-12-20)
+
+**Status:** ⚠️ PARTIAL SUCCESS - Schema complete, parity bug blocking further generation
+
+**Actions Recorded (db_health.canonical_square19.json):**
+
+1. ✅ Archived prior DB to `ai-service/data/games/canonical_square19.db.archived_20251220_052509`
+2. ✅ Ran `generate_canonical_selfplay.py --board-type square19 --num-games 200`
+3. ✅ New DB created with schema v9 (all 9 tables present)
+4. ⚠️ Only 1 game recorded due to parity divergence on first game
+
+**Data Verification:**
+
+- Games: 1
+- Moves: 733 (in `game_moves` table)
+- Health summary: `ai-service/data/games/db_health.canonical_square19.json`
+
+**Blocking Issue Identified:**
+The parity gate fails with a **TS↔Python phase/move invariant violation**:
+
+```
+[PHASE_MOVE_INVARIANT] Cannot apply move type 'forced_elimination' in phase 'territory_processing'
+```
+
+**Root Cause:** Self-play/engine emitted a `forced_elimination` move without transitioning into the `forced_elimination` phase.
+
+**Next Steps (AI-03 Blocker):**
+Before AI-03 can proceed for square19:
+
+1. Fix forced-elimination phase transition in self-play generation
+2. Re-run AI-02 for square19 after fix
