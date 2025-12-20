@@ -582,6 +582,7 @@ The AI Training Pipeline Remediation is complete when:
 | 1.4     | 2025-12-20 | Disabled fast territory detection for large-board canonical selfplay gates           |
 | 1.5     | 2025-12-20 | Forced phase/move invariant checks on canonical selfplay runs                        |
 | 1.6     | 2025-12-20 | Record actual phase-at-move-time in GameReplayDB for canonical validation            |
+| 1.7     | 2025-12-20 | Force trace-mode for canonical selfplay to prevent implicit ANM forced eliminations  |
 
 ---
 
@@ -644,6 +645,24 @@ The AI Training Pipeline Remediation is complete when:
 **Files Modified:**
 
 - `ai-service/app/db/game_replay.py`
+
+### AI-02: Force trace-mode for canonical selfplay (2025-12-20)
+
+**Status:** ✅ CODE FIXED (awaiting regeneration + gate re-run)
+
+**Context:** Canonical selfplay relies on explicit bookkeeping (no\_\*\_action, forced_elimination) moves. DefaultRulesEngine was applying moves with `trace_mode=False`, allowing implicit ANM resolution to silently apply forced eliminations and desync phase history. This manifested as `no_placement_action` being replayed while still in `territory_processing`.
+
+**Actions Completed:**
+
+1. ✅ Added a `trace_mode` kwarg to `DefaultRulesEngine.apply_move` and wired it into `GameEngine.apply_move`.
+2. ✅ Updated `RingRiftEnv.step` to pass `trace_mode=True` for both player moves and auto-generated bookkeeping moves.
+3. ✅ Disabled ANM auto-resolution in `GameEngine.apply_move` when `trace_mode=True` so forced elimination is always explicit.
+
+**Files Modified:**
+
+- `ai-service/app/_game_engine_legacy.py`
+- `ai-service/app/rules/default_engine.py`
+- `ai-service/app/training/env.py`
 
 ### AI-02: Regenerate canonical_hexagonal.db (2025-12-20)
 

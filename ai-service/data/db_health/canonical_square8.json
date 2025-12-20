@@ -7,10 +7,10 @@
       "path": "data/games/staging/improvement_loop/selfplay_iter0_square8_2p.db",
       "games": 212,
       "schema_version": "v7",
-      "parity_check": "PENDING",
-      "failure_reason": null,
-      "canonical_status": "checking",
-      "notes": "Has game_moves table, TS replay running"
+      "parity_check": "FAIL",
+      "failure_reason": "151 semantic divergence, 33 structural issues (pre-fix data)",
+      "canonical_status": "not_canonical",
+      "notes": "Generated before parity fix b8175468 - data is non-canonical"
     },
     {
       "path": "data/games/staging/improvement_loop/selfplay_iter1_square8_2p.db",
