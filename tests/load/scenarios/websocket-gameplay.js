@@ -40,6 +40,9 @@ const wsMoveStalled = new Counter('ws_move_stalled_total');
 
 const wsConnectionSuccess = new Rate('ws_connection_success_rate');
 const wsHandshakeSuccess = new Rate('ws_handshake_success_rate');
+const wsReconnectAttempts = new Counter('ws_reconnect_attempts_total');
+const wsReconnectSuccess = new Rate('ws_reconnect_success_rate');
+const wsReconnectLatency = new Trend('ws_reconnect_latency_ms');
 
 const wsErrorMoveRejected = new Counter('ws_error_move_rejected_total');
 const wsErrorAccessDenied = new Counter('ws_error_access_denied_total');
@@ -111,6 +114,9 @@ const MOVE_STALL_THRESHOLD_MS = Number(
   __ENV.WS_MOVE_STALL_THRESHOLD_MS || moveSubmissionSlo.stall_threshold_ms || 2000
 );
 const MOVE_RTT_TIMEOUT_MS = Number(__ENV.WS_MOVE_RTT_TIMEOUT_MS || 10000);
+const WS_RECONNECT_PROBABILITY = Number(__ENV.WS_RECONNECT_PROBABILITY || 0);
+const WS_RECONNECT_MAX_PER_GAME = Number(__ENV.WS_RECONNECT_MAX_PER_GAME || 1);
+const WS_RECONNECT_DELAY_MS = Number(__ENV.WS_RECONNECT_DELAY_MS || 1000);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // k6 options (scenarios + thresholds)
@@ -369,6 +375,10 @@ let myGameCreatedAt = 0;
 let gamesCompletedByVu = 0;
 let myLastObservedMoveNumberForPlayer = 0;
 let hasActiveGame = false;
+let reconnectsForGame = 0;
+let pendingReconnect = false;
+let reconnectStartAtMs = 0;
+let reconnectDeadlineAtMs = 0;
 
 function markGameActive() {
   if (!hasActiveGame) {
@@ -498,6 +508,10 @@ export default function (data) {
       myMovesInCurrentGame = 0;
       myGameCreatedAt = Date.now();
       myLastObservedMoveNumberForPlayer = 0;
+      reconnectsForGame = 0;
+      pendingReconnect = false;
+      reconnectStartAtMs = 0;
+      reconnectDeadlineAtMs = 0;
       console.log(`VU ${__VU}: Created AI game ${myGameId} for WebSocket gameplay`);
     } else {
       // Record as true error only if not already classified as auth/rate-limit
@@ -522,6 +536,8 @@ export default function (data) {
   let pendingMoveId = null;
   let myPlayerNumberInGame = null;
   let shouldRetireGame = false;
+  let reconnectAttemptResolved = false;
+  const isReconnectAttempt = pendingReconnect === true;
 
   const connectionStart = Date.now();
 
@@ -572,9 +588,42 @@ export default function (data) {
           wsHandshakeSuccess.add(1);
           console.log(`VU ${__VU}: Socket.IO handshake complete for game ${myGameId}`);
 
+          if (isReconnectAttempt && !reconnectAttemptResolved) {
+            const reconnectLatency =
+              reconnectStartAtMs > 0 ? Date.now() - reconnectStartAtMs : null;
+            if (reconnectLatency !== null) {
+              wsReconnectLatency.add(reconnectLatency);
+            }
+            wsReconnectSuccess.add(1);
+            reconnectAttemptResolved = true;
+            pendingReconnect = false;
+            reconnectStartAtMs = 0;
+            reconnectDeadlineAtMs = 0;
+          }
+
           const joinPayload = { gameId: myGameId };
           const joinMsg = buildSocketIOEvent('join_game', joinPayload);
           socket.send(joinMsg);
+
+          if (
+            WS_RECONNECT_PROBABILITY > 0 &&
+            WS_RECONNECT_MAX_PER_GAME > 0 &&
+            !pendingReconnect &&
+            reconnectsForGame < WS_RECONNECT_MAX_PER_GAME
+          ) {
+            const roll = Math.random();
+            if (roll <= WS_RECONNECT_PROBABILITY) {
+              pendingReconnect = true;
+              reconnectsForGame += 1;
+              reconnectDeadlineAtMs = Date.now() + WS_RECONNECT_DELAY_MS;
+              wsReconnectAttempts.add(1);
+              if (WS_GAMEPLAY_DEBUG) {
+                console.log(
+                  `[websocket-gameplay] VU ${__VU} scheduled reconnect in ${WS_RECONNECT_DELAY_MS}ms for game ${myGameId}`
+                );
+              }
+            }
+          }
           return;
         }
 
@@ -636,6 +685,10 @@ export default function (data) {
           `VU ${__VU}: WebSocket closed for game ${myGameId} after ${durationMs}ms (code: ${code})`
         );
 
+        if (pendingReconnect && reconnectStartAtMs === 0) {
+          reconnectStartAtMs = Date.now();
+        }
+
         if (awaitingRttForMove) {
           // Treat an unexpected close while a move is in flight as a failed,
           // stalled move for success-rate accounting.
@@ -647,6 +700,14 @@ export default function (data) {
 
         if (connectionOpened && !handshakeComplete) {
           wsHandshakeSuccess.add(0);
+        }
+
+        if (isReconnectAttempt && !reconnectAttemptResolved) {
+          wsReconnectSuccess.add(0);
+          reconnectAttemptResolved = true;
+          pendingReconnect = false;
+          reconnectStartAtMs = 0;
+          reconnectDeadlineAtMs = 0;
         }
       });
 
@@ -668,6 +729,23 @@ export default function (data) {
 
       // Lightweight interval to allow retirement once caps or terminal states are reached.
       socket.setInterval(() => {
+        if (shouldRetireGame && pendingReconnect) {
+          wsReconnectSuccess.add(0);
+          pendingReconnect = false;
+          reconnectStartAtMs = 0;
+          reconnectDeadlineAtMs = 0;
+        }
+
+        if (
+          pendingReconnect &&
+          !awaitingRttForMove &&
+          reconnectDeadlineAtMs > 0 &&
+          Date.now() >= reconnectDeadlineAtMs
+        ) {
+          socket.close();
+          return;
+        }
+
         if (shouldRetireGame && !awaitingRttForMove) {
           socket.close();
         }
@@ -684,6 +762,13 @@ export default function (data) {
         res && res.status
       }`
     );
+    if (isReconnectAttempt && !reconnectAttemptResolved) {
+      wsReconnectSuccess.add(0);
+      reconnectAttemptResolved = true;
+      pendingReconnect = false;
+      reconnectStartAtMs = 0;
+      reconnectDeadlineAtMs = 0;
+    }
     // Keep the current myGameId and retry in the next iteration.
     sleep(2);
     return;
@@ -706,6 +791,10 @@ export default function (data) {
     myMovesInCurrentGame = 0;
     myGameCreatedAt = 0;
     myLastObservedMoveNumberForPlayer = 0;
+    reconnectsForGame = 0;
+    pendingReconnect = false;
+    reconnectStartAtMs = 0;
+    reconnectDeadlineAtMs = 0;
     gamesCompletedByVu += 1;
     sleep(1 + Math.random() * 2);
     return;
