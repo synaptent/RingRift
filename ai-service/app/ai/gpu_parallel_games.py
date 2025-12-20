@@ -23,9 +23,8 @@ from __future__ import annotations
 import os
 import logging
 import time
-from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -36,39 +35,20 @@ from .gpu_game_types import (
     GameStatus,
     MoveType,
     GamePhase,
-    DetectedLine,
-    get_required_line_length,
-    MAX_STACK_HEIGHT,
-    SQUARE_DIRECTIONS,
-    LINE_DIRECTIONS,
+    get_required_line_length,  # Backwards-compatible re-export
 )
 from .gpu_line_detection import (
     detect_lines_vectorized,
-    has_lines_batch_vectorized,
-    detect_lines_with_metadata,
-    detect_lines_batch,
     process_lines_batch,
 )
 from .gpu_territory import (
-    _find_eligible_territory_cap,
-    _find_all_regions,
-    _is_physically_disconnected,
-    _is_color_disconnected,
     compute_territory_batch,
 )
 from .gpu_move_generation import (
     BatchMoves,
-    _empty_batch_moves,
     generate_placement_moves_batch,
-    DIRECTIONS,
-    _validate_paths_vectorized_fast,
-    generate_movement_moves_batch_vectorized,
-    _validate_paths_vectorized,
     generate_movement_moves_batch,
-    _generate_movement_moves_batch_legacy,
     generate_capture_moves_batch,
-    generate_capture_moves_batch_vectorized,
-    _generate_capture_moves_batch_legacy,
     generate_chain_capture_moves_from_position,
     apply_single_chain_capture,
     generate_recovery_moves_batch,

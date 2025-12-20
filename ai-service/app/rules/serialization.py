@@ -362,7 +362,6 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
     from app.rules.core import (
         get_rings_per_player,
         get_territory_victory_threshold,
-        get_territory_victory_minimum,
         get_victory_threshold,
     )
 
