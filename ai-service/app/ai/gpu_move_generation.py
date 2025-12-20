@@ -1366,15 +1366,27 @@ def apply_single_chain_capture(
         # December 2025: Track buried ring position for recovery extraction
         state.buried_at[game_idx, target_owner, to_y, to_x] = True
 
+    # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
+    # ownership transfers to the target's original owner.
     new_height = attacker_height + 1 - landing_ring_cost
     state.stack_height[game_idx, to_y, to_x] = new_height
-    state.stack_owner[game_idx, to_y, to_x] = player
 
-    new_cap = attacker_cap_height - landing_ring_cost
-    if new_cap <= 0:
-        new_cap = 1
-    if new_cap > new_height:
+    # Check if landing cost eliminated entire cap
+    cap_fully_eliminated = landing_ring_cost >= attacker_cap_height
+    if cap_fully_eliminated:
+        # Ownership transfers to target owner, new cap is all remaining rings
+        new_owner = target_owner
         new_cap = new_height
+    else:
+        # Normal case: attacker keeps ownership, cap reduced
+        new_owner = player
+        new_cap = attacker_cap_height - landing_ring_cost
+        if new_cap <= 0:
+            new_cap = 1
+        if new_cap > new_height:
+            new_cap = new_height
+
+    state.stack_owner[game_idx, to_y, to_x] = new_owner
     state.cap_height[game_idx, to_y, to_x] = new_cap
 
     # Clear origin stack and leave departure marker.
@@ -1514,10 +1526,23 @@ def apply_single_initial_capture(
         state.buried_at[game_idx, target_owner, to_y, to_x] = True
 
     # Set up landing stack
+    # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
+    # ownership transfers to the target's original owner.
     new_height = attacker_height + 1 - landing_ring_cost
     state.stack_height[game_idx, to_y, to_x] = new_height
-    state.stack_owner[game_idx, to_y, to_x] = player
-    new_cap = max(1, min(attacker_cap_height - landing_ring_cost, new_height))
+
+    # Check if landing cost eliminated entire cap
+    cap_fully_eliminated = landing_ring_cost >= attacker_cap_height
+    if cap_fully_eliminated:
+        # Ownership transfers to target owner, new cap is all remaining rings
+        new_owner = target_owner
+        new_cap = new_height
+    else:
+        # Normal case: attacker keeps ownership, cap reduced
+        new_owner = player
+        new_cap = max(1, min(attacker_cap_height - landing_ring_cost, new_height))
+
+    state.stack_owner[game_idx, to_y, to_x] = new_owner
     state.cap_height[game_idx, to_y, to_x] = new_cap
 
     # Clear origin

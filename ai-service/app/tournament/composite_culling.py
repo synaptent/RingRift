@@ -516,20 +516,22 @@ class HierarchicalCullingController:
                 if HAS_EVENTS and publish_composite_nn_culled is not None:
                     import asyncio
                     try:
-                        asyncio.get_event_loop().run_until_complete(
-                            publish_composite_nn_culled(
-                                nn_id=nn_id or pid,
-                                reason="hierarchical_culling",
-                                final_elo=final_elo,
-                                games_played=games_played,
-                                cull_level=1,  # Could be 1, 2, or 3 - simplified to 1
-                                algorithms_tested=[ai_type] if ai_type else [],
-                                board_type=self.board_type,
-                                num_players=self.num_players,
-                            )
+                        coro = publish_composite_nn_culled(
+                            nn_id=nn_id or pid,
+                            reason="hierarchical_culling",
+                            final_elo=final_elo,
+                            games_played=games_played,
+                            cull_level=1,  # Could be 1, 2, or 3 - simplified to 1
+                            algorithms_tested=[ai_type] if ai_type else [],
+                            board_type=self.board_type,
+                            num_players=self.num_players,
                         )
-                    except RuntimeError:
-                        # No event loop or loop not running - skip event
+                        try:
+                            loop = asyncio.get_running_loop()
+                            asyncio.ensure_future(coro, loop=loop)
+                        except RuntimeError:
+                            asyncio.run(coro)
+                    except Exception:
                         pass
 
             except Exception as e:

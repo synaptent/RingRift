@@ -197,15 +197,27 @@ def apply_capture_moves_vectorized(
 
         # Move attacker to landing and apply net height change:
         # +1 captured ring (to bottom) - landing marker elimination cost.
+        # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
+        # ownership transfers to the target's original owner.
         new_height = attacker_height + 1 - landing_ring_cost
         state.stack_height[g, to_y, to_x] = new_height
-        state.stack_owner[g, to_y, to_x] = player
 
-        new_cap = attacker_cap_height - landing_ring_cost
-        if new_cap <= 0:
-            new_cap = 1
-        if new_cap > new_height:
+        # Check if landing cost eliminated entire cap
+        cap_fully_eliminated = landing_ring_cost >= attacker_cap_height
+        if cap_fully_eliminated:
+            # Ownership transfers to target owner, new cap is all remaining rings
+            new_owner = target_owner
             new_cap = new_height
+        else:
+            # Normal case: attacker keeps ownership, cap reduced
+            new_owner = player
+            new_cap = attacker_cap_height - landing_ring_cost
+            if new_cap <= 0:
+                new_cap = 1
+            if new_cap > new_height:
+                new_cap = new_height
+
+        state.stack_owner[g, to_y, to_x] = new_owner
         state.cap_height[g, to_y, to_x] = new_cap
 
         # Clear origin stack and leave a departure marker (RR-CANON-R092).
@@ -1540,11 +1552,32 @@ def apply_capture_moves_batch_vectorized(
         )
 
     # Attacker gains captured ring (+1) minus landing marker cost
+    # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
+    # ownership transfers to the target's original owner. The captured ring goes to the
+    # bottom, so after cap elimination, all remaining rings are from the target's owner.
     new_height = torch.clamp(attacker_height + 1 - landing_ring_cost, min=1, max=5)
-    new_cap_height = torch.clamp(attacker_cap_height - landing_ring_cost, min=1)
+
+    # Check if cap is fully eliminated by landing cost
+    cap_fully_eliminated = landing_ring_cost >= attacker_cap_height
+
+    # Calculate new cap height and owner based on cap elimination
+    # If cap eliminated: new owner is target owner, new cap is all remaining rings
+    # If cap not eliminated: new owner is attacker (player), cap reduced by landing cost
+    new_cap_height = torch.where(
+        cap_fully_eliminated,
+        new_height,  # All remaining rings are target's color
+        torch.clamp(attacker_cap_height - landing_ring_cost, min=1)
+    )
     new_cap_height = torch.minimum(new_cap_height, new_height)
 
-    state.stack_owner[game_indices, to_y, to_x] = players.to(state.stack_owner.dtype)
+    # Determine new owner
+    new_owner = torch.where(
+        cap_fully_eliminated,
+        defender_owner,  # Target's original owner
+        players  # Capturing player
+    )
+
+    state.stack_owner[game_indices, to_y, to_x] = new_owner.to(state.stack_owner.dtype)
     state.stack_height[game_indices, to_y, to_x] = new_height.to(state.stack_height.dtype)
     state.cap_height[game_indices, to_y, to_x] = new_cap_height.to(state.cap_height.dtype)
 

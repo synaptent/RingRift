@@ -195,6 +195,23 @@ ai-service/data/games/*.parity_gate.json
 ai-service/data/games/failures/
 ai-service/parity_summary.*.json
 
+# Test output directories
+ai-service/test_output/
+test_output/
+
+# Root-level test/debug scripts (should be in tests/ or scripts/)
+ai-service/test_*.py
+test_*.py
+
+# One-off debug scripts with specific seeds/moves (local debugging only)
+ai-service/scripts/debug_seed*.py
+ai-service/scripts/debug_move_*.py
+ai-service/scripts/minimal_*_debug.py
+ai-service/scripts/quick_*_test.py
+
+# Runtime alert state
+ai-service/data/.elo_alert_state.json
+
 # Root-level hypothesis directory (Python property-based testing)
 .hypothesis/
 

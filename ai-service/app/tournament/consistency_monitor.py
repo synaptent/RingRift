@@ -144,21 +144,23 @@ class ConsistencyMonitor:
                 checks_failed = sum(1 for c in report.checks if not c.passed)
                 check_results = {c.name: c.passed for c in report.checks}
 
-                asyncio.get_event_loop().run_until_complete(
-                    publish_composite_consistency_check(
-                        overall_healthy=report.overall_healthy,
-                        checks_passed=checks_passed,
-                        checks_failed=checks_failed,
-                        warnings_count=len(report.warnings),
-                        errors_count=len(report.errors),
-                        check_results=check_results,
-                        board_type=self.board_type,
-                        num_players=self.num_players,
-                    )
+                coro = publish_composite_consistency_check(
+                    overall_healthy=report.overall_healthy,
+                    checks_passed=checks_passed,
+                    checks_failed=checks_failed,
+                    warnings_count=len(report.warnings),
+                    errors_count=len(report.errors),
+                    check_results=check_results,
+                    board_type=self.board_type,
+                    num_players=self.num_players,
                 )
-            except RuntimeError:
-                # No event loop - skip event
-                pass
+                # Try to schedule in running loop, otherwise use new loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.ensure_future(coro, loop=loop)
+                except RuntimeError:
+                    # No running loop - create one
+                    asyncio.run(coro)
             except Exception as e:
                 logger.debug(f"Failed to emit consistency check event: {e}")
 

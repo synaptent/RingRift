@@ -264,9 +264,12 @@ def enumerate_capture_moves_py(
 
             stack_at_pos = BoardManager.get_stack(pos, board)
             if stack_at_pos and stack_at_pos.stack_height > 0:
-                if attacker.cap_height >= stack_at_pos.cap_height:
-                    target_pos = pos
-                    steps_to_target = step
+                # Can only capture ENEMY stacks, not own stacks
+                if stack_at_pos.controlling_player != player:
+                    if attacker.cap_height >= stack_at_pos.cap_height:
+                        target_pos = pos
+                        steps_to_target = step
+                # Any stack (own or enemy) blocks the ray
                 break
 
             step += 1

@@ -54,7 +54,11 @@ def load_gate_summary(registry_dir: Path, gate_summary_name: str) -> dict | None
 
     summary_path = registry_dir / gate_summary_name
     if not summary_path.exists():
-        return None
+        candidate = Path(gate_summary_name)
+        if candidate.parent == Path("."):
+            summary_path = registry_dir / "data" / "games" / gate_summary_name
+        if not summary_path.exists():
+            return None
 
     try:
         return json.loads(summary_path.read_text(encoding="utf-8"))

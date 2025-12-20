@@ -99,6 +99,35 @@ def test_validate_canonical_sources_allows_pending_gate_when_configured(tmp_path
     assert result["ok"] is True
 
 
+def test_validate_canonical_sources_finds_gate_summary_under_data_games(tmp_path: Path) -> None:
+    registry_path = tmp_path / "TRAINING_DATA_REGISTRY.md"
+    db_path = tmp_path / "data" / "games" / "canonical_square8.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.write_bytes(b"")
+
+    gate_summary_name = "db_health.canonical_square8.json"
+    gate_summary_path = tmp_path / "data" / "games" / gate_summary_name
+    gate_summary_path.write_text(
+        json.dumps(
+            {
+                "canonical_ok": True,
+                "parity_gate": {"passed_canonical_parity_gate": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _write_registry(
+        registry_path,
+        db_name=db_path.name,
+        status="canonical",
+        gate_summary=gate_summary_name,
+    )
+
+    result = validate_canonical_sources(registry_path, [db_path])
+    assert result["ok"] is True
+
+
 def test_validate_canonical_sources_rejects_failed_canonical_gate(tmp_path: Path) -> None:
     registry_path = tmp_path / "TRAINING_DATA_REGISTRY.md"
     db_path = tmp_path / "data" / "games" / "canonical_square8.db"
