@@ -1421,8 +1421,8 @@ class TrainingScheduler:
                     except Exception as e:
                         print(f"[Training] Database validation error (continuing anyway): {e}")
 
-            if HAS_COORDINATION and estimate_task_duration:
-                est_duration = estimate_task_duration("training", config=config_key)
+            if HAS_COORDINATION and estimate_task_duration is not None:
+                est_duration = estimate_task_duration("training", config=config_key)  # type: ignore[misc]
                 eta_time = datetime.fromtimestamp(time.time() + est_duration).strftime("%H:%M:%S")
                 print(f"[Training] Estimated duration: {est_duration/3600:.1f}h (ETA: {eta_time})")
 

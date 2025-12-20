@@ -137,6 +137,8 @@ except ImportError:
     stop_memory_monitor = None
     start_disk_monitor = None
     stop_disk_monitor = None
+    get_memory_pressure_level = None
+    get_disk_pressure_level = None
 
 # Model hygiene: validation at startup
 try:
@@ -1610,9 +1612,9 @@ class MetricsHandler(BaseHTTPRequestHandler):
         }
 
         # Memory pressure
-        if HAS_PRESSURE_MONITORS and get_memory_pressure_level:
+        if HAS_PRESSURE_MONITORS and get_memory_pressure_level is not None:
             try:
-                mem_level = get_memory_pressure_level()
+                mem_level = get_memory_pressure_level()  # type: ignore[misc]
                 health["components"]["memory_pressure"] = {
                     "level": mem_level,
                     "level_name": ["NORMAL", "WARNING", "ELEVATED", "CRITICAL", "EMERGENCY"][mem_level],
@@ -1624,9 +1626,9 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 health["components"]["memory_pressure"] = {"error": "unavailable"}
 
         # Disk pressure
-        if HAS_PRESSURE_MONITORS and get_disk_pressure_level:
+        if HAS_PRESSURE_MONITORS and get_disk_pressure_level is not None:
             try:
-                disk_level = get_disk_pressure_level()
+                disk_level = get_disk_pressure_level()  # type: ignore[misc]
                 health["components"]["disk_pressure"] = {
                     "level": disk_level,
                     "level_name": ["NORMAL", "WARNING", "ELEVATED", "CRITICAL", "EMERGENCY"][disk_level],
@@ -1838,7 +1840,7 @@ class ConfigPriorityQueue:
             self._model_counts_last_update = now
 
             # Log model counts for visibility
-            if hasattr(self, '_last_model_count_log') and now - self._last_model_count_log < 300:
+            if hasattr(self, '_last_model_count_log') and now - self._last_model_count_log < 300:  # type: ignore[has-type]
                 pass  # Don't log too frequently
             else:
                 self._last_model_count_log = now
@@ -2793,11 +2795,11 @@ class UnifiedAILoop:
                 p2p_seed_urls = os.environ.get("RINGRIFT_P2P_SEEDS", "").split(",")
                 p2p_seed_urls = [s.strip() for s in p2p_seed_urls if s.strip()]
 
-                if HAS_P2P_BACKEND and discover_p2p_leader_url and p2p_seed_urls:
+                if HAS_P2P_BACKEND and discover_p2p_leader_url is not None and p2p_seed_urls:
                     # Use resilient leader discovery
                     try:
                         discovered_url = asyncio.get_event_loop().run_until_complete(
-                            discover_p2p_leader_url(
+                            discover_p2p_leader_url(  # type: ignore[misc]
                                 p2p_seed_urls,
                                 auth_token=config.p2p.auth_token or "",
                             )
@@ -4274,7 +4276,7 @@ class UnifiedAILoop:
                 metrics=ModelMetrics(
                     value_mse=train_loss,
                 ) if train_loss else None,
-                training_config=RegistryTrainingConfig() if RegistryTrainingConfig else None,
+                training_config=RegistryTrainingConfig() if RegistryTrainingConfig is not None else None,  # type: ignore[misc]
             )
             print(f"[ModelRegistry] Registered model {model_id}:v{version} from training ({config_key})")
 
@@ -4359,7 +4361,7 @@ class UnifiedAILoop:
             # Record Elo update in feedback accelerator for momentum tracking
             if HAS_FEEDBACK_ACCELERATOR and config_key and new_elo > 0:
                 try:
-                    momentum = record_elo_update(config_key, new_elo, games_played, model_id)
+                    momentum = record_elo_update(config_key, new_elo, games_played, model_id)  # type: ignore[func-returns-value]
                     if momentum:
                         accelerator = get_feedback_accelerator()
                         momentum_data = accelerator.get_config_momentum(config_key)
@@ -4447,7 +4449,7 @@ class UnifiedAILoop:
         # This allows P2P orchestrator to query the negotiated rate
         if HAS_RESOURCE_OPTIMIZER and negotiate_selfplay_rate is not None:
             try:
-                current = get_current_selfplay_rate() if get_current_selfplay_rate else 1000
+                current = get_current_selfplay_rate() if get_current_selfplay_rate is not None else 1000  # type: ignore[misc]
                 requested_rate = int(current * multiplier)
                 approved_rate = negotiate_selfplay_rate(
                     requested_rate=requested_rate,
@@ -5418,13 +5420,13 @@ class UnifiedAILoop:
 
             # Phase 3.3: Use distributed execution when cluster is available
             results = None
-            if run_tournament_round_distributed and load_cluster_hosts and filter_available_hosts:
+            if run_tournament_round_distributed is not None and load_cluster_hosts is not None and filter_available_hosts is not None:
                 try:
                     # Load and filter available cluster hosts
                     hosts_config = AI_SERVICE_ROOT / "config" / "remote_hosts.yaml"
-                    cluster_hosts = load_cluster_hosts(str(hosts_config))
+                    cluster_hosts = load_cluster_hosts(str(hosts_config))  # type: ignore[misc]
                     if cluster_hosts:
-                        available_hosts = await filter_available_hosts(cluster_hosts)
+                        available_hosts = await filter_available_hosts(cluster_hosts)  # type: ignore[misc]
                         if available_hosts:
                             print(f"[DiverseTournament] Using distributed execution ({len(available_hosts)} hosts)")
                             results = await run_tournament_round_distributed(configs, available_hosts)
@@ -5441,8 +5443,8 @@ class UnifiedAILoop:
                 if DISABLE_LOCAL_TASKS:
                     print("[DiverseTournament] Skipping local fallback (coordinator-only mode)")
                     results = []
-                elif run_tournament_round_local:
-                    results = run_tournament_round_local(configs)
+                elif run_tournament_round_local is not None:
+                    results = run_tournament_round_local(configs)  # type: ignore[misc]
                 else:
                     results = []
 
@@ -6534,7 +6536,7 @@ class UnifiedAILoop:
                     if apply_feedback_adjustment is not None:
                         try:
                             new_rate = apply_feedback_adjustment(requestor="unified_loop_utilization")
-                            status = get_utilization_status() if get_utilization_status else {}
+                            status = get_utilization_status() if get_utilization_status is not None else {}  # type: ignore[misc]
                             cpu_util = status.get('cpu_util', 0)
                             gpu_util = status.get('gpu_util', 0)
                             util_status_text = status.get('status', 'unknown')
@@ -7884,8 +7886,8 @@ class UnifiedAILoop:
             self.data_collector.set_hot_buffer(self.hot_buffer)
 
         # Clear stale health cache on startup
-        if HAS_PRE_SPAWN_HEALTH and clear_health_cache:
-            cleared = clear_health_cache()
+        if HAS_PRE_SPAWN_HEALTH and clear_health_cache is not None:
+            cleared = clear_health_cache()  # type: ignore[misc]
             if cleared > 0:
                 print(f"[UnifiedLoop] Cleared {cleared} stale host health entries")
 
@@ -7989,14 +7991,14 @@ class UnifiedAILoop:
         # Stop pressure monitors (2025-12)
         if HAS_PRESSURE_MONITORS:
             try:
-                if stop_memory_monitor:
-                    stop_memory_monitor()
+                if stop_memory_monitor is not None:
+                    stop_memory_monitor()  # type: ignore[misc]
                     print("[UnifiedLoop] Memory pressure monitor stopped")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to stop memory monitor: {e}")
             try:
-                if stop_disk_monitor:
-                    stop_disk_monitor()
+                if stop_disk_monitor is not None:
+                    stop_disk_monitor()  # type: ignore[misc]
                     print("[UnifiedLoop] Disk pressure monitor stopped")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to stop disk monitor: {e}")
