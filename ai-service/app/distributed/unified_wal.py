@@ -448,7 +448,8 @@ class UnifiedWAL:
 
             entry_id = cursor.lastrowid
             conn.commit()
-            assert entry_id is not None, "INSERT should always set lastrowid"
+            if entry_id is None:
+                raise RuntimeError("Database INSERT failed to return lastrowid")
 
             self._entries_since_checkpoint += 1
             self._maybe_checkpoint()
@@ -548,7 +549,8 @@ class UnifiedWAL:
 
                 entry_id = cursor.lastrowid
                 conn.commit()
-                assert entry_id is not None, "INSERT should always set lastrowid"
+                if entry_id is None:
+                    raise RuntimeError("Database INSERT failed to return lastrowid")
 
                 self._entries_since_checkpoint += 1
                 self._maybe_checkpoint()
@@ -911,7 +913,8 @@ class UnifiedWAL:
 
             checkpoint_id = cursor.lastrowid
             conn.commit()
-            assert checkpoint_id is not None, "INSERT should always set lastrowid"
+            if checkpoint_id is None:
+                raise RuntimeError("Database INSERT failed to return lastrowid")
 
             self._entries_since_checkpoint = 0
 

@@ -201,7 +201,8 @@ class CrossProcessEventQueue:
                 )
                 event_id = cursor.lastrowid
                 conn.commit()
-                assert event_id is not None, "INSERT should always set lastrowid"
+                if event_id is None:
+                    raise RuntimeError("Database INSERT failed to return lastrowid")
                 return event_id
             except sqlite3.OperationalError as e:
                 last_error = e

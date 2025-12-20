@@ -269,7 +269,8 @@ class TransactionIsolation:
             conn.commit()
 
             transaction_id = cursor.lastrowid
-            assert transaction_id is not None, "INSERT should always set lastrowid"
+            if transaction_id is None:
+                raise RuntimeError("Database INSERT failed to return lastrowid")
 
             # Create WAL file for this transaction
             wal_path = self.wal_dir / f"txn_{transaction_id}.wal"
@@ -370,7 +371,8 @@ class TransactionIsolation:
             conn.commit()
 
             operation_id = cursor.lastrowid
-            assert operation_id is not None, "INSERT should always set lastrowid"
+            if operation_id is None:
+                raise RuntimeError("Database INSERT failed to return lastrowid")
 
             # Update WAL
             self._append_to_wal(transaction_id, {

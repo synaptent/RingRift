@@ -235,7 +235,8 @@ class _LegacyIngestionWAL:
             entry_id = cursor.lastrowid
             conn.commit()
             conn.close()
-            assert entry_id is not None, "INSERT should always set lastrowid"
+            if entry_id is None:
+                raise RuntimeError("Database INSERT failed to return lastrowid")
 
             self._entries_since_checkpoint += 1
 
