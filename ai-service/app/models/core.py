@@ -3,10 +3,10 @@ Pydantic Models for RingRift Game State
 Mirrors TypeScript types from src/shared/types/game.ts
 """
 
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Tuple
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BoardType(str, Enum):
@@ -162,7 +162,7 @@ class Position(BaseModel):
 
     x: int
     y: int
-    z: Optional[int] = None
+    z: int | None = None
 
     def to_key(self) -> str:
         """Convert position to string key.
@@ -185,7 +185,7 @@ class Position(BaseModel):
 
 
 # Module-level cache for position keys (outside Pydantic model)
-_position_key_cache: Dict[Tuple[int, int, Optional[int]], str] = {}
+_position_key_cache: dict[tuple[int, int, int | None], str] = {}
 
 
 def clear_position_key_cache() -> None:
@@ -197,7 +197,7 @@ class LineInfo(BaseModel):
     """Information about a formed line"""
     model_config = ConfigDict(populate_by_name=True)
 
-    positions: List[Position]
+    positions: list[Position]
     player: int
     length: int
     direction: Position  # Direction vector
@@ -207,7 +207,7 @@ class Territory(BaseModel):
     """Information about a territory region"""
     model_config = ConfigDict(populate_by_name=True)
 
-    spaces: List[Position]
+    spaces: list[Position]
     controlling_player: int = Field(alias="controllingPlayer")
     is_disconnected: bool = Field(alias="isDisconnected")
 
@@ -217,7 +217,7 @@ class RingStack(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     position: Position
-    rings: List[int]  # Player numbers from bottom to top
+    rings: list[int]  # Player numbers from bottom to top
     stack_height: int = Field(alias="stackHeight")
     cap_height: int = Field(alias="capHeight")
     controlling_player: int = Field(alias="controllingPlayer")
@@ -240,7 +240,7 @@ class Player(BaseModel):
     player_number: int = Field(alias="playerNumber")
     is_ready: bool = Field(alias="isReady")
     time_remaining: int = Field(alias="timeRemaining")
-    ai_difficulty: Optional[int] = Field(None, alias="aiDifficulty")
+    ai_difficulty: int | None = Field(None, alias="aiDifficulty")
     rings_in_hand: int = Field(alias="ringsInHand")
     eliminated_rings: int = Field(alias="eliminatedRings")
     territory_spaces: int = Field(alias="territorySpaces")
@@ -280,60 +280,60 @@ class Move(BaseModel):
 
     # Spatial metadata (both optional for certain move types like
     # forced_elimination or swap_sides).
-    from_pos: Optional[Position] = Field(None, alias="from")
-    to: Optional[Position] = None
+    from_pos: Position | None = Field(None, alias="from")
+    to: Position | None = None
 
     # Capture metadata
-    capture_target: Optional[Position] = Field(None, alias="captureTarget")
-    captured_stacks: Optional[Tuple[RingStack, ...]] = Field(
+    capture_target: Position | None = Field(None, alias="captureTarget")
+    captured_stacks: tuple[RingStack, ...] | None = Field(
         None, alias="capturedStacks"
     )
-    capture_chain: Optional[Tuple[Position, ...]] = Field(
+    capture_chain: tuple[Position, ...] | None = Field(
         None, alias="captureChain"
     )
-    overtaken_rings: Optional[Tuple[int, ...]] = Field(
+    overtaken_rings: tuple[int, ...] | None = Field(
         None, alias="overtakenRings"
     )
 
     # Ring placement specific metadata (optional for non-placement moves)
-    placed_on_stack: Optional[bool] = Field(None, alias="placedOnStack")
-    placement_count: Optional[int] = Field(None, alias="placementCount")
+    placed_on_stack: bool | None = Field(None, alias="placedOnStack")
+    placement_count: int | None = Field(None, alias="placementCount")
 
     # Movement specific
-    stack_moved: Optional[RingStack] = Field(None, alias="stackMoved")
-    minimum_distance: Optional[int] = Field(None, alias="minimumDistance")
-    actual_distance: Optional[int] = Field(None, alias="actualDistance")
-    marker_left: Optional[Position] = Field(None, alias="markerLeft")
+    stack_moved: RingStack | None = Field(None, alias="stackMoved")
+    minimum_distance: int | None = Field(None, alias="minimumDistance")
+    actual_distance: int | None = Field(None, alias="actualDistance")
+    marker_left: Position | None = Field(None, alias="markerLeft")
 
     # Line / territory metadata for decision phases
-    line_index: Optional[int] = Field(None, alias="lineIndex")
-    formed_lines: Optional[Tuple[LineInfo, ...]] = Field(
+    line_index: int | None = Field(None, alias="lineIndex")
+    formed_lines: tuple[LineInfo, ...] | None = Field(
         default=None, alias="formedLines"
     )
-    collapsed_markers: Optional[Tuple[Position, ...]] = Field(
+    collapsed_markers: tuple[Position, ...] | None = Field(
         default=None, alias="collapsedMarkers"
     )
-    claimed_territory: Optional[Tuple[Territory, ...]] = Field(
+    claimed_territory: tuple[Territory, ...] | None = Field(
         default=None, alias="claimedTerritory"
     )
-    disconnected_regions: Optional[Tuple[Territory, ...]] = Field(
+    disconnected_regions: tuple[Territory, ...] | None = Field(
         default=None, alias="disconnectedRegions"
     )
     # Recovery-specific metadata
-    recovery_option: Optional[int] = Field(None, alias="recoveryOption")
+    recovery_option: int | None = Field(None, alias="recoveryOption")
     # Recovery mode: which success criterion was met (RR-CANON-R112)
     # "line" (a), "fallback" (b1), or "stack_strike" (b2)
-    recovery_mode: Optional[str] = Field(None, alias="recoveryMode")
-    collapse_positions: Optional[Tuple[Position, ...]] = Field(
+    recovery_mode: str | None = Field(None, alias="recoveryMode")
+    collapse_positions: tuple[Position, ...] | None = Field(
         default=None, alias="collapsePositions"
     )
     # Stack position keys from which to extract buried rings (Option 1/fallback/stack_strike).
     # Option 2 uses no extraction (empty list).
-    extraction_stacks: Optional[Tuple[str, ...]] = Field(
+    extraction_stacks: tuple[str, ...] | None = Field(
         default=None, alias="extractionStacks"
     )
     # Summary of rings eliminated by this action, grouped per player.
-    eliminated_rings: Optional[Tuple[Dict[str, int], ...]] = Field(
+    eliminated_rings: tuple[dict[str, int], ...] | None = Field(
         default=None, alias="eliminatedRings"
     )
     # Elimination context for eliminate_rings_from_stack moves (RR-CANON-R022, R122):
@@ -342,14 +342,14 @@ class Move(BaseModel):
     # - 'forced': Eliminate entire cap (any controlled stack eligible)
     # - 'recovery': Extract exactly ONE buried ring from any stack that contains a buried ring
     #   of the eliminating player (stack need not be controlled by that player)
-    elimination_context: Optional[str] = Field(
+    elimination_context: str | None = Field(
         default=None, alias="eliminationContext"
     )
 
     # Timing / ordering (optional for backward compatibility with JSONL imports)
-    timestamp: Optional[datetime] = None
-    think_time: Optional[int] = Field(default=None, alias="thinkTime")
-    move_number: Optional[int] = Field(default=None, alias="moveNumber")
+    timestamp: datetime | None = None
+    think_time: int | None = Field(default=None, alias="thinkTime")
+    move_number: int | None = Field(default=None, alias="moveNumber")
 
 
 class BoardState(BaseModel):
@@ -358,18 +358,18 @@ class BoardState(BaseModel):
 
     type: BoardType
     size: int
-    stacks: Dict[str, RingStack] = Field(default_factory=dict)
-    markers: Dict[str, MarkerInfo] = Field(default_factory=dict)
-    collapsed_spaces: Dict[str, int] = Field(
+    stacks: dict[str, RingStack] = Field(default_factory=dict)
+    markers: dict[str, MarkerInfo] = Field(default_factory=dict)
+    collapsed_spaces: dict[str, int] = Field(
         default_factory=dict, alias="collapsedSpaces"
     )
-    eliminated_rings: Dict[str, int] = Field(
+    eliminated_rings: dict[str, int] = Field(
         default_factory=dict, alias="eliminatedRings"
     )
-    formed_lines: List[LineInfo] = Field(
+    formed_lines: list[LineInfo] = Field(
         default_factory=list, alias="formedLines"
     )
-    territories: Dict[str, Territory] = Field(
+    territories: dict[str, Territory] = Field(
         default_factory=dict, alias="territories"
     )
 
@@ -391,9 +391,9 @@ class ChainCaptureState(BaseModel):
     player_number: int = Field(alias="playerNumber")
     start_position: Position = Field(alias="startPosition")
     current_position: Position = Field(alias="currentPosition")
-    segments: List[ChainCaptureSegment]
-    available_moves: List[Move] = Field(alias="availableMoves")
-    visited_positions: List[str] = Field(alias="visitedPositions")
+    segments: list[ChainCaptureSegment]
+    available_moves: list[Move] = Field(alias="availableMoves")
+    visited_positions: list[str] = Field(alias="visitedPositions")
 
 
 class GameState(BaseModel):
@@ -402,16 +402,16 @@ class GameState(BaseModel):
 
     id: str
     board_type: BoardType = Field(alias="boardType")
-    rng_seed: Optional[int] = Field(None, alias="rngSeed")
+    rng_seed: int | None = Field(None, alias="rngSeed")
     board: BoardState
-    players: List[Player]
+    players: list[Player]
     current_phase: GamePhase = Field(alias="currentPhase")
     current_player: int = Field(alias="currentPlayer")
-    move_history: List[Move] = Field(default_factory=list, alias="moveHistory")
+    move_history: list[Move] = Field(default_factory=list, alias="moveHistory")
     time_control: TimeControl = Field(alias="timeControl")
-    spectators: List[str] = Field(default_factory=list)
+    spectators: list[str] = Field(default_factory=list)
     game_status: GameStatus = Field(alias="gameStatus")
-    winner: Optional[int] = None
+    winner: int | None = None
     created_at: datetime = Field(alias="createdAt")
     last_move_at: datetime = Field(alias="lastMoveAt")
     is_rated: bool = Field(alias="isRated")
@@ -422,26 +422,26 @@ class GameState(BaseModel):
     # Legacy: >50% threshold, kept for backward compatibility
     territory_victory_threshold: int = Field(alias="territoryVictoryThreshold")
     # New: floor(totalSpaces / numPlayers) + 1. Victory also requires > opponents combined.
-    territory_victory_minimum: Optional[int] = Field(None, alias="territoryVictoryMinimum")
-    chain_capture_state: Optional[ChainCaptureState] = Field(
+    territory_victory_minimum: int | None = Field(None, alias="territoryVictoryMinimum")
+    chain_capture_state: ChainCaptureState | None = Field(
         None,
         alias="chainCaptureState",
     )
-    must_move_from_stack_key: Optional[str] = Field(
+    must_move_from_stack_key: str | None = Field(
         None,
         alias="mustMoveFromStackKey",
     )
-    zobrist_hash: Optional[int] = Field(None, alias="zobristHash")
+    zobrist_hash: int | None = Field(None, alias="zobristHash")
     lps_round_index: int = Field(0, alias="lpsRoundIndex")
-    lps_current_round_actor_mask: Dict[int, bool] = Field(
+    lps_current_round_actor_mask: dict[int, bool] = Field(
         default_factory=dict,
         alias="lpsCurrentRoundActorMask",
     )
-    lps_exclusive_player_for_completed_round: Optional[int] = Field(
+    lps_exclusive_player_for_completed_round: int | None = Field(
         None,
         alias="lpsExclusivePlayerForCompletedRound",
     )
-    lps_current_round_first_player: Optional[int] = Field(
+    lps_current_round_first_player: int | None = Field(
         None,
         alias="lpsCurrentRoundFirstPlayer",
     )
@@ -460,14 +460,14 @@ class GameState(BaseModel):
         alias="lpsRoundsRequired",
     )
     # The player who has been exclusive for consecutive rounds.
-    lps_consecutive_exclusive_player: Optional[int] = Field(
+    lps_consecutive_exclusive_player: int | None = Field(
         None,
         alias="lpsConsecutiveExclusivePlayer",
     )
     # Optional per-game rules configuration (e.g., swap rule / pie rule).
     # Mirrors the RulesOptions bag in src/shared/types/game.ts; callers
     # currently use this primarily for swapRuleEnabled in 2-player games.
-    rules_options: Optional[Dict[str, object]] = Field(
+    rules_options: dict[str, object] | None = Field(
         default=None,
         alias="rulesOptions",
     )
@@ -522,12 +522,12 @@ class AIConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     difficulty: int = Field(ge=1, le=10)
-    think_time: Optional[int] = None
-    randomness: Optional[float] = Field(None, ge=0, le=1)
-    rng_seed: Optional[int] = Field(None, alias="rngSeed")
-    heuristic_profile_id: Optional[str] = None
-    nn_model_id: Optional[str] = None
-    nn_state_dict: Optional[dict] = Field(
+    think_time: int | None = None
+    randomness: float | None = Field(None, ge=0, le=1)
+    rng_seed: int | None = Field(None, alias="rngSeed")
+    heuristic_profile_id: str | None = None
+    nn_model_id: str | None = None
+    nn_state_dict: dict | None = Field(
         default=None,
         description=(
             "When provided, NeuralNetAI loads weights from this in-memory state "
@@ -537,8 +537,8 @@ class AIConfig(BaseModel):
             "Takes precedence over nn_model_id when both are set."
         ),
     )
-    heuristic_eval_mode: Optional[str] = None
-    use_neural_net: Optional[bool] = Field(
+    heuristic_eval_mode: str | None = None
+    use_neural_net: bool | None = Field(
         default=None,
         description=(
             "When explicitly set to False, disables neural-network-backed "
@@ -553,7 +553,7 @@ class AIConfig(BaseModel):
         "MutableGameState for 10-50x faster search. When False, falls back "
         "to legacy immutable state cloning via apply_move()."
     )
-    training_move_sample_limit: Optional[int] = Field(
+    training_move_sample_limit: int | None = Field(
         default=None,
         description="When set to a positive integer, HeuristicAI will "
         "randomly sample at most this many moves for evaluation during "
@@ -570,7 +570,7 @@ class AIConfig(BaseModel):
             "callers can fall back to heuristic evaluation."
         ),
     )
-    weight_noise: Optional[float] = Field(
+    weight_noise: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
@@ -599,7 +599,7 @@ class AIConfig(BaseModel):
             "Production and evaluation paths should keep this False."
         ),
     )
-    root_dirichlet_alpha: Optional[float] = Field(
+    root_dirichlet_alpha: float | None = Field(
         default=None,
         ge=0.0,
         description=(
@@ -607,7 +607,7 @@ class AIConfig(BaseModel):
             "None, a board-specific default is used."
         ),
     )
-    root_noise_fraction: Optional[float] = Field(
+    root_noise_fraction: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
@@ -616,7 +616,7 @@ class AIConfig(BaseModel):
             "When None, defaults to 0.25."
         ),
     )
-    temperature: Optional[float] = Field(
+    temperature: float | None = Field(
         default=None,
         ge=0.0,
         description=(
@@ -624,7 +624,7 @@ class AIConfig(BaseModel):
             "a default schedule based on move count is used."
         ),
     )
-    temperature_cutoff_moves: Optional[int] = Field(
+    temperature_cutoff_moves: int | None = Field(
         default=None,
         ge=0,
         description=(
@@ -637,7 +637,7 @@ class AIConfig(BaseModel):
     # NNUE Policy Model Configuration
     # ------------------------------------------------------------------
 
-    use_policy_ordering: Optional[bool] = Field(
+    use_policy_ordering: bool | None = Field(
         default=None,
         description=(
             "When True, MinimaxAI uses NNUE policy model for move ordering, "
@@ -646,7 +646,7 @@ class AIConfig(BaseModel):
             "model is available."
         ),
     )
-    use_nnue_policy_priors: Optional[bool] = Field(
+    use_nnue_policy_priors: bool | None = Field(
         default=None,
         description=(
             "When True, MCTSAI uses NNUE policy model for move priors when "
@@ -660,7 +660,7 @@ class AIConfig(BaseModel):
     # Policy-Only AI Configuration
     # ------------------------------------------------------------------
 
-    policy_temperature: Optional[float] = Field(
+    policy_temperature: float | None = Field(
         default=1.0,
         ge=0.01,
         le=10.0,
@@ -675,7 +675,7 @@ class AIConfig(BaseModel):
     # Gumbel MCTS Configuration
     # ------------------------------------------------------------------
 
-    gumbel_num_sampled_actions: Optional[int] = Field(
+    gumbel_num_sampled_actions: int | None = Field(
         default=16,
         ge=2,
         le=64,
@@ -685,7 +685,7 @@ class AIConfig(BaseModel):
             "more simulations. Default is 16."
         ),
     )
-    gumbel_simulation_budget: Optional[int] = Field(
+    gumbel_simulation_budget: int | None = Field(
         default=100,
         ge=10,
         le=1000,
@@ -713,11 +713,11 @@ class LineRewardChoiceRequest(BaseModel):
     """
     model_config = ConfigDict(populate_by_name=True)
 
-    game_state: Optional[GameState] = Field(None, alias="gameState")
+    game_state: GameState | None = Field(None, alias="gameState")
     player_number: int = Field(alias="playerNumber")
     difficulty: int = Field(ge=1, le=10, default=5)
-    ai_type: Optional[AIType] = Field(None, alias="aiType")
-    options: List[LineRewardChoiceOption]
+    ai_type: AIType | None = Field(None, alias="aiType")
+    options: list[LineRewardChoiceOption]
 
 
 class LineRewardChoiceResponse(BaseModel):
@@ -750,11 +750,11 @@ class RingEliminationChoiceRequest(BaseModel):
     """
     model_config = ConfigDict(populate_by_name=True)
 
-    game_state: Optional[GameState] = Field(None, alias="gameState")
+    game_state: GameState | None = Field(None, alias="gameState")
     player_number: int = Field(alias="playerNumber")
     difficulty: int = Field(ge=1, le=10, default=5)
-    ai_type: Optional[AIType] = Field(None, alias="aiType")
-    options: List[RingEliminationChoiceOption]
+    ai_type: AIType | None = Field(None, alias="aiType")
+    options: list[RingEliminationChoiceOption]
 
 
 class RingEliminationChoiceResponse(BaseModel):
@@ -796,11 +796,11 @@ class RegionOrderChoiceRequest(BaseModel):
     """Request model for AI-backed region order choices."""
     model_config = ConfigDict(populate_by_name=True)
 
-    game_state: Optional[GameState] = Field(None, alias="gameState")
+    game_state: GameState | None = Field(None, alias="gameState")
     player_number: int = Field(alias="playerNumber")
     difficulty: int = Field(ge=1, le=10, default=5)
-    ai_type: Optional[AIType] = Field(None, alias="aiType")
-    options: List[RegionOrderChoiceOption]
+    ai_type: AIType | None = Field(None, alias="aiType")
+    options: list[RegionOrderChoiceOption]
 
 
 class RegionOrderChoiceResponse(BaseModel):
@@ -821,7 +821,7 @@ class LineOrderChoiceLine(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     line_id: str = Field(alias="lineId")
-    marker_positions: List[Position] = Field(alias="markerPositions")
+    marker_positions: list[Position] = Field(alias="markerPositions")
 
 
 class LineOrderChoiceRequest(BaseModel):
@@ -833,11 +833,11 @@ class LineOrderChoiceRequest(BaseModel):
     """
     model_config = ConfigDict(populate_by_name=True)
 
-    game_state: Optional[GameState] = Field(None, alias="gameState")
+    game_state: GameState | None = Field(None, alias="gameState")
     player_number: int = Field(alias="playerNumber")
     difficulty: int = Field(ge=1, le=10, default=5)
-    ai_type: Optional[AIType] = Field(None, alias="aiType")
-    options: List[LineOrderChoiceLine]
+    ai_type: AIType | None = Field(None, alias="aiType")
+    options: list[LineOrderChoiceLine]
 
 
 class LineOrderChoiceResponse(BaseModel):
@@ -866,11 +866,11 @@ class CaptureDirectionChoiceRequest(BaseModel):
     """Request model for AI-backed capture direction choices."""
     model_config = ConfigDict(populate_by_name=True)
 
-    game_state: Optional[GameState] = Field(None, alias="gameState")
+    game_state: GameState | None = Field(None, alias="gameState")
     player_number: int = Field(alias="playerNumber")
     difficulty: int = Field(ge=1, le=10, default=5)
-    ai_type: Optional[AIType] = Field(None, alias="aiType")
-    options: List[CaptureDirectionChoiceOption]
+    ai_type: AIType | None = Field(None, alias="aiType")
+    options: list[CaptureDirectionChoiceOption]
 
 
 class CaptureDirectionChoiceResponse(BaseModel):

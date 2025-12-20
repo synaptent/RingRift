@@ -18,7 +18,6 @@ For production code, prefer gpu_batch.py or gpu_parallel_games.py.
 from __future__ import annotations
 
 import logging
-from typing import Tuple, Dict
 
 import torch
 
@@ -67,7 +66,7 @@ DIRECTIONS_Y = torch.tensor([-1, -1, 0, 1, 1, 1, 0, -1], dtype=torch.int32)
 DIRECTIONS_X = torch.tensor([0, 1, 1, 1, 0, -1, -1, -1], dtype=torch.int32)
 
 
-def get_directions(device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
+def get_directions(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     """Get direction tensors on the specified device."""
     return DIRECTIONS_Y.to(device), DIRECTIONS_X.to(device)
 
@@ -88,7 +87,7 @@ def generate_placement_mask_kernel(
     Returns:
         Tensor of shape (batch, board, board) where True = valid placement
     """
-    batch_size, board_size, _ = stack_owner.shape
+    batch_size, _board_size, _ = stack_owner.shape
 
     # Get rings in hand for current players
     player_rings = torch.zeros(batch_size, dtype=torch.int32, device=stack_owner.device)
@@ -109,7 +108,7 @@ def generate_placement_moves_vectorized(
     rings_in_hand: torch.Tensor,
     current_player: torch.Tensor,
     active_mask: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate all valid placement moves for the batch.
 
     Returns:
@@ -151,7 +150,7 @@ def generate_normal_moves_vectorized(
     stack_height: torch.Tensor,  # (batch, board, board)
     current_player: torch.Tensor,  # (batch,)
     active_mask: torch.Tensor,  # (batch,)
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate all valid normal (non-capture) moves for the batch.
 
     Optimized to minimize GPU-CPU synchronization:
@@ -275,7 +274,7 @@ def generate_capture_moves_vectorized(
     stack_height: torch.Tensor,  # (batch, board, board)
     current_player: torch.Tensor,  # (batch,)
     active_mask: torch.Tensor,  # (batch,)
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate all valid capture moves for the batch.
 
     Optimized to minimize GPU-CPU synchronization:
@@ -400,7 +399,7 @@ def evaluate_positions_kernel(
     buried_rings: torch.Tensor,  # (batch, num_players+1)
     current_player: torch.Tensor,  # (batch,)
     active_mask: torch.Tensor,  # (batch,)
-    weights: Dict[str, float],
+    weights: dict[str, float],
     board_size: int,
     num_players: int,
 ) -> torch.Tensor:
@@ -519,7 +518,7 @@ def detect_lines_kernel(
     marker_owner: torch.Tensor,  # (batch, board, board)
     board_size: int,
     min_line_length: int = 4,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Detect all lines of markers for each player.
 
     Returns:
@@ -593,7 +592,7 @@ def check_victory_conditions_kernel(
     game_status: torch.Tensor,  # (batch,)
     num_players: int,
     board_size: int,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Check victory conditions for all games in parallel.
 
     Returns:
@@ -664,7 +663,7 @@ def apply_placement_batch(
     to_y: torch.Tensor,
     to_x: torch.Tensor,
     current_player: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Apply placement moves in batch.
 
     Returns:
@@ -697,7 +696,7 @@ def apply_movement_batch(
     to_y: torch.Tensor,
     to_x: torch.Tensor,
     current_player: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply movement moves in batch.
 
     Returns:
@@ -736,7 +735,7 @@ def apply_capture_batch(
     to_y: torch.Tensor,
     to_x: torch.Tensor,
     current_player: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Apply capture moves in batch.
 
     Returns:

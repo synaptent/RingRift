@@ -10,9 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +33,17 @@ class GradientSurgeryConfig:
 class GradientSurgeon:
     """Applies gradient surgery to handle conflicting task gradients."""
 
-    def __init__(self, config: Optional[GradientSurgeryConfig] = None):
+    def __init__(self, config: GradientSurgeryConfig | None = None):
         if not HAS_TORCH:
             raise ImportError("PyTorch not available")
         self.config = config or GradientSurgeryConfig()
-        self._grad_cache: Dict[str, torch.Tensor] = {}
+        self._grad_cache: dict[str, torch.Tensor] = {}
 
     def compute_task_gradients(
         self,
         model: nn.Module,
-        losses: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        losses: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
         """Compute gradients for each task separately.
 
         Args:
@@ -75,8 +72,8 @@ class GradientSurgeon:
 
     def project_conflicting_gradients(
         self,
-        grads: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        grads: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
         """Apply PCGrad: project conflicting gradients.
 
         Args:
@@ -114,7 +111,7 @@ class GradientSurgeon:
     def apply_surgery(
         self,
         model: nn.Module,
-        losses: Dict[str, torch.Tensor],
+        losses: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """Apply gradient surgery and update model gradients.
 
@@ -161,7 +158,7 @@ class GradientSurgeon:
         self,
         grad1: torch.Tensor,
         grad2: torch.Tensor,
-    ) -> Tuple[bool, float]:
+    ) -> tuple[bool, float]:
         """Check if two gradients are in conflict.
 
         Args:
@@ -189,7 +186,7 @@ class MultiTaskLossBalancer:
 
     def __init__(
         self,
-        task_names: List[str],
+        task_names: list[str],
         method: str = "uncertainty",
     ):
         """Initialize loss balancer.
@@ -209,7 +206,7 @@ class MultiTaskLossBalancer:
 
     def balance_losses(
         self,
-        losses: Dict[str, torch.Tensor],
+        losses: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """Compute balanced total loss.
 

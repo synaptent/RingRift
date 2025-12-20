@@ -6,18 +6,18 @@ Provides AI move selection and position evaluation endpoints
 import asyncio
 import logging
 import os
+import secrets
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import threading
+from typing import Any, TypedDict
 
-from fastapi import FastAPI, HTTPException, Response, Header, Depends
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-import secrets
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Dict, Any, TypedDict, List
 
 try:
     from typing import Self  # Python 3.11+
@@ -31,17 +31,17 @@ except ImportError:
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from .config.ladder_config import (
+    LadderTierConfig,
+    get_effective_ladder_config,
+    list_ladder_tiers,
+)
 from .metrics import (
     AI_INSTANCE_CACHE_LOOKUPS,
     AI_INSTANCE_CACHE_SIZE,
     AI_MOVE_LATENCY,
     AI_MOVE_REQUESTS,
     observe_ai_move_start,
-)
-from .config.ladder_config import (
-    LadderTierConfig,
-    get_effective_ladder_config,
-    list_ladder_tiers,
 )
 
 # Resource cleanup imports
@@ -59,36 +59,36 @@ except ImportError:  # pragma: no cover
     HAS_MODEL_CACHE = False
     _clear_model_cache = None  # type: ignore
 
-from .ai.random_ai import RandomAI
+from .ai.descent_ai import DescentAI
 from .ai.heuristic_ai import HeuristicAI
 from .ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES, load_trained_profiles_if_available
-from .ai.descent_ai import DescentAI
-from .models import (
-    GameState,
-    Move,
-    AIConfig,
-    AIType,
-    LineRewardChoiceRequest,
-    LineRewardChoiceResponse,
-    LineRewardChoiceOption,
-    RingEliminationChoiceRequest,
-    RingEliminationChoiceResponse,
-    RegionOrderChoiceRequest,
-    RegionOrderChoiceResponse,
-    RegionOrderChoiceOption,
-    LineOrderChoiceRequest,
-    LineOrderChoiceResponse,
-    LineOrderChoiceLine,
-    CaptureDirectionChoiceRequest,
-    CaptureDirectionChoiceResponse,
-    CaptureDirectionChoiceOption,
-    Position,
-    GameStatus,
-)
+from .ai.random_ai import RandomAI
 from .board_manager import BoardManager
 from .game_engine import GameEngine
-from .rules.default_engine import DefaultRulesEngine
+from .models import (
+    AIConfig,
+    AIType,
+    CaptureDirectionChoiceOption,
+    CaptureDirectionChoiceRequest,
+    CaptureDirectionChoiceResponse,
+    GameState,
+    GameStatus,
+    LineOrderChoiceLine,
+    LineOrderChoiceRequest,
+    LineOrderChoiceResponse,
+    LineRewardChoiceOption,
+    LineRewardChoiceRequest,
+    LineRewardChoiceResponse,
+    Move,
+    Position,
+    RegionOrderChoiceOption,
+    RegionOrderChoiceRequest,
+    RegionOrderChoiceResponse,
+    RingEliminationChoiceRequest,
+    RingEliminationChoiceResponse,
+)
 from .routes import replay_router
+from .rules.default_engine import DefaultRulesEngine
 
 # Configure logging
 logging.basicConfig(
@@ -138,8 +138,8 @@ except ImportError:  # pragma: no cover
 try:
     from app.coordination.daemon_manager import (
         DaemonManager,
-        get_daemon_manager,
         DaemonType,
+        get_daemon_manager,
     )
     HAS_DAEMON_MANAGER = True
 except ImportError:  # pragma: no cover
@@ -151,8 +151,8 @@ except ImportError:  # pragma: no cover
 # Import event helpers for unified router configuration (December 2025)
 try:
     from app.distributed.event_helpers import (
-        set_use_router_by_default,
         has_event_router,
+        set_use_router_by_default,
     )
     HAS_EVENT_HELPERS = True
 except ImportError:  # pragma: no cover
@@ -321,7 +321,7 @@ AI_INSTANCE_CACHE_TTL_SEC = int(os.getenv("RINGRIFT_AI_INSTANCE_CACHE_TTL_SEC", 
 AI_INSTANCE_CACHE_MAX = int(os.getenv("RINGRIFT_AI_INSTANCE_CACHE_MAX", "512"))
 
 _ai_cache_lock = threading.RLock()
-ai_instances: Dict[str, CachedAIInstance] = {}
+ai_instances: dict[str, CachedAIInstance] = {}
 
 
 def _should_cache_ai(ai_type: AIType, game_state: GameState) -> bool:
@@ -413,8 +413,8 @@ class MoveRequest(BaseModel):
     game_state: GameState
     player_number: int = Field(ge=1, description="Player number (1-indexed)")
     difficulty: int = Field(ge=1, le=10, default=5)
-    ai_type: Optional[AIType] = None
-    seed: Optional[int] = Field(
+    ai_type: AIType | None = None
+    seed: int | None = Field(
         None,
         ge=0,
         le=0x7FFFFFFF,
@@ -436,17 +436,17 @@ class MoveRequest(BaseModel):
 
 class MoveResponse(BaseModel):
     """Response model for AI move selection"""
-    move: Optional[Move]
+    move: Move | None
     evaluation: float
     thinking_time_ms: int
     ai_type: str
     difficulty: int
     # Optional model observability fields (backward compatible for TS clients).
-    heuristic_profile_id: Optional[str] = None
-    use_neural_net: Optional[bool] = None
-    nn_model_id: Optional[str] = None
-    nn_checkpoint: Optional[str] = None
-    nnue_checkpoint: Optional[str] = None
+    heuristic_profile_id: str | None = None
+    use_neural_net: bool | None = None
+    nn_model_id: str | None = None
+    nn_checkpoint: str | None = None
+    nnue_checkpoint: str | None = None
 
 
 class EvaluationRequest(BaseModel):
@@ -470,7 +470,7 @@ class EvaluationRequest(BaseModel):
 class EvaluationResponse(BaseModel):
     """Response model for position evaluation"""
     score: float
-    breakdown: Dict[str, float]
+    breakdown: dict[str, float]
 
 
 class PositionEvaluationByPlayer(BaseModel):
@@ -479,7 +479,7 @@ class PositionEvaluationByPlayer(BaseModel):
     totalEval: float
     territoryEval: float = 0.0
     ringEval: float = 0.0
-    winProbability: Optional[float] = None
+    winProbability: float | None = None
 
 
 class PositionEvaluationRequest(BaseModel):
@@ -487,9 +487,9 @@ class PositionEvaluationRequest(BaseModel):
 
     game_state: GameState
     # Optional label for the underlying engine profile used to evaluate.
-    engine_profile: Optional[str] = None
+    engine_profile: str | None = None
     # Optional explicit RNG seed for deterministic evaluations.
-    random_seed: Optional[int] = None
+    random_seed: int | None = None
 
 
 class PositionEvaluationResponse(BaseModel):
@@ -502,7 +502,7 @@ class PositionEvaluationResponse(BaseModel):
     board_type: str
     game_id: str
     move_number: int
-    per_player: Dict[int, PositionEvaluationByPlayer]
+    per_player: dict[int, PositionEvaluationByPlayer]
     evaluation_scale: str
     generated_at: str
 
@@ -516,11 +516,11 @@ class RulesEvalRequest(BaseModel):
 class RulesEvalResponse(BaseModel):
     """Response model for rules-engine evaluation."""
     valid: bool
-    validation_error: Optional[str] = None
-    next_state: Optional[GameState] = None
-    state_hash: Optional[str] = None
-    s_invariant: Optional[int] = None
-    game_status: Optional[GameStatus] = None
+    validation_error: str | None = None
+    next_state: GameState | None = None
+    state_hash: str | None = None
+    s_invariant: int | None = None
+    game_status: GameStatus | None = None
 
 
 def _derive_non_ssot_seed(request: MoveRequest) -> int:
@@ -592,7 +592,7 @@ async def metrics():
 @app.get("/admin/health/coordinators")
 async def admin_health_coordinators(
     _: bool = Depends(verify_admin_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get health status of all coordinator managers.
 
     Requires X-Admin-Key header for authentication.
@@ -651,7 +651,7 @@ async def admin_health_coordinators(
 @app.get("/admin/health/full")
 async def admin_health_full(
     _: bool = Depends(verify_admin_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get comprehensive health check of all pipeline components.
 
     Requires X-Admin-Key header for authentication.
@@ -695,7 +695,7 @@ async def admin_health_full(
 @app.get("/admin/sync/status")
 async def admin_sync_status(
     _: bool = Depends(verify_admin_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get comprehensive data synchronization status.
 
     Requires X-Admin-Key header for authentication.
@@ -735,8 +735,8 @@ async def admin_sync_status(
 @app.post("/admin/sync/trigger")
 async def admin_sync_trigger(
     _: bool = Depends(verify_admin_api_key),
-    categories: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    categories: list[str] | None = None,
+) -> dict[str, Any]:
     """Manually trigger a data sync operation.
 
     Requires X-Admin-Key header for authentication.
@@ -749,7 +749,7 @@ async def admin_sync_trigger(
         Sync operation results with files synced per category
     """
     try:
-        from app.distributed.sync_coordinator import SyncCoordinator, SyncCategory
+        from app.distributed.sync_coordinator import SyncCategory, SyncCoordinator
 
         coordinator = SyncCoordinator.get_instance()
 
@@ -801,7 +801,7 @@ async def admin_sync_trigger(
 async def admin_start_data_server(
     _: bool = Depends(verify_admin_api_key),
     port: int = 8766,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Start the aria2 data server for serving files to other nodes.
 
     Requires X-Admin-Key header for authentication.
@@ -839,7 +839,7 @@ async def admin_start_data_server(
 @app.post("/admin/sync/data-server/stop")
 async def admin_stop_data_server(
     _: bool = Depends(verify_admin_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Stop the aria2 data server.
 
     Requires X-Admin-Key header for authentication.
@@ -870,7 +870,7 @@ async def admin_stop_data_server(
 @app.get("/admin/velocity")
 async def admin_velocity_dashboard(
     _: bool = Depends(verify_admin_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get Elo velocity dashboard for all configurations.
 
     Requires X-Admin-Key header for authentication.
@@ -963,7 +963,7 @@ async def get_ai_move(request: MoveRequest):
     # canonical ladder.
     profile = _get_difficulty_profile(request.difficulty)
 
-    ladder_config: Optional[LadderTierConfig] = None
+    ladder_config: LadderTierConfig | None = None
     try:
         board_type = getattr(request.game_state, "board_type", None)
         players = getattr(request.game_state, "players", None)
@@ -1001,8 +1001,8 @@ async def get_ai_move(request: MoveRequest):
             else bool(profile.get("use_neural_net", False))
         )
 
-        heuristic_profile_id: Optional[str] = None
-        nn_model_id: Optional[str] = None
+        heuristic_profile_id: str | None = None
+        nn_model_id: str | None = None
 
         if ladder_config is not None and ladder_config.heuristic_profile_id:
             heuristic_profile_id = ladder_config.heuristic_profile_id
@@ -1049,7 +1049,7 @@ async def get_ai_move(request: MoveRequest):
             use_neural_net=use_neural_net,
         )
         ai = None
-        cache_key: Optional[str] = None
+        cache_key: str | None = None
         if _should_cache_ai(ai_type, request.game_state):
             cache_key = _ai_cache_key(
                 request.game_state,
@@ -1117,7 +1117,7 @@ async def get_ai_move(request: MoveRequest):
             evaluation,
         )
 
-        nn_checkpoint: Optional[str] = None
+        nn_checkpoint: str | None = None
         try:
             neural_net = getattr(ai, "neural_net", None)
             path = getattr(neural_net, "loaded_checkpoint_path", None) if neural_net is not None else None
@@ -1126,7 +1126,7 @@ async def get_ai_move(request: MoveRequest):
         except Exception:
             nn_checkpoint = None
 
-        nnue_checkpoint: Optional[str] = None
+        nnue_checkpoint: str | None = None
         try:
             nnue_eval = getattr(ai, "nnue_evaluator", None)
             nnue_model = getattr(nnue_eval, "model", None) if nnue_eval is not None else None
@@ -1214,13 +1214,13 @@ async def evaluate_position(request: EvaluationRequest):
         )
 
     except Exception as e:
-        logger.error(f"Error evaluating position: {str(e)}", exc_info=True)
+        logger.error(f"Error evaluating position: {e!s}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 def _select_effective_eval_seed(
     game_state: GameState,
-    explicit_seed: Optional[int],
+    explicit_seed: int | None,
 ) -> int:
     """
     Compute an effective RNG seed for /ai/evaluate_position.
@@ -1268,9 +1268,9 @@ async def evaluate_position_multi(request: PositionEvaluationRequest):
         engine_profile = request.engine_profile or "heuristic_v1_d5"
         base_seed = _select_effective_eval_seed(state, request.random_seed)
 
-        raw_total: Dict[int, float] = {}
-        raw_territory: Dict[int, float] = {}
-        raw_rings: Dict[int, float] = {}
+        raw_total: dict[int, float] = {}
+        raw_territory: dict[int, float] = {}
+        raw_rings: dict[int, float] = {}
 
         for idx, player in enumerate(state.players):
             player_number = getattr(player, "player_number", None)
@@ -1305,7 +1305,7 @@ async def evaluate_position_multi(request: PositionEvaluationRequest):
                 detail="No players found in game_state",
             )
 
-        def _to_zero_sum(source: Dict[int, float]) -> Dict[int, float]:
+        def _to_zero_sum(source: dict[int, float]) -> dict[int, float]:
             if not source:
                 return {}
             count = float(len(source))
@@ -1316,7 +1316,7 @@ async def evaluate_position_multi(request: PositionEvaluationRequest):
         territory_zero_sum = _to_zero_sum(raw_territory)
         rings_zero_sum = _to_zero_sum(raw_rings)
 
-        per_player: Dict[int, PositionEvaluationByPlayer] = {}
+        per_player: dict[int, PositionEvaluationByPlayer] = {}
         for player_number, total in total_zero_sum.items():
             per_player[player_number] = PositionEvaluationByPlayer(
                 totalEval=total,
@@ -1329,7 +1329,7 @@ async def evaluate_position_multi(request: PositionEvaluationRequest):
 
         board_type = getattr(state, "board_type", "")
         if hasattr(board_type, "value"):
-            board_type_str = str(getattr(board_type, "value"))
+            board_type_str = str(board_type.value)
         else:
             board_type_str = str(board_type)
 
@@ -1445,7 +1445,7 @@ async def choose_line_reward_option(request: LineRewardChoiceRequest):
         )
     except Exception as e:
         logger.error(
-            f"Error selecting line reward option: {str(e)}",
+            f"Error selecting line reward option: {e!s}",
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
@@ -1483,9 +1483,7 @@ async def choose_ring_elimination_option(
         # choose the one with the smallest total_height.
         selected = request.options[0]
         for opt in request.options[1:]:
-            if opt.cap_height < selected.cap_height:
-                selected = opt
-            elif (
+            if opt.cap_height < selected.cap_height or (
                 opt.cap_height == selected.cap_height
                 and opt.total_height < selected.total_height
             ):
@@ -1502,7 +1500,7 @@ async def choose_ring_elimination_option(
         raise
     except Exception as e:
         logger.error(
-            f"Error selecting ring elimination option: {str(e)}",
+            f"Error selecting ring elimination option: {e!s}",
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
@@ -1601,7 +1599,7 @@ async def choose_region_order_option(request: RegionOrderChoiceRequest):
         )
     except Exception as e:
         logger.error(
-            f"Error selecting region order option: {str(e)}",
+            f"Error selecting region order option: {e!s}",
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
@@ -1815,7 +1813,7 @@ async def get_model_versions():
     }
 
 
-def _safe_file_stat(path: "Path") -> Dict[str, Any]:
+def _safe_file_stat(path: "Path") -> dict[str, Any]:
     try:
         stat = path.stat()
         return {
@@ -1830,7 +1828,7 @@ def _safe_file_stat(path: "Path") -> Dict[str, Any]:
         return {"basename": path.name, "exists": False, "error": str(exc)}
 
 
-def _resolve_latest_checkpoint(models_dir: "Path", model_id: str) -> Dict[str, Any]:
+def _resolve_latest_checkpoint(models_dir: "Path", model_id: str) -> dict[str, Any]:
     """Resolve the latest matching .pth checkpoint for a model id prefix."""
     patterns = [
         f"{model_id}.pth",
@@ -1839,12 +1837,12 @@ def _resolve_latest_checkpoint(models_dir: "Path", model_id: str) -> Dict[str, A
         f"{model_id}_*_mps.pth",
     ]
 
-    matches: list["Path"] = []
+    matches: list[Path] = []
     for pattern in patterns:
         matches.extend(models_dir.glob(pattern))
 
     seen: set[str] = set()
-    unique: list["Path"] = []
+    unique: list[Path] = []
     for candidate in matches:
         key = str(candidate)
         if key in seen:
@@ -1870,10 +1868,10 @@ def _resolve_latest_checkpoint(models_dir: "Path", model_id: str) -> Dict[str, A
 
 @app.get("/internal/ladder/health")
 async def ladder_health(
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-    difficulty: Optional[int] = None,
-) -> Dict[str, Any]:
+    board_type: str | None = None,
+    num_players: int | None = None,
+    difficulty: int | None = None,
+) -> dict[str, Any]:
     """Report effective ladder tiers and artifact availability.
 
     This endpoint is designed for validating training→promotion→deployment
@@ -1910,7 +1908,7 @@ async def ladder_health(
     models_dir = Path(__file__).resolve().parent.parent / "models"
     nnue_dir = models_dir / "nnue"
 
-    tiers: list[Dict[str, Any]] = []
+    tiers: list[dict[str, Any]] = []
     overrides_count = 0
     missing_profiles = 0
     missing_nnue = 0
@@ -1963,7 +1961,7 @@ async def ladder_health(
         if overridden:
             overrides_count += 1
 
-        artifacts: Dict[str, Any] = {}
+        artifacts: dict[str, Any] = {}
 
         heuristic_profile_id = effective.heuristic_profile_id
         if heuristic_profile_id:
@@ -2060,7 +2058,7 @@ class DifficultyProfile(TypedDict):
 # hard upper bound on wall-clock search time; simpler engines may ignore it or
 # treat it as a soft search-budget hint but must not use it to delay after a
 # move has been selected.
-_CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
+_CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
     1: {
         # Beginner: pure random baseline
         "ai_type": AIType.RANDOM,

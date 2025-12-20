@@ -28,20 +28,20 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
+# Use centralized executor pool (December 2025)
+from app.coordination.async_bridge_manager import get_bridge_manager
+
+# Use centralized event emitters (December 2025)
+from app.coordination.event_emitters import emit_training_complete
 from app.coordination.training_coordinator import (
     TrainingCoordinator,
     TrainingJob,
     get_training_coordinator,
 )
-
-# Use centralized event emitters (December 2025)
-from app.coordination.event_emitters import emit_training_complete
-
-# Use centralized executor pool (December 2025)
-from app.coordination.async_bridge_manager import get_bridge_manager
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class AsyncTrainingBridge:
 
     def __init__(
         self,
-        coordinator: Optional[TrainingCoordinator] = None,
+        coordinator: TrainingCoordinator | None = None,
         emit_events: bool = True,
     ):
         """Initialize the async training bridge.
@@ -123,8 +123,8 @@ class AsyncTrainingBridge:
         board_type: str,
         num_players: int,
         model_version: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
         """Request a training slot (async wrapper).
 
         Args:
@@ -155,7 +155,7 @@ class AsyncTrainingBridge:
         epochs_completed: int = 0,
         best_val_loss: float = float("inf"),
         current_elo: float = 0.0,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Update training progress (async wrapper).
 
@@ -202,9 +202,9 @@ class AsyncTrainingBridge:
         self,
         job_id: str,
         status: str = "completed",
-        final_val_loss: Optional[float] = None,
-        final_elo: Optional[float] = None,
-        model_path: Optional[str] = None,
+        final_val_loss: float | None = None,
+        final_elo: float | None = None,
+        model_path: str | None = None,
     ) -> bool:
         """Complete training and emit event (async wrapper).
 
@@ -247,7 +247,7 @@ class AsyncTrainingBridge:
 
         return success
 
-    async def get_job_by_id(self, job_id: str) -> Optional[TrainingJob]:
+    async def get_job_by_id(self, job_id: str) -> TrainingJob | None:
         """Get training job by ID."""
         # Parse board_type and num_players from job_id
         # Format: {board_type}_{num_players}p_{timestamp}_{pid}
@@ -269,7 +269,7 @@ class AsyncTrainingBridge:
         """Get all active training jobs."""
         return await self._run_sync(self._coordinator.get_active_jobs)
 
-    async def get_training_status(self) -> Dict[str, Any]:
+    async def get_training_status(self) -> dict[str, Any]:
         """Get cluster-wide training status."""
         return await self._run_sync(self._coordinator.get_status)
 
@@ -292,11 +292,11 @@ class AsyncTrainingBridge:
 
 
 # Global singleton
-_bridge: Optional[AsyncTrainingBridge] = None
+_bridge: AsyncTrainingBridge | None = None
 
 
 def get_training_bridge(
-    coordinator: Optional[TrainingCoordinator] = None,
+    coordinator: TrainingCoordinator | None = None,
     emit_events: bool = True,
 ) -> AsyncTrainingBridge:
     """Get the global async training bridge.
@@ -332,8 +332,8 @@ async def async_request_training(
     board_type: str,
     num_players: int,
     model_version: str = "",
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+    metadata: dict[str, Any] | None = None,
+) -> str | None:
     """Request a training slot (async)."""
     return await get_training_bridge().request_training_slot(
         board_type, num_players, model_version, metadata
@@ -355,9 +355,9 @@ async def async_update_progress(
 async def async_complete_training(
     job_id: str,
     status: str = "completed",
-    final_val_loss: Optional[float] = None,
-    final_elo: Optional[float] = None,
-    model_path: Optional[str] = None,
+    final_val_loss: float | None = None,
+    final_elo: float | None = None,
+    model_path: str | None = None,
 ) -> bool:
     """Complete training and emit event (async)."""
     return await get_training_bridge().complete_training(
@@ -365,7 +365,7 @@ async def async_complete_training(
     )
 
 
-async def async_get_training_status() -> Dict[str, Any]:
+async def async_get_training_status() -> dict[str, Any]:
     """Get cluster-wide training status (async)."""
     return await get_training_bridge().get_training_status()
 
@@ -374,13 +374,13 @@ __all__ = [
     # Main class
     "AsyncTrainingBridge",
     "TrainingProgressEvent",
+    # Convenience functions
+    "async_can_train",
+    "async_complete_training",
+    "async_get_training_status",
+    "async_request_training",
+    "async_update_progress",
     # Global access
     "get_training_bridge",
     "reset_training_bridge",
-    # Convenience functions
-    "async_can_train",
-    "async_request_training",
-    "async_update_progress",
-    "async_complete_training",
-    "async_get_training_status",
 ]

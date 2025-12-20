@@ -8,11 +8,10 @@ you only need to create game states, not for full training data generation.
 
 import os
 from datetime import datetime
-from typing import Optional
 
 from app.models import (
-    BoardType,
     BoardState,
+    BoardType,
     GamePhase,
     GameState,
     GameStatus,
@@ -24,7 +23,7 @@ from app.models import (
 def create_initial_state(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
-    rings_per_player_override: Optional[int] = None,
+    rings_per_player_override: int | None = None,
     lps_rounds_required: int = 3,
 ) -> GameState:
     """Create an initial GameState for self-play.
@@ -55,20 +54,18 @@ def create_initial_state(
     # Use centralized BOARD_CONFIGS from app.rules.core (mirrors TS BOARD_CONFIGS)
     from app.rules.core import (
         BOARD_CONFIGS,
-        get_victory_threshold,
         get_territory_victory_threshold,
+        get_victory_threshold,
     )
 
     if board_type in BOARD_CONFIGS:
         config = BOARD_CONFIGS[board_type]
         size = config.size
         rings_per_player = rings_per_player_override or config.rings_per_player
-        total_spaces = config.total_spaces
     else:
         # Fallback to square8-style defaults if an unknown board is passed.
         size = 8
         rings_per_player = rings_per_player_override or 18
-        total_spaces = 64
 
     # Victory thresholds per RR-CANON-R061 and RR-CANON-R062
     total_rings = rings_per_player * num_players

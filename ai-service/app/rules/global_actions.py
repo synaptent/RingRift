@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-from app.models import GameState, GameStatus, GamePhase, MoveType, Position
 from app.game_engine import GameEngine
+from app.models import GamePhase, GameState, GameStatus, MoveType, Position
 
 """
 Global-actions and ANM helpers for the Python rules engine.
@@ -45,7 +44,7 @@ class ForcedEliminationOutcome:
 
     next_state: GameState
     eliminated_player: int
-    eliminated_from: Optional[Position]
+    eliminated_from: Position | None
     eliminated_count: int
 
 
@@ -62,11 +61,7 @@ def has_turn_material(state: GameState, player: int) -> bool:
     if player_state.rings_in_hand > 0:
         return True
 
-    for stack in state.board.stacks.values():
-        if stack.controlling_player == player and stack.stack_height > 0:
-            return True
-
-    return False
+    return any(stack.controlling_player == player and stack.stack_height > 0 for stack in state.board.stacks.values())
 
 
 def has_global_placement_action(state: GameState, player: int) -> bool:
@@ -216,7 +211,7 @@ def is_anm_state(state: GameState) -> bool:
 def apply_forced_elimination_for_player(
     state: GameState,
     player: int,
-) -> Optional[ForcedEliminationOutcome]:
+) -> ForcedEliminationOutcome | None:
     """Apply one host-level forced elimination for ``player``, if legal.
 
     The function mutates ``state`` in-place and returns a

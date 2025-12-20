@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 
@@ -63,7 +63,7 @@ def get_bool(key: str, default: bool = False) -> bool:
     return value.strip().lower() in ("true", "1", "yes", "on")
 
 
-def get_list(key: str, default: Optional[list] = None, sep: str = ",") -> list:
+def get_list(key: str, default: list | None = None, sep: str = ",") -> list:
     """Get a list environment variable (comma-separated by default)."""
     value = os.environ.get(key)
     if value is None:
@@ -306,11 +306,11 @@ env = EnvConfig()
 
 # Convenience re-exports
 __all__ = [
-    "env",
     "EnvConfig",
-    "get_str",
-    "get_int",
-    "get_float",
+    "env",
     "get_bool",
+    "get_float",
+    "get_int",
     "get_list",
+    "get_str",
 ]

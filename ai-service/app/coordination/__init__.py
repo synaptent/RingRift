@@ -34,33 +34,196 @@ Usage:
 """
 
 # Task coordinator exports (canonical coordination system)
-from app.coordination.task_coordinator import (
-    TaskCoordinator,
-    TaskType,
-    TaskLimits,
-    TaskInfo,
-    CoordinatorState,
-    OrchestratorLock,
-    RateLimiter,
-    CoordinatedTask,
-    get_coordinator,
-    can_spawn,
-    emergency_stop_all,
-    # Resource-aware task classification
-    ResourceType,
-    TASK_RESOURCE_MAP,
-    get_task_resource_type,
-    is_gpu_task,
-    is_cpu_task,
+# Bandwidth manager exports
+from app.coordination.bandwidth_manager import (
+    BandwidthAllocation,
+    BandwidthManager,
+    TransferPriority,
+    bandwidth_allocation,
+    get_bandwidth_manager,
+    get_bandwidth_stats,
+    get_host_bandwidth_status,
+    get_optimal_transfer_time,
+    release_bandwidth,
+    request_bandwidth,
+    reset_bandwidth_manager,
+)
+
+# Cross-process event queue exports
+from app.coordination.cross_process_events import (
+    CrossProcessEvent,
+    CrossProcessEventPoller,
+    CrossProcessEventQueue,
+    ack_event,
+    ack_events,
+    bridge_to_cross_process,
+    get_event_queue,
+    poll_events,
+    publish_event,
+    reset_event_queue,
+    subscribe_process,
+)
+
+# Duration scheduler exports
+from app.coordination.duration_scheduler import (
+    DurationScheduler,
+    ScheduledTask,
+    TaskDurationRecord,
+    can_schedule_task,
+    estimate_task_duration,
+    get_resource_availability,
+    get_scheduler,
+    record_task_completion,
+    register_running_task,
+    reset_scheduler,
+)
+
+# Host health policy exports (renamed from health_check.py for clarity)
+from app.coordination.host_health_policy import (
+    HealthStatus,
+    check_host_health,
+    clear_health_cache,
+    get_health_summary,
+    get_healthy_hosts,
+    is_host_healthy,
+    mark_host_unhealthy,
+    pre_spawn_check,
+)
+
+# Orchestrator registry exports
+from app.coordination.orchestrator_registry import (
+    OrchestratorInfo,
+    OrchestratorRegistry,
+    OrchestratorRole,
+    OrchestratorState,
+    acquire_orchestrator_role,
+    get_registry,
+    is_orchestrator_role_available,
+    orchestrator_role,
+    release_orchestrator_role,
+)
+
+# Queue monitor exports
+from app.coordination.queue_monitor import (
+    BackpressureLevel,
+    QueueMonitor,
+    QueueStatus,
+    QueueType,
+    check_backpressure,
+    get_queue_monitor,
+    get_queue_stats,
+    get_throttle_factor,
+    report_queue_depth,
+    reset_queue_monitor,
+    should_stop_production,
+    should_throttle_production,
+)
+
+# Resource optimizer exports (PID-controlled cluster-wide optimization)
+from app.coordination.resource_optimizer import (
+    ClusterState,
+    NodeResources,
+    OptimizationResult,
+    PIDController,
+    ResourceOptimizer,
+    # ResourceType already imported from task_coordinator above
+    ScaleAction,
+    get_cluster_utilization,
+    # Note: should_scale_up/down/record_utilization also exist here
+    # but we prefer the resource_targets versions for per-host decisions
+    get_optimal_concurrency,
+    get_resource_optimizer,
+)
+
+# Resource targets exports (unified utilization targets)
+from app.coordination.resource_targets import (
+    HostTargets,
+    HostTier,
+    ResourceTargetManager,
+    UtilizationTargets,
+    get_cluster_summary,
+    get_host_targets,
+    get_resource_targets,
+    get_target_job_count,
+    get_utilization_score,
+    record_utilization,
+    reset_resource_targets,
+    set_backpressure,
+    should_scale_down,
+    should_scale_up,
 )
 
 # Safeguards exports
 from app.coordination.safeguards import (
-    Safeguards,
-    SafeguardConfig,
-    SpawnRateTracker,
     ResourceMonitor,
+    SafeguardConfig,
+    Safeguards,
+    SpawnRateTracker,
     check_before_spawn,
+)
+
+# Sync SCHEDULER exports (unified cluster-wide data sync SCHEDULING)
+# Note: This is the SCHEDULING layer - decides WHEN/WHAT to sync.
+# For EXECUTION (HOW to sync), use app.distributed.sync_coordinator.SyncCoordinator
+from app.coordination.sync_coordinator import (
+    ClusterDataStatus,
+    # Data types
+    HostDataState,
+    HostType,
+    SyncAction,
+    # Backward-compatible names (use SyncScheduler for new code)
+    SyncCoordinator as CoordinationSyncCoordinator,  # Alias to avoid collision
+    SyncPriority,
+    SyncRecommendation,
+    # Preferred names (December 2025)
+    SyncScheduler,
+    execute_priority_sync,  # Bridge to distributed layer execution
+    # Functions
+    get_cluster_data_status,
+    get_next_sync_target,
+    get_sync_coordinator,
+    get_sync_recommendations,
+    get_sync_scheduler,
+    record_games_generated,
+    record_sync_complete,
+    record_sync_start,
+    register_host,
+    reset_sync_coordinator,
+    reset_sync_scheduler,
+    update_host_state,
+)
+
+# Sync mutex exports
+from app.coordination.sync_mutex import (
+    SyncLockInfo,
+    SyncMutex,
+    acquire_sync_lock,
+    get_sync_mutex,
+    get_sync_stats,
+    is_sync_locked,
+    release_sync_lock,
+    reset_sync_mutex,
+    sync_lock,
+    sync_lock_required,
+)
+from app.coordination.task_coordinator import (
+    TASK_RESOURCE_MAP,
+    CoordinatedTask,
+    CoordinatorState,
+    OrchestratorLock,
+    RateLimiter,
+    # Resource-aware task classification
+    ResourceType,
+    TaskCoordinator,
+    TaskInfo,
+    TaskLimits,
+    TaskType,
+    can_spawn,
+    emergency_stop_all,
+    get_coordinator,
+    get_task_resource_type,
+    is_cpu_task,
+    is_gpu_task,
 )
 
 # Circuit breaker - canonical location is app.distributed.circuit_breaker
@@ -69,191 +232,64 @@ from app.distributed.circuit_breaker import (
     CircuitState,
 )
 
-# Orchestrator registry exports
-from app.coordination.orchestrator_registry import (
-    OrchestratorRegistry,
-    OrchestratorRole,
-    OrchestratorState,
-    OrchestratorInfo,
-    get_registry,
-    acquire_orchestrator_role,
-    release_orchestrator_role,
-    is_orchestrator_role_available,
-    orchestrator_role,
-)
-
-# Cross-process event queue exports
-from app.coordination.cross_process_events import (
-    CrossProcessEventQueue,
-    CrossProcessEvent,
-    CrossProcessEventPoller,
-    get_event_queue,
-    reset_event_queue,
-    publish_event,
-    subscribe_process,
-    poll_events,
-    ack_event,
-    ack_events,
-    bridge_to_cross_process,
-)
-
-# Host health policy exports (renamed from health_check.py for clarity)
-from app.coordination.host_health_policy import (
-    HealthStatus,
-    check_host_health,
-    is_host_healthy,
-    get_healthy_hosts,
-    get_health_summary,
-    clear_health_cache,
-    mark_host_unhealthy,
-    pre_spawn_check,
-)
-
-# Sync mutex exports
-from app.coordination.sync_mutex import (
-    SyncMutex,
-    SyncLockInfo,
-    get_sync_mutex,
-    reset_sync_mutex,
-    acquire_sync_lock,
-    release_sync_lock,
-    is_sync_locked,
-    get_sync_stats,
-    sync_lock,
-    sync_lock_required,
-)
-
-# Duration scheduler exports
-from app.coordination.duration_scheduler import (
-    DurationScheduler,
-    TaskDurationRecord,
-    ScheduledTask,
-    get_scheduler,
-    reset_scheduler,
-    estimate_task_duration,
-    record_task_completion,
-    register_running_task,
-    get_resource_availability,
-    can_schedule_task,
-)
-
-# Queue monitor exports
-from app.coordination.queue_monitor import (
-    QueueMonitor,
-    QueueType,
-    QueueStatus,
-    BackpressureLevel,
-    get_queue_monitor,
-    reset_queue_monitor,
-    report_queue_depth,
-    check_backpressure,
-    should_throttle_production,
-    should_stop_production,
-    get_throttle_factor,
-    get_queue_stats,
-)
-
-# Bandwidth manager exports
-from app.coordination.bandwidth_manager import (
-    BandwidthManager,
-    BandwidthAllocation,
-    TransferPriority,
-    get_bandwidth_manager,
-    reset_bandwidth_manager,
-    request_bandwidth,
-    release_bandwidth,
-    get_host_bandwidth_status,
-    get_optimal_transfer_time,
-    get_bandwidth_stats,
-    bandwidth_allocation,
-)
-
-# Resource targets exports (unified utilization targets)
-from app.coordination.resource_targets import (
-    ResourceTargetManager,
-    UtilizationTargets,
-    HostTargets,
-    HostTier,
-    get_resource_targets,
-    get_host_targets,
-    should_scale_up,
-    should_scale_down,
-    get_target_job_count,
-    get_utilization_score,
-    record_utilization,
-    get_cluster_summary,
-    set_backpressure,
-    reset_resource_targets,
-)
-
-# Resource optimizer exports (PID-controlled cluster-wide optimization)
-from app.coordination.resource_optimizer import (
-    ResourceOptimizer,
-    # ResourceType already imported from task_coordinator above
-    ScaleAction,
-    NodeResources,
-    ClusterState,
-    OptimizationResult,
-    PIDController,
-    get_resource_optimizer,
-    get_optimal_concurrency,
-    get_cluster_utilization,
-    # Note: should_scale_up/down/record_utilization also exist here
-    # but we prefer the resource_targets versions for per-host decisions
-)
-
-# Sync SCHEDULER exports (unified cluster-wide data sync SCHEDULING)
-# Note: This is the SCHEDULING layer - decides WHEN/WHAT to sync.
-# For EXECUTION (HOW to sync), use app.distributed.sync_coordinator.SyncCoordinator
-from app.coordination.sync_coordinator import (
-    # Preferred names (December 2025)
-    SyncScheduler,
-    get_sync_scheduler,
-    reset_sync_scheduler,
-    # Backward-compatible names (use SyncScheduler for new code)
-    SyncCoordinator as CoordinationSyncCoordinator,  # Alias to avoid collision
-    get_sync_coordinator,
-    reset_sync_coordinator,
-    # Data types
-    HostDataState,
-    HostType,
-    SyncPriority,
-    SyncAction,
-    SyncRecommendation,
-    ClusterDataStatus,
-    # Functions
-    get_cluster_data_status,
-    get_sync_recommendations,
-    get_next_sync_target,
-    register_host,
-    update_host_state,
-    record_sync_start,
-    record_sync_complete,
-    record_games_generated,
-    execute_priority_sync,  # Bridge to distributed layer execution
-)
-
 # Re-export distributed layer sync execution for convenience
 # These provide the actual sync transport (aria2, SSH, P2P)
 try:
     from app.distributed.sync_coordinator import (
-        SyncCoordinator as DistributedSyncCoordinator,
-        SyncStats,
         ClusterSyncStats,
         SyncCategory,
-        sync_training_data,
-        sync_models,
+        SyncCoordinator as DistributedSyncCoordinator,
+        SyncStats,
+        full_cluster_sync,
+        get_elo_lookup,
+        get_quality_lookup,
         sync_games,
         sync_high_quality_games,
-        full_cluster_sync,
-        get_quality_lookup,
-        get_elo_lookup,
+        sync_models,
+        sync_training_data,
     )
 except ImportError:
     # Distributed layer may not be available in all environments
     pass
 
 # Cluster transport layer (unified multi-transport communication)
+# Async Bridge Manager (December 2025 - shared executor pool)
+import contextlib
+
+from app.coordination.async_bridge_manager import (
+    AsyncBridgeManager,
+    get_bridge_manager,
+    get_shared_executor,
+    reset_bridge_manager,
+    run_in_bridge_pool,
+)
+
+# Async Training Bridge (async wrapper + event integration)
+from app.coordination.async_training_bridge import (
+    AsyncTrainingBridge,
+    TrainingProgressEvent,
+    async_can_train,
+    async_complete_training,
+    async_get_training_status,
+    async_request_training,
+    async_update_progress,
+    get_training_bridge,
+    reset_training_bridge,
+)
+
+# CacheCoordinationOrchestrator - unified cache management
+from app.coordination.cache_coordination_orchestrator import (
+    CacheCoordinationOrchestrator,
+    CacheEntry,
+    CacheStats,
+    CacheStatus,
+    CacheType,
+    NodeCacheState,
+    get_cache_orchestrator,
+    invalidate_model_caches,
+    register_cache,
+    wire_cache_events,
+)
 from app.coordination.cluster_transport import (
     ClusterTransport,
     # CircuitBreaker already imported from app.distributed.circuit_breaker above
@@ -262,160 +298,72 @@ from app.coordination.cluster_transport import (
     get_cluster_transport,
 )
 
-# Ephemeral data guard exports (data insurance for ephemeral hosts)
-from app.coordination.ephemeral_data_guard import (
-    EphemeralDataGuard,
-    HostCheckpoint,
-    WriteThrough,
-    get_ephemeral_guard,
-    reset_ephemeral_guard,
-    checkpoint_games,
-    ephemeral_heartbeat,
-    is_host_ephemeral,
-    get_evacuation_candidates,
-    request_evacuation,
-    queue_critical_game,
+# Coordinator Base (common patterns for coordinators/managers)
+from app.coordination.coordinator_base import (
+    CallbackMixin,
+    CoordinatorBase,
+    CoordinatorProtocol,
+    CoordinatorStats,
+    CoordinatorStatus,
+    SingletonMixin,
+    SQLitePersistenceMixin,
+    is_coordinator,
 )
 
-# Transfer verification exports (checksum verification for data integrity)
-from app.coordination.transfer_verification import (
-    TransferVerifier,
-    TransferRecord,
-    BatchChecksum,
-    QuarantineRecord,
-    get_transfer_verifier,
-    reset_transfer_verifier,
-    compute_file_checksum,
-    verify_transfer,
-    quarantine_file,
-    verify_batch,
-    compute_batch_checksum,
+# Coordinator Configuration (December 2025 - centralized config)
+from app.coordination.coordinator_config import (
+    CacheConfig,
+    CoordinatorConfig,
+    EventBusConfig,
+    HandlerResilienceConfig,
+    HeartbeatConfig,
+    MetricsConfig,
+    OptimizationConfig,
+    PipelineConfig,
+    ResourceConfig,
+    SelfplayConfig,
+    TaskLifecycleConfig,
+    get_config,
+    reset_config,
+    set_config,
+    update_config,
+    validate_config,
 )
 
-# Transaction isolation exports (ACID-like guarantees for merge operations)
-from app.coordination.transaction_isolation import (
-    TransactionIsolation,
-    TransactionState,
-    MergeOperation,
-    MergeTransaction,
-    get_transaction_isolation,
-    reset_transaction_isolation,
-    begin_merge_transaction,
-    add_merge_operation,
-    complete_merge_operation,
-    commit_merge_transaction,
-    rollback_merge_transaction,
-    merge_transaction,
-    get_transaction_stats,
+# Coordinator Persistence Layer (December 2025 - state snapshots and recovery)
+from app.coordination.coordinator_persistence import (
+    SnapshotCoordinator,
+    StatePersistable,
+    StatePersistenceMixin,
+    StateSerializer,
+    StateSnapshot,
+    get_snapshot_coordinator,
+    reset_snapshot_coordinator,
 )
 
-# Coordination helpers (safe wrappers to reduce duplicate try/except imports)
-from app.coordination.helpers import (
-    # Availability checks
-    has_coordination,
-    has_sync_lock,
-    has_bandwidth_manager,
-    has_duration_scheduler,
-    has_cross_process_events,
-    has_resource_targets,
-    # Type getters
-    get_task_types,
-    get_orchestrator_roles,
-    get_queue_types,
-    get_transfer_priorities,
-    get_event_poller_class,
-    # Coordinator functions
-    get_coordinator_safe,
-    can_spawn_safe,
-    register_task_safe,
-    complete_task_safe,
-    fail_task_safe,
-    # Orchestrator role functions
-    get_registry_safe,
-    acquire_role_safe,
-    release_role_safe,
-    has_role,
-    get_role_holder,
-    # Safeguard functions
-    check_spawn_allowed,
-    get_safeguards,
-    # Convenience functions
-    get_current_node_id,
-    is_unified_loop_running,
-    warn_if_orchestrator_running,
-    # Queue backpressure functions
-    should_throttle_safe,
-    should_stop_safe,
-    get_throttle_factor_safe,
-    report_queue_depth_safe,
-    # Sync mutex functions
-    get_sync_lock_context,
-    acquire_sync_lock_safe,
-    release_sync_lock_safe,
-    # Bandwidth functions
-    request_bandwidth_safe,
-    release_bandwidth_safe,
-    get_bandwidth_context,
-    # Duration scheduling functions
-    can_schedule_task_safe,
-    register_running_task_safe,
-    record_task_completion_safe,
-    estimate_duration_safe,
-    # Cross-process events functions
-    publish_event_safe,
-    poll_events_safe,
-    ack_event_safe,
-    subscribe_process_safe,
-    # Resource targets functions
-    get_resource_targets_safe,
-    get_host_targets_safe,
-    get_cluster_summary_safe,
-    should_scale_up_safe,
-    should_scale_down_safe,
-    set_backpressure_safe,
+# DaemonManager - unified lifecycle management for all background services (December 2025)
+from app.coordination.daemon_manager import (
+    DaemonInfo,
+    DaemonManager,
+    DaemonManagerConfig,
+    DaemonState,
+    DaemonType,
+    get_daemon_manager,
+    reset_daemon_manager,
+    setup_signal_handlers,
 )
 
-# P2P Backend exports (REST API client for P2P orchestrator)
-from app.coordination.p2p_backend import (
-    P2PBackend,
-    P2PNodeInfo,
-    discover_p2p_leader_url,
-    get_p2p_backend,
-    P2P_DEFAULT_PORT,
-    P2P_HTTP_TIMEOUT,
-    HAS_AIOHTTP,
-)
-
-# Job Scheduler exports (priority-based job scheduling)
-from app.coordination.job_scheduler import (
-    PriorityJobScheduler,
-    JobPriority,
-    ScheduledJob,
-    get_scheduler as get_job_scheduler,
-    reset_scheduler as reset_job_scheduler,
-    get_config_game_counts,
-    select_curriculum_config,
-    get_underserved_configs,
-    get_cpu_rich_hosts,
-    get_gpu_rich_hosts,
-    TARGET_GPU_UTILIZATION_MIN,
-    TARGET_GPU_UTILIZATION_MAX,
-    TARGET_CPU_UTILIZATION_MIN,
-    TARGET_CPU_UTILIZATION_MAX,
-    MIN_MEMORY_GB_FOR_TASKS,
-    ELO_CURRICULUM_ENABLED,
-)
-
-# Stage Events exports (event-driven pipeline orchestration)
-from app.coordination.stage_events import (
-    StageEventBus,
-    StageEvent,
-    StageCompletionResult,
-    StageCompletionCallback,
-    get_event_bus as get_stage_event_bus,
-    reset_event_bus as reset_stage_event_bus,
-    create_pipeline_callbacks,
-    register_standard_callbacks,
+# DataPipelineOrchestrator - unified pipeline stage coordination
+from app.coordination.data_pipeline_orchestrator import (
+    DataPipelineOrchestrator,
+    IterationRecord,
+    PipelineStage,
+    PipelineStats,
+    StageTransition,
+    get_current_pipeline_stage,
+    get_pipeline_orchestrator,
+    get_pipeline_status,
+    wire_pipeline_events,
 )
 
 # Distributed Locking (Redis + file-based fallback)
@@ -426,317 +374,368 @@ from app.coordination.distributed_lock import (
     training_lock,
 )
 
-# Training Coordination (cluster-wide training management)
-from app.coordination.training_coordinator import (
-    TrainingCoordinator,
-    TrainingJob,
-    get_training_coordinator,
-    request_training_slot,
-    release_training_slot,
-    update_training_progress,
-    can_train,
-    get_training_status,
-    training_slot,
+# Dynamic Threshold Adjustment (December 2025 - adaptive thresholds)
+from app.coordination.dynamic_thresholds import (
+    AdjustmentStrategy,
+    DynamicThreshold,
+    ThresholdManager,
+    ThresholdObservation,
+    get_threshold_manager,
+    reset_threshold_manager,
 )
 
-# Async Training Bridge (async wrapper + event integration)
-from app.coordination.async_training_bridge import (
-    AsyncTrainingBridge,
-    TrainingProgressEvent,
-    get_training_bridge,
-    reset_training_bridge,
-    async_can_train,
-    async_request_training,
-    async_update_progress,
-    async_complete_training,
-    async_get_training_status,
+# Ephemeral data guard exports (data insurance for ephemeral hosts)
+from app.coordination.ephemeral_data_guard import (
+    EphemeralDataGuard,
+    HostCheckpoint,
+    WriteThrough,
+    checkpoint_games,
+    ephemeral_heartbeat,
+    get_ephemeral_guard,
+    get_evacuation_candidates,
+    is_host_ephemeral,
+    queue_critical_game,
+    request_evacuation,
+    reset_ephemeral_guard,
 )
 
-# Coordinator Base (common patterns for coordinators/managers)
-from app.coordination.coordinator_base import (
-    CoordinatorBase,
-    CoordinatorProtocol,
-    CoordinatorStatus,
-    CoordinatorStats,
-    SQLitePersistenceMixin,
-    SingletonMixin,
-    CallbackMixin,
-    is_coordinator,
-)
-
-# Unified Event Coordinator (December 2025 - bridges all event systems)
-from app.coordination.unified_event_coordinator import (
-    UnifiedEventCoordinator,
-    CoordinatorStats as EventCoordinatorStats,
-    get_event_coordinator,
-    start_coordinator as start_event_coordinator,
-    stop_coordinator as stop_event_coordinator,
-    get_coordinator_stats as get_event_coordinator_stats,
+# Event Emitters (December 2025 - centralized event emission)
+from app.coordination.event_emitters import (
+    emit_backpressure_activated,
+    emit_backpressure_released,
+    emit_cache_invalidated,
+    emit_evaluation_complete,
+    emit_host_offline,
+    emit_host_online,
+    emit_node_recovered,
+    # New emitters (December 2025)
+    emit_optimization_triggered,
+    emit_plateau_detected,
+    emit_promotion_complete,
+    emit_quality_updated,
+    emit_regression_detected,
+    emit_selfplay_complete,
+    emit_sync_complete,
+    emit_task_complete,
+    emit_training_complete,
+    emit_training_complete_sync,
+    emit_training_started,
 )
 
 # Unified Event Router (December 2025 - single API for all event systems)
 # Note: EventRouter provides the publishing API, EventCoordinator provides bridging daemon
 from app.coordination.event_router import (
-    UnifiedEventRouter,
-    RouterEvent,
     EventSource,
+    RouterEvent,
+    UnifiedEventRouter,
     get_router as get_event_router,
-    reset_router as reset_event_router,
     publish as router_publish_event,  # Alias to avoid collision with cross_process_events.publish_event
     publish_sync as publish_event_sync,
+    reset_router as reset_event_router,
     subscribe as subscribe_event,
     unsubscribe as unsubscribe_event,
 )
 
-# Distributed Tracing (December 2025)
-from app.coordination.tracing import (
-    TraceContext,
-    TraceSpan,
-    TraceCollector,
-    get_trace_id,
-    set_trace_id,
-    get_trace_context,
-    new_trace,
-    with_trace,
-    span,
-    traced,
-    inject_trace_into_event,
-    extract_trace_from_event,
-    inject_trace_into_headers,
-    extract_trace_from_headers,
-    get_trace_collector,
-    collect_trace,
+# Coordination helpers (safe wrappers to reduce duplicate try/except imports)
+from app.coordination.helpers import (
+    ack_event_safe,
+    acquire_role_safe,
+    acquire_sync_lock_safe,
+    # Duration scheduling functions
+    can_schedule_task_safe,
+    can_spawn_safe,
+    # Safeguard functions
+    check_spawn_allowed,
+    complete_task_safe,
+    estimate_duration_safe,
+    fail_task_safe,
+    get_bandwidth_context,
+    get_cluster_summary_safe,
+    # Coordinator functions
+    get_coordinator_safe,
+    # Convenience functions
+    get_current_node_id,
+    get_event_poller_class,
+    get_host_targets_safe,
+    get_orchestrator_roles,
+    get_queue_types,
+    # Orchestrator role functions
+    get_registry_safe,
+    # Resource targets functions
+    get_resource_targets_safe,
+    get_role_holder,
+    get_safeguards,
+    # Sync mutex functions
+    get_sync_lock_context,
+    # Type getters
+    get_task_types,
+    get_throttle_factor_safe,
+    get_transfer_priorities,
+    has_bandwidth_manager,
+    # Availability checks
+    has_coordination,
+    has_cross_process_events,
+    has_duration_scheduler,
+    has_resource_targets,
+    has_role,
+    has_sync_lock,
+    is_unified_loop_running,
+    poll_events_safe,
+    # Cross-process events functions
+    publish_event_safe,
+    record_task_completion_safe,
+    register_running_task_safe,
+    register_task_safe,
+    release_bandwidth_safe,
+    release_role_safe,
+    release_sync_lock_safe,
+    report_queue_depth_safe,
+    # Bandwidth functions
+    request_bandwidth_safe,
+    set_backpressure_safe,
+    should_scale_down_safe,
+    should_scale_up_safe,
+    should_stop_safe,
+    # Queue backpressure functions
+    should_throttle_safe,
+    subscribe_process_safe,
+    warn_if_orchestrator_running,
+)
+
+# Job Scheduler exports (priority-based job scheduling)
+from app.coordination.job_scheduler import (
+    ELO_CURRICULUM_ENABLED,
+    MIN_MEMORY_GB_FOR_TASKS,
+    TARGET_CPU_UTILIZATION_MAX,
+    TARGET_CPU_UTILIZATION_MIN,
+    TARGET_GPU_UTILIZATION_MAX,
+    TARGET_GPU_UTILIZATION_MIN,
+    JobPriority,
+    PriorityJobScheduler,
+    ScheduledJob,
+    get_config_game_counts,
+    get_cpu_rich_hosts,
+    get_gpu_rich_hosts,
+    get_scheduler as get_job_scheduler,
+    get_underserved_configs,
+    reset_scheduler as reset_job_scheduler,
+    select_curriculum_config,
+)
+
+# MetricsAnalysisOrchestrator - unified metrics analysis
+from app.coordination.metrics_analysis_orchestrator import (
+    AnalysisResult,
+    MetricsAnalysisOrchestrator,
+    MetricTracker,
+    MetricType,
+    analyze_metrics,
+    get_metrics_orchestrator,
+    record_metric,
+    wire_metrics_events,
+)
+
+# Model Lifecycle Coordinator (December 2025)
+from app.coordination.model_lifecycle_coordinator import (
+    CacheEntry,
+    CheckpointInfo,
+    ModelLifecycleCoordinator,
+    ModelLifecycleStats,
+    ModelRecord,
+    ModelState,
+    get_model_coordinator,
+    get_production_elo,
+    get_production_model_id,
+    wire_model_events,
+)
+
+# OptimizationCoordinator - unified optimization management
+from app.coordination.optimization_coordinator import (
+    OptimizationCoordinator,
+    OptimizationRun,
+    OptimizationStats,
+    OptimizationType,
+    get_optimization_coordinator,
+    get_optimization_stats,
+    trigger_cmaes,
+    trigger_nas,
+    wire_optimization_events,
 )
 
 # Cross-Coordinator Health Protocol (December 2025)
 from app.coordination.orchestrator_registry import (
     CoordinatorHealth,
     CrossCoordinatorHealthProtocol,
-    get_cross_coordinator_health,
+    auto_register_known_coordinators,
     check_cluster_health,
+    get_coordinator as get_registered_coordinator,  # Alias to avoid collision with task_coordinator.get_coordinator
+    get_cross_coordinator_health,
+    get_registered_coordinators,
     # Coordinator Registration (December 2025)
     register_coordinator,
-    unregister_coordinator,
-    get_coordinator as get_registered_coordinator,  # Alias to avoid collision with task_coordinator.get_coordinator
-    get_registered_coordinators,
     shutdown_all_coordinators as shutdown_registered_coordinators,  # Alias to avoid collision
-    auto_register_known_coordinators,
+    unregister_coordinator,
 )
 
-# Async Bridge Manager (December 2025 - shared executor pool)
-from app.coordination.async_bridge_manager import (
-    AsyncBridgeManager,
-    get_bridge_manager,
-    reset_bridge_manager,
-    get_shared_executor,
-    run_in_bridge_pool,
+# P2P Backend exports (REST API client for P2P orchestrator)
+from app.coordination.p2p_backend import (
+    HAS_AIOHTTP,
+    P2P_DEFAULT_PORT,
+    P2P_HTTP_TIMEOUT,
+    P2PBackend,
+    P2PNodeInfo,
+    discover_p2p_leader_url,
+    get_p2p_backend,
 )
 
-# Model Lifecycle Coordinator (December 2025)
-from app.coordination.model_lifecycle_coordinator import (
-    ModelLifecycleCoordinator,
-    ModelState,
-    ModelRecord,
-    CheckpointInfo,
-    CacheEntry,
-    ModelLifecycleStats,
-    get_model_coordinator,
-    wire_model_events,
-    get_production_model_id,
-    get_production_elo,
-)
-
-# Task Decorators (December 2025 - lifecycle management)
-from app.coordination.task_decorators import (
-    TaskContext,
-    coordinate_task,
-    coordinate_async_task,
-    task_context,
-    get_current_task_context,
-)
-
-# Event Emitters (December 2025 - centralized event emission)
-from app.coordination.event_emitters import (
-    emit_training_started,
-    emit_training_complete,
-    emit_training_complete_sync,
-    emit_selfplay_complete,
-    emit_evaluation_complete,
-    emit_promotion_complete,
-    emit_sync_complete,
-    emit_quality_updated,
-    emit_task_complete,
-    # New emitters (December 2025)
-    emit_optimization_triggered,
-    emit_plateau_detected,
-    emit_regression_detected,
-    emit_backpressure_activated,
-    emit_backpressure_released,
-    emit_cache_invalidated,
-    emit_host_online,
-    emit_host_offline,
-    emit_node_recovered,
-)
-
-# Unified Registry (December 2025 - registry facade)
-from app.coordination.unified_registry import (
-    UnifiedRegistry,
-    ClusterHealth,
-    get_unified_registry,
-    reset_unified_registry,
+# ResourceMonitoringCoordinator - unified resource monitoring
+from app.coordination.resource_monitoring_coordinator import (
+    NodeResourceState,
+    ResourceAlert,
+    ResourceMonitoringCoordinator,
+    ResourceStats,
+    check_resource_thresholds,
+    get_resource_coordinator,
+    update_node_resources,
+    wire_resource_events,
 )
 
 # =============================================================================
 # Orchestrator Imports (December 2025 - event-driven coordination)
 # =============================================================================
-
 # SelfplayOrchestrator - unified selfplay event coordination
 from app.coordination.selfplay_orchestrator import (
     SelfplayOrchestrator,
-    SelfplayType,
-    SelfplayTaskInfo,
     SelfplayStats,
-    get_selfplay_orchestrator,
-    wire_selfplay_events,
+    SelfplayTaskInfo,
+    SelfplayType,
     emit_selfplay_completion,
+    get_selfplay_orchestrator,
     get_selfplay_stats,
+    wire_selfplay_events,
 )
 
-# DataPipelineOrchestrator - unified pipeline stage coordination
-from app.coordination.data_pipeline_orchestrator import (
-    DataPipelineOrchestrator,
-    PipelineStage,
-    StageTransition,
-    IterationRecord,
-    PipelineStats,
-    get_pipeline_orchestrator,
-    wire_pipeline_events,
-    get_pipeline_status,
-    get_current_pipeline_stage,
+# Stage Events exports (event-driven pipeline orchestration)
+from app.coordination.stage_events import (
+    StageCompletionCallback,
+    StageCompletionResult,
+    StageEvent,
+    StageEventBus,
+    create_pipeline_callbacks,
+    get_event_bus as get_stage_event_bus,
+    register_standard_callbacks,
+    reset_event_bus as reset_stage_event_bus,
+)
+
+# Task Decorators (December 2025 - lifecycle management)
+from app.coordination.task_decorators import (
+    TaskContext,
+    coordinate_async_task,
+    coordinate_task,
+    get_current_task_context,
+    task_context,
 )
 
 # TaskLifecycleCoordinator - unified task event monitoring
 from app.coordination.task_lifecycle_coordinator import (
     TaskLifecycleCoordinator,
+    TaskLifecycleStats,
     TaskStatus,
     TrackedTask,
-    TaskLifecycleStats,
-    get_task_lifecycle_coordinator,
-    wire_task_events,
-    get_task_stats,
     get_active_task_count,
+    get_task_lifecycle_coordinator,
+    get_task_stats,
+    wire_task_events,
 )
 
-# OptimizationCoordinator - unified optimization management
-from app.coordination.optimization_coordinator import (
-    OptimizationCoordinator,
-    OptimizationType,
-    OptimizationRun,
-    OptimizationStats,
-    get_optimization_coordinator,
-    wire_optimization_events,
-    trigger_cmaes,
-    trigger_nas,
-    get_optimization_stats,
+# Distributed Tracing (December 2025)
+from app.coordination.tracing import (
+    TraceCollector,
+    TraceContext,
+    TraceSpan,
+    collect_trace,
+    extract_trace_from_event,
+    extract_trace_from_headers,
+    get_trace_collector,
+    get_trace_context,
+    get_trace_id,
+    inject_trace_into_event,
+    inject_trace_into_headers,
+    new_trace,
+    set_trace_id,
+    span,
+    traced,
+    with_trace,
 )
 
-# MetricsAnalysisOrchestrator - unified metrics analysis
-from app.coordination.metrics_analysis_orchestrator import (
-    MetricsAnalysisOrchestrator,
-    MetricType,
-    MetricTracker,
-    AnalysisResult,
-    get_metrics_orchestrator,
-    wire_metrics_events,
-    record_metric,
-    analyze_metrics,
+# Training Coordination (cluster-wide training management)
+from app.coordination.training_coordinator import (
+    TrainingCoordinator,
+    TrainingJob,
+    can_train,
+    get_training_coordinator,
+    get_training_status,
+    release_training_slot,
+    request_training_slot,
+    training_slot,
+    update_training_progress,
 )
 
-# ResourceMonitoringCoordinator - unified resource monitoring
-from app.coordination.resource_monitoring_coordinator import (
-    ResourceMonitoringCoordinator,
-    NodeResourceState,
-    ResourceAlert,
-    ResourceStats,
-    get_resource_coordinator,
-    wire_resource_events,
-    update_node_resources,
-    check_resource_thresholds,
+# Transaction isolation exports (ACID-like guarantees for merge operations)
+from app.coordination.transaction_isolation import (
+    MergeOperation,
+    MergeTransaction,
+    TransactionIsolation,
+    TransactionState,
+    add_merge_operation,
+    begin_merge_transaction,
+    commit_merge_transaction,
+    complete_merge_operation,
+    get_transaction_isolation,
+    get_transaction_stats,
+    merge_transaction,
+    reset_transaction_isolation,
+    rollback_merge_transaction,
 )
 
-# CacheCoordinationOrchestrator - unified cache management
-from app.coordination.cache_coordination_orchestrator import (
-    CacheCoordinationOrchestrator,
-    CacheType,
-    CacheStatus,
-    CacheEntry,
-    NodeCacheState,
-    CacheStats,
-    get_cache_orchestrator,
-    wire_cache_events,
-    register_cache,
-    invalidate_model_caches,
+# Transfer verification exports (checksum verification for data integrity)
+from app.coordination.transfer_verification import (
+    BatchChecksum,
+    QuarantineRecord,
+    TransferRecord,
+    TransferVerifier,
+    compute_batch_checksum,
+    compute_file_checksum,
+    get_transfer_verifier,
+    quarantine_file,
+    reset_transfer_verifier,
+    verify_batch,
+    verify_transfer,
 )
 
-# DaemonManager - unified lifecycle management for all background services (December 2025)
-from app.coordination.daemon_manager import (
-    DaemonManager,
-    DaemonType,
-    DaemonState,
-    DaemonInfo,
-    DaemonManagerConfig,
-    get_daemon_manager,
-    reset_daemon_manager,
-    setup_signal_handlers,
+# Unified Event Coordinator (December 2025 - bridges all event systems)
+from app.coordination.unified_event_coordinator import (
+    CoordinatorStats as EventCoordinatorStats,
+    UnifiedEventCoordinator,
+    get_coordinator_stats as get_event_coordinator_stats,
+    get_event_coordinator,
+    start_coordinator as start_event_coordinator,
+    stop_coordinator as stop_event_coordinator,
 )
 
-# Coordinator Persistence Layer (December 2025 - state snapshots and recovery)
-from app.coordination.coordinator_persistence import (
-    StateSerializer,
-    StateSnapshot,
-    StatePersistable,
-    StatePersistenceMixin,
-    SnapshotCoordinator,
-    get_snapshot_coordinator,
-    reset_snapshot_coordinator,
-)
-
-# Coordinator Configuration (December 2025 - centralized config)
-from app.coordination.coordinator_config import (
-    TaskLifecycleConfig,
-    SelfplayConfig,
-    PipelineConfig,
-    OptimizationConfig,
-    MetricsConfig,
-    ResourceConfig,
-    CacheConfig,
-    HandlerResilienceConfig,
-    HeartbeatConfig,
-    EventBusConfig,
-    CoordinatorConfig,
-    get_config,
-    set_config,
-    reset_config,
-    update_config,
-    validate_config,
-)
-
-# Dynamic Threshold Adjustment (December 2025 - adaptive thresholds)
-from app.coordination.dynamic_thresholds import (
-    DynamicThreshold,
-    ThresholdObservation,
-    AdjustmentStrategy,
-    ThresholdManager,
-    get_threshold_manager,
-    reset_threshold_manager,
+# Unified Registry (December 2025 - registry facade)
+from app.coordination.unified_registry import (
+    ClusterHealth,
+    UnifiedRegistry,
+    get_unified_registry,
+    reset_unified_registry,
 )
 
 # Coordination Utilities (December 2025 - reusable base classes)
 from app.coordination.utils import (
     BoundedHistory,
+    CallbackRegistry,
     HistoryEntry,
     MetricsAccumulator,
-    CallbackRegistry,
 )
 
 # Module-level singleton placeholders for cleanup in shutdown_all_coordinators
@@ -935,8 +934,9 @@ def initialize_all_coordinators(
     # Emit COORDINATOR_INIT_FAILED for any failures (best effort)
     if errors:
         try:
-            from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
             import time as _time
+
+            from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
 
             bus = get_event_bus()
             for name, error in errors.items():
@@ -959,7 +959,7 @@ def initialize_all_coordinators(
 
     # Log summary
     wired_count = sum(1 for k, v in status.items() if v and not k.startswith("_"))
-    total_count = len([k for k in status.keys() if not k.startswith("_")])
+    total_count = len([k for k in status if not k.startswith("_")])
 
     if wired_count == total_count:
         logger.info(
@@ -1185,13 +1185,11 @@ async def shutdown_all_coordinators(
                 "cache", "resources", "task_lifecycle",
             ]
             for coord_name in coordinators:
-                try:
+                with contextlib.suppress(Exception):
                     await emit_coordinator_shutdown(
                         coordinator_name=coord_name,
                         reason="system_shutdown",
                     )
-                except Exception:
-                    pass
         except ImportError:
             pass
 
@@ -1417,526 +1415,526 @@ def is_heartbeat_running() -> bool:
 
 
 __all__ = [
-    # Task Coordinator (canonical)
-    "TaskCoordinator",
-    "TaskType",
-    "TaskLimits",
-    "TaskInfo",
-    "CoordinatorState",
-    "OrchestratorLock",
-    "RateLimiter",
-    "CoordinatedTask",
-    "get_coordinator",
-    "can_spawn",
-    "emergency_stop_all",
-    # Safeguards
-    "Safeguards",
-    "SafeguardConfig",
+    "ELO_CURRICULUM_ENABLED",
+    "HAS_AIOHTTP",
+    "MIN_MEMORY_GB_FOR_TASKS",
+    "P2P_DEFAULT_PORT",
+    "P2P_HTTP_TIMEOUT",
+    "TARGET_CPU_UTILIZATION_MAX",
+    "TARGET_CPU_UTILIZATION_MIN",
+    "TARGET_GPU_UTILIZATION_MAX",
+    "TARGET_GPU_UTILIZATION_MIN",
+    "AdjustmentStrategy",
+    "AnalysisResult",
+    # Async Bridge Manager (December 2025)
+    "AsyncBridgeManager",
+    # Async Training Bridge (async wrapper + event integration)
+    "AsyncTrainingBridge",
+    "BackpressureLevel",
+    "BandwidthAllocation",
+    # Bandwidth Manager
+    "BandwidthManager",
+    "BatchChecksum",
+    # Coordination Utilities (December 2025)
+    "BoundedHistory",
+    "CacheConfig",
+    # CacheCoordinationOrchestrator
+    "CacheCoordinationOrchestrator",
+    "CacheEntry",
+    "CacheStats",
+    "CacheStatus",
+    "CacheType",
+    "CallbackMixin",
+    "CallbackRegistry",
     "CircuitBreaker",
     "CircuitState",
-    "SpawnRateTracker",
-    "ResourceMonitor",
-    "check_before_spawn",
+    "ClusterDataStatus",
+    "ClusterHealth",
+    "ClusterState",
+    "CoordinatedTask",
+    # Backward-compatible names
+    "CoordinationSyncCoordinator",  # Renamed to avoid collision
+    # Coordinator Base (common patterns for coordinators/managers)
+    "CoordinatorBase",
+    "CoordinatorConfig",
+    # Cross-Coordinator Health Protocol (December 2025)
+    "CoordinatorHealth",
+    "CoordinatorProtocol",
+    "CoordinatorState",
+    "CoordinatorStats",
+    "CoordinatorStatus",
+    "CrossCoordinatorHealthProtocol",
+    "CrossProcessEvent",
+    "CrossProcessEventPoller",
+    # Cross-Process Event Queue
+    "CrossProcessEventQueue",
+    "DaemonInfo",
+    # DaemonManager (December 2025)
+    "DaemonManager",
+    "DaemonManagerConfig",
+    "DaemonState",
+    "DaemonType",
+    # DataPipelineOrchestrator
+    "DataPipelineOrchestrator",
+    # Distributed Locking
+    "DistributedLock",
+    # Duration Scheduler
+    "DurationScheduler",
+    # Dynamic Threshold Adjustment (December 2025)
+    "DynamicThreshold",
+    # Ephemeral Data Guard (data insurance for ephemeral hosts)
+    "EphemeralDataGuard",
+    "EventBusConfig",
+    "EventCoordinatorStats",
+    "EventSource",
+    "HandlerResilienceConfig",
+    # Health Check
+    "HealthStatus",
+    "HeartbeatConfig",
+    "HistoryEntry",
+    "HostCheckpoint",
+    # Data types
+    "HostDataState",
+    "HostTargets",
+    "HostTier",
+    "HostType",
+    "IterationRecord",
+    "JobPriority",
+    "MergeOperation",
+    "MergeTransaction",
+    "MetricTracker",
+    "MetricType",
+    "MetricsAccumulator",
+    # MetricsAnalysisOrchestrator
+    "MetricsAnalysisOrchestrator",
+    "MetricsConfig",
+    "NodeCacheState",
+    "NodeResourceState",
+    "NodeResources",
+    "OptimizationConfig",
+    # OptimizationCoordinator
+    "OptimizationCoordinator",
+    "OptimizationResult",
+    "OptimizationRun",
+    "OptimizationStats",
+    "OptimizationType",
+    "OrchestratorInfo",
+    "OrchestratorLock",
     # Orchestrator Registry
     "OrchestratorRegistry",
     "OrchestratorRole",
     "OrchestratorState",
-    "OrchestratorInfo",
-    "get_registry",
-    "acquire_orchestrator_role",
-    "release_orchestrator_role",
-    "is_orchestrator_role_available",
-    "orchestrator_role",
-    # Cross-Process Event Queue
-    "CrossProcessEventQueue",
-    "CrossProcessEvent",
-    "CrossProcessEventPoller",
-    "get_event_queue",
-    "reset_event_queue",
-    "publish_event",
-    "subscribe_process",
-    "poll_events",
-    "ack_event",
-    "ack_events",
-    "bridge_to_cross_process",
-    # Health Check
-    "HealthStatus",
-    "check_host_health",
-    "is_host_healthy",
-    "get_healthy_hosts",
-    "get_health_summary",
-    "clear_health_cache",
-    "mark_host_unhealthy",
-    "pre_spawn_check",
-    # Sync Mutex
-    "SyncMutex",
-    "SyncLockInfo",
-    "get_sync_mutex",
-    "reset_sync_mutex",
-    "acquire_sync_lock",
-    "release_sync_lock",
-    "is_sync_locked",
-    "get_sync_stats",
-    "sync_lock",
-    "sync_lock_required",
-    # Duration Scheduler
-    "DurationScheduler",
-    "TaskDurationRecord",
-    "ScheduledTask",
-    "get_scheduler",
-    "reset_scheduler",
-    "estimate_task_duration",
-    "record_task_completion",
-    "register_running_task",
-    "get_resource_availability",
-    "can_schedule_task",
-    # Queue Monitor
-    "QueueMonitor",
-    "QueueType",
-    "QueueStatus",
-    "BackpressureLevel",
-    "get_queue_monitor",
-    "reset_queue_monitor",
-    "report_queue_depth",
-    "check_backpressure",
-    "should_throttle_production",
-    "should_stop_production",
-    "get_throttle_factor",
-    "get_queue_stats",
-    # Bandwidth Manager
-    "BandwidthManager",
-    "BandwidthAllocation",
-    "TransferPriority",
-    "get_bandwidth_manager",
-    "reset_bandwidth_manager",
-    "request_bandwidth",
-    "release_bandwidth",
-    "get_host_bandwidth_status",
-    "get_optimal_transfer_time",
-    "get_bandwidth_stats",
-    "bandwidth_allocation",
-    # Resource Targets
-    "ResourceTargetManager",
-    "UtilizationTargets",
-    "HostTargets",
-    "HostTier",
-    "get_resource_targets",
-    "get_host_targets",
-    "should_scale_up",
-    "should_scale_down",
-    "get_target_job_count",
-    "get_utilization_score",
-    "record_utilization",
-    "get_cluster_summary",
-    "set_backpressure",
-    "reset_resource_targets",
-    # Resource Optimizer (cluster-wide PID control)
-    "ResourceOptimizer",
-    "ResourceType",
-    "ScaleAction",
-    "NodeResources",
-    "ClusterState",
-    "OptimizationResult",
-    "PIDController",
-    "get_resource_optimizer",
-    "get_optimal_concurrency",
-    "get_cluster_utilization",
-    # Sync SCHEDULER (unified data sync SCHEDULING - December 2025)
-    # Preferred names (avoids collision with distributed.sync_coordinator.SyncCoordinator)
-    "SyncScheduler",
-    "get_sync_scheduler",
-    "reset_sync_scheduler",
-    # Backward-compatible names
-    "CoordinationSyncCoordinator",  # Renamed to avoid collision
-    "get_sync_coordinator",
-    "reset_sync_coordinator",
-    # Data types
-    "HostDataState",
-    "HostType",
-    "SyncPriority",
-    "SyncAction",
-    "SyncRecommendation",
-    "ClusterDataStatus",
-    # Functions
-    "get_cluster_data_status",
-    "get_sync_recommendations",
-    "get_next_sync_target",
-    "register_host",
-    "update_host_state",
-    "record_sync_start",
-    "record_sync_complete",
-    "record_games_generated",
-    "execute_priority_sync",
-    # Ephemeral Data Guard (data insurance for ephemeral hosts)
-    "EphemeralDataGuard",
-    "HostCheckpoint",
-    "WriteThrough",
-    "get_ephemeral_guard",
-    "reset_ephemeral_guard",
-    "checkpoint_games",
-    "ephemeral_heartbeat",
-    "is_host_ephemeral",
-    "get_evacuation_candidates",
-    "request_evacuation",
-    "queue_critical_game",
-    # Transfer Verification (checksum verification for data integrity)
-    "TransferVerifier",
-    "TransferRecord",
-    "BatchChecksum",
-    "QuarantineRecord",
-    "get_transfer_verifier",
-    "reset_transfer_verifier",
-    "compute_file_checksum",
-    "verify_transfer",
-    "quarantine_file",
-    "verify_batch",
-    "compute_batch_checksum",
-    # Transaction Isolation (ACID-like guarantees for merge operations)
-    "TransactionIsolation",
-    "TransactionState",
-    "MergeOperation",
-    "MergeTransaction",
-    "get_transaction_isolation",
-    "reset_transaction_isolation",
-    "begin_merge_transaction",
-    "add_merge_operation",
-    "complete_merge_operation",
-    "commit_merge_transaction",
-    "rollback_merge_transaction",
-    "merge_transaction",
-    "get_transaction_stats",
-    # Coordination helpers (safe wrappers)
-    "has_coordination",
-    "get_task_types",
-    "get_orchestrator_roles",
-    "get_queue_types",
-    "get_transfer_priorities",
-    "get_event_poller_class",
-    "get_coordinator_safe",
-    "can_spawn_safe",
-    "register_task_safe",
-    "complete_task_safe",
-    "fail_task_safe",
-    "get_registry_safe",
-    "acquire_role_safe",
-    "release_role_safe",
-    "has_role",
-    "get_role_holder",
-    "check_spawn_allowed",
-    "get_safeguards",
-    "get_current_node_id",
-    "is_unified_loop_running",
-    "warn_if_orchestrator_running",
-    # Additional availability checks
-    "has_sync_lock",
-    "has_bandwidth_manager",
-    "has_duration_scheduler",
-    "has_cross_process_events",
-    "has_resource_targets",
-    # Queue backpressure helpers
-    "should_throttle_safe",
-    "should_stop_safe",
-    "get_throttle_factor_safe",
-    "report_queue_depth_safe",
-    # Sync mutex helpers
-    "get_sync_lock_context",
-    "acquire_sync_lock_safe",
-    "release_sync_lock_safe",
-    # Bandwidth helpers
-    "request_bandwidth_safe",
-    "release_bandwidth_safe",
-    "get_bandwidth_context",
-    # Duration scheduling helpers
-    "can_schedule_task_safe",
-    "register_running_task_safe",
-    "record_task_completion_safe",
-    "estimate_duration_safe",
-    # Cross-process events helpers
-    "publish_event_safe",
-    "poll_events_safe",
-    "ack_event_safe",
-    "subscribe_process_safe",
-    # Resource targets helpers
-    "get_resource_targets_safe",
-    "get_host_targets_safe",
-    "get_cluster_summary_safe",
-    "should_scale_up_safe",
-    "should_scale_down_safe",
-    "set_backpressure_safe",
     # P2P Backend (REST API client for P2P orchestrator)
     "P2PBackend",
     "P2PNodeInfo",
-    "discover_p2p_leader_url",
-    "get_p2p_backend",
-    "P2P_DEFAULT_PORT",
-    "P2P_HTTP_TIMEOUT",
-    "HAS_AIOHTTP",
+    "PIDController",
+    "PipelineConfig",
+    "PipelineStage",
+    "PipelineStats",
     # Job Scheduler (priority-based job scheduling)
     "PriorityJobScheduler",
-    "JobPriority",
-    "ScheduledJob",
-    "get_job_scheduler",
-    "reset_job_scheduler",
-    "get_config_game_counts",
-    "select_curriculum_config",
-    "get_underserved_configs",
-    "get_cpu_rich_hosts",
-    "get_gpu_rich_hosts",
-    "TARGET_GPU_UTILIZATION_MIN",
-    "TARGET_GPU_UTILIZATION_MAX",
-    "TARGET_CPU_UTILIZATION_MIN",
-    "TARGET_CPU_UTILIZATION_MAX",
-    "MIN_MEMORY_GB_FOR_TASKS",
-    "ELO_CURRICULUM_ENABLED",
-    # Stage Events (event-driven pipeline orchestration)
-    "StageEventBus",
-    "StageEvent",
-    "StageCompletionResult",
-    "StageCompletionCallback",
-    "get_stage_event_bus",
-    "reset_stage_event_bus",
-    "create_pipeline_callbacks",
-    "register_standard_callbacks",
-    # Distributed Locking
-    "DistributedLock",
-    "acquire_training_lock",
-    "release_training_lock",
-    "training_lock",
-    # Training Coordination (cluster-wide training management)
-    "TrainingCoordinator",
-    "TrainingJob",
-    "get_training_coordinator",
-    "request_training_slot",
-    "release_training_slot",
-    "update_training_progress",
-    "can_train",
-    "get_training_status",
-    "training_slot",
-    # Async Training Bridge (async wrapper + event integration)
-    "AsyncTrainingBridge",
-    "TrainingProgressEvent",
-    "get_training_bridge",
-    "reset_training_bridge",
-    "async_can_train",
-    "async_request_training",
-    "async_update_progress",
-    "async_complete_training",
-    "async_get_training_status",
-    # Coordinator Base (common patterns for coordinators/managers)
-    "CoordinatorBase",
-    "CoordinatorProtocol",
-    "CoordinatorStatus",
-    "CoordinatorStats",
-    "SQLitePersistenceMixin",
-    "SingletonMixin",
-    "CallbackMixin",
-    "is_coordinator",
-    # Unified Event Coordinator (bridges all event systems)
-    "UnifiedEventCoordinator",
-    "EventCoordinatorStats",
-    "get_event_coordinator",
-    "start_event_coordinator",
-    "stop_event_coordinator",
-    "get_event_coordinator_stats",
-    # Unified Event Router (December 2025)
-    "UnifiedEventRouter",
+    "QuarantineRecord",
+    # Queue Monitor
+    "QueueMonitor",
+    "QueueStatus",
+    "QueueType",
+    "RateLimiter",
+    "ResourceAlert",
+    "ResourceConfig",
+    "ResourceMonitor",
+    # ResourceMonitoringCoordinator
+    "ResourceMonitoringCoordinator",
+    # Resource Optimizer (cluster-wide PID control)
+    "ResourceOptimizer",
+    "ResourceStats",
+    # Resource Targets
+    "ResourceTargetManager",
+    "ResourceType",
     "RouterEvent",
-    "EventSource",
-    "get_event_router",
-    "reset_event_router",
-    "publish_event",
-    "publish_event_sync",
-    "subscribe_event",
-    "unsubscribe_event",
-    # Distributed Tracing (December 2025)
-    "TraceContext",
-    "TraceSpan",
-    "TraceCollector",
-    "get_trace_id",
-    "set_trace_id",
-    "get_trace_context",
-    "new_trace",
-    "with_trace",
-    "span",
-    "traced",
-    "inject_trace_into_event",
-    "extract_trace_from_event",
-    "inject_trace_into_headers",
-    "extract_trace_from_headers",
-    "get_trace_collector",
-    "collect_trace",
-    # Cross-Coordinator Health Protocol (December 2025)
-    "CoordinatorHealth",
-    "CrossCoordinatorHealthProtocol",
-    "get_cross_coordinator_health",
-    "check_cluster_health",
-    # Coordinator Registration (December 2025)
-    "register_coordinator",
-    "unregister_coordinator",
-    "get_coordinator",
-    "get_registered_coordinators",
-    "shutdown_all_coordinators",
-    "auto_register_known_coordinators",
-    # Async Bridge Manager (December 2025)
-    "AsyncBridgeManager",
-    "get_bridge_manager",
-    "reset_bridge_manager",
-    "get_shared_executor",
-    "run_in_bridge_pool",
-    # Task Decorators (December 2025)
-    "TaskContext",
-    "coordinate_task",
-    "coordinate_async_task",
-    "task_context",
-    "get_current_task_context",
-    # Event Emitters (December 2025)
-    "emit_training_started",
-    "emit_training_complete",
-    "emit_training_complete_sync",
-    "emit_selfplay_complete",
-    "emit_evaluation_complete",
-    "emit_promotion_complete",
-    "emit_sync_complete",
-    "emit_quality_updated",
-    "emit_task_complete",
-    # New emitters (December 2025)
-    "emit_optimization_triggered",
-    "emit_plateau_detected",
-    "emit_regression_detected",
-    "emit_backpressure_activated",
-    "emit_backpressure_released",
-    "emit_cache_invalidated",
-    "emit_host_online",
-    "emit_host_offline",
-    "emit_node_recovered",
-    # Unified Registry (December 2025)
-    "UnifiedRegistry",
-    "ClusterHealth",
-    "get_unified_registry",
-    "reset_unified_registry",
+    "SQLitePersistenceMixin",
+    "SafeguardConfig",
+    # Safeguards
+    "Safeguards",
+    "ScaleAction",
+    "ScheduledJob",
+    "ScheduledTask",
+    "SelfplayConfig",
     # ==========================================================================
     # Orchestrators (December 2025 - event-driven coordination)
     # ==========================================================================
     # SelfplayOrchestrator
     "SelfplayOrchestrator",
-    "SelfplayType",
-    "SelfplayTaskInfo",
     "SelfplayStats",
-    "get_selfplay_orchestrator",
-    "wire_selfplay_events",
-    "emit_selfplay_completion",
-    "get_selfplay_stats",
-    # DataPipelineOrchestrator
-    "DataPipelineOrchestrator",
-    "PipelineStage",
+    "SelfplayTaskInfo",
+    "SelfplayType",
+    "SingletonMixin",
+    "SnapshotCoordinator",
+    "SpawnRateTracker",
+    "StageCompletionCallback",
+    "StageCompletionResult",
+    "StageEvent",
+    # Stage Events (event-driven pipeline orchestration)
+    "StageEventBus",
     "StageTransition",
-    "IterationRecord",
-    "PipelineStats",
-    "get_pipeline_orchestrator",
-    "wire_pipeline_events",
-    "get_pipeline_status",
-    "get_current_pipeline_stage",
-    # TaskLifecycleCoordinator
-    "TaskLifecycleCoordinator",
-    "TaskStatus",
-    "TrackedTask",
-    "TaskLifecycleStats",
-    "get_task_lifecycle_coordinator",
-    "wire_task_events",
-    "get_task_stats",
-    "get_active_task_count",
-    # OptimizationCoordinator
-    "OptimizationCoordinator",
-    "OptimizationType",
-    "OptimizationRun",
-    "OptimizationStats",
-    "get_optimization_coordinator",
-    "wire_optimization_events",
-    "trigger_cmaes",
-    "trigger_nas",
-    "get_optimization_stats",
-    # MetricsAnalysisOrchestrator
-    "MetricsAnalysisOrchestrator",
-    "MetricType",
-    "MetricTracker",
-    "AnalysisResult",
-    "get_metrics_orchestrator",
-    "wire_metrics_events",
-    "record_metric",
-    "analyze_metrics",
-    # ResourceMonitoringCoordinator
-    "ResourceMonitoringCoordinator",
-    "NodeResourceState",
-    "ResourceAlert",
-    "ResourceStats",
-    "get_resource_coordinator",
-    "wire_resource_events",
-    "update_node_resources",
-    "check_resource_thresholds",
-    # CacheCoordinationOrchestrator
-    "CacheCoordinationOrchestrator",
-    "CacheType",
-    "CacheStatus",
-    "CacheEntry",
-    "NodeCacheState",
-    "CacheStats",
-    "get_cache_orchestrator",
-    "wire_cache_events",
-    "register_cache",
-    "invalidate_model_caches",
-    # DaemonManager (December 2025)
-    "DaemonManager",
-    "DaemonType",
-    "DaemonState",
-    "DaemonInfo",
-    "DaemonManagerConfig",
-    "get_daemon_manager",
-    "reset_daemon_manager",
-    "setup_signal_handlers",
-    # Unified Initialization (December 2025)
-    "initialize_all_coordinators",
-    "get_all_coordinator_status",
-    "get_system_health",
-    "shutdown_all_coordinators",
-    # Coordinator Heartbeats (December 2025)
-    "start_coordinator_heartbeats",
-    "stop_coordinator_heartbeats",
-    "is_heartbeat_running",
+    "StatePersistable",
+    "StatePersistenceMixin",
     # Coordinator Persistence Layer (December 2025)
     "StateSerializer",
     "StateSnapshot",
-    "StatePersistable",
-    "StatePersistenceMixin",
-    "SnapshotCoordinator",
-    "get_snapshot_coordinator",
-    "reset_snapshot_coordinator",
+    "SyncAction",
+    "SyncLockInfo",
+    # Sync Mutex
+    "SyncMutex",
+    "SyncPriority",
+    "SyncRecommendation",
+    # Sync SCHEDULER (unified data sync SCHEDULING - December 2025)
+    # Preferred names (avoids collision with distributed.sync_coordinator.SyncCoordinator)
+    "SyncScheduler",
+    # Task Decorators (December 2025)
+    "TaskContext",
+    # Task Coordinator (canonical)
+    "TaskCoordinator",
+    "TaskDurationRecord",
+    "TaskInfo",
     # Coordinator Configuration (December 2025)
     "TaskLifecycleConfig",
-    "SelfplayConfig",
-    "PipelineConfig",
-    "OptimizationConfig",
-    "MetricsConfig",
-    "ResourceConfig",
-    "CacheConfig",
-    "HandlerResilienceConfig",
-    "HeartbeatConfig",
-    "EventBusConfig",
-    "CoordinatorConfig",
-    "get_config",
-    "set_config",
-    "reset_config",
-    "update_config",
-    "validate_config",
-    # Dynamic Threshold Adjustment (December 2025)
-    "DynamicThreshold",
-    "ThresholdObservation",
-    "AdjustmentStrategy",
+    # TaskLifecycleCoordinator
+    "TaskLifecycleCoordinator",
+    "TaskLifecycleStats",
+    "TaskLimits",
+    "TaskStatus",
+    "TaskType",
     "ThresholdManager",
+    "ThresholdObservation",
+    "TraceCollector",
+    # Distributed Tracing (December 2025)
+    "TraceContext",
+    "TraceSpan",
+    "TrackedTask",
+    # Training Coordination (cluster-wide training management)
+    "TrainingCoordinator",
+    "TrainingJob",
+    "TrainingProgressEvent",
+    # Transaction Isolation (ACID-like guarantees for merge operations)
+    "TransactionIsolation",
+    "TransactionState",
+    "TransferPriority",
+    "TransferRecord",
+    # Transfer Verification (checksum verification for data integrity)
+    "TransferVerifier",
+    # Unified Event Coordinator (bridges all event systems)
+    "UnifiedEventCoordinator",
+    # Unified Event Router (December 2025)
+    "UnifiedEventRouter",
+    # Unified Registry (December 2025)
+    "UnifiedRegistry",
+    "UtilizationTargets",
+    "WriteThrough",
+    "ack_event",
+    "ack_event_safe",
+    "ack_events",
+    "acquire_orchestrator_role",
+    "acquire_role_safe",
+    "acquire_sync_lock",
+    "acquire_sync_lock_safe",
+    "acquire_training_lock",
+    "add_merge_operation",
+    "analyze_metrics",
+    "async_can_train",
+    "async_complete_training",
+    "async_get_training_status",
+    "async_request_training",
+    "async_update_progress",
+    "auto_register_known_coordinators",
+    "bandwidth_allocation",
+    "begin_merge_transaction",
+    "bridge_to_cross_process",
+    "can_schedule_task",
+    # Duration scheduling helpers
+    "can_schedule_task_safe",
+    "can_spawn",
+    "can_spawn_safe",
+    "can_train",
+    "check_backpressure",
+    "check_before_spawn",
+    "check_cluster_health",
+    "check_host_health",
+    "check_resource_thresholds",
+    "check_spawn_allowed",
+    "checkpoint_games",
+    "clear_health_cache",
+    "collect_trace",
+    "commit_merge_transaction",
+    "complete_merge_operation",
+    "complete_task_safe",
+    "compute_batch_checksum",
+    "compute_file_checksum",
+    "coordinate_async_task",
+    "coordinate_task",
+    "create_pipeline_callbacks",
+    "discover_p2p_leader_url",
+    "emergency_stop_all",
+    "emit_backpressure_activated",
+    "emit_backpressure_released",
+    "emit_cache_invalidated",
+    "emit_evaluation_complete",
+    "emit_host_offline",
+    "emit_host_online",
+    "emit_node_recovered",
+    # New emitters (December 2025)
+    "emit_optimization_triggered",
+    "emit_plateau_detected",
+    "emit_promotion_complete",
+    "emit_quality_updated",
+    "emit_regression_detected",
+    "emit_selfplay_complete",
+    "emit_selfplay_completion",
+    "emit_sync_complete",
+    "emit_task_complete",
+    "emit_training_complete",
+    "emit_training_complete_sync",
+    # Event Emitters (December 2025)
+    "emit_training_started",
+    "ephemeral_heartbeat",
+    "estimate_duration_safe",
+    "estimate_task_duration",
+    "execute_priority_sync",
+    "extract_trace_from_event",
+    "extract_trace_from_headers",
+    "fail_task_safe",
+    "get_active_task_count",
+    "get_all_coordinator_status",
+    "get_bandwidth_context",
+    "get_bandwidth_manager",
+    "get_bandwidth_stats",
+    "get_bridge_manager",
+    "get_cache_orchestrator",
+    # Functions
+    "get_cluster_data_status",
+    "get_cluster_summary",
+    "get_cluster_summary_safe",
+    "get_cluster_utilization",
+    "get_config",
+    "get_config_game_counts",
+    "get_coordinator",
+    "get_coordinator",
+    "get_coordinator_safe",
+    "get_cpu_rich_hosts",
+    "get_cross_coordinator_health",
+    "get_current_node_id",
+    "get_current_pipeline_stage",
+    "get_current_task_context",
+    "get_daemon_manager",
+    "get_ephemeral_guard",
+    "get_evacuation_candidates",
+    "get_event_coordinator",
+    "get_event_coordinator_stats",
+    "get_event_poller_class",
+    "get_event_queue",
+    "get_event_router",
+    "get_gpu_rich_hosts",
+    "get_health_summary",
+    "get_healthy_hosts",
+    "get_host_bandwidth_status",
+    "get_host_targets",
+    "get_host_targets_safe",
+    "get_job_scheduler",
+    "get_metrics_orchestrator",
+    "get_next_sync_target",
+    "get_optimal_concurrency",
+    "get_optimal_transfer_time",
+    "get_optimization_coordinator",
+    "get_optimization_stats",
+    "get_orchestrator_roles",
+    "get_p2p_backend",
+    "get_pipeline_orchestrator",
+    "get_pipeline_status",
+    "get_queue_monitor",
+    "get_queue_stats",
+    "get_queue_types",
+    "get_registered_coordinators",
+    "get_registry",
+    "get_registry_safe",
+    "get_resource_availability",
+    "get_resource_coordinator",
+    "get_resource_optimizer",
+    "get_resource_targets",
+    # Resource targets helpers
+    "get_resource_targets_safe",
+    "get_role_holder",
+    "get_safeguards",
+    "get_scheduler",
+    "get_selfplay_orchestrator",
+    "get_selfplay_stats",
+    "get_shared_executor",
+    "get_snapshot_coordinator",
+    "get_stage_event_bus",
+    "get_sync_coordinator",
+    # Sync mutex helpers
+    "get_sync_lock_context",
+    "get_sync_mutex",
+    "get_sync_recommendations",
+    "get_sync_scheduler",
+    "get_sync_stats",
+    "get_system_health",
+    "get_target_job_count",
+    "get_task_lifecycle_coordinator",
+    "get_task_stats",
+    "get_task_types",
     "get_threshold_manager",
+    "get_throttle_factor",
+    "get_throttle_factor_safe",
+    "get_trace_collector",
+    "get_trace_context",
+    "get_trace_id",
+    "get_training_bridge",
+    "get_training_coordinator",
+    "get_training_status",
+    "get_transaction_isolation",
+    "get_transaction_stats",
+    "get_transfer_priorities",
+    "get_transfer_verifier",
+    "get_underserved_configs",
+    "get_unified_registry",
+    "get_utilization_score",
+    "has_bandwidth_manager",
+    # Coordination helpers (safe wrappers)
+    "has_coordination",
+    "has_cross_process_events",
+    "has_duration_scheduler",
+    "has_resource_targets",
+    "has_role",
+    # Additional availability checks
+    "has_sync_lock",
+    # Unified Initialization (December 2025)
+    "initialize_all_coordinators",
+    "inject_trace_into_event",
+    "inject_trace_into_headers",
+    "invalidate_model_caches",
+    "is_coordinator",
+    "is_heartbeat_running",
+    "is_host_ephemeral",
+    "is_host_healthy",
+    "is_orchestrator_role_available",
+    "is_sync_locked",
+    "is_unified_loop_running",
+    "mark_host_unhealthy",
+    "merge_transaction",
+    "new_trace",
+    "orchestrator_role",
+    "poll_events",
+    "poll_events_safe",
+    "pre_spawn_check",
+    "publish_event",
+    "publish_event",
+    # Cross-process events helpers
+    "publish_event_safe",
+    "publish_event_sync",
+    "quarantine_file",
+    "queue_critical_game",
+    "record_games_generated",
+    "record_metric",
+    "record_sync_complete",
+    "record_sync_start",
+    "record_task_completion",
+    "record_task_completion_safe",
+    "record_utilization",
+    "register_cache",
+    # Coordinator Registration (December 2025)
+    "register_coordinator",
+    "register_host",
+    "register_running_task",
+    "register_running_task_safe",
+    "register_standard_callbacks",
+    "register_task_safe",
+    "release_bandwidth",
+    "release_bandwidth_safe",
+    "release_orchestrator_role",
+    "release_role_safe",
+    "release_sync_lock",
+    "release_sync_lock_safe",
+    "release_training_lock",
+    "release_training_slot",
+    "report_queue_depth",
+    "report_queue_depth_safe",
+    "request_bandwidth",
+    # Bandwidth helpers
+    "request_bandwidth_safe",
+    "request_evacuation",
+    "request_training_slot",
+    "reset_bandwidth_manager",
+    "reset_bridge_manager",
+    "reset_config",
+    "reset_daemon_manager",
+    "reset_ephemeral_guard",
+    "reset_event_queue",
+    "reset_event_router",
+    "reset_job_scheduler",
+    "reset_queue_monitor",
+    "reset_resource_targets",
+    "reset_scheduler",
+    "reset_snapshot_coordinator",
+    "reset_stage_event_bus",
+    "reset_sync_coordinator",
+    "reset_sync_mutex",
+    "reset_sync_scheduler",
     "reset_threshold_manager",
-    # Coordination Utilities (December 2025)
-    "BoundedHistory",
-    "HistoryEntry",
-    "MetricsAccumulator",
-    "CallbackRegistry",
+    "reset_training_bridge",
+    "reset_transaction_isolation",
+    "reset_transfer_verifier",
+    "reset_unified_registry",
+    "rollback_merge_transaction",
+    "run_in_bridge_pool",
+    "select_curriculum_config",
+    "set_backpressure",
+    "set_backpressure_safe",
+    "set_config",
+    "set_trace_id",
+    "setup_signal_handlers",
+    "should_scale_down",
+    "should_scale_down_safe",
+    "should_scale_up",
+    "should_scale_up_safe",
+    "should_stop_production",
+    "should_stop_safe",
+    "should_throttle_production",
+    # Queue backpressure helpers
+    "should_throttle_safe",
+    "shutdown_all_coordinators",
+    "shutdown_all_coordinators",
+    "span",
+    # Coordinator Heartbeats (December 2025)
+    "start_coordinator_heartbeats",
+    "start_event_coordinator",
+    "stop_coordinator_heartbeats",
+    "stop_event_coordinator",
+    "subscribe_event",
+    "subscribe_process",
+    "subscribe_process_safe",
+    "sync_lock",
+    "sync_lock_required",
+    "task_context",
+    "traced",
+    "training_lock",
+    "training_slot",
+    "trigger_cmaes",
+    "trigger_nas",
+    "unregister_coordinator",
+    "unsubscribe_event",
+    "update_config",
+    "update_host_state",
+    "update_node_resources",
+    "update_training_progress",
+    "validate_config",
+    "verify_batch",
+    "verify_transfer",
+    "warn_if_orchestrator_running",
+    "wire_cache_events",
+    "wire_metrics_events",
+    "wire_optimization_events",
+    "wire_pipeline_events",
+    "wire_resource_events",
+    "wire_selfplay_events",
+    "wire_task_events",
+    "with_trace",
 ]

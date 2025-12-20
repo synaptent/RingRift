@@ -44,12 +44,13 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class NodeTransportState:
     # Cloudflare Zero Trust tracking
     cloudflare_consecutive_failures: int = 0
     cloudflare_last_success: float = 0.0
-    cloudflare_tunnel: Optional[str] = None
+    cloudflare_tunnel: str | None = None
 
     # Aria2 tracking (for large file transfers)
     aria2_available: bool = False
@@ -196,7 +197,7 @@ class HybridTransport:
     """
 
     def __init__(self):
-        self._states: Dict[str, NodeTransportState] = {}
+        self._states: dict[str, NodeTransportState] = {}
         self._lock = asyncio.Lock()
         self._ssh_transport = None
         self._http_session = None
@@ -222,9 +223,9 @@ class HybridTransport:
         node_id: str,
         url: str,
         method: str = "POST",
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         timeout: float = 15.0,
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Try HTTP communication.
 
         Returns:
@@ -255,9 +256,9 @@ class HybridTransport:
         port: int,
         path: str,
         method: str = "POST",
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         timeout: float = 15.0,
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Try communication via Tailscale IP.
 
         Returns:
@@ -287,9 +288,9 @@ class HybridTransport:
         node_id: str,
         path: str,
         method: str = "POST",
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         timeout: float = 15.0,
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Try communication via Cloudflare Zero Trust tunnel.
 
         Returns:
@@ -309,10 +310,10 @@ class HybridTransport:
     async def _try_aria2(
         self,
         node_id: str,
-        urls: List[str],
+        urls: list[str],
         local_path: str,
         max_connections: int = 16,
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Download file using aria2 with parallel connections.
 
         Best for large files like model checkpoints.
@@ -352,10 +353,8 @@ class HybridTransport:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
 
             # Clean up input file
-            try:
+            with contextlib.suppress(Exception):
                 Path(input_file).unlink()
-            except Exception:
-                pass
 
             if proc.returncode == 0:
                 self._get_state(node_id).record_aria2_success()
@@ -378,8 +377,8 @@ class HybridTransport:
         self,
         node_id: str,
         command_type: str,
-        payload: Dict[str, Any],
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        payload: dict[str, Any],
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Try SSH communication.
 
         Returns:
@@ -398,10 +397,10 @@ class HybridTransport:
         port: int,
         path: str,
         method: str = "POST",
-        payload: Optional[Dict[str, Any]] = None,
-        command_type: Optional[str] = None,
+        payload: dict[str, Any] | None = None,
+        command_type: str | None = None,
         timeout: float = 15.0,
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Send a request using the best available transport.
 
         Tries transports in order of preference, tracking success/failure
@@ -479,8 +478,8 @@ class HybridTransport:
         node_id: str,
         host: str,
         port: int,
-        self_info: Dict[str, Any],
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        self_info: dict[str, Any],
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Send heartbeat to a node.
 
         Args:
@@ -507,8 +506,8 @@ class HybridTransport:
         node_id: str,
         host: str,
         port: int,
-        self_info: Dict[str, Any],
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        self_info: dict[str, Any],
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Send relay heartbeat to a node.
 
         Args:
@@ -535,8 +534,8 @@ class HybridTransport:
         node_id: str,
         host: str,
         port: int,
-        job_payload: Dict[str, Any],
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        job_payload: dict[str, Any],
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Request a node to start a job.
 
         Args:
@@ -563,7 +562,7 @@ class HybridTransport:
         node_id: str,
         host: str,
         port: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get status from a node.
 
         Args:
@@ -584,7 +583,7 @@ class HybridTransport:
         )
         return response if success else None
 
-    def get_transport_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_transport_stats(self) -> dict[str, dict[str, Any]]:
         """Get transport statistics for all nodes.
 
         Returns:
@@ -632,9 +631,9 @@ class HybridTransport:
     async def download_file(
         self,
         node_id: str,
-        urls: List[str],
+        urls: list[str],
         local_path: str,
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Download a file using aria2 with multi-source parallel download.
 
         Best for large files like model checkpoints where multiple nodes
@@ -661,14 +660,13 @@ class HybridTransport:
             try:
                 from aiohttp import ClientSession, ClientTimeout
                 timeout = ClientTimeout(total=300, connect=10)
-                async with ClientSession(timeout=timeout) as session:
-                    async with session.get(urls[0]) as resp:
-                        if resp.status == 200:
-                            Path(local_path).parent.mkdir(parents=True, exist_ok=True)
-                            with open(local_path, "wb") as f:
-                                async for chunk in resp.content.iter_chunked(1024 * 1024):
-                                    f.write(chunk)
-                            return True, local_path
+                async with ClientSession(timeout=timeout) as session, session.get(urls[0]) as resp:
+                    if resp.status == 200:
+                        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+                        with open(local_path, "wb") as f:
+                            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                                f.write(chunk)
+                        return True, local_path
             except Exception as e:
                 logger.debug(f"HTTP download failed: {e}")
 
@@ -679,7 +677,7 @@ class HybridTransport:
         node_id: str,
         host: str,
         port: int,
-    ) -> Dict[str, Tuple[bool, float]]:
+    ) -> dict[str, tuple[bool, float]]:
         """Probe all transports for a node and return latencies.
 
         Args:
@@ -722,7 +720,7 @@ class HybridTransport:
 
 
 # Global instance
-_hybrid_transport: Optional[HybridTransport] = None
+_hybrid_transport: HybridTransport | None = None
 
 
 def get_hybrid_transport() -> HybridTransport:
@@ -737,7 +735,7 @@ async def diagnose_node_connectivity(
     node_id: str,
     host: str,
     port: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run comprehensive connectivity diagnostics for a node.
 
     Args:

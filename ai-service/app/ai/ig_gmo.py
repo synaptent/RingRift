@@ -22,7 +22,6 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -31,7 +30,7 @@ import torch.nn.functional as F
 
 from ..models import AIConfig, GameState, Move
 from .base import BaseAI
-from .gmo_ai import MoveEncoder, NoveltyTracker, GMOValueNetWithUncertainty
+from .gmo_ai import GMOValueNetWithUncertainty, MoveEncoder, NoveltyTracker
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +312,7 @@ class GNNStateEncoder(nn.Module):
         x = self.input_proj(node_features)
 
         # GNN layers with residual connections
-        for gnn_layer, layer_norm in zip(self.gnn_layers, self.layer_norms):
+        for gnn_layer, layer_norm in zip(self.gnn_layers, self.layer_norms, strict=False):
             x_new = gnn_layer(x, adj)
             x = layer_norm(x + x_new)  # Residual + norm
 
@@ -335,7 +334,7 @@ def compute_mutual_information(
     move_embed: torch.Tensor,
     value_net: nn.Module,
     mc_samples: int = 10,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute mutual information for exploration.
 
     MI(y; θ | s, a) = H(E_θ[p(y|s,a,θ)]) - E_θ[H(p(y|s,a,θ))]
@@ -433,7 +432,7 @@ class IGGMO(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        ig_config: Optional[IGGMOConfig] = None,
+        ig_config: IGGMOConfig | None = None,
     ):
         super().__init__(player_number, config)
 
@@ -481,7 +480,7 @@ class IGGMO(BaseAI):
         self,
         state_embed: torch.Tensor,
         initial_embed: torch.Tensor,
-        legal_move_embeds: List[torch.Tensor],
+        legal_move_embeds: list[torch.Tensor],
     ) -> torch.Tensor:
         """Optimize move embedding with MI-based exploration.
 
@@ -490,7 +489,7 @@ class IGGMO(BaseAI):
         move_embed = initial_embed.clone().detach().requires_grad_(True)
         optimizer = torch.optim.Adam([move_embed], lr=self.ig_config.lr)
 
-        for step in range(self.ig_config.optim_steps):
+        for _step in range(self.ig_config.optim_steps):
             optimizer.zero_grad()
 
             # Compute value and mutual information
@@ -525,7 +524,7 @@ class IGGMO(BaseAI):
 
         return move_embed.detach()
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select move using IG-GMO algorithm."""
         from ..game_engine import GameEngine
 
@@ -658,7 +657,7 @@ class IGGMO(BaseAI):
 def create_ig_gmo(
     player_number: int,
     device: str = "cpu",
-    checkpoint_path: Optional[Path] = None,
+    checkpoint_path: Path | None = None,
 ) -> IGGMO:
     """Factory function for IG-GMO."""
     ai_config = AIConfig(difficulty=6)

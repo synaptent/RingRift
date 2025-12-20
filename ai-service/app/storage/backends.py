@@ -35,12 +35,12 @@ Environment variables:
 
 from __future__ import annotations
 
+import builtins
 import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def list(self, prefix: str = "") -> List[str]:
+    def list(self, prefix: str = "") -> builtins.list[str]:
         """List files with the given prefix.
 
         Args:
@@ -163,7 +163,7 @@ class LocalStorage(StorageBackend):
             shutil.copy2(source_path, local_path)
             logger.debug(f"Copied {source_path} to {local_path}")
 
-    def list(self, prefix: str = "") -> List[str]:
+    def list(self, prefix: str = "") -> builtins.list[str]:
         """List files with prefix."""
         search_path = self._resolve_path(prefix)
 
@@ -209,7 +209,7 @@ class S3Storage(StorageBackend):
         self,
         bucket: str,
         prefix: str = "",
-        region: Optional[str] = None,
+        region: str | None = None,
     ):
         """Initialize S3 storage.
 
@@ -258,7 +258,7 @@ class S3Storage(StorageBackend):
         self._s3.download_file(self._bucket_name, full_key, str(local_path))
         logger.info(f"Downloaded s3://{self._bucket_name}/{full_key} to {local_path}")
 
-    def list(self, prefix: str = "") -> List[str]:
+    def list(self, prefix: str = "") -> builtins.list[str]:
         """List files with prefix."""
         full_prefix = self._full_key(prefix)
 
@@ -343,7 +343,7 @@ class GCSStorage(StorageBackend):
         blob.download_to_filename(str(local_path))
         logger.info(f"Downloaded gs://{self._bucket_name}/{full_key} to {local_path}")
 
-    def list(self, prefix: str = "") -> List[str]:
+    def list(self, prefix: str = "") -> builtins.list[str]:
         """List files with prefix."""
         full_prefix = self._full_key(prefix)
 
@@ -372,10 +372,10 @@ class GCSStorage(StorageBackend):
 
 
 def get_storage_backend(
-    backend: Optional[str] = None,
-    bucket: Optional[str] = None,
-    prefix: Optional[str] = None,
-    base_path: Optional[str] = None,
+    backend: str | None = None,
+    bucket: str | None = None,
+    prefix: str | None = None,
+    base_path: str | None = None,
 ) -> StorageBackend:
     """Get a storage backend based on configuration.
 

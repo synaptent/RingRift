@@ -41,13 +41,11 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import math
-import os
 import random
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -80,19 +78,19 @@ class PBTConfig:
     higher_is_better: bool = True  # True for Elo, False for loss
     checkpoint_dir: str = "data/pbt_checkpoints"
     # Hyperparameter specifications
-    hyperparameter_specs: List[HyperparameterSpec] = field(default_factory=list)
+    hyperparameter_specs: list[HyperparameterSpec] = field(default_factory=list)
 
 
 @dataclass
 class WorkerState:
     """State of a PBT worker."""
     worker_id: int
-    hyperparameters: Dict[str, float]
+    hyperparameters: dict[str, float]
     performance: float = 0.0
     steps: int = 0
     generation: int = 0  # How many times this worker has been replaced
-    parent_id: Optional[int] = None  # Worker this was copied from
-    checkpoint_path: Optional[str] = None
+    parent_id: int | None = None  # Worker this was copied from
+    checkpoint_path: str | None = None
 
 
 class PBTWorker:
@@ -105,8 +103,8 @@ class PBTWorker:
     def __init__(
         self,
         worker_id: int,
-        hyperparameters: Dict[str, float],
-        checkpoint_dir: Optional[Path] = None,
+        hyperparameters: dict[str, float],
+        checkpoint_dir: Path | None = None,
     ):
         """Initialize a PBT worker.
 
@@ -120,12 +118,12 @@ class PBTWorker:
         self.performance = 0.0
         self.steps = 0
         self.generation = 0
-        self.parent_id: Optional[int] = None
+        self.parent_id: int | None = None
         self.checkpoint_dir = checkpoint_dir or Path("data/pbt_checkpoints")
 
         # Model state (to be set externally)
-        self.model_state_dict: Optional[Dict] = None
-        self.optimizer_state_dict: Optional[Dict] = None
+        self.model_state_dict: dict | None = None
+        self.optimizer_state_dict: dict | None = None
 
     def update_performance(self, performance: float):
         """Update the worker's performance metric."""
@@ -208,7 +206,7 @@ class PBTWorker:
             logger.error(f"[PBT] Failed to load checkpoint: {e}")
             return False
 
-    def copy_from(self, other: "PBTWorker"):
+    def copy_from(self, other: PBTWorker):
         """Copy model weights and hyperparameters from another worker."""
         self.hyperparameters = other.hyperparameters.copy()
         self.model_state_dict = copy.deepcopy(other.model_state_dict)
@@ -233,8 +231,8 @@ class PBTController:
             config: PBT configuration
         """
         self.config = config
-        self.workers: Dict[int, PBTWorker] = {}
-        self.history: List[Dict[str, Any]] = []  # History of exploit/explore events
+        self.workers: dict[int, PBTWorker] = {}
+        self.history: list[dict[str, Any]] = []  # History of exploit/explore events
         self.step_count = 0
         self.checkpoint_dir = Path(config.checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -291,7 +289,7 @@ class PBTController:
             ),
         ]
 
-    def sample_initial_hyperparameters(self) -> Dict[str, float]:
+    def sample_initial_hyperparameters(self) -> dict[str, float]:
         """Sample initial hyperparameters for a new worker."""
         hp = {}
         for spec in self.config.hyperparameter_specs:
@@ -304,7 +302,7 @@ class PBTController:
                 value = np.random.uniform(spec.min_value, spec.max_value)
 
             if spec.discrete:
-                value = int(round(value))
+                value = round(value)
 
             hp[spec.name] = value
 
@@ -320,11 +318,11 @@ class PBTController:
         if worker_id in self.workers:
             del self.workers[worker_id]
 
-    def get_worker(self, worker_id: int) -> Optional[PBTWorker]:
+    def get_worker(self, worker_id: int) -> PBTWorker | None:
         """Get a worker by ID."""
         return self.workers.get(worker_id)
 
-    def get_ranked_workers(self) -> List[PBTWorker]:
+    def get_ranked_workers(self) -> list[PBTWorker]:
         """Get workers sorted by performance (best first)."""
         workers = list(self.workers.values())
         reverse = self.config.higher_is_better
@@ -352,7 +350,7 @@ class PBTController:
         bottom_workers = workers[-n_replace:]
 
         replacements = []
-        for bottom, top in zip(bottom_workers, top_workers):
+        for bottom, top in zip(bottom_workers, top_workers, strict=False):
             if bottom.worker_id == top.worker_id:
                 continue
 
@@ -392,7 +390,7 @@ class PBTController:
         # Save history
         self._save_history()
 
-    def _mutate_hyperparameters(self, hp: Dict[str, float]) -> Dict[str, float]:
+    def _mutate_hyperparameters(self, hp: dict[str, float]) -> dict[str, float]:
         """Mutate hyperparameters using explore strategy."""
         mutated = hp.copy()
 
@@ -434,7 +432,7 @@ class PBTController:
             value = np.clip(value, spec.min_value, spec.max_value)
 
             if spec.discrete:
-                value = int(round(value))
+                value = round(value)
 
             mutated[spec.name] = value
 
@@ -450,17 +448,17 @@ class PBTController:
         if self.should_exploit_explore(step):
             self.exploit_and_explore()
 
-    def get_best_worker(self) -> Optional[PBTWorker]:
+    def get_best_worker(self) -> PBTWorker | None:
         """Get the best performing worker."""
         ranked = self.get_ranked_workers()
         return ranked[0] if ranked else None
 
-    def get_best_hyperparameters(self) -> Optional[Dict[str, float]]:
+    def get_best_hyperparameters(self) -> dict[str, float] | None:
         """Get hyperparameters of the best worker."""
         best = self.get_best_worker()
         return best.hyperparameters.copy() if best else None
 
-    def get_population_stats(self) -> Dict[str, Any]:
+    def get_population_stats(self) -> dict[str, Any]:
         """Get statistics about the current population."""
         workers = list(self.workers.values())
         if not workers:
@@ -516,7 +514,7 @@ class PBTController:
         logger.info(f"[PBT] State saved to {state_path}")
         return state_path
 
-    def load_state(self, state_path: Optional[Path] = None) -> bool:
+    def load_state(self, state_path: Path | None = None) -> bool:
         """Load PBT state from disk."""
         state_path = state_path or (self.checkpoint_dir / "pbt_state.json")
 

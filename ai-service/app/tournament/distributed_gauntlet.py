@@ -22,21 +22,20 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import sqlite3
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Try to import hybrid transport for distributed execution
 try:
-    from app.distributed.hybrid_transport import get_hybrid_transport, HybridTransport
+    from app.distributed.hybrid_transport import HybridTransport, get_hybrid_transport
     HAS_HYBRID_TRANSPORT = True
 except ImportError:
     HAS_HYBRID_TRANSPORT = False
@@ -77,11 +76,11 @@ class GauntletResult:
     run_id: str
     config_key: str
     started_at: float
-    completed_at: Optional[float] = None
+    completed_at: float | None = None
     models_evaluated: int = 0
     total_games: int = 0
     status: str = "pending"
-    model_results: Dict[str, Dict] = field(default_factory=dict)
+    model_results: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass
@@ -127,7 +126,7 @@ class DistributedNNGauntlet:
         self,
         elo_db_path: Path,
         model_dir: Path,
-        config: Optional[GauntletConfig] = None,
+        config: GauntletConfig | None = None,
     ):
         """Initialize gauntlet evaluator.
 
@@ -141,8 +140,8 @@ class DistributedNNGauntlet:
         self.config = config or GauntletConfig()
 
         # State
-        self._current_run: Optional[GauntletResult] = None
-        self._reserved_workers: Set[str] = set()
+        self._current_run: GauntletResult | None = None
+        self._reserved_workers: set[str] = set()
 
     def _get_db_connection(self) -> sqlite3.Connection:
         """Get database connection."""
@@ -185,7 +184,7 @@ class DistributedNNGauntlet:
         finally:
             conn.close()
 
-    def get_unrated_models(self, config_key: str) -> List[str]:
+    def get_unrated_models(self, config_key: str) -> list[str]:
         """Get models that haven't been rated via gauntlet for this config.
 
         Args:
@@ -225,7 +224,7 @@ class DistributedNNGauntlet:
         finally:
             conn.close()
 
-    def get_models_by_elo(self, config_key: str) -> List[Tuple[str, float]]:
+    def get_models_by_elo(self, config_key: str) -> list[tuple[str, float]]:
         """Get all models for a config sorted by Elo rating.
 
         Args:
@@ -270,14 +269,13 @@ class DistributedNNGauntlet:
         Returns:
             Number of newly registered models
         """
-        import re
 
         parts = config_key.split("_")
         board_type = parts[0]
         num_players = int(parts[1].replace("p", ""))
 
         # Get currently registered models
-        registered = set(m[0] for m in self.get_models_by_elo(config_key))
+        registered = {m[0] for m in self.get_models_by_elo(config_key)}
 
         # Scan models directory for matching .pth files
         # Map board types to their filename prefixes
@@ -329,7 +327,7 @@ class DistributedNNGauntlet:
 
         return len(new_models)
 
-    def select_baselines(self, config_key: str) -> List[str]:
+    def select_baselines(self, config_key: str) -> list[str]:
         """Select 4 fixed baseline models for gauntlet comparison.
 
         Selection strategy:
@@ -384,10 +382,10 @@ class DistributedNNGauntlet:
 
     def create_game_tasks(
         self,
-        unrated_models: List[str],
-        baselines: List[str],
+        unrated_models: list[str],
+        baselines: list[str],
         config_key: str,
-    ) -> List[GameTask]:
+    ) -> list[GameTask]:
         """Create list of games to play for gauntlet evaluation.
 
         Args:
@@ -512,9 +510,9 @@ class DistributedNNGauntlet:
 
     async def _execute_tasks_local(
         self,
-        tasks: List[GameTask],
+        tasks: list[GameTask],
         config_key: str,
-    ) -> List[GameResult]:
+    ) -> list[GameResult]:
         """Execute game tasks locally using thread pool.
 
         Runs actual games using the game engine with NN agents.
@@ -691,10 +689,10 @@ class DistributedNNGauntlet:
                 duration_sec=time.time() - start_time,
             )
 
-    def _aggregate_results(self, results: List[GameResult]) -> None:
+    def _aggregate_results(self, results: list[GameResult]) -> None:
         """Aggregate game results and update Elo ratings."""
         # Group by model
-        model_stats: Dict[str, Dict[str, Dict]] = {}
+        model_stats: dict[str, dict[str, dict]] = {}
 
         for result in results:
             if result.model_id not in model_stats:
@@ -744,7 +742,7 @@ class DistributedNNGauntlet:
     async def run_gauntlet_distributed(
         self,
         config_key: str,
-        p2p_url: Optional[str] = None,
+        p2p_url: str | None = None,
     ) -> GauntletResult:
         """Run gauntlet evaluation distributed across the P2P cluster.
 
@@ -849,7 +847,7 @@ class DistributedNNGauntlet:
 
         return self._current_run
 
-    async def _discover_workers(self, p2p_url: str) -> List[Dict[str, Any]]:
+    async def _discover_workers(self, p2p_url: str) -> list[dict[str, Any]]:
         """Discover available gauntlet workers from P2P cluster.
 
         Args:
@@ -950,10 +948,10 @@ class DistributedNNGauntlet:
 
     async def _execute_tasks_distributed(
         self,
-        tasks: List[GameTask],
-        workers: List[Dict[str, Any]],
+        tasks: list[GameTask],
+        workers: list[dict[str, Any]],
         config_key: str,
-    ) -> List[GameResult]:
+    ) -> list[GameResult]:
         """Execute game tasks distributed across workers.
 
         Dispatches batches of games to workers and collects results.
@@ -967,10 +965,9 @@ class DistributedNNGauntlet:
             List of game results
         """
         results = []
-        batch_size = self.config.parallel_games
 
         # Split tasks into batches for each worker
-        worker_batches: Dict[str, List[GameTask]] = {w["node_id"]: [] for w in workers}
+        worker_batches: dict[str, list[GameTask]] = {w["node_id"]: [] for w in workers}
 
         for i, task in enumerate(tasks):
             worker_idx = i % len(workers)
@@ -1002,10 +999,10 @@ class DistributedNNGauntlet:
 
     async def _dispatch_and_wait(
         self,
-        worker: Dict[str, Any],
-        tasks: List[GameTask],
+        worker: dict[str, Any],
+        tasks: list[GameTask],
         config_key: str,
-    ) -> List[GameResult]:
+    ) -> list[GameResult]:
         """Dispatch a batch of tasks to a worker and wait for results.
 
         Uses hybrid transport for reliable communication.
@@ -1076,7 +1073,7 @@ class DistributedNNGauntlet:
             logger.error(f"[Gauntlet] Dispatch to {node_id} failed: {e}")
             return []
 
-    def _parse_batch_response(self, response: Dict[str, Any]) -> List[GameResult]:
+    def _parse_batch_response(self, response: dict[str, Any]) -> list[GameResult]:
         """Parse batch response from worker into GameResult objects."""
         results = []
 
@@ -1101,7 +1098,7 @@ class DistributedNNGauntlet:
     async def _update_elo_from_results(
         self,
         config_key: str,
-        results: List[GameResult],
+        results: list[GameResult],
     ) -> None:
         """Update Elo ratings based on gauntlet results.
 
@@ -1141,7 +1138,7 @@ class DistributedNNGauntlet:
             ratings.setdefault("random_ai", DEFAULT_RATING)
 
             # Calculate Elo changes
-            elo_changes: Dict[str, float] = {}
+            elo_changes: dict[str, float] = {}
 
             for result in results:
                 model_id = result.model_id
@@ -1189,8 +1186,8 @@ class DistributedNNGauntlet:
 
 
 def get_gauntlet(
-    elo_db_path: Optional[Path] = None,
-    model_dir: Optional[Path] = None,
+    elo_db_path: Path | None = None,
+    model_dir: Path | None = None,
 ) -> DistributedNNGauntlet:
     """Get gauntlet evaluator instance.
 

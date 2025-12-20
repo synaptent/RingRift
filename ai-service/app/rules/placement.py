@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
 
+from app.board_manager import BoardManager
 from app.models import (
-    GameState,
-    Move,
-    Position,
     BoardState,
     BoardType,
+    GameState,
+    Move,
     MoveType,
+    Position,
 )
-from app.board_manager import BoardManager
-
 
 """
 Canonical placement helpers for the Python rules engine.
@@ -43,8 +41,8 @@ class PlacementContextPy:
     rings_in_hand: int
     rings_per_player_cap: int
     # Optional precomputed values for efficiency.
-    rings_on_board: Optional[int] = None
-    max_available_global: Optional[int] = None
+    rings_on_board: int | None = None
+    max_available_global: int | None = None
 
 
 @dataclass
@@ -55,8 +53,8 @@ class PlacementValidationResultPy:
 
     valid: bool
     max_placement_count: int = 0
-    error_code: Optional[str] = None
-    message: Optional[str] = None
+    error_code: str | None = None
+    message: str | None = None
 
 
 @dataclass
@@ -77,8 +75,8 @@ class SkipPlacementEligibilityResultPy:
     """
 
     eligible: bool
-    reason: Optional[str] = None
-    code: Optional[str] = None
+    reason: str | None = None
+    code: str | None = None
 
 
 def _count_rings_on_board_for_player(board: BoardState, player: int) -> int:
@@ -248,7 +246,7 @@ def validate_placement_on_board_py(
     )
 
 
-def enumerate_placement_moves_py(state: GameState, player: int) -> List[Move]:
+def enumerate_placement_moves_py(state: GameState, player: int) -> list[Move]:
     """
     Enumerate legal PLACE_RING moves for `player` in `state`.
 

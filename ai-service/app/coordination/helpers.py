@@ -34,10 +34,11 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import socket
-from typing import Any, Optional, Tuple, List, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -62,20 +63,20 @@ _check_before_spawn = None
 
 try:
     from app.coordination import (
-        TaskCoordinator,
-        TaskType,
-        TaskLimits,
-        OrchestratorRole,
-        OrchestratorRegistry,
-        Safeguards,
         CircuitBreaker,
         CircuitState,
+        OrchestratorRegistry,
+        OrchestratorRole,
+        Safeguards,
+        TaskCoordinator,
+        TaskLimits,
+        TaskType,
+        acquire_orchestrator_role,
         can_spawn,
+        check_before_spawn,
         get_coordinator,
         get_registry,
-        acquire_orchestrator_role,
         release_orchestrator_role,
-        check_before_spawn,
     )
     _HAS_COORDINATION = True
     _TaskCoordinator = TaskCoordinator
@@ -127,7 +128,7 @@ def get_orchestrator_roles():
 # Coordinator Functions
 # =============================================================================
 
-def get_coordinator_safe() -> Optional[Any]:
+def get_coordinator_safe() -> Any | None:
     """Get the task coordinator instance if available.
 
     Returns:
@@ -144,8 +145,8 @@ def get_coordinator_safe() -> Optional[Any]:
 
 def can_spawn_safe(
     task_type: Any,
-    node_id: Optional[str] = None
-) -> Tuple[bool, str]:
+    node_id: str | None = None
+) -> tuple[bool, str]:
     """Safely check if a task can be spawned.
 
     Args:
@@ -173,8 +174,8 @@ def can_spawn_safe(
 def register_task_safe(
     task_id: str,
     task_type: Any,
-    node_id: Optional[str] = None,
-    pid: Optional[int] = None
+    node_id: str | None = None,
+    pid: int | None = None
 ) -> bool:
     """Safely register a task with the coordinator.
 
@@ -260,7 +261,7 @@ def fail_task_safe(task_id: str, error: str = "") -> bool:
 # Orchestrator Role Functions
 # =============================================================================
 
-def get_registry_safe() -> Optional[Any]:
+def get_registry_safe() -> Any | None:
     """Get the orchestrator registry if available.
 
     Returns:
@@ -334,7 +335,7 @@ def has_role(role: Any) -> bool:
         return False
 
 
-def get_role_holder(role: Any) -> Optional[Any]:
+def get_role_holder(role: Any) -> Any | None:
     """Get information about who holds a role.
 
     Args:
@@ -360,7 +361,7 @@ def get_role_holder(role: Any) -> Optional[Any]:
 def check_spawn_allowed(
     task_type: str = "unknown",
     config_key: str = ""
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Check safeguards before spawning a task.
 
     Args:
@@ -380,7 +381,7 @@ def check_spawn_allowed(
         return (True, f"check_failed: {e}")
 
 
-def get_safeguards() -> Optional[Any]:
+def get_safeguards() -> Any | None:
     """Get the Safeguards instance if available.
 
     Returns:
@@ -461,10 +462,10 @@ _report_queue_depth = None
 try:
     from app.coordination import (
         QueueType,
-        should_throttle_production,
-        should_stop_production,
         get_throttle_factor,
         report_queue_depth,
+        should_stop_production,
+        should_throttle_production,
     )
     _QueueType = QueueType
     _should_throttle_production = should_throttle_production
@@ -535,10 +536,8 @@ def report_queue_depth_safe(queue_type: Any, depth: int) -> None:
     """Safely report queue depth for backpressure calculation."""
     if _report_queue_depth is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         _report_queue_depth(queue_type, depth)
-    except Exception:
-        pass
 
 
 # =============================================================================
@@ -551,9 +550,9 @@ _release_sync_lock = None
 
 try:
     from app.coordination import (
-        sync_lock,
         acquire_sync_lock,
         release_sync_lock,
+        sync_lock,
     )
     _sync_lock = sync_lock
     _acquire_sync_lock = acquire_sync_lock
@@ -617,9 +616,9 @@ _bandwidth_allocation = None
 try:
     from app.coordination import (
         TransferPriority,
-        request_bandwidth,
-        release_bandwidth,
         bandwidth_allocation,
+        release_bandwidth,
+        request_bandwidth,
     )
     _TransferPriority = TransferPriority
     _request_bandwidth = request_bandwidth
@@ -643,7 +642,7 @@ def request_bandwidth_safe(
     host: str,
     requested_mbps: float = 100.0,
     priority: Any = None,
-) -> Tuple[bool, float]:
+) -> tuple[bool, float]:
     """Safely request bandwidth allocation.
 
     Args:
@@ -692,9 +691,9 @@ _estimate_task_duration = None
 try:
     from app.coordination import (
         can_schedule_task,
-        register_running_task,
-        record_task_completion,
         estimate_task_duration,
+        record_task_completion,
+        register_running_task,
     )
     _can_schedule_task = can_schedule_task
     _register_running_task = register_running_task
@@ -797,11 +796,11 @@ _CrossProcessEventPoller = None
 
 try:
     from app.coordination import (
-        publish_event,
-        poll_events,
-        ack_event,
-        subscribe_process,
         CrossProcessEventPoller,
+        ack_event,
+        poll_events,
+        publish_event,
+        subscribe_process,
     )
     _publish_event = publish_event
     _poll_events = poll_events
@@ -817,7 +816,7 @@ def has_cross_process_events() -> bool:
     return _publish_event is not None
 
 
-def publish_event_safe(event_type: str, payload: Dict[str, Any] = None) -> bool:
+def publish_event_safe(event_type: str, payload: dict[str, Any] | None = None) -> bool:
     """Safely publish a cross-process event.
 
     Returns:
@@ -834,9 +833,9 @@ def publish_event_safe(event_type: str, payload: Dict[str, Any] = None) -> bool:
 
 
 def poll_events_safe(
-    event_types: List[str] = None,
+    event_types: list[str] | None = None,
     limit: int = 100,
-) -> List[Any]:
+) -> list[Any]:
     """Safely poll for cross-process events.
 
     Returns:
@@ -861,7 +860,7 @@ def ack_event_safe(event_id: int) -> bool:
         return False
 
 
-def subscribe_process_safe(process_name: str = None) -> bool:
+def subscribe_process_safe(process_name: str | None = None) -> bool:
     """Safely subscribe the current process to events."""
     if _subscribe_process is None:
         return False
@@ -890,12 +889,12 @@ _set_backpressure = None
 
 try:
     from app.coordination import (
-        get_resource_targets,
-        get_host_targets,
         get_cluster_summary,
-        should_scale_up as should_scale_up_targets,
-        should_scale_down as should_scale_down_targets,
+        get_host_targets,
+        get_resource_targets,
         set_backpressure,
+        should_scale_down as should_scale_down_targets,
+        should_scale_up as should_scale_up_targets,
     )
     _get_resource_targets = get_resource_targets
     _get_host_targets = get_host_targets
@@ -932,7 +931,7 @@ def get_host_targets_safe(host: str):
         return None
 
 
-def get_cluster_summary_safe() -> Dict[str, Any]:
+def get_cluster_summary_safe() -> dict[str, Any]:
     """Safely get cluster summary."""
     if _get_cluster_summary is None:
         return {}
@@ -966,10 +965,8 @@ def set_backpressure_safe(active: bool) -> None:
     """Safely set backpressure state."""
     if _set_backpressure is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         _set_backpressure(active)
-    except Exception:
-        pass
 
 
 # =============================================================================
@@ -995,41 +992,41 @@ CrossProcessEventPoller = _CrossProcessEventPoller
 # =============================================================================
 
 __all__ = [
-    # Type checking helpers
-    "has_coordination",
-    "get_task_types",
-    "get_orchestrator_roles",
-    # Safe accessors
-    "get_coordinator_safe",
-    "can_spawn_safe",
-    "register_task_safe",
-    "complete_task_safe",
-    "fail_task_safe",
-    "get_registry_safe",
-    # Role management
-    "acquire_role_safe",
-    "release_role_safe",
-    "has_role",
-    "get_role_holder",
-    # Spawn checks
-    "check_spawn_allowed",
-    "get_safeguards",
-    # Utilities
-    "get_current_node_id",
-    "is_unified_loop_running",
-    "warn_if_orchestrator_running",
-    # Queue helpers
-    "get_queue_types",
-    "should_throttle_safe",
-    # Re-exported types (for convenience)
-    "TaskType",
-    "TaskLimits",
-    "OrchestratorRole",
-    "OrchestratorRegistry",
-    "Safeguards",
     "CircuitBreaker",
     "CircuitState",
-    "QueueType",
-    "TransferPriority",
     "CrossProcessEventPoller",
+    "OrchestratorRegistry",
+    "OrchestratorRole",
+    "QueueType",
+    "Safeguards",
+    "TaskLimits",
+    # Re-exported types (for convenience)
+    "TaskType",
+    "TransferPriority",
+    # Role management
+    "acquire_role_safe",
+    "can_spawn_safe",
+    # Spawn checks
+    "check_spawn_allowed",
+    "complete_task_safe",
+    "fail_task_safe",
+    # Safe accessors
+    "get_coordinator_safe",
+    # Utilities
+    "get_current_node_id",
+    "get_orchestrator_roles",
+    # Queue helpers
+    "get_queue_types",
+    "get_registry_safe",
+    "get_role_holder",
+    "get_safeguards",
+    "get_task_types",
+    # Type checking helpers
+    "has_coordination",
+    "has_role",
+    "is_unified_loop_running",
+    "register_task_safe",
+    "release_role_safe",
+    "should_throttle_safe",
+    "warn_if_orchestrator_running",
 ]

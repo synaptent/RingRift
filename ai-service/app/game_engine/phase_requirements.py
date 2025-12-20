@@ -8,7 +8,6 @@ for constructing and applying the actual Move objects.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
 
 from app.models import Position
 
@@ -40,4 +39,4 @@ class PhaseRequirement:
 
     type: PhaseRequirementType
     player: int
-    eligible_positions: List[Position]
+    eligible_positions: list[Position]

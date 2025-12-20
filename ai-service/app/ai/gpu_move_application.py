@@ -22,8 +22,8 @@ import torch
 from .gpu_game_types import MoveType
 
 if TYPE_CHECKING:
-    from .gpu_parallel_games import BatchGameState
     from .gpu_move_generation import BatchMoves
+    from .gpu_parallel_games import BatchGameState
 
 
 # =============================================================================
@@ -32,9 +32,9 @@ if TYPE_CHECKING:
 
 
 def apply_capture_moves_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     selected_local_idx: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
     active_mask: torch.Tensor,
 ) -> None:
     """Apply capture moves in a vectorized manner.
@@ -212,9 +212,9 @@ def apply_capture_moves_vectorized(
 
 
 def apply_movement_moves_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     selected_local_idx: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
     active_mask: torch.Tensor,
 ) -> None:
     """Apply movement moves in a vectorized manner.
@@ -333,9 +333,9 @@ def apply_movement_moves_vectorized(
 
 
 def apply_recovery_moves_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     selected_local_idx: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
     active_mask: torch.Tensor,
 ) -> None:
     """Apply recovery slide moves in a fully vectorized manner.
@@ -445,7 +445,7 @@ def apply_recovery_moves_vectorized(
 
 
 def apply_no_action_moves_batch(
-    state: "BatchGameState",
+    state: BatchGameState,
     mask: torch.Tensor,
 ) -> None:
     """Record a NO_ACTION move for each masked active game.
@@ -485,9 +485,9 @@ def apply_no_action_moves_batch(
 
 
 def apply_placement_moves_batch_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Vectorized placement move application.
 
@@ -594,9 +594,9 @@ def apply_placement_moves_batch_vectorized(
 
 
 def _apply_placement_moves_batch_legacy(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Legacy Python-loop based placement application.
 
@@ -658,9 +658,9 @@ def _apply_placement_moves_batch_legacy(
 
 
 def apply_placement_moves_batch(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Apply selected placement moves to batch state (in-place).
 
@@ -676,9 +676,9 @@ def apply_placement_moves_batch(
 
 
 def apply_movement_moves_batch_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Vectorized movement move application.
 
@@ -784,7 +784,7 @@ def apply_movement_moves_batch_vectorized(
             )
             # Update territory count per player
             # Use scatter_add to count collapsed markers per (game, player) pair
-            for g, p in zip(collapse_games.tolist(), collapse_players.tolist()):
+            for g, p in zip(collapse_games.tolist(), collapse_players.tolist(), strict=False):
                 state.territory_count[g, p] += 1
 
     # Handle landing on ANY marker (per RR-CANON-R091/R092)
@@ -813,12 +813,12 @@ def apply_movement_moves_batch_vectorized(
                 state.territory_owner.dtype
             )
             # Update territory count per player
-            for g, p in zip(collapse_games.tolist(), collapse_players.tolist()):
+            for g, p in zip(collapse_games.tolist(), collapse_players.tolist(), strict=False):
                 state.territory_count[g, p] += 1
 
         # Track eliminated rings from landing cost (cap-elimination)
         # The moving player loses a ring from their cap
-        for g, p in zip(marker_games.tolist(), marker_players.tolist()):
+        for g, p in zip(marker_games.tolist(), marker_players.tolist(), strict=False):
             state.eliminated_rings[g, p] += 1
             state.rings_caused_eliminated[g, p] += 1
 
@@ -845,9 +845,9 @@ def apply_movement_moves_batch_vectorized(
 
 
 def _apply_movement_moves_batch_legacy(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Legacy Python-loop based movement application.
 
@@ -922,9 +922,9 @@ def _apply_movement_moves_batch_legacy(
 
 
 def apply_movement_moves_batch(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Apply selected movement moves to batch state (in-place).
 
@@ -946,9 +946,9 @@ def apply_movement_moves_batch(
 
 
 def apply_capture_moves_batch_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Vectorized capture move application.
 
@@ -1166,9 +1166,9 @@ def apply_capture_moves_batch_vectorized(
 
 
 def _apply_capture_moves_batch_legacy(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Legacy Python-loop based capture application.
 
@@ -1244,9 +1244,9 @@ def _apply_capture_moves_batch_legacy(
 
 
 def apply_capture_moves_batch(
-    state: "BatchGameState",
+    state: BatchGameState,
     move_indices: torch.Tensor,
-    moves: "BatchMoves",
+    moves: BatchMoves,
 ) -> None:
     """Apply selected capture moves to batch state (in-place).
 
@@ -1268,19 +1268,19 @@ def apply_capture_moves_batch(
 
 
 __all__ = [
+    '_apply_capture_moves_batch_legacy',
+    '_apply_movement_moves_batch_legacy',
+    '_apply_placement_moves_batch_legacy',
+    'apply_capture_moves_batch',
+    'apply_capture_moves_batch_vectorized',
     # Vectorized apply functions (for move selection)
     'apply_capture_moves_vectorized',
+    'apply_movement_moves_batch',
+    'apply_movement_moves_batch_vectorized',
     'apply_movement_moves_vectorized',
-    'apply_recovery_moves_vectorized',
     'apply_no_action_moves_batch',
+    'apply_placement_moves_batch',
     # Batch apply functions (main API)
     'apply_placement_moves_batch_vectorized',
-    '_apply_placement_moves_batch_legacy',
-    'apply_placement_moves_batch',
-    'apply_movement_moves_batch_vectorized',
-    '_apply_movement_moves_batch_legacy',
-    'apply_movement_moves_batch',
-    'apply_capture_moves_batch_vectorized',
-    '_apply_capture_moves_batch_legacy',
-    'apply_capture_moves_batch',
+    'apply_recovery_moves_vectorized',
 ]

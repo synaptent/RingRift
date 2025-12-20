@@ -25,13 +25,11 @@ Usage:
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from ..models import BoardType
 
-
 # Type aliases for clarity
-CoordTuple = Tuple[int, int, Optional[int]]  # (x, y, z) or (x, y, None)
+CoordTuple = tuple[int, int, int | None]  # (x, y, z) or (x, y, None)
 KeyString = str  # "x,y" or "x,y,z"
 
 
@@ -42,10 +40,10 @@ class FastGeometry:
     at initialization time, then provides O(1) lookups during evaluation.
     """
 
-    _instance: Optional["FastGeometry"] = None
+    _instance: FastGeometry | None = None
 
     # Square board directions (8 neighbors)
-    SQUARE_DIRECTIONS: List[Tuple[int, int]] = [
+    SQUARE_DIRECTIONS: list[tuple[int, int]] = [
         (-1, -1),
         (-1, 0),
         (-1, 1),
@@ -57,10 +55,10 @@ class FastGeometry:
     ]
 
     # Line-of-sight directions for square boards
-    SQUARE_LOS_DIRECTIONS: List[Tuple[int, int, int]] = [(dx, dy, 0) for dx, dy in SQUARE_DIRECTIONS]
+    SQUARE_LOS_DIRECTIONS: list[tuple[int, int, int]] = [(dx, dy, 0) for dx, dy in SQUARE_DIRECTIONS]
 
     # Hexagonal directions (6 neighbors)
-    HEX_DIRECTIONS: List[Tuple[int, int, int]] = [
+    HEX_DIRECTIONS: list[tuple[int, int, int]] = [
         (1, 0, -1),
         (-1, 0, 1),
         (0, 1, -1),
@@ -77,30 +75,30 @@ class FastGeometry:
     def __init__(self):
         """Initialize pre-computed geometry tables."""
         # Adjacency tables: key -> list of adjacent keys
-        self._adjacency_square8: Dict[str, List[str]] = {}
-        self._adjacency_square19: Dict[str, List[str]] = {}
-        self._adjacency_hex: Dict[str, List[str]] = {}
+        self._adjacency_square8: dict[str, list[str]] = {}
+        self._adjacency_square19: dict[str, list[str]] = {}
+        self._adjacency_hex: dict[str, list[str]] = {}
 
         # All board keys (cached)
-        self._all_keys_square8: List[str] = []
-        self._all_keys_square19: List[str] = []
-        self._all_keys_hex: List[str] = []
+        self._all_keys_square8: list[str] = []
+        self._all_keys_square19: list[str] = []
+        self._all_keys_hex: list[str] = []
 
         # Center positions (cached)
-        self._center_square8: FrozenSet[str] = frozenset()
-        self._center_square19: FrozenSet[str] = frozenset()
-        self._center_hex: FrozenSet[str] = frozenset()
+        self._center_square8: frozenset[str] = frozenset()
+        self._center_square19: frozenset[str] = frozenset()
+        self._center_hex: frozenset[str] = frozenset()
 
         # Key -> coordinates tuple (avoids string parsing)
-        self._coords_square8: Dict[str, Tuple[int, int, None]] = {}
-        self._coords_square19: Dict[str, Tuple[int, int, None]] = {}
-        self._coords_hex: Dict[str, Tuple[int, int, int]] = {}
+        self._coords_square8: dict[str, tuple[int, int, None]] = {}
+        self._coords_square19: dict[str, tuple[int, int, None]] = {}
+        self._coords_hex: dict[str, tuple[int, int, int]] = {}
 
         # Pre-computed offset tables: (key, direction_index, distance) -> result_key
         # For distances 1, 2, 3 (most common in line evaluation)
-        self._offset_square8: Dict[Tuple[str, int, int], Optional[str]] = {}
-        self._offset_square19: Dict[Tuple[str, int, int], Optional[str]] = {}
-        self._offset_hex: Dict[Tuple[str, int, int], Optional[str]] = {}
+        self._offset_square8: dict[tuple[str, int, int], str | None] = {}
+        self._offset_square19: dict[tuple[str, int, int], str | None] = {}
+        self._offset_hex: dict[tuple[str, int, int], str | None] = {}
 
         # Pre-compute everything
         self._build_square_tables(8, self._adjacency_square8, self._all_keys_square8)
@@ -111,7 +109,7 @@ class FastGeometry:
         self._build_offset_tables()
 
     @classmethod
-    def get_instance(cls) -> "FastGeometry":
+    def get_instance(cls) -> FastGeometry:
         """Get singleton instance of FastGeometry."""
         if cls._instance is None:
             cls._instance = cls()
@@ -120,8 +118,8 @@ class FastGeometry:
     def _build_square_tables(
         self,
         size: int,
-        adjacency: Dict[str, List[str]],
-        all_keys: List[str],
+        adjacency: dict[str, list[str]],
+        all_keys: list[str],
     ) -> None:
         """Pre-compute adjacency table for square board."""
         for x in range(size):
@@ -129,7 +127,7 @@ class FastGeometry:
                 key = f"{x},{y}"
                 all_keys.append(key)
 
-                neighbors: List[str] = []
+                neighbors: list[str] = []
                 for dx, dy in self.SQUARE_DIRECTIONS:
                     nx, ny = x + dx, y + dy
                     if 0 <= nx < size and 0 <= ny < size:
@@ -139,8 +137,8 @@ class FastGeometry:
     def _build_hex_tables(
         self,
         size: int,
-        adjacency: Dict[str, List[str]],
-        all_keys: List[str],
+        adjacency: dict[str, list[str]],
+        all_keys: list[str],
     ) -> None:
         """Pre-compute adjacency table for hexagonal board."""
         radius = size - 1  # canonical: size=13 -> radius=12
@@ -152,7 +150,7 @@ class FastGeometry:
                     key = f"{x},{y},{z}"
                     all_keys.append(key)
 
-                    neighbors: List[str] = []
+                    neighbors: list[str] = []
                     for dx, dy, dz in self.HEX_DIRECTIONS:
                         nx, ny, nz = x + dx, y + dy, z + dz
                         if abs(nx) <= radius and abs(ny) <= radius and abs(nz) <= radius:
@@ -168,7 +166,7 @@ class FastGeometry:
         self._center_square19 = frozenset(f"{x},{y}" for x in [8, 9, 10] for y in [8, 9, 10])
 
         # Hex: center hexagon (distance 0-2 from origin)
-        hex_center: Set[str] = set()
+        hex_center: set[str] = set()
         for x in range(-2, 3):
             for y in range(-2, 3):
                 z = -x - y
@@ -240,7 +238,7 @@ class FastGeometry:
                     else:
                         self._offset_hex[(key, dir_idx, dist)] = None
 
-    def get_adjacent_keys(self, key: str, board_type) -> List[str]:
+    def get_adjacent_keys(self, key: str, board_type) -> list[str]:
         """Get pre-computed adjacent position keys.
 
         Args:
@@ -260,7 +258,7 @@ class FastGeometry:
             return self._adjacency_hex.get(key, [])
         return []
 
-    def get_all_board_keys(self, board_type: BoardType) -> List[str]:
+    def get_all_board_keys(self, board_type: BoardType) -> list[str]:
         """Get all valid position keys for a board type.
 
         Args:
@@ -277,7 +275,7 @@ class FastGeometry:
             return self._all_keys_hex
         return []
 
-    def get_center_positions(self, board_type: BoardType) -> FrozenSet[str]:
+    def get_center_positions(self, board_type: BoardType) -> frozenset[str]:
         """Get pre-computed center position keys.
 
         Args:
@@ -298,7 +296,7 @@ class FastGeometry:
         self,
         x: int,
         y: int,
-        z: Optional[int],
+        z: int | None,
         board_type: BoardType,
     ) -> bool:
         """Fast bounds check using raw coordinates.
@@ -339,7 +337,7 @@ class FastGeometry:
         else:
             return (int(parts[0]), int(parts[1]), int(parts[2]))
 
-    def coords_to_key(self, x: int, y: int, z: Optional[int] = None) -> str:
+    def coords_to_key(self, x: int, y: int, z: int | None = None) -> str:
         """Convert coordinates to position key.
 
         Args:
@@ -352,7 +350,7 @@ class FastGeometry:
             return f"{x},{y}"
         return f"{x},{y},{z}"
 
-    def get_los_directions(self, board_type: BoardType) -> List[Tuple[int, int, int]]:
+    def get_los_directions(self, board_type: BoardType) -> list[tuple[int, int, int]]:
         """Get line-of-sight directions for a board type.
 
         Args:
@@ -391,7 +389,7 @@ class FastGeometry:
         direction_index: int,
         distance: int,
         board_type: BoardType,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Ultra-fast offset lookup using pre-computed tables.
 
         This is O(1) with a single dict lookup - no coordinate parsing,
@@ -418,10 +416,10 @@ class FastGeometry:
     def offset_key(
         self,
         key: str,
-        direction: Tuple[int, int, int],
+        direction: tuple[int, int, int],
         distance: int,
         board_type: BoardType,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Compute a position key offset by a direction, without bounds check.
 
         This is a fast alternative to BoardManager._add_direction that
@@ -452,10 +450,10 @@ class FastGeometry:
         self,
         x: int,
         y: int,
-        z: Optional[int],
-        direction: Tuple[int, int, int],
+        z: int | None,
+        direction: tuple[int, int, int],
         distance: int,
-    ) -> Tuple[int, int, Optional[int]]:
+    ) -> tuple[int, int, int | None]:
         """Compute coordinates offset by a direction.
 
         Args:
@@ -477,7 +475,7 @@ class FastGeometry:
         self,
         key: str,
         board_type: BoardType,
-    ) -> List[List[str]]:
+    ) -> list[list[str]]:
         """Get all position keys visible from a position in each direction.
 
         This returns a list of rays, where each ray is a list of keys
@@ -495,9 +493,9 @@ class FastGeometry:
         x, y, z = self.key_to_coords(key)
         directions = self.get_los_directions(board_type)
 
-        rays: List[List[str]] = []
+        rays: list[list[str]] = []
         for dx, dy, dz in directions:
-            ray: List[str] = []
+            ray: list[str] = []
             curr_x, curr_y, curr_z = x, y, z
 
             while True:

@@ -7,7 +7,7 @@ strength across different board types without pulling in SciPy.
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Sequence, Tuple
+from collections.abc import Iterable, Sequence
 
 
 def normalise_tier_name(tier: str) -> str:
@@ -25,21 +25,21 @@ def tier_number(tier: str) -> int:
     return int(normalise_tier_name(tier)[1:])
 
 
-def rank_order_from_elos(elos: Dict[str, float]) -> List[str]:
+def rank_order_from_elos(elos: dict[str, float]) -> list[str]:
     """Return tier ids sorted from strongest to weakest by Elo."""
     items = [(normalise_tier_name(t), float(v)) for t, v in elos.items()]
     items.sort(key=lambda kv: (kv[1], tier_number(kv[0])), reverse=True)
     return [tier for tier, _ in items]
 
 
-def rank_map(order: Sequence[str]) -> Dict[str, int]:
+def rank_map(order: Sequence[str]) -> dict[str, int]:
     """Return 1-based rank map from an ordered tier list."""
     return {normalise_tier_name(tier): idx + 1 for idx, tier in enumerate(order)}
 
 
 def spearman_rank_correlation(
-    rank_a: Dict[str, int],
-    rank_b: Dict[str, int],
+    rank_a: dict[str, int],
+    rank_b: dict[str, int],
     *,
     tiers: Iterable[str] | None = None,
 ) -> float:
@@ -76,13 +76,13 @@ def spearman_rank_correlation(
     return 1.0 - (6.0 * d_sq_sum) / float(denom)
 
 
-def inversion_count(elos: Dict[str, float]) -> int:
+def inversion_count(elos: dict[str, float]) -> int:
     """Count inversions vs the expected monotone difficulty ordering.
 
     An inversion is a pair of tiers (i < j) where Elo(Di) > Elo(Dj), even
     though higher difficulty is expected to be stronger.
     """
-    tiers = sorted((normalise_tier_name(t) for t in elos.keys()), key=tier_number)
+    tiers = sorted((normalise_tier_name(t) for t in elos), key=tier_number)
     values = [float(elos[t]) for t in tiers]
     inv = 0
     for i in range(len(values)):
@@ -93,8 +93,8 @@ def inversion_count(elos: Dict[str, float]) -> int:
 
 
 def summarize_crossboard_tier_strength(
-    board_elos: Dict[str, Dict[str, float]],
-) -> Dict[str, object]:
+    board_elos: dict[str, dict[str, float]],
+) -> dict[str, object]:
     """Compute a lightweight cross-board summary from per-board Elo maps."""
     boards = sorted(board_elos.keys())
     per_board_order = {
@@ -104,7 +104,7 @@ def summarize_crossboard_tier_strength(
         board: rank_map(order) for board, order in per_board_order.items()
     }
 
-    pairwise: List[Dict[str, object]] = []
+    pairwise: list[dict[str, object]] = []
     for i, a in enumerate(boards):
         for b in boards[i + 1 :]:
             corr = spearman_rank_correlation(per_board_ranks[a], per_board_ranks[b])
@@ -124,7 +124,7 @@ def summarize_crossboard_tier_strength(
     tier_sets = [set(ranks.keys()) for ranks in per_board_ranks.values()]
     common_tiers = sorted(set.intersection(*tier_sets) if tier_sets else set(), key=tier_number)
 
-    tier_rank_std: Dict[str, float] = {}
+    tier_rank_std: dict[str, float] = {}
     for tier in common_tiers:
         ranks = [per_board_ranks[b][tier] for b in boards]
         mean = sum(ranks) / len(ranks)

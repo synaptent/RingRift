@@ -16,22 +16,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-from typing import List, Optional, Tuple
-
-import numpy as np
-import torch
 
 # Add parent to path for imports
 import sys
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from app.ai.factory import AIFactory
 from app.ai.gmo_ai import GMOAI, GMOConfig
 from app.game_engine import GameEngine
-from app.models import AIConfig, AIType, BoardType, GameState, Move, Player
+from app.models import AIConfig, AIType, BoardType
 from app.training.train_gmo_selfplay import create_initial_state
 
 logging.basicConfig(
@@ -64,7 +63,7 @@ class CalibrationMetrics:
     coverage_2_sigma: float  # % within 2 std
     calibration_error: float  # ECE-style metric
     brier_score: float  # For win probability
-    uncertainty_bins: List[Tuple[float, float, float]]  # (bin_center, mean_variance, mean_error)
+    uncertainty_bins: list[tuple[float, float, float]]  # (bin_center, mean_variance, mean_error)
 
 
 def collect_samples_from_game(
@@ -72,7 +71,7 @@ def collect_samples_from_game(
     opponent_ai,
     game_id: int,
     max_moves: int = 500
-) -> List[CalibrationSample]:
+) -> list[CalibrationSample]:
     """Play a game and collect calibration samples.
 
     Returns samples of (predicted_value, predicted_variance, actual_outcome).
@@ -157,7 +156,7 @@ def collect_samples_from_game(
     return samples
 
 
-def compute_calibration_metrics(samples: List[CalibrationSample]) -> CalibrationMetrics:
+def compute_calibration_metrics(samples: list[CalibrationSample]) -> CalibrationMetrics:
     """Compute calibration metrics from samples."""
     if not samples:
         raise ValueError("No samples provided")
@@ -235,7 +234,7 @@ def compute_calibration_metrics(samples: List[CalibrationSample]) -> Calibration
 
 
 def run_calibration_study(
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
     num_games: int = 50,
     opponent_type: str = "random",
     output_dir: str = "data/calibration"
@@ -314,7 +313,7 @@ def run_calibration_study(
     logger.info("=" * 60)
     logger.info(f"Samples: {metrics.num_samples}")
     logger.info(f"Error-Uncertainty Correlation: {metrics.error_uncertainty_correlation:.4f}")
-    logger.info(f"  (Ideal: positive; high uncertainty should predict high error)")
+    logger.info("  (Ideal: positive; high uncertainty should predict high error)")
     logger.info(f"MSE: {metrics.mean_squared_error:.4f}")
     logger.info(f"RMSE: {metrics.root_mean_squared_error:.4f}")
     logger.info(f"MAE: {metrics.mean_absolute_error:.4f}")

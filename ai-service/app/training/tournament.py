@@ -2,20 +2,16 @@
 Tournament system for evaluating AI models
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 import time
-from typing import Dict, Optional
 from datetime import datetime
 
 from app.ai.descent_ai import DescentAI
 from app.game_engine import GameEngine
+from app.models import AIConfig, BoardState, BoardType, GamePhase, GameState, GameStatus, Player, TimeControl
 from app.utils.progress_reporter import SoakProgressReporter
-from app.models import (
-    GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl,
-    Player, AIConfig
-)
 
 # Model cache for memory-efficient model sharing (2025-12)
 try:
@@ -76,7 +72,7 @@ def infer_victory_reason(game_state: GameState) -> str:
         return "elimination"
 
     # Check territory victory.
-    territory_counts: Dict[int, int] = {}
+    territory_counts: dict[int, int] = {}
     for p_id in game_state.board.collapsed_spaces.values():
         territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
     threshold = game_state.territory_victory_threshold
@@ -117,9 +113,7 @@ class Tournament:
         self.ratings = {"A": 1500.0, "B": 1500.0}
         # Victory reason statistics: counts by reason for analysis.
         # Tracks R172 LPS wins separately from elimination/territory.
-        self.victory_reasons: Dict[str, int] = {
-            reason: 0 for reason in VICTORY_REASONS
-        }
+        self.victory_reasons: dict[str, int] = dict.fromkeys(VICTORY_REASONS, 0)
 
     def _create_ai(self, player_number: int, model_path: str) -> DescentAI:
         """Create an AI instance with specific model weights.
@@ -141,7 +135,7 @@ class Tournament:
         )
         return DescentAI(player_number, config)
 
-    def run(self) -> Dict[str, int]:
+    def run(self) -> dict[str, int]:
         """Run the tournament.
 
         For 2-player games, alternates colors between models A and B.
@@ -247,7 +241,7 @@ class Tournament:
 
     def _play_game(
         self, ai1: DescentAI, ai2: DescentAI
-    ) -> tuple[Optional[int], GameState]:
+    ) -> tuple[int | None, GameState]:
         """Play a single 2-player game and return (winner, final_state).
 
         Returns:
@@ -256,8 +250,8 @@ class Tournament:
         return self._play_game_multiplayer({1: ai1, 2: ai2})
 
     def _play_game_multiplayer(
-        self, ais: Dict[int, DescentAI]
-    ) -> tuple[Optional[int], GameState]:
+        self, ais: dict[int, DescentAI]
+    ) -> tuple[int | None, GameState]:
         """Play a single game with any number of players.
 
         Args:
@@ -306,7 +300,7 @@ class Tournament:
 
         return winner, state
 
-    def _determine_winner_by_tiebreaker(self, state: GameState) -> Optional[int]:
+    def _determine_winner_by_tiebreaker(self, state: GameState) -> int | None:
         """Determine winner using tiebreaker rules when no natural victory.
 
         Tiebreaker priority (2025-12-16):
@@ -332,7 +326,7 @@ class Tournament:
 
         return best_player
 
-    def _update_elo(self, winner_label: Optional[str]) -> None:
+    def _update_elo(self, winner_label: str | None) -> None:
         """Update Elo-like ratings for candidate (A) and best (B)."""
         ra = self.ratings["A"]
         rb = self.ratings["B"]
@@ -359,8 +353,8 @@ class Tournament:
         """
         from app.rules.core import (
             BOARD_CONFIGS,
-            get_victory_threshold,
             get_territory_victory_threshold,
+            get_victory_threshold,
         )
 
         # Get board configuration
@@ -368,12 +362,10 @@ class Tournament:
             config = BOARD_CONFIGS[self.board_type]
             size = config.size
             rings_per_player = config.rings_per_player
-            total_spaces = config.total_spaces
         else:
             # Fallback to square8-style defaults
             size = 8
             rings_per_player = 18
-            total_spaces = 64
 
         # Create players
         players = [
@@ -441,8 +433,8 @@ def run_tournament(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 10000,
-    seed: Optional[int] = None,
-) -> Dict[str, any]:
+    seed: int | None = None,
+) -> dict[str, any]:
     """
     Convenience function to run a tournament between two models.
 
@@ -518,8 +510,8 @@ def run_tournament_adaptive(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 10000,
-    seed: Optional[int] = None,
-) -> Dict[str, any]:
+    seed: int | None = None,
+) -> dict[str, any]:
     """
     Run an adaptive tournament that stops early when statistically decisive.
 
@@ -588,7 +580,7 @@ def run_tournament_adaptive(
     total_losses = 0
     total_draws = 0
     games_played = 0
-    victory_reasons: Dict[str, int] = {reason: 0 for reason in VICTORY_REASONS}
+    victory_reasons: dict[str, int] = dict.fromkeys(VICTORY_REASONS, 0)
 
     current_seed = seed if seed is not None else int(time.time())
     stop_reason = "max_games"

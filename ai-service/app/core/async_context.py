@@ -26,17 +26,12 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import (
     Any,
-    AsyncGenerator,
-    AsyncIterator,
-    Awaitable,
-    Callable,
     Generic,
-    List,
-    Optional,
     TypeVar,
     Union,
 )
@@ -44,15 +39,15 @@ from typing import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "timeout_context",
-    "retry_context",
-    "rate_limiter",
+    "RateLimiter",
+    "ResourcePool",
+    "RetryContext",
+    "TimeoutContext",
     "cancellation_scope",
     "gather_with_limit",
-    "TimeoutContext",
-    "RetryContext",
-    "ResourcePool",
-    "RateLimiter",
+    "rate_limiter",
+    "retry_context",
+    "timeout_context",
 ]
 
 T = TypeVar("T")
@@ -131,10 +126,10 @@ class RetryContext:
     """Context for retry operations with state tracking."""
     max_attempts: int
     attempts: int = 0
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     succeeded: bool = False
     total_delay: float = 0.0
-    errors: List[Exception] = field(default_factory=list)
+    errors: list[Exception] = field(default_factory=list)
 
 
 @asynccontextmanager
@@ -226,8 +221,8 @@ class ResourcePool(Generic[T]):
         max_size: int = 10,
         min_size: int = 1,
         max_idle_time: float = 300.0,
-        destroy: Optional[Callable[[T], Awaitable[None]]] = None,
-        validate: Optional[Callable[[T], Awaitable[bool]]] = None,
+        destroy: Callable[[T], Awaitable[None]] | None = None,
+        validate: Callable[[T], Awaitable[bool]] | None = None,
     ):
         """Initialize the pool.
 
@@ -291,7 +286,7 @@ class ResourcePool(Generic[T]):
     @asynccontextmanager
     async def acquire(
         self,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> AsyncGenerator[T, None]:
         """Acquire a resource from the pool.
 
@@ -318,12 +313,12 @@ class ResourcePool(Generic[T]):
             if not self._closed:
                 await self._available.put((resource, time.time()))
 
-    async def _get_resource(self, timeout: Optional[float]) -> T:
+    async def _get_resource(self, timeout: float | None) -> T:
         """Get a resource, creating if needed."""
         while True:
             # Try to get from pool
             try:
-                resource, created_at = self._available.get_nowait()
+                resource, _created_at = self._available.get_nowait()
 
                 # Validate if we have a validator
                 if self._validate:
@@ -453,7 +448,7 @@ class RateLimiter:
             self._tokens + elapsed * self._rate,
         )
 
-    async def __aenter__(self) -> "RateLimiter":
+    async def __aenter__(self) -> RateLimiter:
         await self.acquire()
         return self
 
@@ -490,7 +485,7 @@ class CancellationScope:
     """Scope for managing cancellation."""
     cancelled: bool = False
     shield: bool = False
-    _tasks: List[asyncio.Task] = field(default_factory=list)
+    _tasks: list[asyncio.Task] = field(default_factory=list)
 
     def cancel(self) -> None:
         """Cancel all tasks in scope."""
@@ -549,7 +544,7 @@ async def gather_with_limit(
     *coros: Awaitable[T],
     limit: int = 10,
     return_exceptions: bool = False,
-) -> List[Union[T, Exception]]:
+) -> list[Union[T, Exception]]:
     """Like asyncio.gather but with concurrency limit.
 
     Args:
@@ -567,7 +562,7 @@ async def gather_with_limit(
         )
     """
     semaphore = asyncio.Semaphore(limit)
-    results: List[Any] = [None] * len(coros)
+    results: list[Any] = [None] * len(coros)
 
     async def run_with_semaphore(index: int, coro: Awaitable[T]) -> None:
         async with semaphore:
@@ -594,7 +589,7 @@ async def gather_with_limit(
 async def async_batch(
     items: AsyncIterator[T],
     batch_size: int,
-) -> AsyncIterator[List[T]]:
+) -> AsyncIterator[list[T]]:
     """Batch async iterator into chunks.
 
     Args:
@@ -608,7 +603,7 @@ async def async_batch(
         async for batch in async_batch(stream, 100):
             await process_batch(batch)
     """
-    batch: List[T] = []
+    batch: list[T] = []
 
     async for item in items:
         batch.append(item)

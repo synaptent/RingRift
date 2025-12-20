@@ -11,14 +11,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional
-
-import torch
 
 # Add parent to path for imports
 import sys
+from datetime import datetime
+from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from app.ai.factory import AIFactory
@@ -109,7 +107,7 @@ def create_baseline_ai(baseline_type: str, player_number: int):
         raise ValueError(f"Unknown baseline: {baseline_type}")
 
 
-def create_gmo_ai(player_number: int, checkpoint_path: Optional[str] = None) -> GMOAI:
+def create_gmo_ai(player_number: int, checkpoint_path: str | None = None) -> GMOAI:
     """Create a GMO AI with the specified player number."""
     ai_config = AIConfig(difficulty=6)
     gmo_config = GMOConfig()
@@ -126,10 +124,10 @@ def create_gmo_ai(player_number: int, checkpoint_path: Optional[str] = None) -> 
 
 
 def evaluate_against_baseline(
-    checkpoint_path: Optional[str],
+    checkpoint_path: str | None,
     baseline_type: str,
     num_games: int = 20,
-) -> Dict:
+) -> dict:
     """Evaluate GMO against a baseline AI.
 
     Args:
@@ -205,9 +203,9 @@ def evaluate_against_baseline(
 
 
 def run_baseline_evaluation(
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
     num_games: int = 20,
-    baselines: List[str] = None,
+    baselines: list[str] | None = None,
     output_dir: str = "data/gmo_evaluation"
 ):
     """Run evaluation against multiple baselines.

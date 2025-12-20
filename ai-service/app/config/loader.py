@@ -34,19 +34,14 @@ Environment Variables (December 2025):
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from dataclasses import dataclass, field, fields, is_dataclass
+from collections.abc import Callable
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import (
     Any,
-    Callable,
-    Dict,
     Generic,
-    List,
-    Optional,
-    Type,
     TypeVar,
     Union,
     get_args,
@@ -55,24 +50,22 @@ from typing import (
 
 from app.utils.json_utils import load_json, save_json
 from app.utils.yaml_utils import (
-    load_yaml,
-    load_yaml_with_defaults,
-    safe_load_yaml,
-    dump_yaml,
     ConfigDict,
+    dump_yaml,
+    load_yaml,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "load_config",
-    "save_config",
+    "ConfigLoadError",
     "ConfigLoader",
     "ConfigSource",
     "env_override",
+    "load_config",
     "merge_configs",
+    "save_config",
     "validate_config",
-    "ConfigLoadError",
 ]
 
 T = TypeVar("T")
@@ -89,9 +82,9 @@ class ConfigSource:
     def __init__(
         self,
         path: Union[str, Path],
-        format: Optional[str] = None,
+        format: str | None = None,
         required: bool = True,
-        env_var: Optional[str] = None,
+        env_var: str | None = None,
     ):
         """Initialize a config source.
 
@@ -130,9 +123,9 @@ class ConfigSource:
 def load_config(
     path: Union[str, Path],
     *,
-    target: Optional[Type[T]] = None,
-    defaults: Optional[Dict[str, Any]] = None,
-    env_prefix: Optional[str] = None,
+    target: type[T] | None = None,
+    defaults: dict[str, Any] | None = None,
+    env_prefix: str | None = None,
     required: bool = True,
     validate: bool = True,
 ) -> Union[T, ConfigDict]:
@@ -195,8 +188,8 @@ def load_config(
 
 def _load_raw_config(
     source: ConfigSource,
-    defaults: Optional[Dict[str, Any]] = None,
-) -> Optional[ConfigDict]:
+    defaults: dict[str, Any] | None = None,
+) -> ConfigDict | None:
     """Load raw config from source."""
     actual_path = source.get_path()
 
@@ -223,10 +216,10 @@ def _load_raw_config(
 
 
 def save_config(
-    config: Union[Dict[str, Any], Any],
+    config: Union[dict[str, Any], Any],
     path: Union[str, Path],
     *,
-    format: Optional[str] = None,
+    format: str | None = None,
 ) -> None:
     """Save configuration to a file.
 
@@ -252,7 +245,7 @@ def save_config(
 def env_override(
     config: ConfigDict,
     prefix: str,
-    target: Optional[Type] = None,
+    target: type | None = None,
 ) -> ConfigDict:
     """Apply environment variable overrides to config.
 
@@ -298,10 +291,10 @@ def env_override(
 
 
 def _set_nested(
-    config: Dict[str, Any],
-    keys: List[str],
+    config: dict[str, Any],
+    keys: list[str],
     value: str,
-    type_hint: Optional[Type] = None,
+    type_hint: type | None = None,
 ) -> None:
     """Set a nested config value."""
     current = config
@@ -312,7 +305,7 @@ def _set_nested(
     current[keys[-1]] = _coerce_type(value, type_hint)
 
 
-def _coerce_type(value: str, type_hint: Optional[Type]) -> Any:
+def _coerce_type(value: str, type_hint: type | None) -> Any:
     """Coerce a string value to the target type."""
     if type_hint is None:
         # Try to infer type
@@ -352,7 +345,7 @@ def _coerce_type(value: str, type_hint: Optional[Type]) -> Any:
         return value
 
 
-def _dict_to_dataclass(data: Dict[str, Any], target: Type[T]) -> T:
+def _dict_to_dataclass(data: dict[str, Any], target: type[T]) -> T:
     """Convert a dictionary to a dataclass instance.
 
     Handles nested dataclasses and provides defaults for missing fields.
@@ -422,10 +415,10 @@ def merge_configs(
 
 
 def validate_config(
-    config: Union[Dict[str, Any], Any],
-    required_keys: Optional[List[str]] = None,
-    validators: Optional[Dict[str, Callable[[Any], bool]]] = None,
-) -> tuple[bool, List[str]]:
+    config: Union[dict[str, Any], Any],
+    required_keys: list[str] | None = None,
+    validators: dict[str, Callable[[Any], bool]] | None = None,
+) -> tuple[bool, list[str]]:
     """Validate configuration.
 
     Args:
@@ -482,9 +475,9 @@ class ConfigLoader(Generic[T]):
         self,
         path: Union[str, Path],
         *,
-        target: Optional[Type[T]] = None,
-        defaults: Optional[Dict[str, Any]] = None,
-        env_prefix: Optional[str] = None,
+        target: type[T] | None = None,
+        defaults: dict[str, Any] | None = None,
+        env_prefix: str | None = None,
         auto_reload: bool = False,
     ):
         """Initialize the config loader.
@@ -501,8 +494,8 @@ class ConfigLoader(Generic[T]):
         self.defaults = defaults
         self.env_prefix = env_prefix
         self.auto_reload = auto_reload
-        self._cached: Optional[Union[T, ConfigDict]] = None
-        self._mtime: Optional[float] = None
+        self._cached: Union[T, ConfigDict] | None = None
+        self._mtime: float | None = None
 
     def load(self, force_reload: bool = False) -> Union[T, ConfigDict]:
         """Load configuration, using cache if available.

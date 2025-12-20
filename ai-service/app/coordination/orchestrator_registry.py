@@ -40,18 +40,19 @@ import socket
 import sqlite3
 import threading
 import time
-from contextlib import contextmanager
-from dataclasses import dataclass, asdict
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 # Import DataCatalog for data availability tracking (December 2025)
 try:
-    from app.distributed.data_catalog import DataCatalog, get_data_catalog, CatalogStats
+    from app.distributed.data_catalog import CatalogStats, DataCatalog, get_data_catalog
     HAS_DATA_CATALOG = True
 except ImportError:
     HAS_DATA_CATALOG = False
@@ -123,7 +124,7 @@ class OrchestratorInfo:
     state: str
     started_at: str
     last_heartbeat: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
     def is_alive(self) -> bool:
         """Check if orchestrator is considered alive based on heartbeat."""
@@ -136,7 +137,7 @@ class OrchestratorInfo:
         except (ValueError, TypeError):
             return False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -153,9 +154,9 @@ class OrchestratorRegistry:
 
     def __init__(self):
         self._db_path = REGISTRY_DB
-        self._my_id: Optional[str] = None
-        self._my_role: Optional[OrchestratorRole] = None
-        self._heartbeat_thread: Optional[threading.Thread] = None
+        self._my_id: str | None = None
+        self._my_role: OrchestratorRole | None = None
+        self._heartbeat_thread: threading.Thread | None = None
         self._running = False
         self._init_db()
 
@@ -235,7 +236,7 @@ class OrchestratorRegistry:
         return f"{role.value}_{hostname}_{pid}_{timestamp}"
 
     def _log_event(self, conn: sqlite3.Connection, event_type: str, message: str,
-                   orchestrator_id: str = None, role: str = None, metadata: Dict = None):
+                   orchestrator_id: str | None = None, role: str | None = None, metadata: dict | None = None):
         """Log an event for debugging."""
         import json
         conn.execute('''
@@ -254,7 +255,7 @@ class OrchestratorRegistry:
         self,
         role: OrchestratorRole,
         force: bool = False,
-        metadata: Dict[str, Any] = None
+        metadata: dict[str, Any] | None = None
     ) -> bool:
         """
         Acquire a role as an orchestrator.
@@ -377,7 +378,7 @@ class OrchestratorRegistry:
         self._my_id = None
         self._my_role = None
 
-    def heartbeat(self, metadata_update: Dict[str, Any] = None):
+    def heartbeat(self, metadata_update: dict[str, Any] | None = None):
         """Update heartbeat timestamp. Call periodically to stay registered."""
         if not self._my_id:
             return
@@ -470,16 +471,14 @@ class OrchestratorRegistry:
 
     def _cleanup_on_exit(self):
         """Cleanup handler called on process exit."""
-        try:
+        with suppress(Exception):
             self.release_role()
-        except Exception:
-            pass
 
     # =========================================================================
     # Query Methods
     # =========================================================================
 
-    def get_active_orchestrators(self) -> List[OrchestratorInfo]:
+    def get_active_orchestrators(self) -> list[OrchestratorInfo]:
         """Get all currently active orchestrators."""
         import json
         result = []
@@ -524,7 +523,7 @@ class OrchestratorRegistry:
             timeout = timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS)
             return datetime.now() - last_hb < timeout
 
-    def get_role_holder(self, role: OrchestratorRole) -> Optional[OrchestratorInfo]:
+    def get_role_holder(self, role: OrchestratorRole) -> OrchestratorInfo | None:
         """Get info about the orchestrator holding a role."""
         import json
 
@@ -572,7 +571,7 @@ class OrchestratorRegistry:
             time.sleep(poll_interval)
         return False
 
-    def get_recent_events(self, limit: int = 100, role: str = None) -> List[Dict[str, Any]]:
+    def get_recent_events(self, limit: int = 100, role: str | None = None) -> list[dict[str, Any]]:
         """Get recent orchestrator events for debugging."""
         import json
 
@@ -602,7 +601,7 @@ class OrchestratorRegistry:
                 for row in cursor
             ]
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get summary of orchestrator registry status."""
         active = self.get_active_orchestrators()
         roles_held = {o.role: o.hostname for o in active}
@@ -623,10 +622,10 @@ class OrchestratorRegistry:
 
     def get_data_availability(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         min_quality: float = 0.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Query DataCatalog for current data availability.
 
         Args:
@@ -697,8 +696,8 @@ class OrchestratorRegistry:
 
     def heartbeat_with_data_status(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> None:
         """Update heartbeat with data availability status.
 
@@ -724,8 +723,8 @@ class OrchestratorRegistry:
     def has_sufficient_data(
         self,
         min_games: int = 500,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         min_quality: float = 0.0,
     ) -> bool:
         """Check if there's sufficient data for training.
@@ -759,7 +758,7 @@ class OrchestratorRegistry:
         config_key: str = "",
         min_games: int = 500,
         min_quality: float = MIN_QUALITY_FOR_TRAINING,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check training readiness including data availability.
 
         Combines data catalog stats with training signal checks to
@@ -869,11 +868,11 @@ class CoordinatorHealth:
     role: str
     is_healthy: bool
     last_seen: str
-    response_time_ms: Optional[float] = None
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = None
+    response_time_ms: float | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "coordinator_id": self.coordinator_id,
             "role": self.role,
@@ -913,7 +912,7 @@ class CrossCoordinatorHealthProtocol:
 
     def __init__(
         self,
-        registry: Optional[OrchestratorRegistry] = None,
+        registry: OrchestratorRegistry | None = None,
         health_check_timeout_ms: float = 5000.0,
     ):
         """Initialize cross-coordinator health protocol.
@@ -924,7 +923,7 @@ class CrossCoordinatorHealthProtocol:
         """
         self._registry = registry
         self._health_check_timeout_ms = health_check_timeout_ms
-        self._health_cache: Dict[str, CoordinatorHealth] = {}
+        self._health_cache: dict[str, CoordinatorHealth] = {}
         self._last_check_time: float = 0.0
         self._check_cooldown_seconds: float = 10.0
 
@@ -935,7 +934,7 @@ class CrossCoordinatorHealthProtocol:
             self._registry = get_registry()
         return self._registry
 
-    def check_all_coordinators(self) -> Dict[str, CoordinatorHealth]:
+    def check_all_coordinators(self) -> dict[str, CoordinatorHealth]:
         """Check health of all registered coordinators.
 
         Returns:
@@ -948,7 +947,7 @@ class CrossCoordinatorHealthProtocol:
             return self._health_cache
 
         orchestrators = self.registry.get_active_orchestrators()
-        health_report: Dict[str, CoordinatorHealth] = {}
+        health_report: dict[str, CoordinatorHealth] = {}
 
         for orch in orchestrators:
             start_time = time.time()
@@ -981,22 +980,19 @@ class CrossCoordinatorHealthProtocol:
             True if healthy coordinator exists for this role
         """
         orchestrators = self.registry.get_active_orchestrators()
-        for orch in orchestrators:
-            if orch.role == role.value and orch.is_alive():
-                return True
-        return False
+        return any(orch.role == role.value and orch.is_alive() for orch in orchestrators)
 
-    def get_healthy_coordinators(self) -> List[CoordinatorHealth]:
+    def get_healthy_coordinators(self) -> list[CoordinatorHealth]:
         """Get list of all healthy coordinators."""
         health_report = self.check_all_coordinators()
         return [h for h in health_report.values() if h.is_healthy]
 
-    def get_unhealthy_coordinators(self) -> List[CoordinatorHealth]:
+    def get_unhealthy_coordinators(self) -> list[CoordinatorHealth]:
         """Get list of all unhealthy coordinators."""
         health_report = self.check_all_coordinators()
         return [h for h in health_report.values() if not h.is_healthy]
 
-    def get_role_health(self, role: OrchestratorRole) -> Optional[CoordinatorHealth]:
+    def get_role_health(self, role: OrchestratorRole) -> CoordinatorHealth | None:
         """Get health status for a specific role.
 
         Args:
@@ -1023,7 +1019,7 @@ class CrossCoordinatorHealthProtocol:
                 )
         return None
 
-    def get_cluster_health_summary(self) -> Dict[str, Any]:
+    def get_cluster_health_summary(self) -> dict[str, Any]:
         """Get overall cluster health summary.
 
         Returns:
@@ -1036,7 +1032,7 @@ class CrossCoordinatorHealthProtocol:
         unhealthy = total - healthy
 
         # Group by role
-        by_role: Dict[str, Dict[str, Any]] = {}
+        by_role: dict[str, dict[str, Any]] = {}
         for health in health_report.values():
             role = health.role
             if role not in by_role:
@@ -1115,7 +1111,7 @@ class CrossCoordinatorHealthProtocol:
 
 
 # Singleton health protocol
-_health_protocol: Optional[CrossCoordinatorHealthProtocol] = None
+_health_protocol: CrossCoordinatorHealthProtocol | None = None
 
 
 def get_cross_coordinator_health() -> CrossCoordinatorHealthProtocol:
@@ -1126,7 +1122,7 @@ def get_cross_coordinator_health() -> CrossCoordinatorHealthProtocol:
     return _health_protocol
 
 
-def check_cluster_health() -> Dict[str, Any]:
+def check_cluster_health() -> dict[str, Any]:
     """Convenience function to check cluster health."""
     return get_cross_coordinator_health().get_cluster_health_summary()
 
@@ -1136,16 +1132,16 @@ def check_cluster_health() -> Dict[str, Any]:
 # ============================================
 
 # Registry of active coordinators (non-orchestrator singletons)
-_coordinator_registry: Dict[str, Dict[str, Any]] = {}
+_coordinator_registry: dict[str, dict[str, Any]] = {}
 _coordinator_lock = threading.Lock()
 
 
 def register_coordinator(
     name: str,
     coordinator: Any,
-    health_callback: Optional[Callable[[], bool]] = None,
-    shutdown_callback: Optional[Callable[[], None]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    health_callback: Callable[[], bool] | None = None,
+    shutdown_callback: Callable[[], None] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> bool:
     """Register a coordinator (non-orchestrator singleton) for visibility.
 
@@ -1202,14 +1198,14 @@ def unregister_coordinator(name: str) -> bool:
     return False
 
 
-def get_coordinator(name: str) -> Optional[Any]:
+def get_coordinator(name: str) -> Any | None:
     """Get a registered coordinator by name."""
     with _coordinator_lock:
         entry = _coordinator_registry.get(name)
         return entry["coordinator"] if entry else None
 
 
-def get_registered_coordinators() -> Dict[str, Dict[str, Any]]:
+def get_registered_coordinators() -> dict[str, dict[str, Any]]:
     """Get all registered coordinators with their status.
 
     Returns:
@@ -1234,7 +1230,7 @@ def get_registered_coordinators() -> Dict[str, Dict[str, Any]]:
     return result
 
 
-def shutdown_all_coordinators() -> Dict[str, bool]:
+def shutdown_all_coordinators() -> dict[str, bool]:
     """Shutdown all registered coordinators.
 
     Returns:
@@ -1253,7 +1249,7 @@ def shutdown_all_coordinators() -> Dict[str, bool]:
     return results
 
 
-def auto_register_known_coordinators() -> Dict[str, bool]:
+def auto_register_known_coordinators() -> dict[str, bool]:
     """Auto-register known training/quality coordinators.
 
     Discovers and registers common coordinator singletons that should be
@@ -1370,7 +1366,8 @@ def auto_register_known_coordinators() -> Dict[str, bool]:
                 if hasattr(coordinator, "is_healthy"):
                     health_cb = coordinator.is_healthy
                 elif hasattr(coordinator, "get_health"):
-                    health_cb = lambda c=coordinator: c.get_health().get("healthy", True)
+                    def health_cb(c=coordinator):
+                        return c.get_health().get("healthy", True)
 
                 # Get shutdown method if available
                 shutdown_cb = None
@@ -1405,7 +1402,7 @@ def auto_register_known_coordinators() -> Dict[str, bool]:
 # Auto-discovery of Known Orchestrators (December 2025)
 # ============================================
 
-def discover_and_register_orchestrators() -> Dict[str, Any]:
+def discover_and_register_orchestrators() -> dict[str, Any]:
     """Discover and register known orchestrators.
 
     Attempts to import and reference all known orchestrators, adding them
@@ -1453,8 +1450,8 @@ def discover_and_register_orchestrators() -> Dict[str, Any]:
             package = __import__(module_parts[0], fromlist=[module_parts[1]])
             module = getattr(package, module_parts[1])
 
-            # Get class or getter function
-            target = getattr(module, orch_def["class_or_getter"])
+            # Verify class or getter function exists
+            _target = getattr(module, orch_def["class_or_getter"])
 
             # Record discovery (don't instantiate unless needed)
             results[name] = {
@@ -1477,7 +1474,7 @@ def discover_and_register_orchestrators() -> Dict[str, Any]:
     return results
 
 
-def get_orchestrator_inventory() -> Dict[str, Any]:
+def get_orchestrator_inventory() -> dict[str, Any]:
     """Get inventory of all known orchestrators and their status.
 
     Returns:
@@ -1499,24 +1496,24 @@ def get_orchestrator_inventory() -> Dict[str, Any]:
 # ============================================
 
 __all__ = [
+    "OrchestratorInfo",
     # Core classes
     "OrchestratorRegistry",
     "OrchestratorRole",
-    "OrchestratorInfo",
-    # Singleton access
-    "get_registry",
+    "auto_register_known_coordinators",
     # Health and status
     "check_cluster_health",
-    # Coordinator registration (December 2025)
-    "register_coordinator",
-    "unregister_coordinator",
-    "get_coordinator",
-    "get_registered_coordinators",
-    "shutdown_all_coordinators",
-    "auto_register_known_coordinators",
     # Discovery
     "discover_and_register_orchestrators",
+    "get_coordinator",
     "get_orchestrator_inventory",
+    "get_registered_coordinators",
+    # Singleton access
+    "get_registry",
+    # Coordinator registration (December 2025)
+    "register_coordinator",
+    "shutdown_all_coordinators",
+    "unregister_coordinator",
 ]
 
 

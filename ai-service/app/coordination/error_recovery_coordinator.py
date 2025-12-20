@@ -44,9 +44,10 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class ErrorRecord:
     node_id: str = ""
     severity: ErrorSeverity = ErrorSeverity.ERROR
     timestamp: float = field(default_factory=time.time)
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     recovered: bool = False
     recovery_time: float = 0.0
 
@@ -127,9 +128,9 @@ class ErrorStats:
     """Aggregate error statistics."""
 
     total_errors: int = 0
-    errors_by_severity: Dict[str, int] = field(default_factory=dict)
-    errors_by_component: Dict[str, int] = field(default_factory=dict)
-    errors_by_node: Dict[str, int] = field(default_factory=dict)
+    errors_by_severity: dict[str, int] = field(default_factory=dict)
+    errors_by_component: dict[str, int] = field(default_factory=dict)
+    errors_by_node: dict[str, int] = field(default_factory=dict)
     recovery_attempts: int = 0
     successful_recoveries: int = 0
     failed_recoveries: int = 0
@@ -169,17 +170,17 @@ class ErrorRecoveryCoordinator:
         self.max_recovery_history = max_recovery_history
 
         # Error tracking
-        self._errors: List[ErrorRecord] = []
-        self._errors_by_component: Dict[str, List[ErrorRecord]] = defaultdict(list)
+        self._errors: list[ErrorRecord] = []
+        self._errors_by_component: dict[str, list[ErrorRecord]] = defaultdict(list)
         self._error_id_counter = 0
 
         # Recovery tracking
-        self._active_recoveries: Dict[str, RecoveryAttempt] = {}
-        self._recovery_history: List[RecoveryAttempt] = []
+        self._active_recoveries: dict[str, RecoveryAttempt] = {}
+        self._recovery_history: list[RecoveryAttempt] = []
         self._recovery_id_counter = 0
 
         # Circuit breakers by component
-        self._circuit_breakers: Dict[str, CircuitBreakerState] = {}
+        self._circuit_breakers: dict[str, CircuitBreakerState] = {}
 
         # Statistics
         self._total_errors = 0
@@ -189,9 +190,9 @@ class ErrorRecoveryCoordinator:
         self._total_recovery_time = 0.0
 
         # Callbacks
-        self._error_callbacks: List[Callable[[ErrorRecord], None]] = []
-        self._recovery_callbacks: List[Callable[[RecoveryAttempt], None]] = []
-        self._circuit_breaker_callbacks: List[Callable[[str, bool], None]] = []
+        self._error_callbacks: list[Callable[[ErrorRecord], None]] = []
+        self._recovery_callbacks: list[Callable[[RecoveryAttempt], None]] = []
+        self._circuit_breaker_callbacks: list[Callable[[str, bool], None]] = []
 
         # Subscription state
         self._subscribed = False
@@ -513,7 +514,7 @@ class ErrorRecoveryCoordinator:
         message: str,
         node_id: str = "",
         severity: str = "error",
-        context: Optional[Dict] = None,
+        context: dict | None = None,
     ) -> ErrorRecord:
         """Manually record an error.
 
@@ -621,40 +622,40 @@ class ErrorRecoveryCoordinator:
         """
         self._circuit_breaker_callbacks.append(callback)
 
-    def get_recent_errors(self, limit: int = 50) -> List[ErrorRecord]:
+    def get_recent_errors(self, limit: int = 50) -> list[ErrorRecord]:
         """Get recent errors."""
         return self._errors[-limit:]
 
-    def get_errors_by_component(self, component: str) -> List[ErrorRecord]:
+    def get_errors_by_component(self, component: str) -> list[ErrorRecord]:
         """Get errors for a specific component."""
         return list(self._errors_by_component.get(component, []))
 
-    def get_recovery_history(self, limit: int = 50) -> List[RecoveryAttempt]:
+    def get_recovery_history(self, limit: int = 50) -> list[RecoveryAttempt]:
         """Get recent recovery attempts."""
         return self._recovery_history[-limit:]
 
-    def get_active_recoveries(self) -> List[RecoveryAttempt]:
+    def get_active_recoveries(self) -> list[RecoveryAttempt]:
         """Get active recovery attempts."""
         return list(self._active_recoveries.values())
 
-    def get_circuit_breaker_states(self) -> Dict[str, CircuitBreakerState]:
+    def get_circuit_breaker_states(self) -> dict[str, CircuitBreakerState]:
         """Get all circuit breaker states."""
         return dict(self._circuit_breakers)
 
     def get_stats(self) -> ErrorStats:
         """Get aggregate error statistics."""
         # Count by severity
-        by_severity: Dict[str, int] = defaultdict(int)
+        by_severity: dict[str, int] = defaultdict(int)
         for error in self._errors:
             by_severity[error.severity.value] += 1
 
         # Count by component
-        by_component: Dict[str, int] = {
+        by_component: dict[str, int] = {
             comp: len(errors) for comp, errors in self._errors_by_component.items()
         }
 
         # Count by node
-        by_node: Dict[str, int] = defaultdict(int)
+        by_node: dict[str, int] = defaultdict(int)
         for error in self._errors:
             if error.node_id:
                 by_node[error.node_id] += 1
@@ -689,7 +690,7 @@ class ErrorRecoveryCoordinator:
             avg_recovery_time=avg_recovery_time,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring."""
         stats = self.get_stats()
 
@@ -718,7 +719,7 @@ class ErrorRecoveryCoordinator:
 # Singleton and convenience functions
 # =============================================================================
 
-_error_coordinator: Optional[ErrorRecoveryCoordinator] = None
+_error_coordinator: ErrorRecoveryCoordinator | None = None
 
 
 def get_error_coordinator() -> ErrorRecoveryCoordinator:
@@ -751,15 +752,15 @@ def get_error_stats() -> ErrorStats:
 
 
 __all__ = [
+    "CircuitBreakerState",
+    "ErrorRecord",
     "ErrorRecoveryCoordinator",
     "ErrorSeverity",
-    "RecoveryStatus",
-    "ErrorRecord",
-    "RecoveryAttempt",
-    "CircuitBreakerState",
     "ErrorStats",
+    "RecoveryAttempt",
+    "RecoveryStatus",
     "get_error_coordinator",
-    "wire_error_events",
-    "is_component_healthy",
     "get_error_stats",
+    "is_component_healthy",
+    "wire_error_events",
 ]

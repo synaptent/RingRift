@@ -39,7 +39,7 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class QualityLevel(Enum):
     CRITICAL = "critical"  # < 0.3
 
     @classmethod
-    def from_score(cls, score: float) -> "QualityLevel":
+    def from_score(cls, score: float) -> QualityLevel:
         """Get quality level from numeric score."""
         if score >= 0.9:
             return cls.EXCELLENT
@@ -129,8 +129,8 @@ class DataQualityOrchestrator:
         self.low_quality_threshold = low_quality_threshold
 
         # Config tracking
-        self._configs: Dict[str, ConfigQualityState] = {}
-        self._config_history: Dict[str, List[Dict[str, Any]]] = {}
+        self._configs: dict[str, ConfigQualityState] = {}
+        self._config_history: dict[str, list[dict[str, Any]]] = {}
 
         # Statistics
         self._total_updates: int = 0
@@ -361,7 +361,7 @@ class DataQualityOrchestrator:
             "timestamp": time.time(),
         })
 
-    def _add_to_history(self, config_key: str, event_type: str, data: Dict[str, Any]) -> None:
+    def _add_to_history(self, config_key: str, event_type: str, data: dict[str, Any]) -> None:
         """Add entry to config history."""
         if config_key not in self._config_history:
             self._config_history[config_key] = []
@@ -376,19 +376,19 @@ class DataQualityOrchestrator:
         if len(history) > self.max_history_per_config:
             self._config_history[config_key] = history[-self.max_history_per_config:]
 
-    def get_config_quality(self, config_key: str) -> Optional[ConfigQualityState]:
+    def get_config_quality(self, config_key: str) -> ConfigQualityState | None:
         """Get quality state for a specific config."""
         return self._configs.get(config_key)
 
-    def get_configs_ready_for_training(self) -> List[ConfigQualityState]:
+    def get_configs_ready_for_training(self) -> list[ConfigQualityState]:
         """Get all configs that are ready for training."""
         return [c for c in self._configs.values() if c.is_ready_for_training]
 
-    def get_configs_with_warnings(self) -> List[ConfigQualityState]:
+    def get_configs_with_warnings(self) -> list[ConfigQualityState]:
         """Get all configs with active quality warnings."""
         return [c for c in self._configs.values() if c.has_active_warning]
 
-    def get_config_history(self, config_key: Optional[str] = None) -> Dict[str, List[Dict]]:
+    def get_config_history(self, config_key: str | None = None) -> dict[str, list[dict]]:
         """Get quality history."""
         if config_key:
             return {config_key: self._config_history.get(config_key, [])}
@@ -418,7 +418,7 @@ class DataQualityOrchestrator:
             last_activity_time=last_activity,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring."""
         stats = self.get_stats()
 
@@ -453,7 +453,7 @@ class DataQualityOrchestrator:
 
 
 # Singleton instance
-_quality_orchestrator: Optional[DataQualityOrchestrator] = None
+_quality_orchestrator: DataQualityOrchestrator | None = None
 
 
 def wire_quality_events(
@@ -489,7 +489,7 @@ def wire_quality_events(
     return _quality_orchestrator
 
 
-def get_quality_orchestrator() -> Optional[DataQualityOrchestrator]:
+def get_quality_orchestrator() -> DataQualityOrchestrator | None:
     """Get the global quality orchestrator if configured."""
     return _quality_orchestrator
 
@@ -503,11 +503,11 @@ def reset_quality_orchestrator() -> None:
 
 
 __all__ = [
-    "DataQualityOrchestrator",
     "ConfigQualityState",
-    "QualityStats",
+    "DataQualityOrchestrator",
     "QualityLevel",
-    "wire_quality_events",
+    "QualityStats",
     "get_quality_orchestrator",
     "reset_quality_orchestrator",
+    "wire_quality_events",
 ]

@@ -24,15 +24,16 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.utils.checksum_utils import compute_string_checksum
-from typing import Any, Dict, List, Optional
 
 # Cache directory
 from app.utils.paths import DATA_DIR, ensure_dir
+
 EXPORT_CACHE_DIR = ensure_dir(DATA_DIR / "export_cache")
 
 
@@ -42,25 +43,25 @@ class ExportCacheEntry:
     output_path: str
     board_type: str
     num_players: int
-    db_sources: Dict[str, Dict[str, Any]]  # path -> {mtime, size, game_count}
+    db_sources: dict[str, dict[str, Any]]  # path -> {mtime, size, game_count}
     export_timestamp: str
     samples_exported: int
     games_exported: int
     output_size: int
     output_mtime: float
-    history_length: Optional[int] = None
-    feature_version: Optional[int] = None
-    policy_encoding: Optional[str] = None
+    history_length: int | None = None
+    feature_version: int | None = None
+    policy_encoding: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "ExportCacheEntry":
+    def from_dict(cls, d: dict[str, Any]) -> ExportCacheEntry:
         return cls(**d)
 
 
-def _get_db_stats(db_path: str) -> Dict[str, Any]:
+def _get_db_stats(db_path: str) -> dict[str, Any]:
     """Get stats for a database file (mtime, size, game count)."""
     path = Path(db_path)
     if not path.exists():
@@ -89,9 +90,9 @@ def _get_cache_key(
     board_type: str,
     num_players: int,
     output_path: str,
-    history_length: Optional[int] = None,
-    feature_version: Optional[int] = None,
-    policy_encoding: Optional[str] = None,
+    history_length: int | None = None,
+    feature_version: int | None = None,
+    policy_encoding: str | None = None,
 ) -> str:
     """Generate a unique cache key for this export configuration."""
     # Use a hash of the normalized output path plus feature context.
@@ -115,11 +116,11 @@ def _get_cache_file(cache_key: str) -> Path:
 class ExportCache:
     """Manages incremental export caching for training data."""
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Path | None = None):
         self.cache_dir = cache_dir or EXPORT_CACHE_DIR
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def _load_cache_entry(self, cache_key: str) -> Optional[ExportCacheEntry]:
+    def _load_cache_entry(self, cache_key: str) -> ExportCacheEntry | None:
         """Load a cache entry by key."""
         cache_file = self.cache_dir / f"export_{cache_key}.json"
         if not cache_file.exists():
@@ -140,13 +141,13 @@ class ExportCache:
 
     def needs_export(
         self,
-        db_paths: List[str],
+        db_paths: list[str],
         output_path: str,
         board_type: str,
         num_players: int,
-        history_length: Optional[int] = None,
-        feature_version: Optional[int] = None,
-        policy_encoding: Optional[str] = None,
+        history_length: int | None = None,
+        feature_version: int | None = None,
+        policy_encoding: str | None = None,
         force: bool = False,
     ) -> bool:
         """Check if export is needed or if cached output is still valid.
@@ -222,13 +223,13 @@ class ExportCache:
 
     def record_export(
         self,
-        db_paths: List[str],
+        db_paths: list[str],
         output_path: str,
         board_type: str,
         num_players: int,
-        history_length: Optional[int] = None,
-        feature_version: Optional[int] = None,
-        policy_encoding: Optional[str] = None,
+        history_length: int | None = None,
+        feature_version: int | None = None,
+        policy_encoding: str | None = None,
         samples_exported: int = 0,
         games_exported: int = 0,
     ) -> None:
@@ -276,9 +277,9 @@ class ExportCache:
         output_path: str,
         board_type: str,
         num_players: int,
-        history_length: Optional[int] = None,
-        feature_version: Optional[int] = None,
-        policy_encoding: Optional[str] = None,
+        history_length: int | None = None,
+        feature_version: int | None = None,
+        policy_encoding: str | None = None,
     ) -> bool:
         """Invalidate a cache entry. Returns True if entry was found and removed."""
         cache_key = _get_cache_key(
@@ -301,10 +302,10 @@ class ExportCache:
         output_path: str,
         board_type: str,
         num_players: int,
-        history_length: Optional[int] = None,
-        feature_version: Optional[int] = None,
-        policy_encoding: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        history_length: int | None = None,
+        feature_version: int | None = None,
+        policy_encoding: str | None = None,
+    ) -> dict[str, Any] | None:
         """Get cache entry info for debugging/inspection."""
         cache_key = _get_cache_key(
             board_type,
@@ -348,13 +349,13 @@ def get_export_cache() -> ExportCache:
 
 
 def needs_export(
-    db_paths: List[str],
+    db_paths: list[str],
     output_path: str,
     board_type: str,
     num_players: int,
-    history_length: Optional[int] = None,
-    feature_version: Optional[int] = None,
-    policy_encoding: Optional[str] = None,
+    history_length: int | None = None,
+    feature_version: int | None = None,
+    policy_encoding: str | None = None,
     force: bool = False,
 ) -> bool:
     """Check if export is needed using the default cache."""
@@ -371,13 +372,13 @@ def needs_export(
 
 
 def record_export(
-    db_paths: List[str],
+    db_paths: list[str],
     output_path: str,
     board_type: str,
     num_players: int,
-    history_length: Optional[int] = None,
-    feature_version: Optional[int] = None,
-    policy_encoding: Optional[str] = None,
+    history_length: int | None = None,
+    feature_version: int | None = None,
+    policy_encoding: str | None = None,
     samples_exported: int = 0,
     games_exported: int = 0,
 ) -> None:

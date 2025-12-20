@@ -45,7 +45,7 @@
 
     "latency_move_e2e": {
       "name": "Move End-to-End Latency (p95)",
-      "target": 500,
+      "target": 200,
       "unit": "ms",
       "measurement": "move_latency p95",
       "priority": "high",
@@ -104,6 +104,14 @@
       "measurement": "http_5xx_rate",
       "priority": "critical",
       "source": "thresholds.json production http_api"
+    },
+    "true_error_rate": {
+      "name": "True Error Rate",
+      "target": 0.2,
+      "unit": "percent",
+      "measurement": "true_errors_total / total_requests",
+      "priority": "critical",
+      "source": "thresholds.json load_tests.true_errors"
     },
 
     "concurrent_games": {
@@ -179,10 +187,12 @@
         "concurrent_players": { "target": 60 },
         "latency_api_p95": { "target": 800 },
         "latency_game_creation": { "target": 2000 },
+        "latency_move_e2e": { "target": 300 },
         "error_rate": { "target": 1.0 },
         "error_rate_5xx": { "target": 1.0 },
         "latency_ai_response": { "target": 1500 },
-        "latency_ai_response_p99": { "target": 3000 }
+        "latency_ai_response_p99": { "target": 3000 },
+        "true_error_rate": { "target": 0.5 }
       }
     },
     "production": {
@@ -194,7 +204,8 @@
         "error_rate_5xx": { "target": 0.5 },
         "websocket_connection_success": { "target": 99.5 },
         "move_stall_rate": { "target": 0.2 },
-        "ai_fallback_rate": { "target": 0.5 }
+        "ai_fallback_rate": { "target": 0.5 },
+        "true_error_rate": { "target": 0.2 }
       }
     }
   },
@@ -208,6 +219,7 @@
         "availability",
         "error_rate",
         "error_rate_5xx",
+        "true_error_rate",
         "contract_failures",
         "lifecycle_mismatches"
       ]
@@ -246,6 +258,7 @@
     "mappings": {
       "http_req_duration": ["latency_api_p95", "latency_api_p99"],
       "http_req_failed": ["error_rate"],
+      "true_errors_total": ["true_error_rate"],
       "ws_connecting": ["latency_websocket_connect"],
       "move_latency": ["latency_move_e2e"],
       "game_creation_time": ["latency_game_creation"],

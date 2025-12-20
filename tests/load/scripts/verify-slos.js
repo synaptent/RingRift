@@ -118,7 +118,10 @@ function extractMetrics(results) {
     stalled_moves: 0,
     ws_connection_successes: 0,
     ws_connection_attempts: 0,
-    concurrent_games_max: 0
+    concurrent_games_max: 0,
+    true_errors_total: 0,
+    auth_token_expired_total: 0,
+    rate_limit_hit_total: 0
   };
 
   for (const entry of results) {
@@ -169,6 +172,15 @@ function extractMetrics(results) {
         case 'ws_move_stalled_total':
           metrics.stalled_moves = Math.max(metrics.stalled_moves, value);
           break;
+        case 'true_errors_total':
+          metrics.true_errors_total += value;
+          break;
+        case 'auth_token_expired_total':
+          metrics.auth_token_expired_total += value;
+          break;
+        case 'rate_limit_hit_total':
+          metrics.rate_limit_hit_total += value;
+          break;
         case 'concurrent_active_games':
         case 'concurrent_games':
           if (value > metrics.concurrent_games_max) {
@@ -200,6 +212,10 @@ function extractMetrics(results) {
       
       if (m.vus?.values) {
         metrics.max_vus = Math.max(metrics.max_vus, m.vus.values.max || 0);
+      }
+
+      if (m.true_errors_total?.values && metrics.true_errors_total === 0) {
+        metrics.true_errors_total = m.true_errors_total.values.count || 0;
       }
     }
   }
@@ -349,6 +365,21 @@ function verifySLOs(metrics, env) {
     unit: slos.error_rate.unit,
     passed: errorRate <= errorRateTarget,
     priority: slos.error_rate.priority
+  };
+
+  // True Error Rate (excludes auth and rate-limit noise)
+  const trueErrorRate = metrics.total_requests > 0
+    ? (metrics.true_errors_total / metrics.total_requests) * 100
+    : 0;
+  const trueErrorRateTarget = getTarget('true_error_rate', env);
+  results.true_error_rate = {
+    name: slos.true_error_rate.name,
+    target: trueErrorRateTarget,
+    actual: parseFloat(trueErrorRate.toFixed(3)),
+    unit: slos.true_error_rate.unit,
+    passed: trueErrorRate <= trueErrorRateTarget,
+    priority: slos.true_error_rate.priority,
+    note: metrics.total_requests === 0 ? 'No request data collected' : null
   };
 
   // Concurrent Games Capacity

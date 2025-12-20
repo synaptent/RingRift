@@ -42,9 +42,10 @@ import logging
 import statistics
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Deque, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class MetricPoint:
     value: float
     timestamp: float = field(default_factory=time.time)
     epoch: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -132,11 +133,11 @@ class MetricTracker:
         self.regression_threshold = regression_threshold
         self.anomaly_threshold = anomaly_threshold
 
-        self._history: Deque[MetricPoint] = deque(maxlen=window_size)
-        self._best_value: Optional[float] = None
-        self._worst_value: Optional[float] = None
+        self._history: deque[MetricPoint] = deque(maxlen=window_size)
+        self._best_value: float | None = None
+        self._worst_value: float | None = None
         self._epochs_since_improvement = 0
-        self._last_improvement_value: Optional[float] = None
+        self._last_improvement_value: float | None = None
 
     def add_point(self, value: float, epoch: int = 0, **metadata) -> None:
         """Add a data point."""
@@ -168,7 +169,7 @@ class MetricTracker:
             else:
                 self._epochs_since_improvement += 1
 
-    def get_values(self) -> List[float]:
+    def get_values(self) -> list[float]:
         """Get all values in the window."""
         return [p.value for p in self._history]
 
@@ -259,7 +260,7 @@ class MetricTracker:
             return max(0.0, (current - self._best_value) / self._best_value)
         return max(0.0, (self._best_value - current) / self._best_value)
 
-    def check_anomaly(self) -> Optional[AnomalyDetection]:
+    def check_anomaly(self) -> AnomalyDetection | None:
         """Check if latest value is an anomaly."""
         if len(self._history) < 10:
             return None
@@ -331,10 +332,10 @@ class MetricsAnalysisOrchestrator:
         self.plateau_window = plateau_window
 
         # Metric trackers
-        self._trackers: Dict[str, MetricTracker] = {}
+        self._trackers: dict[str, MetricTracker] = {}
 
         # Default metric types
-        self._metric_types: Dict[str, MetricType] = {
+        self._metric_types: dict[str, MetricType] = {
             "train_loss": MetricType.MINIMIZE,
             "val_loss": MetricType.MINIMIZE,
             "loss": MetricType.MINIMIZE,
@@ -346,12 +347,12 @@ class MetricsAnalysisOrchestrator:
         }
 
         # Anomaly history
-        self._anomalies: List[AnomalyDetection] = []
+        self._anomalies: list[AnomalyDetection] = []
 
         # Callbacks
-        self._plateau_callbacks: List[Callable[[str], None]] = []
-        self._regression_callbacks: List[Callable[[str, float], None]] = []
-        self._anomaly_callbacks: List[Callable[[AnomalyDetection], None]] = []
+        self._plateau_callbacks: list[Callable[[str], None]] = []
+        self._regression_callbacks: list[Callable[[str, float], None]] = []
+        self._anomaly_callbacks: list[Callable[[AnomalyDetection], None]] = []
 
         # Subscription state
         self._subscribed = False
@@ -384,14 +385,15 @@ class MetricsAnalysisOrchestrator:
             logger.error(f"[MetricsAnalysisOrchestrator] Failed to subscribe: {e}")
             return False
 
-    def _emit_plateau_detected(self, metric_name: str, tracker: "MetricTracker") -> None:
+    def _emit_plateau_detected(self, metric_name: str, tracker: MetricTracker) -> None:
         """Emit PLATEAU_DETECTED event (December 2025).
 
         Uses centralized event_emitters for consistent event emission.
         """
         try:
-            from app.coordination.event_emitters import emit_plateau_detected
             import asyncio
+
+            from app.coordination.event_emitters import emit_plateau_detected
 
             current_value = tracker.get_values()[-1] if tracker.get_values() else 0.0
             best_value = tracker._best_value or 0.0
@@ -428,8 +430,9 @@ class MetricsAnalysisOrchestrator:
         Uses centralized event_emitters for consistent event emission.
         """
         try:
-            from app.coordination.event_emitters import emit_regression_detected
             import asyncio
+
+            from app.coordination.event_emitters import emit_regression_detected
 
             # Determine severity level
             if severity > 0.20:
@@ -605,9 +608,8 @@ class MetricsAnalysisOrchestrator:
         """
         count = 0
         for name, tracker in self._trackers.items():
-            if tracker.metric_type == metric_type:
-                if self.reset_window(name):
-                    count += 1
+            if tracker.metric_type == metric_type and self.reset_window(name):
+                count += 1
 
         logger.info(
             f"[MetricsAnalysisOrchestrator] Reset {count} {metric_type.value} metric windows"
@@ -616,7 +618,7 @@ class MetricsAnalysisOrchestrator:
 
     def record_metric(
         self, name: str, value: float, epoch: int = 0, **metadata
-    ) -> Optional[AnomalyDetection]:
+    ) -> AnomalyDetection | None:
         """Record a metric value.
 
         Returns:
@@ -674,13 +676,13 @@ class MetricsAnalysisOrchestrator:
         if name in self._trackers:
             self._trackers[name].metric_type = metric_type
 
-    def get_trend(self, name: str) -> Optional[TrendAnalysis]:
+    def get_trend(self, name: str) -> TrendAnalysis | None:
         """Get trend analysis for a metric."""
         if name not in self._trackers:
             return None
         return self._trackers[name].analyze()
 
-    def get_all_trends(self) -> Dict[str, TrendAnalysis]:
+    def get_all_trends(self) -> dict[str, TrendAnalysis]:
         """Get trend analysis for all tracked metrics."""
         return {name: tracker.analyze() for name, tracker in self._trackers.items()}
 
@@ -696,14 +698,14 @@ class MetricsAnalysisOrchestrator:
             return False
         return self._trackers[name].is_regression()
 
-    def get_current_value(self, name: str) -> Optional[float]:
+    def get_current_value(self, name: str) -> float | None:
         """Get current value of a metric."""
         if name not in self._trackers:
             return None
         values = self._trackers[name].get_values()
         return values[-1] if values else None
 
-    def get_best_value(self, name: str) -> Optional[float]:
+    def get_best_value(self, name: str) -> float | None:
         """Get best value of a metric."""
         if name not in self._trackers:
             return None
@@ -721,11 +723,11 @@ class MetricsAnalysisOrchestrator:
         """Register callback for anomaly detection."""
         self._anomaly_callbacks.append(callback)
 
-    def get_anomalies(self, limit: int = 50) -> List[AnomalyDetection]:
+    def get_anomalies(self, limit: int = 50) -> list[AnomalyDetection]:
         """Get recent anomalies."""
         return self._anomalies[-limit:]
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring."""
         trends = self.get_all_trends()
 
@@ -755,7 +757,7 @@ class MetricsAnalysisOrchestrator:
 # Singleton and convenience functions
 # =============================================================================
 
-_metrics_orchestrator: Optional[MetricsAnalysisOrchestrator] = None
+_metrics_orchestrator: MetricsAnalysisOrchestrator | None = None
 
 
 def get_metrics_orchestrator() -> MetricsAnalysisOrchestrator:
@@ -778,32 +780,32 @@ def is_metric_plateau(name: str) -> bool:
     return get_metrics_orchestrator().is_plateau(name)
 
 
-def get_metric_trend(name: str) -> Optional[TrendAnalysis]:
+def get_metric_trend(name: str) -> TrendAnalysis | None:
     """Convenience function to get metric trend."""
     return get_metrics_orchestrator().get_trend(name)
 
-def record_metric(name: str, value: float, epoch: int = 0, **metadata) -> Optional[AnomalyDetection]:
+def record_metric(name: str, value: float, epoch: int = 0, **metadata) -> AnomalyDetection | None:
     """Convenience function to record a metric value."""
     return get_metrics_orchestrator().record_metric(name, value, epoch=epoch, **metadata)
 
-def analyze_metrics() -> Dict[str, TrendAnalysis]:
+def analyze_metrics() -> dict[str, TrendAnalysis]:
     """Convenience function to analyze all tracked metrics."""
     return get_metrics_orchestrator().get_all_trends()
 
 
 __all__ = [
-    "MetricsAnalysisOrchestrator",
+    "AnalysisResult",
+    "AnomalyDetection",
+    "MetricPoint",
     "MetricTracker",
     "MetricType",
-    "TrendDirection",
+    "MetricsAnalysisOrchestrator",
     "TrendAnalysis",
-    "AnalysisResult",
-    "MetricPoint",
-    "AnomalyDetection",
-    "get_metrics_orchestrator",
-    "wire_metrics_events",
-    "is_metric_plateau",
-    "get_metric_trend",
-    "record_metric",
+    "TrendDirection",
     "analyze_metrics",
+    "get_metric_trend",
+    "get_metrics_orchestrator",
+    "is_metric_plateau",
+    "record_metric",
+    "wire_metrics_events",
 ]

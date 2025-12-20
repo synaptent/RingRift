@@ -29,26 +29,25 @@ Architecture (December 2025):
 """
 
 # Factory is safe to import (uses lazy loading internally)
+# Import base class (no circular dependency issues)
+from app.ai.base import BaseAI
 from app.ai.factory import (
+    CANONICAL_DIFFICULTY_PROFILES,
+    DIFFICULTY_DESCRIPTIONS,
     AIFactory,
     AIType,
     DifficultyProfile,
-    CANONICAL_DIFFICULTY_PROFILES,
-    DIFFICULTY_DESCRIPTIONS,
-    get_difficulty_profile,
-    select_ai_type,
-    get_randomness_for_difficulty,
-    get_think_time_for_difficulty,
-    uses_neural_net,
-    get_all_difficulties,
-    get_difficulty_description,
     create_ai,
     create_ai_from_difficulty,
     create_tournament_ai,
+    get_all_difficulties,
+    get_difficulty_description,
+    get_difficulty_profile,
+    get_randomness_for_difficulty,
+    get_think_time_for_difficulty,
+    select_ai_type,
+    uses_neural_net,
 )
-
-# Import base class (no circular dependency issues)
-from app.ai.base import BaseAI
 
 # Lazy-load AI implementations to avoid circular imports
 _AI_CLASSES = {
@@ -76,39 +75,39 @@ def __getattr__(name: str):
 
 
 __all__ = [
-    # Base class
-    "BaseAI",
-    # AI Type enum
-    "AIType",
-    # Factory class
-    "AIFactory",
-    # Type definitions
-    "DifficultyProfile",
     # Profile data
     "CANONICAL_DIFFICULTY_PROFILES",
     "DIFFICULTY_DESCRIPTIONS",
-    # Helper functions
-    "get_difficulty_profile",
-    "select_ai_type",
-    "get_randomness_for_difficulty",
-    "get_think_time_for_difficulty",
-    "uses_neural_net",
-    "get_all_difficulties",
-    "get_difficulty_description",
+    "EBMOAI",
+    "GMOAI",
+    "IGGMO",
+    "MCTSAI",
+    # Factory class
+    "AIFactory",
+    # AI Type enum
+    "AIType",
+    # Base class
+    "BaseAI",
+    "DescentAI",
+    # Type definitions
+    "DifficultyProfile",
+    "GumbelMCTSAI",
+    # AI implementation classes (lazy-loaded)
+    "HeuristicAI",
+    "MaxNAI",
+    "MinimaxAI",
+    "PolicyOnlyAI",
+    "RandomAI",
     # Convenience aliases
     "create_ai",
     "create_ai_from_difficulty",
     "create_tournament_ai",
-    # AI implementation classes (lazy-loaded)
-    "HeuristicAI",
-    "MCTSAI",
-    "DescentAI",
-    "GumbelMCTSAI",
-    "MaxNAI",
-    "MinimaxAI",
-    "RandomAI",
-    "PolicyOnlyAI",
-    "GMOAI",
-    "EBMOAI",
-    "IGGMO",
+    "get_all_difficulties",
+    "get_difficulty_description",
+    # Helper functions
+    "get_difficulty_profile",
+    "get_randomness_for_difficulty",
+    "get_think_time_for_difficulty",
+    "select_ai_type",
+    "uses_neural_net",
 ]

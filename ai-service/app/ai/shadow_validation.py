@@ -37,13 +37,14 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from queue import Queue, Full, Empty
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from queue import Empty, Full, Queue
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.models import GameState, Move, Position
-    from app.game_engine import GameEngine
-    from .gpu_parallel_games import BatchGameState
+    from app.models import GameState
+
+
+import contextlib
 
 from app.models import MoveType
 
@@ -80,9 +81,9 @@ class DivergenceRecord:
     divergence_type: DivergenceType
     cpu_move_count: int
     gpu_move_count: int
-    missing_moves: List[str]  # Moves in CPU but not GPU
-    extra_moves: List[str]  # Moves in GPU but not CPU
-    game_state_hash: Optional[str] = None  # For debugging
+    missing_moves: list[str]  # Moves in CPU but not GPU
+    extra_moves: list[str]  # Moves in GPU but not CPU
+    game_state_hash: str | None = None  # For debugging
 
 
 @dataclass
@@ -90,7 +91,7 @@ class ValidationStats:
     """Aggregate validation statistics."""
     total_validations: int = 0
     total_divergences: int = 0
-    divergence_by_type: Dict[DivergenceType, int] = field(default_factory=dict)
+    divergence_by_type: dict[DivergenceType, int] = field(default_factory=dict)
 
     # Per-move-type stats
     placement_validations: int = 0
@@ -161,7 +162,7 @@ class ShadowValidator:
         self.halt_on_threshold = halt_on_threshold
 
         self.stats = ValidationStats()
-        self.divergence_log: List[DivergenceRecord] = []
+        self.divergence_log: list[DivergenceRecord] = []
 
         self._rng = random.Random()  # Dedicated RNG for sampling
 
@@ -180,8 +181,8 @@ class ShadowValidator:
 
     def validate_placement_moves(
         self,
-        gpu_positions: List[Tuple[int, int]],
-        game_state: "GameState",
+        gpu_positions: list[tuple[int, int]],
+        game_state: GameState,
         player: int,
     ) -> bool:
         """Validate GPU placement move generation against CPU.
@@ -210,7 +211,7 @@ class ShadowValidator:
         ]
 
         # Convert to comparable format (Position uses x, y fields)
-        cpu_positions = set((m.to.x, m.to.y) for m in cpu_placement_moves)
+        cpu_positions = {(m.to.x, m.to.y) for m in cpu_placement_moves}
         gpu_positions_set = set(gpu_positions)
 
         # Compare
@@ -240,8 +241,8 @@ class ShadowValidator:
 
     def validate_movement_moves(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
     ) -> bool:
         """Validate GPU movement move generation against CPU.
@@ -267,10 +268,10 @@ class ShadowValidator:
             if m.type == MoveType.MOVE_STACK
         ]
 
-        cpu_move_set = set(
+        cpu_move_set = {
             ((m.from_pos.x, m.from_pos.y), (m.to.x, m.to.y))
             for m in cpu_movement_moves
-        )
+        }
         gpu_move_set = set(gpu_moves)
 
         self.stats.movement_validations += 1
@@ -299,8 +300,8 @@ class ShadowValidator:
 
     def validate_capture_moves(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
     ) -> bool:
         """Validate GPU capture move generation against CPU.
@@ -326,10 +327,10 @@ class ShadowValidator:
             if m.type == MoveType.OVERTAKING_CAPTURE
         ]
 
-        cpu_move_set = set(
+        cpu_move_set = {
             ((m.from_pos.x, m.from_pos.y), (m.to.x, m.to.y))
             for m in cpu_capture_moves
-        )
+        }
         gpu_move_set = set(gpu_moves)
 
         self.stats.capture_validations += 1
@@ -358,8 +359,8 @@ class ShadowValidator:
 
     def validate_recovery_moves(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
     ) -> bool:
         """Validate GPU recovery move generation against CPU.
@@ -385,10 +386,10 @@ class ShadowValidator:
             if m.type == MoveType.RECOVERY_SLIDE
         ]
 
-        cpu_move_set = set(
+        cpu_move_set = {
             ((m.from_pos.x, m.from_pos.y), (m.to.x, m.to.y))
             for m in cpu_recovery_moves
-        )
+        }
         gpu_move_set = set(gpu_moves)
 
         self.stats.recovery_validations += 1
@@ -417,8 +418,8 @@ class ShadowValidator:
 
     def validate_all_moves(
         self,
-        gpu_moves: List[Dict[str, Any]],
-        game_state: "GameState",
+        gpu_moves: list[dict[str, Any]],
+        game_state: GameState,
         player: int,
     ) -> bool:
         """Validate all GPU-generated moves against CPU.
@@ -454,8 +455,8 @@ class ShadowValidator:
                 to_str = f"({m.get('to_row', -1)},{m.get('to_col', -1)})"
                 return f"{m.get('type', 'unknown')}:{from_str}->{to_str}"
 
-        cpu_move_set = set(move_key(m) for m in cpu_moves_for_player)
-        gpu_move_set = set(move_key(m) for m in gpu_moves)
+        cpu_move_set = {move_key(m) for m in cpu_moves_for_player}
+        gpu_move_set = {move_key(m) for m in gpu_moves}
 
         self.stats.total_validations += 1
 
@@ -486,8 +487,8 @@ class ShadowValidator:
         divergence_type: DivergenceType,
         cpu_count: int,
         gpu_count: int,
-        missing: List[str],
-        extra: List[str],
+        missing: list[str],
+        extra: list[str],
     ) -> None:
         """Record a divergence event."""
         self.stats.total_divergences += 1
@@ -541,7 +542,7 @@ class ShadowValidator:
             f"avg time: {self.stats.avg_validation_time_ms:.2f}ms"
         )
 
-    def get_report(self) -> Dict[str, Any]:
+    def get_report(self) -> dict[str, Any]:
         """Get a detailed validation report."""
         return {
             "total_validations": self.stats.total_validations,
@@ -600,7 +601,7 @@ class ValidationJob:
     """A validation job to be processed by background worker."""
     job_type: str  # 'placement', 'movement', 'capture', 'recovery'
     gpu_data: Any  # GPU-generated data to validate
-    game_state_snapshot: Dict[str, Any]  # Serialized game state
+    game_state_snapshot: dict[str, Any]  # Serialized game state
     player: int
     game_index: int
 
@@ -657,13 +658,13 @@ class AsyncShadowValidator:
 
         # Queue and worker
         self._queue: Queue = Queue(maxsize=max_queue_size)
-        self._worker: Optional[threading.Thread] = None
+        self._worker: threading.Thread | None = None
         self._running = False
         self._lock = threading.RLock()
 
         # Error state (set if threshold exceeded in background)
         self._error_flag = threading.Event()
-        self._error_message: Optional[str] = None
+        self._error_message: str | None = None
 
         # Stats
         self._jobs_submitted = 0
@@ -703,10 +704,8 @@ class AsyncShadowValidator:
         self._running = False
 
         # Signal worker to exit by putting sentinel
-        try:
+        with contextlib.suppress(Full):
             self._queue.put_nowait(None)
-        except Full:
-            pass
 
         if self._worker:
             self._worker.join(timeout=timeout)
@@ -722,7 +721,7 @@ class AsyncShadowValidator:
         """Determine if this move should be sampled for validation."""
         return self._rng.random() < self.sample_rate
 
-    def _serialize_game_state(self, game_state: "GameState") -> Dict[str, Any]:
+    def _serialize_game_state(self, game_state: GameState) -> dict[str, Any]:
         """Serialize game state for queue transfer (minimal data needed)."""
         # We need to pass enough info to reconstruct validation context
         return {
@@ -734,8 +733,8 @@ class AsyncShadowValidator:
 
     def submit_placement_validation(
         self,
-        gpu_positions: List[Tuple[int, int]],
-        game_state: "GameState",
+        gpu_positions: list[tuple[int, int]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> bool:
@@ -765,8 +764,8 @@ class AsyncShadowValidator:
 
     def submit_movement_validation(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> bool:
@@ -786,8 +785,8 @@ class AsyncShadowValidator:
 
     def submit_capture_validation(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> bool:
@@ -807,8 +806,8 @@ class AsyncShadowValidator:
 
     def submit_recovery_validation(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> bool:
@@ -907,7 +906,7 @@ class AsyncShadowValidator:
         """
         return self._error_flag.is_set()
 
-    def get_error_message(self) -> Optional[str]:
+    def get_error_message(self) -> str | None:
         """Get error message if threshold exceeded."""
         return self._error_message
 
@@ -924,7 +923,7 @@ class AsyncShadowValidator:
         """Get underlying validation statistics."""
         return self._validator.stats
 
-    def get_report(self) -> Dict[str, Any]:
+    def get_report(self) -> dict[str, Any]:
         """Get a detailed validation report including async stats."""
         report = self._validator.get_report()
         report.update({
@@ -962,8 +961,8 @@ class AsyncShadowValidator:
 
     def validate_placement_moves(
         self,
-        gpu_positions: List[Tuple[int, int]],
-        game_state: "GameState",
+        gpu_positions: list[tuple[int, int]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> None:
@@ -975,8 +974,8 @@ class AsyncShadowValidator:
 
     def validate_movement_moves(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> None:
@@ -988,8 +987,8 @@ class AsyncShadowValidator:
 
     def validate_capture_moves(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> None:
@@ -1001,8 +1000,8 @@ class AsyncShadowValidator:
 
     def validate_recovery_moves(
         self,
-        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
-        game_state: "GameState",
+        gpu_moves: list[tuple[tuple[int, int], tuple[int, int]]],
+        game_state: GameState,
         player: int,
         game_index: int = 0,
     ) -> None:
@@ -1014,11 +1013,11 @@ class AsyncShadowValidator:
 
 
 def create_async_shadow_validator(
-    sample_rate: Optional[float] = None,
-    threshold: Optional[float] = None,
+    sample_rate: float | None = None,
+    threshold: float | None = None,
     enabled: bool = True,
     max_queue_size: int = 1000,
-) -> Optional[AsyncShadowValidator]:
+) -> AsyncShadowValidator | None:
     """Create an async shadow validator for non-blocking validation.
 
     Args:
@@ -1048,10 +1047,10 @@ def create_async_shadow_validator(
 
 
 def create_shadow_validator(
-    sample_rate: Optional[float] = None,
-    threshold: Optional[float] = None,
+    sample_rate: float | None = None,
+    threshold: float | None = None,
     enabled: bool = True,
-) -> Optional[ShadowValidator]:
+) -> ShadowValidator | None:
     """Create a shadow validator with sensible defaults.
 
     Args:
@@ -1072,9 +1071,9 @@ def create_shadow_validator(
 
 
 def validate_batch_moves(
-    validator: Optional[ShadowValidator],
-    gpu_moves_by_game: List[List[Dict[str, Any]]],
-    cpu_game_states: List["GameState"],
+    validator: ShadowValidator | None,
+    gpu_moves_by_game: list[list[dict[str, Any]]],
+    cpu_game_states: list[GameState],
 ) -> bool:
     """Convenience function to validate a batch of moves.
 
@@ -1090,7 +1089,7 @@ def validate_batch_moves(
         return True
 
     all_passed = True
-    for game_idx, (gpu_moves, cpu_state) in enumerate(zip(gpu_moves_by_game, cpu_game_states)):
+    for _game_idx, (gpu_moves, cpu_state) in enumerate(zip(gpu_moves_by_game, cpu_game_states, strict=False)):
         player = cpu_state.current_player
         if not validator.validate_all_moves(gpu_moves, cpu_state, player):
             all_passed = False
@@ -1131,8 +1130,8 @@ class StateDivergenceRecord:
     timestamp: float
     game_index: int
     move_number: int
-    divergence_fields: List[str]  # Which fields diverged
-    details: Dict[str, Any]  # Specific mismatch details
+    divergence_fields: list[str]  # Which fields diverged
+    details: dict[str, Any]  # Specific mismatch details
 
 
 class StateValidator:
@@ -1180,7 +1179,7 @@ class StateValidator:
         self.halt_on_threshold = halt_on_threshold
 
         self.stats = StateValidationStats()
-        self.divergence_log: List[StateDivergenceRecord] = []
+        self.divergence_log: list[StateDivergenceRecord] = []
 
         self._rng = random.Random()
 
@@ -1199,8 +1198,8 @@ class StateValidator:
 
     def validate_state(
         self,
-        gpu_state: "GameState",
-        cpu_state: "GameState",
+        gpu_state: GameState,
+        cpu_state: GameState,
         game_index: int,
     ) -> bool:
         """Validate GPU state against CPU oracle state.
@@ -1285,7 +1284,7 @@ class StateValidator:
         self,
         gpu_board: Any,
         cpu_board: Any,
-        details: Dict[str, Any],
+        details: dict[str, Any],
     ) -> bool:
         """Compare board states, returning True if identical."""
         is_valid = True
@@ -1353,8 +1352,8 @@ class StateValidator:
         self,
         game_index: int,
         move_number: int,
-        divergence_fields: List[str],
-        details: Dict[str, Any],
+        divergence_fields: list[str],
+        details: dict[str, Any],
     ) -> None:
         """Record a state divergence event."""
         self.stats.total_divergences += 1
@@ -1385,7 +1384,7 @@ class StateValidator:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
-    def get_report(self) -> Dict[str, Any]:
+    def get_report(self) -> dict[str, Any]:
         """Get a detailed state validation report."""
         return {
             "total_validations": self.stats.total_validations,
@@ -1421,10 +1420,10 @@ class StateValidator:
 
 
 def create_state_validator(
-    sample_rate: Optional[float] = None,
-    threshold: Optional[float] = None,
+    sample_rate: float | None = None,
+    threshold: float | None = None,
     enabled: bool = True,
-) -> Optional[StateValidator]:
+) -> StateValidator | None:
     """Create a state validator for CPU oracle mode.
 
     Args:

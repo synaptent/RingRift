@@ -16,7 +16,7 @@ Territory processing per RR-CANON-R140-R146:
 from __future__ import annotations
 
 from collections import deque
-from typing import List, Optional, Set, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -31,11 +31,11 @@ if TYPE_CHECKING:
 
 
 def _find_eligible_territory_cap(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
     player: int,
-    excluded_positions: Optional[set] = None,
-) -> Optional[Tuple[int, int, int]]:
+    excluded_positions: set | None = None,
+) -> tuple[int, int, int] | None:
     """Find an eligible stack for territory self-elimination.
 
     Per RR-CANON-R145: All controlled stacks outside the region are eligible,
@@ -83,9 +83,9 @@ def _find_eligible_territory_cap(
 
 
 def _find_all_regions(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
-) -> List[Set[Tuple[int, int]]]:
+) -> list[set[tuple[int, int]]]:
     """Find all maximal connected regions of non-collapsed cells (R140).
 
     Uses BFS to discover all connected regions of non-collapsed cells.
@@ -142,10 +142,10 @@ def _find_all_regions(
 
 
 def _is_physically_disconnected(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
-    region: Set[Tuple[int, int]],
-) -> Tuple[bool, Optional[int]]:
+    region: set[tuple[int, int]],
+) -> tuple[bool, int | None]:
     """Check if a region is physically disconnected per R141.
 
     A region R is physically disconnected if every path from any cell in R to
@@ -186,7 +186,7 @@ def _is_physically_disconnected(
         return (False, None)
 
     # Convert to set for O(1) lookup in later checks
-    outside_non_collapsed = set(map(tuple, outside_positions))
+    set(map(tuple, outside_positions))
 
     # BFS from region boundary
     blocking_marker_players = set()
@@ -258,9 +258,9 @@ def _is_physically_disconnected(
 
 
 def _is_color_disconnected(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
-    region: Set[Tuple[int, int]],
+    region: set[tuple[int, int]],
 ) -> bool:
     """Check if a region is color-disconnected per R142.
 
@@ -312,8 +312,8 @@ def _is_color_disconnected(
 
 
 def compute_territory_batch(
-    state: "BatchGameState",
-    game_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    game_mask: torch.Tensor | None = None,
 ) -> None:
     """Compute and update territory claims (in-place).
 
@@ -368,7 +368,7 @@ def compute_territory_batch(
         # Iterate until no more regions can be processed
         # (processing a region may create new disconnected regions)
         max_iterations = 10  # Safety limit
-        for iteration in range(max_iterations):
+        for _iteration in range(max_iterations):
             found_processable = False
 
             for region_idx, region in enumerate(all_regions):
@@ -488,9 +488,9 @@ def compute_territory_batch(
 
 
 __all__ = [
-    '_find_eligible_territory_cap',
     '_find_all_regions',
-    '_is_physically_disconnected',
+    '_find_eligible_territory_cap',
     '_is_color_disconnected',
+    '_is_physically_disconnected',
     'compute_territory_batch',
 ]

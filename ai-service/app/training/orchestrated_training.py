@@ -46,7 +46,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +85,8 @@ class TrainingOrchestratorState:
     last_checkpoint_step: int = 0
     last_evaluation_step: int = 0
     training_active: bool = False
-    managers_loaded: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    managers_loaded: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 class TrainingOrchestrator:
@@ -111,7 +111,7 @@ class TrainingOrchestrator:
     - Data coordination
     """
 
-    def __init__(self, config: Optional[TrainingOrchestratorConfig] = None):
+    def __init__(self, config: TrainingOrchestratorConfig | None = None):
         self.config = config or TrainingOrchestratorConfig()
         self.state = TrainingOrchestratorState()
 
@@ -152,12 +152,12 @@ class TrainingOrchestrator:
         # Load rollback manager and wire regression→rollback automation (December 2025)
         if self.config.enable_rollback:
             try:
+                from app.training.model_registry import get_model_registry
                 from app.training.rollback_manager import (
                     RollbackManager,
-                    wire_regression_to_rollback,
                     get_auto_rollback_handler,
+                    wire_regression_to_rollback,
                 )
-                from app.training.model_registry import get_model_registry
 
                 # Get registry and create rollback manager
                 registry = get_model_registry()
@@ -166,7 +166,7 @@ class TrainingOrchestrator:
                 # Wire regression detector to auto-rollback handler
                 # This enables automatic rollback on CRITICAL regressions
                 # and pending rollbacks requiring approval for SEVERE regressions
-                auto_handler = wire_regression_to_rollback(
+                wire_regression_to_rollback(
                     registry=registry,
                     auto_rollback_enabled=self.config.auto_rollback,
                     require_approval_for_severe=True,
@@ -299,7 +299,7 @@ class TrainingOrchestrator:
         """Record a completed epoch."""
         self.state.current_epoch = epoch
 
-    def save_checkpoint(self, **kwargs) -> Optional[str]:
+    def save_checkpoint(self, **kwargs) -> str | None:
         """Save a checkpoint using the checkpoint manager.
 
         Returns:
@@ -320,13 +320,13 @@ class TrainingOrchestrator:
             logger.error(f"[TrainingOrchestrator] Checkpoint save failed: {e}")
             return None
 
-    def get_latest_checkpoint(self) -> Optional[str]:
+    def get_latest_checkpoint(self) -> str | None:
         """Get path to latest checkpoint."""
         if not self._checkpoint_manager:
             return None
         return self._checkpoint_manager.get_latest_checkpoint()
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> dict[str, Any]:
         """Get orchestrator state for monitoring."""
         return {
             "initialized": self.state.initialized,
@@ -345,11 +345,11 @@ class TrainingOrchestrator:
 
 
 # Singleton instance
-_training_orchestrator: Optional[TrainingOrchestrator] = None
+_training_orchestrator: TrainingOrchestrator | None = None
 
 
 def get_training_orchestrator(
-    config: Optional[TrainingOrchestratorConfig] = None,
+    config: TrainingOrchestratorConfig | None = None,
 ) -> TrainingOrchestrator:
     """Get the global training orchestrator singleton.
 

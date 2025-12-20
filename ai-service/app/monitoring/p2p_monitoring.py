@@ -29,9 +29,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
-
-import yaml
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass  # Avoid circular imports
@@ -124,7 +122,7 @@ class PeerInfo:
     node_id: str
     host: str
     port: int = 8770
-    gpu_type: Optional[str] = None
+    gpu_type: str | None = None
     is_alive: bool = True
 
 
@@ -140,8 +138,8 @@ class MonitoringManager:
         node_id: str,
         prometheus_port: int = DEFAULT_PROMETHEUS_PORT,
         grafana_port: int = DEFAULT_GRAFANA_PORT,
-        config_dir: Optional[str] = None,
-        data_dir: Optional[str] = None,
+        config_dir: str | None = None,
+        data_dir: str | None = None,
     ):
         """Initialize the monitoring manager.
 
@@ -158,12 +156,12 @@ class MonitoringManager:
         self.config_dir = Path(config_dir or "/etc/prometheus")
         self.data_dir = Path(data_dir or "/var/lib")
 
-        self._prometheus_process: Optional[subprocess.Popen] = None
-        self._grafana_process: Optional[subprocess.Popen] = None
+        self._prometheus_process: subprocess.Popen | None = None
+        self._grafana_process: subprocess.Popen | None = None
         self._is_running = False
-        self._peers: List[PeerInfo] = []
+        self._peers: list[PeerInfo] = []
 
-    def _load_monitoring_hosts(self) -> List[tuple]:
+    def _load_monitoring_hosts(self) -> list[tuple]:
         """Load monitoring hosts from config/distributed_hosts.yaml."""
         from pathlib import Path
         config_path = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
@@ -190,7 +188,7 @@ class MonitoringManager:
             logger.warning(f"[Monitoring] Error loading config: {e}")
             return []
 
-    def update_peers(self, peers: List[Dict[str, Any]]):
+    def update_peers(self, peers: list[dict[str, Any]]):
         """Update the list of known peers for config generation.
 
         Args:

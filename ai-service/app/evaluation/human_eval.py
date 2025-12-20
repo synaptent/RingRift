@@ -6,19 +6,17 @@ comparing models, and gathering annotations for training improvement.
 """
 
 import json
-import uuid
-import sqlite3
 import logging
-import hashlib
+import sqlite3
 import threading
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple, Callable
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.parse
-
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -49,15 +47,15 @@ class EvaluationTask:
     task_id: str
     eval_type: EvaluationType
     model_id: str
-    position_data: Dict[str, Any]
-    ai_move: Optional[int] = None
-    alternatives: Optional[List[int]] = None
-    comparison_model_id: Optional[str] = None
-    comparison_move: Optional[int] = None
+    position_data: dict[str, Any]
+    ai_move: int | None = None
+    alternatives: list[int] | None = None
+    comparison_model_id: str | None = None
+    comparison_move: int | None = None
     created_at: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d['eval_type'] = self.eval_type.value
         d['created_at'] = self.created_at.isoformat()
@@ -69,15 +67,15 @@ class EvaluationResponse:
     """Human evaluator's response to a task."""
     task_id: str
     evaluator_id: str
-    rating: Optional[int] = None
-    preference: Optional[str] = None  # 'a', 'b', or 'tie'
-    annotation: Optional[str] = None
-    suggested_move: Optional[int] = None
-    confidence: Optional[float] = None
-    time_spent_seconds: Optional[float] = None
+    rating: int | None = None
+    preference: str | None = None  # 'a', 'b', or 'tie'
+    annotation: str | None = None
+    suggested_move: int | None = None
+    confidence: float | None = None
+    time_spent_seconds: float | None = None
     submitted_at: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d['submitted_at'] = self.submitted_at.isoformat()
         return d
@@ -93,7 +91,7 @@ class EvaluatorProfile:
     agreement_score: float = 1.0  # How often they agree with consensus
     created_at: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d['created_at'] = self.created_at.isoformat()
         return d
@@ -182,7 +180,7 @@ class EvaluationDatabase:
               profile.created_at.isoformat()))
         self.conn.commit()
 
-    def get_evaluator(self, evaluator_id: str) -> Optional[EvaluatorProfile]:
+    def get_evaluator(self, evaluator_id: str) -> EvaluatorProfile | None:
         """Get evaluator profile."""
         cursor = self.conn.execute(
             "SELECT * FROM evaluators WHERE evaluator_id = ?", (evaluator_id,)
@@ -216,7 +214,7 @@ class EvaluationDatabase:
         ))
         self.conn.commit()
 
-    def get_task(self, task_id: str) -> Optional[EvaluationTask]:
+    def get_task(self, task_id: str) -> EvaluationTask | None:
         """Get a task by ID."""
         cursor = self.conn.execute(
             "SELECT * FROM tasks WHERE task_id = ?", (task_id,)
@@ -260,7 +258,7 @@ class EvaluationDatabase:
 
         self.conn.commit()
 
-    def get_responses(self, task_id: str) -> List[EvaluationResponse]:
+    def get_responses(self, task_id: str) -> list[EvaluationResponse]:
         """Get all responses for a task."""
         cursor = self.conn.execute(
             "SELECT * FROM responses WHERE task_id = ?", (task_id,)
@@ -280,7 +278,7 @@ class EvaluationDatabase:
             ))
         return responses
 
-    def get_model_statistics(self, model_id: str) -> Dict[str, Any]:
+    def get_model_statistics(self, model_id: str) -> dict[str, Any]:
         """Get evaluation statistics for a model."""
         cursor = self.conn.execute("""
             SELECT
@@ -313,9 +311,9 @@ class TaskGenerator:
     def create_move_quality_task(
         self,
         model_id: str,
-        position_data: Dict[str, Any],
+        position_data: dict[str, Any],
         ai_move: int,
-        alternatives: Optional[List[int]] = None
+        alternatives: list[int] | None = None
     ) -> EvaluationTask:
         """Create a move quality evaluation task."""
         task = EvaluationTask(
@@ -333,7 +331,7 @@ class TaskGenerator:
         self,
         model_a_id: str,
         model_b_id: str,
-        position_data: Dict[str, Any],
+        position_data: dict[str, Any],
         move_a: int,
         move_b: int
     ) -> EvaluationTask:
@@ -353,8 +351,8 @@ class TaskGenerator:
     def create_annotation_task(
         self,
         model_id: str,
-        position_data: Dict[str, Any],
-        ai_move: Optional[int] = None
+        position_data: dict[str, Any],
+        ai_move: int | None = None
     ) -> EvaluationTask:
         """Create a position annotation task."""
         task = EvaluationTask(
@@ -370,10 +368,10 @@ class TaskGenerator:
     def create_batch_from_games(
         self,
         model_id: str,
-        games: List[Dict[str, Any]],
+        games: list[dict[str, Any]],
         tasks_per_game: int = 3,
         eval_type: EvaluationType = EvaluationType.MOVE_QUALITY
-    ) -> List[EvaluationTask]:
+    ) -> list[EvaluationTask]:
         """Create evaluation tasks from a batch of games."""
         import random
 
@@ -415,7 +413,7 @@ class EvaluationAnalyzer:
     def __init__(self, db: EvaluationDatabase):
         self.db = db
 
-    def compute_inter_rater_agreement(self, task_ids: List[str]) -> float:
+    def compute_inter_rater_agreement(self, task_ids: list[str]) -> float:
         """
         Compute inter-rater agreement (Fleiss' kappa).
         """
@@ -445,7 +443,7 @@ class EvaluationAnalyzer:
         self,
         model_a_id: str,
         model_b_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Compute preference statistics between two models."""
         cursor = self.db.conn.execute("""
             SELECT r.preference, COUNT(*) as count
@@ -479,7 +477,7 @@ class EvaluationAnalyzer:
         self,
         model_id: str,
         rating_threshold: int = 2
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get positions where the AI received poor ratings."""
         cursor = self.db.conn.execute("""
             SELECT t.task_id, t.position_data, t.ai_move, AVG(r.rating) as avg_rating,
@@ -504,7 +502,7 @@ class EvaluationAnalyzer:
 
         return problems
 
-    def generate_training_signal(self, min_confidence: float = 0.7) -> List[Dict[str, Any]]:
+    def generate_training_signal(self, min_confidence: float = 0.7) -> list[dict[str, Any]]:
         """
         Generate training signals from human evaluations.
 
@@ -746,7 +744,7 @@ class HumanEvalServer:
         self.host = host
         self.port = port
         self.task_generator = TaskGenerator(db)
-        self.pending_tasks: List[str] = []
+        self.pending_tasks: list[str] = []
 
     def create_handler(self):
         """Create request handler with access to database."""
@@ -847,7 +845,7 @@ class HumanEvalServer:
 
         return Handler
 
-    def add_tasks(self, tasks: List[EvaluationTask]):
+    def add_tasks(self, tasks: list[EvaluationTask]):
         """Add tasks to the pending queue."""
         for task in tasks:
             self.pending_tasks.append(task.task_id)
@@ -937,10 +935,10 @@ def main():
 
         # Analyze results
         print("\n=== Analysis ===")
-        analyzer = EvaluationAnalyzer(db)
+        EvaluationAnalyzer(db)
 
         stats = db.get_model_statistics("test_model_v1")
-        print(f"Model Statistics:")
+        print("Model Statistics:")
         print(f"  Total evaluations: {stats['total_evaluations']}")
         print(f"  Average rating: {stats['average_rating']:.2f}")
         print(f"  Good moves: {stats['good_move_count']}")
@@ -948,7 +946,7 @@ def main():
 
         # Show evaluator stats
         evaluator = db.get_evaluator("test_evaluator_1")
-        print(f"\nEvaluator Stats:")
+        print("\nEvaluator Stats:")
         print(f"  Name: {evaluator.name}")
         print(f"  Evaluations completed: {evaluator.evaluations_completed}")
 

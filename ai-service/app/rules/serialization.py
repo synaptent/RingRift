@@ -6,15 +6,16 @@ TypeScript format from src/shared/engine/contracts/serialization.ts, enabling
 Python contract tests to load test vectors and compare results.
 """
 
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any
+
 from ..models import (
     BoardState,
     BoardType,
     ChainCaptureState,
     GamePhase,
-    GameStatus,
     GameState,
+    GameStatus,
     MarkerInfo,
     Move,
     MoveType,
@@ -24,21 +25,20 @@ from ..models import (
     TimeControl,
 )
 
-
 # ============================================================================
 # Position serialization
 # ============================================================================
 
 
-def serialize_position(pos: Position) -> Dict[str, int]:
+def serialize_position(pos: Position) -> dict[str, int]:
     """Serialize a Position to JSON-compatible dict."""
-    result: Dict[str, int] = {"x": pos.x, "y": pos.y}
+    result: dict[str, int] = {"x": pos.x, "y": pos.y}
     if pos.z is not None:
         result["z"] = pos.z
     return result
 
 
-def deserialize_position(data: Dict[str, Any]) -> Position:
+def deserialize_position(data: dict[str, Any]) -> Position:
     """Deserialize a Position from JSON dict."""
     return Position(
         x=data["x"],
@@ -52,7 +52,7 @@ def deserialize_position(data: Dict[str, Any]) -> Position:
 # ============================================================================
 
 
-def serialize_stack(stack: RingStack) -> Dict[str, Any]:
+def serialize_stack(stack: RingStack) -> dict[str, Any]:
     """Serialize a RingStack to JSON-compatible dict."""
     return {
         "position": serialize_position(stack.position),
@@ -63,7 +63,7 @@ def serialize_stack(stack: RingStack) -> Dict[str, Any]:
     }
 
 
-def deserialize_stack(data: Dict[str, Any]) -> RingStack:
+def deserialize_stack(data: dict[str, Any]) -> RingStack:
     """Deserialize a RingStack from JSON dict.
 
     NOTE: TS stores rings top-to-bottom (top ring at index 0), but Python
@@ -86,7 +86,7 @@ def deserialize_stack(data: Dict[str, Any]) -> RingStack:
 # ============================================================================
 
 
-def serialize_marker(marker: MarkerInfo) -> Dict[str, Any]:
+def serialize_marker(marker: MarkerInfo) -> dict[str, Any]:
     """Serialize a MarkerInfo to JSON-compatible dict."""
     return {
         "position": serialize_position(marker.position),
@@ -94,7 +94,7 @@ def serialize_marker(marker: MarkerInfo) -> Dict[str, Any]:
     }
 
 
-def deserialize_marker(data: Dict[str, Any]) -> MarkerInfo:
+def deserialize_marker(data: dict[str, Any]) -> MarkerInfo:
     """Deserialize a MarkerInfo from JSON dict."""
     return MarkerInfo(
         position=deserialize_position(data["position"]),
@@ -108,21 +108,21 @@ def deserialize_marker(data: Dict[str, Any]) -> MarkerInfo:
 # ============================================================================
 
 
-def serialize_board_state(board: BoardState) -> Dict[str, Any]:
+def serialize_board_state(board: BoardState) -> dict[str, Any]:
     """Serialize a BoardState to JSON-compatible dict."""
-    stacks: Dict[str, Any] = {}
+    stacks: dict[str, Any] = {}
     for key, stack in board.stacks.items():
         stacks[key] = serialize_stack(stack)
 
-    markers: Dict[str, Any] = {}
+    markers: dict[str, Any] = {}
     for key, marker in board.markers.items():
         markers[key] = serialize_marker(marker)
 
-    collapsed: Dict[str, int] = {}
+    collapsed: dict[str, int] = {}
     for key, player in board.collapsed_spaces.items():
         collapsed[key] = player
 
-    eliminated: Dict[str, int] = {}
+    eliminated: dict[str, int] = {}
     for key, count in board.eliminated_rings.items():
         eliminated[key] = count
 
@@ -136,29 +136,29 @@ def serialize_board_state(board: BoardState) -> Dict[str, Any]:
     }
 
 
-def deserialize_board_state(data: Dict[str, Any]) -> BoardState:
+def deserialize_board_state(data: dict[str, Any]) -> BoardState:
     """Deserialize a BoardState from JSON dict."""
     # Parse board type
     board_type_str = data.get("type", "square8")
     board_type = BoardType(board_type_str)
 
     # Parse stacks
-    stacks: Dict[str, RingStack] = {}
+    stacks: dict[str, RingStack] = {}
     for key, stack_data in data.get("stacks", {}).items():
         stacks[key] = deserialize_stack(stack_data)
 
     # Parse markers
-    markers: Dict[str, MarkerInfo] = {}
+    markers: dict[str, MarkerInfo] = {}
     for key, marker_data in data.get("markers", {}).items():
         markers[key] = deserialize_marker(marker_data)
 
     # Parse collapsed spaces
-    collapsed_spaces: Dict[str, int] = {}
+    collapsed_spaces: dict[str, int] = {}
     for key, player in data.get("collapsedSpaces", {}).items():
         collapsed_spaces[key] = player
 
     # Parse eliminated rings
-    eliminated_rings: Dict[str, int] = {}
+    eliminated_rings: dict[str, int] = {}
     for key, count in data.get("eliminatedRings", {}).items():
         eliminated_rings[key] = count
 
@@ -179,7 +179,7 @@ def deserialize_board_state(data: Dict[str, Any]) -> BoardState:
 # ============================================================================
 
 
-def serialize_player(player: Player) -> Dict[str, Any]:
+def serialize_player(player: Player) -> dict[str, Any]:
     """Serialize a Player to JSON-compatible dict."""
     return {
         "playerNumber": player.player_number,
@@ -190,7 +190,7 @@ def serialize_player(player: Player) -> Dict[str, Any]:
     }
 
 
-def deserialize_player(data: Dict[str, Any], index: int) -> Player:
+def deserialize_player(data: dict[str, Any], index: int) -> Player:
     """Deserialize a Player from JSON dict."""
     player_number = data.get("playerNumber", index + 1)
     return Player(
@@ -212,9 +212,9 @@ def deserialize_player(data: Dict[str, Any], index: int) -> Player:
 # ============================================================================
 
 
-def serialize_move(move: Move) -> Dict[str, Any]:
+def serialize_move(move: Move) -> dict[str, Any]:
     """Serialize a Move to JSON-compatible dict."""
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "id": move.id,
         "type": move.type.value,
         "player": move.player,
@@ -243,7 +243,7 @@ def serialize_move(move: Move) -> Dict[str, Any]:
     return result
 
 
-def deserialize_move(data: Dict[str, Any]) -> Optional[Move]:
+def deserialize_move(data: dict[str, Any]) -> Move | None:
     """Deserialize a Move from JSON dict.
 
     This mirrors the TypeScript contract move format from
@@ -290,7 +290,7 @@ def deserialize_move(data: Dict[str, Any]) -> Optional[Move]:
     # additional decision/metadata fields. Pydantic will coerce the
     # raw dict/list payloads into the appropriate typed models based
     # on field aliases (e.g. formedLines → LineInfo[], disconnectedRegions → Territory[]).
-    move_kwargs: Dict[str, Any] = {
+    move_kwargs: dict[str, Any] = {
         "id": data.get("id", "test-move"),
         "type": move_type,
         "player": data.get("player", 1),
@@ -328,7 +328,7 @@ def deserialize_move(data: Dict[str, Any]) -> Optional[Move]:
 # ============================================================================
 
 
-def serialize_game_state(state: GameState) -> Dict[str, Any]:
+def serialize_game_state(state: GameState) -> dict[str, Any]:
     """Serialize a GameState to JSON-compatible dict."""
     return {
         "gameId": state.id,
@@ -351,7 +351,7 @@ def serialize_game_state(state: GameState) -> Dict[str, Any]:
     }
 
 
-def deserialize_game_state(data: Dict[str, Any]) -> GameState:
+def deserialize_game_state(data: dict[str, Any]) -> GameState:
     """Deserialize a GameState from JSON dict.
 
     This function parses the contract test vector format and produces a
@@ -369,7 +369,7 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
 
     # Parse players
     players_data = data.get("players", [])
-    players: List[Player] = []
+    players: list[Player] = []
     for i, pdata in enumerate(players_data):
         players.append(deserialize_player(pdata, i))
 
@@ -403,7 +403,7 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
     now = datetime.now()
 
     # Parse move history (usually empty in test vectors)
-    move_history: List[Move] = []
+    move_history: list[Move] = []
     for mdata in data.get("moveHistory", []):
         move_history.append(deserialize_move(mdata))
 
@@ -415,7 +415,7 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
     )
 
     # Parse chainCapturePosition to construct chain_capture_state if in chain_capture phase
-    chain_capture_state: Optional[ChainCaptureState] = None
+    chain_capture_state: ChainCaptureState | None = None
     chain_capture_pos_data = data.get("chainCapturePosition")
     if chain_capture_pos_data and current_phase == GamePhase.CHAIN_CAPTURE:
         chain_capture_pos = deserialize_position(chain_capture_pos_data)
@@ -508,14 +508,14 @@ def compute_collapsed_count(state: GameState) -> int:
 class ContractVectorAssertions:
     """Assertions for validating test vector output."""
 
-    def __init__(self, data: Dict[str, Any]):
-        self.current_player: Optional[int] = data.get("currentPlayer")
-        self.current_phase: Optional[str] = data.get("currentPhase")
-        self.game_status: Optional[str] = data.get("gameStatus")
-        self.stack_count: Optional[int] = data.get("stackCount")
-        self.marker_count: Optional[int] = data.get("markerCount")
-        self.collapsed_count: Optional[int] = data.get("collapsedCount")
-        self.s_invariant_delta: Optional[int] = data.get("sInvariantDelta")
+    def __init__(self, data: dict[str, Any]):
+        self.current_player: int | None = data.get("currentPlayer")
+        self.current_phase: str | None = data.get("currentPhase")
+        self.game_status: str | None = data.get("gameStatus")
+        self.stack_count: int | None = data.get("stackCount")
+        self.marker_count: int | None = data.get("markerCount")
+        self.collapsed_count: int | None = data.get("collapsedCount")
+        self.s_invariant_delta: int | None = data.get("sInvariantDelta")
 
 
 # Alias for backwards compatibility
@@ -525,16 +525,16 @@ TestVectorAssertions = ContractVectorAssertions
 class ContractVector:
     """Parsed test vector for contract testing."""
 
-    def __init__(self, data: Dict[str, Any]):
+    def __init__(self, data: dict[str, Any]):
         self.id: str = data.get("id", "unknown")
         self.version: str = data.get("version", "v2")
         self.category: str = data.get("category", "unknown")
         self.description: str = data.get("description", "")
-        self.tags: List[str] = data.get("tags", [])
+        self.tags: list[str] = data.get("tags", [])
         self.source: str = data.get("source", "manual")
         self.created_at: str = data.get("createdAt", "")
         # Skip reason if present (for tests requiring unimplemented functionality)
-        self.skip: Optional[str] = data.get("skip")
+        self.skip: str | None = data.get("skip")
 
         # Input
         input_data = data.get("input", {})
@@ -543,9 +543,9 @@ class ContractVector:
         )
         # Check for 'move' first, then fall back to 'initialMove' for multi-phase vectors
         move_data = input_data.get("move") or input_data.get("initialMove") or {}
-        self.input_move: Optional[Move] = deserialize_move(move_data)
+        self.input_move: Move | None = deserialize_move(move_data)
         # Expected chain sequence for multi-segment chain capture tests
-        self.expected_chain_sequence: List[Dict[str, Any]] = input_data.get(
+        self.expected_chain_sequence: list[dict[str, Any]] = input_data.get(
             "expectedChainSequence", []
         )
 
@@ -567,13 +567,13 @@ TestVector = ContractVector
 class ContractVectorBundle:
     """Collection of test vectors from a single file."""
 
-    def __init__(self, data: Dict[str, Any]):
+    def __init__(self, data: dict[str, Any]):
         self.version: str = data.get("version", "v2")
         self.generated: str = data.get("generated", "")
         self.count: int = data.get("count", 0)
-        self.categories: List[str] = data.get("categories", [])
+        self.categories: list[str] = data.get("categories", [])
         self.description: str = data.get("description", "")
-        self.vectors: List[ContractVector] = [
+        self.vectors: list[ContractVector] = [
             ContractVector(v) for v in data.get("vectors", [])
         ]
 

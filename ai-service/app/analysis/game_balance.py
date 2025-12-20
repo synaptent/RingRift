@@ -29,12 +29,12 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-from app.utils.datetime_utils import iso_now
+from typing import Any
 
 import numpy as np
 from scipy import stats
+
+from app.utils.datetime_utils import iso_now
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class WinRateStats:
     draws: int
     total_games: int
     win_rate: float  # 0-1
-    confidence_interval: Tuple[float, float]  # 95% CI
+    confidence_interval: tuple[float, float]  # 95% CI
     expected_rate: float  # Expected under fair conditions
     is_significant: bool  # Statistically significant deviation
 
@@ -65,7 +65,7 @@ class GameLengthStats:
     std: float
     min: int
     max: int
-    percentiles: Dict[int, float]  # 10, 25, 50, 75, 90
+    percentiles: dict[int, float]  # 10, 25, 50, 75, 90
 
 
 @dataclass
@@ -78,7 +78,7 @@ class BalanceIssue:
     win_rate: float
     expected_rate: float
     p_value: float
-    confidence_interval: Tuple[float, float]
+    confidence_interval: tuple[float, float]
     recommendation: str
 
 
@@ -96,7 +96,7 @@ class BalanceReport:
     avg_game_length: float
 
     # Per-player statistics
-    player_win_rates: Dict[int, WinRateStats]
+    player_win_rates: dict[int, WinRateStats]
 
     # First-player analysis
     first_player_advantage: float
@@ -106,23 +106,23 @@ class BalanceReport:
     game_length_stats: GameLengthStats
 
     # Detected issues
-    balance_issues: List[BalanceIssue]
+    balance_issues: list[BalanceIssue]
 
     # Summary
     summary: str
     is_balanced: bool
 
     # Raw data for visualization
-    win_distribution: Dict[int, int]  # player -> win count
-    length_distribution: List[int]  # list of game lengths
+    win_distribution: dict[int, int]  # player -> win count
+    length_distribution: list[int]  # list of game lengths
 
 
 @dataclass
 class CrossConfigAnalysis:
     """Analysis across different configurations."""
-    configs: List[Dict[str, Any]]  # board_type, num_players combos
-    per_config_stats: Dict[str, BalanceReport]
-    cross_config_issues: List[BalanceIssue]
+    configs: list[dict[str, Any]]  # board_type, num_players combos
+    per_config_stats: dict[str, BalanceReport]
+    cross_config_issues: list[BalanceIssue]
 
 
 class GameBalanceAnalyzer:
@@ -137,8 +137,8 @@ class GameBalanceAnalyzer:
     def __init__(
         self,
         db_path: Path,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ):
         """Initialize analyzer.
 
@@ -159,10 +159,10 @@ class GameBalanceAnalyzer:
 
     def _load_games(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         """Load completed games from database."""
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -245,7 +245,7 @@ class GameBalanceAnalyzer:
 
     def _calculate_game_length_stats(
         self,
-        games: List[Dict[str, Any]],
+        games: list[dict[str, Any]],
     ) -> GameLengthStats:
         """Calculate game length statistics."""
         lengths = []
@@ -279,8 +279,8 @@ class GameBalanceAnalyzer:
 
     def analyze(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> BalanceReport:
         """Perform comprehensive balance analysis.
 
@@ -321,7 +321,7 @@ class GameBalanceAnalyzer:
         draw_rate = draws / total_games
 
         # Win distribution per player
-        win_distribution: Dict[int, int] = {p: 0 for p in range(np_)}
+        win_distribution: dict[int, int] = dict.fromkeys(range(np_), 0)
         for game in games:
             winner = game.get("winner")
             if winner is not None and winner in win_distribution:
@@ -392,12 +392,12 @@ class GameBalanceAnalyzer:
 
     def _detect_balance_issues(
         self,
-        player_win_rates: Dict[int, WinRateStats],
+        player_win_rates: dict[int, WinRateStats],
         first_player_advantage: float,
         draw_rate: float,
         game_length_stats: GameLengthStats,
         num_players: int,
-    ) -> List[BalanceIssue]:
+    ) -> list[BalanceIssue]:
         """Detect potential balance issues."""
         issues = []
 
@@ -494,10 +494,10 @@ class GameBalanceAnalyzer:
         total_games: int,
         board_type: str,
         num_players: int,
-        player_win_rates: Dict[int, WinRateStats],
+        player_win_rates: dict[int, WinRateStats],
         first_player_advantage: float,
         draw_rate: float,
-        balance_issues: List[BalanceIssue],
+        balance_issues: list[BalanceIssue],
     ) -> str:
         """Generate human-readable summary."""
         summary_parts = [
@@ -532,10 +532,10 @@ class GameBalanceAnalyzer:
 
     def find_balance_issues(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        severity_filter: Optional[str] = None,
-    ) -> List[BalanceIssue]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+        severity_filter: str | None = None,
+    ) -> list[BalanceIssue]:
         """Find balance issues matching criteria.
 
         Args:
@@ -609,9 +609,9 @@ class GameBalanceAnalyzer:
 
     def generate_report(
         self,
-        output_path: Optional[Path] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        output_path: Path | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> str:
         """Generate and optionally save a balance report.
 
@@ -687,7 +687,7 @@ class GameBalanceAnalyzer:
         self,
         window_size: int = 1000,
         step_size: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Track balance metrics over time to detect trends.
 
         Args:
@@ -736,7 +736,7 @@ def analyze_game_balance(
     db_path: Path,
     board_type: str = "square8",
     num_players: int = 2,
-    output_path: Optional[Path] = None,
+    output_path: Path | None = None,
 ) -> BalanceReport:
     """Convenience function to analyze game balance.
 

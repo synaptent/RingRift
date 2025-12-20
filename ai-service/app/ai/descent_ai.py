@@ -13,25 +13,26 @@ for A/B testing and for backwards‑compatible behaviour.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import os
-from typing import Optional, List, Dict, Any, Tuple, TYPE_CHECKING
 import time
 from enum import Enum
+from typing import TYPE_CHECKING, Any
 
+from ..models import AIConfig, BoardType, GameState, Move, MoveType
+from ..rules.mutable_state import MutableGameState
+from ..utils.memory_config import MemoryConfig
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
 from .game_state_utils import infer_num_players, victory_progress_for_player
-from ..models import GameState, Move, MoveType, AIConfig, BoardType
-from ..rules.mutable_state import MutableGameState
-from ..utils.memory_config import MemoryConfig
 
 # Lazy imports for neural network components to avoid loading torch when not needed
 if TYPE_CHECKING:
     from .async_nn_eval import AsyncNeuralBatcher
-    from .neural_net import NeuralNetAI, ActionEncoderHex
     from .evaluation_provider import HeuristicEvaluator
+    from .neural_net import ActionEncoderHex, NeuralNetAI
 
 # Optional GPU heuristic evaluation - try but don't fail if unavailable
 GPU_HEURISTIC_AVAILABLE = False
@@ -91,7 +92,7 @@ class DescentAI(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        memory_config: Optional[MemoryConfig] = None,
+        memory_config: MemoryConfig | None = None,
     ):
         super().__init__(player_number, config)
 
@@ -121,8 +122,8 @@ class DescentAI(BaseAI):
         # NeuralNetAI now uses lazy initialization to select the correct
         # board-specific model (RingRiftCNN_MPS for square, HexNeuralNet for hex)
         # when it first sees a game state.
-        self.neural_net: Optional["NeuralNetAI"] = None
-        self.hex_encoder: Optional["ActionEncoderHex"] = None
+        self.neural_net: NeuralNetAI | None = None
+        self.hex_encoder: ActionEncoderHex | None = None
 
         if self.use_neural_net:
             try:
@@ -145,7 +146,7 @@ class DescentAI(BaseAI):
             from .neural_net import ActionEncoderHex  # Lazy import
             self.hex_encoder = ActionEncoderHex()
         # Per-instance neural batcher for safe, synchronous batched evaluation.
-        self.nn_batcher: Optional["AsyncNeuralBatcher"] = None
+        self.nn_batcher: AsyncNeuralBatcher | None = None
         if self.neural_net is not None:
             from .async_nn_eval import AsyncNeuralBatcher  # Lazy import
             self.nn_batcher = AsyncNeuralBatcher(self.neural_net)
@@ -168,7 +169,7 @@ class DescentAI(BaseAI):
         self.memory_config = memory_config or MemoryConfig.from_env()
 
         # GPU heuristic evaluator for batch fallback (when NN unavailable)
-        self.gpu_heuristic: Optional["GPUHeuristicEvaluator"] = None
+        self.gpu_heuristic: GPUHeuristicEvaluator | None = None
         self.use_gpu_heuristic = os.environ.get("RINGRIFT_DESCENT_GPU_HEURISTIC", "").lower() in {
             "1", "true", "yes", "on"
         }
@@ -184,13 +185,13 @@ class DescentAI(BaseAI):
         # FastGeometry-backed heuristic evaluator for single-position fallback
         # (when neural net is unavailable). Uses pre-computed geometry tables
         # for ~3-5x faster evaluation than naive implementations.
-        self._heuristic_evaluator: Optional["HeuristicEvaluator"] = None
+        self._heuristic_evaluator: HeuristicEvaluator | None = None
         self._use_heuristic_fallback = os.environ.get(
             "RINGRIFT_DESCENT_HEURISTIC_FALLBACK", "true"
         ).lower() in {"1", "true", "yes", "on"}
         if self._use_heuristic_fallback and not self.neural_net:
             try:
-                from .evaluation_provider import HeuristicEvaluator, EvaluatorConfig
+                from .evaluation_provider import EvaluatorConfig, HeuristicEvaluator
                 eval_config = EvaluatorConfig(
                     eval_mode="light",  # Use light mode for fast Descent fallback
                     difficulty=config.difficulty,
@@ -228,7 +229,7 @@ class DescentAI(BaseAI):
         # Only populated when collect_training_data is True to prevent
         # memory leaks in inference-only scenarios.
         self.collect_training_data: bool = False
-        self.search_log: List[Tuple[Any, float]] = []
+        self.search_log: list[tuple[Any, float]] = []
 
         # Configuration option for incremental search (make/unmake pattern)
         self.use_incremental_search: bool = getattr(
@@ -262,16 +263,12 @@ class DescentAI(BaseAI):
         self.uncertainty_ucb_c: float = 0.25
         cfg_c = getattr(config, "uncertainty_ucb_c", None)
         if cfg_c is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.uncertainty_ucb_c = float(cfg_c)
-            except Exception:
-                pass
         env_c = os.environ.get("RINGRIFT_DESCENT_UCB_C", "").strip()
         if env_c:
-            try:
+            with contextlib.suppress(Exception):
                 self.uncertainty_ucb_c = float(env_c)
-            except Exception:
-                pass
         if self.uncertainty_ucb_c <= 0:
             self.use_uncertainty_selection = False
 
@@ -320,7 +317,7 @@ class DescentAI(BaseAI):
 
     def _select_child_key(
         self,
-        children_values: Dict[str, Any],
+        children_values: dict[str, Any],
         *,
         parent_visits: int,
         maximizing: bool,
@@ -387,10 +384,10 @@ class DescentAI(BaseAI):
 
     def _unpack_tt_entry(
         self, entry: Any
-    ) -> tuple[float, Dict[str, Any], NodeStatus, list[tuple[Move, float]], int]:
+    ) -> tuple[float, dict[str, Any], NodeStatus, list[tuple[Move, float]], int]:
         """Normalize TT entries across legacy/progressive formats."""
         current_val = float(entry[0])
-        children_values: Dict[str, Any] = entry[1]
+        children_values: dict[str, Any] = entry[1]
         status = entry[2] if len(entry) >= 3 else NodeStatus.HEURISTIC
         remaining_moves: list[tuple[Move, float]] = (
             entry[3] if len(entry) >= 4 else []
@@ -398,7 +395,7 @@ class DescentAI(BaseAI):
         visits = int(entry[4]) if len(entry) >= 5 else 0
         return current_val, children_values, status, remaining_moves, visits
 
-    def get_search_data(self) -> List[Tuple[Any, float]]:
+    def get_search_data(self) -> list[tuple[Any, float]]:
         """Retrieve and clear the accumulated search log.
 
         Note:
@@ -424,7 +421,7 @@ class DescentAI(BaseAI):
             # Clear any existing data when disabling
             self.search_log.clear()
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """
         Select the best move using Descent search.
 
@@ -462,8 +459,8 @@ class DescentAI(BaseAI):
             return self._select_move_legacy(game_state, valid_moves)
 
     def _select_move_legacy(
-        self, game_state: GameState, valid_moves: List[Move]
-    ) -> Optional[Move]:
+        self, game_state: GameState, valid_moves: list[Move]
+    ) -> Move | None:
         """Legacy search using immutable state cloning via apply_move().
 
         This is the original implementation preserved for backward
@@ -548,8 +545,8 @@ class DescentAI(BaseAI):
         return fallback
 
     def _select_move_incremental(
-        self, game_state: GameState, valid_moves: List[Move]
-    ) -> Optional[Move]:
+        self, game_state: GameState, valid_moves: list[Move]
+    ) -> Move | None:
         """Incremental search using make/unmake on MutableGameState.
 
         This provides significant speedup by avoiding object allocation
@@ -642,7 +639,7 @@ class DescentAI(BaseAI):
         self,
         state: GameState,
         depth: int = 0,
-        deadline: Optional[float] = None,
+        deadline: float | None = None,
     ) -> float:
         """
         Perform one iteration of Descent search.
@@ -686,31 +683,30 @@ class DescentAI(BaseAI):
                 and remaining_moves
                 and len(children_values)
                 < self._max_children_allowed(visits, state.board.type)
-            ):
-                if deadline is None or time.time() < deadline:
-                    next_move, next_prob = remaining_moves.pop(0)
-                    next_state = self.rules_engine.apply_move(state, next_move)
-                    if next_state.game_status == "completed":
-                        if next_state.winner == self.player_number:
-                            next_val = 1.0
-                        elif next_state.winner is not None:
-                            next_val = -1.0
-                        else:
-                            next_val = 0.0
+            ) and (deadline is None or time.time() < deadline):
+                next_move, next_prob = remaining_moves.pop(0)
+                next_state = self.rules_engine.apply_move(state, next_move)
+                if next_state.game_status == "completed":
+                    if next_state.winner == self.player_number:
+                        next_val = 1.0
+                    elif next_state.winner is not None:
+                        next_val = -1.0
                     else:
-                        next_val = self.evaluate_position(next_state)
+                        next_val = 0.0
+                else:
+                    next_val = self.evaluate_position(next_state)
 
-                    children_values[str(next_move)] = (
-                        next_move,
-                        next_val,
-                        float(next_prob),
-                        0,
-                    )
-                    # Refresh current value after widening.
-                    if state.current_player == self.player_number:
-                        current_val = max(v[1] for v in children_values.values())
-                    else:
-                        current_val = min(v[1] for v in children_values.values())
+                children_values[str(next_move)] = (
+                    next_move,
+                    next_val,
+                    float(next_prob),
+                    0,
+                )
+                # Refresh current value after widening.
+                if state.current_player == self.player_number:
+                    current_val = max(v[1] for v in children_values.values())
+                else:
+                    current_val = min(v[1] for v in children_values.values())
 
             # Select best child to descend
             if not children_values:
@@ -800,7 +796,7 @@ class DescentAI(BaseAI):
                 return 0.0
 
             # Get policy if available
-            move_probs: Dict[str, float] = {}
+            move_probs: dict[str, float] = {}
             if self.neural_net:
                 try:
                     from .neural_net import INVALID_MOVE_INDEX  # Lazy import
@@ -874,8 +870,8 @@ class DescentAI(BaseAI):
             else:
                 best_val = float("inf")
 
-            expanded_children: List[Tuple[Move, float, Optional[float]]] = []
-            non_terminal_states: List[GameState] = []
+            expanded_children: list[tuple[Move, float, float | None]] = []
+            non_terminal_states: list[GameState] = []
 
             for move in expand_moves:
                 next_state = self.rules_engine.apply_move(state, move)
@@ -955,7 +951,7 @@ class DescentAI(BaseAI):
         self,
         state: MutableGameState,
         depth: int = 0,
-        deadline: Optional[float] = None,
+        deadline: float | None = None,
     ) -> float:
         """
         Perform one iteration of Descent search using make/unmake pattern.
@@ -999,32 +995,31 @@ class DescentAI(BaseAI):
                 and remaining_moves
                 and len(children_values)
                 < self._max_children_allowed(visits, state.board_type)
-            ):
-                if deadline is None or time.time() < deadline:
-                    next_move, next_prob = remaining_moves.pop(0)
-                    undo_pw = state.make_move(next_move)
-                    if state.is_game_over():
-                        winner = state.get_winner()
-                        if winner == self.player_number:
-                            next_val = 1.0
-                        elif winner is not None:
-                            next_val = -1.0
-                        else:
-                            next_val = 0.0
+            ) and (deadline is None or time.time() < deadline):
+                next_move, next_prob = remaining_moves.pop(0)
+                undo_pw = state.make_move(next_move)
+                if state.is_game_over():
+                    winner = state.get_winner()
+                    if winner == self.player_number:
+                        next_val = 1.0
+                    elif winner is not None:
+                        next_val = -1.0
                     else:
-                        next_val = self._evaluate_mutable(state)
-                    state.unmake_move(undo_pw)
+                        next_val = 0.0
+                else:
+                    next_val = self._evaluate_mutable(state)
+                state.unmake_move(undo_pw)
 
-                    children_values[str(next_move)] = (
-                        next_move,
-                        next_val,
-                        float(next_prob),
-                        0,
-                    )
-                    if state.current_player == self.player_number:
-                        current_val = max(v[1] for v in children_values.values())
-                    else:
-                        current_val = min(v[1] for v in children_values.values())
+                children_values[str(next_move)] = (
+                    next_move,
+                    next_val,
+                    float(next_prob),
+                    0,
+                )
+                if state.current_player == self.player_number:
+                    current_val = max(v[1] for v in children_values.values())
+                else:
+                    current_val = min(v[1] for v in children_values.values())
 
             # Select best child to descend
             if not children_values:
@@ -1116,7 +1111,7 @@ class DescentAI(BaseAI):
                 return 0.0
 
             # Get policy if available
-            move_probs: Dict[str, float] = {}
+            move_probs: dict[str, float] = {}
             if self.neural_net:
                 try:
                     from .neural_net import INVALID_MOVE_INDEX  # Lazy import
@@ -1223,8 +1218,8 @@ class DescentAI(BaseAI):
                     else:
                         best_val = min(best_val, val)
             else:
-                expanded_children: List[Tuple[Move, float, Optional[float]]] = []
-                non_terminal_states: List[GameState] = []
+                expanded_children: list[tuple[Move, float, float | None]] = []
+                non_terminal_states: list[GameState] = []
 
                 for move in expand_moves:
                     undo = state.make_move(move)
@@ -1411,7 +1406,7 @@ class DescentAI(BaseAI):
             opp_prog = max(
                 (
                     victory_progress_for_player(state, pid)
-                    for pid in state.players.keys()
+                    for pid in state.players
                     if pid != self.player_number
                 ),
                 default=0.0,
@@ -1419,8 +1414,8 @@ class DescentAI(BaseAI):
             return my_prog - opp_prog
 
     def _batch_evaluate_positions(
-        self, game_states: List[GameState]
-    ) -> List[float]:
+        self, game_states: list[GameState]
+    ) -> list[float]:
         """Batch-evaluate immutable states with NN when available.
 
         Returns values in this agent's fixed perspective. NeuralNetAI encodes
@@ -1454,13 +1449,13 @@ class DescentAI(BaseAI):
                 step = max(1, batch_size)
                 max_pending = 2
 
-                adjusted: List[float] = []
-                pending: list[tuple[List[GameState], Any]] = []
+                adjusted: list[float] = []
+                pending: list[tuple[list[GameState], Any]] = []
 
                 def _drain_one() -> None:
                     chunk, fut = pending.pop(0)
                     values, _policy = fut.result()
-                    for val, st in zip(values, chunk):
+                    for val, st in zip(values, chunk, strict=False):
                         v = float(val)
                         if (not use_vector_head) and (
                             st.current_player != self.player_number
@@ -1495,8 +1490,8 @@ class DescentAI(BaseAI):
                     value_head=value_head,
                 )
 
-            adjusted: List[float] = []
-            for val, st in zip(values, game_states):
+            adjusted: list[float] = []
+            for val, st in zip(values, game_states, strict=False):
                 v = float(val)
                 if (not use_vector_head) and (
                     st.current_player != self.player_number
@@ -1521,7 +1516,7 @@ class DescentAI(BaseAI):
             self.nn_batcher = None
             return [self.evaluate_position(s) for s in game_states]
 
-    def _gpu_batch_heuristic_eval(self, game_states: List[GameState]) -> List[float]:
+    def _gpu_batch_heuristic_eval(self, game_states: list[GameState]) -> list[float]:
         """Batch-evaluate positions using full-parity GPU heuristic.
 
         Uses the 49-feature evaluate_positions_batch for CPU heuristic parity,
@@ -1531,9 +1526,9 @@ class DescentAI(BaseAI):
         Returns values adjusted to this agent's perspective.
         """
         # Import here to avoid circular deps at module load
+        from .gpu_batch import get_device
         from .gpu_parallel_games import BatchGameState, evaluate_positions_batch
         from .heuristic_weights import get_weights_for_player_count
-        from .gpu_batch import get_device
 
         # Convert states to BatchGameState for full-parity evaluation
         device = get_device() if self.gpu_heuristic is None else self.gpu_heuristic.device
@@ -1547,7 +1542,7 @@ class DescentAI(BaseAI):
         scores_tensor = evaluate_positions_batch(batch_state, weights)
 
         # Convert to list and adjust perspective
-        adjusted: List[float] = []
+        adjusted: list[float] = []
         for i, st in enumerate(game_states):
             # Get score for this player from the batch result
             val = float(scores_tensor[i, self.player_number].item())

@@ -37,10 +37,11 @@ import socket
 import sqlite3
 import threading
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 from app.coordination.distributed_lock import DistributedLock
 from app.utils.paths import DATA_DIR
@@ -61,7 +62,7 @@ LOCAL_COORDINATION_PATH = DATA_DIR / "coordination"
 
 # Training configuration - use centralized defaults (December 2025)
 try:
-    from app.config.coordination_defaults import TrainingDefaults, HeartbeatDefaults
+    from app.config.coordination_defaults import HeartbeatDefaults, TrainingDefaults
     MAX_CONCURRENT_TRAINING_SAME_CONFIG = TrainingDefaults.MAX_CONCURRENT_SAME_CONFIG
     MAX_TOTAL_CONCURRENT_TRAINING = TrainingDefaults.MAX_CONCURRENT_TOTAL
     TRAINING_TIMEOUT_HOURS = TrainingDefaults.TIMEOUT_HOURS
@@ -93,7 +94,7 @@ class TrainingJob:
     epochs_completed: int = 0
     best_val_loss: float = float("inf")
     current_elo: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def config_key(self) -> str:
@@ -114,7 +115,7 @@ class TrainingJob:
             or self.age_hours > TRAINING_TIMEOUT_HOURS
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             **asdict(self),
             "config_key": self.config_key,
@@ -309,8 +310,8 @@ class TrainingCoordinator:
         board_type: str,
         num_players: int,
         model_version: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
         """Register a new training job.
 
         Args:
@@ -383,7 +384,7 @@ class TrainingCoordinator:
         epochs_completed: int = 0,
         best_val_loss: float = float("inf"),
         current_elo: float = 0.0,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Update training progress and heartbeat.
 
@@ -401,7 +402,7 @@ class TrainingCoordinator:
         now = time.time()
 
         updates = ["last_heartbeat = ?", "epochs_completed = ?"]
-        params: List[Any] = [now, epochs_completed]
+        params: list[Any] = [now, epochs_completed]
 
         if best_val_loss < float("inf"):
             updates.append("best_val_loss = ?")
@@ -431,8 +432,8 @@ class TrainingCoordinator:
         self,
         job_id: str,
         status: str = "completed",
-        final_val_loss: Optional[float] = None,
-        final_elo: Optional[float] = None,
+        final_val_loss: float | None = None,
+        final_elo: float | None = None,
     ) -> bool:
         """Mark training as complete and archive to history.
 
@@ -516,13 +517,14 @@ class TrainingCoordinator:
             **kwargs: Additional event data
         """
         try:
+            import asyncio
+            from datetime import datetime
+
             from app.coordination.stage_events import (
-                StageEvent,
                 StageCompletionResult,
+                StageEvent,
                 get_event_bus,
             )
-            from datetime import datetime
-            import asyncio
 
             # Map event type to StageEvent
             event_map = {
@@ -567,7 +569,7 @@ class TrainingCoordinator:
         except Exception as e:
             logger.debug(f"Failed to emit training event: {e}")
 
-    def get_active_jobs(self) -> List[TrainingJob]:
+    def get_active_jobs(self) -> list[TrainingJob]:
         """Get all active training jobs."""
         conn = self._get_connection()
         self._cleanup_stale_jobs()
@@ -597,7 +599,7 @@ class TrainingCoordinator:
             ))
         return jobs
 
-    def get_job(self, board_type: str, num_players: int) -> Optional[TrainingJob]:
+    def get_job(self, board_type: str, num_players: int) -> TrainingJob | None:
         """Get the active training job for a config if any."""
         conn = self._get_connection()
         cursor = conn.execute(
@@ -628,15 +630,15 @@ class TrainingCoordinator:
 
     def get_training_history(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get training history."""
         conn = self._get_connection()
 
         query = "SELECT * FROM training_history WHERE 1=1"
-        params: List[Any] = []
+        params: list[Any] = []
 
         if board_type:
             query += " AND board_type = ?"
@@ -699,7 +701,7 @@ class TrainingCoordinator:
             conn.commit()
         return len(stale_jobs)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get overall training coordination status."""
         conn = self._get_connection()
         self._cleanup_stale_jobs()
@@ -745,7 +747,7 @@ class TrainingCoordinator:
 
 
 # Global singleton
-_coordinator: Optional[TrainingCoordinator] = None
+_coordinator: TrainingCoordinator | None = None
 _coordinator_lock = threading.Lock()
 
 
@@ -777,8 +779,8 @@ def request_training_slot(
     board_type: str,
     num_players: int,
     model_version: str = "",
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+    metadata: dict[str, Any] | None = None,
+) -> str | None:
     """Request a training slot for a config.
 
     Returns:
@@ -792,8 +794,8 @@ def request_training_slot(
 def release_training_slot(
     job_id: str,
     status: str = "completed",
-    final_val_loss: Optional[float] = None,
-    final_elo: Optional[float] = None,
+    final_val_loss: float | None = None,
+    final_elo: float | None = None,
 ) -> bool:
     """Release a training slot."""
     return get_training_coordinator().complete_training(
@@ -818,7 +820,7 @@ def can_train(board_type: str, num_players: int) -> bool:
     return get_training_coordinator().can_start_training(board_type, num_players)
 
 
-def get_training_status() -> Dict[str, Any]:
+def get_training_status() -> dict[str, Any]:
     """Get cluster-wide training status."""
     return get_training_coordinator().get_status()
 
@@ -829,7 +831,7 @@ def training_slot(
     num_players: int,
     model_version: str = "",
     timeout: int = 60,
-) -> Generator[Optional[str], None, None]:
+) -> Generator[str | None, None, None]:
     """Context manager for training slot.
 
     Usage:
@@ -858,7 +860,7 @@ def training_slot(
     except Exception as e:
         if job_id:
             coordinator.complete_training(job_id, status="failed")
-        raise
+        raise e
     else:
         if job_id:
             coordinator.complete_training(job_id, status="completed")
@@ -883,7 +885,7 @@ def wire_training_events() -> TrainingCoordinator:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -895,7 +897,7 @@ def wire_training_events() -> TrainingCoordinator:
             job_id = payload.get("job_id")
             board_type = payload.get("board_type")
             num_players = payload.get("num_players")
-            host = payload.get("host") or payload.get("node_id")
+            _host = payload.get("host") or payload.get("node_id")
             if job_id and board_type and num_players:
                 # Training already registered - just log
                 logger.info(f"[TrainingCoordinator] Training started: {job_id}")
@@ -945,19 +947,19 @@ def wire_training_events() -> TrainingCoordinator:
 
 
 __all__ = [
-    # Data classes
-    "TrainingJob",
     # Main class
     "TrainingCoordinator",
+    # Data classes
+    "TrainingJob",
+    "can_train",
     # Singleton getter
     "get_training_coordinator",
+    "get_training_status",
+    "release_training_slot",
     # Convenience functions
     "request_training_slot",
-    "release_training_slot",
-    "update_training_progress",
-    "can_train",
-    "get_training_status",
     "training_slot",
+    "update_training_progress",
     # Event wiring
     "wire_training_events",
 ]

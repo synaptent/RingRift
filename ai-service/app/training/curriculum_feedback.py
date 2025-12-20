@@ -30,15 +30,12 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from app.utils.paths import AI_SERVICE_ROOT
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +96,11 @@ class CurriculumFeedback:
         self.target_win_rate = target_win_rate
 
         # Game history (circular buffer per config)
-        self._game_history: Dict[str, List[GameRecord]] = defaultdict(list)
+        self._game_history: dict[str, list[GameRecord]] = defaultdict(list)
         self._max_history_per_config = 1000
 
         # Cached metrics per config
-        self._config_metrics: Dict[str, ConfigMetrics] = {}
+        self._config_metrics: dict[str, ConfigMetrics] = {}
 
         # Last update time for change detection
         self._last_update_time: float = 0
@@ -202,14 +199,14 @@ class CurriculumFeedback:
         """Get current metrics for a config."""
         return self._compute_metrics(config_key)
 
-    def get_all_metrics(self) -> Dict[str, ConfigMetrics]:
+    def get_all_metrics(self) -> dict[str, ConfigMetrics]:
         """Get metrics for all configs."""
         result = {}
         for config_key in set(self._game_history.keys()) | set(self._config_metrics.keys()):
             result[config_key] = self._compute_metrics(config_key)
         return result
 
-    def get_curriculum_weights(self) -> Dict[str, float]:
+    def get_curriculum_weights(self) -> dict[str, float]:
         """Compute curriculum weights based on current metrics.
 
         Weighting strategy:
@@ -308,7 +305,7 @@ class CurriculumFeedback:
 
 
 # Singleton instance
-_feedback_instance: Optional[CurriculumFeedback] = None
+_feedback_instance: CurriculumFeedback | None = None
 
 
 def get_curriculum_feedback() -> CurriculumFeedback:
@@ -330,7 +327,7 @@ def record_selfplay_game(
     )
 
 
-def get_curriculum_weights() -> Dict[str, float]:
+def get_curriculum_weights() -> dict[str, float]:
     """Get current curriculum weights (convenience function)."""
     return get_curriculum_feedback().get_curriculum_weights()
 
@@ -362,7 +359,7 @@ class EloToCurriculumWatcher:
 
     def __init__(
         self,
-        feedback: Optional[CurriculumFeedback] = None,
+        feedback: CurriculumFeedback | None = None,
         significant_elo_change: float = 30.0,
         rebalance_cooldown_seconds: float = 300.0,
         auto_export: bool = True,
@@ -384,7 +381,7 @@ class EloToCurriculumWatcher:
         self.export_path = export_path
 
         self._last_rebalance_time: float = 0.0
-        self._elo_history: Dict[str, List[float]] = defaultdict(list)
+        self._elo_history: dict[str, list[float]] = defaultdict(list)
         self._subscribed = False
 
     def subscribe_to_elo_events(self) -> bool:
@@ -511,7 +508,7 @@ class EloToCurriculumWatcher:
 
     def _publish_rebalance_event(
         self,
-        weights: Dict[str, float],
+        weights: dict[str, float],
         trigger_config: str,
         elo_change: float,
     ) -> None:
@@ -537,7 +534,7 @@ class EloToCurriculumWatcher:
             bus = get_event_bus()
             import asyncio
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(bus.publish(event))
             except RuntimeError:
                 if hasattr(bus, 'publish_sync'):
@@ -546,7 +543,7 @@ class EloToCurriculumWatcher:
         except Exception as e:
             logger.debug(f"Failed to publish rebalance event: {e}")
 
-    def force_rebalance(self) -> Dict[str, float]:
+    def force_rebalance(self) -> dict[str, float]:
         """Force an immediate curriculum rebalance.
 
         Returns:
@@ -566,7 +563,7 @@ class EloToCurriculumWatcher:
 
 
 # Singleton watcher
-_elo_watcher: Optional[EloToCurriculumWatcher] = None
+_elo_watcher: EloToCurriculumWatcher | None = None
 
 
 def wire_elo_to_curriculum(
@@ -601,7 +598,7 @@ def wire_elo_to_curriculum(
     return _elo_watcher
 
 
-def get_elo_curriculum_watcher() -> Optional[EloToCurriculumWatcher]:
+def get_elo_curriculum_watcher() -> EloToCurriculumWatcher | None:
     """Get the global ELO-to-curriculum watcher if configured."""
     return _elo_watcher
 
@@ -626,7 +623,7 @@ class PlateauToCurriculumWatcher:
 
     def __init__(
         self,
-        feedback: Optional[CurriculumFeedback] = None,
+        feedback: CurriculumFeedback | None = None,
         rebalance_cooldown_seconds: float = 600.0,
         auto_export: bool = True,
         export_path: str = "data/curriculum_weights.json",
@@ -648,7 +645,7 @@ class PlateauToCurriculumWatcher:
         self.plateau_weight_boost = plateau_weight_boost
 
         self._last_rebalance_time: float = 0.0
-        self._plateau_configs: Dict[str, float] = {}  # config -> plateau_time
+        self._plateau_configs: dict[str, float] = {}  # config -> plateau_time
         self._subscribed = False
 
     def subscribe_to_plateau_events(self) -> bool:
@@ -770,7 +767,7 @@ class PlateauToCurriculumWatcher:
 
     def _publish_rebalance_event(
         self,
-        weights: Dict[str, float],
+        weights: dict[str, float],
         trigger_config: str,
         plateau_games: int,
     ) -> None:
@@ -797,7 +794,7 @@ class PlateauToCurriculumWatcher:
             bus = get_event_bus()
             import asyncio
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(bus.publish(event))
             except RuntimeError:
                 if hasattr(bus, 'publish_sync'):
@@ -806,7 +803,7 @@ class PlateauToCurriculumWatcher:
         except Exception as e:
             logger.debug(f"Failed to publish rebalance event: {e}")
 
-    def get_plateau_configs(self) -> Dict[str, float]:
+    def get_plateau_configs(self) -> dict[str, float]:
         """Get configs currently in plateau state.
 
         Returns:
@@ -828,7 +825,7 @@ class PlateauToCurriculumWatcher:
 
 
 # Singleton plateau watcher
-_plateau_watcher: Optional[PlateauToCurriculumWatcher] = None
+_plateau_watcher: PlateauToCurriculumWatcher | None = None
 
 
 def wire_plateau_to_curriculum(
@@ -866,7 +863,7 @@ def wire_plateau_to_curriculum(
     return _plateau_watcher
 
 
-def get_plateau_curriculum_watcher() -> Optional[PlateauToCurriculumWatcher]:
+def get_plateau_curriculum_watcher() -> PlateauToCurriculumWatcher | None:
     """Get the global plateau-to-curriculum watcher if configured."""
     return _plateau_watcher
 
@@ -892,7 +889,7 @@ class TournamentToCurriculumWatcher:
 
     def __init__(
         self,
-        feedback: Optional[CurriculumFeedback] = None,
+        feedback: CurriculumFeedback | None = None,
         rebalance_cooldown_seconds: float = 300.0,
         auto_export: bool = True,
         export_path: str = "data/curriculum_weights.json",
@@ -920,7 +917,7 @@ class TournamentToCurriculumWatcher:
         self.weight_adjustment = weight_adjustment
 
         self._last_rebalance_time: float = 0.0
-        self._tournament_results: Dict[str, List[Dict]] = defaultdict(list)
+        self._tournament_results: dict[str, list[dict]] = defaultdict(list)
         self._subscribed = False
         self._adjustment_count = 0
 
@@ -1071,7 +1068,7 @@ class TournamentToCurriculumWatcher:
 
     def _publish_rebalance_event(
         self,
-        weights: Dict[str, float],
+        weights: dict[str, float],
         trigger_config: str,
         win_rate: float,
         reason: str,
@@ -1099,7 +1096,7 @@ class TournamentToCurriculumWatcher:
             bus = get_event_bus()
             import asyncio
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(bus.publish(event))
             except RuntimeError:
                 if hasattr(bus, 'publish_sync'):
@@ -1108,7 +1105,7 @@ class TournamentToCurriculumWatcher:
         except Exception as e:
             logger.debug(f"Failed to publish rebalance event: {e}")
 
-    def get_tournament_summary(self, config_key: str) -> Dict[str, Any]:
+    def get_tournament_summary(self, config_key: str) -> dict[str, Any]:
         """Get tournament results summary for a config.
 
         Returns:
@@ -1127,7 +1124,7 @@ class TournamentToCurriculumWatcher:
             "last_tournament": results[-1] if results else None,
         }
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get watcher statistics.
 
         Returns:
@@ -1146,7 +1143,7 @@ class TournamentToCurriculumWatcher:
 
 
 # Singleton tournament watcher
-_tournament_watcher: Optional[TournamentToCurriculumWatcher] = None
+_tournament_watcher: TournamentToCurriculumWatcher | None = None
 
 
 def wire_tournament_to_curriculum(
@@ -1191,6 +1188,6 @@ def wire_tournament_to_curriculum(
     return _tournament_watcher
 
 
-def get_tournament_curriculum_watcher() -> Optional[TournamentToCurriculumWatcher]:
+def get_tournament_curriculum_watcher() -> TournamentToCurriculumWatcher | None:
     """Get the global tournament-to-curriculum watcher if configured."""
     return _tournament_watcher

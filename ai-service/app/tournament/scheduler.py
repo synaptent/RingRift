@@ -27,7 +27,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from app.models import BoardType
@@ -47,16 +46,16 @@ class Match:
     """Represents a scheduled match between agents."""
 
     match_id: str
-    agent_ids: List[str]  # For multiplayer, can have 2-4 agents
+    agent_ids: list[str]  # For multiplayer, can have 2-4 agents
     board_type: BoardType
     round_number: int = 0
     status: MatchStatus = MatchStatus.PENDING
-    scheduled_at: Optional[datetime] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    result: Optional[Dict] = None  # Rankings, winner, etc.
-    worker_id: Optional[str] = None  # Which worker executed this match
-    metadata: Dict = field(default_factory=dict)
+    scheduled_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    result: dict | None = None  # Rankings, winner, etc.
+    worker_id: str | None = None  # Which worker executed this match
+    metadata: dict = field(default_factory=dict)
 
     @property
     def num_players(self) -> int:
@@ -66,7 +65,7 @@ class Match:
     def is_multiplayer(self) -> bool:
         return len(self.agent_ids) > 2
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "match_id": self.match_id,
             "agent_ids": self.agent_ids,
@@ -88,25 +87,25 @@ class TournamentScheduler(ABC):
     @abstractmethod
     def generate_matches(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: BoardType,
         **kwargs,
-    ) -> List[Match]:
+    ) -> list[Match]:
         """Generate all matches for the tournament."""
         pass
 
     @abstractmethod
-    def get_pending_matches(self) -> List[Match]:
+    def get_pending_matches(self) -> list[Match]:
         """Get matches that haven't been played yet."""
         pass
 
     @abstractmethod
-    def mark_match_started(self, match_id: str, worker_id: Optional[str] = None) -> None:
+    def mark_match_started(self, match_id: str, worker_id: str | None = None) -> None:
         """Mark a match as in progress."""
         pass
 
     @abstractmethod
-    def mark_match_completed(self, match_id: str, result: Dict) -> None:
+    def mark_match_completed(self, match_id: str, result: dict) -> None:
         """Mark a match as completed with results."""
         pass
 
@@ -122,7 +121,7 @@ class RoundRobinScheduler(TournamentScheduler):
         self,
         games_per_pairing: int = 2,
         shuffle_order: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         """Initialize round-robin scheduler.
 
@@ -135,16 +134,16 @@ class RoundRobinScheduler(TournamentScheduler):
         self.games_per_pairing = games_per_pairing
         self.shuffle_order = shuffle_order
         self.seed = seed
-        self._matches: Dict[str, Match] = {}
+        self._matches: dict[str, Match] = {}
         self._rng = random.Random(seed)
 
     def generate_matches(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: BoardType,
         num_players: int = 2,
         **kwargs,
-    ) -> List[Match]:
+    ) -> list[Match]:
         """Generate round-robin matches.
 
         Args:
@@ -196,22 +195,22 @@ class RoundRobinScheduler(TournamentScheduler):
 
         return matches
 
-    def get_pending_matches(self) -> List[Match]:
+    def get_pending_matches(self) -> list[Match]:
         """Get all pending matches."""
         return [m for m in self._matches.values() if m.status == MatchStatus.PENDING]
 
-    def get_matches_by_status(self, status: MatchStatus) -> List[Match]:
+    def get_matches_by_status(self, status: MatchStatus) -> list[Match]:
         """Get matches by status."""
         return [m for m in self._matches.values() if m.status == status]
 
-    def get_match(self, match_id: str) -> Optional[Match]:
+    def get_match(self, match_id: str) -> Match | None:
         """Get match by ID."""
         return self._matches.get(match_id)
 
     def mark_match_started(
         self,
         match_id: str,
-        worker_id: Optional[str] = None,
+        worker_id: str | None = None,
     ) -> None:
         """Mark a match as in progress."""
         match = self._matches.get(match_id)
@@ -220,7 +219,7 @@ class RoundRobinScheduler(TournamentScheduler):
             match.started_at = datetime.now()
             match.worker_id = worker_id
 
-    def mark_match_completed(self, match_id: str, result: Dict) -> None:
+    def mark_match_completed(self, match_id: str, result: dict) -> None:
         """Mark a match as completed with results."""
         match = self._matches.get(match_id)
         if match:
@@ -236,14 +235,14 @@ class RoundRobinScheduler(TournamentScheduler):
             match.completed_at = datetime.now()
             match.result = {"error": error}
 
-    def get_all_matches(self) -> List[Match]:
+    def get_all_matches(self) -> list[Match]:
         """Get all matches."""
         return list(self._matches.values())
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         """Get tournament progress statistics."""
         total = len(self._matches)
-        by_status = {status: 0 for status in MatchStatus}
+        by_status = dict.fromkeys(MatchStatus, 0)
         for match in self._matches.values():
             by_status[match.status] += 1
 
@@ -274,7 +273,7 @@ class SwissScheduler(TournamentScheduler):
     def __init__(
         self,
         rounds: int = 5,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         """Initialize Swiss scheduler.
 
@@ -284,19 +283,19 @@ class SwissScheduler(TournamentScheduler):
         """
         self.rounds = rounds
         self.seed = seed
-        self._matches: Dict[str, Match] = {}
-        self._scores: Dict[str, float] = {}
-        self._pairings_history: Dict[Tuple[str, str], int] = {}
+        self._matches: dict[str, Match] = {}
+        self._scores: dict[str, float] = {}
+        self._pairings_history: dict[tuple[str, str], int] = {}
         self._current_round = 0
         self._rng = random.Random(seed)
 
     def generate_matches(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: BoardType,
         num_players: int = 2,
         **kwargs,
-    ) -> List[Match]:
+    ) -> list[Match]:
         """Generate first round of Swiss matches.
 
         For subsequent rounds, call generate_next_round() after
@@ -313,9 +312,9 @@ class SwissScheduler(TournamentScheduler):
 
     def _generate_round(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: BoardType,
-    ) -> List[Match]:
+    ) -> list[Match]:
         """Generate matches for one Swiss round."""
         # Sort agents by score (descending), with random tiebreaker
         sorted_agents = sorted(
@@ -362,15 +361,15 @@ class SwissScheduler(TournamentScheduler):
 
     def generate_next_round(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: BoardType,
-    ) -> List[Match]:
+    ) -> list[Match]:
         """Generate next round based on current scores."""
         if self._current_round >= self.rounds:
             return []
         return self._generate_round(agent_ids, board_type)
 
-    def update_scores(self, match_id: str, result: Dict) -> None:
+    def update_scores(self, match_id: str, result: dict) -> None:
         """Update scores after a match."""
         match = self._matches.get(match_id)
         if not match or len(match.agent_ids) != 2:
@@ -387,13 +386,13 @@ class SwissScheduler(TournamentScheduler):
             self._scores[agent_a] = self._scores.get(agent_a, 0) + 0.5
             self._scores[agent_b] = self._scores.get(agent_b, 0) + 0.5
 
-    def get_pending_matches(self) -> List[Match]:
+    def get_pending_matches(self) -> list[Match]:
         return [m for m in self._matches.values() if m.status == MatchStatus.PENDING]
 
     def mark_match_started(
         self,
         match_id: str,
-        worker_id: Optional[str] = None,
+        worker_id: str | None = None,
     ) -> None:
         match = self._matches.get(match_id)
         if match:
@@ -401,7 +400,7 @@ class SwissScheduler(TournamentScheduler):
             match.started_at = datetime.now()
             match.worker_id = worker_id
 
-    def mark_match_completed(self, match_id: str, result: Dict) -> None:
+    def mark_match_completed(self, match_id: str, result: dict) -> None:
         match = self._matches.get(match_id)
         if match:
             match.status = MatchStatus.COMPLETED
@@ -409,7 +408,7 @@ class SwissScheduler(TournamentScheduler):
             match.result = result
             self.update_scores(match_id, result)
 
-    def get_standings(self) -> List[Tuple[str, float]]:
+    def get_standings(self) -> list[tuple[str, float]]:
         """Get current standings sorted by score."""
         return sorted(
             self._scores.items(),

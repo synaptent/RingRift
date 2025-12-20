@@ -65,7 +65,6 @@ warnings.warn(
 import fcntl
 import json
 import os
-import psutil
 import signal
 import socket
 import sqlite3
@@ -75,7 +74,9 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+import psutil
 
 # Use centralized path constants
 from app.utils.paths import DATA_DIR
@@ -120,18 +121,18 @@ class TaskInfo:
     pid: int
     started_at: str
     description: str = ""
-    parent_task: Optional[str] = None
+    parent_task: str | None = None
 
 
 class ClusterCoordinator:
     """Coordinates tasks across the cluster to prevent collisions and runaway processes."""
 
-    def __init__(self, limits: Optional[ProcessLimits] = None):
+    def __init__(self, limits: ProcessLimits | None = None):
         self.limits = limits or ProcessLimits()
         self.hostname = socket.gethostname()
         self._ensure_dirs()
         self._init_registry_db()
-        self._active_locks: Dict[str, int] = {}  # role -> lock fd
+        self._active_locks: dict[str, int] = {}  # role -> lock fd
 
     def _ensure_dirs(self):
         """Create coordination directories if needed."""
@@ -185,14 +186,14 @@ class ClusterCoordinator:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 fcntl.flock(fd, fcntl.LOCK_UN)
                 return False  # Lock is free
-            except IOError:
+            except OSError:
                 return True  # Lock is held
             finally:
                 os.close(fd)
         except FileNotFoundError:
             return False
 
-    def get_role_holder_pid(self, role: TaskRole) -> Optional[int]:
+    def get_role_holder_pid(self, role: TaskRole) -> int | None:
         """Get the PID of the process holding a role lock."""
         lock_path = self._lock_file_path(role)
         if lock_path.exists():
@@ -227,7 +228,7 @@ class ClusterCoordinator:
             else:
                 try:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except IOError:
+                except OSError:
                     os.close(fd)
                     existing_pid = self.get_role_holder_pid(role)
                     raise RuntimeError(
@@ -301,7 +302,7 @@ class ClusterCoordinator:
         conn.commit()
         conn.close()
 
-    def get_active_tasks(self, role: Optional[TaskRole] = None, host: Optional[str] = None) -> List[TaskInfo]:
+    def get_active_tasks(self, role: TaskRole | None = None, host: str | None = None) -> list[TaskInfo]:
         """Get all active tasks, optionally filtered by role or host."""
         conn = sqlite3.connect(str(REGISTRY_DB), timeout=30)
         cursor = conn.cursor()
@@ -328,7 +329,7 @@ class ClusterCoordinator:
             for r in rows
         ]
 
-    def count_processes(self, category: Optional[str] = None) -> int:
+    def count_processes(self, category: str | None = None) -> int:
         """Count Python processes on this host, optionally by category."""
         if category:
             conn = sqlite3.connect(str(REGISTRY_DB), timeout=30)
@@ -369,12 +370,9 @@ class ClusterCoordinator:
         # Also check overall system resources
         if psutil.virtual_memory().percent > self.limits.max_memory_percent:
             return False
-        if psutil.cpu_percent(interval=0.1) > self.limits.max_cpu_percent:
-            return False
+        return not psutil.cpu_percent(interval=0.1) > self.limits.max_cpu_percent
 
-        return True
-
-    def register_process(self, pid: int, category: str, parent_pid: Optional[int] = None):
+    def register_process(self, pid: int, category: str, parent_pid: int | None = None):
         """Register a spawned process."""
         conn = sqlite3.connect(str(REGISTRY_DB), timeout=30)
         cursor = conn.cursor()
@@ -396,7 +394,7 @@ class ClusterCoordinator:
         conn.commit()
         conn.close()
 
-    def cleanup_stale_locks(self) -> List[str]:
+    def cleanup_stale_locks(self) -> list[str]:
         """Clean up lock files held by dead processes.
 
         Returns list of cleaned up lock files.
@@ -439,9 +437,9 @@ class ClusterCoordinator:
                 )
 
         # Clean up tasks with no heartbeat in max_age_hours
-        cursor.execute("""
-            DELETE FROM tasks WHERE last_heartbeat < datetime('now', '-{} hours')
-        """.format(int(max_age_hours)))
+        cursor.execute(f"""
+            DELETE FROM tasks WHERE last_heartbeat < datetime('now', '-{int(max_age_hours)} hours')
+        """)
 
         conn.commit()
         conn.close()
@@ -471,7 +469,7 @@ class ClusterCoordinator:
 
         return killed
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get a summary of coordination status."""
         tasks = self.get_active_tasks()
 

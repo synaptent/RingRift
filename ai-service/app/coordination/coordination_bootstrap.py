@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +57,8 @@ class CoordinatorStatus:
     name: str
     initialized: bool = False
     subscribed: bool = False
-    error: Optional[str] = None
-    initialized_at: Optional[datetime] = None
+    error: str | None = None
+    initialized_at: datetime | None = None
 
 
 @dataclass
@@ -66,10 +66,10 @@ class BootstrapState:
     """Global bootstrap state."""
 
     initialized: bool = False
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    coordinators: Dict[str, CoordinatorStatus] = field(default_factory=dict)
-    errors: List[str] = field(default_factory=list)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    coordinators: dict[str, CoordinatorStatus] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
     shutdown_requested: bool = False
 
 
@@ -482,7 +482,7 @@ def _init_global_task_coordinator() -> CoordinatorStatus:
     try:
         from app.coordination.task_coordinator import wire_task_coordinator_events
 
-        coordinator = wire_task_coordinator_events()
+        _ = wire_task_coordinator_events()
         status.initialized = True
         status.subscribed = True  # wire function always subscribes
         status.initialized_at = datetime.now()
@@ -541,7 +541,7 @@ def bootstrap_coordination(
     enable_global_task: bool = True,
     pipeline_auto_trigger: bool = False,
     register_with_registry: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Initialize all coordination components.
 
     Initializes coordinators in the correct dependency order:
@@ -673,7 +673,7 @@ def bootstrap_coordination(
     return get_bootstrap_status()
 
 
-def shutdown_coordination() -> Dict[str, Any]:
+def shutdown_coordination() -> dict[str, Any]:
     """Gracefully shutdown all coordination components.
 
     Returns:
@@ -710,7 +710,7 @@ def shutdown_coordination() -> Dict[str, Any]:
         "task_coordinator",
     ]
 
-    shutdown_results: Dict[str, bool] = {}
+    shutdown_results: dict[str, bool] = {}
 
     for name in shutdown_order:
         if name not in _state.coordinators:
@@ -800,7 +800,7 @@ def shutdown_coordination() -> Dict[str, Any]:
     }
 
 
-def get_bootstrap_status() -> Dict[str, Any]:
+def get_bootstrap_status() -> dict[str, Any]:
     """Get current bootstrap status.
 
     Returns:
@@ -863,16 +863,17 @@ def reset_bootstrap_state() -> None:
 
     WARNING: Only use in tests or development.
     """
+    global _state
     _state = BootstrapState()
     logger.warning("[Bootstrap] Bootstrap state reset")
 
 
 __all__ = [
+    "BootstrapState",
+    "CoordinatorStatus",
     "bootstrap_coordination",
-    "shutdown_coordination",
     "get_bootstrap_status",
     "is_coordination_ready",
     "reset_bootstrap_state",
-    "CoordinatorStatus",
-    "BootstrapState",
+    "shutdown_coordination",
 ]

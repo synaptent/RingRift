@@ -19,10 +19,11 @@ Uses a singleton model cache similar to neural_net.py to share model
 instances and prevent memory leaks in long-running sessions.
 """
 
+import contextlib
 import gc
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import torch
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Model Cache
 # =============================================================================
 
-_NNUE_CACHE: Dict[Tuple[str, str], nn.Module] = {}
+_NNUE_CACHE: dict[tuple[str, str], nn.Module] = {}
 
 
 def clear_nnue_cache() -> None:
@@ -45,20 +46,16 @@ def clear_nnue_cache() -> None:
     cache_size = len(_NNUE_CACHE)
 
     for model in _NNUE_CACHE.values():
-        try:
+        with contextlib.suppress(Exception):
             model.cpu()
-        except Exception:
-            pass
 
     _NNUE_CACHE.clear()
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-        try:
+        with contextlib.suppress(Exception):
             torch.mps.empty_cache()
-        except Exception:
-            pass
 
     gc.collect()
 
@@ -76,14 +73,14 @@ def clear_nnue_cache() -> None:
 # - Territory ownership per player (4 planes)
 FEATURE_PLANES = 12
 
-BOARD_SIZES: Dict[BoardType, int] = {
+BOARD_SIZES: dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
     BoardType.SQUARE19: 19,
     BoardType.HEXAGONAL: 25,  # Embedded in 25x25 grid
     BoardType.HEX8: 9,        # Radius 4, embedded in 9x9 grid
 }
 
-FEATURE_DIMS: Dict[BoardType, int] = {
+FEATURE_DIMS: dict[BoardType, int] = {
     BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES,      # 768 features
     BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES,   # 4332 features
     BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES,  # 7500 features
@@ -307,7 +304,7 @@ class RingRiftNNUE(nn.Module):
             chunk_size = features.shape[-1] // self.num_heads
             chunks = [features[..., i*chunk_size:(i+1)*chunk_size] for i in range(self.num_heads)]
             # Project each chunk through its head
-            head_outputs = [proj(chunk) for proj, chunk in zip(self.head_projections, chunks)]
+            head_outputs = [proj(chunk) for proj, chunk in zip(self.head_projections, chunks, strict=False)]
             # Concatenate head outputs
             acc = torch.cat(head_outputs, dim=-1)
         else:
@@ -509,7 +506,7 @@ def extract_features_from_gamestate(
             continue
 
     # Extract territory features (planes 8-11) - ROTATED perspective
-    for territory_key, territory in (board.territories or {}).items():
+    for _territory_key, territory in (board.territories or {}).items():
         try:
             pnum = getattr(territory, 'player', 0)
             if 1 <= pnum <= 4:
@@ -623,7 +620,7 @@ def extract_features_from_mutable(
 def get_nnue_model_path(
     board_type: BoardType,
     num_players: int = 2,
-    model_id: Optional[str] = None,
+    model_id: str | None = None,
 ) -> Path:
     """Get the default NNUE model checkpoint path.
 
@@ -655,9 +652,9 @@ def get_nnue_model_path(
 
 
 def _migrate_legacy_state_dict(
-    state_dict: Dict[str, torch.Tensor],
+    state_dict: dict[str, torch.Tensor],
     architecture_version: str,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Migrate a legacy state dict to the current architecture.
 
     Handles backwards compatibility for older model checkpoints.
@@ -703,10 +700,10 @@ def _migrate_legacy_state_dict(
 def load_nnue_model(
     board_type: BoardType,
     num_players: int = 2,
-    model_id: Optional[str] = None,
-    device: Optional[str] = None,
+    model_id: str | None = None,
+    device: str | None = None,
     allow_fresh: bool = True,
-) -> Optional[RingRiftNNUE]:
+) -> RingRiftNNUE | None:
     """Load an NNUE model, using cache when possible.
 
     Args:
@@ -739,7 +736,7 @@ def load_nnue_model(
     model_path = get_nnue_model_path(board_type, num_players, model_id)
 
     model = RingRiftNNUE(board_type=board_type)
-    loaded_checkpoint_path: Optional[str] = None
+    loaded_checkpoint_path: str | None = None
     used_fresh_weights: bool = False
 
     if model_path.exists():
@@ -774,8 +771,8 @@ def load_nnue_model(
 
     # Attach lightweight observability metadata for API consumers.
     try:
-        setattr(model, "loaded_checkpoint_path", loaded_checkpoint_path)
-        setattr(model, "used_fresh_weights", used_fresh_weights)
+        model.loaded_checkpoint_path = loaded_checkpoint_path
+        model.used_fresh_weights = used_fresh_weights
     except Exception:
         pass
 
@@ -835,7 +832,7 @@ class NNUEEvaluator:
         board_type: BoardType,
         player_number: int,
         num_players: int = 2,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         allow_fresh: bool = True,
     ):
         import os
@@ -1023,7 +1020,7 @@ class BatchNNUEEvaluator:
         self,
         board_type: BoardType,
         num_players: int = 2,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         device: Optional["torch.device"] = None,
     ):
         self.board_type = board_type
@@ -1031,7 +1028,7 @@ class BatchNNUEEvaluator:
         self.device = device or torch.device("cpu")
 
         # Load NNUE model
-        self.model: Optional[RingRiftNNUE] = None
+        self.model: RingRiftNNUE | None = None
         self.available = False
 
         if model_path is None:

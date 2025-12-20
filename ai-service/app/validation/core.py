@@ -5,13 +5,14 @@ Provides the base classes and functions for the validation system.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, List, Optional, TypeVar, Union
+from typing import Any, TypeVar, Union
 
 __all__ = [
-    "Validator",
-    "ValidationResult",
     "ValidationError",
+    "ValidationResult",
+    "Validator",
     "validate",
     "validate_all",
 ]
@@ -22,7 +23,7 @@ T = TypeVar("T")
 class ValidationError(Exception):
     """Exception raised for validation failures."""
 
-    def __init__(self, message: str, field: Optional[str] = None):
+    def __init__(self, message: str, field: str | None = None):
         self.message = message
         self.field = field
         super().__init__(message)
@@ -32,8 +33,8 @@ class ValidationError(Exception):
 class ValidationResult:
     """Result of a validation operation."""
     valid: bool
-    errors: List[str] = field(default_factory=list)
-    field: Optional[str] = None
+    errors: list[str] = field(default_factory=list)
+    field: str | None = None
     value: Any = None
 
     def __bool__(self) -> bool:
@@ -46,16 +47,16 @@ class ValidationResult:
         return "; ".join(self.errors)
 
     @classmethod
-    def ok(cls, value: Any = None) -> "ValidationResult":
+    def ok(cls, value: Any = None) -> ValidationResult:
         """Create a successful result."""
         return cls(valid=True, value=value)
 
     @classmethod
-    def fail(cls, error: str, field: Optional[str] = None) -> "ValidationResult":
+    def fail(cls, error: str, field: str | None = None) -> ValidationResult:
         """Create a failed result."""
         return cls(valid=False, errors=[error], field=field)
 
-    def merge(self, other: "ValidationResult") -> "ValidationResult":
+    def merge(self, other: ValidationResult) -> ValidationResult:
         """Merge another result into this one."""
         return ValidationResult(
             valid=self.valid and other.valid,
@@ -119,7 +120,7 @@ def validate(value: Any, *validators: Validator) -> ValidationResult:
 
 
 def validate_all(
-    items: List[Any],
+    items: list[Any],
     *validators: Validator,
     stop_on_first: bool = False,
 ) -> ValidationResult:

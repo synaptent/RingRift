@@ -1,7 +1,7 @@
 """Memory configuration for training and inference limits."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 import psutil
 

@@ -10,27 +10,28 @@ Provides validators for common validation scenarios:
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, List, Pattern, Sequence, Type, Union
+from re import Pattern
+from typing import Any, Union
 
 from app.validation.core import ValidationResult, Validator
 
 __all__ = [
-    # Range validators
-    "in_range",
-    "is_positive",
-    "is_non_negative",
-    # String validators
-    "is_not_empty",
-    "matches_pattern",
-    "max_length",
-    "min_length",
+    "each_item",
     # Collection validators
     "has_keys",
     "has_length",
-    "each_item",
+    # Range validators
+    "in_range",
+    "is_instance",
+    "is_non_negative",
+    # String validators
+    "is_not_empty",
+    "is_positive",
     # Type validators
     "is_type",
-    "is_instance",
+    "matches_pattern",
+    "max_length",
+    "min_length",
 ]
 
 
@@ -147,7 +148,7 @@ def max_length(length: int) -> Validator:
                 f"Length {len(value)} exceeds maximum {length}"
             )
         except TypeError:
-            return ValidationResult.fail(f"Value has no length")
+            return ValidationResult.fail("Value has no length")
 
     return validator
 
@@ -169,7 +170,7 @@ def min_length(length: int) -> Validator:
                 f"Length {len(value)} is less than minimum {length}"
             )
         except TypeError:
-            return ValidationResult.fail(f"Value has no length")
+            return ValidationResult.fail("Value has no length")
 
     return validator
 
@@ -257,7 +258,7 @@ def each_item(*validators: Validator) -> Validator:
 # Type Validators
 # =============================================================================
 
-def is_type(*types: Type) -> Validator:
+def is_type(*types: type) -> Validator:
     """Create a validator that checks if value is one of the specified types.
 
     Args:
@@ -277,7 +278,7 @@ def is_type(*types: Type) -> Validator:
     return validator
 
 
-def is_instance(*types: Type) -> Validator:
+def is_instance(*types: type) -> Validator:
     """Create a validator that checks if value is instance of specified types.
 
     Args:

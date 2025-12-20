@@ -549,7 +549,7 @@ MIN_INTENSITY_MULTIPLIER = 0.5
 # Consolidated from app/monitoring/thresholds.py
 
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class AlertLevel(str, Enum):
@@ -562,7 +562,7 @@ class AlertLevel(str, Enum):
 
 # Master threshold configuration for monitoring systems
 # All monitoring scripts should reference these values instead of hardcoding
-MONITORING_THRESHOLDS: Dict[str, Dict[str, Any]] = {
+MONITORING_THRESHOLDS: dict[str, dict[str, Any]] = {
     # Disk space monitoring
     "disk": {
         "warning": DISK_WARNING_PERCENT,
@@ -649,7 +649,7 @@ THRESHOLDS = MONITORING_THRESHOLDS
 def get_threshold(
     category: str,
     key: str,
-    default: Optional[Any] = None,
+    default: Any | None = None,
 ) -> Any:
     """Get a specific monitoring threshold value.
 
@@ -706,7 +706,7 @@ def should_alert(
     return compare_fn(value, threshold)
 
 
-def get_all_thresholds() -> Dict[str, Dict[str, Any]]:
+def get_all_thresholds() -> dict[str, dict[str, Any]]:
     """Get all monitoring thresholds for display/documentation."""
     return MONITORING_THRESHOLDS.copy()
 

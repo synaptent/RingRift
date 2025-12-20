@@ -28,8 +28,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -207,8 +206,8 @@ class GraphEncoder(nn.Module):
         node_features: torch.Tensor,
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor,
-        batch: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             node_features: (N, node_feature_dim) node features
@@ -318,8 +317,8 @@ class CAGEEnergyHead(nn.Module):
         self,
         graph_embed: torch.Tensor,
         action_embed: torch.Tensor,
-        dual_vars: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        dual_vars: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             graph_embed: (B, gnn_hidden_dim) graph embedding
@@ -362,7 +361,7 @@ class CAGENetwork(nn.Module):
     - CAGEEnergyHead: Energy with constraint penalties
     """
 
-    def __init__(self, config: Optional[CAGEConfig] = None):
+    def __init__(self, config: CAGEConfig | None = None):
         super().__init__()
         self.config = config or CAGEConfig()
 
@@ -385,8 +384,8 @@ class CAGENetwork(nn.Module):
         node_features: torch.Tensor,
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor,
-        batch: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Encode board as graph."""
         return self.graph_encoder(node_features, edge_index, edge_attr, batch)
 
@@ -407,7 +406,7 @@ class CAGENetwork(nn.Module):
         self,
         graph_embed: torch.Tensor,
         action_embed: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute energy and constraint violations."""
         return self.energy_head(graph_embed, action_embed, self.dual_vars)
 
@@ -416,7 +415,7 @@ class CAGENetwork(nn.Module):
         graph_embed: torch.Tensor,
         legal_action_embeds: torch.Tensor,
         num_steps: int = 50,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Optimize action embedding using primal-dual method.
 
         Instead of pure gradient descent (which escapes manifold),
@@ -446,7 +445,7 @@ class CAGENetwork(nn.Module):
         best_energy = float('inf')
         best_idx = 0
 
-        for step in range(num_steps):
+        for _step in range(num_steps):
             optimizer.zero_grad()
 
             # Current action as convex combination
@@ -488,7 +487,7 @@ def board_to_graph(
     game_state: GameState,
     player_number: int,
     board_size: int = 8,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Convert board state to graph representation.
 
     Args:
@@ -586,9 +585,9 @@ def board_to_graph(
 # Export for use
 __all__ = [
     "CAGEConfig",
-    "CAGENetwork",
-    "GraphEncoder",
-    "ConstraintNetwork",
     "CAGEEnergyHead",
+    "CAGENetwork",
+    "ConstraintNetwork",
+    "GraphEncoder",
     "board_to_graph",
 ]

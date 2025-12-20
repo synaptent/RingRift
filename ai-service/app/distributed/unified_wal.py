@@ -48,13 +48,14 @@ import logging
 import sqlite3
 import threading
 import time
-
-from app.utils.checksum_utils import compute_string_checksum
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, Generator
+from typing import Any
+
+from app.utils.checksum_utils import compute_string_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -153,10 +154,8 @@ class ConnectionPool:
         except sqlite3.Error:
             # On error, invalidate the connection
             self._local.conn = None
-            try:
+            with suppress(Exception):
                 conn.close()
-            except Exception:
-                pass
             raise
 
     def close_all(self) -> None:
@@ -167,13 +166,11 @@ class ConnectionPool:
         """
         conn = getattr(self._local, 'conn', None)
         if conn is not None:
-            try:
+            with suppress(Exception):
                 conn.close()
-            except Exception:
-                pass
             self._local.conn = None
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         """Get connection pool statistics."""
         with self._lock:
             return {
@@ -215,15 +212,15 @@ class WALEntry:
     source_host: str
     source_db: str
     data_hash: str
-    data_json: Optional[str] = None  # Full game data for ingestion entries
+    data_json: str | None = None  # Full game data for ingestion entries
     status: WALEntryStatus = WALEntryStatus.PENDING
     created_at: float = 0.0
-    updated_at: Optional[float] = None
+    updated_at: float | None = None
     retry_count: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     @property
-    def data(self) -> Optional[Dict[str, Any]]:
+    def data(self) -> dict[str, Any] | None:
         """Parse data_json if present."""
         if self.data_json:
             try:
@@ -232,7 +229,7 @@ class WALEntry:
                 return None
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "entry_id": self.entry_id,
@@ -256,7 +253,7 @@ class WALCheckpoint:
     last_entry_id: int
     timestamp: float
     entries_compacted: int
-    entry_type: Optional[WALEntryType] = None
+    entry_type: WALEntryType | None = None
 
 
 @dataclass
@@ -316,7 +313,7 @@ class UnifiedWAL:
         self._entries_since_checkpoint = 0
 
         # Connection pool for thread-local connection reuse
-        self._conn_pool: Optional[ConnectionPool] = None
+        self._conn_pool: ConnectionPool | None = None
         if use_connection_pool:
             self._conn_pool = ConnectionPool(db_path)
 
@@ -428,40 +425,39 @@ class UnifiedWAL:
         Returns:
             Entry ID for tracking
         """
-        with self._lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.cursor()
 
-                # Check for duplicate (idempotency)
-                cursor.execute("""
+            # Check for duplicate (idempotency)
+            cursor.execute("""
                     SELECT entry_id FROM wal_entries
                     WHERE entry_type = ? AND game_id = ? AND data_hash = ?
                 """, (WALEntryType.SYNC.value, game_id, data_hash))
 
-                existing = cursor.fetchone()
-                if existing:
-                    return existing[0]
+            existing = cursor.fetchone()
+            if existing:
+                return existing[0]
 
-                # Append entry
-                now = time.time()
-                cursor.execute("""
+            # Append entry
+            now = time.time()
+            cursor.execute("""
                     INSERT INTO wal_entries
                     (entry_type, game_id, source_host, source_db, data_hash, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (WALEntryType.SYNC.value, game_id, source_host, source_db, data_hash, now))
 
-                entry_id = cursor.lastrowid
-                conn.commit()
-                assert entry_id is not None, "INSERT should always set lastrowid"
+            entry_id = cursor.lastrowid
+            conn.commit()
+            assert entry_id is not None, "INSERT should always set lastrowid"
 
-                self._entries_since_checkpoint += 1
-                self._maybe_checkpoint()
+            self._entries_since_checkpoint += 1
+            self._maybe_checkpoint()
 
-                return entry_id
+            return entry_id
 
     def append_sync_batch(
         self,
-        entries: List[Tuple[str, str, str, str]],  # (game_id, host, db, hash)
+        entries: list[tuple[str, str, str, str]],  # (game_id, host, db, hash)
     ) -> int:
         """Append multiple sync entries efficiently.
 
@@ -474,29 +470,28 @@ class UnifiedWAL:
         if not entries:
             return 0
 
-        with self._lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                now = time.time()
-                added = 0
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.cursor()
+            now = time.time()
+            added = 0
 
-                for game_id, source_host, source_db, data_hash in entries:
-                    try:
-                        cursor.execute("""
+            for game_id, source_host, source_db, data_hash in entries:
+                try:
+                    cursor.execute("""
                             INSERT OR IGNORE INTO wal_entries
                             (entry_type, game_id, source_host, source_db, data_hash, created_at)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (WALEntryType.SYNC.value, game_id, source_host, source_db, data_hash, now))
-                        if cursor.rowcount > 0:
-                            added += 1
-                            self._entries_since_checkpoint += 1
-                    except sqlite3.IntegrityError:
-                        pass  # Duplicate, skip
+                    if cursor.rowcount > 0:
+                        added += 1
+                        self._entries_since_checkpoint += 1
+                except sqlite3.IntegrityError:
+                    pass  # Duplicate, skip
 
-                conn.commit()
+            conn.commit()
 
-                self._maybe_checkpoint()
-                return added
+            self._maybe_checkpoint()
+            return added
 
     # =========================================================================
     # Ingestion Entry Operations (from ingestion_wal.IngestionWAL)
@@ -505,7 +500,7 @@ class UnifiedWAL:
     def append_ingestion_entry(
         self,
         game_id: str,
-        game_data: Dict[str, Any],
+        game_data: dict[str, Any],
         source_host: str = "",
     ) -> int:
         """Append an ingestion entry to the WAL.
@@ -562,9 +557,9 @@ class UnifiedWAL:
 
     def append_ingestion_batch(
         self,
-        games: List[Tuple[str, Dict[str, Any]]],
+        games: list[tuple[str, dict[str, Any]]],
         source_host: str = "",
-    ) -> List[int]:
+    ) -> list[int]:
         """Append multiple ingestion entries efficiently.
 
         Args:
@@ -617,7 +612,7 @@ class UnifiedWAL:
     # Status Updates
     # =========================================================================
 
-    def mark_synced(self, entry_ids: List[int]) -> int:
+    def mark_synced(self, entry_ids: list[int]) -> int:
         """Mark entries as synced (intermediate state for sync entries).
 
         Args:
@@ -638,13 +633,13 @@ class UnifiedWAL:
                 UPDATE wal_entries
                 SET status = ?, updated_at = ?
                 WHERE entry_id IN ({placeholders}) AND status = ?
-            """, [WALEntryStatus.SYNCED.value, now] + list(entry_ids) + [WALEntryStatus.PENDING.value])
+            """, [WALEntryStatus.SYNCED.value, now, *list(entry_ids), WALEntryStatus.PENDING.value])
 
             updated = cursor.rowcount
             conn.commit()
             return updated
 
-    def mark_processed(self, entry_ids: List[int]) -> int:
+    def mark_processed(self, entry_ids: list[int]) -> int:
         """Mark entries as fully processed.
 
         Args:
@@ -665,8 +660,7 @@ class UnifiedWAL:
                 UPDATE wal_entries
                 SET status = ?, updated_at = ?
                 WHERE entry_id IN ({placeholders}) AND status IN (?, ?)
-            """, [WALEntryStatus.PROCESSED.value, now] + list(entry_ids) +
-                 [WALEntryStatus.PENDING.value, WALEntryStatus.SYNCED.value])
+            """, [WALEntryStatus.PROCESSED.value, now, *list(entry_ids), WALEntryStatus.PENDING.value, WALEntryStatus.SYNCED.value])
 
             updated = cursor.rowcount
             conn.commit()
@@ -674,7 +668,7 @@ class UnifiedWAL:
 
     def mark_failed(
         self,
-        entry_ids: List[int],
+        entry_ids: list[int],
         error_message: str = "",
     ) -> int:
         """Mark entries as failed (dead letter).
@@ -699,7 +693,7 @@ class UnifiedWAL:
                 SET status = ?, updated_at = ?, error_message = ?,
                     retry_count = retry_count + 1
                 WHERE entry_id IN ({placeholders})
-            """, [WALEntryStatus.FAILED.value, now, error_message] + list(entry_ids))
+            """, [WALEntryStatus.FAILED.value, now, error_message, *list(entry_ids)])
 
             updated = cursor.rowcount
             conn.commit()
@@ -737,9 +731,9 @@ class UnifiedWAL:
 
     def get_pending_entries(
         self,
-        entry_type: Optional[WALEntryType] = None,
+        entry_type: WALEntryType | None = None,
         limit: int = 1000,
-    ) -> List[WALEntry]:
+    ) -> list[WALEntry]:
         """Get pending entries for processing.
 
         Args:
@@ -776,15 +770,15 @@ class UnifiedWAL:
             entries = self._rows_to_entries(cursor.fetchall())
             return entries
 
-    def get_pending_sync_entries(self, limit: int = 1000) -> List[WALEntry]:
+    def get_pending_sync_entries(self, limit: int = 1000) -> list[WALEntry]:
         """Get pending sync entries."""
         return self.get_pending_entries(WALEntryType.SYNC, limit)
 
-    def get_pending_ingestion_entries(self, limit: int = 1000) -> List[WALEntry]:
+    def get_pending_ingestion_entries(self, limit: int = 1000) -> list[WALEntry]:
         """Get pending ingestion entries."""
         return self.get_pending_entries(WALEntryType.INGESTION, limit)
 
-    def get_synced_unconfirmed(self, limit: int = 1000) -> List[WALEntry]:
+    def get_synced_unconfirmed(self, limit: int = 1000) -> list[WALEntry]:
         """Get entries that are synced but not yet processed."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -802,7 +796,7 @@ class UnifiedWAL:
             entries = self._rows_to_entries(cursor.fetchall())
             return entries
 
-    def get_failed_entries(self, limit: int = 100) -> List[WALEntry]:
+    def get_failed_entries(self, limit: int = 100) -> list[WALEntry]:
         """Get failed entries (dead letter queue)."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -820,7 +814,7 @@ class UnifiedWAL:
             entries = self._rows_to_entries(cursor.fetchall())
             return entries
 
-    def _rows_to_entries(self, rows: List[tuple]) -> List[WALEntry]:
+    def _rows_to_entries(self, rows: list[tuple]) -> list[WALEntry]:
         """Convert database rows to WALEntry objects."""
         return [
             WALEntry(
@@ -982,7 +976,7 @@ class UnifiedWAL:
 
             return removed
 
-    def get_connection_pool_stats(self) -> Optional[Dict[str, int]]:
+    def get_connection_pool_stats(self) -> dict[str, int] | None:
         """Get connection pool statistics if pooling is enabled."""
         if self._conn_pool:
             return self._conn_pool.get_stats()
@@ -1019,12 +1013,12 @@ class WriteAheadLog(UnifiedWAL):
 
     def append_batch(
         self,
-        entries: List[Tuple[str, str, str, str]],
+        entries: list[tuple[str, str, str, str]],
     ) -> int:
         """Append batch (compatibility method)."""
         return self.append_sync_batch(entries)
 
-    def confirm_synced(self, game_ids: List[str]) -> int:
+    def confirm_synced(self, game_ids: list[str]) -> int:
         """Confirm synced (compatibility method)."""
         # Find entry IDs by game_id
         conn = sqlite3.connect(self.db_path)
@@ -1039,13 +1033,13 @@ class WriteAheadLog(UnifiedWAL):
         return self.mark_processed(entry_ids)
 
     def get_pending_entries(  # type: ignore[override]
-        self, entry_type: Optional["WALEntryType"] = None, limit: int = 1000
-    ) -> List[WALEntry]:
+        self, entry_type: WALEntryType | None = None, limit: int = 1000
+    ) -> list[WALEntry]:
         """Get pending entries (compatibility method)."""
         # Ignores entry_type for backward compatibility
         return super().get_pending_sync_entries(limit)
 
-    def get_unconfirmed_entries(self, limit: int = 1000) -> List[WALEntry]:
+    def get_unconfirmed_entries(self, limit: int = 1000) -> list[WALEntry]:
         """Get unconfirmed entries (compatibility method)."""
         return super().get_synced_unconfirmed(limit)
 
@@ -1082,9 +1076,9 @@ class IngestionWAL(UnifiedWAL):
 
     def append(
         self,
-        game_data: Dict[str, Any],
+        game_data: dict[str, Any],
         source_host: str = "",
-        game_id: Optional[str] = None,
+        game_id: str | None = None,
     ) -> int:
         """Append entry (compatibility method)."""
         if game_id is None:
@@ -1095,9 +1089,9 @@ class IngestionWAL(UnifiedWAL):
 
     def append_batch(
         self,
-        games: List[Tuple[str, Dict[str, Any]]],
+        games: list[tuple[str, dict[str, Any]]],
         source_host: str = "",
-    ) -> List[int]:
+    ) -> list[int]:
         """Append batch (compatibility method)."""
         return self.append_ingestion_batch(games, source_host)
 
@@ -1105,11 +1099,11 @@ class IngestionWAL(UnifiedWAL):
         """Mark single entry processed (compatibility method)."""
         return super().mark_processed([entry_id]) > 0
 
-    def mark_processed(self, entry_ids: List[int]) -> int:  # type: ignore[override]
+    def mark_processed(self, entry_ids: list[int]) -> int:  # type: ignore[override]
         """Mark processed (compatibility method - batch)."""
         return super().mark_processed(entry_ids)
 
-    def mark_batch_processed(self, entry_ids: List[int]) -> int:
+    def mark_batch_processed(self, entry_ids: list[int]) -> int:
         """Mark batch processed (compatibility method)."""
         return super().mark_processed(entry_ids)
 
@@ -1117,7 +1111,7 @@ class IngestionWAL(UnifiedWAL):
         self,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[WALEntry]:
+    ) -> list[WALEntry]:
         """Get unprocessed entries (compatibility method)."""
         # Note: offset not supported in unified version
         return super().get_pending_ingestion_entries(limit)
@@ -1128,11 +1122,11 @@ class IngestionWAL(UnifiedWAL):
 # =============================================================================
 
 
-_wal_instance: Optional[UnifiedWAL] = None
+_wal_instance: UnifiedWAL | None = None
 _wal_lock = threading.RLock()
 
 
-def get_unified_wal(db_path: Optional[Path] = None) -> UnifiedWAL:
+def get_unified_wal(db_path: Path | None = None) -> UnifiedWAL:
     """Get singleton unified WAL instance.
 
     Args:

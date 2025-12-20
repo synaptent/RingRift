@@ -41,18 +41,17 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.db.game_replay import GameReplayDB, GameWriter
 from app.models import BoardType, GameState, Move
 from app.rules.fsm import validate_move_for_phase
 from app.utils.canonical_naming import (
-    normalize_board_type,
-    make_config_key,
-    normalize_database_filename,
     get_board_type_enum,
+    make_config_key,
+    normalize_board_type,
+    normalize_database_filename,
 )
-
 
 # -----------------------------------------------------------------------------
 # Environment variable configuration (from recording.py)
@@ -62,7 +61,7 @@ from app.utils.canonical_naming import (
 DEFAULT_SELFPLAY_DB_PATH = "data/games/selfplay.db"
 
 
-def _augment_metadata_with_env(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _augment_metadata_with_env(metadata: dict[str, Any] | None) -> dict[str, Any]:
     """Return a copy of metadata enriched with environment-provided tags.
 
     This centralises common recording metadata such as engine/service
@@ -70,7 +69,7 @@ def _augment_metadata_with_env(metadata: Optional[Dict[str, Any]]) -> Dict[str, 
     optimisation scripts) benefit without having to thread these fields
     manually at every call site.
     """
-    base: Dict[str, Any] = dict(metadata or {})
+    base: dict[str, Any] = dict(metadata or {})
 
     env_to_key = [
         ("RINGRIFT_RULES_ENGINE_VERSION", "rules_engine_version"),
@@ -108,7 +107,7 @@ def get_default_db_path() -> str:
 def validate_move_fsm(
     state: GameState,
     move: Move,
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Validate a move against the FSM and return validation result.
 
     This is a convenience function for recording FSM validation status
@@ -148,15 +147,15 @@ class GameRecorder:
         self,
         db: GameReplayDB,
         initial_state: GameState,
-        game_id: Optional[str] = None,
+        game_id: str | None = None,
     ):
         self.db = db
         self.initial_state = initial_state
         self.game_id = game_id or str(uuid.uuid4())
-        self._writer: Optional[GameWriter] = None
+        self._writer: GameWriter | None = None
         self._finalized = False
 
-    def __enter__(self) -> "GameRecorder":
+    def __enter__(self) -> GameRecorder:
         # For recording we want the "initial" state to represent the start
         # of the recorded sequence, not a mid-game snapshot with an existing
         # move_history. To make downstream replay/debugging consistent, we
@@ -188,14 +187,14 @@ class GameRecorder:
     def add_move(
         self,
         move: Move,
-        state_after: Optional["GameState"] = None,
-        state_before: Optional["GameState"] = None,
-        available_moves: Optional[List[Move]] = None,
-        available_moves_count: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_depth: Optional[int] = None,
-        fsm_valid: Optional[bool] = None,
-        fsm_error_code: Optional[str] = None,
+        state_after: GameState | None = None,
+        state_before: GameState | None = None,
+        available_moves: list[Move] | None = None,
+        available_moves_count: int | None = None,
+        engine_eval: float | None = None,
+        engine_depth: int | None = None,
+        fsm_valid: bool | None = None,
+        fsm_error_code: str | None = None,
     ) -> None:
         """Add a move to the game record.
 
@@ -229,7 +228,7 @@ class GameRecorder:
     def finalize(
         self,
         final_state: GameState,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Finalize the game recording with the final state and metadata."""
         if self._writer is None:
@@ -248,11 +247,11 @@ def record_completed_game(
     db: GameReplayDB,
     initial_state: GameState,
     final_state: GameState,
-    moves: List[Move],
-    metadata: Optional[Dict[str, Any]] = None,
-    game_id: Optional[str] = None,
+    moves: list[Move],
+    metadata: dict[str, Any] | None = None,
+    game_id: str | None = None,
     store_history_entries: bool = True,
-    snapshot_interval: Optional[int] = None,
+    snapshot_interval: int | None = None,
 ) -> str:
     """Record a completed game in one shot.
 
@@ -305,11 +304,11 @@ def record_completed_game(
 
 
 def get_or_create_db(
-    db_path: Optional[str] = None,
-    default_path: Optional[str] = None,
+    db_path: str | None = None,
+    default_path: str | None = None,
     respect_env_disable: bool = True,
     enforce_canonical_history: bool = True,
-) -> Optional[GameReplayDB]:
+) -> GameReplayDB | None:
     """Get or create a GameReplayDB instance.
 
     This function respects the RINGRIFT_RECORD_SELFPLAY_GAMES and
@@ -372,12 +371,12 @@ def record_completed_game_with_parity_check(
     db: GameReplayDB,
     initial_state: GameState,
     final_state: GameState,
-    moves: List[Move],
-    metadata: Optional[Dict[str, Any]] = None,
-    game_id: Optional[str] = None,
-    parity_mode: Optional[str] = None,
+    moves: list[Move],
+    metadata: dict[str, Any] | None = None,
+    game_id: str | None = None,
+    parity_mode: str | None = None,
     store_history_entries: bool = True,
-    snapshot_interval: Optional[int] = None,
+    snapshot_interval: int | None = None,
 ) -> str:
     """Record a completed game and optionally validate parity with TS engine.
 
@@ -424,10 +423,10 @@ def record_completed_game_with_parity_check(
 
     # Then validate parity if enabled
     from app.db.parity_validator import (
-        validate_game_parity,
-        get_parity_mode,
         ParityMode,
         ParityValidationError,
+        get_parity_mode,
+        validate_game_parity,
     )
 
     effective_mode = parity_mode or get_parity_mode()
@@ -488,9 +487,10 @@ def cache_nnue_features_for_game(
         return 0
 
     # Import here to avoid circular imports
+    import numpy as np
+
     from app.ai.nnue import extract_features_from_gamestate
     from app.game_engine import GameEngine
-    import numpy as np
 
     # Get game metadata
     games = db.list_games(filters={"game_id": game_id})
@@ -566,13 +566,13 @@ def cache_nnue_features_for_game(
 
 def cache_nnue_features_batch(
     db: GameReplayDB,
-    game_ids: Optional[List[str]] = None,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    game_ids: list[str] | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     sample_every_n_moves: int = 1,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     skip_if_cached: bool = True,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Batch cache NNUE features for multiple games.
 
     Args:
@@ -629,11 +629,11 @@ def record_completed_game_with_nnue_cache(
     db: GameReplayDB,
     initial_state: GameState,
     final_state: GameState,
-    moves: List[Move],
-    metadata: Optional[Dict[str, Any]] = None,
-    game_id: Optional[str] = None,
+    moves: list[Move],
+    metadata: dict[str, Any] | None = None,
+    game_id: str | None = None,
     store_history_entries: bool = True,
-    snapshot_interval: Optional[int] = None,
+    snapshot_interval: int | None = None,
     cache_nnue_features: bool = True,
     sample_every_n_moves: int = 1,
 ) -> str:
@@ -719,22 +719,22 @@ class RecordingConfig:
     source: str = RecordSource.SELF_PLAY
 
     # Optional metadata
-    difficulty: Optional[int] = None
-    engine_mode: Optional[str] = None
-    model_id: Optional[str] = None
-    generation: Optional[int] = None
-    candidate_id: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
+    difficulty: int | None = None
+    engine_mode: str | None = None
+    model_id: str | None = None
+    generation: int | None = None
+    candidate_id: str | None = None
+    tags: list[str] = field(default_factory=list)
 
     # Database configuration
-    db_path: Optional[str] = None  # If None, auto-generated from board_type/num_players
+    db_path: str | None = None  # If None, auto-generated from board_type/num_players
     db_prefix: str = "selfplay"
     db_dir: str = "data/games"
 
     # Recording options
     store_history_entries: bool = True
-    snapshot_interval: Optional[int] = None  # None = use env default (20)
-    parity_mode: Optional[str] = None  # None = use env default
+    snapshot_interval: int | None = None  # None = use env default (20)
+    parity_mode: str | None = None  # None = use env default
     fsm_validation: bool = False
 
     def __post_init__(self):
@@ -767,9 +767,9 @@ class RecordingConfig:
         )
         return str(Path(self.db_dir) / filename)
 
-    def build_metadata(self, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def build_metadata(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build standardized metadata dict for this recording config."""
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "source": self.source,
             "board_type": self.board_type,
             "num_players": self.num_players,
@@ -821,16 +821,16 @@ class UnifiedGameRecorder:
         self,
         config: RecordingConfig,
         initial_state: GameState,
-        game_id: Optional[str] = None,
+        game_id: str | None = None,
     ):
         self.config = config
         self.initial_state = initial_state
         self.game_id = game_id or str(uuid.uuid4())
-        self._db: Optional[GameReplayDB] = None
-        self._recorder: Optional[GameRecorder] = None
+        self._db: GameReplayDB | None = None
+        self._recorder: GameRecorder | None = None
         self._finalized = False
 
-    def __enter__(self) -> "UnifiedGameRecorder":
+    def __enter__(self) -> UnifiedGameRecorder:
         if not is_recording_enabled():
             return self
 
@@ -850,11 +850,11 @@ class UnifiedGameRecorder:
     def add_move(
         self,
         move: Move,
-        state_after: Optional[GameState] = None,
-        state_before: Optional[GameState] = None,
-        available_moves_count: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_depth: Optional[int] = None,
+        state_after: GameState | None = None,
+        state_before: GameState | None = None,
+        available_moves_count: int | None = None,
+        engine_eval: float | None = None,
+        engine_depth: int | None = None,
     ) -> None:
         """Add a move to the game record."""
         if self._recorder is None:
@@ -881,7 +881,7 @@ class UnifiedGameRecorder:
     def finalize(
         self,
         final_state: GameState,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Finalize the game recording with standardized metadata."""
         if self._recorder is None:
@@ -901,11 +901,11 @@ def record_game_unified(
     config: RecordingConfig,
     initial_state: GameState,
     final_state: GameState,
-    moves: List[Move],
-    extra_metadata: Optional[Dict[str, Any]] = None,
-    game_id: Optional[str] = None,
+    moves: list[Move],
+    extra_metadata: dict[str, Any] | None = None,
+    game_id: str | None = None,
     with_parity_check: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """Record a completed game with canonical naming (one-shot).
 
     This is the recommended function for recording completed games
@@ -963,7 +963,7 @@ def get_unified_db(
     num_players: int,
     prefix: str = "selfplay",
     db_dir: str = "data/games",
-) -> Optional[GameReplayDB]:
+) -> GameReplayDB | None:
     """Get a GameReplayDB with canonical naming.
 
     Args:
@@ -994,25 +994,25 @@ def get_unified_db(
 __all__ = [
     # Environment/config utilities
     "DEFAULT_SELFPLAY_DB_PATH",
-    "_augment_metadata_with_env",
-    "is_recording_enabled",
-    "get_default_db_path",
-    "validate_move_fsm",
-    "should_record_games",
-    "get_or_create_db",
     # GameRecorder
     "GameRecorder",
-    # One-shot recording
-    "record_completed_game",
-    "record_completed_game_with_parity_check",
-    "record_completed_game_with_nnue_cache",
-    # NNUE caching
-    "cache_nnue_features_for_game",
-    "cache_nnue_features_batch",
     # Unified recording (RECOMMENDED)
     "RecordSource",
     "RecordingConfig",
     "UnifiedGameRecorder",
-    "record_game_unified",
+    "_augment_metadata_with_env",
+    "cache_nnue_features_batch",
+    # NNUE caching
+    "cache_nnue_features_for_game",
+    "get_default_db_path",
+    "get_or_create_db",
     "get_unified_db",
+    "is_recording_enabled",
+    # One-shot recording
+    "record_completed_game",
+    "record_completed_game_with_nnue_cache",
+    "record_completed_game_with_parity_check",
+    "record_game_unified",
+    "should_record_games",
+    "validate_move_fsm",
 ]

@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -38,7 +37,7 @@ class TaskConfig:
     weight: float = 1.0
     enabled: bool = True
     hidden_dim: int = 256
-    output_dim: Optional[int] = None
+    output_dim: int | None = None
 
 
 @dataclass
@@ -147,7 +146,7 @@ class StateReconstructionHead(nn.Module):
     def __init__(
         self,
         input_dim: int,
-        state_shape: Tuple[int, ...],
+        state_shape: tuple[int, ...],
         hidden_dim: int = 512,
     ):
         super().__init__()
@@ -185,8 +184,8 @@ class MultiTaskHead(nn.Module):
         self,
         backbone_output_dim: int,
         policy_size: int,
-        state_shape: Optional[Tuple[int, ...]] = None,
-        config: Optional[MultiTaskConfig] = None,
+        state_shape: tuple[int, ...] | None = None,
+        config: MultiTaskConfig | None = None,
     ):
         super().__init__()
         self.config = config or MultiTaskConfig()
@@ -225,7 +224,7 @@ class MultiTaskHead(nn.Module):
     def forward(
         self,
         features: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Compute auxiliary task outputs.
 
@@ -259,7 +258,7 @@ class GradNormWeighter(nn.Module):
         self,
         num_tasks: int,
         alpha: float = 1.5,
-        initial_weights: Optional[List[float]] = None,
+        initial_weights: list[float] | None = None,
     ):
         """
         Args:
@@ -311,7 +310,7 @@ class GradNormWeighter(nn.Module):
 
     def compute_grad_norm_loss(
         self,
-        task_losses: List[torch.Tensor],
+        task_losses: list[torch.Tensor],
         shared_params: nn.Parameter,
     ) -> torch.Tensor:
         """
@@ -335,7 +334,7 @@ class GradNormWeighter(nn.Module):
 
         # Compute gradient norms for each weighted task loss
         grad_norms = []
-        for i, wl in enumerate(weighted_losses):
+        for _i, wl in enumerate(weighted_losses):
             if shared_params.grad is not None:
                 shared_params.grad.zero_()
 
@@ -364,7 +363,7 @@ class GradNormWeighter(nn.Module):
 
         return gradnorm_loss
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get current weight statistics for logging."""
         weights = self.weights.detach().cpu().numpy()
         ratios = self.loss_ratios.detach().cpu().numpy()
@@ -389,8 +388,8 @@ class MultiTaskLoss(nn.Module):
 
     def __init__(
         self,
-        config: Optional[MultiTaskConfig] = None,
-        shared_layer: Optional[nn.Parameter] = None,
+        config: MultiTaskConfig | None = None,
+        shared_layer: nn.Parameter | None = None,
     ):
         super().__init__()
         self.config = config or MultiTaskConfig()
@@ -402,10 +401,10 @@ class MultiTaskLoss(nn.Module):
         self.reconstruction_loss = nn.MSELoss()
 
         # GradNorm weighter (initialized lazily based on actual tasks)
-        self._gradnorm_weighter: Optional[GradNormWeighter] = None
-        self._task_names: List[str] = []
+        self._gradnorm_weighter: GradNormWeighter | None = None
+        self._task_names: list[str] = []
 
-    def _ensure_gradnorm_initialized(self, task_names: List[str], device: torch.device):
+    def _ensure_gradnorm_initialized(self, task_names: list[str], device: torch.device):
         """Initialize GradNorm weighter if needed."""
         if self._gradnorm_weighter is None or self._task_names != task_names:
             self._task_names = task_names
@@ -426,16 +425,16 @@ class MultiTaskLoss(nn.Module):
                 initial_weights=initial_weights,
             ).to(device)
 
-    def get_gradnorm_weighter(self) -> Optional[GradNormWeighter]:
+    def get_gradnorm_weighter(self) -> GradNormWeighter | None:
         """Get the GradNorm weighter for optimizer access."""
         return self._gradnorm_weighter
 
     def forward(
         self,
-        auxiliary_outputs: Dict[str, torch.Tensor],
-        targets: Dict[str, torch.Tensor],
-        log_vars: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        auxiliary_outputs: dict[str, torch.Tensor],
+        targets: dict[str, torch.Tensor],
+        log_vars: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """
         Compute combined auxiliary task loss.
 
@@ -491,7 +490,7 @@ class MultiTaskLoss(nn.Module):
             self._ensure_gradnorm_initialized(task_names, device)
             weights = self._gradnorm_weighter.weights
 
-            for i, (loss, name) in enumerate(zip(task_losses, task_names)):
+            for i, (loss, name) in enumerate(zip(task_losses, task_names, strict=False)):
                 total_loss = total_loss + weights[i] * loss
                 loss_dict[f'{name}_weight'] = weights[i].item()
 
@@ -501,14 +500,14 @@ class MultiTaskLoss(nn.Module):
 
         elif self.config.task_weighting == "uncertainty" and log_vars is not None:
             # Uncertainty weighting: learn precision for each task
-            for i, (loss, name) in enumerate(zip(task_losses, task_names)):
+            for i, (loss, name) in enumerate(zip(task_losses, task_names, strict=False)):
                 precision = torch.exp(-log_vars[i])
                 weighted_loss = precision * loss + log_vars[i]
                 total_loss = total_loss + weighted_loss
 
         else:
             # Fixed weighting: use config weights
-            for loss, name in zip(task_losses, task_names):
+            for loss, name in zip(task_losses, task_names, strict=False):
                 if name == 'outcome':
                     weight = self.config.outcome_prediction.weight
                 elif name == 'legality':
@@ -524,9 +523,9 @@ class MultiTaskLoss(nn.Module):
 
     def compute_gradnorm_loss(
         self,
-        task_losses: List[torch.Tensor],
+        task_losses: list[torch.Tensor],
         shared_params: nn.Parameter,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         """
         Compute GradNorm loss for weight optimization.
 
@@ -546,9 +545,9 @@ class MultiTaskLoss(nn.Module):
 
 
 def create_auxiliary_targets(
-    batch: Dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     num_classes: int = 3,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Create auxiliary task targets from a training batch.
 
@@ -605,9 +604,9 @@ class MultiTaskModelWrapper(nn.Module):
         backbone: nn.Module,
         backbone_output_dim: int,
         policy_size: int,
-        state_shape: Optional[Tuple[int, ...]] = None,
-        config: Optional[MultiTaskConfig] = None,
-        extract_features_fn: Optional[str] = None,
+        state_shape: tuple[int, ...] | None = None,
+        config: MultiTaskConfig | None = None,
+        extract_features_fn: str | None = None,
     ):
         """
         Args:
@@ -632,7 +631,7 @@ class MultiTaskModelWrapper(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         """
         Forward pass with multi-task outputs.
 
@@ -677,9 +676,9 @@ def integrate_multi_task_loss(
     policy_loss: torch.Tensor,
     value_loss: torch.Tensor,
     auxiliary_loss: torch.Tensor,
-    config: Optional[MultiTaskConfig] = None,
-    log_vars: Optional[torch.Tensor] = None,
-) -> Tuple[torch.Tensor, Dict[str, float]]:
+    config: MultiTaskConfig | None = None,
+    log_vars: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, dict[str, float]]:
     """
     Combine primary and auxiliary losses.
 

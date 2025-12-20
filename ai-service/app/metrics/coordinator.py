@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, Final
+from typing import Any, Final
 
 from prometheus_client import Counter, Gauge
 
@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Use the centralized registry to avoid duplicate metric registration.
 from app.metrics.registry import safe_metric as _safe_metric
-
 
 # =============================================================================
 # Coordinator Status Metrics
@@ -229,7 +228,7 @@ def record_coordinator_error(
 # Recovery Manager Updates
 # =============================================================================
 
-def update_recovery_stats(stats: Dict[str, Any]) -> None:
+def update_recovery_stats(stats: dict[str, Any]) -> None:
     """Update RecoveryManager metrics from stats dict.
 
     Args:
@@ -254,7 +253,7 @@ def update_recovery_stats(stats: Dict[str, Any]) -> None:
 # Bandwidth Manager Updates
 # =============================================================================
 
-def update_bandwidth_stats(stats: Dict[str, Any]) -> None:
+def update_bandwidth_stats(stats: dict[str, Any]) -> None:
     """Update BandwidthManager metrics from stats dict.
 
     Args:
@@ -278,7 +277,7 @@ def update_bandwidth_stats(stats: Dict[str, Any]) -> None:
 # Sync Coordinator Updates
 # =============================================================================
 
-def update_sync_stats(stats: Dict[str, Any]) -> None:
+def update_sync_stats(stats: dict[str, Any]) -> None:
     """Update SyncCoordinator metrics from stats dict.
 
     Args:
@@ -296,7 +295,7 @@ def update_sync_stats(stats: Dict[str, Any]) -> None:
 # Aggregation Function
 # =============================================================================
 
-async def collect_all_coordinator_metrics() -> Dict[str, Any]:
+async def collect_all_coordinator_metrics() -> dict[str, Any]:
     """Collect metrics from all coordinators.
 
     Returns:
@@ -348,7 +347,7 @@ async def collect_all_coordinator_metrics() -> Dict[str, Any]:
     return metrics
 
 
-def collect_all_coordinator_metrics_sync() -> Dict[str, Any]:
+def collect_all_coordinator_metrics_sync() -> dict[str, Any]:
     """Synchronous wrapper for collect_all_coordinator_metrics."""
     try:
         asyncio.get_running_loop()
@@ -359,7 +358,7 @@ def collect_all_coordinator_metrics_sync() -> Dict[str, Any]:
         return asyncio.run(collect_all_coordinator_metrics())
 
 
-def _collect_sync() -> Dict[str, Any]:
+def _collect_sync() -> dict[str, Any]:
     """Synchronous collection using sync stat methods."""
     metrics = {"coordinators": {}}
 

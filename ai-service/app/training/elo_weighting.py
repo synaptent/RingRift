@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -38,7 +37,7 @@ except ImportError:
 
 try:
     import torch
-    from torch.utils.data import Sampler, Dataset
+    from torch.utils.data import Dataset, Sampler
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -121,7 +120,7 @@ class EloWeightedSampler(WeightedSamplerBase):
         self,
         sample_elos: np.ndarray,
         model_elo: float = 1500.0,
-        config: Optional[EloWeightConfig] = None,
+        config: EloWeightConfig | None = None,
     ):
         """Initialize the ELO-weighted sampler.
 
@@ -168,7 +167,7 @@ class EloWeightedDataset:
 
     def __init__(
         self,
-        base_dataset: "Dataset",
+        base_dataset: Dataset,
         sample_elos: np.ndarray,
         model_elo: float = 1500.0,
     ):

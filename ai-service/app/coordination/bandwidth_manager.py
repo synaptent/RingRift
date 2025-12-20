@@ -41,12 +41,13 @@ import os
 import socket
 import threading
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any
 
 from app.coordination.coordinator_base import (
     CoordinatorBase,
@@ -112,7 +113,7 @@ class BandwidthAllocation:
     def bwlimit_mbps(self) -> float:
         return self.bwlimit_kbps / 125  # KB/s to Mbps
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "allocation_id": self.allocation_id,
             "host": self.host,
@@ -152,8 +153,8 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
-        host_limits: Optional[Dict[str, int]] = None,
+        db_path: Path | None = None,
+        host_limits: dict[str, int] | None = None,
     ):
         CoordinatorBase.__init__(self, name="BandwidthManager")
         self.host_limits = host_limits or DEFAULT_HOST_BANDWIDTH
@@ -220,7 +221,7 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
 
         return self.host_limits.get("default", 100)
 
-    def _get_active_allocations(self, host: str) -> List[Dict[str, Any]]:
+    def _get_active_allocations(self, host: str) -> list[dict[str, Any]]:
         """Get active allocations for a host."""
         conn = self._get_connection()
         now = time.time()
@@ -369,7 +370,7 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
         conn.commit()
         return True
 
-    def get_host_status(self, host: str) -> Dict[str, Any]:
+    def get_host_status(self, host: str) -> dict[str, Any]:
         """Get bandwidth status for a host."""
         host_limit = self._get_host_limit_mbps(host)
         active = self._get_active_allocations(host)
@@ -399,7 +400,7 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
         host: str,
         size_mb: int,
         priority: TransferPriority = TransferPriority.NORMAL,
-    ) -> Tuple[datetime, str]:
+    ) -> tuple[datetime, str]:
         """Get optimal time to schedule a transfer.
 
         Args:
@@ -453,7 +454,7 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
         optimal = now + timedelta(hours=hours_until_best)
         return optimal, f"Hour {best_hour}:00 historically fastest"
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get bandwidth management statistics.
 
         Implements CoordinatorBase.get_stats() interface.
@@ -496,7 +497,7 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
         })
         return base_stats
 
-    def get_stats_sync(self) -> Dict[str, Any]:
+    def get_stats_sync(self) -> dict[str, Any]:
         """Synchronous version of get_stats for CLI usage."""
         conn = self._get_connection()
 
@@ -545,11 +546,11 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
 
 
 # Global singleton
-_manager: Optional[BandwidthManager] = None
+_manager: BandwidthManager | None = None
 _manager_lock = threading.RLock()
 
 
-def get_bandwidth_manager(db_path: Optional[Path] = None) -> BandwidthManager:
+def get_bandwidth_manager(db_path: Path | None = None) -> BandwidthManager:
     """Get the global bandwidth manager singleton."""
     global _manager
     with _manager_lock:
@@ -588,7 +589,7 @@ def release_bandwidth(
     return get_bandwidth_manager().release(allocation_id, bytes_transferred, duration_seconds)
 
 
-def get_host_bandwidth_status(host: str) -> Dict[str, Any]:
+def get_host_bandwidth_status(host: str) -> dict[str, Any]:
     """Get bandwidth status for a host."""
     return get_bandwidth_manager().get_host_status(host)
 
@@ -596,12 +597,12 @@ def get_host_bandwidth_status(host: str) -> Dict[str, Any]:
 def get_optimal_transfer_time(
     host: str,
     size_mb: int,
-) -> Tuple[datetime, str]:
+) -> tuple[datetime, str]:
     """Get optimal time to transfer."""
     return get_bandwidth_manager().get_optimal_time(host, size_mb)
 
 
-def get_bandwidth_stats() -> Dict[str, Any]:
+def get_bandwidth_stats() -> dict[str, Any]:
     """Get bandwidth management statistics (sync version)."""
     return get_bandwidth_manager().get_stats_sync()
 
@@ -684,20 +685,20 @@ if __name__ == "__main__":
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "TransferPriority",
     # Data classes
     "BandwidthAllocation",
-    "TransferRecord",
     # Main class
     "BandwidthManager",
+    # Enums
+    "TransferPriority",
+    "TransferRecord",
+    "bandwidth_allocation",
     # Functions
     "get_bandwidth_manager",
-    "reset_bandwidth_manager",
-    "request_bandwidth",
-    "release_bandwidth",
+    "get_bandwidth_stats",
     "get_host_bandwidth_status",
     "get_optimal_transfer_time",
-    "get_bandwidth_stats",
-    "bandwidth_allocation",
+    "release_bandwidth",
+    "request_bandwidth",
+    "reset_bandwidth_manager",
 ]

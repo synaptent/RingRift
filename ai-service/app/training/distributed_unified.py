@@ -39,16 +39,16 @@ import os
 import socket
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-
-import numpy as np
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Use shared lazy torch import; extend with distributed modules
 from app.training.utils import get_torch
+
 _dist = None
 _DDP = None
 
@@ -153,12 +153,12 @@ class GradientCompressor:
         self.compression_ratio = compression_ratio
         self.warmup_steps = warmup_steps
         self._step = 0
-        self._error_buffers: Dict[str, Any] = {}  # torch.Tensor
+        self._error_buffers: dict[str, Any] = {}  # torch.Tensor
 
     def compress(
         self,
-        gradients: Dict[str, Any],  # torch.Tensor
-    ) -> Dict[str, Tuple[Any, Any]]:
+        gradients: dict[str, Any],  # torch.Tensor
+    ) -> dict[str, tuple[Any, Any]]:
         """Compress gradients using top-K sparsification.
 
         Args:
@@ -202,9 +202,9 @@ class GradientCompressor:
 
     def decompress(
         self,
-        compressed: Dict[str, Tuple[Any, Any]],
-        shapes: Dict[str, Tuple],
-    ) -> Dict[str, Any]:
+        compressed: dict[str, tuple[Any, Any]],
+        shapes: dict[str, tuple],
+    ) -> dict[str, Any]:
         """Decompress gradients from sparse representation.
 
         Args:
@@ -264,7 +264,7 @@ class AsyncSGD:
 
     def push_gradients(
         self,
-        gradients: Dict[str, Any],
+        gradients: dict[str, Any],
         step: int,
     ) -> None:
         """Push gradients from a worker.
@@ -279,7 +279,7 @@ class AsyncSGD:
             'timestamp': time.time(),
         })
 
-    def get_update(self) -> Optional[Dict[str, Any]]:
+    def get_update(self) -> dict[str, Any] | None:
         """Get aggregated gradient update.
 
         Returns:
@@ -353,8 +353,8 @@ class UnifiedDistributedTrainer:
     def __init__(
         self,
         model: Any,  # nn.Module
-        config: Optional[UnifiedDistributedConfig] = None,
-        optimizer: Optional[Any] = None,  # torch.optim.Optimizer
+        config: UnifiedDistributedConfig | None = None,
+        optimizer: Any | None = None,  # torch.optim.Optimizer
     ):
         """Initialize unified distributed trainer.
 
@@ -366,7 +366,7 @@ class UnifiedDistributedTrainer:
         self.config = config or UnifiedDistributedConfig()
         self._original_model = model
         self._optimizer = optimizer
-        self._ddp_model: Optional[Any] = None
+        self._ddp_model: Any | None = None
 
         # State
         self._initialized = False
@@ -374,12 +374,12 @@ class UnifiedDistributedTrainer:
         self._epoch = 0
 
         # Node tracking
-        self._nodes: Dict[int, NodeInfo] = {}
+        self._nodes: dict[int, NodeInfo] = {}
 
         # Components (initialized lazily)
-        self._compressor: Optional[GradientCompressor] = None
-        self._async_sgd: Optional[AsyncSGD] = None
-        self._scaler: Optional[Any] = None  # GradScaler
+        self._compressor: GradientCompressor | None = None
+        self._async_sgd: AsyncSGD | None = None
+        self._scaler: Any | None = None  # GradScaler
 
         # Checkpointing
         self._checkpoint_dir = Path(self.config.checkpoint_dir)
@@ -479,7 +479,7 @@ class UnifiedDistributedTrainer:
 
     def _register_node(self):
         """Register this node in the cluster."""
-        torch, _, _ = _get_torch_distributed()
+        _torch, _, _ = _get_torch_distributed()
         config = self.config
 
         self._nodes[config.rank] = NodeInfo(
@@ -494,7 +494,7 @@ class UnifiedDistributedTrainer:
 
     def train_step(
         self,
-        batch: Tuple[Any, ...],
+        batch: tuple[Any, ...],
         loss_fn: Callable,
     ) -> float:
         """Execute a single training step.
@@ -572,7 +572,7 @@ class UnifiedDistributedTrainer:
 
         return loss.item()
 
-    def save_checkpoint(self, path: Optional[Path] = None):
+    def save_checkpoint(self, path: Path | None = None):
         """Save training checkpoint.
 
         Args:
@@ -671,11 +671,11 @@ class UnifiedDistributedTrainer:
         return self._step
 
     @property
-    def nodes(self) -> Dict[int, NodeInfo]:
+    def nodes(self) -> dict[int, NodeInfo]:
         """Get registered nodes."""
         return self._nodes
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get training metrics."""
         metrics = {
             "step": self._step,

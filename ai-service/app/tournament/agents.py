@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.ai.heuristic_weights import (
     BASE_V1_BALANCED_WEIGHTS,
@@ -34,12 +34,12 @@ class AIAgent:
     mcts_simulations: int = 100
     description: str = ""
     version: str = "1.0"
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    model_path: Optional[str] = None  # Path to neural network weights for NEURAL agents
-    board_type: Optional[str] = None  # Board type the model was trained for
-    num_players: Optional[int] = None  # Number of players the model supports
+    metadata: dict[str, Any] = field(default_factory=dict)
+    model_path: str | None = None  # Path to neural network weights for NEURAL agents
+    board_type: str | None = None  # Board type the model was trained for
+    num_players: int | None = None  # Number of players the model supports
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize agent to dictionary."""
         data = {
             "agent_id": self.agent_id,
@@ -61,7 +61,7 @@ class AIAgent:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AIAgent":
+    def from_dict(cls, data: dict[str, Any]) -> AIAgent:
         """Deserialize agent from dictionary."""
         return cls(
             agent_id=data["agent_id"],
@@ -82,13 +82,13 @@ class AIAgent:
 class AIAgentRegistry:
     """Registry for managing AI agents."""
 
-    def __init__(self, registry_path: Optional[Path] = None):
+    def __init__(self, registry_path: Path | None = None):
         """Initialize agent registry.
 
         Args:
             registry_path: Path to JSON file for persistent storage.
         """
-        self._agents: Dict[str, AIAgent] = {}
+        self._agents: dict[str, AIAgent] = {}
         self._registry_path = registry_path
 
         if registry_path and registry_path.exists():
@@ -168,15 +168,15 @@ class AIAgentRegistry:
             return True
         return False
 
-    def get(self, agent_id: str) -> Optional[AIAgent]:
+    def get(self, agent_id: str) -> AIAgent | None:
         """Get agent by ID."""
         return self._agents.get(agent_id)
 
-    def list_agents(self) -> List[AIAgent]:
+    def list_agents(self) -> list[AIAgent]:
         """List all registered agents."""
         return list(self._agents.values())
 
-    def list_agent_ids(self) -> List[str]:
+    def list_agent_ids(self) -> list[str]:
         """List all agent IDs."""
         return list(self._agents.keys())
 
@@ -199,7 +199,7 @@ class AIAgentRegistry:
             self._register_builtin_agents()
             return
 
-        with open(self._registry_path, 'r') as f:
+        with open(self._registry_path) as f:
             data = json.load(f)
 
         self._agents.clear()
@@ -231,10 +231,10 @@ class AIAgentRegistry:
     def create_from_model(
         self,
         model_path: str,
-        agent_id: Optional[str] = None,
-        name: Optional[str] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        agent_id: str | None = None,
+        name: str | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         description: str = "",
     ) -> AIAgent:
         """Create and register a neural network agent from model file.

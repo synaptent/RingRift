@@ -31,8 +31,9 @@ import functools
 import logging
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class HandlerMetrics:
 
 
 # Global registry of handler metrics
-_handler_metrics: Dict[str, HandlerMetrics] = {}
+_handler_metrics: dict[str, HandlerMetrics] = {}
 
 
 def get_handler_metrics(handler_name: str, coordinator: str = "") -> HandlerMetrics:
@@ -114,7 +115,7 @@ def get_handler_metrics(handler_name: str, coordinator: str = "") -> HandlerMetr
     return _handler_metrics[key]
 
 
-def get_all_handler_metrics() -> Dict[str, HandlerMetrics]:
+def get_all_handler_metrics() -> dict[str, HandlerMetrics]:
     """Get all handler metrics."""
     return dict(_handler_metrics)
 
@@ -186,7 +187,7 @@ async def _emit_health_degraded(
 def resilient_handler(
     handler: Callable,
     coordinator: str = "",
-    config: Optional[ResilientHandlerConfig] = None,
+    config: ResilientHandlerConfig | None = None,
 ) -> Callable:
     """Wrap an async event handler with exception boundary and timeout.
 
@@ -271,8 +272,8 @@ def make_handlers_resilient(
     coordinator_instance: Any,
     coordinator_name: str,
     handler_prefix: str = "_on_",
-    config: Optional[ResilientHandlerConfig] = None,
-) -> Dict[str, Callable]:
+    config: ResilientHandlerConfig | None = None,
+) -> dict[str, Callable]:
     """Make all handler methods of a coordinator resilient.
 
     Finds all methods starting with handler_prefix and wraps them.
@@ -317,7 +318,7 @@ class ResilientCoordinatorMixin:
     """
 
     _coordinator_name: str = "unknown"
-    _handler_config: Optional[ResilientHandlerConfig] = None
+    _handler_config: ResilientHandlerConfig | None = None
     _events_processed: int = 0
     _handler_failures: int = 0
 
@@ -329,7 +330,7 @@ class ResilientCoordinatorMixin:
             config=self._handler_config,
         )
 
-    def _get_handler_health(self) -> Dict[str, Any]:
+    def _get_handler_health(self) -> dict[str, Any]:
         """Get health summary for this coordinator's handlers."""
         metrics = get_all_handler_metrics()
         coordinator_metrics = {
@@ -365,12 +366,12 @@ class ResilientCoordinatorMixin:
 
 
 __all__ = [
-    "ResilientHandlerConfig",
     "HandlerMetrics",
-    "resilient_handler",
-    "make_handlers_resilient",
-    "get_handler_metrics",
-    "get_all_handler_metrics",
-    "reset_handler_metrics",
     "ResilientCoordinatorMixin",
+    "ResilientHandlerConfig",
+    "get_all_handler_metrics",
+    "get_handler_metrics",
+    "make_handlers_resilient",
+    "reset_handler_metrics",
+    "resilient_handler",
 ]

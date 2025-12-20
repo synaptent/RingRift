@@ -12,7 +12,7 @@ Key functions:
 
 from __future__ import annotations
 
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 def select_moves_vectorized(
-    moves: "BatchMoves",
+    moves: BatchMoves,
     active_mask: torch.Tensor,
     board_size: int,
     temperature: float = 1.0,
@@ -168,10 +168,10 @@ def select_moves_vectorized(
 
 
 def select_moves_heuristic(
-    moves: "BatchMoves",
-    state: "BatchGameState",
+    moves: BatchMoves,
+    state: BatchGameState,
     active_mask: torch.Tensor,
-    weights: Optional[Dict[str, float]] = None,
+    weights: dict[str, float] | None = None,
     temperature: float = 1.0,
 ) -> torch.Tensor:
     """Select one move per game using heuristic scoring.
@@ -350,6 +350,6 @@ def select_moves_heuristic(
 
 
 __all__ = [
-    'select_moves_vectorized',
     'select_moves_heuristic',
+    'select_moves_vectorized',
 ]

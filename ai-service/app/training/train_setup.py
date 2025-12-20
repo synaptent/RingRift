@@ -9,17 +9,14 @@ December 2025: Extracted from train.py to improve modularity.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 if TYPE_CHECKING:
-    from app.training.training_enhancements import (
-        TrainingAnomalyDetector,
-        AdaptiveGradientClipper,
-    )
-    from app.training.checkpoint_unified import GracefulShutdownHandler
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +80,10 @@ class FaultToleranceConfig:
 @dataclass
 class FaultToleranceComponents:
     """Container for initialized fault tolerance components."""
-    training_breaker: Optional[Any] = None
-    anomaly_detector: Optional[Any] = None
-    adaptive_clipper: Optional[Any] = None
-    shutdown_handler: Optional[Any] = None
+    training_breaker: Any | None = None
+    anomaly_detector: Any | None = None
+    adaptive_clipper: Any | None = None
+    shutdown_handler: Any | None = None
     gradient_clip_mode: str = 'fixed'
     fixed_clip_norm: float = 1.0
 
@@ -94,7 +91,7 @@ class FaultToleranceComponents:
 def setup_fault_tolerance(
     config: FaultToleranceConfig,
     distributed: bool = False,
-    is_main_process_fn: Optional[Callable[[], bool]] = None,
+    is_main_process_fn: Callable[[], bool] | None = None,
 ) -> FaultToleranceComponents:
     """Initialize all fault tolerance components.
 
@@ -173,8 +170,8 @@ def setup_fault_tolerance(
 def setup_graceful_shutdown(
     checkpoint_callback: Callable[[], None],
     distributed: bool = False,
-    is_main_process_fn: Optional[Callable[[], bool]] = None,
-) -> Optional[Any]:
+    is_main_process_fn: Callable[[], bool] | None = None,
+) -> Any | None:
     """Setup graceful shutdown handler.
 
     Args:
@@ -259,7 +256,7 @@ class TrainingState:
     epoch: int = 0
     best_val_loss: float = float('inf')
     avg_val_loss: float = float('inf')
-    last_good_checkpoint_path: Optional[str] = None
+    last_good_checkpoint_path: str | None = None
     last_good_epoch: int = 0
     circuit_breaker_rollbacks: int = 0
     max_circuit_breaker_rollbacks: int = 3
@@ -282,15 +279,15 @@ class TrainingState:
 
 
 __all__ = [
+    'FaultToleranceComponents',
     # Configuration
     'FaultToleranceConfig',
-    'FaultToleranceComponents',
+    # State management
+    'TrainingState',
+    'compute_effective_lr',
+    # Helpers
+    'get_device',
     # Setup functions
     'setup_fault_tolerance',
     'setup_graceful_shutdown',
-    # Helpers
-    'get_device',
-    'compute_effective_lr',
-    # State management
-    'TrainingState',
 ]

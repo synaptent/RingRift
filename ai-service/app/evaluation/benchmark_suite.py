@@ -5,17 +5,16 @@ Provides reproducible benchmarks for model evaluation across
 performance, quality, and position-specific metrics.
 """
 
-import time
 import json
 import logging
 import statistics
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field, asdict
+import time
+from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
-from abc import ABC, abstractmethod
-
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +37,11 @@ class BenchmarkResult:
     score: float
     unit: str
     higher_is_better: bool
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
     duration_seconds: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d['category'] = self.category.value
         d['timestamp'] = self.timestamp.isoformat()
@@ -54,19 +53,19 @@ class BenchmarkSuiteResult:
     """Results from running a benchmark suite."""
     suite_name: str
     model_id: str
-    results: List[BenchmarkResult] = field(default_factory=list)
+    results: list[BenchmarkResult] = field(default_factory=list)
     total_duration_seconds: float = 0.0
     timestamp: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def get_score(self, benchmark_name: str) -> Optional[float]:
+    def get_score(self, benchmark_name: str) -> float | None:
         """Get score for a specific benchmark."""
         for r in self.results:
             if r.benchmark_name == benchmark_name:
                 return r.score
         return None
 
-    def get_category_scores(self, category: BenchmarkCategory) -> Dict[str, float]:
+    def get_category_scores(self, category: BenchmarkCategory) -> dict[str, float]:
         """Get all scores for a category."""
         return {
             r.benchmark_name: r.score
@@ -90,7 +89,7 @@ class BenchmarkSuiteResult:
 
         return statistics.mean(normalized_scores)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             'suite_name': self.suite_name,
             'model_id': self.model_id,
@@ -120,10 +119,12 @@ class InferenceBenchmark(Benchmark):
 
     def __init__(
         self,
-        batch_sizes: List[int] = [1, 8, 32, 64],
+        batch_sizes: list[int] | None = None,
         warmup_iterations: int = 10,
         benchmark_iterations: int = 100
     ):
+        if batch_sizes is None:
+            batch_sizes = [1, 8, 32, 64]
         super().__init__("inference_speed", BenchmarkCategory.PERFORMANCE)
         self.batch_sizes = batch_sizes
         self.warmup_iterations = warmup_iterations
@@ -132,8 +133,8 @@ class InferenceBenchmark(Benchmark):
     def run(self, model: Any, **kwargs) -> BenchmarkResult:
         """Run inference speed benchmark."""
         try:
-            import torch
             import numpy as np
+            import torch
         except ImportError:
             return BenchmarkResult(
                 benchmark_name=self.name,
@@ -150,7 +151,7 @@ class InferenceBenchmark(Benchmark):
         for batch_size in self.batch_sizes:
             # Create dummy input
             if hasattr(model, 'input_shape'):
-                shape = (batch_size,) + model.input_shape
+                shape = (batch_size, *model.input_shape)
             else:
                 shape = (batch_size, 18, 8, 8)  # Default shape
 
@@ -199,7 +200,9 @@ class InferenceBenchmark(Benchmark):
 class MemoryBenchmark(Benchmark):
     """Benchmark memory usage."""
 
-    def __init__(self, batch_sizes: List[int] = [1, 8, 32]):
+    def __init__(self, batch_sizes: list[int] | None = None):
+        if batch_sizes is None:
+            batch_sizes = [1, 8, 32]
         super().__init__("memory_usage", BenchmarkCategory.EFFICIENCY)
         self.batch_sizes = batch_sizes
 
@@ -231,7 +234,7 @@ class MemoryBenchmark(Benchmark):
 
             for batch_size in self.batch_sizes:
                 if hasattr(model, 'input_shape'):
-                    shape = (batch_size,) + model.input_shape
+                    shape = (batch_size, *model.input_shape)
                 else:
                     shape = (batch_size, 18, 8, 8)
 
@@ -257,7 +260,7 @@ class MemoryBenchmark(Benchmark):
 class PolicyAccuracyBenchmark(Benchmark):
     """Benchmark policy prediction accuracy on known positions."""
 
-    def __init__(self, test_positions: Optional[List[Dict[str, Any]]] = None):
+    def __init__(self, test_positions: list[dict[str, Any]] | None = None):
         super().__init__("policy_accuracy", BenchmarkCategory.QUALITY)
         self.test_positions = test_positions or []
 
@@ -281,7 +284,7 @@ class PolicyAccuracyBenchmark(Benchmark):
         for pos in self.test_positions:
             state = pos.get('state')
             best_move = pos.get('best_move')
-            good_moves = pos.get('good_moves', [best_move])
+            pos.get('good_moves', [best_move])
 
             if state is None or best_move is None:
                 continue
@@ -322,11 +325,11 @@ class PolicyAccuracyBenchmark(Benchmark):
             details=details
         )
 
-    def _get_policy(self, model: Any, state: Any, **kwargs) -> List[float]:
+    def _get_policy(self, model: Any, state: Any, **kwargs) -> list[float]:
         """Get policy from model for a state."""
         try:
-            import torch
             import numpy as np
+            import torch
         except ImportError:
             return []
 
@@ -352,7 +355,7 @@ class PolicyAccuracyBenchmark(Benchmark):
 class ValueAccuracyBenchmark(Benchmark):
     """Benchmark value prediction accuracy."""
 
-    def __init__(self, test_positions: Optional[List[Dict[str, Any]]] = None):
+    def __init__(self, test_positions: list[dict[str, Any]] | None = None):
         super().__init__("value_accuracy", BenchmarkCategory.QUALITY)
         self.test_positions = test_positions or []
 
@@ -438,7 +441,7 @@ class ValueAccuracyBenchmark(Benchmark):
 class TacticalBenchmark(Benchmark):
     """Benchmark tactical pattern recognition."""
 
-    def __init__(self, tactical_puzzles: Optional[List[Dict[str, Any]]] = None):
+    def __init__(self, tactical_puzzles: list[dict[str, Any]] | None = None):
         super().__init__("tactical_patterns", BenchmarkCategory.TACTICAL)
         self.tactical_puzzles = tactical_puzzles or []
 
@@ -509,8 +512,8 @@ class TacticalBenchmark(Benchmark):
     def _get_best_move(self, model: Any, state: Any, **kwargs) -> int:
         """Get best move from model."""
         try:
-            import torch
             import numpy as np
+            import torch
         except ImportError:
             return 0
 
@@ -538,9 +541,11 @@ class MCTSBenchmark(Benchmark):
 
     def __init__(
         self,
-        search_iterations: List[int] = [100, 400, 800],
-        test_positions: Optional[List[Dict[str, Any]]] = None
+        search_iterations: list[int] | None = None,
+        test_positions: list[dict[str, Any]] | None = None
     ):
+        if search_iterations is None:
+            search_iterations = [100, 400, 800]
         super().__init__("mcts_quality", BenchmarkCategory.QUALITY)
         self.search_iterations = search_iterations
         self.test_positions = test_positions or []
@@ -618,9 +623,11 @@ class RobustnessBenchmark(Benchmark):
 
     def __init__(
         self,
-        test_positions: Optional[List[Dict[str, Any]]] = None,
-        noise_levels: List[float] = [0.01, 0.05, 0.1]
+        test_positions: list[dict[str, Any]] | None = None,
+        noise_levels: list[float] | None = None
     ):
+        if noise_levels is None:
+            noise_levels = [0.01, 0.05, 0.1]
         super().__init__("robustness", BenchmarkCategory.ROBUSTNESS)
         self.test_positions = test_positions or []
         self.noise_levels = noise_levels
@@ -628,8 +635,8 @@ class RobustnessBenchmark(Benchmark):
     def run(self, model: Any, **kwargs) -> BenchmarkResult:
         """Run robustness benchmark."""
         try:
-            import torch
             import numpy as np
+            import torch
         except ImportError:
             return BenchmarkResult(
                 benchmark_name=self.name,
@@ -729,8 +736,8 @@ class RobustnessBenchmark(Benchmark):
     def _add_noise(self, state: Any, noise_level: float) -> Any:
         """Add Gaussian noise to state."""
         try:
-            import torch
             import numpy as np
+            import torch
         except ImportError:
             return state
 
@@ -751,8 +758,8 @@ class BenchmarkSuite:
 
     def __init__(self, suite_name: str = "default"):
         self.suite_name = suite_name
-        self.benchmarks: List[Benchmark] = []
-        self.results_history: List[BenchmarkSuiteResult] = []
+        self.benchmarks: list[Benchmark] = []
+        self.results_history: list[BenchmarkSuiteResult] = []
 
     def add_benchmark(self, benchmark: Benchmark):
         """Add a benchmark to the suite."""
@@ -818,7 +825,7 @@ class BenchmarkSuite:
         self,
         results_a: BenchmarkSuiteResult,
         results_b: BenchmarkSuiteResult
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compare benchmark results between two models.
 
@@ -971,8 +978,8 @@ def main():
         print(f"  Category: {r.category.value}")
 
     # Save results
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         result_path = Path(f.name)

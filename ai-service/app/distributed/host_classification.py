@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +100,10 @@ class HostSyncProfile:
     last_sync_time: float = 0.0
     games_at_risk: int = 0  # Estimated games that could be lost
     # Hardware tier
-    tier: Optional[HostTier] = None
+    tier: HostTier | None = None
 
     @classmethod
-    def for_ephemeral_host(cls, host_name: str) -> "HostSyncProfile":
+    def for_ephemeral_host(cls, host_name: str) -> HostSyncProfile:
         """Create profile for ephemeral (RAM disk) host.
 
         Ephemeral hosts use aggressive sync to prevent data loss:
@@ -124,7 +124,7 @@ class HostSyncProfile:
         )
 
     @classmethod
-    def for_persistent_host(cls, host_name: str) -> "HostSyncProfile":
+    def for_persistent_host(cls, host_name: str) -> HostSyncProfile:
         """Create profile for persistent storage host."""
         return cls(
             host_name=host_name,
@@ -138,7 +138,7 @@ class HostSyncProfile:
         )
 
     @classmethod
-    def for_ssd_host(cls, host_name: str) -> "HostSyncProfile":
+    def for_ssd_host(cls, host_name: str) -> HostSyncProfile:
         """Create profile for SSD storage host."""
         return cls(
             host_name=host_name,
@@ -151,7 +151,7 @@ class HostSyncProfile:
             aggressive_sync=False,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "host_name": self.host_name,
@@ -173,7 +173,7 @@ class HostSyncProfile:
 # =============================================================================
 
 
-def classify_host_storage(host_config: Dict[str, Any]) -> StorageType:
+def classify_host_storage(host_config: dict[str, Any]) -> StorageType:
     """Classify host storage type from configuration.
 
     Detection priority:
@@ -211,7 +211,7 @@ def classify_host_storage(host_config: Dict[str, Any]) -> StorageType:
     return StorageType.PERSISTENT
 
 
-def classify_host_tier(host_config: Dict[str, Any]) -> HostTier:
+def classify_host_tier(host_config: dict[str, Any]) -> HostTier:
     """Classify host hardware tier from configuration.
 
     Detection priority:
@@ -250,7 +250,7 @@ def classify_host_tier(host_config: Dict[str, Any]) -> HostTier:
     return HostTier.MID_TIER
 
 
-def get_ephemeral_hosts(hosts_config: Dict[str, Any]) -> List[str]:
+def get_ephemeral_hosts(hosts_config: dict[str, Any]) -> list[str]:
     """Get list of ephemeral host names from config.
 
     Checks both vast_hosts (typically ephemeral) and standard_hosts.
@@ -277,9 +277,9 @@ def get_ephemeral_hosts(hosts_config: Dict[str, Any]) -> List[str]:
 
 
 def get_hosts_by_storage_type(
-    hosts_config: Dict[str, Any],
+    hosts_config: dict[str, Any],
     storage_type: StorageType,
-) -> List[str]:
+) -> list[str]:
     """Get hosts of a specific storage type.
 
     Args:
@@ -300,9 +300,9 @@ def get_hosts_by_storage_type(
 
 
 def get_hosts_by_tier(
-    hosts_config: Dict[str, Any],
+    hosts_config: dict[str, Any],
     tier: HostTier,
-) -> List[str]:
+) -> list[str]:
     """Get hosts of a specific hardware tier.
 
     Args:
@@ -324,7 +324,7 @@ def get_hosts_by_tier(
 
 def create_sync_profile(
     host_name: str,
-    host_config: Dict[str, Any],
+    host_config: dict[str, Any],
 ) -> HostSyncProfile:
     """Create a sync profile for a host based on its configuration.
 
@@ -352,8 +352,8 @@ def create_sync_profile(
 
 
 def create_sync_profiles(
-    hosts_config: Dict[str, Any],
-) -> Dict[str, HostSyncProfile]:
+    hosts_config: dict[str, Any],
+) -> dict[str, HostSyncProfile]:
     """Create sync profiles for all hosts in configuration.
 
     Args:
@@ -376,14 +376,14 @@ def create_sync_profiles(
 # =============================================================================
 
 __all__ = [
-    "StorageType",
-    "HostTier",
     "HostSyncProfile",
+    "HostTier",
+    "StorageType",
     "classify_host_storage",
     "classify_host_tier",
+    "create_sync_profile",
+    "create_sync_profiles",
     "get_ephemeral_hosts",
     "get_hosts_by_storage_type",
     "get_hosts_by_tier",
-    "create_sync_profile",
-    "create_sync_profiles",
 ]

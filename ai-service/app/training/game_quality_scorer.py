@@ -18,13 +18,11 @@
 from __future__ import annotations
 
 import warnings
-from typing import Optional
 
 # Re-export from unified_quality for backwards compatibility
 from app.quality.unified_quality import (
-    QualityCategory,
     GameQuality as _UnifiedGameQuality,
-    UnifiedQualityScorer,
+    QualityCategory,
     compute_game_quality_from_params,
     get_quality_category,
     get_quality_scorer as _get_unified_scorer,
@@ -57,7 +55,7 @@ class GameQuality:
         diversity_score: float = 0.0,
         source_score: float = 1.0,
         total_moves: int = 0,
-        phase_distribution: dict = None,
+        phase_distribution: dict | None = None,
         reason: str = "",
     ):
         self.game_id = game_id
@@ -73,7 +71,7 @@ class GameQuality:
         self.reason = reason
 
     @classmethod
-    def from_unified(cls, unified: _UnifiedGameQuality) -> "GameQuality":
+    def from_unified(cls, unified: _UnifiedGameQuality) -> GameQuality:
         """Create from unified GameQuality."""
         return cls(
             game_id=unified.game_id,
@@ -119,11 +117,11 @@ class GameQualityScorer:
         self,
         game_id: str,
         game_status: str,
-        winner: Optional[int],
-        termination_reason: Optional[str],
+        winner: int | None,
+        termination_reason: str | None,
         total_moves: int,
         board_type: str = "square8",
-        source: Optional[str] = None,
+        source: str | None = None,
         _move_entropies=None,
     ) -> GameQuality:
         """Compute quality score for a game."""
@@ -140,7 +138,7 @@ class GameQualityScorer:
 
 
 # Singleton instance
-_scorer_instance: Optional[GameQualityScorer] = None
+_scorer_instance: GameQualityScorer | None = None
 
 
 def get_quality_scorer() -> GameQualityScorer:
@@ -154,11 +152,11 @@ def get_quality_scorer() -> GameQualityScorer:
 def compute_game_quality(
     game_id: str,
     game_status: str,
-    winner: Optional[int],
-    termination_reason: Optional[str],
+    winner: int | None,
+    termination_reason: str | None,
     total_moves: int,
     board_type: str = "square8",
-    source: Optional[str] = None,
+    source: str | None = None,
 ) -> GameQuality:
     """Convenience function to compute game quality.
 

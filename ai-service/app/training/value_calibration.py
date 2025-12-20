@@ -5,13 +5,11 @@ Ensures value predictions are well-calibrated to actual game outcomes,
 improving MCTS search quality and decision-making.
 """
 
-import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-from collections import defaultdict
-import numpy as np
+from typing import Any
 
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +19,8 @@ class CalibrationBin:
     """A bin for calibration analysis."""
     lower: float
     upper: float
-    predictions: List[float] = field(default_factory=list)
-    outcomes: List[float] = field(default_factory=list)
+    predictions: list[float] = field(default_factory=list)
+    outcomes: list[float] = field(default_factory=list)
 
     @property
     def count(self) -> int:
@@ -48,13 +46,13 @@ class CalibrationReport:
     ece: float                           # Expected Calibration Error
     mce: float                           # Maximum Calibration Error
     overconfidence: float                # Degree of overconfidence (-1 to 1)
-    bins: List[CalibrationBin] = field(default_factory=list)
+    bins: list[CalibrationBin] = field(default_factory=list)
     total_samples: int = 0
-    reliability_diagram: Optional[Dict[str, List[float]]] = None
-    optimal_temperature: Optional[float] = None
-    brier_score: Optional[float] = None
+    reliability_diagram: dict[str, list[float]] | None = None
+    optimal_temperature: float | None = None
+    brier_score: float | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             'ece': self.ece,
             'mce': self.mce,
@@ -87,8 +85,8 @@ class ValueCalibrator:
             num_bins: Number of bins for calibration analysis
         """
         self.num_bins = num_bins
-        self.predictions: List[float] = []
-        self.outcomes: List[float] = []
+        self.predictions: list[float] = []
+        self.outcomes: list[float] = []
         self._temperature = 1.0
 
     def add_sample(self, prediction: float, outcome: float):
@@ -102,7 +100,7 @@ class ValueCalibrator:
         self.predictions.append(prediction)
         self.outcomes.append(outcome)
 
-    def add_batch(self, predictions: List[float], outcomes: List[float]):
+    def add_batch(self, predictions: list[float], outcomes: list[float]):
         """Add a batch of prediction-outcome pairs."""
         assert len(predictions) == len(outcomes)
         self.predictions.extend(predictions)
@@ -187,7 +185,7 @@ class ValueCalibrator:
 
     def find_optimal_temperature(
         self,
-        temp_range: Tuple[float, float] = (0.5, 2.0),
+        temp_range: tuple[float, float] = (0.5, 2.0),
         num_steps: int = 20
     ) -> float:
         """
@@ -249,7 +247,7 @@ class ValueCalibrator:
         scaled = np.tanh(np.arctanh(clipped) / self._temperature)
         return float(scaled)
 
-    def calibrate_batch(self, predictions: List[float]) -> List[float]:
+    def calibrate_batch(self, predictions: list[float]) -> list[float]:
         """Apply temperature scaling to a batch of predictions."""
         return [self.calibrate_prediction(p) for p in predictions]
 
@@ -274,7 +272,7 @@ class PlattScaler:
         self.b = 0.0
         self._fitted = False
 
-    def fit(self, predictions: List[float], outcomes: List[float],
+    def fit(self, predictions: list[float], outcomes: list[float],
             learning_rate: float = 0.01, max_iterations: int = 1000,
             tolerance: float = 1e-6) -> 'PlattScaler':
         """
@@ -298,7 +296,7 @@ class PlattScaler:
         a = 1.0
         b = 0.0
 
-        for iteration in range(max_iterations):
+        for _iteration in range(max_iterations):
             # Compute probabilities
             z = a * f + b
             p = 1 / (1 + np.exp(-z))
@@ -337,7 +335,7 @@ class PlattScaler:
         p = 1 / (1 + np.exp(-z))
         return float(2 * p - 1)  # Convert back to [-1, 1]
 
-    def calibrate_batch(self, predictions: List[float]) -> List[float]:
+    def calibrate_batch(self, predictions: list[float]) -> list[float]:
         """Calibrate a batch of predictions."""
         return [self.calibrate(p) for p in predictions]
 
@@ -350,18 +348,18 @@ class IsotonicCalibrator:
     """
 
     def __init__(self):
-        self.x_values: List[float] = []
-        self.y_values: List[float] = []
+        self.x_values: list[float] = []
+        self.y_values: list[float] = []
         self._fitted = False
 
-    def fit(self, predictions: List[float], outcomes: List[float]) -> 'IsotonicCalibrator':
+    def fit(self, predictions: list[float], outcomes: list[float]) -> 'IsotonicCalibrator':
         """
         Fit isotonic regression.
 
         Uses Pool Adjacent Violators algorithm.
         """
         # Sort by prediction
-        sorted_pairs = sorted(zip(predictions, outcomes))
+        sorted_pairs = sorted(zip(predictions, outcomes, strict=False))
         preds = [p[0] for p in sorted_pairs]
         outs = [p[1] for p in sorted_pairs]
 
@@ -422,7 +420,7 @@ class IsotonicCalibrator:
 
         return prediction
 
-    def calibrate_batch(self, predictions: List[float]) -> List[float]:
+    def calibrate_batch(self, predictions: list[float]) -> list[float]:
         """Calibrate a batch of predictions."""
         return [self.calibrate(p) for p in predictions]
 
@@ -436,7 +434,7 @@ class GamePhaseCalibrator:
 
     def __init__(self, num_phases: int = 3):
         self.num_phases = num_phases
-        self.phase_calibrators: Dict[int, ValueCalibrator] = {
+        self.phase_calibrators: dict[int, ValueCalibrator] = {
             i: ValueCalibrator() for i in range(num_phases)
         }
         self.phase_boundaries = [20, 50]  # Move thresholds
@@ -453,14 +451,14 @@ class GamePhaseCalibrator:
         phase = self._get_phase(move_number)
         self.phase_calibrators[phase].add_sample(prediction, outcome)
 
-    def compute_calibration(self) -> Dict[int, CalibrationReport]:
+    def compute_calibration(self) -> dict[int, CalibrationReport]:
         """Compute calibration for each phase."""
         return {
             phase: calibrator.compute_calibration()
             for phase, calibrator in self.phase_calibrators.items()
         }
 
-    def find_optimal_temperatures(self) -> Dict[int, float]:
+    def find_optimal_temperatures(self) -> dict[int, float]:
         """Find optimal temperature for each phase."""
         return {
             phase: calibrator.find_optimal_temperature()
@@ -480,9 +478,9 @@ class CalibrationTracker:
 
     def __init__(self, window_size: int = 1000):
         self.window_size = window_size
-        self.history: List[CalibrationReport] = []
-        self.running_predictions: List[float] = []
-        self.running_outcomes: List[float] = []
+        self.history: list[CalibrationReport] = []
+        self.running_predictions: list[float] = []
+        self.running_outcomes: list[float] = []
 
     def add_sample(self, prediction: float, outcome: float):
         """Add a sample to the running window."""
@@ -494,7 +492,7 @@ class CalibrationTracker:
             self.running_predictions.pop(0)
             self.running_outcomes.pop(0)
 
-    def compute_current_calibration(self) -> Optional[CalibrationReport]:
+    def compute_current_calibration(self) -> CalibrationReport | None:
         """Compute calibration for current window."""
         if len(self.running_predictions) < 100:
             return None
@@ -507,7 +505,7 @@ class CalibrationTracker:
         self.history.append(report)
         return report
 
-    def get_calibration_trend(self) -> Dict[str, List[float]]:
+    def get_calibration_trend(self) -> dict[str, list[float]]:
         """Get trend of calibration metrics over time."""
         return {
             'ece': [r.ece for r in self.history],
@@ -523,7 +521,7 @@ class CalibrationTracker:
         return self.history[-1].ece < ece_threshold
 
 
-def create_reliability_diagram(report: CalibrationReport, save_path: Optional[str] = None):
+def create_reliability_diagram(report: CalibrationReport, save_path: str | None = None):
     """
     Create a reliability diagram visualization.
     """
@@ -541,7 +539,7 @@ def create_reliability_diagram(report: CalibrationReport, save_path: Optional[st
     outcomes = rd['mean_outcomes']
     counts = rd['counts']
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    _fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     # Reliability diagram
     ax1.plot([0, 1], [0, 1], 'k--', label='Perfect calibration')
@@ -615,7 +613,7 @@ def main():
     calibrator2.add_batch(calibrated_predictions, outcomes)
     report2 = calibrator2.compute_calibration()
 
-    print(f"\n=== After Temperature Scaling ===")
+    print("\n=== After Temperature Scaling ===")
     print(f"ECE: {report2.ece:.4f}")
     print(f"MCE: {report2.mce:.4f}")
     print(f"Overconfidence: {report2.overconfidence:.4f}")
@@ -654,7 +652,7 @@ def main():
     print("\n=== Phase-Specific Calibration ===")
     phase_calibrator = GamePhaseCalibrator()
 
-    for i, (pred, out) in enumerate(zip(predictions, outcomes)):
+    for _i, (pred, out) in enumerate(zip(predictions, outcomes, strict=False)):
         move_number = random.randint(0, 100)
         phase_calibrator.add_sample(pred, out, move_number)
 

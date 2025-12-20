@@ -107,7 +107,7 @@ export RATE_LIMIT_BYPASS_ENABLED=true
 #### Baseline (20G/60P)
 
 ```bash
-SEED_LOADTEST_USERS=true tests/load/scripts/run-baseline.sh --staging
+SEED_LOADTEST_USERS=true tests/load/scripts/run-baseline.sh staging
 npm run slo:verify tests/load/results/BCAP_STAGING_BASELINE_20G_60P_staging_<timestamp>.json -- --env staging
 npm run slo:verify tests/load/results/websocket_BCAP_STAGING_BASELINE_20G_60P_staging_<timestamp>.json -- --env staging # if WS companion enabled
 ```
@@ -115,7 +115,7 @@ npm run slo:verify tests/load/results/websocket_BCAP_STAGING_BASELINE_20G_60P_st
 #### Target-scale (100G/300P)
 
 ```bash
-SEED_LOADTEST_USERS=true tests/load/scripts/run-target-scale.sh --staging
+SEED_LOADTEST_USERS=true tests/load/scripts/run-target-scale.sh staging
 npm run slo:verify tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_staging_<timestamp>.json -- --env production
 npm run slo:verify tests/load/results/websocket_BCAP_SQ8_3P_TARGET_100G_300P_staging_<timestamp>.json -- --env production
 ```
@@ -123,7 +123,7 @@ npm run slo:verify tests/load/results/websocket_BCAP_SQ8_3P_TARGET_100G_300P_sta
 #### AI-heavy (75G/300P, 3 AI seats)
 
 ```bash
-SEED_LOADTEST_USERS=true tests/load/scripts/run-ai-heavy.sh --staging
+SEED_LOADTEST_USERS=true tests/load/scripts/run-ai-heavy.sh staging
 npm run slo:verify tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_staging_<timestamp>.json -- --env staging
 npm run slo:verify tests/load/results/websocket_BCAP_SQ8_4P_AI_HEAVY_75G_300P_staging_<timestamp>.json -- --env staging
 ```

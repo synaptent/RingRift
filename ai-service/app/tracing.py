@@ -48,31 +48,32 @@ from __future__ import annotations
 import functools
 import logging
 import os
+from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # Core functions
-    "is_tracing_enabled",
-    "get_tracer",
-    "get_current_span",
-    "setup_tracing",
-    "shutdown_tracing",
-    # Decorators
-    "traced",
-    "traced_async",
-    # Context propagation
-    "inject_trace_context",
-    "extract_trace_context",
-    "trace_context_from_headers",
-    # Helper functions
-    "add_ai_move_attributes",
-    "add_training_attributes",
     # Classes
     "NoOpSpan",
     "NoOpTracer",
+    # Helper functions
+    "add_ai_move_attributes",
+    "add_training_attributes",
+    "extract_trace_context",
+    "get_current_span",
+    "get_tracer",
+    # Context propagation
+    "inject_trace_context",
+    # Core functions
+    "is_tracing_enabled",
+    "setup_tracing",
+    "shutdown_tracing",
+    "trace_context_from_headers",
+    # Decorators
+    "traced",
+    "traced_async",
     # Module-level tracer
     "tracer",
 ]
@@ -84,10 +85,10 @@ F = TypeVar('F', bound=Callable[..., Any])
 try:
     from opentelemetry import trace
     from opentelemetry.context import Context
-    from opentelemetry.sdk.resources import Resource, SERVICE_NAME
-    from opentelemetry.sdk.trace import TracerProvider, Span
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    from opentelemetry.sdk.trace import Span, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    from opentelemetry.trace import Status, StatusCode, SpanKind
+    from opentelemetry.trace import SpanKind, Status, StatusCode
     from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
     HAS_OPENTELEMETRY = True
@@ -126,8 +127,8 @@ except ImportError:
 # Global State
 # =============================================================================
 
-_tracer_provider: Optional[Any] = None
-_tracer: Optional[Any] = None
+_tracer_provider: Any | None = None
+_tracer: Any | None = None
 _tracing_enabled: bool = False
 
 
@@ -176,9 +177,9 @@ def get_current_span() -> Any:
 def setup_tracing(
     service_name: str = "ringrift-ai",
     exporter: str = "none",
-    jaeger_host: Optional[str] = None,
-    jaeger_port: Optional[int] = None,
-    otlp_endpoint: Optional[str] = None,
+    jaeger_host: str | None = None,
+    jaeger_port: int | None = None,
+    otlp_endpoint: str | None = None,
     sample_rate: float = 1.0,
 ) -> bool:
     """Initialize OpenTelemetry tracing.
@@ -256,10 +257,10 @@ def setup_tracing(
 
 def _create_span_processor(
     exporter: str,
-    jaeger_host: Optional[str],
-    jaeger_port: Optional[int],
-    otlp_endpoint: Optional[str],
-) -> Optional[Any]:
+    jaeger_host: str | None,
+    jaeger_port: int | None,
+    otlp_endpoint: str | None,
+) -> Any | None:
     """Create span processor based on exporter type."""
     if exporter == "console":
         return BatchSpanProcessor(ConsoleSpanExporter())
@@ -316,9 +317,9 @@ def shutdown_tracing():
 # =============================================================================
 
 def traced(
-    span_name: Optional[str] = None,
-    attributes: Optional[Dict[str, Any]] = None,
-    kind: Optional[Any] = None,
+    span_name: str | None = None,
+    attributes: dict[str, Any] | None = None,
+    kind: Any | None = None,
 ) -> Callable[[F], F]:
     """Decorator to trace a function.
 
@@ -368,9 +369,9 @@ def traced(
 
 
 def traced_async(
-    span_name: Optional[str] = None,
-    attributes: Optional[Dict[str, Any]] = None,
-    kind: Optional[Any] = None,
+    span_name: str | None = None,
+    attributes: dict[str, Any] | None = None,
+    kind: Any | None = None,
 ) -> Callable[[F], F]:
     """Decorator to trace an async function.
 
@@ -409,7 +410,7 @@ def traced_async(
 # Context Propagation
 # =============================================================================
 
-def inject_trace_context(carrier: Dict[str, str]) -> None:
+def inject_trace_context(carrier: dict[str, str]) -> None:
     """Inject trace context into carrier for propagation.
 
     Args:
@@ -422,7 +423,7 @@ def inject_trace_context(carrier: Dict[str, str]) -> None:
     propagator.inject(carrier)
 
 
-def extract_trace_context(carrier: Dict[str, str]) -> Optional[Any]:
+def extract_trace_context(carrier: dict[str, str]) -> Any | None:
     """Extract trace context from carrier.
 
     Args:
@@ -439,7 +440,7 @@ def extract_trace_context(carrier: Dict[str, str]) -> Optional[Any]:
 
 
 @contextmanager
-def trace_context_from_headers(headers: Dict[str, str]):
+def trace_context_from_headers(headers: dict[str, str]):
     """Context manager to set trace context from HTTP headers.
 
     Args:
@@ -475,10 +476,10 @@ class NoOpSpan:
     def set_attribute(self, key: str, value: Any) -> None:
         pass
 
-    def set_attributes(self, attributes: Dict[str, Any]) -> None:
+    def set_attributes(self, attributes: dict[str, Any]) -> None:
         pass
 
-    def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
         pass
 
     def record_exception(self, exception: Exception) -> None:

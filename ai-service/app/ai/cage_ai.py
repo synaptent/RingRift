@@ -19,10 +19,11 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import torch
 
+from ..models import AIConfig, GameState, Move
 from .base import BaseAI
 from .cage_network import (
     CAGEConfig,
@@ -30,7 +31,6 @@ from .cage_network import (
     board_to_graph,
 )
 from .ebmo_network import ActionFeatureExtractor
-from ..models import AIConfig, GameState, Move
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,8 @@ class CAGE_AI(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        model_path: Optional[str] = None,
-        cage_config: Optional[CAGEConfig] = None,
+        model_path: str | None = None,
+        cage_config: CAGEConfig | None = None,
     ) -> None:
         super().__init__(player_number, config)
 
@@ -58,7 +58,7 @@ class CAGE_AI(BaseAI):
         self.device = self._select_device()
 
         # Load or create network
-        self.network: Optional[CAGENetwork] = None
+        self.network: CAGENetwork | None = None
         self._model_loaded = False
 
         if model_path:
@@ -107,7 +107,7 @@ class CAGE_AI(BaseAI):
             self.network.to(self.device)
             self.network.eval()
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         valid_moves = self.get_valid_moves(game_state)
 
         if not valid_moves:
@@ -137,7 +137,7 @@ class CAGE_AI(BaseAI):
     def _optimize_for_move(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
     ) -> Move:
         """Find best move using graph-based energy optimization."""
         with torch.no_grad():
@@ -162,7 +162,7 @@ class CAGE_AI(BaseAI):
             action_embeds = self.network.encode_action(action_features)
 
         # Run primal-dual optimization
-        best_idx, best_energy = self.network.primal_dual_optimize(
+        best_idx, _best_energy = self.network.primal_dual_optimize(
             graph_embed, action_embeds, self.cage_config.optim_steps
         )
 
@@ -199,7 +199,7 @@ class CAGE_AI(BaseAI):
 
         return -min_energy
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         return {
             "type": "CAGE",
             "player": self.player_number,
@@ -213,7 +213,7 @@ class CAGE_AI(BaseAI):
 def create_cage_ai(
     player_number: int,
     config: AIConfig,
-    model_path: Optional[str] = None,
+    model_path: str | None = None,
 ) -> CAGE_AI:
     return CAGE_AI(player_number, config, model_path)
 
@@ -221,7 +221,7 @@ def create_cage_ai(
 CAGEAI = CAGE_AI
 
 __all__ = [
-    "CAGE_AI",
     "CAGEAI",
+    "CAGE_AI",
     "create_cage_ai",
 ]

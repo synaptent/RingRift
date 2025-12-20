@@ -7,14 +7,15 @@ Hex boards use D6 symmetry augmentation (12 transformations).
 """
 
 import argparse
+import contextlib
 import json
+import logging
 import os
 import random as py_random
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Tuple
 
 import numpy as np
 
@@ -23,14 +24,12 @@ from app.ai.gmo_ai import GMOAI, GMOConfig
 from app.ai.mcts_ai import MCTSAI
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.db import GameReplayDB, get_or_create_db, record_completed_game
-from app.models import (
-    GameState, BoardType, GameStatus, AIConfig
-)
+from app.models import AIConfig, BoardType, GameState, GameStatus
 from app.models.game_record import RecordSource
 from app.training.env import (
     TrainingEnvConfig,
-    make_env,
     get_theoretical_max_moves,
+    make_env,
 )
 from app.training.game_record_export import build_training_game_record
 from app.training.hex_augmentation import (
@@ -38,9 +37,7 @@ from app.training.hex_augmentation import (
     augment_hex_sample,
 )
 from app.utils.progress_reporter import SoakProgressReporter
-from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
-
-import logging
+from app.utils.resource_guard import LIMITS, check_disk_space, get_disk_usage
 
 logger = logging.getLogger(__name__)
 
@@ -180,9 +177,9 @@ class DataQualityTracker:
 def extract_mcts_visit_distribution(
     ai: MCTSAI,
     state: GameState,
-    encoder: Optional[NeuralNetAI] = None,
+    encoder: NeuralNetAI | None = None,
     use_board_aware_encoding: bool = False,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Extract MCTS visit count distribution as soft policy targets.
 
     This provides a richer training signal than 1-hot policy targets by
@@ -232,7 +229,7 @@ def extract_mcts_visit_distribution(
     p_indices = []
     p_values = []
 
-    for move, prob in zip(moves, probs):
+    for move, prob in zip(moves, probs, strict=False):
         if use_board_aware_encoding:
             idx = encode_move_for_board(move, state.board)
         else:
@@ -256,7 +253,6 @@ def extract_mcts_visit_distribution(
 # Re-export create_initial_state from the lightweight module for backwards compatibility
 # Using this module directly loads torch; for torch-free imports, use:
 #   from app.training.initial_state import create_initial_state
-from app.training.initial_state import create_initial_state
 
 
 def calculate_outcome(state, player_number, depth):
@@ -433,7 +429,7 @@ def augment_data(
     policy_values,
     neural_net,
     board_type: BoardType,
-    hex_transform: Optional[HexSymmetryTransform] = None,
+    hex_transform: HexSymmetryTransform | None = None,
     use_board_aware_encoding: bool = False,
 ):
     """
@@ -476,7 +472,7 @@ def augment_data(
 
         new_indices = []
         new_values = []
-        for idx, prob in zip(indices, values):
+        for idx, prob in zip(indices, values, strict=False):
             new_idx = transform_policy_index_square(
                 int(idx), board_type, k_rot, flip_h
             )
@@ -501,12 +497,12 @@ def augment_data(
 
         # Create a dummy game state for decoding/encoding context.
         from app.models import (
-            GameState,
             BoardState,
-            TimeControl,
-            GameStatus,
             GamePhase,
+            GameState,
+            GameStatus,
             Position,
+            TimeControl,
         )
         dummy_state = GameState(
             id="dummy",
@@ -534,7 +530,7 @@ def augment_data(
             mustMoveFromStackKey=None,
         )
 
-        for idx, prob in zip(indices, values):
+        for idx, prob in zip(indices, values, strict=False):
             move = neural_net.decode_move(idx, dummy_state)
             if not move:
                 continue
@@ -646,8 +642,8 @@ def augment_hex_data(
     globals_vec: np.ndarray,
     policy_indices: np.ndarray,
     policy_values: np.ndarray,
-    hex_transform: Optional[HexSymmetryTransform] = None,
-) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    hex_transform: HexSymmetryTransform | None = None,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """
     Augment hex board data using D6 symmetry transformations.
 
@@ -692,18 +688,18 @@ def generate_dataset(
     ai1=None,
     ai2=None,
     board_type: BoardType = BoardType.SQUARE8,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     max_moves: int = 10000,
     history_length: int = 3,
     feature_version: int = 2,
-    batch_size: Optional[int] = None,
-    replay_db: Optional[GameReplayDB] = None,
+    batch_size: int | None = None,
+    replay_db: GameReplayDB | None = None,
     num_players: int = 2,
-    game_records_jsonl: Optional[str] = None,
+    game_records_jsonl: str | None = None,
     engine: str = "descent",
     engine_mix: str = "single",
     engine_ratio: float = 0.5,
-    nn_model_id: Optional[str] = None,
+    nn_model_id: str | None = None,
     multi_player_values: bool = False,
     max_players: int = 4,
     graded_outcomes: bool = False,
@@ -818,16 +814,12 @@ def generate_dataset(
         nn = getattr(ai_obj, "neural_net", None)
         if nn is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             nn.feature_version = feature_version
-        except Exception:
-            pass
         hex_encoder = getattr(nn, "_hex_encoder", None)
         if hex_encoder is not None:
-            try:
+            with contextlib.suppress(Exception):
                 hex_encoder.feature_version = feature_version
-            except Exception:
-                pass
 
     def _make_ai(player_num: int, engine_type: str):
         """Create an AI instance for the specified player and engine type."""
@@ -925,7 +917,7 @@ def generate_dataset(
     games_recorded = 0
 
     # Optional JSONL export of per-game GameRecord entries.
-    jsonl_path: Optional[str] = None
+    jsonl_path: str | None = None
     jsonl_file = None
     if game_records_jsonl:
         if not os.path.isabs(game_records_jsonl):
@@ -972,7 +964,7 @@ def generate_dataset(
 
         # Track initial state and moves for DB recording
         initial_state = state.model_copy(deep=True)
-        moves_for_db: List = []
+        moves_for_db: list = []
 
         # History buffer for this game
         # List of feature planes (10, 8, 8)
@@ -1097,7 +1089,7 @@ def generate_dataset(
                         while len(hist_list) < history_length:
                             hist_list.append(np.zeros_like(feat))
                         hist_list = hist_list[:history_length]
-                        stack_list = [feat] + hist_list
+                        stack_list = [feat, *hist_list]
                         stacked_features = np.concatenate(stack_list, axis=0)
 
                         # Globals need to be re-calculated for the search node state?
@@ -1149,7 +1141,7 @@ def generate_dataset(
                 while len(hist_list) < history_length:
                     hist_list.append(np.zeros_like(features))
                 hist_list = hist_list[:history_length]
-                stack_list = [features] + hist_list
+                stack_list = [features, *hist_list]
                 stacked_features = np.concatenate(stack_list, axis=0)
 
                 # Update history
@@ -1159,8 +1151,8 @@ def generate_dataset(
 
                 # Encode policy using DescentAI search statistics (existing path)
                 state_key = ai._get_state_key(state)
-                p_indices: List[int] = []
-                p_values: List[float] = []
+                p_indices: list[int] = []
+                p_values: list[float] = []
 
                 entry = ai.transposition_table.get(state_key)
                 if entry is not None:
@@ -1237,7 +1229,7 @@ def generate_dataset(
                 while len(hist_list) < history_length:
                     hist_list.append(np.zeros_like(features))
                 hist_list = hist_list[:history_length]
-                stack_list = [features] + hist_list
+                stack_list = [features, *hist_list]
                 stacked_features = np.concatenate(stack_list, axis=0)
 
                 # Update history buffer
@@ -1339,7 +1331,7 @@ def generate_dataset(
                 )
 
         # Record game to DB if replay_db is provided
-        recorded_game_id: Optional[str] = None
+        recorded_game_id: str | None = None
         if replay_db is not None:
             try:
                 # Build per-player AI type metadata for DB schema compatibility
@@ -1655,7 +1647,7 @@ def generate_dataset(
     output_dir = os.path.dirname(output_path) or '.'
     if not check_disk_space(required_gb=2.0, path=output_dir, log_warning=False):
         disk_pct, available_gb, _ = get_disk_usage(output_dir)
-        raise IOError(
+        raise OSError(
             f"Insufficient disk space to save dataset: "
             f"{disk_pct:.1f}% used (limit: {LIMITS.DISK_MAX_PERCENT}%), "
             f"{available_gb:.1f}GB available. Path: {output_path}"
@@ -1668,13 +1660,13 @@ def generate_dataset_gpu_parallel(
     num_games: int = 20,
     output_file: str = "data/dataset_gpu.npz",
     board_type: BoardType = BoardType.SQUARE8,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     max_moves: int = 10000,
     num_players: int = 2,
     history_length: int = 3,
     feature_version: int = 2,
     gpu_batch_size: int = 20,
-    heuristic_weights: Optional[dict] = None,
+    heuristic_weights: dict | None = None,
 ) -> None:
     """Generate self-play data using GPU-accelerated parallel game simulation.
 
@@ -1721,11 +1713,9 @@ def generate_dataset_gpu_parallel(
     can be mixed with data from generate_dataset().
     """
     import torch
+
     from app.ai.gpu_parallel_games import (
         ParallelGameRunner,
-        BatchGameState,
-        evaluate_positions_batch,
-        MoveType as GPUMoveType,
     )
     from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
     from app.ai.neural_net import NeuralNetAI, encode_move_for_board
@@ -1809,8 +1799,8 @@ def generate_dataset_gpu_parallel(
 
         # Extract training data from each game
         for g in range(batch_games):
-            game_winner = results["winners"][g]
-            move_count = results["move_counts"][g]
+            results["winners"][g]
+            results["move_counts"][g]
 
             # Extract move history
             move_history = runner.state.extract_move_history(g)
@@ -1853,7 +1843,7 @@ def generate_dataset_gpu_parallel(
                     while len(hist_list) < history_length:
                         hist_list.append(np.zeros_like(features))
                     hist_list = hist_list[:history_length]
-                    stacked_features = np.concatenate([features] + hist_list, axis=0)
+                    stacked_features = np.concatenate([features, *hist_list], axis=0)
 
                     # Update history buffer
                     history_buffer.append(features)
@@ -1993,7 +1983,7 @@ def generate_dataset_gpu_parallel(
     # Check disk space before writing
     if not check_disk_space(required_gb=2.0, path=output_dir, log_warning=False):
         disk_pct, available_gb, _ = get_disk_usage(output_dir)
-        raise IOError(
+        raise OSError(
             f"Insufficient disk space to save dataset: "
             f"{disk_pct:.1f}% used (limit: {LIMITS.DISK_MAX_PERCENT}%), "
             f"{available_gb:.1f}GB available. Path: {output_path}"
@@ -2213,7 +2203,7 @@ def _board_type_from_str(name: str) -> BoardType:
     raise ValueError(f"Unknown board type: {name!r}")
 
 
-def _resolve_db_summary_path(db_path: Path) -> Optional[Path]:
+def _resolve_db_summary_path(db_path: Path) -> Path | None:
     """Best-effort resolution of a canonical self-play gate summary JSON.
 
     Mirrors the conventions used by ``scripts/generate_canonical_selfplay.py``:

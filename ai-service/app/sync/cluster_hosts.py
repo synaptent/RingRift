@@ -17,8 +17,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.error import URLError
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 HOSTS_CONFIG = ROOT / "config" / "distributed_hosts.yaml"
@@ -41,10 +40,10 @@ def _get_default_data_server_port() -> int:
 class ClusterNode:
     """Represents a cluster node with connectivity info."""
     name: str
-    tailscale_ip: Optional[str] = None
-    ssh_host: Optional[str] = None
+    tailscale_ip: str | None = None
+    ssh_host: str | None = None
     ssh_user: str = "ubuntu"
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     ssh_port: int = 22
     ringrift_path: str = "~/ringrift/ai-service"
     status: str = "unknown"
@@ -53,10 +52,10 @@ class ClusterNode:
     cpus: int = 0
     gpu: str = ""
     data_server_port: int = DATA_SYNC_PORT
-    data_server_url: Optional[str] = None
+    data_server_url: str | None = None
 
     @property
-    def best_ip(self) -> Optional[str]:
+    def best_ip(self) -> str | None:
         """Get best IP for connection (prefer Tailscale)."""
         for candidate in (self.tailscale_ip, self.ssh_host):
             if not candidate:
@@ -70,7 +69,7 @@ class ClusterNode:
         return None
 
     @property
-    def data_server_base_url(self) -> Optional[str]:
+    def data_server_base_url(self) -> str | None:
         """Get base URL for the node's data server."""
         if self.data_server_url:
             return self.data_server_url
@@ -92,10 +91,10 @@ class EloSyncConfig:
     sync_port: int = 8766
     sync_interval: int = 300
     divergence_threshold: int = 50
-    transports: List[str] = field(default_factory=lambda: ["tailscale", "aria2", "http"])
+    transports: list[str] = field(default_factory=lambda: ["tailscale", "aria2", "http"])
 
 
-def load_hosts_config() -> Dict[str, Any]:
+def load_hosts_config() -> dict[str, Any]:
     """Load raw hosts config from distributed_hosts.yaml."""
     if not HOSTS_CONFIG.exists():
         return {}
@@ -159,7 +158,7 @@ def get_elo_sync_config() -> EloSyncConfig:
     )
 
 
-def get_cluster_nodes() -> Dict[str, ClusterNode]:
+def get_cluster_nodes() -> dict[str, ClusterNode]:
     """Get all cluster nodes from config."""
     hosts_config = load_hosts_config().get("hosts", {})
     nodes = {}
@@ -186,19 +185,19 @@ def get_cluster_nodes() -> Dict[str, ClusterNode]:
     return nodes
 
 
-def get_active_nodes() -> List[ClusterNode]:
+def get_active_nodes() -> list[ClusterNode]:
     """Get all active (non-terminated) cluster nodes."""
     return [n for n in get_cluster_nodes().values() if n.is_active]
 
 
-def get_coordinator_node() -> Optional[ClusterNode]:
+def get_coordinator_node() -> ClusterNode | None:
     """Get the Elo coordinator node."""
     sync_config = get_elo_sync_config()
     nodes = get_cluster_nodes()
     return nodes.get(sync_config.coordinator)
 
 
-def get_coordinator_address() -> Tuple[str, int]:
+def get_coordinator_address() -> tuple[str, int]:
     """Get coordinator IP and port."""
     sync_config = get_elo_sync_config()
     coord_node = get_coordinator_node()
@@ -216,7 +215,7 @@ def get_coordinator_address() -> Tuple[str, int]:
     return None, sync_config.sync_port
 
 
-def check_http_endpoint(ip: str, port: int, path: str = "/status", timeout: int = 5) -> Optional[Dict]:
+def check_http_endpoint(ip: str, port: int, path: str = "/status", timeout: int = 5) -> dict | None:
     """Check if an HTTP endpoint is reachable and return response data."""
     try:
         url = f"http://{ip}:{port}{path}"
@@ -234,7 +233,7 @@ def check_node_reachable(node: ClusterNode, port: int = ELO_SYNC_PORT, timeout: 
     return check_http_endpoint(ip, port, "/status", timeout) is not None
 
 
-def discover_reachable_nodes(port: int = ELO_SYNC_PORT, timeout: int = 5) -> List[Tuple[ClusterNode, Dict]]:
+def discover_reachable_nodes(port: int = ELO_SYNC_PORT, timeout: int = 5) -> list[tuple[ClusterNode, dict]]:
     """Discover all reachable nodes in parallel, returning node and status."""
     nodes = get_active_nodes()
     reachable = []
@@ -261,14 +260,14 @@ def discover_reachable_nodes(port: int = ELO_SYNC_PORT, timeout: int = 5) -> Lis
     return reachable
 
 
-def get_sync_urls(port: int = ELO_SYNC_PORT, path: str = "/db") -> List[str]:
+def get_sync_urls(port: int = ELO_SYNC_PORT, path: str = "/db") -> list[str]:
     """Get URLs for all reachable sync endpoints."""
     reachable = discover_reachable_nodes(port)
     return [f"http://{node.best_ip}:{port}{path}" for node, _ in reachable if node.best_ip]
 
 
 # Convenience functions for specific sync types
-def get_elo_sync_urls() -> List[str]:
+def get_elo_sync_urls() -> list[str]:
     """Get URLs for Elo database sync."""
     return get_sync_urls(ELO_SYNC_PORT, "/db")
 
@@ -277,7 +276,7 @@ def get_data_sync_urls(
     exclude_self: bool = True,
     reachable_only: bool = True,
     timeout: int = 5,
-) -> List[str]:
+) -> list[str]:
     """Get URLs for data sync (games, training)."""
     if reachable_only:
         reachable = discover_reachable_nodes(_get_default_data_server_port(), timeout)
@@ -286,7 +285,7 @@ def get_data_sync_urls(
         nodes = get_active_nodes()
 
     hostname = socket.gethostname().lower()
-    urls: List[str] = []
+    urls: list[str] = []
 
     for node in nodes:
         if exclude_self and node.name.lower() == hostname:

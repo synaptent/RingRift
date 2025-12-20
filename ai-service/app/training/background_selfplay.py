@@ -17,14 +17,12 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import socket
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 # Get AI_SERVICE_ROOT
 from app.utils.paths import AI_SERVICE_ROOT
@@ -48,8 +46,8 @@ class BackgroundSelfplayTask:
     """Track a background selfplay process."""
 
     iteration: int
-    process: Optional[subprocess.Popen] = None
-    staging_db_path: Optional[Path] = None
+    process: subprocess.Popen | None = None
+    staging_db_path: Path | None = None
     games_requested: int = 0
     start_time: float = field(default_factory=time.time)
     board_type: str = "square8"
@@ -61,7 +59,7 @@ class BackgroundSelfplayTask:
             return False
         return self.process.poll() is None
 
-    def wait(self, timeout: Optional[float] = None) -> Tuple[bool, int]:
+    def wait(self, timeout: float | None = None) -> tuple[bool, int]:
         """Wait for background process to complete.
 
         Returns: (success, return_code)
@@ -95,16 +93,16 @@ class BackgroundSelfplayManager:
     runs while training/evaluation for iteration N is in progress.
     """
 
-    def __init__(self, ai_service_root: Optional[Path] = None):
+    def __init__(self, ai_service_root: Path | None = None):
         self._ai_service_root = ai_service_root or AI_SERVICE_ROOT
-        self._current_task: Optional[BackgroundSelfplayTask] = None
-        self._history: List[BackgroundSelfplayTask] = []
+        self._current_task: BackgroundSelfplayTask | None = None
+        self._history: list[BackgroundSelfplayTask] = []
 
     def start_background_selfplay(
         self,
-        config: Dict,
+        config: dict,
         iteration: int,
-    ) -> Optional[BackgroundSelfplayTask]:
+    ) -> BackgroundSelfplayTask | None:
         """Start selfplay in background.
 
         Args:
@@ -198,15 +196,16 @@ class BackgroundSelfplayManager:
     ) -> None:
         """Emit selfplay completion event via SelfplayOrchestrator (December 2025)."""
         try:
-            from app.coordination.selfplay_orchestrator import emit_selfplay_completion
             import asyncio
             import socket
+
+            from app.coordination.selfplay_orchestrator import emit_selfplay_completion
 
             node_id = socket.gethostname()
             task_id = f"background_selfplay_{task.iteration}_{int(task.start_time)}"
 
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(emit_selfplay_completion(
                     task_id=task_id,
                     board_type=task.board_type,
@@ -236,14 +235,14 @@ class BackgroundSelfplayManager:
         except Exception as e:
             print(f"[background] Failed to emit SELFPLAY_COMPLETE: {e}")
 
-    def get_current_task(self) -> Optional[BackgroundSelfplayTask]:
+    def get_current_task(self) -> BackgroundSelfplayTask | None:
         """Get the current background task."""
         return self._current_task
 
     def wait_for_current(
         self,
-        timeout: Optional[float] = None,
-    ) -> Tuple[bool, Optional[Path], int]:
+        timeout: float | None = None,
+    ) -> tuple[bool, Path | None, int]:
         """Wait for current background task to complete.
 
         Args:
@@ -288,7 +287,7 @@ class BackgroundSelfplayManager:
         """Check if there's a pending background task."""
         return self._current_task is not None and self._current_task.is_running()
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> dict:
         """Get statistics about background selfplay."""
         completed = [t for t in self._history if t.process and t.process.returncode == 0]
         failed = [t for t in self._history if t.process and t.process.returncode != 0]
@@ -307,11 +306,11 @@ class BackgroundSelfplayManager:
 
 
 # Global singleton manager
-_background_selfplay_manager: Optional[BackgroundSelfplayManager] = None
+_background_selfplay_manager: BackgroundSelfplayManager | None = None
 
 
 def get_background_selfplay_manager(
-    ai_service_root: Optional[Path] = None,
+    ai_service_root: Path | None = None,
 ) -> BackgroundSelfplayManager:
     """Get or create the global background selfplay manager.
 

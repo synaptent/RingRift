@@ -95,41 +95,40 @@ Unsafe optimizations (may affect play strength):
 
 from __future__ import annotations
 
-import os
-from typing import FrozenSet, Optional, List, Dict, Tuple
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from .base import BaseAI
-from .numba_eval import (
-    evaluate_line_potential_numba,
-    prepare_marker_arrays,
-)
-from .lightweight_state import LightweightState, MoveUndo
-from .lightweight_eval import evaluate_position_light, extract_weights_from_ai
-from .batch_eval import (
-    BoardArrays,
-    batch_evaluate_positions,
-    prepare_moves_for_batch,
-    get_or_update_board_arrays,
-)
-from .move_cache import get_cached_moves, cache_moves, USE_MOVE_CACHE
 from ..models import (
+    AIConfig,
     BoardType,
     GameState,
     Move,
     MoveType,
-    RingStack,
-    Position,
-    AIConfig,
     Player as PlayerState,
+    Position,
+    RingStack,
 )
-from ..rules.geometry import BoardGeometry
-from .heuristic_weights import HEURISTIC_WEIGHT_PROFILES
-from .fast_geometry import FastGeometry
-from .swap_evaluation import SwapEvaluator, SwapWeights
 from ..rules.core import count_buried_rings, is_eligible_for_recovery
+from ..rules.geometry import BoardGeometry
 from ..rules.recovery import has_any_recovery_move
+from .base import BaseAI
+from .batch_eval import (
+    BoardArrays,
+    batch_evaluate_positions,
+    get_or_update_board_arrays,
+    prepare_moves_for_batch,
+)
+from .fast_geometry import FastGeometry
+from .heuristic_weights import HEURISTIC_WEIGHT_PROFILES
+from .lightweight_eval import evaluate_position_light, extract_weights_from_ai
+from .lightweight_state import LightweightState, MoveUndo
+from .move_cache import USE_MOVE_CACHE, cache_moves, get_cached_moves
+from .numba_eval import (
+    evaluate_line_potential_numba,
+    prepare_marker_arrays,
+)
+from .swap_evaluation import SwapEvaluator, SwapWeights
 
 # Environment flag to enable make/unmake optimization
 # WARNING: When enabled, uses simplified evaluation (fewer heuristic features).
@@ -166,7 +165,7 @@ PARALLEL_WORKERS = int(os.getenv('RINGRIFT_PARALLEL_WORKERS', '0'))
 PARALLEL_MIN_MOVES = int(os.getenv('RINGRIFT_PARALLEL_MIN_MOVES', '50'))
 
 # Global persistent process pool for parallel evaluation
-_parallel_executor: Optional[ProcessPoolExecutor] = None
+_parallel_executor: ProcessPoolExecutor | None = None
 
 
 def _get_parallel_executor() -> ProcessPoolExecutor:
@@ -186,7 +185,7 @@ def _shutdown_parallel_executor() -> None:
         _parallel_executor = None
 
 
-def _evaluate_moves_chunk_worker(args: Tuple) -> List[Tuple[int, float]]:
+def _evaluate_moves_chunk_worker(args: tuple) -> list[tuple[int, float]]:
     """
     Worker function for parallel chunk evaluation.
 
@@ -366,12 +365,12 @@ class HeuristicAI(BaseAI):
 
         # Cached BoardArrays for lazy reuse across evaluations.
         # This avoids recreating NumPy arrays on each move evaluation.
-        self._cached_board_arrays: Optional[BoardArrays] = None
+        self._cached_board_arrays: BoardArrays | None = None
 
         self._apply_weight_profile()
 
         # Initialize swap evaluator with current weights
-        self._swap_evaluator: Optional[SwapEvaluator] = None
+        self._swap_evaluator: SwapEvaluator | None = None
 
     def _apply_weight_profile(self) -> None:
         """Override evaluation weights for this instance from a profile.
@@ -496,7 +495,7 @@ class HeuristicAI(BaseAI):
         )
         return score
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using heuristic evaluation.
 
         Args:
@@ -529,7 +528,7 @@ class HeuristicAI(BaseAI):
 
             # Evaluate each move and collect all moves with the best score
             # (random tie-breaking among equally good moves)
-            best_moves: List[Move] = []
+            best_moves: list[Move] = []
             best_score = float('-inf')
 
             # Choose evaluation strategy based on number of moves and flags
@@ -648,7 +647,7 @@ class HeuristicAI(BaseAI):
         self.move_count += 1
         return selected
 
-    def _sample_moves_for_training(self, moves: List[Move]) -> List[Move]:
+    def _sample_moves_for_training(self, moves: list[Move]) -> list[Move]:
         """
         Sample moves for evaluation if training_move_sample_limit is set.
 
@@ -705,16 +704,13 @@ class HeuristicAI(BaseAI):
         board_type = game_state.board.type
         if board_type == BoardType.HEXAGONAL:
             return True
-        if board_type == BoardType.SQUARE19:
-            return True
-
-        return False
+        return board_type == BoardType.SQUARE19
 
     def _evaluate_moves_parallel(
         self,
         game_state: GameState,
-        moves: List[Move],
-    ) -> List[Tuple[Move, float]]:
+        moves: list[Move],
+    ) -> list[tuple[Move, float]]:
         """
         Evaluate moves in parallel using ProcessPoolExecutor.
 
@@ -752,7 +748,7 @@ class HeuristicAI(BaseAI):
         executor = _get_parallel_executor()
 
         # Evaluate chunks in parallel
-        results: Dict[int, float] = {}
+        results: dict[int, float] = {}
         futures = [
             executor.submit(_evaluate_moves_chunk_worker, chunk_args)
             for chunk_args in chunks
@@ -777,9 +773,9 @@ class HeuristicAI(BaseAI):
     def _evaluate_moves_fast(
         self,
         game_state: GameState,
-        moves: List[Move],
+        moves: list[Move],
         early_term: bool = True,
-    ) -> List[tuple]:
+    ) -> list[tuple]:
         """
         Evaluate moves using make/unmake pattern with lightweight state.
 
@@ -884,7 +880,7 @@ class HeuristicAI(BaseAI):
     def _evaluate_swap_opening_bonus_light(
         self,
         state: LightweightState,
-        player_number: Optional[int] = None,
+        player_number: int | None = None,
     ) -> float:
         """Evaluate swap opening bonus using lightweight state.
 
@@ -900,8 +896,8 @@ class HeuristicAI(BaseAI):
     def _evaluate_moves_batch(
         self,
         game_state: GameState,
-        moves: List[Move],
-    ) -> List[tuple]:
+        moves: list[Move],
+    ) -> list[tuple]:
         """
         Evaluate moves using NumPy batch operations.
 
@@ -989,7 +985,7 @@ class HeuristicAI(BaseAI):
     def _compute_component_scores(
         self,
         game_state: GameState,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Compute per-feature component scores for the current position.
 
@@ -999,8 +995,8 @@ class HeuristicAI(BaseAI):
         not evaluated at all and are reported as ``0.0``.
         """
         # Clear visibility cache for this evaluation (avoids stale data)
-        self._visible_stacks_cache: Dict[str, List] = {}
-        scores: Dict[str, float] = {}
+        self._visible_stacks_cache: dict[str, list] = {}
+        scores: dict[str, float] = {}
 
         # Tier 0 (core) features – always computed.
         scores["stack_control"] = self._evaluate_stack_control(game_state)
@@ -1090,7 +1086,7 @@ class HeuristicAI(BaseAI):
     def get_evaluation_breakdown(
         self,
         game_state: GameState
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Get detailed breakdown of position evaluation
 
@@ -1102,7 +1098,7 @@ class HeuristicAI(BaseAI):
         """
         components = self._compute_component_scores(game_state)
         total = sum(components.values())
-        breakdown: Dict[str, float] = {"total": total}
+        breakdown: dict[str, float] = {"total": total}
         breakdown.update(components)
         return breakdown
 
@@ -1305,7 +1301,7 @@ class HeuristicAI(BaseAI):
         score = (my_mobility - opp_mobility) * self.WEIGHT_MOBILITY
         return score
 
-    def _iterate_board_keys(self, board) -> List[str]:
+    def _iterate_board_keys(self, board) -> list[str]:
         """
         Iterate over all logical board coordinate keys for the given board.
 
@@ -1596,7 +1592,7 @@ class HeuristicAI(BaseAI):
         self,
         position: Position,
         game_state: GameState,
-    ) -> List[RingStack]:
+    ) -> list[RingStack]:
         """
         Compute line-of-sight visible stacks from a position.
 
@@ -1612,7 +1608,7 @@ class HeuristicAI(BaseAI):
         if hasattr(self, '_visible_stacks_cache') and cache_key in self._visible_stacks_cache:
             return self._visible_stacks_cache[cache_key]
 
-        visible: List[RingStack] = []
+        visible: list[RingStack] = []
         board = game_state.board
         board_type = board.type
         stacks = board.stacks
@@ -1784,7 +1780,7 @@ class HeuristicAI(BaseAI):
     # _evaluate_move is deprecated in favor of evaluate_position
     # on the simulated state
 
-    def _get_center_positions(self, game_state: GameState) -> FrozenSet[str]:
+    def _get_center_positions(self, game_state: GameState) -> frozenset[str]:
         """Get center position keys for the board using FastGeometry cache."""
         return self._fast_geo.get_center_positions(game_state.board.type)
 
@@ -2056,7 +2052,7 @@ class HeuristicAI(BaseAI):
         self,
         position: Position,
         game_state: GameState
-    ) -> List[Position]:
+    ) -> list[Position]:
         """Get adjacent positions around a position.
 
         Note: This method returns Position objects for compatibility.
@@ -2068,7 +2064,7 @@ class HeuristicAI(BaseAI):
             game_state.board.size
         )
 
-    def _get_adjacent_keys(self, pos_key: str, board_type) -> List[str]:
+    def _get_adjacent_keys(self, pos_key: str, board_type) -> list[str]:
         """Get adjacent position keys using pre-computed FastGeometry tables.
 
         This is significantly faster than _get_adjacent_positions as it

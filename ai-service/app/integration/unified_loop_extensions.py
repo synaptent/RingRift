@@ -29,11 +29,9 @@ Usage:
 import asyncio
 import logging
 import time
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
-
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +83,7 @@ class ExtensionState:
     last_calibration_time: float = 0.0
 
     # Plateau detection state
-    elo_history: List[tuple] = field(default_factory=list)  # (timestamp, elo)
+    elo_history: list[tuple] = field(default_factory=list)  # (timestamp, elo)
     plateau_count: int = 0
     last_plateau_check: float = 0.0
 
@@ -111,7 +109,7 @@ class UnifiedLoopExtensions:
     def __init__(
         self,
         unified_loop,  # UnifiedAILoop instance
-        config: Optional[ExtensionConfig] = None
+        config: ExtensionConfig | None = None
     ):
         from app.utils.paths import AI_SERVICE_ROOT
 
@@ -290,9 +288,9 @@ class UnifiedLoopExtensions:
         self,
         name: str,
         model_path: Path,
-        metrics: Dict[str, Any],
-        training_config: Dict[str, Any]
-    ) -> Optional[tuple]:
+        metrics: dict[str, Any],
+        training_config: dict[str, Any]
+    ) -> tuple | None:
         """Register a model with the registry."""
         if not self.model_registry:
             return None
@@ -528,7 +526,7 @@ class UnifiedLoopExtensions:
 # Helper function for easy integration
 # =============================================================================
 
-def integrate_extensions(unified_loop, config: Optional[ExtensionConfig] = None) -> UnifiedLoopExtensions:
+def integrate_extensions(unified_loop, config: ExtensionConfig | None = None) -> UnifiedLoopExtensions:
     """
     Integrate extensions into an existing UnifiedAILoop instance.
 

@@ -33,15 +33,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -77,16 +75,16 @@ class ImprovementState:
     consecutive_promotions: int = 0
     total_promotions_24h: int = 0
     last_promotion_time: float = 0.0
-    promotion_times: List[float] = field(default_factory=list)
+    promotion_times: list[float] = field(default_factory=list)
 
     # Performance metrics
     avg_elo_gain_per_promotion: float = 25.0
     best_elo_gain: float = 0.0
-    elo_gains: List[float] = field(default_factory=list)
+    elo_gains: list[float] = field(default_factory=list)
 
     # Throughput tracking
     training_runs_24h: int = 0
-    training_times: List[float] = field(default_factory=list)
+    training_times: list[float] = field(default_factory=list)
     avg_training_duration_seconds: float = 3600.0
 
     # Quality metrics
@@ -99,7 +97,7 @@ class ImprovementState:
     evaluation_frequency_multiplier: float = 1.0  # <1.0 = more frequent
 
     # Config-specific boosts
-    config_boosts: Dict[str, float] = field(default_factory=dict)
+    config_boosts: dict[str, float] = field(default_factory=dict)
 
     # Last update
     updated_at: float = field(default_factory=time.time)
@@ -115,7 +113,7 @@ class OptimizationRecommendation:
     evaluation_adjustment: float  # Multiplier for evaluation interval
     reason: str
     confidence: float  # 0-1, how confident in this recommendation
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ImprovementOptimizer:
@@ -128,7 +126,7 @@ class ImprovementOptimizer:
     4. Success streak tracking and rewards
     """
 
-    _instance: Optional["ImprovementOptimizer"] = None
+    _instance: ImprovementOptimizer | None = None
     _lock = threading.RLock()
 
     # Baseline thresholds (from unified_config.py)
@@ -152,14 +150,14 @@ class ImprovementOptimizer:
     QUALITY_DATA_THRESHOLD = 0.98   # 98%+ parity success rate
     CALIBRATION_EXCELLENT_THRESHOLD = 0.05  # ECE < 5%
 
-    def __init__(self, state_path: Optional[Path] = None):
+    def __init__(self, state_path: Path | None = None):
         self._state_path = state_path or OPTIMIZER_STATE_PATH
         self._state = ImprovementState()
-        self._callbacks: List[Callable[[OptimizationRecommendation], None]] = []
+        self._callbacks: list[Callable[[OptimizationRecommendation], None]] = []
         self._load_state()
 
     @classmethod
-    def get_instance(cls, state_path: Optional[Path] = None) -> "ImprovementOptimizer":
+    def get_instance(cls, state_path: Path | None = None) -> ImprovementOptimizer:
         """Get or create singleton instance."""
         with cls._lock:
             if cls._instance is None:
@@ -325,7 +323,7 @@ class ImprovementOptimizer:
         config_key: str,
         duration_seconds: float,
         val_loss: float,
-        calibration_ece: Optional[float] = None,
+        calibration_ece: float | None = None,
     ) -> OptimizationRecommendation:
         """Record training completion.
 
@@ -545,7 +543,7 @@ class ImprovementOptimizer:
 
         return False
 
-    def get_improvement_metrics(self) -> Dict[str, Any]:
+    def get_improvement_metrics(self) -> dict[str, Any]:
         """Get metrics for monitoring improvement efficiency."""
         self._cleanup_old_times()
 
@@ -574,7 +572,7 @@ class ImprovementOptimizer:
             "config_boosts": dict(self._state.config_boosts),
         }
 
-    def get_recommendations(self) -> List[OptimizationRecommendation]:
+    def get_recommendations(self) -> list[OptimizationRecommendation]:
         """Get current optimization recommendations based on state."""
         recommendations = []
 
@@ -619,7 +617,7 @@ ImprovementSignal.OPPORTUNITY_AVAILABLE = "opportunity_available"
 # Module-level convenience functions
 # =============================================================================
 
-_optimizer: Optional[ImprovementOptimizer] = None
+_optimizer: ImprovementOptimizer | None = None
 
 
 def get_improvement_optimizer() -> ImprovementOptimizer:
@@ -651,7 +649,7 @@ def record_training_complete(
     config_key: str,
     duration_seconds: float,
     val_loss: float,
-    calibration_ece: Optional[float] = None,
+    calibration_ece: float | None = None,
 ) -> None:
     """Record training completion."""
     get_improvement_optimizer().record_training_complete(
@@ -659,7 +657,7 @@ def record_training_complete(
     )
 
 
-def get_improvement_metrics() -> Dict[str, Any]:
+def get_improvement_metrics() -> dict[str, Any]:
     """Get improvement efficiency metrics."""
     return get_improvement_optimizer().get_improvement_metrics()
 

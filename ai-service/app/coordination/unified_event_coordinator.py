@@ -35,11 +35,13 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -140,8 +142,8 @@ CROSS_PROCESS_TO_DATA_MAP = {
 # DataEventBus
 try:
     from app.distributed.data_events import (
-        DataEventType,
         DataEvent,
+        DataEventType,
         EventBus as DataEventBus,
         get_event_bus as get_data_event_bus,
     )
@@ -158,8 +160,8 @@ except ImportError:
 # StageEventBus
 try:
     from app.coordination.stage_events import (
-        StageEvent,
         StageCompletionResult,
+        StageEvent,
         StageEventBus,
         get_event_bus as get_stage_event_bus,
     )
@@ -201,9 +203,9 @@ class CoordinatorStats:
     events_bridged_stage_to_cross: int = 0
     events_bridged_cross_to_data: int = 0
     events_dropped: int = 0
-    last_bridge_time: Optional[str] = None
-    errors: List[str] = field(default_factory=list)
-    start_time: Optional[str] = None
+    last_bridge_time: str | None = None
+    errors: list[str] = field(default_factory=list)
+    start_time: str | None = None
     is_running: bool = False
 
 
@@ -221,28 +223,28 @@ class UnifiedEventCoordinator:
     4. Provides centralized monitoring of all event traffic
     """
 
-    _instance: Optional['UnifiedEventCoordinator'] = None
+    _instance: UnifiedEventCoordinator | None = None
     _lock = threading.RLock()
 
     def __init__(self):
         """Initialize the coordinator."""
-        self._data_bus: Optional[DataEventBus] = None
-        self._stage_bus: Optional[StageEventBus] = None
-        self._cross_queue: Optional[CrossProcessEventQueue] = None
+        self._data_bus: DataEventBus | None = None
+        self._stage_bus: StageEventBus | None = None
+        self._cross_queue: CrossProcessEventQueue | None = None
 
         self._running = False
-        self._poll_task: Optional[asyncio.Task] = None
-        self._subscriber_id: Optional[str] = None
+        self._poll_task: asyncio.Task | None = None
+        self._subscriber_id: str | None = None
 
         self._stats = CoordinatorStats()
-        self._event_handlers: Dict[str, List[Callable]] = {}
+        self._event_handlers: dict[str, list[Callable]] = {}
 
         # Events we're bridging (avoid re-forwarding)
-        self._recently_bridged: Set[str] = set()
+        self._recently_bridged: set[str] = set()
         self._bridge_dedup_window = 5.0  # seconds
 
     @classmethod
-    def get_instance(cls) -> 'UnifiedEventCoordinator':
+    def get_instance(cls) -> UnifiedEventCoordinator:
         """Get singleton instance."""
         if cls._instance is None:
             with cls._lock:
@@ -302,10 +304,8 @@ class UnifiedEventCoordinator:
 
         if self._poll_task:
             self._poll_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._poll_task
-            except asyncio.CancelledError:
-                pass
             self._poll_task = None
 
         if self._cross_queue and self._subscriber_id:
@@ -320,7 +320,7 @@ class UnifiedEventCoordinator:
             return
 
         # Subscribe to events we want to bridge to cross-process
-        for data_event_value in DATA_TO_CROSS_PROCESS_MAP.keys():
+        for data_event_value in DATA_TO_CROSS_PROCESS_MAP:
             try:
                 event_type = DataEventType(data_event_value)
                 self._data_bus.subscribe(event_type, self._handle_data_event)
@@ -333,7 +333,7 @@ class UnifiedEventCoordinator:
             return
 
         # Subscribe to events we want to bridge to cross-process
-        for stage_event_value in STAGE_TO_CROSS_PROCESS_MAP.keys():
+        for stage_event_value in STAGE_TO_CROSS_PROCESS_MAP:
             try:
                 event_type = StageEvent(stage_event_value)
                 self._stage_bus.subscribe(event_type, self._handle_stage_event)
@@ -494,7 +494,7 @@ class UnifiedEventCoordinator:
     def register_handler(
         self,
         event_type: str,
-        handler: Callable[[Dict[str, Any]], None]
+        handler: Callable[[dict[str, Any]], None]
     ) -> None:
         """Register a custom handler for specific event types.
 
@@ -511,7 +511,7 @@ class UnifiedEventCoordinator:
     async def _dispatch_handlers(
         self,
         event_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         source: str,
         origin: str,
     ) -> None:
@@ -540,7 +540,7 @@ class UnifiedEventCoordinator:
     async def emit_to_all(
         self,
         event_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         source: str = "unified_coordinator",
     ) -> None:
         """Emit an event to all event systems.
@@ -866,20 +866,20 @@ __all__ = [
     "CoordinatorStats",
     # Main class
     "UnifiedEventCoordinator",
+    "emit_evaluation_completed",
+    "emit_model_promoted",
+    "emit_selfplay_batch_completed",
+    "emit_sync_completed",
+    "emit_training_completed",
+    "emit_training_completed_sync",
+    "emit_training_failed",
+    # Async event emitters
+    "emit_training_started",
+    # Sync event emitters
+    "emit_training_started_sync",
+    "get_coordinator_stats",
     # Functions
     "get_event_coordinator",
     "start_coordinator",
     "stop_coordinator",
-    "get_coordinator_stats",
-    # Async event emitters
-    "emit_training_started",
-    "emit_training_completed",
-    "emit_training_failed",
-    "emit_evaluation_completed",
-    "emit_sync_completed",
-    "emit_model_promoted",
-    "emit_selfplay_batch_completed",
-    # Sync event emitters
-    "emit_training_started_sync",
-    "emit_training_completed_sync",
 ]

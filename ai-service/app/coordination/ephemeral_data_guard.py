@@ -39,12 +39,13 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Default paths
 from app.utils.paths import DATA_DIR
+
 DEFAULT_GUARD_DB = DATA_DIR / "coordination" / "ephemeral_guard.db"
 
 # Thresholds
@@ -72,7 +73,7 @@ class HostCheckpoint:
     games_generated: int
     games_synced: int
     last_game_id: str
-    checkpoint_data: Dict[str, Any] = field(default_factory=dict)
+    checkpoint_data: dict[str, Any] = field(default_factory=dict)
 
     @property
     def unsynced_games(self) -> int:
@@ -89,11 +90,9 @@ class HostCheckpoint:
             return False
         if self.unsynced_games < EVACUATION_THRESHOLD:
             return False
-        if self.seconds_since_heartbeat < HEARTBEAT_TIMEOUT:
-            return False
-        return True
+        return not self.seconds_since_heartbeat < HEARTBEAT_TIMEOUT
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "host": self.host,
             "is_ephemeral": self.is_ephemeral,
@@ -128,20 +127,20 @@ class EphemeralDataGuard:
     3. Evacuation detection and triggering
     """
 
-    _instance: Optional["EphemeralDataGuard"] = None
+    _instance: EphemeralDataGuard | None = None
     _lock = threading.RLock()
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or DEFAULT_GUARD_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
-        self._checkpoints: Dict[str, HostCheckpoint] = {}
-        self._write_through_queue: List[WriteThrough] = []
+        self._checkpoints: dict[str, HostCheckpoint] = {}
+        self._write_through_queue: list[WriteThrough] = []
         self._init_db()
         self._load_state()
 
     @classmethod
-    def get_instance(cls, db_path: Optional[Path] = None) -> "EphemeralDataGuard":
+    def get_instance(cls, db_path: Path | None = None) -> EphemeralDataGuard:
         """Get or create singleton instance."""
         with cls._lock:
             if cls._instance is None:
@@ -267,11 +266,11 @@ class EphemeralDataGuard:
 
     def checkpoint(
         self,
-        host: Optional[str] = None,
-        games_generated: Optional[int] = None,
-        games_synced: Optional[int] = None,
-        last_game_id: Optional[str] = None,
-        extra_data: Optional[Dict[str, Any]] = None,
+        host: str | None = None,
+        games_generated: int | None = None,
+        games_synced: int | None = None,
+        last_game_id: str | None = None,
+        extra_data: dict[str, Any] | None = None,
     ) -> HostCheckpoint:
         """Record a checkpoint for a host.
 
@@ -325,7 +324,7 @@ class EphemeralDataGuard:
 
         return checkpoint
 
-    def heartbeat(self, host: Optional[str] = None) -> None:
+    def heartbeat(self, host: str | None = None) -> None:
         """Record a heartbeat for a host (lighter than full checkpoint)."""
         if host is None:
             host = socket.gethostname()
@@ -377,7 +376,7 @@ class EphemeralDataGuard:
 
         logger.info(f"[EphemeralGuard] Queued write-through for game {game_id} from {host}")
 
-    def get_pending_write_throughs(self, limit: int = 100) -> List[WriteThrough]:
+    def get_pending_write_throughs(self, limit: int = 100) -> list[WriteThrough]:
         """Get pending write-through requests ordered by priority."""
         conn = self._get_connection()
         cursor = conn.execute("""
@@ -414,7 +413,7 @@ class EphemeralDataGuard:
     # Evacuation Management
     # =========================================================================
 
-    def get_evacuation_candidates(self) -> List[HostCheckpoint]:
+    def get_evacuation_candidates(self) -> list[HostCheckpoint]:
         """Get hosts that need emergency data evacuation."""
         candidates = []
         for checkpoint in self._checkpoints.values():
@@ -470,7 +469,7 @@ class EphemeralDataGuard:
     # Status and Monitoring
     # =========================================================================
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get overall ephemeral guard status."""
         ephemeral_hosts = [c for c in self._checkpoints.values() if c.is_ephemeral]
         evacuation_candidates = self.get_evacuation_candidates()
@@ -489,7 +488,7 @@ class EphemeralDataGuard:
             },
         }
 
-    def get_checkpoint(self, host: str) -> Optional[HostCheckpoint]:
+    def get_checkpoint(self, host: str) -> HostCheckpoint | None:
         """Get checkpoint for a specific host."""
         return self._checkpoints.get(host)
 
@@ -504,10 +503,10 @@ def get_ephemeral_guard() -> EphemeralDataGuard:
 
 
 def checkpoint_games(
-    host: Optional[str] = None,
-    games_generated: Optional[int] = None,
-    games_synced: Optional[int] = None,
-    last_game_id: Optional[str] = None,
+    host: str | None = None,
+    games_generated: int | None = None,
+    games_synced: int | None = None,
+    last_game_id: str | None = None,
 ) -> HostCheckpoint:
     """Record a checkpoint for games generated."""
     return get_ephemeral_guard().checkpoint(
@@ -518,7 +517,7 @@ def checkpoint_games(
     )
 
 
-def ephemeral_heartbeat(host: Optional[str] = None) -> None:
+def ephemeral_heartbeat(host: str | None = None) -> None:
     """Record a heartbeat for a host."""
     get_ephemeral_guard().heartbeat(host)
 
@@ -528,7 +527,7 @@ def is_host_ephemeral(host: str) -> bool:
     return get_ephemeral_guard()._is_ephemeral_host(host)
 
 
-def get_evacuation_candidates() -> List[HostCheckpoint]:
+def get_evacuation_candidates() -> list[HostCheckpoint]:
     """Get hosts needing emergency evacuation."""
     return get_ephemeral_guard().get_evacuation_candidates()
 
@@ -571,7 +570,7 @@ def wire_ephemeral_guard_events() -> EphemeralDataGuard:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -624,23 +623,23 @@ def wire_ephemeral_guard_events() -> EphemeralDataGuard:
 __all__ = [
     # Constants
     "CHECKPOINT_INTERVAL",
-    "HEARTBEAT_TIMEOUT",
-    "EVACUATION_THRESHOLD",
     "CRITICAL_GAME_THRESHOLD",
     "EPHEMERAL_HOST_PATTERNS",
+    "EVACUATION_THRESHOLD",
+    "HEARTBEAT_TIMEOUT",
+    # Main class
+    "EphemeralDataGuard",
     # Data classes
     "HostCheckpoint",
     "WriteThrough",
-    # Main class
-    "EphemeralDataGuard",
-    # Functions
-    "get_ephemeral_guard",
     "checkpoint_games",
     "ephemeral_heartbeat",
-    "is_host_ephemeral",
+    # Functions
+    "get_ephemeral_guard",
     "get_evacuation_candidates",
-    "request_evacuation",
+    "is_host_ephemeral",
     "queue_critical_game",
+    "request_evacuation",
     "reset_ephemeral_guard",
     "wire_ephemeral_guard_events",
 ]

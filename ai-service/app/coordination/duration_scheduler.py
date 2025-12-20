@@ -39,7 +39,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Default database location
 DEFAULT_SCHEDULER_DB = Path("/tmp/ringrift_coordination/duration_scheduler.db")
@@ -102,7 +102,7 @@ class TaskDurationRecord:
     started_at: float
     completed_at: float
     success: bool
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def duration_seconds(self) -> float:
@@ -123,7 +123,7 @@ class ScheduledTask:
     scheduled_start: float
     expected_end: float
     priority: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def expected_duration_seconds(self) -> float:
@@ -133,7 +133,7 @@ class ScheduledTask:
 class DurationScheduler:
     """Duration-aware task scheduler with historical learning."""
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or DEFAULT_SCHEDULER_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
@@ -263,7 +263,7 @@ class DurationScheduler:
         completed_at: float,
         success: bool = True,
         config: str = "",
-        metadata: Dict[str, Any] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a task completion for duration learning.
 
@@ -298,9 +298,9 @@ class DurationScheduler:
         task_id: str,
         task_type: str,
         host: str,
-        expected_duration: Optional[float] = None,
+        expected_duration: float | None = None,
         pid: int = 0,
-        metadata: Dict[str, Any] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Register a task as currently running.
 
@@ -345,7 +345,7 @@ class DurationScheduler:
         conn.commit()
         return cursor.rowcount > 0
 
-    def get_host_availability(self, host: str, task_type: str = "") -> Tuple[bool, float]:
+    def get_host_availability(self, host: str, task_type: str = "") -> tuple[bool, float]:
         """Check when a host will be available for a new task.
 
         Args:
@@ -389,7 +389,7 @@ class DurationScheduler:
         host: str,
         min_duration_hours: float = 0,
         avoid_peak_hours: bool = True,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Check if a task can be scheduled to start now.
 
         Args:
@@ -438,9 +438,9 @@ class DurationScheduler:
         task_id: str,
         task_type: str,
         host: str,
-        scheduled_start: Optional[float] = None,
+        scheduled_start: float | None = None,
         priority: int = 0,
-        metadata: Dict[str, Any] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Schedule a task for future execution.
 
@@ -476,10 +476,10 @@ class DurationScheduler:
 
     def get_scheduled_tasks(
         self,
-        host: Optional[str] = None,
-        task_type: Optional[str] = None,
+        host: str | None = None,
+        task_type: str | None = None,
         limit: int = 50,
-    ) -> List[ScheduledTask]:
+    ) -> list[ScheduledTask]:
         """Get scheduled tasks.
 
         Args:
@@ -494,7 +494,7 @@ class DurationScheduler:
 
         query = '''SELECT task_id, task_type, host, scheduled_start, expected_end, priority, metadata
                    FROM scheduled_tasks WHERE 1=1'''
-        params: List[Any] = []
+        params: list[Any] = []
 
         if host:
             query += ' AND host = ?'
@@ -527,7 +527,7 @@ class DurationScheduler:
         conn.commit()
         return cursor.rowcount > 0
 
-    def get_duration_stats(self, task_type: Optional[str] = None) -> Dict[str, Any]:
+    def get_duration_stats(self, task_type: str | None = None) -> dict[str, Any]:
         """Get duration statistics."""
         conn = self._get_connection()
 
@@ -588,11 +588,11 @@ class DurationScheduler:
 
 
 # Global singleton
-_scheduler: Optional[DurationScheduler] = None
+_scheduler: DurationScheduler | None = None
 _scheduler_lock = threading.RLock()
 
 
-def get_scheduler(db_path: Optional[Path] = None) -> DurationScheduler:
+def get_scheduler(db_path: Path | None = None) -> DurationScheduler:
     """Get the global duration scheduler singleton."""
     global _scheduler
     with _scheduler_lock:
@@ -634,13 +634,13 @@ def register_running_task(
     task_id: str,
     task_type: str,
     host: str,
-    expected_duration: Optional[float] = None,
+    expected_duration: float | None = None,
 ) -> None:
     """Register a task as running."""
     get_scheduler().register_running(task_id, task_type, host, expected_duration)
 
 
-def get_resource_availability(host: str, task_type: str = "") -> Tuple[bool, float]:
+def get_resource_availability(host: str, task_type: str = "") -> tuple[bool, float]:
     """Check resource availability on a host."""
     return get_scheduler().get_host_availability(host, task_type)
 
@@ -649,7 +649,7 @@ def can_schedule_task(
     task_type: str,
     host: str,
     min_duration_hours: float = 0,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Check if a task can be scheduled now."""
     return get_scheduler().can_schedule_now(task_type, host, min_duration_hours)
 
@@ -699,19 +699,19 @@ __all__ = [
     # Constants
     "DEFAULT_DURATIONS",
     "INTENSIVE_TASK_TYPES",
-    "PEAK_HOURS_START",
     "PEAK_HOURS_END",
-    # Data classes
-    "TaskDurationRecord",
-    "ScheduledTask",
+    "PEAK_HOURS_START",
     # Main class
     "DurationScheduler",
+    "ScheduledTask",
+    # Data classes
+    "TaskDurationRecord",
+    "can_schedule_task",
+    "estimate_task_duration",
+    "get_resource_availability",
     # Functions
     "get_scheduler",
-    "reset_scheduler",
-    "estimate_task_duration",
     "record_task_completion",
     "register_running_task",
-    "get_resource_availability",
-    "can_schedule_task",
+    "reset_scheduler",
 ]

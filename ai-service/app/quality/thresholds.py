@@ -28,9 +28,9 @@ from dataclasses import dataclass
 # Import from canonical source (app/config/thresholds.py)
 try:
     from app.config.thresholds import (
-        MIN_QUALITY_FOR_TRAINING,
-        MIN_QUALITY_FOR_PRIORITY_SYNC,
         HIGH_QUALITY_THRESHOLD,
+        MIN_QUALITY_FOR_PRIORITY_SYNC,
+        MIN_QUALITY_FOR_TRAINING,
     )
 except ImportError:
     # Fallback defaults if central config not available

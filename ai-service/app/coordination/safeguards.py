@@ -29,14 +29,15 @@ Usage:
 import json
 import logging
 import os
-import psutil
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,6 @@ class SafeguardConfig:
 
 # Use canonical circuit breaker from distributed module
 from app.distributed.circuit_breaker import CircuitBreaker as CanonicalCircuitBreaker
-
 
 # ============================================
 # Spawn Rate Tracker
@@ -158,11 +158,11 @@ class ResourceMonitor:
 
     def __init__(self, config: SafeguardConfig):
         self.config = config
-        self._last_check: Dict[str, Any] = {}
+        self._last_check: dict[str, Any] = {}
         self._last_check_time: float = 0
         self._check_interval: float = 5.0  # Cache for 5 seconds
 
-    def get_resources(self) -> Dict[str, Any]:
+    def get_resources(self) -> dict[str, Any]:
         """Get current resource usage."""
         now = time.time()
         if now - self._last_check_time < self._check_interval and self._last_check:
@@ -197,7 +197,7 @@ class ResourceMonitor:
 
         return self._last_check
 
-    def is_critical(self) -> Tuple[bool, str]:
+    def is_critical(self) -> tuple[bool, str]:
         """Check if resources are at critical levels."""
         resources = self.get_resources()
 
@@ -218,7 +218,7 @@ class ResourceMonitor:
 
         return False, ""
 
-    def is_warning(self) -> Tuple[bool, str]:
+    def is_warning(self) -> tuple[bool, str]:
         """Check if resources are at warning levels."""
         resources = self.get_resources()
 
@@ -257,7 +257,7 @@ class Safeguards:
                     cls._instance = cls()
         return cls._instance
 
-    def __init__(self, config: Optional[SafeguardConfig] = None):
+    def __init__(self, config: SafeguardConfig | None = None):
         self.config = config or SafeguardConfig()
 
         # Canonical circuit breaker (tracks all targets internally)
@@ -271,13 +271,13 @@ class Safeguards:
 
         # Spawn rate tracking
         self._global_tracker = SpawnRateTracker(self.config)
-        self._node_trackers: Dict[str, SpawnRateTracker] = {}
+        self._node_trackers: dict[str, SpawnRateTracker] = {}
 
         # Resource monitor
         self._resource_monitor = ResourceMonitor(self.config)
 
         # Task counts
-        self._task_counts: Dict[str, Dict[str, int]] = {}  # node_id -> {task_type: count}
+        self._task_counts: dict[str, dict[str, int]] = {}  # node_id -> {task_type: count}
         self._counts_lock = threading.RLock()
 
         # Block reason (for debugging)
@@ -437,7 +437,7 @@ class Safeguards:
     # Statistics
     # ==========================================
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get safeguard statistics."""
         resources = self._resource_monitor.get_resources()
 
@@ -465,7 +465,7 @@ class Safeguards:
             "last_block_reason": self._last_block_reason,
         }
 
-    def get_task_count(self, node_id: str, task_type: Optional[str] = None) -> int:
+    def get_task_count(self, node_id: str, task_type: str | None = None) -> int:
         """Get task count for a node."""
         with self._counts_lock:
             if node_id not in self._task_counts:
@@ -474,7 +474,7 @@ class Safeguards:
                 return self._task_counts[node_id].get(task_type, 0)
             return sum(self._task_counts[node_id].values())
 
-    def sync_task_counts(self, counts: Dict[str, Dict[str, int]]) -> None:
+    def sync_task_counts(self, counts: dict[str, dict[str, int]]) -> None:
         """Sync task counts from external source (e.g., P2P orchestrator)."""
         with self._counts_lock:
             self._task_counts = counts
@@ -563,7 +563,7 @@ def patch_p2p_start_job():
     return wrapped_start_job
 
 
-def check_before_spawn(task_type: str, node_id: str) -> Tuple[bool, str]:
+def check_before_spawn(task_type: str, node_id: str) -> tuple[bool, str]:
     """
     Simple check function for existing code.
 
@@ -625,13 +625,13 @@ if __name__ == "__main__":
 # =============================================================================
 
 __all__ = [
+    "ResourceMonitor",
     # Data classes
     "SafeguardConfig",
+    "Safeguards",
     # Classes
     "SpawnRateTracker",
-    "ResourceMonitor",
-    "Safeguards",
+    "check_before_spawn",
     # Functions
     "patch_p2p_start_job",
-    "check_before_spawn",
 ]

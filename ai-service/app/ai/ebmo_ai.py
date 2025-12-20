@@ -28,20 +28,20 @@ import logging
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from ..models import AIConfig, GameState, Move
 from .base import BaseAI
 from .ebmo_network import (
+    ActionFeatureExtractor,
     EBMOConfig,
     EBMONetwork,
-    ActionFeatureExtractor,
     load_ebmo_model,
 )
-from ..models import AIConfig, GameState, Move
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,8 @@ class EBMO_AI(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        model_path: Optional[str] = None,
-        ebmo_config: Optional[EBMOConfig] = None,
+        model_path: str | None = None,
+        ebmo_config: EBMOConfig | None = None,
     ) -> None:
         """Initialize EBMO AI.
 
@@ -93,7 +93,7 @@ class EBMO_AI(BaseAI):
         self.device = self._select_device()
 
         # Load or create network
-        self.network: Optional[EBMONetwork] = None
+        self.network: EBMONetwork | None = None
         self._model_loaded = False
 
         if model_path:
@@ -126,8 +126,8 @@ class EBMO_AI(BaseAI):
         self.temperature: float = 1.0
 
         # Training feedback: last move's root value and policy
-        self.last_root_value: Optional[float] = None
-        self.last_root_policy: Optional[Dict[int, float]] = None
+        self.last_root_value: float | None = None
+        self.last_root_policy: dict[int, float] | None = None
 
     def _load_config_from_ai_config(self, config: AIConfig) -> None:
         """Extract EBMO parameters from AIConfig.extra."""
@@ -154,7 +154,7 @@ class EBMO_AI(BaseAI):
     def _load_model(self, path: str) -> None:
         """Load trained EBMO model."""
         try:
-            self.network, info = load_ebmo_model(path, self.device, self.ebmo_config)
+            self.network, _info = load_ebmo_model(path, self.device, self.ebmo_config)
             self.network.eval()
             self._model_loaded = True
             logger.info(f"[EBMO_AI] Loaded model from {path}")
@@ -165,7 +165,7 @@ class EBMO_AI(BaseAI):
             self.network.to(self.device)
             self.network.eval()
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select best move using energy-based optimization.
 
         Algorithm:
@@ -211,7 +211,7 @@ class EBMO_AI(BaseAI):
     def _optimize_for_move(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
     ) -> Move:
         """Run gradient-based optimization to find best move.
 
@@ -251,13 +251,13 @@ class EBMO_AI(BaseAI):
         best_move = valid_moves[0]
         best_energy = float('inf')
 
-        for restart in range(self.ebmo_config.num_restarts):
+        for _restart in range(self.ebmo_config.num_restarts):
             # Initialize from random legal move
             init_idx = self.rng.randint(0, len(valid_moves) - 1)
             init_move = valid_moves[init_idx]
 
             # Optimize action embedding
-            optimized_embed, final_energy = self._optimize_action_embedding(
+            optimized_embed, _final_energy = self._optimize_action_embedding(
                 state_embed,
                 init_move,
                 legal_embeddings,
@@ -298,7 +298,7 @@ class EBMO_AI(BaseAI):
     def _direct_eval_move(
         self,
         state_embed: torch.Tensor,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
         legal_embeddings: torch.Tensor,
     ) -> Move:
         """Directly evaluate energy on all legal moves (no gradient descent).
@@ -341,7 +341,7 @@ class EBMO_AI(BaseAI):
 
         return valid_moves[best_idx]
 
-    def _encode_legal_moves(self, moves: List[Move]) -> torch.Tensor:
+    def _encode_legal_moves(self, moves: list[Move]) -> torch.Tensor:
         """Encode all legal moves to embeddings.
 
         Args:
@@ -358,7 +358,7 @@ class EBMO_AI(BaseAI):
         state_embed: torch.Tensor,
         init_move: Move,
         legal_embeddings: torch.Tensor,
-    ) -> Tuple[torch.Tensor, float]:
+    ) -> tuple[torch.Tensor, float]:
         """Run gradient descent on action embedding.
 
         Args:
@@ -453,7 +453,7 @@ class EBMO_AI(BaseAI):
     def _find_nearest_move(
         self,
         action_embed: torch.Tensor,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
         legal_embeddings: torch.Tensor,
     ) -> Move:
         """Find legal move nearest to embedding.
@@ -479,7 +479,7 @@ class EBMO_AI(BaseAI):
     def _manifold_constrained_optimization(
         self,
         state_embed: torch.Tensor,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
         legal_embeddings: torch.Tensor,
     ) -> Move:
         """Optimize on the legal move manifold using convex combinations.
@@ -520,7 +520,7 @@ class EBMO_AI(BaseAI):
         best_move = valid_moves[0]
         best_energy = float('inf')
 
-        for restart in range(self.ebmo_config.num_restarts):
+        for _restart in range(self.ebmo_config.num_restarts):
             # Initialize weights uniformly (with skip penalty bias)
             weights = torch.zeros(num_moves, device=self.device, requires_grad=True)
             # Add some noise for diversity across restarts
@@ -611,8 +611,8 @@ class EBMO_AI(BaseAI):
     def get_move_energies(
         self,
         game_state: GameState,
-        moves: Optional[List[Move]] = None,
-    ) -> Dict[str, float]:
+        moves: list[Move] | None = None,
+    ) -> dict[str, float]:
         """Get energy values for moves (for debugging/analysis).
 
         Args:
@@ -640,7 +640,7 @@ class EBMO_AI(BaseAI):
             energies = self.network.compute_energy(state_batch, move_embeddings)
 
         result = {}
-        for move, energy in zip(moves, energies.tolist()):
+        for move, energy in zip(moves, energies.tolist(), strict=False):
             key = f"{move.type.value}"
             if move.from_pos:
                 key += f"_from_{move.from_pos.x},{move.from_pos.y}"
@@ -650,7 +650,7 @@ class EBMO_AI(BaseAI):
 
         return result
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get AI statistics.
 
         Returns:
@@ -675,7 +675,7 @@ class EBMO_AI(BaseAI):
             },
         }
 
-    def reset_for_new_game(self, *, rng_seed: Optional[int] = None) -> None:
+    def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset for a new game."""
         super().reset_for_new_game(rng_seed=rng_seed)
         # Reset training feedback
@@ -699,7 +699,7 @@ class EBMO_AI(BaseAI):
         # Also seed torch for any stochastic operations
         torch.manual_seed(self.rng_seed)
 
-    def get_policy_distribution(self, game_state: GameState) -> Dict[int, float]:
+    def get_policy_distribution(self, game_state: GameState) -> dict[int, float]:
         """Get policy distribution over moves for training.
 
         Converts energy-based scores to probability distribution.
@@ -748,7 +748,7 @@ class EBMO_AI(BaseAI):
 def create_ebmo_ai(
     player_number: int,
     config: AIConfig,
-    model_path: Optional[str] = None,
+    model_path: str | None = None,
 ) -> EBMO_AI:
     """Factory function to create EBMO AI.
 
@@ -766,9 +766,9 @@ EBMOAI = EBMO_AI
 
 
 __all__ = [
-    "EBMO_AI",
     "EBMOAI",
-    "create_ebmo_ai",
-    "EBMO_MODEL_PATH_ENV",
+    "EBMO_AI",
     "EBMO_DEFAULT_MODEL_PATH",
+    "EBMO_MODEL_PATH_ENV",
+    "create_ebmo_ai",
 ]

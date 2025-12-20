@@ -21,7 +21,7 @@ Usage:
 from __future__ import annotations
 
 import os
-from typing import Any, Optional, Type, TypeVar, Union
+from typing import Any, TypeVar, Union
 
 T = TypeVar("T")
 
@@ -36,7 +36,7 @@ class AssertionError(Exception):
     caught separately and includes better context.
     """
 
-    def __init__(self, message: str, context: Optional[dict] = None):
+    def __init__(self, message: str, context: dict | None = None):
         super().__init__(message)
         self.message = message
         self.context = context or {}
@@ -157,7 +157,7 @@ def check(
 
 def require_type(
     value: Any,
-    expected_type: Union[Type, tuple],
+    expected_type: Union[type, tuple],
     name: str = "value",
 ) -> None:
     """Assert that a value has the expected type.
@@ -191,7 +191,7 @@ def require_type(
 
 
 def require_not_none(
-    value: Optional[T],
+    value: T | None,
     name: str = "value",
 ) -> T:
     """Assert that a value is not None and return it.
@@ -307,17 +307,17 @@ def unreachable(message: str = "This code should be unreachable") -> None:
 
 
 __all__ = [
+    "ASSERTIONS_ENABLED",
     "AssertionError",
-    "PreconditionError",
-    "PostconditionError",
     "InvariantError",
-    "require",
-    "ensure",
+    "PostconditionError",
+    "PreconditionError",
     "check",
-    "require_type",
-    "require_not_none",
+    "ensure",
+    "require",
     "require_in_range",
     "require_non_empty",
+    "require_not_none",
+    "require_type",
     "unreachable",
-    "ASSERTIONS_ENABLED",
 ]

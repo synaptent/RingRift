@@ -43,18 +43,18 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from app.core.health import HealthCheck, HealthRegistry, HealthResult, HealthStatus, ProbeType
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "ServiceState",
-    "Service",
-    "LifecycleManager",
     "LifecycleEvent",
     "LifecycleListener",
+    "LifecycleManager",
+    "Service",
+    "ServiceState",
 ]
 
 
@@ -73,11 +73,11 @@ class LifecycleEvent:
     """Event emitted during lifecycle transitions."""
     service_name: str
     event_type: str  # started, stopped, failed, health_changed
-    old_state: Optional[ServiceState]
+    old_state: ServiceState | None
     new_state: ServiceState
     timestamp: float = field(default_factory=time.time)
-    error: Optional[Exception] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    error: Exception | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class LifecycleListener(ABC):
@@ -120,10 +120,10 @@ class Service(HealthCheck, ABC):
 
     def __init__(self):
         self._state = ServiceState.CREATED
-        self._error: Optional[Exception] = None
-        self._started_at: Optional[float] = None
-        self._stopped_at: Optional[float] = None
-        self._dependencies_resolved: Dict[str, "Service"] = {}
+        self._error: Exception | None = None
+        self._started_at: float | None = None
+        self._stopped_at: float | None = None
+        self._dependencies_resolved: dict[str, Service] = {}
 
     @property
     @abstractmethod
@@ -132,7 +132,7 @@ class Service(HealthCheck, ABC):
         pass
 
     @property
-    def dependencies(self) -> List[str]:
+    def dependencies(self) -> list[str]:
         """List of service names this depends on."""
         return []
 
@@ -147,14 +147,14 @@ class Service(HealthCheck, ABC):
         return self._state == ServiceState.RUNNING
 
     @property
-    def uptime(self) -> Optional[float]:
+    def uptime(self) -> float | None:
         """Get service uptime in seconds."""
         if self._started_at and self._state == ServiceState.RUNNING:
             return time.time() - self._started_at
         return None
 
     @property
-    def error(self) -> Optional[Exception]:
+    def error(self) -> Exception | None:
         """Get error that caused failure."""
         return self._error
 
@@ -180,13 +180,13 @@ class Service(HealthCheck, ABC):
         """Check service health."""
         pass
 
-    def _get_dependency(self, name: str) -> "Service":
+    def _get_dependency(self, name: str) -> Service:
         """Get a resolved dependency."""
         if name not in self._dependencies_resolved:
             raise RuntimeError(f"Dependency '{name}' not resolved for {self.name}")
         return self._dependencies_resolved[name]
 
-    def _set_dependency(self, name: str, service: "Service") -> None:
+    def _set_dependency(self, name: str, service: Service) -> None:
         """Set a resolved dependency (called by manager)."""
         self._dependencies_resolved[name] = service
 
@@ -219,7 +219,7 @@ class Service(HealthCheck, ABC):
             logger.error(f"Service {self.name} failed to stop: {e}")
             raise
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get service status as dictionary."""
         return {
             "name": self.name,
@@ -269,9 +269,9 @@ class LifecycleManager:
             health_timeout: Timeout for health checks
             shutdown_timeout: Timeout for service shutdown
         """
-        self._services: Dict[str, Service] = {}
-        self._startup_order: List[str] = []
-        self._listeners: List[LifecycleListener] = []
+        self._services: dict[str, Service] = {}
+        self._startup_order: list[str] = []
+        self._listeners: list[LifecycleListener] = []
         self._health_registry = HealthRegistry(timeout=health_timeout)
         self._shutdown_timeout = shutdown_timeout
         self._shutting_down = False
@@ -298,7 +298,7 @@ class LifecycleManager:
         self._services.pop(name, None)
         self._health_registry.unregister(name)
 
-    def get(self, name: str) -> Optional[Service]:
+    def get(self, name: str) -> Service | None:
         """Get a service by name."""
         return self._services.get(name)
 
@@ -311,7 +311,7 @@ class LifecycleManager:
         self._listeners.remove(listener)
 
     @property
-    def services(self) -> Dict[str, Service]:
+    def services(self) -> dict[str, Service]:
         """Get all registered services."""
         return dict(self._services)
 
@@ -320,7 +320,7 @@ class LifecycleManager:
         """Check if shutdown is in progress."""
         return self._shutting_down
 
-    def compute_startup_order(self) -> List[str]:
+    def compute_startup_order(self) -> list[str]:
         """Compute startup order via topological sort.
 
         Returns:
@@ -330,8 +330,8 @@ class LifecycleManager:
             ValueError: If dependencies cannot be resolved
         """
         # Build dependency graph
-        in_degree: Dict[str, int] = {name: 0 for name in self._services}
-        graph: Dict[str, List[str]] = {name: [] for name in self._services}
+        in_degree: dict[str, int] = dict.fromkeys(self._services, 0)
+        graph: dict[str, list[str]] = {name: [] for name in self._services}
 
         for name, service in self._services.items():
             for dep in service.dependencies:
@@ -344,7 +344,7 @@ class LifecycleManager:
 
         # Kahn's algorithm
         queue = [name for name, degree in in_degree.items() if degree == 0]
-        order: List[str] = []
+        order: list[str] = []
 
         while queue:
             queue.sort()  # Deterministic order
@@ -367,7 +367,7 @@ class LifecycleManager:
         self,
         parallel: bool = False,
         stop_on_failure: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
         """Start all registered services.
 
         Args:
@@ -386,7 +386,7 @@ class LifecycleManager:
             for dep_name in service.dependencies:
                 service._set_dependency(dep_name, self._services[dep_name])
 
-        started: List[str] = []
+        started: list[str] = []
 
         if parallel:
             started = await self._start_parallel(order, stop_on_failure)
@@ -398,9 +398,9 @@ class LifecycleManager:
 
     async def _start_sequential(
         self,
-        order: List[str],
+        order: list[str],
         stop_on_failure: bool,
-    ) -> List[str]:
+    ) -> list[str]:
         """Start services sequentially."""
         started = []
 
@@ -434,11 +434,11 @@ class LifecycleManager:
 
     async def _start_parallel(
         self,
-        order: List[str],
+        order: list[str],
         stop_on_failure: bool,
-    ) -> List[str]:
+    ) -> list[str]:
         """Start independent services in parallel."""
-        started: Set[str] = set()
+        started: set[str] = set()
         pending = set(order)
 
         while pending:
@@ -458,7 +458,7 @@ class LifecycleManager:
                 return_exceptions=True,
             )
 
-            for name, result in zip(ready, results):
+            for name, result in zip(ready, results, strict=False):
                 if isinstance(result, Exception):
                     if stop_on_failure:
                         await self._stop_services(list(started))
@@ -506,7 +506,7 @@ class LifecycleManager:
         await self._stop_services(order)
         self._shutting_down = False
 
-    async def _stop_services(self, names: List[str]) -> None:
+    async def _stop_services(self, names: list[str]) -> None:
         """Stop specified services."""
         logger.info(f"Stopping {len(names)} services")
 
@@ -597,7 +597,7 @@ class LifecycleManager:
         self._signal_handlers_installed = True
         logger.debug("Signal handlers installed")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get status of all services."""
         return {
             "services": {

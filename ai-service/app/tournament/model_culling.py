@@ -26,10 +26,9 @@ import shutil
 import sqlite3
 import subprocess
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
-import urllib.request
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +58,8 @@ class CullResult:
     config_key: str
     culled: int
     kept: int
-    archived_models: List[str]
-    preserved_models: List[str]
+    archived_models: list[str]
+    preserved_models: list[str]
     timestamp: float
 
 
@@ -105,7 +104,7 @@ class ModelCullingController:
         self.KEEP_FRACTION = keep_fraction
 
         # Track last cull time per config
-        self._last_cull: Dict[str, float] = {}
+        self._last_cull: dict[str, float] = {}
         self._cull_cooldown = 3600  # 1 hour between culls per config
 
     def _get_db_connection(self) -> sqlite3.Connection:
@@ -142,7 +141,7 @@ class ModelCullingController:
         finally:
             conn.close()
 
-    def get_models_for_config(self, config_key: str) -> List[ModelInfo]:
+    def get_models_for_config(self, config_key: str) -> list[ModelInfo]:
         """Get all models for a config, sorted by Elo descending.
 
         Args:
@@ -363,12 +362,10 @@ class ModelCullingController:
         src = self.model_dir / model.filename
         alt_src = self.model_dir / f"{model.model_id}.pth"
 
-        moved = False
         if src.exists():
             dst = archive_dir / model.filename
             try:
                 shutil.move(str(src), str(dst))
-                moved = True
                 logger.debug(f"[Culling] Archived {src} -> {dst}")
             except Exception as e:
                 logger.warning(f"[Culling] Failed to move {src}: {e}")
@@ -376,7 +373,6 @@ class ModelCullingController:
             dst = archive_dir / f"{model.model_id}.pth"
             try:
                 shutil.move(str(alt_src), str(dst))
-                moved = True
                 logger.debug(f"[Culling] Archived {alt_src} -> {dst}")
             except Exception as e:
                 logger.warning(f"[Culling] Failed to move {alt_src}: {e}")
@@ -418,7 +414,7 @@ class ModelCullingController:
         finally:
             conn.close()
 
-    def cull_all_configs(self) -> Dict[str, CullResult]:
+    def cull_all_configs(self) -> dict[str, CullResult]:
         """Check and cull all 9 configs.
 
         Returns:
@@ -441,7 +437,7 @@ class ModelCullingController:
                 )
         return results
 
-    def get_archive_stats(self) -> Dict[str, Dict]:
+    def get_archive_stats(self) -> dict[str, dict]:
         """Get statistics about archived models.
 
         Returns:
@@ -530,7 +526,7 @@ class ModelCullingController:
         finally:
             conn.close()
 
-    def load_cull_manifest(self) -> Set[str]:
+    def load_cull_manifest(self) -> set[str]:
         """Load archived model IDs from manifest file.
 
         Returns:
@@ -542,7 +538,7 @@ class ModelCullingController:
 
         try:
             import json
-            with open(manifest_path, "r") as f:
+            with open(manifest_path) as f:
                 manifest = json.load(f)
             return set(manifest.get("archived_ids", []))
         except Exception as e:
@@ -551,8 +547,8 @@ class ModelCullingController:
 
 
 def get_culling_controller(
-    elo_db_path: Optional[Path] = None,
-    model_dir: Optional[Path] = None,
+    elo_db_path: Path | None = None,
+    model_dir: Path | None = None,
 ) -> ModelCullingController:
     """Get culling controller instance.
 

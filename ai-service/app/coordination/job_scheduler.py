@@ -38,21 +38,22 @@ import logging
 import random
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
 # Resource thresholds - import from centralized thresholds (December 2025)
 try:
     from app.config.thresholds import (
-        GPU_WARNING_PERCENT,
-        GPU_CRITICAL_PERCENT,
-        CPU_WARNING_PERCENT,
         CPU_CRITICAL_PERCENT,
+        CPU_WARNING_PERCENT,
         ELO_UNDERSERVED_THRESHOLD as ELO_UNDERSERVED_THRESHOLD_CONFIG,
+        GPU_CRITICAL_PERCENT,
+        GPU_WARNING_PERCENT,
     )
     TARGET_GPU_UTILIZATION_MIN = GPU_WARNING_PERCENT
     TARGET_GPU_UTILIZATION_MAX = GPU_CRITICAL_PERCENT
@@ -108,16 +109,16 @@ class ScheduledJob:
 
     job_type: str  # selfplay, tournament, training, promotion, etc.
     priority: JobPriority
-    config: Dict[str, Any] = field(default_factory=dict)
-    host_preference: Optional[str] = None  # Preferred host name or None
+    config: dict[str, Any] = field(default_factory=dict)
+    host_preference: str | None = None  # Preferred host name or None
     requires_gpu: bool = False
     estimated_duration_seconds: int = 3600
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    job_id: Optional[str] = None
+    started_at: float | None = None
+    completed_at: float | None = None
+    job_id: str | None = None
 
-    def __lt__(self, other: "ScheduledJob") -> bool:
+    def __lt__(self, other: ScheduledJob) -> bool:
         """Enable sorting by priority."""
         return self.priority < other.priority
 
@@ -125,7 +126,7 @@ class ScheduledJob:
         """Hash by job_id or id if no job_id."""
         return hash(self.job_id or id(self))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dict for serialization."""
         return {
             "job_type": self.job_type,
@@ -165,10 +166,10 @@ class PriorityJobScheduler:
         Args:
             max_queue_size: Maximum number of jobs in the queue
         """
-        self._queue: List[ScheduledJob] = []
-        self._running: Dict[str, ScheduledJob] = {}  # host_name -> job
+        self._queue: list[ScheduledJob] = []
+        self._running: dict[str, ScheduledJob] = {}  # host_name -> job
         self._max_queue_size = max_queue_size
-        self._completed_jobs: List[ScheduledJob] = []
+        self._completed_jobs: list[ScheduledJob] = []
         self._max_completed_history = 100
 
     def schedule(self, job: ScheduledJob) -> bool:
@@ -196,17 +197,17 @@ class PriorityJobScheduler:
 
     def next_job(
         self,
-        hosts: List[Any],
-        statuses: List[Any],
+        hosts: list[Any],
+        statuses: list[Any],
         *,
-        host_has_gpu: Optional[Callable[[Any], bool]] = None,
-        host_get_name: Optional[Callable[[Any], str]] = None,
-        host_get_memory_gb: Optional[Callable[[Any], int]] = None,
-        status_get_cpu: Optional[Callable[[Any], float]] = None,
-        status_get_disk: Optional[Callable[[Any], float]] = None,
-        status_get_memory: Optional[Callable[[Any], float]] = None,
-        status_is_reachable: Optional[Callable[[Any], bool]] = None,
-    ) -> Optional[Tuple[ScheduledJob, Any]]:
+        host_has_gpu: Callable[[Any], bool] | None = None,
+        host_get_name: Callable[[Any], str] | None = None,
+        host_get_memory_gb: Callable[[Any], int] | None = None,
+        status_get_cpu: Callable[[Any], float] | None = None,
+        status_get_disk: Callable[[Any], float] | None = None,
+        status_get_memory: Callable[[Any], float] | None = None,
+        status_is_reachable: Callable[[Any], bool] | None = None,
+    ) -> tuple[ScheduledJob, Any] | None:
         """Get the next job to run and the host to run it on.
 
         This method is designed to work with any host/status types by accepting
@@ -267,8 +268,8 @@ class PriorityJobScheduler:
             return getattr(s, "reachable", True)
 
         # Build host availability map
-        available_hosts: List[Tuple[Any, Any]] = []
-        for host, status in zip(hosts, statuses):
+        available_hosts: list[tuple[Any, Any]] = []
+        for host, status in zip(hosts, statuses, strict=False):
             if not _is_reachable(status):
                 continue
             if _get_disk(status) > 70:  # 70% limit enforced 2025-12-15
@@ -307,7 +308,7 @@ class PriorityJobScheduler:
 
         return None
 
-    def complete_job(self, host_name: str, success: bool = True) -> Optional[ScheduledJob]:
+    def complete_job(self, host_name: str, success: bool = True) -> ScheduledJob | None:
         """Mark a job as completed for a host.
 
         Args:
@@ -329,7 +330,7 @@ class PriorityJobScheduler:
             return job
         return None
 
-    def cancel_job(self, host_name: str) -> Optional[ScheduledJob]:
+    def cancel_job(self, host_name: str) -> ScheduledJob | None:
         """Cancel a running job on a host.
 
         Args:
@@ -355,7 +356,7 @@ class PriorityJobScheduler:
         except ValueError:
             return False
 
-    def get_queue_stats(self) -> Dict[str, int]:
+    def get_queue_stats(self) -> dict[str, int]:
         """Get statistics about queued jobs by priority."""
         stats = {
             "total": len(self._queue),
@@ -380,7 +381,7 @@ class PriorityJobScheduler:
         """Check if any critical priority jobs are pending."""
         return any(j.priority == JobPriority.CRITICAL for j in self._queue)
 
-    def has_pending(self, priority: Optional[JobPriority] = None) -> bool:
+    def has_pending(self, priority: JobPriority | None = None) -> bool:
         """Check if any jobs are pending.
 
         Args:
@@ -393,11 +394,11 @@ class PriorityJobScheduler:
             return len(self._queue) > 0
         return any(j.priority == priority for j in self._queue)
 
-    def get_running_jobs(self) -> Dict[str, ScheduledJob]:
+    def get_running_jobs(self) -> dict[str, ScheduledJob]:
         """Get all currently running jobs by host name."""
         return dict(self._running)
 
-    def get_pending_jobs(self, priority: Optional[JobPriority] = None) -> List[ScheduledJob]:
+    def get_pending_jobs(self, priority: JobPriority | None = None) -> list[ScheduledJob]:
         """Get all pending jobs, optionally filtered by priority."""
         if priority is None:
             return list(self._queue)
@@ -405,15 +406,15 @@ class PriorityJobScheduler:
 
     def reserve_capacity_for_training(
         self,
-        hosts: List[Any],
-        statuses: List[Any],
+        hosts: list[Any],
+        statuses: list[Any],
         reserve_percent: float = 20.0,
         *,
-        host_has_gpu: Optional[Callable[[Any], bool]] = None,
-        host_get_name: Optional[Callable[[Any], str]] = None,
-        status_get_gpu: Optional[Callable[[Any], float]] = None,
-        status_is_reachable: Optional[Callable[[Any], bool]] = None,
-    ) -> List[str]:
+        host_has_gpu: Callable[[Any], bool] | None = None,
+        host_get_name: Callable[[Any], str] | None = None,
+        status_get_gpu: Callable[[Any], float] | None = None,
+        status_is_reachable: Callable[[Any], bool] | None = None,
+    ) -> list[str]:
         """Reserve GPU capacity for training on GPU hosts.
 
         Returns list of host names where capacity was reserved.
@@ -440,7 +441,7 @@ class PriorityJobScheduler:
             return getattr(s, "reachable", True)
 
         reserved = []
-        for host, status in zip(hosts, statuses):
+        for host, status in zip(hosts, statuses, strict=False):
             if not _has_gpu(host):
                 continue
             if not _is_reachable(status):
@@ -465,7 +466,7 @@ class PriorityJobScheduler:
 
 
 # Global scheduler instance
-_scheduler: Optional[PriorityJobScheduler] = None
+_scheduler: PriorityJobScheduler | None = None
 
 
 def get_scheduler() -> PriorityJobScheduler:
@@ -488,8 +489,8 @@ def reset_scheduler() -> None:
 
 
 def get_config_game_counts(
-    db_path: Optional[Path] = None,
-) -> Dict[str, int]:
+    db_path: Path | None = None,
+) -> dict[str, int]:
     """Get game counts per config from match history for curriculum prioritization.
 
     Args:
@@ -523,9 +524,9 @@ def get_config_game_counts(
 
 
 def select_curriculum_config(
-    configs: List[Dict[str, Any]],
-    game_counts: Dict[str, int],
-) -> Dict[str, Any]:
+    configs: list[dict[str, Any]],
+    game_counts: dict[str, int],
+) -> dict[str, Any]:
     """Select next config based on curriculum learning (prioritize underserved).
 
     Configs with fewer games get higher priority to ensure balanced training.
@@ -571,10 +572,10 @@ def select_curriculum_config(
 
 
 def get_underserved_configs(
-    configs: List[Dict[str, Any]],
-    game_counts: Dict[str, int],
+    configs: list[dict[str, Any]],
+    game_counts: dict[str, int],
     threshold: int = ELO_UNDERSERVED_THRESHOLD,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get configs that have fewer games than the threshold.
 
     Args:
@@ -602,17 +603,17 @@ def get_underserved_configs(
 
 
 def get_cpu_rich_hosts(
-    hosts: List[Any],
-    statuses: Dict[str, Any],
+    hosts: list[Any],
+    statuses: dict[str, Any],
     *,
-    host_enabled: Optional[Callable[[Any], bool]] = None,
-    host_get_name: Optional[Callable[[Any], str]] = None,
-    host_get_cpus: Optional[Callable[[Any], int]] = None,
-    host_get_role: Optional[Callable[[Any], str]] = None,
-    host_has_expensive_gpu: Optional[Callable[[Any], bool]] = None,
-    status_get_cpu: Optional[Callable[[Any], float]] = None,
-    status_is_reachable: Optional[Callable[[Any], bool]] = None,
-) -> List[Tuple[Any, Any]]:
+    host_enabled: Callable[[Any], bool] | None = None,
+    host_get_name: Callable[[Any], str] | None = None,
+    host_get_cpus: Callable[[Any], int] | None = None,
+    host_get_role: Callable[[Any], str] | None = None,
+    host_has_expensive_gpu: Callable[[Any], bool] | None = None,
+    status_get_cpu: Callable[[Any], float] | None = None,
+    status_is_reachable: Callable[[Any], bool] | None = None,
+) -> list[tuple[Any, Any]]:
     """Get CPU-rich hosts suitable for tournament workloads.
 
     Prioritizes hosts with:
@@ -718,16 +719,16 @@ def get_cpu_rich_hosts(
 
 
 def get_gpu_rich_hosts(
-    hosts: List[Any],
-    statuses: Dict[str, Any],
+    hosts: list[Any],
+    statuses: dict[str, Any],
     *,
-    host_enabled: Optional[Callable[[Any], bool]] = None,
-    host_has_gpu: Optional[Callable[[Any], bool]] = None,
-    host_get_name: Optional[Callable[[Any], str]] = None,
-    host_get_memory_gb: Optional[Callable[[Any], int]] = None,
-    status_get_gpu: Optional[Callable[[Any], float]] = None,
-    status_is_reachable: Optional[Callable[[Any], bool]] = None,
-) -> List[Tuple[Any, Any]]:
+    host_enabled: Callable[[Any], bool] | None = None,
+    host_has_gpu: Callable[[Any], bool] | None = None,
+    host_get_name: Callable[[Any], str] | None = None,
+    host_get_memory_gb: Callable[[Any], int] | None = None,
+    status_get_gpu: Callable[[Any], float] | None = None,
+    status_is_reachable: Callable[[Any], bool] | None = None,
+) -> list[tuple[Any, Any]]:
     """Get GPU-rich hosts suitable for GPU selfplay and training.
 
     Prioritizes hosts with:
@@ -820,7 +821,7 @@ class HostDeadJobMigrator:
 
     def __init__(
         self,
-        scheduler: Optional[PriorityJobScheduler] = None,
+        scheduler: PriorityJobScheduler | None = None,
         requeue_priority_boost: int = 1,  # Boost priority by 1 level on requeue
     ):
         """Initialize job migrator.
@@ -907,7 +908,7 @@ class HostDeadJobMigrator:
             logger.debug(f"[HostDeadJobMigrator] No running jobs on host {host_name}")
             return 0
 
-        job = running_jobs[host_name]
+        _job = running_jobs[host_name]  # Access to confirm key exists
         migrated = 0
 
         try:
@@ -962,7 +963,7 @@ class HostDeadJobMigrator:
         new_value = max(0, current.value - self._requeue_priority_boost)
         return JobPriority(new_value)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get migration statistics.
 
         Returns:
@@ -977,11 +978,11 @@ class HostDeadJobMigrator:
 
 
 # Singleton migrator instance
-_job_migrator: Optional[HostDeadJobMigrator] = None
+_job_migrator: HostDeadJobMigrator | None = None
 
 
 def wire_host_dead_to_job_migration(
-    scheduler: Optional[PriorityJobScheduler] = None,
+    scheduler: PriorityJobScheduler | None = None,
     requeue_priority_boost: int = 1,
 ) -> HostDeadJobMigrator:
     """Wire HOST_OFFLINE events to automatic job migration.
@@ -1009,7 +1010,7 @@ def wire_host_dead_to_job_migration(
     return _job_migrator
 
 
-def get_job_migrator() -> Optional[HostDeadJobMigrator]:
+def get_job_migrator() -> HostDeadJobMigrator | None:
     """Get the job migrator instance if wired."""
     return _job_migrator
 
@@ -1021,30 +1022,30 @@ def reset_job_migrator() -> None:
 
 
 __all__ = [
+    "ELO_CURRICULUM_ENABLED",
+    "ELO_UNDERSERVED_THRESHOLD",
+    "MIN_MEMORY_GB_FOR_TASKS",
+    "TARGET_CPU_UTILIZATION_MAX",
+    "TARGET_CPU_UTILIZATION_MIN",
+    "TARGET_GPU_UTILIZATION_MAX",
+    # Configuration
+    "TARGET_GPU_UTILIZATION_MIN",
+    # Job migration (December 2025)
+    "HostDeadJobMigrator",
+    "JobPriority",
     # Priority scheduler
     "PriorityJobScheduler",
-    "JobPriority",
     "ScheduledJob",
-    "get_scheduler",
-    "reset_scheduler",
     # Curriculum learning
     "get_config_game_counts",
-    "select_curriculum_config",
-    "get_underserved_configs",
     # Host selection
     "get_cpu_rich_hosts",
     "get_gpu_rich_hosts",
-    # Job migration (December 2025)
-    "HostDeadJobMigrator",
-    "wire_host_dead_to_job_migration",
     "get_job_migrator",
+    "get_scheduler",
+    "get_underserved_configs",
     "reset_job_migrator",
-    # Configuration
-    "TARGET_GPU_UTILIZATION_MIN",
-    "TARGET_GPU_UTILIZATION_MAX",
-    "TARGET_CPU_UTILIZATION_MIN",
-    "TARGET_CPU_UTILIZATION_MAX",
-    "MIN_MEMORY_GB_FOR_TASKS",
-    "ELO_CURRICULUM_ENABLED",
-    "ELO_UNDERSERVED_THRESHOLD",
+    "reset_scheduler",
+    "select_curriculum_config",
+    "wire_host_dead_to_job_migration",
 ]

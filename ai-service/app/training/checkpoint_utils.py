@@ -24,11 +24,13 @@ December 2025: Centralized atomic save pattern.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ def fsync_file(file_path: Path) -> bool:
         with open(file_path, 'rb') as f:
             os.fsync(f.fileno())
         return True
-    except (OSError, IOError) as e:
+    except OSError as e:
         # fsync may fail on some filesystems (e.g., NFS without sync option)
         # Fall back to global sync as a last resort
         logger.debug(f"fsync failed ({e}), using os.sync() fallback")
@@ -94,7 +96,7 @@ def atomic_save(
     temp_suffix: str = TEMP_SUFFIX,
     sync_to_disk: bool = True,
     verify_hash: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """Atomically save a file using temp file + rename pattern.
 
     This prevents file corruption from:
@@ -146,19 +148,17 @@ def atomic_save(
     except Exception as e:
         # Clean up temp file on failure
         if temp_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 temp_path.unlink()
-            except OSError:
-                pass
         raise RuntimeError(f"Failed to save {file_path}: {e}") from e
 
 
 def atomic_torch_save(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     file_path: Path,
     sync_to_disk: bool = True,
     verify_hash: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """Atomically save PyTorch data using temp file + rename pattern.
 
     Convenience wrapper around atomic_save for torch.save operations.
@@ -191,8 +191,8 @@ def atomic_torch_save(
 
 def load_with_validation(
     file_path: Path,
-    expected_hash: Optional[str] = None,
-) -> Tuple[Any, str]:
+    expected_hash: str | None = None,
+) -> tuple[Any, str]:
     """Load a PyTorch checkpoint with optional hash validation.
 
     Args:
@@ -233,14 +233,14 @@ def load_with_validation(
 
 
 __all__ = [
+    'HASH_SHA256',
+    # Constants
+    'TEMP_SUFFIX',
     # Core functions
     'atomic_save',
     'atomic_torch_save',
-    'load_with_validation',
     # Utilities
     'compute_file_hash',
     'fsync_file',
-    # Constants
-    'TEMP_SUFFIX',
-    'HASH_SHA256',
+    'load_with_validation',
 ]

@@ -18,7 +18,7 @@ move as authoritative for:
 """
 
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
 
 from app.db.game_replay import GameReplayDB
 from app.models import GameState
@@ -46,22 +46,22 @@ class CanonicalHistoryIssue:
 class CanonicalHistoryReport:
     game_id: str
     is_canonical: bool
-    issues: List[CanonicalHistoryIssue]
+    issues: list[CanonicalHistoryIssue]
 
 
 @dataclass
 class CanonicalConfigIssue:
     game_id: str
     reason: str
-    observed: Optional[Any] = None
-    expected: Optional[Any] = None
+    observed: Any | None = None
+    expected: Any | None = None
 
 
 @dataclass
 class CanonicalConfigReport:
     game_id: str
     is_canonical: bool
-    issues: List[CanonicalConfigIssue]
+    issues: list[CanonicalConfigIssue]
 
 
 def validate_canonical_config_for_game(
@@ -74,7 +74,7 @@ def validate_canonical_config_for_game(
     The phase↔move contract is useful for parity/debug tooling even when running
     experimental non-canonical rulesOptions (e.g. ringsPerPlayer ablations).
     """
-    issues: List[CanonicalConfigIssue] = []
+    issues: list[CanonicalConfigIssue] = []
 
     state: GameState | None = db.get_initial_state(game_id)
     if state is None:
@@ -175,7 +175,7 @@ def validate_canonical_history_for_game(db: GameReplayDB, game_id: str) -> Canon
     inferred from the move_type using derive_phase_from_move_type(). This
     allows validation of older DBs that predate phase tracking.
     """
-    issues: List[CanonicalHistoryIssue] = []
+    issues: list[CanonicalHistoryIssue] = []
 
     records = db.get_move_records(game_id)
 

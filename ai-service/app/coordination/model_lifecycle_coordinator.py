@@ -40,9 +40,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class CheckpointInfo:
     node_id: str
     created_at: float = field(default_factory=time.time)
     size_bytes: int = 0
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict)
     is_best: bool = False
 
 
@@ -92,16 +93,16 @@ class ModelRecord:
     val_loss: float = 0.0
 
     # Checkpoints
-    latest_checkpoint: Optional[str] = None
-    best_checkpoint: Optional[str] = None
+    latest_checkpoint: str | None = None
+    best_checkpoint: str | None = None
     checkpoint_count: int = 0
 
     # Lineage
-    parent_model_id: Optional[str] = None
-    children_model_ids: List[str] = field(default_factory=list)
+    parent_model_id: str | None = None
+    children_model_ids: list[str] = field(default_factory=list)
 
     # State history
-    state_history: List[Dict[str, Any]] = field(default_factory=list)
+    state_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -122,11 +123,11 @@ class ModelLifecycleStats:
     """Aggregate model lifecycle statistics."""
 
     total_models: int = 0
-    models_by_state: Dict[str, int] = field(default_factory=dict)
+    models_by_state: dict[str, int] = field(default_factory=dict)
     total_checkpoints: int = 0
     total_promotions: int = 0
     total_rollbacks: int = 0
-    current_production_model: Optional[str] = None
+    current_production_model: str | None = None
     current_production_elo: float = 0.0
     avg_promotion_time: float = 0.0  # Time from training to production
     cache_entries: int = 0
@@ -154,26 +155,26 @@ class ModelLifecycleCoordinator:
         self.max_state_history_per_model = max_state_history_per_model
 
         # Model tracking
-        self._models: Dict[str, ModelRecord] = {}
-        self._production_model_id: Optional[str] = None
+        self._models: dict[str, ModelRecord] = {}
+        self._production_model_id: str | None = None
 
         # Checkpoint tracking
-        self._checkpoints: Dict[str, CheckpointInfo] = {}
-        self._checkpoint_history: List[CheckpointInfo] = []
+        self._checkpoints: dict[str, CheckpointInfo] = {}
+        self._checkpoint_history: list[CheckpointInfo] = []
 
         # Cache tracking
-        self._cache_entries: Dict[str, CacheEntry] = {}  # key = f"{model_id}:{node_id}:{type}"
+        self._cache_entries: dict[str, CacheEntry] = {}  # key = f"{model_id}:{node_id}:{type}"
 
         # Statistics
         self._total_promotions = 0
         self._total_rollbacks = 0
         self._total_checkpoints = 0
-        self._promotion_times: List[float] = []
+        self._promotion_times: list[float] = []
 
         # Callbacks
-        self._promotion_callbacks: List[Callable[[str, str], None]] = []  # old, new
-        self._rollback_callbacks: List[Callable[[str, str], None]] = []  # from, to
-        self._checkpoint_callbacks: List[Callable[[CheckpointInfo], None]] = []
+        self._promotion_callbacks: list[Callable[[str, str], None]] = []  # old, new
+        self._rollback_callbacks: list[Callable[[str, str], None]] = []  # from, to
+        self._checkpoint_callbacks: list[Callable[[CheckpointInfo], None]] = []
 
         # Subscription state
         self._subscribed = False
@@ -423,7 +424,7 @@ class ModelLifecycleCoordinator:
     def register_model(
         self,
         model_id: str,
-        parent_model_id: Optional[str] = None,
+        parent_model_id: str | None = None,
         initial_state: ModelState = ModelState.TRAINING,
     ) -> ModelRecord:
         """Manually register a new model.
@@ -474,7 +475,7 @@ class ModelLifecycleCoordinator:
         self._cache_entries[cache_key] = entry
         return entry
 
-    def invalidate_cache(self, model_id: str, node_id: Optional[str] = None) -> int:
+    def invalidate_cache(self, model_id: str, node_id: str | None = None) -> int:
         """Invalidate cache entries for a model.
 
         Args:
@@ -486,9 +487,8 @@ class ModelLifecycleCoordinator:
         """
         keys_to_remove = []
         for key, entry in self._cache_entries.items():
-            if entry.model_id == model_id:
-                if node_id is None or entry.node_id == node_id:
-                    keys_to_remove.append(key)
+            if entry.model_id == model_id and (node_id is None or entry.node_id == node_id):
+                keys_to_remove.append(key)
 
         for key in keys_to_remove:
             del self._cache_entries[key]
@@ -515,35 +515,35 @@ class ModelLifecycleCoordinator:
         """Register callback for checkpoint saves."""
         self._checkpoint_callbacks.append(callback)
 
-    def get_model(self, model_id: str) -> Optional[ModelRecord]:
+    def get_model(self, model_id: str) -> ModelRecord | None:
         """Get a model record by ID."""
         return self._models.get(model_id)
 
-    def get_production_model(self) -> Optional[ModelRecord]:
+    def get_production_model(self) -> ModelRecord | None:
         """Get the current production model."""
         if self._production_model_id:
             return self._models.get(self._production_model_id)
         return None
 
-    def get_models_by_state(self, state: ModelState) -> List[ModelRecord]:
+    def get_models_by_state(self, state: ModelState) -> list[ModelRecord]:
         """Get all models in a specific state."""
         return [m for m in self._models.values() if m.state == state]
 
-    def get_model_history(self, model_id: str) -> List[Dict[str, Any]]:
+    def get_model_history(self, model_id: str) -> list[dict[str, Any]]:
         """Get state transition history for a model."""
         if model_id in self._models:
             return list(self._models[model_id].state_history)
         return []
 
-    def get_checkpoints(self, model_id: Optional[str] = None) -> List[CheckpointInfo]:
+    def get_checkpoints(self, model_id: str | None = None) -> list[CheckpointInfo]:
         """Get checkpoints, optionally filtered by model."""
         if model_id:
             return [c for c in self._checkpoint_history if c.model_id == model_id]
         return list(self._checkpoint_history)
 
     def get_cache_entries(
-        self, model_id: Optional[str] = None, node_id: Optional[str] = None
-    ) -> List[CacheEntry]:
+        self, model_id: str | None = None, node_id: str | None = None
+    ) -> list[CacheEntry]:
         """Get cache entries with optional filtering."""
         entries = list(self._cache_entries.values())
 
@@ -557,7 +557,7 @@ class ModelLifecycleCoordinator:
     def get_stats(self) -> ModelLifecycleStats:
         """Get aggregate model lifecycle statistics."""
         # Count by state
-        by_state: Dict[str, int] = {}
+        by_state: dict[str, int] = {}
         for model in self._models.values():
             by_state[model.state.value] = by_state.get(model.state.value, 0) + 1
 
@@ -585,7 +585,7 @@ class ModelLifecycleCoordinator:
             cache_entries=len(self._cache_entries),
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring."""
         stats = self.get_stats()
 
@@ -607,7 +607,7 @@ class ModelLifecycleCoordinator:
 # Singleton and convenience functions
 # =============================================================================
 
-_model_coordinator: Optional[ModelLifecycleCoordinator] = None
+_model_coordinator: ModelLifecycleCoordinator | None = None
 
 
 def get_model_coordinator() -> ModelLifecycleCoordinator:
@@ -629,7 +629,7 @@ def wire_model_events() -> ModelLifecycleCoordinator:
     return coordinator
 
 
-def get_production_model_id() -> Optional[str]:
+def get_production_model_id() -> str | None:
     """Convenience function to get current production model ID."""
     prod = get_model_coordinator().get_production_model()
     return prod.model_id if prod else None
@@ -642,14 +642,14 @@ def get_production_elo() -> float:
 
 
 __all__ = [
-    "ModelLifecycleCoordinator",
-    "ModelState",
-    "ModelRecord",
-    "CheckpointInfo",
     "CacheEntry",
+    "CheckpointInfo",
+    "ModelLifecycleCoordinator",
     "ModelLifecycleStats",
+    "ModelRecord",
+    "ModelState",
     "get_model_coordinator",
-    "wire_model_events",
-    "get_production_model_id",
     "get_production_elo",
+    "get_production_model_id",
+    "wire_model_events",
 ]

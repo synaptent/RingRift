@@ -28,11 +28,11 @@ import os
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Import secrets handling utilities
 try:
@@ -51,7 +51,7 @@ except ImportError:
         def __bool__(self) -> bool:
             return bool(self._value)
 
-    def mask_secret(value: Optional[str], visible_chars: int = 4) -> str:
+    def mask_secret(value: str | None, visible_chars: int = 4) -> str:
         if not value:
             return "[empty]"
         if len(value) <= visible_chars:
@@ -97,8 +97,8 @@ class DynamicNodeInfo:
     node_id: str
     static_host: str            # Original host from YAML
     static_port: int            # Original port from YAML
-    dynamic_host: Optional[str] = None   # Self-registered or API-discovered host
-    dynamic_port: Optional[int] = None   # Self-registered or API-discovered port
+    dynamic_host: str | None = None   # Self-registered or API-discovered host
+    dynamic_port: int | None = None   # Self-registered or API-discovered port
     state: NodeState = NodeState.UNKNOWN
     consecutive_failures: int = 0
     consecutive_successes: int = 0
@@ -106,11 +106,11 @@ class DynamicNodeInfo:
     last_success_time: float = 0.0
     last_failure_time: float = 0.0
     last_registration_time: float = 0.0
-    failure_reason: Optional[str] = None
-    vast_instance_id: Optional[str] = None   # For Vast.ai API queries
-    aws_instance_id: Optional[str] = None    # For AWS CLI queries (ec2 instance id)
-    aws_region: Optional[str] = None         # Optional explicit region for the instance id
-    tailscale_ip: Optional[str] = None       # Discovered mesh IP (100.x) when available
+    failure_reason: str | None = None
+    vast_instance_id: str | None = None   # For Vast.ai API queries
+    aws_instance_id: str | None = None    # For AWS CLI queries (ec2 instance id)
+    aws_region: str | None = None         # Optional explicit region for the instance id
+    tailscale_ip: str | None = None       # Discovered mesh IP (100.x) when available
 
     @property
     def effective_host(self) -> str:
@@ -126,15 +126,15 @@ class DynamicNodeInfo:
 class DynamicHostRegistry:
     """Registry that tracks dynamic host information and health states."""
 
-    def __init__(self, config_path: Optional[str] = None):
-        self._nodes: Dict[str, DynamicNodeInfo] = {}
+    def __init__(self, config_path: str | None = None):
+        self._nodes: dict[str, DynamicNodeInfo] = {}
         self._lock = threading.RLock()
         self._config_path = config_path
         self._state_file = Path(__file__).parent.parent.parent / STATE_FILE
         self._state_file.parent.mkdir(parents=True, exist_ok=True)
         # Store API key as SecretString to prevent accidental logging
         _api_key = os.environ.get("VAST_API_KEY")
-        self._vast_api_key: Optional[SecretString] = SecretString(_api_key) if _api_key else None
+        self._vast_api_key: SecretString | None = SecretString(_api_key) if _api_key else None
         self._last_vast_check = 0.0
         self._last_aws_check = 0.0
         self._last_tailscale_check = 0.0
@@ -172,7 +172,7 @@ class DynamicHostRegistry:
                             self._nodes[name].tailscale_ip = props["tailscale_ip"]
                         elif name.startswith("vast-"):
                             # Try to extract from comments in YAML
-                            for key, val in props.items():
+                            for _key, val in props.items():
                                 if isinstance(val, str) and "Instance ID:" in val:
                                     # Parse "Instance ID: 28654132" from comments
                                     parts = val.split("Instance ID:")
@@ -245,8 +245,8 @@ class DynamicHostRegistry:
         node_id: str,
         host: str,
         port: int,
-        vast_instance_id: Optional[str] = None,
-        tailscale_ip: Optional[str] = None,
+        vast_instance_id: str | None = None,
+        tailscale_ip: str | None = None,
     ) -> bool:
         """Register or update a node's dynamic address.
 
@@ -296,7 +296,7 @@ class DynamicHostRegistry:
         self,
         node_id: str,
         success: bool,
-        failure_reason: Optional[str] = None,
+        failure_reason: str | None = None,
     ) -> NodeState:
         """Record result of a health check and update node state.
 
@@ -340,10 +340,9 @@ class DynamicHostRegistry:
                     if node.state != NodeState.OFFLINE:
                         node.state = NodeState.OFFLINE
                         logger.warning(f"Node {node_id} is now offline after {node.consecutive_failures} failures")
-                elif node.consecutive_failures >= DEGRADED_THRESHOLD:
-                    if node.state == NodeState.ONLINE:
-                        node.state = NodeState.DEGRADED
-                        logger.warning(f"Node {node_id} is degraded: {failure_reason}")
+                elif node.consecutive_failures >= DEGRADED_THRESHOLD and node.state == NodeState.ONLINE:
+                    node.state = NodeState.DEGRADED
+                    logger.warning(f"Node {node_id} is degraded: {failure_reason}")
 
             return node.state
 
@@ -354,7 +353,7 @@ class DynamicHostRegistry:
                 return self._nodes[node_id].state
             return NodeState.UNKNOWN
 
-    def get_effective_address(self, node_id: str) -> Optional[Tuple[str, int]]:
+    def get_effective_address(self, node_id: str) -> tuple[str, int] | None:
         """Get current effective address for a node.
 
         Returns:
@@ -366,7 +365,7 @@ class DynamicHostRegistry:
                 return (node.effective_host, node.effective_port)
             return None
 
-    def get_online_nodes(self) -> List[str]:
+    def get_online_nodes(self) -> list[str]:
         """Get list of nodes that are online or degraded (still usable)."""
         with self._lock:
             return [
@@ -374,7 +373,7 @@ class DynamicHostRegistry:
                 if node.state in (NodeState.ONLINE, NodeState.DEGRADED)
             ]
 
-    def get_all_nodes_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_nodes_status(self) -> dict[str, dict[str, Any]]:
         """Get status summary of all nodes."""
         with self._lock:
             return {
@@ -531,7 +530,7 @@ class DynamicHostRegistry:
             return 0
         self._last_aws_check = time.time()
 
-        instance_ids: List[str] = []
+        instance_ids: list[str] = []
         with self._lock:
             for node in self._nodes.values():
                 if node.aws_instance_id:
@@ -552,8 +551,8 @@ class DynamicHostRegistry:
 
             # Group instance IDs by region so mixed-region clusters can still
             # refresh IPs reliably without depending on a single default region.
-            by_region: Dict[str, List[str]] = {}
-            id_to_node: Dict[str, str] = {}
+            by_region: dict[str, list[str]] = {}
+            id_to_node: dict[str, str] = {}
             with self._lock:
                 for node_id, node in self._nodes.items():
                     if not node.aws_instance_id:
@@ -563,7 +562,7 @@ class DynamicHostRegistry:
                     by_region.setdefault(region, []).append(instance_id)
                     id_to_node[instance_id] = node_id
 
-            def _extract_invalid_ids(stderr: str) -> List[str]:
+            def _extract_invalid_ids(stderr: str) -> list[str]:
                 # Common AWS CLI error when instances are terminated/deleted:
                 #   InvalidInstanceID.NotFound ... instance IDs 'i-...' do not exist
                 if not stderr:
@@ -572,7 +571,7 @@ class DynamicHostRegistry:
                     return []
                 return re.findall(r"i-[0-9a-fA-F]{8,32}", stderr)
 
-            async def _describe_instances(region: str, instance_ids: List[str]) -> Optional[Dict[str, Any]]:
+            async def _describe_instances(region: str, instance_ids: list[str]) -> dict[str, Any] | None:
                 cmd = [
                     "aws",
                     "ec2",
@@ -609,8 +608,8 @@ class DynamicHostRegistry:
             updated = 0
             for region, region_instance_ids in by_region.items():
                 remaining = list(dict.fromkeys(region_instance_ids))  # stable de-dupe
-                payload: Optional[Dict[str, Any]] = None
-                invalid_ids: List[str] = []
+                payload: dict[str, Any] | None = None
+                invalid_ids: list[str] = []
 
                 # Retry once if terminated instance IDs cause the bulk query to fail.
                 for _attempt in range(2):
@@ -727,7 +726,7 @@ class DynamicHostRegistry:
                 name = name.split(".", 1)[0]
             return name
 
-        def _first_ipv4(ips: Any) -> Optional[str]:
+        def _first_ipv4(ips: Any) -> str | None:
             if not isinstance(ips, list):
                 return None
             for ip in ips:
@@ -735,7 +734,7 @@ class DynamicHostRegistry:
                     return ip.strip()
             return None
 
-        name_to_ip: Dict[str, str] = {}
+        name_to_ip: dict[str, str] = {}
 
         try:
             self_entry = payload.get("Self") or {}
@@ -787,7 +786,8 @@ class DynamicHostRegistry:
         """
         try:
             import yaml
-            from app.distributed.hosts import get_ai_service_dir, CONFIG_FILE_PATH
+
+            from app.distributed.hosts import CONFIG_FILE_PATH, get_ai_service_dir
 
             config_path = get_ai_service_dir() / CONFIG_FILE_PATH
             if not config_path.exists():
@@ -835,7 +835,7 @@ class DynamicHostRegistry:
 
 
 # Global registry instance
-_registry: Optional[DynamicHostRegistry] = None
+_registry: DynamicHostRegistry | None = None
 
 
 def get_registry() -> DynamicHostRegistry:

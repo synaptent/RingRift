@@ -43,9 +43,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from app.distributed.data_events import EventBus
@@ -53,11 +53,11 @@ if TYPE_CHECKING:
 # Import canonical thresholds
 try:
     from app.config.thresholds import (
+        CONSECUTIVE_REGRESSIONS_FORCE,
         ELO_DROP_ROLLBACK,
-        WIN_RATE_DROP_ROLLBACK,
         ERROR_RATE_ROLLBACK,
         MIN_GAMES_REGRESSION,
-        CONSECUTIVE_REGRESSIONS_FORCE,
+        WIN_RATE_DROP_ROLLBACK,
     )
 except ImportError:
     # Fallback defaults
@@ -125,11 +125,11 @@ class RegressionEvent:
     baseline_elo: float
     elo_drop: float
 
-    current_win_rate: Optional[float] = None
-    baseline_win_rate: Optional[float] = None
-    win_rate_drop: Optional[float] = None
+    current_win_rate: float | None = None
+    baseline_win_rate: float | None = None
+    win_rate_drop: float | None = None
 
-    error_rate: Optional[float] = None
+    error_rate: float | None = None
     games_played: int = 0
 
     # Tracking
@@ -139,7 +139,7 @@ class RegressionEvent:
     reason: str = ""
     recommended_action: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model_id": self.model_id,
             "severity": self.severity.value,
@@ -183,22 +183,22 @@ class RegressionDetector:
 
     def __init__(
         self,
-        config: Optional[RegressionConfig] = None,
-        event_bus: Optional["EventBus"] = None,
+        config: RegressionConfig | None = None,
+        event_bus: EventBus | None = None,
     ):
         self.config = config or RegressionConfig()
-        self._listeners: List[RegressionListener] = []
+        self._listeners: list[RegressionListener] = []
         self._event_bus = event_bus
 
         # State tracking
-        self._baselines: Dict[str, Dict[str, Any]] = {}
-        self._consecutive_counts: Dict[str, int] = {}
-        self._last_event_times: Dict[str, float] = {}
-        self._event_history: List[RegressionEvent] = []
+        self._baselines: dict[str, dict[str, Any]] = {}
+        self._consecutive_counts: dict[str, int] = {}
+        self._last_event_times: dict[str, float] = {}
+        self._event_history: list[RegressionEvent] = []
 
         logger.info("[RegressionDetector] Initialized with canonical thresholds")
 
-    def set_event_bus(self, event_bus: "EventBus") -> None:
+    def set_event_bus(self, event_bus: EventBus) -> None:
         """Set the event bus for publishing regression events."""
         self._event_bus = event_bus
         logger.debug("[RegressionDetector] Event bus connected")
@@ -217,7 +217,7 @@ class RegressionDetector:
         self,
         model_id: str,
         elo: float,
-        win_rate: Optional[float] = None,
+        win_rate: float | None = None,
         games: int = 0,
     ) -> None:
         """Set baseline metrics for a model.
@@ -238,12 +238,12 @@ class RegressionDetector:
         self,
         model_id: str,
         current_elo: float,
-        baseline_elo: Optional[float] = None,
-        current_win_rate: Optional[float] = None,
-        baseline_win_rate: Optional[float] = None,
-        error_rate: Optional[float] = None,
+        baseline_elo: float | None = None,
+        current_win_rate: float | None = None,
+        baseline_win_rate: float | None = None,
+        error_rate: float | None = None,
         games_played: int = 0,
-    ) -> Optional[RegressionEvent]:
+    ) -> RegressionEvent | None:
         """Check if a regression has occurred.
 
         Args:
@@ -345,9 +345,9 @@ class RegressionDetector:
     def _determine_severity(
         self,
         elo_drop: float,
-        win_rate_drop: Optional[float],
-        error_rate: Optional[float],
-    ) -> Optional[RegressionSeverity]:
+        win_rate_drop: float | None,
+        error_rate: float | None,
+    ) -> RegressionSeverity | None:
         """Determine regression severity from metrics."""
         cfg = self.config
 
@@ -382,8 +382,8 @@ class RegressionDetector:
     def _build_reason(
         self,
         elo_drop: float,
-        win_rate_drop: Optional[float],
-        error_rate: Optional[float],
+        win_rate_drop: float | None,
+        error_rate: float | None,
         consecutive: int,
     ) -> str:
         """Build human-readable reason string."""
@@ -458,7 +458,7 @@ class RegressionDetector:
 
             # Use synchronous publish if no event loop, async otherwise
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(self._event_bus.publish(general_event))
                 asyncio.create_task(self._event_bus.publish(specific_event))
             except RuntimeError:
@@ -488,7 +488,7 @@ class RegressionDetector:
             )
 
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(self._event_bus.publish(event))
             except RuntimeError:
                 if hasattr(self._event_bus, 'publish_sync'):
@@ -497,7 +497,7 @@ class RegressionDetector:
         except Exception as e:
             logger.error(f"[RegressionDetector] Event bus publish error: {e}")
 
-    def get_status(self, model_id: str) -> Dict[str, Any]:
+    def get_status(self, model_id: str) -> dict[str, Any]:
         """Get regression status for a model."""
         baseline = self._baselines.get(model_id, {})
         consecutive = self._consecutive_counts.get(model_id, 0)
@@ -524,7 +524,7 @@ class RegressionDetector:
         self._last_event_times.pop(model_id, None)
         logger.info(f"[RegressionDetector] Reset tracking for {model_id}")
 
-    def get_all_regressing_models(self) -> List[str]:
+    def get_all_regressing_models(self) -> list[str]:
         """Get list of models currently showing regression."""
         return [
             model_id for model_id, count in self._consecutive_counts.items()
@@ -536,11 +536,11 @@ class RegressionDetector:
 # Factory Function
 # =============================================================================
 
-_detector_instance: Optional[RegressionDetector] = None
+_detector_instance: RegressionDetector | None = None
 
 
 def get_regression_detector(
-    config: Optional[RegressionConfig] = None,
+    config: RegressionConfig | None = None,
     connect_event_bus: bool = True,
 ) -> RegressionDetector:
     """Get or create the singleton regression detector.
@@ -570,8 +570,8 @@ def get_regression_detector(
 
 
 def create_regression_detector(
-    config: Optional[RegressionConfig] = None,
-    event_bus: Optional["EventBus"] = None,
+    config: RegressionConfig | None = None,
+    event_bus: EventBus | None = None,
 ) -> RegressionDetector:
     """Create a new regression detector instance.
 

@@ -4,22 +4,22 @@ Training Fault Tolerance for RingRift AI.
 Provides checkpointing, recovery, and fault handling for robust training.
 """
 
-import os
 import json
-import time
-import signal
 import logging
+import os
+import signal
 import threading
+import time
 import traceback
-from pathlib import Path
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Callable, TypeVar
-from dataclasses import dataclass, field, asdict
 from enum import Enum
-from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Optional, TypeVar
 
 from app.utils.checksum_utils import compute_file_checksum
-
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 # All checkpoint management is consolidated in checkpoint_unified.py
 try:
     from app.training.checkpoint_unified import (
-        CheckpointType,
         CheckpointMetadata,
+        CheckpointType,
         TrainingProgress,
-        UnifiedCheckpointManager,
         UnifiedCheckpointConfig,
+        UnifiedCheckpointManager,
         create_checkpoint_manager,
     )
     _HAS_UNIFIED_CHECKPOINT = True
@@ -70,7 +70,7 @@ def retry_with_backoff(
     max_delay: float = 60.0,
     exponential_base: float = 2.0,
     exceptions: tuple = (Exception,),
-    on_retry: Optional[Callable[[Exception, int, float], None]] = None,
+    on_retry: Callable[[Exception, int, float], None] | None = None,
     jitter: bool = True,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
@@ -155,9 +155,9 @@ def async_retry_with_backoff(
     max_delay: float = 60.0,
     exponential_base: float = 2.0,
     exceptions: tuple = (Exception,),
-    on_retry: Optional[Callable[[Exception, int, float], None]] = None,
+    on_retry: Callable[[Exception, int, float], None] | None = None,
     jitter: bool = True,
-    circuit_breaker_key: Optional[str] = None,
+    circuit_breaker_key: str | None = None,
 ):
     """
     Async decorator that retries an async function with exponential backoff.
@@ -182,8 +182,8 @@ def async_retry_with_backoff(
     Returns:
         Decorated async function with retry logic
     """
-    import random
     import asyncio
+    import random
     import warnings
     warnings.warn(
         "async_retry_with_backoff is deprecated. Use app.core.error_handler.retry_async instead.",
@@ -309,7 +309,7 @@ class RetryPolicy:
     }
 
     @classmethod
-    def get_policy(cls, name: str) -> Dict[str, Any]:
+    def get_policy(cls, name: str) -> dict[str, Any]:
         """Get a pre-configured retry policy by name."""
         policies = {
             "aggressive": cls.AGGRESSIVE,
@@ -320,7 +320,7 @@ class RetryPolicy:
         return policies.get(name.lower(), cls.STANDARD)
 
     @staticmethod
-    def apply(policy: Dict[str, Any], sync: bool = True):
+    def apply(policy: dict[str, Any], sync: bool = True):
         """Apply a retry policy as a decorator.
 
         Args:
@@ -346,20 +346,20 @@ class RetryPolicy:
 # These are re-exported for backwards compatibility
 try:
     from app.errors import (
-        TrainingError,
-        RecoverableError,
-        NonRecoverableError,
-        ValidationError,
+        CheckpointError,
         DataQualityError,
         LifecycleError,
+        NonRecoverableError,
+        RecoverableError,
         ResourceError,
-        CheckpointError,
+        TrainingError,
+        ValidationError,
     )
 except ImportError:
     # Fallback definitions for when app.errors is not available
     class TrainingError(Exception):
         """Base exception for all training-related errors."""
-        def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
+        def __init__(self, message: str, context: dict[str, Any] | None = None):
             super().__init__(message)
             self.context = context or {}
 
@@ -482,13 +482,13 @@ class TrainingErrorHandler:
         self.min_batch_size = min_batch_size
         self.batch_reduction_factor = batch_reduction_factor
 
-        self._current_batch_size: Optional[int] = None
+        self._current_batch_size: int | None = None
         self._consecutive_failures = 0
         self._oom_count = 0
         self._total_recoveries = 0
 
     @property
-    def recommended_batch_size(self) -> Optional[int]:
+    def recommended_batch_size(self) -> int | None:
         """Get recommended batch size after OOM events."""
         return self._current_batch_size
 
@@ -572,7 +572,7 @@ class TrainingErrorHandler:
             else:
                 raise RecoverableError(str(e)) from e
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get error handling statistics."""
         return {
             "oom_count": self._oom_count,
@@ -675,20 +675,20 @@ if not _HAS_UNIFIED_CHECKPOINT:
         epoch: int
         global_step: int
         timestamp: datetime
-        metrics: Dict[str, float]
-        training_config: Dict[str, Any]
+        metrics: dict[str, float]
+        training_config: dict[str, Any]
         file_path: str
         file_hash: str
-        parent_checkpoint: Optional[str] = None
+        parent_checkpoint: str | None = None
 
-        def to_dict(self) -> Dict[str, Any]:
+        def to_dict(self) -> dict[str, Any]:
             d = asdict(self)
             d['checkpoint_type'] = self.checkpoint_type.value
             d['timestamp'] = self.timestamp.isoformat()
             return d
 
         @classmethod
-        def from_dict(cls, d: Dict[str, Any]) -> 'CheckpointMetadata':
+        def from_dict(cls, d: dict[str, Any]) -> 'CheckpointMetadata':
             d = d.copy()
             d['checkpoint_type'] = CheckpointType(d['checkpoint_type'])
             d['timestamp'] = datetime.fromisoformat(d['timestamp'])
@@ -702,21 +702,21 @@ if not _HAS_UNIFIED_CHECKPOINT:
         global_step: int = 0
         batch_idx: int = 0
         samples_seen: int = 0
-        best_metric: Optional[float] = None
+        best_metric: float | None = None
         best_metric_name: str = "loss"
         best_epoch: int = 0
         total_epochs: int = 100
         learning_rate: float = 0.001
-        optimizer_state: Optional[Dict[str, Any]] = None
-        scheduler_state: Optional[Dict[str, Any]] = None
-        random_state: Optional[Dict[str, Any]] = None
-        extra_state: Dict[str, Any] = field(default_factory=dict)
+        optimizer_state: dict[str, Any] | None = None
+        scheduler_state: dict[str, Any] | None = None
+        random_state: dict[str, Any] | None = None
+        extra_state: dict[str, Any] = field(default_factory=dict)
 
-        def to_dict(self) -> Dict[str, Any]:
+        def to_dict(self) -> dict[str, Any]:
             return asdict(self)
 
         @classmethod
-        def from_dict(cls, d: Dict[str, Any]) -> 'TrainingProgress':
+        def from_dict(cls, d: dict[str, Any]) -> 'TrainingProgress':
             return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -744,7 +744,7 @@ class _LegacyCheckpointManager:
         self.keep_every_n_epochs = keep_every_n_epochs
 
         self.metadata_file = self.checkpoint_dir / "checkpoints.json"
-        self.checkpoints: List[CheckpointMetadata] = []
+        self.checkpoints: list[CheckpointMetadata] = []
 
         self._load_metadata()
 
@@ -781,11 +781,11 @@ class _LegacyCheckpointManager:
 
     def save_checkpoint(
         self,
-        model_state: Dict[str, Any],
+        model_state: dict[str, Any],
         progress: TrainingProgress,
         checkpoint_type: CheckpointType = CheckpointType.REGULAR,
-        metrics: Optional[Dict[str, float]] = None,
-        training_config: Optional[Dict[str, Any]] = None
+        metrics: dict[str, float] | None = None,
+        training_config: dict[str, Any] | None = None
     ) -> CheckpointMetadata:
         """
         Save a training checkpoint.
@@ -850,7 +850,7 @@ class _LegacyCheckpointManager:
         logger.info(f"Saved checkpoint: {checkpoint_id}")
         return metadata
 
-    def _cleanup_checkpoints(self, current_metrics: Optional[Dict[str, float]] = None):
+    def _cleanup_checkpoints(self, current_metrics: dict[str, float] | None = None):
         """Remove old checkpoints based on retention policy."""
         if len(self.checkpoints) <= self.max_checkpoints:
             return
@@ -895,9 +895,9 @@ class _LegacyCheckpointManager:
 
     def load_checkpoint(
         self,
-        checkpoint_id: Optional[str] = None,
-        checkpoint_type: Optional[CheckpointType] = None
-    ) -> Optional[Dict[str, Any]]:
+        checkpoint_id: str | None = None,
+        checkpoint_type: CheckpointType | None = None
+    ) -> dict[str, Any] | None:
         """
         Load a checkpoint.
 
@@ -949,7 +949,7 @@ class _LegacyCheckpointManager:
         return checkpoint_data
 
     def get_best_checkpoint(self, metric_name: str = 'loss',
-                            lower_is_better: bool = True) -> Optional[CheckpointMetadata]:
+                            lower_is_better: bool = True) -> CheckpointMetadata | None:
         """Get the best checkpoint by a metric."""
         valid_checkpoints = [c for c in self.checkpoints if metric_name in c.metrics]
         if not valid_checkpoints:
@@ -957,11 +957,11 @@ class _LegacyCheckpointManager:
 
         return min(valid_checkpoints, key=lambda c: c.metrics[metric_name] * (1 if lower_is_better else -1))
 
-    def get_latest_checkpoint(self) -> Optional[CheckpointMetadata]:
+    def get_latest_checkpoint(self) -> CheckpointMetadata | None:
         """Get the most recent checkpoint."""
         return self.checkpoints[-1] if self.checkpoints else None
 
-    def list_checkpoints(self) -> List[CheckpointMetadata]:
+    def list_checkpoints(self) -> list[CheckpointMetadata]:
         """List all available checkpoints."""
         return list(self.checkpoints)
 
@@ -982,19 +982,19 @@ class HeartbeatMonitor:
         self,
         heartbeat_interval: float = 30.0,
         timeout_threshold: float = 120.0,
-        on_timeout: Optional[Callable[[], None]] = None
+        on_timeout: Callable[[], None] | None = None
     ):
         self.heartbeat_interval = heartbeat_interval
         self.timeout_threshold = timeout_threshold
         self.on_timeout = on_timeout
 
-        self.last_heartbeat: Optional[datetime] = None
-        self.heartbeat_file: Optional[Path] = None
+        self.last_heartbeat: datetime | None = None
+        self.heartbeat_file: Path | None = None
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
 
-    def start(self, heartbeat_file: Optional[Path] = None):
+    def start(self, heartbeat_file: Path | None = None):
         """Start the heartbeat monitor."""
         self.heartbeat_file = heartbeat_file
         self._running = True
@@ -1065,13 +1065,13 @@ class GracefulShutdown:
     def __init__(self, checkpoint_manager: CheckpointManager):
         self.checkpoint_manager = checkpoint_manager
         self._shutdown_requested = False
-        self._original_handlers: Dict[int, Any] = {}
-        self._model_state_getter: Optional[Callable[[], Dict[str, Any]]] = None
-        self._progress_getter: Optional[Callable[[], TrainingProgress]] = None
+        self._original_handlers: dict[int, Any] = {}
+        self._model_state_getter: Callable[[], dict[str, Any]] | None = None
+        self._progress_getter: Callable[[], TrainingProgress] | None = None
 
     def setup(
         self,
-        model_state_getter: Callable[[], Dict[str, Any]],
+        model_state_getter: Callable[[], dict[str, Any]],
         progress_getter: Callable[[], TrainingProgress]
     ):
         """
@@ -1157,9 +1157,9 @@ class FaultTolerantTrainer:
 
         self.progress = TrainingProgress()
         self.state = TrainingState.INITIALIZING
-        self._model_state: Optional[Dict[str, Any]] = None
-        self._training_config: Optional[Dict[str, Any]] = None
-        self._current_metrics: Dict[str, float] = {}
+        self._model_state: dict[str, Any] | None = None
+        self._training_config: dict[str, Any] | None = None
+        self._current_metrics: dict[str, float] = {}
         self._retry_count = 0
 
     def _on_heartbeat_timeout(self):
@@ -1183,8 +1183,8 @@ class FaultTolerantTrainer:
 
     def initialize(
         self,
-        model_state: Dict[str, Any],
-        training_config: Dict[str, Any],
+        model_state: dict[str, Any],
+        training_config: dict[str, Any],
         total_epochs: int,
         resume: bool = True
     ) -> TrainingProgress:
@@ -1211,13 +1211,13 @@ class FaultTolerantTrainer:
 
     def setup_signal_handling(
         self,
-        model_state_getter: Callable[[], Dict[str, Any]],
+        model_state_getter: Callable[[], dict[str, Any]],
         progress_getter: Callable[[], TrainingProgress]
     ):
         """Setup graceful shutdown handling."""
         self.graceful_shutdown.setup(model_state_getter, progress_getter)
 
-    def start_heartbeat(self, heartbeat_file: Optional[Path] = None):
+    def start_heartbeat(self, heartbeat_file: Path | None = None):
         """Start heartbeat monitoring."""
         self.heartbeat_monitor.start(heartbeat_file)
 
@@ -1234,19 +1234,15 @@ class FaultTolerantTrainer:
             return True
 
         # Check if epoch just completed
-        if self.progress.batch_idx == 0 and self.progress.epoch > 0 and \
-           self.progress.epoch % self.checkpoint_interval_epochs == 0:
-            return True
-
-        return False
+        return bool(self.progress.batch_idx == 0 and self.progress.epoch > 0 and self.progress.epoch % self.checkpoint_interval_epochs == 0)
 
     def update_progress(
         self,
         epoch: int,
         batch_idx: int,
         global_step: int,
-        metrics: Dict[str, float],
-        model_state: Optional[Dict[str, Any]] = None
+        metrics: dict[str, float],
+        model_state: dict[str, Any] | None = None
     ):
         """Update training progress."""
         self.progress.epoch = epoch
@@ -1269,10 +1265,10 @@ class FaultTolerantTrainer:
 
     def checkpoint_if_needed(
         self,
-        model_state: Dict[str, Any],
+        model_state: dict[str, Any],
         force: bool = False,
         checkpoint_type: CheckpointType = CheckpointType.REGULAR
-    ) -> Optional[CheckpointMetadata]:
+    ) -> CheckpointMetadata | None:
         """Save checkpoint if conditions are met or forced."""
         if not force and not self.should_checkpoint():
             return None
@@ -1295,8 +1291,8 @@ class FaultTolerantTrainer:
             self.state = TrainingState.RUNNING
             return None
 
-    def save_best_checkpoint(self, model_state: Dict[str, Any],
-                             metric_name: str, metric_value: float) -> Optional[CheckpointMetadata]:
+    def save_best_checkpoint(self, model_state: dict[str, Any],
+                             metric_name: str, metric_value: float) -> CheckpointMetadata | None:
         """Save a checkpoint if this is the best metric so far."""
         if self.progress.best_metric is None or metric_value < self.progress.best_metric:
             self.progress.best_metric = metric_value
@@ -1341,7 +1337,7 @@ class FaultTolerantTrainer:
                 self.state = TrainingState.FAILED
                 raise
 
-    def complete(self, model_state: Dict[str, Any]) -> CheckpointMetadata:
+    def complete(self, model_state: dict[str, Any]) -> CheckpointMetadata:
         """Mark training as complete and save final checkpoint."""
         self.state = TrainingState.COMPLETED
         return self.checkpoint_manager.save_checkpoint(
@@ -1398,7 +1394,7 @@ class DistributedFaultHandler:
         with open(self._heartbeat_file, 'w') as f:
             json.dump(data, f)
 
-    def check_all_workers_alive(self, timeout: Optional[float] = None) -> List[int]:
+    def check_all_workers_alive(self, timeout: float | None = None) -> list[int]:
         """Check which workers are alive. Returns list of dead worker ranks."""
         timeout = timeout or self.timeout
         dead_workers = []
@@ -1410,7 +1406,7 @@ class DistributedFaultHandler:
 
         return dead_workers
 
-    def barrier(self, name: str, timeout: Optional[float] = None) -> bool:
+    def barrier(self, name: str, timeout: float | None = None) -> bool:
         """
         File-based barrier synchronization.
 
@@ -1437,10 +1433,8 @@ class DistributedFaultHandler:
                 if self.rank == 0:
                     time.sleep(0.5)  # Give other workers time to see completion
                     for rank in range(self.world_size):
-                        try:
+                        with suppress(OSError):
                             (self._barrier_dir / f"{name}_{rank}.barrier").unlink()
-                        except OSError:
-                            pass
                 return True
 
             time.sleep(0.1)
@@ -1462,7 +1456,7 @@ class DistributedFaultHandler:
 def main():
     """Example usage of fault tolerance features."""
     import tempfile
-    import torch
+
     import torch.nn as nn
 
     class DummyModel(nn.Module):
@@ -1572,25 +1566,25 @@ def main():
 
 try:
     from app.training.exception_integration import (
+        # Error aggregation
+        TrainingErrorAggregator,
         # Training-specific retry policies
         TrainingRetryPolicies,
+        checkpoint_error_context,
+        evaluation_error_context,
+        retry_checkpoint_load,
         # Decorators
         retry_checkpoint_save,
-        retry_checkpoint_load,
         retry_data_load,
         retry_evaluation,
         retry_selfplay,
         retry_training_step,
-        # Safe execution wrappers
-        safe_training_step,
         safe_checkpoint_save,
         safe_evaluation,
-        # Error aggregation
-        TrainingErrorAggregator,
+        # Safe execution wrappers
+        safe_training_step,
         # Context managers
         training_error_context,
-        checkpoint_error_context,
-        evaluation_error_context,
     )
     _HAS_EXCEPTION_INTEGRATION = True
 except ImportError:

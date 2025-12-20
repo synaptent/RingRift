@@ -65,11 +65,12 @@ warnings.warn(
     DeprecationWarning,
     stacklevel=2,
 )
+import contextlib
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -90,8 +91,8 @@ except ImportError:
 # Import centralized quality thresholds
 try:
     from app.quality.thresholds import (
-        MIN_QUALITY_FOR_PRIORITY_SYNC,
         HIGH_QUALITY_THRESHOLD,
+        MIN_QUALITY_FOR_PRIORITY_SYNC,
     )
 except ImportError:
     MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
@@ -124,12 +125,12 @@ class DataSourceConfig:
     source_type: DataSourceType
     path: str
     weight: float = 1.0  # Sampling weight for this source
-    board_type: Optional[str] = None
-    num_players: Optional[int] = None
+    board_type: str | None = None
+    num_players: int | None = None
     enabled: bool = True
     priority: int = 0  # Higher = preferred when multiple sources available
     # Remote source options (for ARIA2/REMOTE types)
-    remote_urls: Optional[List[str]] = None  # URLs for aria2 download
+    remote_urls: list[str] | None = None  # URLs for aria2 download
     sync_on_startup: bool = False  # Whether to sync before loading
     # Quality tracking (P4: Data source registry for training)
     avg_quality_score: float = 0.5  # Average quality of games from this source
@@ -189,8 +190,8 @@ class PipelineConfig:
     num_workers: int = 0
 
     # Filtering
-    board_type: Optional[str] = None
-    num_players: Optional[int] = None
+    board_type: str | None = None
+    num_players: int | None = None
 
     # Multi-player value support
     use_multi_player_values: bool = False
@@ -207,7 +208,7 @@ class PipelineConfig:
     quality_weighted_sampling: bool = True  # Weight samples by quality score
     prefer_high_elo_games: bool = True  # Prioritize high-Elo games
     min_elo_threshold: float = 1400.0  # Minimum average Elo for games
-    manifest_db_path: Optional[str] = None  # Path to data manifest for quality lookup
+    manifest_db_path: str | None = None  # Path to data manifest for quality lookup
 
 
 @dataclass
@@ -220,9 +221,9 @@ class PipelineStats:
     active_sources: int = 0
     buffer_size: int = 0
     buffer_capacity: int = 0
-    last_batch_time: Optional[float] = None
+    last_batch_time: float | None = None
     avg_batch_load_time_ms: float = 0.0
-    source_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    source_stats: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # Validation stats
     sources_validated: int = 0
@@ -237,7 +238,7 @@ class PipelineStats:
     avg_elo_in_batch: float = 0.0  # Average player Elo in recent batches
     quality_filtered_count: int = 0  # Games filtered out due to low quality
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert stats to dictionary."""
         return {
             "total_samples_loaded": self.total_samples_loaded,
@@ -277,9 +278,9 @@ class DataPipelineController:
 
     def __init__(
         self,
-        db_paths: Optional[List[str]] = None,
-        npz_paths: Optional[List[str]] = None,
-        config: Optional[PipelineConfig] = None,
+        db_paths: list[str] | None = None,
+        npz_paths: list[str] | None = None,
+        config: PipelineConfig | None = None,
     ):
         """Initialize the data pipeline controller.
 
@@ -292,7 +293,7 @@ class DataPipelineController:
         self.stats = PipelineStats()
 
         # Data sources
-        self._sources: List[DataSourceConfig] = []
+        self._sources: list[DataSourceConfig] = []
         self._db_paths = db_paths or []
         self._npz_paths = npz_paths or []
 
@@ -307,15 +308,15 @@ class DataPipelineController:
         self._lock = threading.RLock()
 
         # Batch timing
-        self._batch_times: List[float] = []
+        self._batch_times: list[float] = []
 
         # Validation results cache
-        self._validation_results: Dict[str, Any] = {}
+        self._validation_results: dict[str, Any] = {}
 
         # Quality-based data selection via manifest
-        self._manifest: Optional[DataManifest] = None
-        self._quality_lookup: Dict[str, float] = {}  # game_id -> quality_score
-        self._elo_lookup: Dict[str, float] = {}  # game_id -> avg_elo
+        self._manifest: DataManifest | None = None
+        self._quality_lookup: dict[str, float] = {}  # game_id -> quality_score
+        self._elo_lookup: dict[str, float] = {}  # game_id -> avg_elo
         self._init_manifest()
 
         logger.info(
@@ -426,11 +427,11 @@ class DataPipelineController:
         self._sources = [s for s in self._sources if s.path != path]
         self.stats.active_sources = len([s for s in self._sources if s.enabled])
 
-    def get_sources(self) -> List[DataSourceConfig]:
+    def get_sources(self) -> list[DataSourceConfig]:
         """Get all configured data sources."""
         return self._sources.copy()
 
-    def get_sources_by_quality(self, min_quality: float = 0.0) -> List[DataSourceConfig]:
+    def get_sources_by_quality(self, min_quality: float = 0.0) -> list[DataSourceConfig]:
         """Get sources sorted by quality score (highest first).
 
         Args:
@@ -442,7 +443,7 @@ class DataPipelineController:
         qualified = [s for s in self._sources if s.enabled and s.avg_quality_score >= min_quality]
         return sorted(qualified, key=lambda s: s.avg_quality_score, reverse=True)
 
-    def get_source_quality_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_source_quality_stats(self) -> dict[str, dict[str, Any]]:
         """Get quality statistics for all sources.
 
         Returns:
@@ -498,7 +499,7 @@ class DataPipelineController:
 
         return self._validator
 
-    def validate_source(self, source_path: str) -> Optional[Dict[str, Any]]:
+    def validate_source(self, source_path: str) -> dict[str, Any] | None:
         """Validate a single data source file.
 
         Args:
@@ -540,10 +541,8 @@ class DataPipelineController:
             self.stats.samples_with_issues += result.samples_with_issues
 
             # Record to Prometheus if available
-            try:
+            with contextlib.suppress(Exception):
                 record_validation_metrics(result)
-            except Exception:
-                pass
 
             # Log summary
             if result.valid:
@@ -560,7 +559,7 @@ class DataPipelineController:
             logger.error(f"Validation failed for {source_path}: {e}")
             return {"valid": False, "error": str(e)}
 
-    def _count_issues_by_type(self, issues) -> Dict[str, int]:
+    def _count_issues_by_type(self, issues) -> dict[str, int]:
         """Count validation issues by type."""
         counts = {}
         for issue in issues:
@@ -568,7 +567,7 @@ class DataPipelineController:
             counts[key] = counts.get(key, 0) + 1
         return counts
 
-    def validate_all_sources(self, fail_fast: bool = False) -> Dict[str, Any]:
+    def validate_all_sources(self, fail_fast: bool = False) -> dict[str, Any]:
         """Validate all NPZ/HDF5 data sources.
 
         Runs validation on all file-based sources before training.
@@ -635,7 +634,7 @@ class DataPipelineController:
 
         return results
 
-    def get_validation_results(self) -> Dict[str, Any]:
+    def get_validation_results(self) -> dict[str, Any]:
         """Get cached validation results.
 
         Returns:
@@ -645,10 +644,10 @@ class DataPipelineController:
 
     async def sync_remote_sources(
         self,
-        source_urls: Optional[List[str]] = None,
-        categories: Optional[List[str]] = None,
+        source_urls: list[str] | None = None,
+        categories: list[str] | None = None,
         max_age_hours: float = 168,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Sync data from remote sources using SyncCoordinator.
 
         This method uses the unified SyncCoordinator which provides:
@@ -670,8 +669,8 @@ class DataPipelineController:
         # Try SyncCoordinator first (preferred)
         try:
             from app.distributed.sync_coordinator import (
-                SyncCoordinator,
                 SyncCategory,
+                SyncCoordinator,
             )
             coordinator = SyncCoordinator.get_instance()
             results = {}
@@ -772,7 +771,7 @@ class DataPipelineController:
     def add_aria2_source(
         self,
         local_path: str,
-        remote_urls: List[str],
+        remote_urls: list[str],
         sync_on_startup: bool = True,
         priority: int = 80,
     ):
@@ -919,9 +918,9 @@ class DataPipelineController:
 
     def get_training_batches(
         self,
-        batch_size: Optional[int] = None,
-        max_batches: Optional[int] = None,
-    ) -> Iterator[Tuple[Any, Any]]:
+        batch_size: int | None = None,
+        max_batches: int | None = None,
+    ) -> Iterator[tuple[Any, Any]]:
         """Get training batches from the best available source.
 
         Automatically selects the appropriate data source based on
@@ -992,8 +991,8 @@ class DataPipelineController:
 
     async def stream_from_database(
         self,
-        batch_size: Optional[int] = None,
-        max_batches: Optional[int] = None,
+        batch_size: int | None = None,
+        max_batches: int | None = None,
     ) -> AsyncIterator[Any]:
         """Stream training batches from database in real-time.
 
@@ -1098,7 +1097,7 @@ class DataPipelineController:
 
         return self.stats
 
-    def get_sync_status(self) -> Dict[str, Any]:
+    def get_sync_status(self) -> dict[str, Any]:
         """Get comprehensive sync status from SyncCoordinator.
 
         Returns:
@@ -1125,10 +1124,10 @@ class DataPipelineController:
 
     def get_high_quality_game_ids(
         self,
-        min_quality: Optional[float] = None,
-        min_elo: Optional[float] = None,
+        min_quality: float | None = None,
+        min_elo: float | None = None,
         limit: int = 10000,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get list of high-quality game IDs from manifest.
 
         Args:
@@ -1162,7 +1161,7 @@ class DataPipelineController:
             logger.warning(f"Failed to get high-quality game IDs: {e}")
             return []
 
-    def get_quality_weights(self, game_ids: List[str]) -> Dict[str, float]:
+    def get_quality_weights(self, game_ids: list[str]) -> dict[str, float]:
         """Get quality-based sampling weights for a list of game IDs.
 
         Weights are normalized so they sum to 1.0.
@@ -1176,7 +1175,7 @@ class DataPipelineController:
         if not self._quality_lookup or not self.config.quality_weighted_sampling:
             # Uniform weights
             n = len(game_ids)
-            return {gid: 1.0 / n for gid in game_ids} if n > 0 else {}
+            return dict.fromkeys(game_ids, 1.0 / n) if n > 0 else {}
 
         weights = {}
         total = 0.0
@@ -1195,7 +1194,7 @@ class DataPipelineController:
 
         return weights
 
-    def get_quality_distribution(self) -> Dict[str, Any]:
+    def get_quality_distribution(self) -> dict[str, Any]:
         """Get quality distribution statistics from manifest.
 
         Returns:
@@ -1223,7 +1222,7 @@ class DataPipelineController:
         """
         return game_id in self._quality_lookup
 
-    def get_game_quality(self, game_id: str) -> Optional[float]:
+    def get_game_quality(self, game_id: str) -> float | None:
         """Get quality score for a specific game.
 
         Args:
@@ -1234,7 +1233,7 @@ class DataPipelineController:
         """
         return self._quality_lookup.get(game_id)
 
-    def get_game_elo(self, game_id: str) -> Optional[float]:
+    def get_game_elo(self, game_id: str) -> float | None:
         """Get average Elo for a specific game.
 
         Args:
@@ -1245,7 +1244,7 @@ class DataPipelineController:
         """
         return self._elo_lookup.get(game_id)
 
-    def build_priority_weights_for_streaming(self) -> Dict[str, float]:
+    def build_priority_weights_for_streaming(self) -> dict[str, float]:
         """Build a priority weight lookup for streaming pipeline.
 
         Returns quality scores that can be used as priority weights
@@ -1313,7 +1312,7 @@ class DataPipelineController:
 
 
 def create_pipeline_from_config(
-    config_path: Optional[str] = None,
+    config_path: str | None = None,
     **overrides,
 ) -> DataPipelineController:
     """Create a DataPipelineController from configuration file.
@@ -1372,7 +1371,7 @@ def create_pipeline_from_config(
 
 # Convenience function for backward compatibility
 def get_training_data_loader(
-    data_paths: List[str],
+    data_paths: list[str],
     batch_size: int = 256,
     shuffle: bool = True,
     **kwargs,

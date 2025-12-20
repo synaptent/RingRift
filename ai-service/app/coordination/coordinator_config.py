@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -165,13 +165,13 @@ class CoordinatorConfig:
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     event_bus: EventBusConfig = field(default_factory=EventBusConfig)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         from dataclasses import asdict
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CoordinatorConfig":
+    def from_dict(cls, data: dict[str, Any]) -> CoordinatorConfig:
         """Create from dictionary."""
         return cls(
             task_lifecycle=TaskLifecycleConfig(**data.get("task_lifecycle", {})),
@@ -187,7 +187,7 @@ class CoordinatorConfig:
         )
 
     @classmethod
-    def from_environment(cls) -> "CoordinatorConfig":
+    def from_environment(cls) -> CoordinatorConfig:
         """Create configuration from environment variables.
 
         Environment variables are prefixed with COORDINATOR_ and use
@@ -247,7 +247,7 @@ class CoordinatorConfig:
 # Global Configuration Singleton
 # =============================================================================
 
-_config: Optional[CoordinatorConfig] = None
+_config: CoordinatorConfig | None = None
 
 
 def get_config() -> CoordinatorConfig:
@@ -304,7 +304,7 @@ def update_config(**kwargs) -> CoordinatorConfig:
     return config
 
 
-def validate_config(config: Optional[CoordinatorConfig] = None) -> tuple:
+def validate_config(config: CoordinatorConfig | None = None) -> tuple:
     """Validate configuration values.
 
     Args:
@@ -346,23 +346,23 @@ def validate_config(config: Optional[CoordinatorConfig] = None) -> tuple:
 
 
 __all__ = [
-    # Individual configs
-    "TaskLifecycleConfig",
-    "SelfplayConfig",
-    "PipelineConfig",
-    "OptimizationConfig",
-    "MetricsConfig",
-    "ResourceConfig",
     "CacheConfig",
-    "HandlerResilienceConfig",
-    "HeartbeatConfig",
-    "EventBusConfig",
     # Unified config
     "CoordinatorConfig",
+    "EventBusConfig",
+    "HandlerResilienceConfig",
+    "HeartbeatConfig",
+    "MetricsConfig",
+    "OptimizationConfig",
+    "PipelineConfig",
+    "ResourceConfig",
+    "SelfplayConfig",
+    # Individual configs
+    "TaskLifecycleConfig",
     # Functions
     "get_config",
-    "set_config",
     "reset_config",
+    "set_config",
     "update_config",
     "validate_config",
 ]

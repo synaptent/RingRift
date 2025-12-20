@@ -19,18 +19,19 @@ import json
 import logging
 import os
 import sqlite3
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset, IterableDataset, Sampler
 
 from ..ai.nnue import (
-    extract_features_from_gamestate,
-    get_feature_dim,
-    get_board_size,
     FEATURE_PLANES,
+    extract_features_from_gamestate,
+    get_board_size,
+    get_feature_dim,
 )
 from ..models import BoardType, GameState, Move
 from ..rules.default_engine import DefaultRulesEngine
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 def _parse_state_to_arrays(
     state: GameState,
     board_size: int,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Parse GameState into numpy arrays for batch GPU processing.
 
     Returns:
@@ -73,7 +74,7 @@ def _parse_state_to_arrays(
             continue
 
     # Parse territories
-    for territory_key, territory in (board.territories or {}).items():
+    for _territory_key, territory in (board.territories or {}).items():
         try:
             pnum = getattr(territory, 'player', 0)
             if pnum > 0:
@@ -87,11 +88,11 @@ def _parse_state_to_arrays(
 
 
 def extract_features_batch_gpu(
-    states: List[GameState],
-    player_numbers: List[int],
+    states: list[GameState],
+    player_numbers: list[int],
     board_type: BoardType,
     num_players: int = 2,
-    device: Optional[torch.device] = None,
+    device: torch.device | None = None,
 ) -> np.ndarray:
     """Extract NNUE features for a batch of states using GPU acceleration.
 
@@ -113,7 +114,7 @@ def extract_features_batch_gpu(
 
     batch_size = len(states)
     board_size = get_board_size(board_type)
-    feature_dim = get_feature_dim(board_type)
+    get_feature_dim(board_type)
 
     # Determine device
     if device is None:
@@ -172,7 +173,7 @@ def _extract_features_batch_vectorized(
     features = torch.zeros(batch_size, FEATURE_PLANES, H, W, device=device, dtype=torch.float32)
 
     # Current player expanded: (batch, 1, 1)
-    cp = current_player.view(batch_size, 1, 1)
+    current_player.view(batch_size, 1, 1)
 
     # Process each player's features with perspective rotation
     for p in range(1, num_players + 1):
@@ -190,7 +191,7 @@ def _extract_features_batch_vectorized(
         )
 
         # Scatter to appropriate planes
-        batch_idx = torch.arange(batch_size, device=device)
+        torch.arange(batch_size, device=device)
 
         # Use advanced indexing to place features in rotated planes
         for b in range(batch_size):
@@ -224,9 +225,9 @@ class DataValidationResult:
     inf_count: int = 0
     value_out_of_range: int = 0
     zero_feature_count: int = 0
-    class_balance: Dict[str, int] = None  # wins/losses/draws
-    feature_stats: Dict[str, float] = None  # mean, std, min, max
-    errors: List[str] = None
+    class_balance: dict[str, int] = None  # wins/losses/draws
+    feature_stats: dict[str, float] = None  # mean, std, min, max
+    errors: list[str] = None
 
     def __post_init__(self):
         if self.class_balance is None:
@@ -237,7 +238,7 @@ class DataValidationResult:
             self.errors = []
 
 
-def validate_nnue_sample(sample: NNUESample, feature_dim: int) -> Tuple[bool, Optional[str]]:
+def validate_nnue_sample(sample: NNUESample, feature_dim: int) -> tuple[bool, str | None]:
     """Validate a single NNUE training sample.
 
     Args:
@@ -275,7 +276,7 @@ def validate_nnue_sample(sample: NNUESample, feature_dim: int) -> Tuple[bool, Op
 
 
 def validate_nnue_dataset(
-    samples: List[NNUESample],
+    samples: list[NNUESample],
     feature_dim: int,
     log_errors: bool = True,
 ) -> DataValidationResult:
@@ -356,7 +357,7 @@ def validate_nnue_dataset(
     return result
 
 
-def validate_database_integrity(db_path: str) -> Tuple[bool, Dict[str, Any]]:
+def validate_database_integrity(db_path: str) -> tuple[bool, dict[str, Any]]:
     """Validate SQLite database integrity for training.
 
     Args:
@@ -419,7 +420,7 @@ def validate_database_integrity(db_path: str) -> Tuple[bool, Dict[str, Any]]:
         return len(stats["errors"]) == 0, stats
 
     except Exception as e:
-        stats["errors"].append(f"Database error: {str(e)}")
+        stats["errors"].append(f"Database error: {e!s}")
         return False, stats
 
 
@@ -449,10 +450,10 @@ class NNUESQLiteDataset(Dataset):
 
     def __init__(
         self,
-        db_paths: List[str],
-        config: Optional[NNUEDatasetConfig] = None,
-        cache_path: Optional[str] = None,
-        max_samples: Optional[int] = None,
+        db_paths: list[str],
+        config: NNUEDatasetConfig | None = None,
+        cache_path: str | None = None,
+        max_samples: int | None = None,
         use_gpu_extraction: bool = False,
         gpu_batch_size: int = 256,
     ):
@@ -474,7 +475,7 @@ class NNUESQLiteDataset(Dataset):
         self.gpu_batch_size = gpu_batch_size
 
         self.feature_dim = get_feature_dim(self.config.board_type)
-        self.samples: List[NNUESample] = []
+        self.samples: list[NNUESample] = []
 
         # Load from cache if available
         if cache_path and os.path.exists(cache_path):
@@ -527,13 +528,13 @@ class NNUESQLiteDataset(Dataset):
             if not validation.is_valid:
                 logger.warning("Dataset validation failed - training may have issues")
 
-    def _extract_from_cached_features(self, db_path: str) -> Optional[List[NNUESample]]:
+    def _extract_from_cached_features(self, db_path: str) -> list[NNUESample] | None:
         """Try to extract samples from cached NNUE features table.
 
         Returns None if no cached features exist, otherwise returns the samples.
         This is much faster than replay-based extraction.
         """
-        samples: List[NNUESample] = []
+        samples: list[NNUESample] = []
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -606,7 +607,7 @@ class NNUESQLiteDataset(Dataset):
             return samples
         return None
 
-    def _extract_from_db(self, db_path: str) -> List[NNUESample]:
+    def _extract_from_db(self, db_path: str) -> list[NNUESample]:
         """Extract samples from a single SQLite database."""
         # Try cached features first (instant extraction)
         cached_samples = self._extract_from_cached_features(db_path)
@@ -614,7 +615,7 @@ class NNUESQLiteDataset(Dataset):
             return cached_samples
 
         # Fall back to snapshot/replay extraction
-        samples: List[NNUESample] = []
+        samples: list[NNUESample] = []
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -646,7 +647,7 @@ class NNUESQLiteDataset(Dataset):
 
         # Batch load all snapshots to avoid N+1 query pattern (December 2025)
         game_ids = [g['game_id'] for g in games]
-        snapshots_by_game: Dict[str, List[Any]] = {gid: [] for gid in game_ids}
+        snapshots_by_game: dict[str, list[Any]] = {gid: [] for gid in game_ids}
 
         if game_ids:
             # Single query for all snapshots instead of one per game
@@ -713,7 +714,7 @@ class NNUESQLiteDataset(Dataset):
                 continue
 
             # Sample positions from snapshots (only if we have good coverage)
-            for i, snapshot in enumerate(snapshots):
+            for _i, snapshot in enumerate(snapshots):
                 move_num = snapshot['move_number']
 
                 # Sample every Nth position
@@ -778,21 +779,21 @@ class NNUESQLiteDataset(Dataset):
         self,
         conn: sqlite3.Connection,
         cursor: sqlite3.Cursor,
-        games: List[Any],
-    ) -> List[NNUESample]:
+        games: list[Any],
+    ) -> list[NNUESample]:
         """GPU-accelerated batch extraction from database.
 
         Collects states in batches, then processes them on GPU for faster
         feature extraction.
         """
-        samples: List[NNUESample] = []
+        samples: list[NNUESample] = []
 
         # Collect batch data: (state, player_number, value, game_id, move_number)
-        batch_states: List[GameState] = []
-        batch_players: List[int] = []
-        batch_values: List[float] = []
-        batch_game_ids: List[str] = []
-        batch_move_nums: List[int] = []
+        batch_states: list[GameState] = []
+        batch_players: list[int] = []
+        batch_values: list[float] = []
+        batch_game_ids: list[str] = []
+        batch_move_nums: list[int] = []
 
         for game_row in games:
             game_id = game_row['game_id']
@@ -912,12 +913,12 @@ class NNUESQLiteDataset(Dataset):
 
     def _process_gpu_batch(
         self,
-        states: List[GameState],
-        players: List[int],
-        values: List[float],
-        game_ids: List[str],
-        move_nums: List[int],
-    ) -> List[NNUESample]:
+        states: list[GameState],
+        players: list[int],
+        values: list[float],
+        game_ids: list[str],
+        move_nums: list[int],
+    ) -> list[NNUESample]:
         """Process a batch of states using GPU feature extraction."""
         try:
             features = extract_features_batch_gpu(
@@ -963,13 +964,13 @@ class NNUESQLiteDataset(Dataset):
         game_id: str,
         winner: int,
         total_moves: int,
-    ) -> List[NNUESample]:
+    ) -> list[NNUESample]:
         """Extract samples by replaying moves when snapshots aren't available.
 
         This method loads the initial state and all moves for a game, then
         replays the game to extract position features at sampled positions.
         """
-        samples: List[NNUESample] = []
+        samples: list[NNUESample] = []
         cursor = conn.cursor()
 
         # Get initial state
@@ -1150,7 +1151,7 @@ class NNUESQLiteDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Get a single sample as (features, value) tensors."""
         # Fast path: use cached arrays directly
         if getattr(self, '_use_tensor_cache', False):
@@ -1172,7 +1173,7 @@ class NNUESQLiteDataset(Dataset):
         self,
         early_end: int = 40,
         mid_end: int = 80,
-        target_balance: Tuple[float, float, float] = (0.25, 0.35, 0.40),
+        target_balance: tuple[float, float, float] = (0.25, 0.35, 0.40),
     ) -> np.ndarray:
         """Compute sample weights to balance early/mid/late game phases.
 
@@ -1238,7 +1239,7 @@ class NNUESQLiteDataset(Dataset):
         self,
         early_end: int = 40,
         mid_end: int = 80,
-        target_balance: Tuple[float, float, float] = (0.25, 0.35, 0.40),
+        target_balance: tuple[float, float, float] = (0.25, 0.35, 0.40),
     ) -> "torch.utils.data.WeightedRandomSampler":
         """Get a WeightedRandomSampler that balances game phases.
 
@@ -1280,10 +1281,10 @@ class NNUEStreamingDataset(IterableDataset):
 
     def __init__(
         self,
-        db_paths: List[str],
-        config: Optional[NNUEDatasetConfig] = None,
+        db_paths: list[str],
+        config: NNUEDatasetConfig | None = None,
         shuffle_games: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         buffer_size: int = 10000,
         epoch: int = 0,
     ):
@@ -1299,14 +1300,14 @@ class NNUEStreamingDataset(IterableDataset):
         """Set current epoch for shuffling variance across epochs."""
         self.epoch = epoch
 
-    def _get_worker_info(self) -> Tuple[int, int]:
+    def _get_worker_info(self) -> tuple[int, int]:
         """Get worker ID and total workers for sharding."""
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
             return 0, 1
         return worker_info.id, worker_info.num_workers
 
-    def __iter__(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Iterate over training samples with multi-worker sharding and buffered shuffle."""
         worker_id, num_workers = self._get_worker_info()
 
@@ -1320,7 +1321,7 @@ class NNUEStreamingDataset(IterableDataset):
             rng.shuffle(db_paths)
 
         # Use buffer for shuffling samples within a window
-        buffer: List[Tuple[torch.Tensor, torch.Tensor]] = []
+        buffer: list[tuple[torch.Tensor, torch.Tensor]] = []
 
         for db_path in db_paths:
             if not os.path.exists(db_path):
@@ -1347,7 +1348,7 @@ class NNUEStreamingDataset(IterableDataset):
             for item in buffer:
                 yield item
 
-    def _stream_from_db(self, db_path: str) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def _stream_from_db(self, db_path: str) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Stream samples from a single database."""
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -1486,18 +1487,18 @@ class PrioritizedExperienceSampler(Sampler):
         probs = priorities_alpha / priorities_alpha.sum()
         return probs
 
-    def update_priorities(self, indices: List[int], errors: np.ndarray) -> None:
+    def update_priorities(self, indices: list[int], errors: np.ndarray) -> None:
         """Update priorities based on prediction errors.
 
         Args:
             indices: List of sample indices that were used
             errors: Corresponding prediction errors (|predicted - target|)
         """
-        for idx, error in zip(indices, errors):
+        for idx, error in zip(indices, errors, strict=False):
             self.priorities[idx] = abs(error) + self.epsilon
             self.seen[idx] = True
 
-    def get_importance_weights(self, indices: List[int]) -> torch.Tensor:
+    def get_importance_weights(self, indices: list[int]) -> torch.Tensor:
         """Compute importance sampling weights for a batch.
 
         Args:
@@ -1527,7 +1528,7 @@ class PrioritizedExperienceSampler(Sampler):
         self.epoch = epoch
         self.total_epochs = total_epochs
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get sampler statistics."""
         return {
             "mean_priority": float(self.priorities.mean()),
@@ -1542,10 +1543,10 @@ class PrioritizedExperienceSampler(Sampler):
 
 
 def generate_nnue_dataset(
-    db_paths: List[str],
+    db_paths: list[str],
     output_path: str,
-    config: Optional[NNUEDatasetConfig] = None,
-    max_samples: Optional[int] = None,
+    config: NNUEDatasetConfig | None = None,
+    max_samples: int | None = None,
 ) -> int:
     """Generate an NPZ dataset file for NNUE training.
 
@@ -1568,9 +1569,9 @@ def generate_nnue_dataset(
 
 
 def count_available_samples(
-    db_paths: List[str],
-    config: Optional[NNUEDatasetConfig] = None,
-) -> Dict[str, int]:
+    db_paths: list[str],
+    config: NNUEDatasetConfig | None = None,
+) -> dict[str, int]:
     """Count available training samples without loading them.
 
     Args:
@@ -1627,7 +1628,7 @@ def count_available_samples(
 
 
 def extract_features_from_state(
-    state_dict: Dict[str, Any],
+    state_dict: dict[str, Any],
     board_type: str,
     num_players: int,
     current_player: int = 1,
@@ -1673,7 +1674,7 @@ def extract_features_from_state(
         # This handles legacy formats where only board data is stored
         rings = state_dict.get("rings", state_dict.get("cells", {}))
         stacks = state_dict.get("stacks", {})
-        territories = state_dict.get("territories", state_dict.get("territory", {}))
+        state_dict.get("territories", state_dict.get("territory", {}))
 
         # Build feature vector manually for simple board formats
         # This is a simplified extraction for compatibility

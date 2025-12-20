@@ -38,12 +38,12 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.ai.base import BaseAI
@@ -80,30 +80,30 @@ class GameResult:
     num_players: int
 
     # Outcome
-    winner: Optional[int]  # 1-indexed player number, None for draw
+    winner: int | None  # 1-indexed player number, None for draw
     outcome: GameOutcome
     move_count: int
 
     # Player information
-    player_types: List[str]  # AI type names
-    player_configs: List[Dict[str, Any]]  # Full configs
+    player_types: list[str]  # AI type names
+    player_configs: list[dict[str, Any]]  # Full configs
 
     # Game data (for training)
-    moves: List[Dict[str, Any]] = field(default_factory=list)
-    initial_state: Optional[Dict[str, Any]] = None
-    final_state: Optional[Dict[str, Any]] = None
+    moves: list[dict[str, Any]] = field(default_factory=list)
+    initial_state: dict[str, Any] | None = None
+    final_state: dict[str, Any] | None = None
 
     # Timing
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     duration_seconds: float = 0.0
 
     # Metadata
-    seed: Optional[int] = None
+    seed: int | None = None
     source: str = "GameExecutor"
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "game_id": self.game_id,
@@ -125,7 +125,7 @@ class GameResult:
             "error_message": self.error_message,
         }
 
-    def to_training_record(self) -> Dict[str, Any]:
+    def to_training_record(self) -> dict[str, Any]:
         """Convert to training data record format.
 
         This format is compatible with the NPZ export pipeline
@@ -210,7 +210,7 @@ class GameExecutor:
             self._create_initial_state = create_initial_state
         return self._create_initial_state
 
-    def _create_game_state(self, seed: Optional[int] = None) -> "GameState":
+    def _create_game_state(self, seed: int | None = None) -> GameState:
         """Create a new game state.
 
         Args:
@@ -227,7 +227,7 @@ class GameExecutor:
             num_players=self.num_players,
         )
 
-    def _compute_tiebreak_winner(self, game_state: "GameState") -> int:
+    def _compute_tiebreak_winner(self, game_state: GameState) -> int:
         """Compute winner for timeout/draw scenarios.
 
         Uses a deterministic tiebreak based on:
@@ -248,7 +248,7 @@ class GameExecutor:
             return 1
 
         # Count markers per player
-        marker_counts: Dict[int, int] = {i + 1: 0 for i in range(len(players))}
+        marker_counts: dict[int, int] = {i + 1: 0 for i in range(len(players))}
         try:
             for marker in game_state.board.markers.values():
                 owner = int(marker.player)
@@ -265,8 +265,8 @@ class GameExecutor:
             pass
 
         # Score each player
-        best_player: Optional[int] = None
-        best_key: Optional[tuple] = None
+        best_player: int | None = None
+        best_key: tuple | None = None
 
         for idx, player in enumerate(players):
             player_num = getattr(player, "player_number", idx + 1)
@@ -294,7 +294,7 @@ class GameExecutor:
 
         return best_player or 1
 
-    def _serialize_move(self, move: "Move") -> Dict[str, Any]:
+    def _serialize_move(self, move: Move) -> dict[str, Any]:
         """Serialize a move for storage.
 
         Args:
@@ -309,7 +309,7 @@ class GameExecutor:
             return move.to_dict()
         else:
             # Manual serialization
-            result: Dict[str, Any] = {
+            result: dict[str, Any] = {
                 "type": move.type.value if hasattr(move.type, "value") else str(move.type),
                 "player": move.player,
             }
@@ -321,11 +321,11 @@ class GameExecutor:
 
     def run_game_with_ais(
         self,
-        ais: List["BaseAI"],
+        ais: list[BaseAI],
         *,
-        max_moves: Optional[int] = None,
-        seed: Optional[int] = None,
-        game_id: Optional[str] = None,
+        max_moves: int | None = None,
+        seed: int | None = None,
+        game_id: str | None = None,
     ) -> GameResult:
         """Run a game with pre-created AI instances.
 
@@ -362,7 +362,7 @@ class GameExecutor:
 
         # Run game loop
         start_time = datetime.now()
-        moves_played: List[Dict[str, Any]] = []
+        moves_played: list[dict[str, Any]] = []
         move_count = 0
         outcome = GameOutcome.WIN
         error_message = None
@@ -448,11 +448,11 @@ class GameExecutor:
 
     def run_game(
         self,
-        player_configs: List[Dict[str, Any]],
+        player_configs: list[dict[str, Any]],
         *,
-        max_moves: Optional[int] = None,
-        seed: Optional[int] = None,
-        game_id: Optional[str] = None,
+        max_moves: int | None = None,
+        seed: int | None = None,
+        game_id: str | None = None,
     ) -> GameResult:
         """Run a game with player configurations.
 
@@ -475,7 +475,7 @@ class GameExecutor:
         for i, config in enumerate(player_configs):
             player_number = i + 1
             ai_type = config.get("ai_type", "heuristic")
-            difficulty = config.get("difficulty", 5)
+            config.get("difficulty", 5)
 
             ai = AIFactory.create_for_tournament(
                 agent_id=ai_type,
@@ -497,12 +497,12 @@ class GameExecutor:
     def run_games(
         self,
         num_games: int,
-        player_configs: List[Dict[str, Any]],
+        player_configs: list[dict[str, Any]],
         *,
-        max_moves: Optional[int] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-        error_callback: Optional[Callable[[int, Exception], None]] = None,
-    ) -> List[GameResult]:
+        max_moves: int | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+        error_callback: Callable[[int, Exception], None] | None = None,
+    ) -> list[GameResult]:
         """Run multiple games.
 
         Args:
@@ -555,9 +555,9 @@ class GameExecutor:
         difficulty: int = 5,
         ai_type: str = "mcts",
         *,
-        max_moves: Optional[int] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> List[GameResult]:
+        max_moves: int | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[GameResult]:
         """Run self-play games (same AI vs itself).
 
         This is a convenience method for generating training data.
@@ -620,10 +620,10 @@ class ParallelGameExecutor:
     def run_games(
         self,
         num_games: int,
-        player_configs: List[Dict[str, Any]],
+        player_configs: list[dict[str, Any]],
         *,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> List[GameResult]:
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[GameResult]:
         """Run games in parallel.
 
         Args:
@@ -636,7 +636,7 @@ class ParallelGameExecutor:
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        results: List[GameResult] = []
+        results: list[GameResult] = []
         completed = 0
 
         def run_single_game(game_index: int) -> GameResult:
@@ -724,8 +724,8 @@ def run_selfplay_batch(
     board_type: str = "square8",
     num_players: int = 2,
     max_workers: int = 4,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
-) -> List[GameResult]:
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> list[GameResult]:
     """Run a batch of self-play games.
 
     Args:

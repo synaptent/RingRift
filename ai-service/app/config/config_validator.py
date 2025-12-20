@@ -33,7 +33,6 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
 
@@ -45,11 +44,11 @@ class ValidationResult:
     """Result of configuration validation."""
     valid: bool
     config_name: str
-    config_path: Optional[str] = None
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    config_path: str | None = None
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
-    def merge(self, other: "ValidationResult") -> "ValidationResult":
+    def merge(self, other: ValidationResult) -> ValidationResult:
         """Merge another result into this one."""
         return ValidationResult(
             valid=self.valid and other.valid,
@@ -62,7 +61,7 @@ class ValidationResult:
 class ConfigValidator:
     """Validates RingRift configuration files."""
 
-    def __init__(self, base_path: Optional[Path] = None):
+    def __init__(self, base_path: Path | None = None):
         self.base_path = base_path or AI_SERVICE_ROOT
 
     def validate_all(self) -> ValidationResult:
@@ -328,9 +327,8 @@ class ConfigValidator:
                 # Validate alert thresholds
                 thresholds = config.get("thresholds", {})
                 for name, value in thresholds.items():
-                    if isinstance(value, (int, float)):
-                        if value < 0:
-                            errors.append(f"Threshold '{name}' cannot be negative: {value}")
+                    if isinstance(value, (int, float)) and value < 0:
+                        errors.append(f"Threshold '{name}' cannot be negative: {value}")
 
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
@@ -454,7 +452,7 @@ class ConfigValidator:
         return bool(re.match(hostname_pattern, host))
 
 
-def validate_all_configs(base_path: Optional[Path] = None) -> ValidationResult:
+def validate_all_configs(base_path: Path | None = None) -> ValidationResult:
     """Convenience function to validate all configurations."""
     validator = ConfigValidator(base_path)
     return validator.validate_all()

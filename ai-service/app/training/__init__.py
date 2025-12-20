@@ -91,9 +91,9 @@ Quick Start
 try:
     from app.training.promotion_controller import (
         PromotionController,
-        PromotionType,
         PromotionCriteria,
         PromotionDecision,
+        PromotionType,
         get_promotion_controller,
     )
     HAS_PROMOTION_CONTROLLER = True
@@ -103,8 +103,8 @@ except ImportError:
 # Import integrated enhancements (December 2025)
 try:
     from app.training.integrated_enhancements import (
-        IntegratedTrainingManager,
         IntegratedEnhancementsConfig,
+        IntegratedTrainingManager,
         create_integrated_manager,
     )
     HAS_INTEGRATED_ENHANCEMENTS = True
@@ -114,10 +114,10 @@ except ImportError:
 # Import consolidated checkpoint manager (December 2025)
 try:
     from app.training.checkpoint_unified import (
-        UnifiedCheckpointManager,
-        UnifiedCheckpointConfig,
-        TrainingProgress,
         CheckpointType,
+        TrainingProgress,
+        UnifiedCheckpointConfig,
+        UnifiedCheckpointManager,
     )
     HAS_CHECKPOINT_UNIFIED = True
 except ImportError:
@@ -126,8 +126,8 @@ except ImportError:
 # Import consolidated distributed trainer (December 2025)
 try:
     from app.training.distributed_unified import (
-        UnifiedDistributedTrainer,
         UnifiedDistributedConfig,
+        UnifiedDistributedTrainer,
     )
     HAS_DISTRIBUTED_UNIFIED = True
 except ImportError:
@@ -136,25 +136,25 @@ except ImportError:
 # Import distributed helper functions (December 2025)
 try:
     from app.training.distributed import (
-        setup_distributed,
-        cleanup_distributed,
-        is_distributed,
-        is_main_process,
-        get_rank,
-        get_world_size,
-        get_local_rank,
-        get_distributed_sampler,
-        wrap_model_ddp,
-        synchronize,
-        reduce_tensor,
-        all_gather_object,
-        broadcast_object,
-        get_device_for_rank,
-        seed_everything,
-        scale_learning_rate,
+        DistributedConfig,
         DistributedMetrics,
         DistributedTrainer,
-        DistributedConfig,
+        all_gather_object,
+        broadcast_object,
+        cleanup_distributed,
+        get_device_for_rank,
+        get_distributed_sampler,
+        get_local_rank,
+        get_rank,
+        get_world_size,
+        is_distributed,
+        is_main_process,
+        reduce_tensor,
+        scale_learning_rate,
+        seed_everything,
+        setup_distributed,
+        synchronize,
+        wrap_model_ddp,
     )
     HAS_DISTRIBUTED_HELPERS = True
 except ImportError:
@@ -163,8 +163,8 @@ except ImportError:
 # Import temperature scheduling (December 2025)
 try:
     from app.training.temperature_scheduling import (
-        TemperatureScheduler,
         TemperatureConfig,
+        TemperatureScheduler,
         create_scheduler as create_temperature_scheduler,
     )
     HAS_TEMPERATURE_SCHEDULING = True
@@ -174,8 +174,8 @@ except ImportError:
 # Import unified orchestrator (December 2025)
 try:
     from app.training.unified_orchestrator import (
-        UnifiedTrainingOrchestrator,
         OrchestratorConfig,
+        UnifiedTrainingOrchestrator,
     )
     HAS_ORCHESTRATOR = True
 except ImportError:
@@ -194,80 +194,80 @@ except ImportError:
     HAS_TRAINING_ORCHESTRATOR = False
 
 __all__ = [
-    "HAS_PROMOTION_CONTROLLER",
-    "HAS_INTEGRATED_ENHANCEMENTS",
     "HAS_CHECKPOINT_UNIFIED",
-    "HAS_DISTRIBUTED_UNIFIED",
     "HAS_DISTRIBUTED_HELPERS",
-    "HAS_TEMPERATURE_SCHEDULING",
+    "HAS_DISTRIBUTED_UNIFIED",
+    "HAS_INTEGRATED_ENHANCEMENTS",
     "HAS_ORCHESTRATOR",
+    "HAS_PROMOTION_CONTROLLER",
+    "HAS_TEMPERATURE_SCHEDULING",
     "HAS_TRAINING_ORCHESTRATOR",
 ]
 
 if HAS_PROMOTION_CONTROLLER:
     __all__.extend([
         "PromotionController",
-        "PromotionType",
         "PromotionCriteria",
         "PromotionDecision",
+        "PromotionType",
         "get_promotion_controller",
     ])
 
 if HAS_INTEGRATED_ENHANCEMENTS:
     __all__.extend([
-        "IntegratedTrainingManager",
         "IntegratedEnhancementsConfig",
+        "IntegratedTrainingManager",
         "create_integrated_manager",
     ])
 
 if HAS_CHECKPOINT_UNIFIED:
     __all__.extend([
-        "UnifiedCheckpointManager",
-        "UnifiedCheckpointConfig",
-        "TrainingProgress",
         "CheckpointType",
+        "TrainingProgress",
+        "UnifiedCheckpointConfig",
+        "UnifiedCheckpointManager",
     ])
 
 if HAS_DISTRIBUTED_UNIFIED:
     __all__.extend([
-        "UnifiedDistributedTrainer",
         "UnifiedDistributedConfig",
+        "UnifiedDistributedTrainer",
     ])
 
 if HAS_DISTRIBUTED_HELPERS:
     __all__.extend([
-        "setup_distributed",
-        "cleanup_distributed",
-        "is_distributed",
-        "is_main_process",
-        "get_rank",
-        "get_world_size",
-        "get_local_rank",
-        "get_distributed_sampler",
-        "wrap_model_ddp",
-        "synchronize",
-        "reduce_tensor",
-        "all_gather_object",
-        "broadcast_object",
-        "get_device_for_rank",
-        "seed_everything",
-        "scale_learning_rate",
+        "DistributedConfig",
         "DistributedMetrics",
         "DistributedTrainer",
-        "DistributedConfig",
+        "all_gather_object",
+        "broadcast_object",
+        "cleanup_distributed",
+        "get_device_for_rank",
+        "get_distributed_sampler",
+        "get_local_rank",
+        "get_rank",
+        "get_world_size",
+        "is_distributed",
+        "is_main_process",
+        "reduce_tensor",
+        "scale_learning_rate",
+        "seed_everything",
+        "setup_distributed",
+        "synchronize",
+        "wrap_model_ddp",
     ])
 
 if HAS_TEMPERATURE_SCHEDULING:
     __all__.extend([
-        "TemperatureScheduler",
         "TemperatureConfig",
+        "TemperatureScheduler",
         "create_temperature_scheduler",
     ])
 
 if HAS_ORCHESTRATOR:
     __all__.extend([
-        "UnifiedTrainingOrchestrator",
         "OrchestratorConfig",
+        "UnifiedTrainingOrchestrator",
     ])
 
 if HAS_TRAINING_ORCHESTRATOR:
@@ -281,13 +281,13 @@ if HAS_TRAINING_ORCHESTRATOR:
 # Import consolidated regression detector (December 2025)
 try:
     from app.training.regression_detector import (
-        RegressionDetector,
         RegressionConfig,
+        RegressionDetector,
         RegressionEvent,
-        RegressionSeverity,
         RegressionListener,
-        get_regression_detector,
+        RegressionSeverity,
         create_regression_detector,
+        get_regression_detector,
     )
     HAS_REGRESSION_DETECTOR = True
 except ImportError:
@@ -297,20 +297,20 @@ __all__.append("HAS_REGRESSION_DETECTOR")
 
 if HAS_REGRESSION_DETECTOR:
     __all__.extend([
-        "RegressionDetector",
         "RegressionConfig",
+        "RegressionDetector",
         "RegressionEvent",
-        "RegressionSeverity",
         "RegressionListener",
-        "get_regression_detector",
+        "RegressionSeverity",
         "create_regression_detector",
+        "get_regression_detector",
     ])
 
 # Import statistical utilities (December 2025)
 try:
     from app.training.significance import (
-        wilson_score_interval,
         wilson_lower_bound,
+        wilson_score_interval,
     )
     HAS_SIGNIFICANCE = True
 except ImportError:
@@ -320,19 +320,19 @@ __all__.append("HAS_SIGNIFICANCE")
 
 if HAS_SIGNIFICANCE:
     __all__.extend([
-        "wilson_score_interval",
         "wilson_lower_bound",
+        "wilson_score_interval",
     ])
 
 # Import crossboard strength analysis (December 2025)
 try:
     from app.training.crossboard_strength import (
+        inversion_count,
         normalise_tier_name,
-        tier_number,
         rank_order_from_elos,
         spearman_rank_correlation,
-        inversion_count,
         summarize_crossboard_tier_strength,
+        tier_number,
     )
     HAS_CROSSBOARD_STRENGTH = True
 except ImportError:
@@ -342,19 +342,19 @@ __all__.append("HAS_CROSSBOARD_STRENGTH")
 
 if HAS_CROSSBOARD_STRENGTH:
     __all__.extend([
+        "inversion_count",
         "normalise_tier_name",
-        "tier_number",
         "rank_order_from_elos",
         "spearman_rank_correlation",
-        "inversion_count",
         "summarize_crossboard_tier_strength",
+        "tier_number",
     ])
 
 # Import value calibration utilities (December 2025)
 try:
     from app.training.value_calibration import (
-        CalibrationTracker,
         CalibrationReport,
+        CalibrationTracker,
         ValueCalibrator,
         create_reliability_diagram,
     )
@@ -366,8 +366,8 @@ __all__.append("HAS_VALUE_CALIBRATION")
 
 if HAS_VALUE_CALIBRATION:
     __all__.extend([
-        "CalibrationTracker",
         "CalibrationReport",
+        "CalibrationTracker",
         "ValueCalibrator",
         "create_reliability_diagram",
     ])
@@ -376,10 +376,10 @@ if HAS_VALUE_CALIBRATION:
 # Migrated to import from checkpoint_unified
 try:
     from app.training.checkpoint_unified import (
-        save_checkpoint,
-        load_checkpoint,
         AsyncCheckpointer,
         GracefulShutdownHandler,
+        load_checkpoint,
+        save_checkpoint,
     )
     HAS_CHECKPOINTING = True
 except ImportError:
@@ -389,17 +389,17 @@ __all__.append("HAS_CHECKPOINTING")
 
 if HAS_CHECKPOINTING:
     __all__.extend([
-        "save_checkpoint",
-        "load_checkpoint",
         "AsyncCheckpointer",
         "GracefulShutdownHandler",
+        "load_checkpoint",
+        "save_checkpoint",
     ])
 
 # Import LR scheduler utilities (December 2025)
 try:
     from app.training.schedulers import (
-        get_warmup_scheduler,
         create_lr_scheduler,
+        get_warmup_scheduler,
     )
     HAS_SCHEDULERS = True
 except ImportError:
@@ -409,20 +409,20 @@ __all__.append("HAS_SCHEDULERS")
 
 if HAS_SCHEDULERS:
     __all__.extend([
-        "get_warmup_scheduler",
         "create_lr_scheduler",
+        "get_warmup_scheduler",
     ])
 
 # Import selfplay configuration (December 2025)
 try:
     from app.training.selfplay_config import (
-        SelfplayConfig,
         EngineMode,
         OutputFormat,
-        parse_selfplay_args,
+        SelfplayConfig,
         create_argument_parser,
         get_default_config,
         get_production_config,
+        parse_selfplay_args,
     )
     HAS_SELFPLAY_CONFIG = True
 except ImportError:
@@ -432,13 +432,13 @@ __all__.append("HAS_SELFPLAY_CONFIG")
 
 if HAS_SELFPLAY_CONFIG:
     __all__.extend([
-        "SelfplayConfig",
         "EngineMode",
         "OutputFormat",
-        "parse_selfplay_args",
+        "SelfplayConfig",
         "create_argument_parser",
         "get_default_config",
         "get_production_config",
+        "parse_selfplay_args",
     ])
 
 # Import dataset classes (December 2025)
@@ -470,9 +470,9 @@ if HAS_DATASETS:
 
 try:
     from app.training.data_loader import (
+        FileHandle,
         StreamingDataLoader,
         WeightedStreamingDataLoader,
-        FileHandle,
     )
     HAS_DATA_LOADERS = True
 except ImportError:
@@ -482,16 +482,16 @@ __all__.append("HAS_DATA_LOADERS")
 
 if HAS_DATA_LOADERS:
     __all__.extend([
+        "FileHandle",
         "StreamingDataLoader",
         "WeightedStreamingDataLoader",
-        "FileHandle",
     ])
 
 # Import HotDataBuffer with quality integration
 try:
     from app.training.hot_data_buffer import (
-        HotDataBuffer,
         GameRecord,
+        HotDataBuffer,
         create_hot_buffer,
     )
     HAS_HOT_BUFFER = True
@@ -502,8 +502,8 @@ __all__.append("HAS_HOT_BUFFER")
 
 if HAS_HOT_BUFFER:
     __all__.extend([
-        "HotDataBuffer",
         "GameRecord",
+        "HotDataBuffer",
         "create_hot_buffer",
     ])
 
@@ -511,8 +511,8 @@ if HAS_HOT_BUFFER:
 try:
     from app.training.data_augmentation import (
         AugmentedDataLoader,
-        DataAugmentor,
         AugmentorConfig,
+        DataAugmentor,
     )
     HAS_AUGMENTATION = True
 except ImportError:
@@ -523,8 +523,8 @@ __all__.append("HAS_AUGMENTATION")
 if HAS_AUGMENTATION:
     __all__.extend([
         "AugmentedDataLoader",
-        "DataAugmentor",
         "AugmentorConfig",
+        "DataAugmentor",
     ])
 
 # Import Elo-weighted sampler
@@ -550,14 +550,14 @@ if HAS_ELO_WEIGHTING:
 # =============================================================================
 try:
     from app.training.unified_model_store import (
-        UnifiedModelStore,
         ModelInfo,
         ModelStoreStage,
         ModelStoreType,
+        UnifiedModelStore,
         get_model_store,
-        register_model,
         get_production_model,
         promote_model,
+        register_model,
     )
     HAS_UNIFIED_MODEL_STORE = True
 except ImportError:
@@ -567,14 +567,14 @@ __all__.append("HAS_UNIFIED_MODEL_STORE")
 
 if HAS_UNIFIED_MODEL_STORE:
     __all__.extend([
-        "UnifiedModelStore",
         "ModelInfo",
         "ModelStoreStage",
         "ModelStoreType",
+        "UnifiedModelStore",
         "get_model_store",
-        "register_model",
         "get_production_model",
         "promote_model",
+        "register_model",
     ])
 
 # =============================================================================

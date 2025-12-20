@@ -7,10 +7,11 @@ CPU cores, achieving near-linear speedup for move evaluation on large boards.
 
 from __future__ import annotations
 
-import os
 import multiprocessing as mp
+import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
@@ -23,7 +24,7 @@ NUM_WORKERS = max(1, int(os.getenv('RINGRIFT_EVAL_WORKERS', str(max(1, mp.cpu_co
 PARALLEL_THRESHOLD = int(os.getenv('RINGRIFT_PARALLEL_THRESHOLD', '50'))
 
 # Global process pool (lazy initialized)
-_process_pool: Optional[ProcessPoolExecutor] = None
+_process_pool: ProcessPoolExecutor | None = None
 
 
 def get_process_pool() -> ProcessPoolExecutor:
@@ -43,11 +44,11 @@ def shutdown_pool():
 
 
 def evaluate_moves_parallel(
-    state_data: Dict,
-    move_data: List[Tuple],
+    state_data: dict,
+    move_data: list[tuple],
     player_number: int,
-    weights: Dict[str, float],
-    num_workers: int = None,
+    weights: dict[str, float],
+    num_workers: int | None = None,
 ) -> np.ndarray:
     """
     Evaluate moves in parallel across multiple processes.
@@ -102,11 +103,11 @@ def evaluate_moves_parallel(
 
 
 def _evaluate_chunk(
-    state_data: Dict,
-    move_data: List[Tuple],
+    state_data: dict,
+    move_data: list[tuple],
     player_number: int,
-    weights: Dict[str, float],
-) -> List[float]:
+    weights: dict[str, float],
+) -> list[float]:
     """
     Evaluate a chunk of moves (runs in worker process).
 
@@ -129,7 +130,7 @@ def _evaluate_chunk(
     return scores.tolist()
 
 
-def serialize_state_for_parallel(arrays: 'BoardArrays') -> Dict:
+def serialize_state_for_parallel(arrays: BoardArrays) -> dict:
     """
     Serialize BoardArrays for passing to worker processes.
 
@@ -157,7 +158,7 @@ def serialize_state_for_parallel(arrays: 'BoardArrays') -> Dict:
     }
 
 
-def _reconstruct_board_arrays(data: Dict) -> 'BoardArrays':
+def _reconstruct_board_arrays(data: dict) -> BoardArrays:
     """Reconstruct BoardArrays from serialized data."""
     from .batch_eval import BoardArrays
 
@@ -194,11 +195,11 @@ def _reconstruct_board_arrays(data: Dict) -> 'BoardArrays':
 
 # Thread-based parallel evaluation (for when multiprocessing overhead is too high)
 def evaluate_moves_threaded(
-    arrays: 'BoardArrays',
-    move_data: List[Tuple],
+    arrays: BoardArrays,
+    move_data: list[tuple],
     player_number: int,
-    weights: Dict[str, float],
-    num_threads: int = None,
+    weights: dict[str, float],
+    num_threads: int | None = None,
 ) -> np.ndarray:
     """
     Evaluate moves using thread pool (less overhead than processes).

@@ -17,10 +17,11 @@ import json
 import logging
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from app.models import BoardType, GameState, Move
 
@@ -343,7 +344,7 @@ class GameWriter:
 
     def __init__(
         self,
-        db: "GameReplayDB",
+        db: GameReplayDB,
         game_id: str,
         initial_state: GameState,
         snapshot_interval: int = DEFAULT_SNAPSHOT_INTERVAL,
@@ -362,8 +363,8 @@ class GameWriter:
         self._finalized = False
 
         # Track previous state for history entries
-        self._prev_state: Optional[GameState] = initial_state
-        self._prev_state_hash: Optional[str] = _compute_state_hash(initial_state) if store_history_entries else None
+        self._prev_state: GameState | None = initial_state
+        self._prev_state_hash: str | None = _compute_state_hash(initial_state) if store_history_entries else None
 
         # Create placeholder games record first (for FK constraint)
         self._db._create_placeholder_game(game_id, initial_state)
@@ -374,14 +375,14 @@ class GameWriter:
     def add_move(
         self,
         move: Move,
-        state_after: Optional[GameState] = None,
-        state_before: Optional[GameState] = None,
-        available_moves: Optional[List[Move]] = None,
-        available_moves_count: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_depth: Optional[int] = None,
-        fsm_valid: Optional[bool] = None,
-        fsm_error_code: Optional[str] = None,
+        state_after: GameState | None = None,
+        state_before: GameState | None = None,
+        available_moves: list[Move] | None = None,
+        available_moves_count: int | None = None,
+        engine_eval: float | None = None,
+        engine_depth: int | None = None,
+        fsm_valid: bool | None = None,
+        fsm_error_code: str | None = None,
     ) -> None:
         """Add a move to the game.
 
@@ -412,7 +413,7 @@ class GameWriter:
         # canonical phases (movement, capture, etc.) within a turn. The canonical
         # phase is derived from the move type by the DB writer via history_contract.
         # Passing None allows validate_canonical_move to derive the correct phase.
-        phase_hint: Optional[str] = None
+        phase_hint: str | None = None
 
         self._db._store_move(
             game_id=self._game_id,
@@ -472,9 +473,9 @@ class GameWriter:
         move_number: int,
         choice_type: str,
         player: int,
-        options: List[dict],
+        options: list[dict],
         selected: dict,
-        reasoning: Optional[str] = None,
+        reasoning: str | None = None,
     ) -> None:
         """Record a player choice."""
         if self._finalized:
@@ -493,7 +494,7 @@ class GameWriter:
     def finalize(
         self,
         final_state: GameState,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> None:
         """Finalize and close the game record."""
         if self._finalized:
@@ -1026,9 +1027,9 @@ class GameReplayDB:
         game_id: str,
         initial_state: GameState,
         final_state: GameState,
-        moves: List[Move],
-        choices: Optional[List[dict]] = None,
-        metadata: Optional[dict] = None,
+        moves: list[Move],
+        choices: list[dict] | None = None,
+        metadata: dict | None = None,
         store_history_entries: bool = True,
         compress_states: bool = False,
         snapshot_interval: int = 20,
@@ -1087,7 +1088,7 @@ class GameReplayDB:
                 # Phase derivation: Use move-type-derived canonical phase rather than
                 # game state's current_phase. The canonical phase is derived from
                 # the move type by the DB writer via history_contract.
-                phase_hint: Optional[str] = None
+                phase_hint: str | None = None
 
                 self._store_move_conn(
                     conn,
@@ -1166,8 +1167,8 @@ class GameReplayDB:
 
     def store_game_incremental(
         self,
-        game_id: Optional[str] = None,
-        initial_state: Optional[GameState] = None,
+        game_id: str | None = None,
+        initial_state: GameState | None = None,
         all_snapshots: bool = False,
         store_history_entries: bool = True,
     ) -> GameWriter:
@@ -1202,7 +1203,7 @@ class GameReplayDB:
     # Read Operations
     # =========================================================================
 
-    def get_game_metadata(self, game_id: str) -> Optional[dict]:
+    def get_game_metadata(self, game_id: str) -> dict | None:
         """Get game metadata without loading full state."""
         with self._get_conn() as conn:
             row = conn.execute(
@@ -1215,7 +1216,7 @@ class GameReplayDB:
 
             return dict(row)
 
-    def get_initial_state(self, game_id: str) -> Optional[GameState]:
+    def get_initial_state(self, game_id: str) -> GameState | None:
         """Get the initial game state.
 
         Falls back to generating a default initial state from game metadata
@@ -1263,8 +1264,8 @@ class GameReplayDB:
         self,
         game_id: str,
         start: int = 0,
-        end: Optional[int] = None,
-    ) -> List[Move]:
+        end: int | None = None,
+    ) -> list[Move]:
         """Get moves in a range.
 
         Args:
@@ -1299,8 +1300,8 @@ class GameReplayDB:
 
     def get_initial_states_batch(
         self,
-        game_ids: List[str],
-    ) -> Dict[str, Optional[GameState]]:
+        game_ids: list[str],
+    ) -> dict[str, GameState | None]:
         """Get initial states for multiple games in a single query.
 
         This is more efficient than calling get_initial_state() for each game
@@ -1315,7 +1316,7 @@ class GameReplayDB:
         if not game_ids:
             return {}
 
-        results: Dict[str, Optional[GameState]] = {gid: None for gid in game_ids}
+        results: dict[str, GameState | None] = dict.fromkeys(game_ids)
 
         with self._get_conn() as conn:
             # Check if game_initial_state table exists
@@ -1368,8 +1369,8 @@ class GameReplayDB:
 
     def get_moves_batch(
         self,
-        game_ids: List[str],
-    ) -> Dict[str, List[Move]]:
+        game_ids: list[str],
+    ) -> dict[str, list[Move]]:
         """Get moves for multiple games in a single query.
 
         This is more efficient than calling get_moves() for each game
@@ -1384,7 +1385,7 @@ class GameReplayDB:
         if not game_ids:
             return {}
 
-        results: Dict[str, List[Move]] = {gid: [] for gid in game_ids}
+        results: dict[str, list[Move]] = {gid: [] for gid in game_ids}
 
         with self._get_conn() as conn:
             placeholders = ",".join("?" * len(game_ids))
@@ -1408,8 +1409,8 @@ class GameReplayDB:
         self,
         game_id: str,
         start: int = 0,
-        end: Optional[int] = None,
-    ) -> List[dict]:
+        end: int | None = None,
+    ) -> list[dict]:
         """Get move records with full metadata including v2 fields.
 
         Args:
@@ -1476,7 +1477,7 @@ class GameReplayDB:
         game_id: str,
         move_number: int,
         auto_inject: bool = True,
-    ) -> Optional[GameState]:
+    ) -> GameState | None:
         """Reconstruct state at a specific move number.
 
         This method replays moves from the initial state using the current
@@ -1543,7 +1544,7 @@ class GameReplayDB:
             ).fetchone()
             return row["count"] if row else 0
 
-    def _is_move_redundant_for_phase(self, state: GameState, move: "Move") -> bool:
+    def _is_move_redundant_for_phase(self, state: GameState, move: Move) -> bool:
         """Check if a move is redundant (invalid) for the current phase.
 
         This matches TS's ts-replay-skip-redundant behavior where certain
@@ -1587,14 +1588,13 @@ class GameReplayDB:
         }
 
         # If this move type has phase constraints, check if current phase matches
-        if move_type in valid_phases:
-            if current_phase not in valid_phases[move_type]:
-                # Move is not valid for current phase - skip it
-                return True
+        if move_type in valid_phases and current_phase not in valid_phases[move_type]:
+            # Move is not valid for current phase - skip it
+            return True
 
         return False
 
-    def _auto_inject_before_move(self, state: GameState, next_move: "Move") -> GameState:
+    def _auto_inject_before_move(self, state: GameState, next_move: Move) -> GameState:
         """Auto-inject bookkeeping moves BEFORE applying a recorded move.
 
         This handles the case where the database recording is missing
@@ -1614,7 +1614,7 @@ class GameReplayDB:
             Updated game state with any necessary bookkeeping moves applied.
         """
         from app.game_engine import GameEngine
-        from app.models import MoveType, Move, Position
+        from app.models import Move, MoveType, Position
 
         # Limit iterations to prevent infinite loops
         max_iterations = 10
@@ -1808,12 +1808,7 @@ class GameReplayDB:
 
             # Only auto-inject for line and territory no-action phases
             # These are the phases where TS auto-advances during replay
-            if requirement.type == PhaseRequirementType.NO_LINE_ACTION_REQUIRED:
-                bookkeeping = GameEngine.synthesize_bookkeeping_move(
-                    requirement, state
-                )
-                state = GameEngine.apply_move(state, bookkeeping, trace_mode=True)
-            elif requirement.type == PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED:
+            if requirement.type == PhaseRequirementType.NO_LINE_ACTION_REQUIRED or requirement.type == PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED:
                 bookkeeping = GameEngine.synthesize_bookkeeping_move(
                     requirement, state
                 )
@@ -1830,7 +1825,7 @@ class GameReplayDB:
         self,
         game_id: str,
         move_number: int,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get player choices made at a specific move."""
         with self._get_conn() as conn:
             rows = conn.execute(
@@ -1857,7 +1852,7 @@ class GameReplayDB:
         self,
         game_id: str,
         move_number: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Get a history entry with before/after states for a specific move.
 
         Returns a dictionary with:
@@ -1942,7 +1937,7 @@ class GameReplayDB:
         game_id: str,
         include_full_states: bool = True,
         include_available_moves: bool = False,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get all history entries for a game.
 
         Args:
@@ -2023,18 +2018,18 @@ class GameReplayDB:
 
     def query_games(
         self,
-        board_type: Optional[BoardType] = None,
-        num_players: Optional[int] = None,
-        winner: Optional[int] = None,
-        termination_reason: Optional[str] = None,
-        source: Optional[str] = None,
-        min_moves: Optional[int] = None,
-        max_moves: Optional[int] = None,
+        board_type: BoardType | None = None,
+        num_players: int | None = None,
+        winner: int | None = None,
+        termination_reason: str | None = None,
+        source: str | None = None,
+        min_moves: int | None = None,
+        max_moves: int | None = None,
         limit: int = 100,
         offset: int = 0,
         exclude_training_excluded: bool = True,
         require_moves: bool = False,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Query games by metadata filters.
 
         Returns list of game metadata dictionaries matching filters.
@@ -2102,7 +2097,7 @@ class GameReplayDB:
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
                 """,
-                params + [limit, offset],
+                [*params, limit, offset],
             ).fetchall()
 
             return [dict(row) for row in rows]
@@ -2111,7 +2106,7 @@ class GameReplayDB:
         self,
         batch_size: int = 100,
         **filters,
-    ) -> Iterator[Tuple[dict, GameState, List[Move]]]:
+    ) -> Iterator[tuple[dict, GameState, list[Move]]]:
         """Iterate over games matching filters.
 
         Uses batch loading to avoid N+1 query pattern. Games are loaded
@@ -2148,13 +2143,13 @@ class GameReplayDB:
 
     def get_game_count(
         self,
-        board_type: Optional[BoardType] = None,
-        num_players: Optional[int] = None,
-        winner: Optional[int] = None,
-        termination_reason: Optional[str] = None,
-        source: Optional[str] = None,
-        min_moves: Optional[int] = None,
-        max_moves: Optional[int] = None,
+        board_type: BoardType | None = None,
+        num_players: int | None = None,
+        winner: int | None = None,
+        termination_reason: str | None = None,
+        source: str | None = None,
+        min_moves: int | None = None,
+        max_moves: int | None = None,
         exclude_training_excluded: bool = True,
     ) -> int:
         """Get count of games matching filters.
@@ -2164,7 +2159,7 @@ class GameReplayDB:
                 excluded_from_training=1 (e.g., timeout games). Default True.
         """
         conditions = []
-        params: List[Any] = []
+        params: list[Any] = []
 
         if board_type is not None:
             conditions.append("board_type = ?")
@@ -2213,7 +2208,7 @@ class GameReplayDB:
             ).fetchone()
             return row["count"] if row else 0
 
-    def get_game_with_players(self, game_id: str) -> Optional[dict]:
+    def get_game_with_players(self, game_id: str) -> dict | None:
         """Get game metadata including player details."""
         with self._get_conn() as conn:
             game_row = conn.execute(
@@ -2354,15 +2349,15 @@ class GameReplayDB:
         move_number: int,
         turn_number: int,
         move: Move,
-        phase: Optional[str] = None,
+        phase: str | None = None,
         *,
-        time_remaining_ms: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_eval_type: Optional[str] = None,
-        engine_depth: Optional[int] = None,
-        engine_nodes: Optional[int] = None,
-        engine_pv: Optional[List[str]] = None,
-        engine_time_ms: Optional[int] = None,
+        time_remaining_ms: int | None = None,
+        engine_eval: float | None = None,
+        engine_eval_type: str | None = None,
+        engine_depth: int | None = None,
+        engine_nodes: int | None = None,
+        engine_pv: list[str] | None = None,
+        engine_time_ms: int | None = None,
     ) -> None:
         """Store a single move (standalone transaction)."""
         with self._get_conn() as conn:
@@ -2389,15 +2384,15 @@ class GameReplayDB:
         move_number: int,
         turn_number: int,
         move: Move,
-        phase: Optional[str] = None,
+        phase: str | None = None,
         *,
-        time_remaining_ms: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_eval_type: Optional[str] = None,
-        engine_depth: Optional[int] = None,
-        engine_nodes: Optional[int] = None,
-        engine_pv: Optional[List[str]] = None,
-        engine_time_ms: Optional[int] = None,
+        time_remaining_ms: int | None = None,
+        engine_eval: float | None = None,
+        engine_eval_type: str | None = None,
+        engine_depth: int | None = None,
+        engine_nodes: int | None = None,
+        engine_pv: list[str] | None = None,
+        engine_time_ms: int | None = None,
     ) -> None:
         """Store a single move (within existing transaction).
 
@@ -2468,7 +2463,7 @@ class GameReplayDB:
         game_id: str,
         move_number: int,
         state: GameState,
-        state_hash: Optional[str] = None,
+        state_hash: str | None = None,
     ) -> None:
         """Store a state snapshot (standalone transaction)."""
         with self._get_conn() as conn:
@@ -2480,7 +2475,7 @@ class GameReplayDB:
         game_id: str,
         move_number: int,
         state: GameState,
-        state_hash: Optional[str] = None,
+        state_hash: str | None = None,
     ) -> None:
         """Store a state snapshot (within existing transaction)."""
         json_str = _serialize_state(state)
@@ -2503,14 +2498,14 @@ class GameReplayDB:
         move: Move,
         state_before: GameState,
         state_after: GameState,
-        state_hash_before: Optional[str] = None,
-        state_hash_after: Optional[str] = None,
-        available_moves: Optional[List[Move]] = None,
-        available_moves_count: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_depth: Optional[int] = None,
-        fsm_valid: Optional[bool] = None,
-        fsm_error_code: Optional[str] = None,
+        state_hash_before: str | None = None,
+        state_hash_after: str | None = None,
+        available_moves: list[Move] | None = None,
+        available_moves_count: int | None = None,
+        engine_eval: float | None = None,
+        engine_depth: int | None = None,
+        fsm_valid: bool | None = None,
+        fsm_error_code: str | None = None,
     ) -> None:
         """Store a history entry for GameTrace-style recording."""
         with self._get_conn() as conn:
@@ -2533,16 +2528,16 @@ class GameReplayDB:
         move: Move,
         state_before: GameState,
         state_after: GameState,
-        state_hash_before: Optional[str] = None,
-        state_hash_after: Optional[str] = None,
+        state_hash_before: str | None = None,
+        state_hash_after: str | None = None,
         store_full_states: bool = True,
         compress_states: bool = False,
-        available_moves: Optional[List[Move]] = None,
-        available_moves_count: Optional[int] = None,
-        engine_eval: Optional[float] = None,
-        engine_depth: Optional[int] = None,
-        fsm_valid: Optional[bool] = None,
-        fsm_error_code: Optional[str] = None,
+        available_moves: list[Move] | None = None,
+        available_moves_count: int | None = None,
+        engine_eval: float | None = None,
+        engine_depth: int | None = None,
+        fsm_valid: bool | None = None,
+        fsm_error_code: str | None = None,
     ) -> None:
         """Store a history entry (within existing transaction).
 
@@ -2589,8 +2584,8 @@ class GameReplayDB:
         }
 
         # Serialize full states if requested (v4 feature)
-        state_before_json: Optional[str] = None
-        state_after_json: Optional[str] = None
+        state_before_json: str | None = None
+        state_after_json: str | None = None
         compressed_flag = 0
 
         if store_full_states:
@@ -2607,14 +2602,14 @@ class GameReplayDB:
                 state_after_json = after_str
 
         # Serialize available moves if provided
-        available_moves_json: Optional[str] = None
+        available_moves_json: str | None = None
         if available_moves is not None:
             available_moves_json = json.dumps([
                 _serialize_move(m) for m in available_moves
             ])
 
         # Convert fsm_valid bool to SQLite integer (1/0/NULL)
-        fsm_valid_int: Optional[int] = None
+        fsm_valid_int: int | None = None
         if fsm_valid is not None:
             fsm_valid_int = 1 if fsm_valid else 0
 
@@ -2658,9 +2653,9 @@ class GameReplayDB:
         move_number: int,
         choice_type: str,
         player: int,
-        options: List[dict],
+        options: list[dict],
         selected: dict,
-        reasoning: Optional[str] = None,
+        reasoning: str | None = None,
     ) -> None:
         """Store a player choice (standalone transaction)."""
         with self._get_conn() as conn:
@@ -2675,9 +2670,9 @@ class GameReplayDB:
         move_number: int,
         choice_type: str,
         player: int,
-        options: List[dict],
+        options: list[dict],
         selected: dict,
-        reasoning: Optional[str] = None,
+        reasoning: str | None = None,
     ) -> None:
         """Store a player choice (within existing transaction)."""
         conn.execute(
@@ -2760,7 +2755,7 @@ class GameReplayDB:
                 termination_reason = "ring_elimination"
             else:
                 # Check territory victory via collapsed_spaces count
-                territory_counts: Dict[int, int] = {}
+                territory_counts: dict[int, int] = {}
                 for p_id in final_state.board.collapsed_spaces.values():
                     territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
                 if territory_counts.get(winner, 0) >= final_state.territory_victory_threshold:
@@ -2912,7 +2907,7 @@ class GameReplayDB:
         game_id: str,
         move_number: int,
         player_perspective: int,
-        features: "np.ndarray",
+        features: np.ndarray,
         value: float,
         board_type: str,
     ) -> None:
@@ -2951,7 +2946,7 @@ class GameReplayDB:
 
     def store_nnue_features_batch(
         self,
-        records: List[Tuple[str, int, int, "np.ndarray", float, str]],
+        records: list[tuple[str, int, int, np.ndarray, float, str]],
     ) -> int:
         """Store multiple NNUE feature records efficiently.
 
@@ -2994,9 +2989,9 @@ class GameReplayDB:
     def get_nnue_features(
         self,
         game_id: str,
-        move_number: Optional[int] = None,
-        player_perspective: Optional[int] = None,
-    ) -> List[Tuple[int, int, "np.ndarray", float]]:
+        move_number: int | None = None,
+        player_perspective: int | None = None,
+    ) -> list[tuple[int, int, np.ndarray, float]]:
         """Retrieve pre-computed NNUE features for a game.
 
         Args:
@@ -3058,9 +3053,9 @@ class GameReplayDB:
         self,
         board_type: str,
         num_players: int,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         offset: int = 0,
-    ) -> Iterator[Tuple[str, int, int, "np.ndarray", float]]:
+    ) -> Iterator[tuple[str, int, int, np.ndarray, float]]:
         """Iterate over cached NNUE features for training.
 
         Yields features for all games matching board_type/num_players criteria.
@@ -3085,7 +3080,7 @@ class GameReplayDB:
                 WHERE f.board_type = ? AND g.num_players = ?
                 ORDER BY f.game_id, f.move_number, f.player_perspective
             """
-            params: List[Any] = [board_type, num_players]
+            params: list[Any] = [board_type, num_players]
 
             if limit is not None:
                 query += " LIMIT ? OFFSET ?"
@@ -3094,7 +3089,7 @@ class GameReplayDB:
             cursor = conn.execute(query, params)
 
             for row in cursor:
-                game_id, move_num, player_persp, features_bytes, value, feature_dim = row
+                game_id, move_num, player_persp, features_bytes, value, _feature_dim = row
                 features = np.frombuffer(
                     gzip.decompress(features_bytes), dtype=np.float32
                 ).copy()
@@ -3102,8 +3097,8 @@ class GameReplayDB:
 
     def count_nnue_features(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> int:
         """Count cached NNUE feature records.
 

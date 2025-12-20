@@ -46,7 +46,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +76,12 @@ class ModelInfo:
     model_type: ModelStoreType
     stage: ModelStoreStage
     model_path: str
-    elo: Optional[float] = None
-    win_rate: Optional[float] = None
-    created_at: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    elo: float | None = None
+    win_rate: float | None = None
+    created_at: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model_id": self.model_id,
             "version": self.version,
@@ -103,9 +103,9 @@ class UnifiedModelStore:
     (ModelRegistry, versioning, loading) with consistent patterns.
     """
 
-    _instance: Optional["UnifiedModelStore"] = None
+    _instance: UnifiedModelStore | None = None
 
-    def __init__(self, registry_dir: Optional[Path] = None):
+    def __init__(self, registry_dir: Path | None = None):
         """Initialize the unified model store.
 
         Args:
@@ -121,7 +121,7 @@ class UnifiedModelStore:
         self._models_loaded = 0
 
     @classmethod
-    def get_instance(cls, registry_dir: Optional[Path] = None) -> "UnifiedModelStore":
+    def get_instance(cls, registry_dir: Path | None = None) -> UnifiedModelStore:
         """Get the singleton instance."""
         if cls._instance is None:
             cls._instance = cls(registry_dir)
@@ -152,13 +152,13 @@ class UnifiedModelStore:
         name: str,
         model_path: Union[str, Path],
         model_type: ModelStoreType = ModelStoreType.POLICY_VALUE,
-        elo: Optional[float] = None,
-        win_rate: Optional[float] = None,
+        elo: float | None = None,
+        win_rate: float | None = None,
         description: str = "",
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
         initial_stage: ModelStoreStage = ModelStoreStage.DEVELOPMENT,
         **metadata,
-    ) -> Tuple[str, int]:
+    ) -> tuple[str, int]:
         """Register a new model or version.
 
         Args:
@@ -183,7 +183,7 @@ class UnifiedModelStore:
 
         try:
             # Map stage to registry enum
-            from app.training.model_registry import ModelStage, ModelType, ModelMetrics
+            from app.training.model_registry import ModelMetrics, ModelStage, ModelType
 
             stage_map = {
                 ModelStoreStage.DEVELOPMENT: ModelStage.DEVELOPMENT,
@@ -236,8 +236,8 @@ class UnifiedModelStore:
     def get(
         self,
         model_id: str,
-        version: Optional[int] = None,
-    ) -> Optional[ModelInfo]:
+        version: int | None = None,
+    ) -> ModelInfo | None:
         """Get model information.
 
         Args:
@@ -273,8 +273,8 @@ class UnifiedModelStore:
 
     def get_production(
         self,
-        config_key: Optional[str] = None,
-    ) -> Optional[ModelInfo]:
+        config_key: str | None = None,
+    ) -> ModelInfo | None:
         """Get the current production model.
 
         Args:
@@ -310,7 +310,7 @@ class UnifiedModelStore:
         self,
         model_id: str,
         target_stage: Union[str, ModelStoreStage],
-        version: Optional[int] = None,
+        version: int | None = None,
     ) -> bool:
         """Promote a model to a new stage.
 
@@ -359,10 +359,10 @@ class UnifiedModelStore:
 
     def list_models(
         self,
-        stage: Optional[ModelStoreStage] = None,
-        model_type: Optional[ModelStoreType] = None,
+        stage: ModelStoreStage | None = None,
+        model_type: ModelStoreType | None = None,
         limit: int = 100,
-    ) -> List[ModelInfo]:
+    ) -> list[ModelInfo]:
         """List registered models.
 
         Args:
@@ -422,9 +422,9 @@ class UnifiedModelStore:
     def load_model(
         self,
         model_id: str,
-        version: Optional[int] = None,
+        version: int | None = None,
         device: str = "cpu",
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Load a model for inference.
 
         Args:
@@ -489,7 +489,7 @@ class UnifiedModelStore:
         action: str,
         model_id: str,
         version: int,
-        extra: Optional[Dict[str, Any]] = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         """Emit model lifecycle event."""
         try:
@@ -517,7 +517,7 @@ class UnifiedModelStore:
         except Exception as e:
             logger.debug(f"Failed to emit model event: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get store statistics."""
         return {
             "models_registered": self._models_registered,
@@ -529,10 +529,10 @@ class UnifiedModelStore:
 
 
 # Singleton access
-_store: Optional[UnifiedModelStore] = None
+_store: UnifiedModelStore | None = None
 
 
-def get_model_store(registry_dir: Optional[Path] = None) -> UnifiedModelStore:
+def get_model_store(registry_dir: Path | None = None) -> UnifiedModelStore:
     """Get the global UnifiedModelStore singleton."""
     global _store
     if _store is None:
@@ -546,12 +546,12 @@ def register_model(
     name: str,
     model_path: Union[str, Path],
     **kwargs,
-) -> Tuple[str, int]:
+) -> tuple[str, int]:
     """Register a model."""
     return get_model_store().register(name, model_path, **kwargs)
 
 
-def get_production_model(config_key: Optional[str] = None) -> Optional[ModelInfo]:
+def get_production_model(config_key: str | None = None) -> ModelInfo | None:
     """Get the production model."""
     return get_model_store().get_production(config_key)
 
@@ -559,7 +559,7 @@ def get_production_model(config_key: Optional[str] = None) -> Optional[ModelInfo
 def promote_model(
     model_id: str,
     target_stage: Union[str, ModelStoreStage],
-    version: Optional[int] = None,
+    version: int | None = None,
 ) -> bool:
     """Promote a model."""
     return get_model_store().promote(model_id, target_stage, version)
@@ -569,15 +569,15 @@ def promote_model(
 # These allow gradual migration from model_registry to unified_model_store
 try:
     from app.training.model_registry import (
+        AutoPromoter,
+        ModelMetrics,
         ModelRegistry,
-        RegistryDatabase,
         ModelStage,
         ModelType,
-        ModelMetrics,
-        TrainingConfig,
         ModelVersion,
+        RegistryDatabase,
+        TrainingConfig,
         ValidationStatus,
-        AutoPromoter,
         get_model_registry,
     )
     _legacy_exports_available = True
@@ -598,24 +598,24 @@ except ImportError:
 
 
 __all__ = [
-    # Unified API (preferred)
-    "UnifiedModelStore",
+    "AutoPromoter",
     "ModelInfo",
-    "ModelStoreStage",
-    "ModelStoreType",
-    "get_model_store",
-    "register_model",
-    "get_production_model",
-    "promote_model",
+    "ModelMetrics",
     # Legacy re-exports for backward compatibility
     "ModelRegistry",
-    "RegistryDatabase",
     "ModelStage",
+    "ModelStoreStage",
+    "ModelStoreType",
     "ModelType",
-    "ModelMetrics",
-    "TrainingConfig",
     "ModelVersion",
+    "RegistryDatabase",
+    "TrainingConfig",
+    # Unified API (preferred)
+    "UnifiedModelStore",
     "ValidationStatus",
-    "AutoPromoter",
     "get_model_registry",
+    "get_model_store",
+    "get_production_model",
+    "promote_model",
+    "register_model",
 ]

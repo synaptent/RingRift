@@ -9,17 +9,17 @@ Supports local filesystem, S3, and GCS backends.
 """
 
 from app.storage.backends import (
-    StorageBackend,
+    GCSStorage,
     LocalStorage,
     S3Storage,
-    GCSStorage,
+    StorageBackend,
     get_storage_backend,
 )
 
 __all__ = [
-    "StorageBackend",
+    "GCSStorage",
     "LocalStorage",
     "S3Storage",
-    "GCSStorage",
+    "StorageBackend",
     "get_storage_backend",
 ]

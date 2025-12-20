@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +37,14 @@ class CoordinatorDependency:
     """Represents a coordinator and its dependencies."""
 
     name: str
-    emits: Set[str] = field(default_factory=set)  # Event types emitted
-    subscribes: Set[str] = field(default_factory=set)  # Event types subscribed to
-    depends_on: Set[str] = field(default_factory=set)  # Direct coordinator dependencies
+    emits: set[str] = field(default_factory=set)  # Event types emitted
+    subscribes: set[str] = field(default_factory=set)  # Event types subscribed to
+    depends_on: set[str] = field(default_factory=set)  # Direct coordinator dependencies
 
 
 # Known coordinator dependencies (December 2025)
 # Format: coordinator -> (emits, subscribes, depends_on)
-COORDINATOR_REGISTRY: Dict[str, CoordinatorDependency] = {
+COORDINATOR_REGISTRY: dict[str, CoordinatorDependency] = {
     "task_lifecycle": CoordinatorDependency(
         name="task_lifecycle",
         emits={"task_orphaned", "task_completed", "task_failed"},
@@ -103,9 +102,9 @@ class CoordinatorDependencyGraph:
     """Graph for analyzing coordinator dependencies."""
 
     def __init__(self):
-        self._dependencies: Dict[str, CoordinatorDependency] = {}
-        self._adjacency: Dict[str, Set[str]] = defaultdict(set)  # coordinator -> depends on
-        self._reverse: Dict[str, Set[str]] = defaultdict(set)  # coordinator -> depended by
+        self._dependencies: dict[str, CoordinatorDependency] = {}
+        self._adjacency: dict[str, set[str]] = defaultdict(set)  # coordinator -> depends on
+        self._reverse: dict[str, set[str]] = defaultdict(set)  # coordinator -> depended by
 
     def add_coordinator(self, dep: CoordinatorDependency) -> None:
         """Add a coordinator to the graph."""
@@ -120,7 +119,7 @@ class CoordinatorDependencyGraph:
         for dep in COORDINATOR_REGISTRY.values():
             self.add_coordinator(dep)
 
-    def detect_cycles(self) -> List[List[str]]:
+    def detect_cycles(self) -> list[list[str]]:
         """Detect circular dependencies using DFS.
 
         Returns:
@@ -143,7 +142,7 @@ class CoordinatorDependencyGraph:
                 elif neighbor in rec_stack:
                     # Found cycle - extract it
                     cycle_start = path.index(neighbor)
-                    cycle = path[cycle_start:] + [neighbor]
+                    cycle = [*path[cycle_start:], neighbor]
                     cycles.append(cycle)
                     return True
 
@@ -157,7 +156,7 @@ class CoordinatorDependencyGraph:
 
         return cycles
 
-    def topological_sort(self) -> Tuple[List[str], bool]:
+    def topological_sort(self) -> tuple[list[str], bool]:
         """Get initialization order using Kahn's algorithm.
 
         Returns:
@@ -168,7 +167,7 @@ class CoordinatorDependencyGraph:
             in_degree[node] = 0
 
         for node in self._dependencies:
-            for dep in self._adjacency.get(node, set()):
+            for _dep in self._adjacency.get(node, set()):
                 in_degree[node] += 1
 
         # Start with nodes that have no dependencies
@@ -189,15 +188,15 @@ class CoordinatorDependencyGraph:
 
         return (result, True)
 
-    def get_dependents(self, coordinator: str) -> Set[str]:
+    def get_dependents(self, coordinator: str) -> set[str]:
         """Get coordinators that depend on the given coordinator."""
         return self._reverse.get(coordinator, set())
 
-    def get_dependencies(self, coordinator: str) -> Set[str]:
+    def get_dependencies(self, coordinator: str) -> set[str]:
         """Get coordinators that the given coordinator depends on."""
         return self._adjacency.get(coordinator, set())
 
-    def validate(self) -> Tuple[bool, List[str]]:
+    def validate(self) -> tuple[bool, list[str]]:
         """Validate the dependency graph.
 
         Returns:
@@ -222,7 +221,7 @@ class CoordinatorDependencyGraph:
 
 
 # Global graph instance
-_dependency_graph: Optional[CoordinatorDependencyGraph] = None
+_dependency_graph: CoordinatorDependencyGraph | None = None
 
 
 def get_dependency_graph() -> CoordinatorDependencyGraph:
@@ -240,7 +239,7 @@ def reset_dependency_graph() -> None:
     _dependency_graph = None
 
 
-def validate_dependencies() -> Tuple[bool, List[str]]:
+def validate_dependencies() -> tuple[bool, list[str]]:
     """Validate coordinator dependencies.
 
     Returns:
@@ -250,7 +249,7 @@ def validate_dependencies() -> Tuple[bool, List[str]]:
     return graph.validate()
 
 
-def get_initialization_order() -> List[str]:
+def get_initialization_order() -> list[str]:
     """Get safe initialization order for coordinators.
 
     Returns:
@@ -269,7 +268,7 @@ def get_initialization_order() -> List[str]:
     return order
 
 
-def check_event_chain_cycles() -> List[List[str]]:
+def check_event_chain_cycles() -> list[list[str]]:
     """Check for cycles in event emission/subscription chains.
 
     This is more comprehensive than direct dependency cycles - it checks
@@ -282,8 +281,8 @@ def check_event_chain_cycles() -> List[List[str]]:
     graph = get_dependency_graph()
 
     # Build event-based adjacency
-    event_to_emitters: Dict[str, Set[str]] = defaultdict(set)
-    event_to_subscribers: Dict[str, Set[str]] = defaultdict(set)
+    event_to_emitters: dict[str, set[str]] = defaultdict(set)
+    event_to_subscribers: dict[str, set[str]] = defaultdict(set)
 
     for name, dep in graph._dependencies.items():
         for event in dep.emits:
@@ -292,7 +291,7 @@ def check_event_chain_cycles() -> List[List[str]]:
             event_to_subscribers[event].add(name)
 
     # Build coordinator adjacency through events
-    event_adjacency: Dict[str, Set[str]] = defaultdict(set)
+    event_adjacency: dict[str, set[str]] = defaultdict(set)
     for event, subscribers in event_to_subscribers.items():
         emitters = event_to_emitters.get(event, set())
         for subscriber in subscribers:
@@ -317,7 +316,7 @@ def check_event_chain_cycles() -> List[List[str]]:
                     return True
             elif neighbor in rec_stack:
                 cycle_start = path.index(neighbor)
-                cycle = path[cycle_start:] + [neighbor]
+                cycle = [*path[cycle_start:], neighbor]
                 cycles.append(cycle)
                 return True
 
@@ -333,12 +332,12 @@ def check_event_chain_cycles() -> List[List[str]]:
 
 
 __all__ = [
+    "COORDINATOR_REGISTRY",
     "CoordinatorDependency",
     "CoordinatorDependencyGraph",
-    "COORDINATOR_REGISTRY",
+    "check_event_chain_cycles",
     "get_dependency_graph",
+    "get_initialization_order",
     "reset_dependency_graph",
     "validate_dependencies",
-    "get_initialization_order",
-    "check_event_chain_cycles",
 ]

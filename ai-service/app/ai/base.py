@@ -17,11 +17,12 @@ The base class:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, TypeVar, Sequence, Any
 import random
+from abc import ABC, abstractmethod
+from collections.abc import Sequence
+from typing import Any, TypeVar
 
-from ..models import GameState, Move, MoveType, AIConfig
+from ..models import AIConfig, GameState, Move, MoveType
 from ..rules.interfaces import RulesEngine
 from .swap_evaluation import SwapEvaluator
 
@@ -101,10 +102,10 @@ class BaseAI(ABC):
             self.rng_seed = derive_training_seed(self.config, self.player_number)
         self.rng: random.Random = random.Random(self.rng_seed)
         # Lazy swap evaluator for pie-rule decisions (used by search AIs).
-        self._swap_evaluator_cache: Optional[SwapEvaluator] = None
+        self._swap_evaluator_cache: SwapEvaluator | None = None
 
     @abstractmethod
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """
         Select the best move for the current game state
 
@@ -129,7 +130,7 @@ class BaseAI(ABC):
         """
         pass
 
-    def get_evaluation_breakdown(self, game_state: GameState) -> Dict[str, float]:
+    def get_evaluation_breakdown(self, game_state: GameState) -> dict[str, float]:
         """Return a structured breakdown of the evaluation for ``game_state``.
 
         Subclasses may override this to expose richer diagnostics (for example
@@ -144,7 +145,7 @@ class BaseAI(ABC):
         """
         return {"total": self.evaluate_position(game_state)}
 
-    def get_valid_moves(self, game_state: GameState) -> List[Move]:
+    def get_valid_moves(self, game_state: GameState) -> list[Move]:
         """Return all legal moves for the current position.
 
         This is a thin convenience wrapper around the canonical Python
@@ -176,7 +177,7 @@ class BaseAI(ABC):
             return False
         return self.rng.random() < self.config.randomness
 
-    def get_random_element(self, items: Sequence[T]) -> Optional[T]:
+    def get_random_element(self, items: Sequence[T]) -> T | None:
         """Return a random element from ``items`` using the per‑instance RNG.
 
         Args:
@@ -189,7 +190,7 @@ class BaseAI(ABC):
             return None
         return self.rng.choice(list(items))
 
-    def shuffle_array(self, items: List[T]) -> List[T]:
+    def shuffle_array(self, items: list[T]) -> list[T]:
         """Shuffle ``items`` in-place using the per‑instance RNG.
 
         Args:
@@ -201,7 +202,7 @@ class BaseAI(ABC):
         self.rng.shuffle(items)
         return items
 
-    def get_opponent_numbers(self, game_state: GameState) -> List[int]:
+    def get_opponent_numbers(self, game_state: GameState) -> list[int]:
         """Return the list of opponent player numbers for this game state.
 
         Args:
@@ -220,8 +221,8 @@ class BaseAI(ABC):
     def maybe_select_swap_move(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
-    ) -> Optional[Move]:
+        valid_moves: list[Move],
+    ) -> Move | None:
         """Return a SWAP_SIDES move when it is clearly advantageous.
 
         Generic tree search does not model the identity swap semantics of the
@@ -237,9 +238,9 @@ class BaseAI(ABC):
         if not swap_moves:
             return None
 
-        evaluator: Optional[SwapEvaluator] = None
+        evaluator: SwapEvaluator | None = None
         try:
-            evaluator = getattr(self, "swap_evaluator")
+            evaluator = self.swap_evaluator
         except Exception:
             evaluator = None
 
@@ -258,8 +259,8 @@ class BaseAI(ABC):
     def get_player_info(
         self,
         game_state: GameState,
-        player_number: Optional[int] = None,
-    ) -> Optional[Any]:
+        player_number: int | None = None,
+    ) -> Any | None:
         """Return the player record for ``player_number`` (or this AI).
 
         Args:
@@ -279,7 +280,7 @@ class BaseAI(ABC):
                 return player
         return None
 
-    def reset_for_new_game(self, *, rng_seed: Optional[int] = None) -> None:
+    def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset per-game mutable state for self-play and evaluation loops.
 
         Some training/evaluation drivers reuse a single AI instance across

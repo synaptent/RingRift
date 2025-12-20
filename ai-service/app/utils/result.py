@@ -34,13 +34,11 @@ Usage:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import (
     Any,
-    Callable,
     Generic,
-    Iterator,
-    Optional,
     TypeVar,
     Union,
 )
@@ -90,19 +88,19 @@ class Ok(Generic[T]):
         """Get the success value or raise with message."""
         return self.value
 
-    def map(self, f: Callable[[T], U]) -> "Result[U, Any]":
+    def map(self, f: Callable[[T], U]) -> Result[U, Any]:
         """Transform the success value."""
         return Ok(f(self.value))
 
-    def map_err(self, f: Callable[[Any], Any]) -> "Result[T, Any]":
+    def map_err(self, f: Callable[[Any], Any]) -> Result[T, Any]:
         """Transform the error (no-op for Ok)."""
         return self  # type: ignore
 
-    def and_then(self, f: Callable[[T], "Result[U, Any]"]) -> "Result[U, Any]":
+    def and_then(self, f: Callable[[T], Result[U, Any]]) -> Result[U, Any]:
         """Chain another operation that returns a Result."""
         return f(self.value)
 
-    def or_else(self, f: Callable[[Any], "Result[T, Any]"]) -> "Result[T, Any]":
+    def or_else(self, f: Callable[[Any], Result[T, Any]]) -> Result[T, Any]:
         """Provide fallback (no-op for Ok)."""
         return self  # type: ignore
 
@@ -152,19 +150,19 @@ class Err(Generic[E]):
         """Raises ResultError with custom message."""
         raise ResultError(f"{msg}: {self.error}")
 
-    def map(self, f: Callable[[Any], U]) -> "Result[U, E]":
+    def map(self, f: Callable[[Any], U]) -> Result[U, E]:
         """No-op for error."""
         return self  # type: ignore
 
-    def map_err(self, f: Callable[[E], U]) -> "Result[Any, U]":
+    def map_err(self, f: Callable[[E], U]) -> Result[Any, U]:
         """Transform the error value."""
         return Err(f(self.error))
 
-    def and_then(self, f: Callable[[Any], "Result[U, E]"]) -> "Result[U, E]":
+    def and_then(self, f: Callable[[Any], Result[U, E]]) -> Result[U, E]:
         """No-op for error."""
         return self  # type: ignore
 
-    def or_else(self, f: Callable[[E], "Result[T, Any]"]) -> "Result[T, Any]":
+    def or_else(self, f: Callable[[E], Result[T, Any]]) -> Result[T, Any]:
         """Provide fallback result."""
         return f(self.error)
 
@@ -280,18 +278,18 @@ class OperationResult(Generic[T]):
     """
 
     success: bool
-    value: Optional[T] = None
-    error: Optional[str] = None
+    value: T | None = None
+    error: str | None = None
     details: dict = field(default_factory=dict)
-    duration_ms: Optional[float] = None
+    duration_ms: float | None = None
 
     @classmethod
-    def ok(cls, value: T, **details) -> "OperationResult[T]":
+    def ok(cls, value: T, **details) -> OperationResult[T]:
         """Create a successful result."""
         return cls(success=True, value=value, details=details)
 
     @classmethod
-    def fail(cls, error: str, **details) -> "OperationResult[T]":
+    def fail(cls, error: str, **details) -> OperationResult[T]:
         """Create a failed result."""
         return cls(success=False, error=error, details=details)
 
@@ -324,12 +322,12 @@ class OperationResult(Generic[T]):
 
 
 __all__ = [
-    "Result",
-    "Ok",
     "Err",
+    "Ok",
+    "OperationResult",
+    "Result",
     "ResultError",
-    "result_from_exception",
     "collect_results",
     "partition_results",
-    "OperationResult",
+    "result_from_exception",
 ]

@@ -29,15 +29,15 @@ import logging
 import random
 import sqlite3
 import time
-
-from app.utils.checksum_utils import compute_bytes_checksum
-from app.utils.datetime_utils import iso_now
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import numpy as np
+
+from app.utils.checksum_utils import compute_bytes_checksum
+from app.utils.datetime_utils import iso_now
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +60,14 @@ class AdversarialPosition:
     board_type: str
     num_players: int
     board_state: np.ndarray
-    move_history: List[Any]
+    move_history: list[Any]
     strategy: AdversarialStrategy
     difficulty_score: float  # How challenging (0-1)
     uncertainty_score: float  # Model uncertainty (0-1)
     disagreement_score: float  # Multi-model disagreement (0-1)
-    ground_truth_value: Optional[float] = None
-    ground_truth_policy: Optional[np.ndarray] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    ground_truth_value: float | None = None
+    ground_truth_policy: np.ndarray | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
 
 
@@ -76,12 +76,12 @@ class AdversarialConfig:
     """Configuration for adversarial generation."""
     # General settings
     num_positions: int = 100
-    strategies: List[AdversarialStrategy] = field(default_factory=lambda: [
+    strategies: list[AdversarialStrategy] = field(default_factory=lambda: [
         AdversarialStrategy.UNCERTAINTY,
         AdversarialStrategy.DISAGREEMENT,
         AdversarialStrategy.REPLAY,
     ])
-    strategy_weights: Dict[str, float] = field(default_factory=lambda: {
+    strategy_weights: dict[str, float] = field(default_factory=lambda: {
         "uncertainty": 0.3,
         "disagreement": 0.2,
         "replay": 0.3,
@@ -112,7 +112,7 @@ class PositionEvaluator:
 
     def __init__(
         self,
-        model_paths: Optional[List[Path]] = None,
+        model_paths: list[Path] | None = None,
         device: str = "cpu",
     ):
         """Initialize evaluator.
@@ -142,7 +142,7 @@ class PositionEvaluator:
     def evaluate_uncertainty(
         self,
         features: np.ndarray,
-    ) -> Tuple[float, np.ndarray, float]:
+    ) -> tuple[float, np.ndarray, float]:
         """Evaluate model uncertainty on a position.
 
         Args:
@@ -214,7 +214,6 @@ class PositionEvaluator:
 
         try:
             import torch
-            import torch.nn.functional as F
 
             with torch.no_grad():
                 input_tensor = torch.tensor(features, dtype=torch.float32)
@@ -250,9 +249,9 @@ class AdversarialGenerator:
 
     def __init__(
         self,
-        model_paths: Optional[List[Path]] = None,
-        config: Optional[AdversarialConfig] = None,
-        game_db_path: Optional[Path] = None,
+        model_paths: list[Path] | None = None,
+        config: AdversarialConfig | None = None,
+        game_db_path: Path | None = None,
         device: str = "cpu",
     ):
         """Initialize generator.
@@ -269,7 +268,7 @@ class AdversarialGenerator:
         self.device = device
 
         self.evaluator = PositionEvaluator(model_paths, device)
-        self._seen_positions: Set[str] = set()
+        self._seen_positions: set[str] = set()
 
     def _hash_position(self, board_state: np.ndarray) -> str:
         """Generate hash for position deduplication."""
@@ -277,10 +276,10 @@ class AdversarialGenerator:
 
     def generate(
         self,
-        num_positions: Optional[int] = None,
+        num_positions: int | None = None,
         board_type: str = "square8",
         num_players: int = 2,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate adversarial positions.
 
         Args:
@@ -359,7 +358,7 @@ class AdversarialGenerator:
         count: int,
         board_type: str,
         num_players: int,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate positions with high model uncertainty."""
         positions = []
 
@@ -380,7 +379,7 @@ class AdversarialGenerator:
 
             # Evaluate uncertainty
             features = self._state_to_features(board_state, board_type)
-            uncertainty, policy, value = self.evaluator.evaluate_uncertainty(features)
+            uncertainty, _policy, _value = self.evaluator.evaluate_uncertainty(features)
 
             if uncertainty >= self.config.min_uncertainty:
                 position = AdversarialPosition(
@@ -404,7 +403,7 @@ class AdversarialGenerator:
         count: int,
         board_type: str,
         num_players: int,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate positions where models disagree."""
         positions = []
 
@@ -451,7 +450,7 @@ class AdversarialGenerator:
         count: int,
         board_type: str,
         num_players: int,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate positions from past game mistakes."""
         positions = []
 
@@ -477,7 +476,7 @@ class AdversarialGenerator:
             games = cursor.fetchall()
             conn.close()
 
-            for game_id, move_history_json, winner in games:
+            for game_id, move_history_json, _winner in games:
                 if len(positions) >= count:
                     break
 
@@ -537,7 +536,7 @@ class AdversarialGenerator:
         count: int,
         board_type: str,
         num_players: int,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate positions by perturbing known difficult ones."""
         positions = []
 
@@ -585,7 +584,7 @@ class AdversarialGenerator:
         count: int,
         board_type: str,
         num_players: int,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate positions through targeted search."""
         positions = []
 
@@ -642,7 +641,7 @@ class AdversarialGenerator:
         count: int,
         board_type: str,
         num_players: int,
-    ) -> List[AdversarialPosition]:
+    ) -> list[AdversarialPosition]:
         """Generate positions near decision boundaries."""
         positions = []
 
@@ -661,7 +660,7 @@ class AdversarialGenerator:
                 continue
 
             features = self._state_to_features(board_state, board_type)
-            uncertainty, policy, value = self.evaluator.evaluate_uncertainty(features)
+            uncertainty, _policy, value = self.evaluator.evaluate_uncertainty(features)
 
             # Look for positions near decision boundary (value ~0.5)
             boundary_distance = abs(value - 0.5)
@@ -687,7 +686,7 @@ class AdversarialGenerator:
         self,
         board_type: str,
         num_players: int,
-    ) -> Tuple[Optional[np.ndarray], List[Any]]:
+    ) -> tuple[np.ndarray | None, list[Any]]:
         """Generate a random valid board position."""
         # Board size based on type
         if board_type == "square8":
@@ -711,9 +710,9 @@ class AdversarialGenerator:
         move_history = []
         player = 0
 
-        for i in range(num_moves):
+        for _i in range(num_moves):
             # Find empty positions
-            empty = list(zip(*np.where(board_state == 0)))
+            empty = list(zip(*np.where(board_state == 0), strict=False))
             if not empty:
                 break
 
@@ -729,8 +728,8 @@ class AdversarialGenerator:
         self,
         board_type: str,
         num_players: int,
-        move_history: List[Any],
-    ) -> Optional[np.ndarray]:
+        move_history: list[Any],
+    ) -> np.ndarray | None:
         """Reconstruct board state from move history."""
         try:
             if board_type == "square8":
@@ -795,16 +794,16 @@ class AdversarialGenerator:
         self,
         board_state: np.ndarray,
         board_type: str,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Create slight perturbation of a position."""
-        size = board_state.shape[0]
+        board_state.shape[0]
 
         # Random perturbations
         for _ in range(random.randint(1, self.config.max_perturbations)):
             if random.random() < self.config.perturbation_prob:
                 # Swap two pieces
-                filled = list(zip(*np.where(board_state > 0)))
-                empty = list(zip(*np.where(board_state == 0)))
+                filled = list(zip(*np.where(board_state > 0), strict=False))
+                empty = list(zip(*np.where(board_state == 0), strict=False))
 
                 if filled and empty:
                     from_pos = random.choice(filled)
@@ -814,14 +813,14 @@ class AdversarialGenerator:
 
             elif random.random() < self.config.perturbation_prob:
                 # Add a piece
-                empty = list(zip(*np.where(board_state == 0)))
+                empty = list(zip(*np.where(board_state == 0), strict=False))
                 if empty:
                     pos = random.choice(empty)
                     board_state[pos] = random.randint(1, 2)
 
             elif random.random() < self.config.perturbation_prob:
                 # Remove a piece
-                filled = list(zip(*np.where(board_state > 0)))
+                filled = list(zip(*np.where(board_state > 0), strict=False))
                 if filled:
                     pos = random.choice(filled)
                     board_state[pos] = 0
@@ -833,10 +832,10 @@ class AdversarialGenerator:
         board_state: np.ndarray,
         board_type: str,
         num_candidates: int,
-    ) -> List[Tuple[np.ndarray, List[Any]]]:
+    ) -> list[tuple[np.ndarray, list[Any]]]:
         """Generate candidate next moves for search."""
         candidates = []
-        empty = list(zip(*np.where(board_state == 0)))
+        empty = list(zip(*np.where(board_state == 0), strict=False))
 
         if not empty:
             return candidates
@@ -855,8 +854,8 @@ class AdversarialGenerator:
 
     def evaluate_model_robustness(
         self,
-        positions: List[AdversarialPosition],
-    ) -> Dict[str, float]:
+        positions: list[AdversarialPosition],
+    ) -> dict[str, float]:
         """Evaluate model robustness on adversarial positions.
 
         Args:
@@ -889,7 +888,7 @@ class AdversarialGenerator:
 
     def save_positions(
         self,
-        positions: List[AdversarialPosition],
+        positions: list[AdversarialPosition],
         output_path: Path,
     ):
         """Save positions to file.
@@ -922,7 +921,7 @@ class AdversarialGenerator:
         logger.info(f"Saved {len(positions)} positions to {output_path}")
 
     @staticmethod
-    def load_positions(input_path: Path) -> List[AdversarialPosition]:
+    def load_positions(input_path: Path) -> list[AdversarialPosition]:
         """Load positions from file.
 
         Args:
@@ -954,13 +953,13 @@ class AdversarialGenerator:
 
 
 def generate_adversarial_training_data(
-    model_paths: List[Path],
+    model_paths: list[Path],
     game_db_path: Path,
     output_path: Path,
     num_positions: int = 1000,
     board_type: str = "square8",
     num_players: int = 2,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate adversarial training data for model improvement.
 
     Args:
@@ -996,7 +995,7 @@ def generate_adversarial_training_data(
 
     return {
         "num_generated": len(positions),
-        "strategies_used": list(set(p.strategy.value for p in positions)),
+        "strategies_used": list({p.strategy.value for p in positions}),
         "avg_difficulty": np.mean([p.difficulty_score for p in positions]),
         "robustness_metrics": metrics,
         "output_path": str(output_path),

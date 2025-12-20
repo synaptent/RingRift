@@ -13,55 +13,55 @@ Usage:
         logger.warning(f"Invalid move: {e.message}, rule: {e.rule_ref}")
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 __all__ = [
-    # Base error
-    "RingRiftError",
-    # Game rules errors
-    "RulesViolationError",
-    "InvalidStateError",
-    "InvalidMoveError",
     # AI errors
     "AIError",
     "AIFallbackError",
     "AITimeoutError",
-    "ModelLoadError",
-    "CheckpointIncompatibleError",
-    # Training errors
-    "TrainingError",
-    "DatasetError",
-    "RegressionDetectedError",
-    "DataQualityError",
-    "LifecycleError",
     "CheckpointError",
-    "ModelVersioningError",
-    "EvaluationError",
-    "SelfplayError",
-    "DataLoadError",
-    # Infrastructure errors
-    "InfrastructureError",
-    "StorageError",
+    "CheckpointIncompatibleError",
     "ClusterError",
-    "NoHealthyWorkersError",
-    "SyncError",
-    # Validation errors
-    "ValidationError",
     "ConfigurationError",
-    "ParityError",
-    # Retry/recovery errors
-    "RetryableError",
-    "NonRetryableError",
-    "EmergencyHaltError",
-    "SSHError",
-    # Resource errors
-    "ResourceError",
-    "OutOfMemoryError",
-    "DiskSpaceError",
+    "DataLoadError",
+    "DataQualityError",
     # Database errors
     "DatabaseError",
+    "DatasetError",
+    "DiskSpaceError",
+    "EmergencyHaltError",
+    "EvaluationError",
     # Aliases
     "FatalError",
+    # Infrastructure errors
+    "InfrastructureError",
+    "InvalidMoveError",
+    "InvalidStateError",
+    "LifecycleError",
+    "ModelLoadError",
+    "ModelVersioningError",
+    "NoHealthyWorkersError",
+    "NonRetryableError",
+    "OutOfMemoryError",
+    "ParityError",
+    "RegressionDetectedError",
+    # Resource errors
+    "ResourceError",
+    # Retry/recovery errors
+    "RetryableError",
+    # Base error
+    "RingRiftError",
+    # Game rules errors
+    "RulesViolationError",
+    "SSHError",
+    "SelfplayError",
+    "StorageError",
+    "SyncError",
+    # Training errors
+    "TrainingError",
+    # Validation errors
+    "ValidationError",
 ]
 
 
@@ -78,8 +78,8 @@ class RingRiftError(Exception):
     def __init__(
         self,
         message: str,
-        code: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        code: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message)
         self.message = message
@@ -93,7 +93,7 @@ class RingRiftError(Exception):
             return f"[{self.code}] {self.message} ({ctx})"
         return f"[{self.code}] {self.message}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "code": self.code,
@@ -121,8 +121,8 @@ class RulesViolationError(RingRiftError):
     def __init__(
         self,
         message: str,
-        rule_ref: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        rule_ref: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         self.rule_ref = rule_ref
@@ -173,9 +173,9 @@ class AIFallbackError(AIError):
     def __init__(
         self,
         message: str,
-        original_error: Optional[Exception] = None,
+        original_error: Exception | None = None,
         fallback_method: str = "random",
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         self.original_error = original_error
@@ -195,9 +195,9 @@ class AITimeoutError(AIError):
     def __init__(
         self,
         message: str,
-        time_limit_ms: Optional[int] = None,
-        actual_time_ms: Optional[int] = None,
-        context: Optional[Dict[str, Any]] = None,
+        time_limit_ms: int | None = None,
+        actual_time_ms: int | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if time_limit_ms:
@@ -217,8 +217,8 @@ class ModelLoadError(AIError):
     def __init__(
         self,
         message: str,
-        model_path: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        model_path: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if model_path:
@@ -236,9 +236,9 @@ class CheckpointIncompatibleError(ModelLoadError):
     def __init__(
         self,
         message: str,
-        saved_hash: Optional[str] = None,
-        current_hash: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        saved_hash: str | None = None,
+        current_hash: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if saved_hash:
@@ -264,8 +264,8 @@ class DatasetError(TrainingError):
     def __init__(
         self,
         message: str,
-        dataset_path: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        dataset_path: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if dataset_path:
@@ -283,10 +283,10 @@ class RegressionDetectedError(TrainingError):
     def __init__(
         self,
         message: str,
-        metric_name: Optional[str] = None,
-        baseline_value: Optional[float] = None,
-        current_value: Optional[float] = None,
-        context: Optional[Dict[str, Any]] = None,
+        metric_name: str | None = None,
+        baseline_value: float | None = None,
+        current_value: float | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if metric_name:
@@ -353,9 +353,9 @@ class ParityError(ValidationError):
     def __init__(
         self,
         message: str,
-        python_result: Optional[Any] = None,
-        typescript_result: Optional[Any] = None,
-        context: Optional[Dict[str, Any]] = None,
+        python_result: Any | None = None,
+        typescript_result: Any | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if python_result is not None:
@@ -411,9 +411,9 @@ class SSHError(RetryableError):
     def __init__(
         self,
         message: str,
-        host: Optional[str] = None,
-        exit_code: Optional[int] = None,
-        context: Optional[Dict[str, Any]] = None,
+        host: str | None = None,
+        exit_code: int | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if host:
@@ -432,8 +432,8 @@ class DatabaseError(RingRiftError):
     def __init__(
         self,
         message: str,
-        db_path: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        db_path: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if db_path:
@@ -481,9 +481,9 @@ class DataQualityError(TrainingError):
     def __init__(
         self,
         message: str,
-        quality_score: Optional[float] = None,
-        samples_affected: Optional[int] = None,
-        context: Optional[Dict[str, Any]] = None,
+        quality_score: float | None = None,
+        samples_affected: int | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if quality_score is not None:
@@ -503,10 +503,10 @@ class LifecycleError(TrainingError):
     def __init__(
         self,
         message: str,
-        model_id: Optional[str] = None,
-        current_stage: Optional[str] = None,
-        target_stage: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        model_id: str | None = None,
+        current_stage: str | None = None,
+        target_stage: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
         if model_id:

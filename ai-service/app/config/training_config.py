@@ -27,10 +27,10 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
 
 from app.utils.checksum_utils import compute_string_checksum
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -55,7 +55,7 @@ class CMAESConfig:
 
     # Board and player configuration
     board_type: str = "square8"
-    eval_boards: List[str] = field(default_factory=lambda: ["square8"])
+    eval_boards: list[str] = field(default_factory=lambda: ["square8"])
     num_players: int = 2
 
     # State pool for mid-game evaluation
@@ -67,7 +67,7 @@ class CMAESConfig:
 
     # Distributed training
     distributed: bool = False
-    workers: List[str] = field(default_factory=list)
+    workers: list[str] = field(default_factory=list)
     eval_timeout: float = 300.0
 
     # Output and reproducibility
@@ -76,7 +76,7 @@ class CMAESConfig:
     progress_interval_sec: int = 30
 
     # Run metadata
-    run_id: Optional[str] = None
+    run_id: str | None = None
 
     @classmethod
     def from_env(cls, prefix: str = "RINGRIFT_CMAES_") -> CMAESConfig:
@@ -112,11 +112,11 @@ class CMAESConfig:
 
         return cls(**kwargs)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
 
-    def to_json(self, path: Optional[str | Path] = None) -> str:
+    def to_json(self, path: str | Path | None = None) -> str:
         """Serialize to JSON string, optionally saving to file."""
         json_str = json.dumps(self.to_dict(), indent=2, sort_keys=True)
         if path:
@@ -148,7 +148,7 @@ class NeuralNetConfig:
 
     # Model architecture
     # Optimized via hyperparameter tuning (Dec 2024)
-    hidden_layers: List[int] = field(default_factory=lambda: [512, 512, 512, 512, 512])
+    hidden_layers: list[int] = field(default_factory=lambda: [512, 512, 512, 512, 512])
     input_channels: int = 17
     policy_head_channels: int = 32
     value_head_channels: int = 32
@@ -241,11 +241,11 @@ class NeuralNetConfig:
 
         return cls(**kwargs)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
 
-    def to_json(self, path: Optional[str | Path] = None) -> str:
+    def to_json(self, path: str | Path | None = None) -> str:
         """Serialize to JSON string, optionally saving to file."""
         json_str = json.dumps(self.to_dict(), indent=2, sort_keys=True)
         if path:
@@ -339,11 +339,11 @@ class SelfPlayConfig:
 
         return cls(**kwargs)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
 
-    def to_json(self, path: Optional[str | Path] = None) -> str:
+    def to_json(self, path: str | Path | None = None) -> str:
         """Serialize to JSON string, optionally saving to file."""
         json_str = json.dumps(self.to_dict(), indent=2, sort_keys=True)
         if path:

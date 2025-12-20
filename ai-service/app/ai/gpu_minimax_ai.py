@@ -14,20 +14,20 @@ Integration: This is an ADDITION to the training system, not a replacement.
 Select via AIType.GPU_MINIMAX in the factory.
 """
 
-from typing import Optional, List, Dict, Tuple, TYPE_CHECKING
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 
 import torch
 
 if TYPE_CHECKING:
     from .gpu_parallel_games import BatchGameState
 
-from .minimax_ai import MinimaxAI, MINIMAX_ZERO_SUM_EVAL
-from .heuristic_weights import BASE_V1_BALANCED_WEIGHTS, get_weights
-from ..models import GameState, Move, MoveType, AIConfig, BoardType
+from ..models import AIConfig, BoardType, GameState, Move, MoveType
 from ..rules.mutable_state import MutableGameState
+from .heuristic_weights import BASE_V1_BALANCED_WEIGHTS, get_weights
+from .minimax_ai import MINIMAX_ZERO_SUM_EVAL, MinimaxAI
 
 logger = logging.getLogger(__name__)
 
@@ -68,21 +68,21 @@ class GPUMinimaxAI(MinimaxAI):
         self.gpu_min_batch: int = getattr(config, 'gpu_min_batch', 8)
 
         # Lazy initialization for GPU resources
-        self._gpu_device: Optional[torch.device] = None
-        self._gpu_available: Optional[bool] = None
+        self._gpu_device: torch.device | None = None
+        self._gpu_available: bool | None = None
 
         # Leaf buffer for batched evaluation
-        self._leaf_buffer: List[Tuple[GameState, int]] = []
-        self._leaf_results: Dict[int, float] = {}
+        self._leaf_buffer: list[tuple[GameState, int]] = []
+        self._leaf_results: dict[int, float] = {}
         self._next_callback_id: int = 0
 
         # Heuristic weights cache
-        self._heuristic_weights: Optional[Dict[str, float]] = None
+        self._heuristic_weights: dict[str, float] | None = None
 
         # Board info (detected on first use)
-        self._board_size: Optional[int] = None
-        self._num_players: Optional[int] = None
-        self._board_type: Optional[BoardType] = None
+        self._board_size: int | None = None
+        self._num_players: int | None = None
+        self._board_type: BoardType | None = None
 
         logger.debug(
             f"GPUMinimaxAI(player={player_number}, difficulty={config.difficulty}): "
@@ -135,7 +135,7 @@ class GPUMinimaxAI(MinimaxAI):
             f"size={self._board_size}, players={self._num_players}"
         )
 
-    def _get_weights(self) -> Dict[str, float]:
+    def _get_weights(self) -> dict[str, float]:
         """Get heuristic weights for GPU evaluation."""
         if self._heuristic_weights is None:
             profile_id = getattr(self.config, 'heuristic_profile_id', None)
@@ -191,7 +191,7 @@ class GPUMinimaxAI(MinimaxAI):
         # Zero-sum: advantage = (my - opponent) / 2
         return (my_scores - max_opponent_scores) / 2.0
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using GPU-accelerated minimax search.
 
         Overrides parent to use GPU batch evaluation when beneficial.
@@ -227,7 +227,7 @@ class GPUMinimaxAI(MinimaxAI):
                 return self._select_move_legacy(game_state, valid_moves)
 
     def _select_move_gpu(
-        self, game_state: GameState, valid_moves: List[Move]
+        self, game_state: GameState, valid_moves: list[Move]
     ) -> Move:
         """GPU-accelerated incremental search with batched leaf evaluation."""
         self.start_time = time.time()
@@ -294,8 +294,8 @@ class GPUMinimaxAI(MinimaxAI):
     def _gpu_score_root_moves(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
-    ) -> List[Tuple[float, Move]]:
+        valid_moves: list[Move],
+    ) -> list[tuple[float, Move]]:
         """Batch-evaluate all root moves on GPU for optimal move ordering.
 
         Args:
@@ -310,11 +310,11 @@ class GPUMinimaxAI(MinimaxAI):
             return self._score_and_sort_moves(game_state, valid_moves)
 
         try:
-            from .gpu_parallel_games import BatchGameState, evaluate_positions_batch
+            from .gpu_parallel_games import evaluate_positions_batch
 
             # Generate all child states
             mutable = MutableGameState.from_immutable(game_state)
-            child_states: List[GameState] = []
+            child_states: list[GameState] = []
 
             for move in valid_moves:
                 undo = mutable.make_move(move)
@@ -329,7 +329,7 @@ class GPUMinimaxAI(MinimaxAI):
             scores = self._to_zero_sum_scores(scores_tensor).cpu().numpy()
 
             # Add move-type priority bonuses (same as CPU version)
-            scored_moves: List[Tuple[float, Move]] = []
+            scored_moves: list[tuple[float, Move]] = []
             for i, move in enumerate(valid_moves):
                 priority_bonus = self._get_move_priority_bonus(move)
                 scored_moves.append((float(scores[i]) + priority_bonus, move))
@@ -372,24 +372,22 @@ class GPUMinimaxAI(MinimaxAI):
         3. If GPU unavailable: fall back to CPU evaluation
         """
         self.nodes_visited += 1
-        if self.nodes_visited % 1000 == 0:
-            if time.time() - self.start_time > self.time_limit:
-                return self._evaluate_mutable(state)
+        if self.nodes_visited % 1000 == 0 and time.time() - self.start_time > self.time_limit:
+            return self._evaluate_mutable(state)
 
         state_hash = state.zobrist_hash
 
         # Transposition table lookup
         entry = self.transposition_table.get(state_hash)
-        if entry is not None:
-            if entry['depth'] >= depth:
-                if entry['flag'] == 'exact':
-                    return entry['score']
-                elif entry['flag'] == 'lowerbound':
-                    alpha = max(alpha, entry['score'])
-                elif entry['flag'] == 'upperbound':
-                    beta = min(beta, entry['score'])
-                if alpha >= beta:
-                    return entry['score']
+        if entry is not None and entry['depth'] >= depth:
+            if entry['flag'] == 'exact':
+                return entry['score']
+            elif entry['flag'] == 'lowerbound':
+                alpha = max(alpha, entry['score'])
+            elif entry['flag'] == 'upperbound':
+                beta = min(beta, entry['score'])
+            if alpha >= beta:
+                return entry['score']
 
         # Leaf node: GPU batch evaluation
         if depth == 0:
@@ -527,7 +525,6 @@ class GPUMinimaxAI(MinimaxAI):
             return self._leaf_results[state_hash]
 
         # Add to leaf buffer for batched GPU evaluation
-        callback_id = self._next_callback_id
         self._next_callback_id += 1
 
         # Convert to immutable for deferred evaluation
@@ -562,7 +559,7 @@ class GPUMinimaxAI(MinimaxAI):
             return
 
         try:
-            from .gpu_parallel_games import BatchGameState, evaluate_positions_batch
+            from .gpu_parallel_games import evaluate_positions_batch
 
             # States are already immutable (stored as GameState in buffer)
             states = [s for s, _ in self._leaf_buffer]
@@ -611,7 +608,7 @@ class GPUMinimaxAI(MinimaxAI):
         self._next_callback_id = 0
 
     def _create_batch_from_states(
-        self, states: List[GameState]
+        self, states: list[GameState]
     ) -> "BatchGameState":
         """Convert list of GameState to BatchGameState for GPU evaluation.
 
@@ -660,7 +657,7 @@ class GPUMinimaxAI(MinimaxAI):
         # Hex coordinate conversion helper
         center = board_size // 2 if is_hex else 0
 
-        def to_grid_coords(x: int, y: int) -> Tuple[int, int]:
+        def to_grid_coords(x: int, y: int) -> tuple[int, int]:
             """Convert CPU coords to GPU grid coords."""
             if is_hex:
                 # Axial to grid: offset by center
@@ -722,8 +719,8 @@ class GPUMinimaxAI(MinimaxAI):
     def _init_nnue_for_board(self, game_state: GameState) -> None:
         """Initialize NNUE evaluator for the detected board type."""
         try:
-            from .nnue import NNUEEvaluator
             from .game_state_utils import infer_num_players
+            from .nnue import NNUEEvaluator
 
             board_type = game_state.board_type
             num_players = infer_num_players(game_state)
@@ -746,7 +743,7 @@ class GPUMinimaxAI(MinimaxAI):
             self._pending_nnue_init = False
             self.use_nnue = False
 
-    def reset_for_new_game(self, *, rng_seed: Optional[int] = None) -> None:
+    def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset state for a new game."""
         super().reset_for_new_game(rng_seed=rng_seed)
         self._clear_leaf_buffer()

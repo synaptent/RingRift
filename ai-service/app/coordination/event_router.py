@@ -41,10 +41,11 @@ import asyncio
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,8 @@ except ImportError:
 
 try:
     from app.coordination.stage_events import (
-        StageEvent,
         StageCompletionResult,
+        StageEvent,
         get_event_bus as get_stage_event_bus,
     )
     HAS_STAGE_EVENTS = True
@@ -92,7 +93,7 @@ class EventSource(str, Enum):
 
 
 # Mapping from StageEvent to DataEventType for automatic conversion
-STAGE_TO_DATA_EVENT_MAP: Dict[str, str] = {
+STAGE_TO_DATA_EVENT_MAP: dict[str, str] = {
     "selfplay_complete": "new_games",
     "canonical_selfplay_complete": "new_games",
     "sync_complete": "sync_completed",
@@ -108,22 +109,22 @@ STAGE_TO_DATA_EVENT_MAP: Dict[str, str] = {
 }
 
 # Reverse mapping
-DATA_TO_STAGE_EVENT_MAP: Dict[str, str] = {v: k for k, v in STAGE_TO_DATA_EVENT_MAP.items()}
+DATA_TO_STAGE_EVENT_MAP: dict[str, str] = {v: k for k, v in STAGE_TO_DATA_EVENT_MAP.items()}
 
 
 @dataclass
 class RouterEvent:
     """Unified event representation across all bus types."""
     event_type: str  # String representation of the event type
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
     source: str = ""  # Component that generated the event
     origin: EventSource = EventSource.ROUTER  # Which bus it came from
 
     # Original event objects (for type-specific handling)
-    data_event: Optional[Any] = None
-    stage_result: Optional[Any] = None
-    cross_process_event: Optional[Any] = None
+    data_event: Any | None = None
+    stage_result: Any | None = None
+    cross_process_event: Any | None = None
 
 
 EventCallback = Callable[[RouterEvent], Union[None, Any]]
@@ -145,21 +146,21 @@ class UnifiedEventRouter:
         enable_cross_process_polling: bool = True,
         poll_interval: float = 1.0,
     ):
-        self._subscribers: Dict[str, List[EventCallback]] = {}
-        self._global_subscribers: List[EventCallback] = []
+        self._subscribers: dict[str, list[EventCallback]] = {}
+        self._global_subscribers: list[EventCallback] = []
         self._lock = asyncio.Lock()
         self._sync_lock = threading.Lock()
 
         # Event history for auditing
-        self._event_history: List[RouterEvent] = []
+        self._event_history: list[RouterEvent] = []
         self._max_history = 1000
 
         # Metrics
-        self._events_routed: Dict[str, int] = {}
-        self._events_by_source: Dict[str, int] = {}
+        self._events_routed: dict[str, int] = {}
+        self._events_by_source: dict[str, int] = {}
 
         # Cross-process polling
-        self._cp_poller: Optional[CrossProcessEventPoller] = None
+        self._cp_poller: CrossProcessEventPoller | None = None
         self._enable_cp_polling = enable_cross_process_polling
         self._poll_interval = poll_interval
 
@@ -217,7 +218,7 @@ class UnifiedEventRouter:
     async def publish(
         self,
         event_type: Union[str, DataEventType, StageEvent],
-        payload: Dict[str, Any] = None,
+        payload: dict[str, Any] | None = None,
         source: str = "",
         route_to_data_bus: bool = True,
         route_to_stage_bus: bool = True,
@@ -342,7 +343,7 @@ class UnifiedEventRouter:
     def publish_sync(
         self,
         event_type: Union[str, DataEventType, StageEvent],
-        payload: Dict[str, Any] = None,
+        payload: dict[str, Any] | None = None,
         source: str = "",
     ) -> Union[RouterEvent, asyncio.Future]:
         """Synchronous version of publish for non-async contexts.
@@ -435,7 +436,7 @@ class UnifiedEventRouter:
 
     def subscribe(
         self,
-        event_type: Optional[Union[str, DataEventType, StageEvent]],
+        event_type: Union[str, DataEventType, StageEvent] | None,
         callback: EventCallback,
     ) -> None:
         """Subscribe to events.
@@ -459,7 +460,7 @@ class UnifiedEventRouter:
 
     def unsubscribe(
         self,
-        event_type: Optional[Union[str, DataEventType, StageEvent]],
+        event_type: Union[str, DataEventType, StageEvent] | None,
         callback: EventCallback,
     ) -> bool:
         """Unsubscribe from events."""
@@ -473,19 +474,18 @@ class UnifiedEventRouter:
             else:
                 event_type_str = str(event_type)
 
-            if event_type_str in self._subscribers:
-                if callback in self._subscribers[event_type_str]:
-                    self._subscribers[event_type_str].remove(callback)
-                    return True
+            if event_type_str in self._subscribers and callback in self._subscribers[event_type_str]:
+                self._subscribers[event_type_str].remove(callback)
+                return True
         return False
 
     def get_history(
         self,
-        event_type: Optional[str] = None,
-        origin: Optional[EventSource] = None,
-        since: Optional[float] = None,
+        event_type: str | None = None,
+        origin: EventSource | None = None,
+        since: float | None = None,
         limit: int = 100,
-    ) -> List[RouterEvent]:
+    ) -> list[RouterEvent]:
         """Get event history with optional filters."""
         events = self._event_history
 
@@ -498,7 +498,7 @@ class UnifiedEventRouter:
 
         return events[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get router statistics."""
         return {
             "events_routed_by_type": dict(self._events_routed),
@@ -521,7 +521,7 @@ class UnifiedEventRouter:
 
 
 # Global singleton
-_router: Optional[UnifiedEventRouter] = None
+_router: UnifiedEventRouter | None = None
 _router_lock = threading.Lock()
 
 
@@ -548,7 +548,7 @@ def reset_router() -> None:
 
 async def publish(
     event_type: Union[str, DataEventType, StageEvent],
-    payload: Dict[str, Any] = None,
+    payload: dict[str, Any] | None = None,
     source: str = "",
 ) -> RouterEvent:
     """Publish an event through the router."""
@@ -557,7 +557,7 @@ async def publish(
 
 def publish_sync(
     event_type: Union[str, DataEventType, StageEvent],
-    payload: Dict[str, Any] = None,
+    payload: dict[str, Any] | None = None,
     source: str = "",
 ) -> Union[RouterEvent, asyncio.Future]:
     """Publish an event synchronously."""
@@ -565,7 +565,7 @@ def publish_sync(
 
 
 def subscribe(
-    event_type: Optional[Union[str, DataEventType, StageEvent]],
+    event_type: Union[str, DataEventType, StageEvent] | None,
     callback: EventCallback,
 ) -> None:
     """Subscribe to events through the router."""
@@ -573,7 +573,7 @@ def subscribe(
 
 
 def unsubscribe(
-    event_type: Optional[Union[str, DataEventType, StageEvent]],
+    event_type: Union[str, DataEventType, StageEvent] | None,
     callback: EventCallback,
 ) -> bool:
     """Unsubscribe from events."""
@@ -581,19 +581,19 @@ def unsubscribe(
 
 
 __all__ = [
+    "DATA_TO_STAGE_EVENT_MAP",
+    # Event type mappings
+    "STAGE_TO_DATA_EVENT_MAP",
+    "EventSource",
+    "RouterEvent",
     # Core classes
     "UnifiedEventRouter",
-    "RouterEvent",
-    "EventSource",
     # Global access
     "get_router",
-    "reset_router",
     # Convenience functions
     "publish",
     "publish_sync",
+    "reset_router",
     "subscribe",
     "unsubscribe",
-    # Event type mappings
-    "STAGE_TO_DATA_EVENT_MAP",
-    "DATA_TO_STAGE_EVENT_MAP",
 ]

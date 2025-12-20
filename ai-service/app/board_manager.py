@@ -12,10 +12,17 @@ code must be updated—never the other way around.
 from __future__ import annotations
 
 import os
-from typing import List, Optional, Tuple
+
 from .models import (
-    BoardState, Position, RingStack, BoardType, LineInfo, Territory,
-    ProgressSnapshot, GameState, MarkerInfo
+    BoardState,
+    BoardType,
+    GameState,
+    LineInfo,
+    MarkerInfo,
+    Position,
+    ProgressSnapshot,
+    RingStack,
+    Territory,
 )
 
 __all__ = ["BoardManager"]
@@ -36,7 +43,7 @@ __all__ = ["BoardManager"]
 USE_FAST_TERRITORY = os.getenv('RINGRIFT_USE_FAST_TERRITORY', 'true').lower() == 'true'
 
 
-def _get_position_keys_for_lookup(position: Position, board_type: BoardType) -> List[str]:
+def _get_position_keys_for_lookup(position: Position, board_type: BoardType) -> list[str]:
     """
     Get position keys to try when looking up stacks/markers.
 
@@ -93,7 +100,7 @@ class BoardManager:
     @staticmethod
     def get_stack(
         position: Position, board: BoardState
-    ) -> Optional[RingStack]:
+    ) -> RingStack | None:
         """Return the stack at ``position`` or ``None`` if empty."""
         # Try multiple key formats for hex boards (data may use "x,y" or "x,y,z")
         for pos_key in _get_position_keys_for_lookup(position, board.type):
@@ -124,13 +131,10 @@ class BoardManager:
     @staticmethod
     def is_collapsed_space(position: Position, board: BoardState) -> bool:
         # Try multiple key formats for hex boards
-        for pos_key in _get_position_keys_for_lookup(position, board.type):
-            if pos_key in board.collapsed_spaces:
-                return True
-        return False
+        return any(pos_key in board.collapsed_spaces for pos_key in _get_position_keys_for_lookup(position, board.type))
 
     @staticmethod
-    def get_marker(position: Position, board: BoardState) -> Optional[MarkerInfo]:
+    def get_marker(position: Position, board: BoardState) -> MarkerInfo | None:
         """Return the marker at ``position`` or ``None`` if no marker."""
         # Try multiple key formats for hex boards (data may use "x,y" or "x,y,z")
         for pos_key in _get_position_keys_for_lookup(position, board.type):
@@ -142,7 +146,7 @@ class BoardManager:
     @staticmethod
     def get_player_stacks(
         board: BoardState, player_number: int
-    ) -> List[RingStack]:
+    ) -> list[RingStack]:
         return [
             stack for stack in board.stacks.values()
             if stack.controlling_player == player_number
@@ -163,7 +167,7 @@ class BoardManager:
         return core_hash_game_state(state)
 
     @staticmethod
-    def find_all_lines(board: BoardState, num_players: int = 3) -> List[LineInfo]:
+    def find_all_lines(board: BoardState, num_players: int = 3) -> list[LineInfo]:
         """
         Find all marker lines on the board.
 
@@ -180,7 +184,7 @@ class BoardManager:
         """
         from app.rules.core import get_effective_line_length
 
-        lines: List[LineInfo] = []
+        lines: list[LineInfo] = []
         processed_keys = set()
 
         # Determine line length based on board type AND player count.
@@ -190,7 +194,7 @@ class BoardManager:
         directions = BoardManager._get_line_directions(board.type)
 
         # Iterate through all markers
-        for pos_key, marker in board.markers.items():
+        for _pos_key, marker in board.markers.items():
             start_pos = marker.position
             player = marker.player
 
@@ -237,7 +241,7 @@ class BoardManager:
     @staticmethod
     def find_disconnected_regions(
         board: BoardState, player_number: int
-    ) -> List[Territory]:
+    ) -> list[Territory]:
         """
         Python analogue of the TS BoardManager.findDisconnectedRegions.
 
@@ -267,7 +271,7 @@ class BoardManager:
             except ImportError:
                 pass  # Fall back to original implementation
 
-        regions: List[Territory] = []
+        regions: list[Territory] = []
 
         # Identify active players (those with stacks on board)
         active_players = set()
@@ -306,9 +310,9 @@ class BoardManager:
         return regions
 
     @staticmethod
-    def _generate_all_positions_for_board(board: BoardState) -> List[Position]:
+    def _generate_all_positions_for_board(board: BoardState) -> list[Position]:
         """Generate all valid positions for the given board."""
-        positions: List[Position] = []
+        positions: list[Position] = []
         if board.type == BoardType.SQUARE8:
             for x in range(8):
                 for y in range(8):
@@ -336,7 +340,7 @@ class BoardManager:
         board: BoardState,
         border_color: int,
         active_players: set,
-    ) -> List[Territory]:
+    ) -> list[Territory]:
         """
         Find regions where markers of `border_color` act as borders.
 
@@ -346,7 +350,7 @@ class BoardManager:
           `border_color` as boundaries;
         - then filters out regions that contain stacks for all active players.
         """
-        disconnected_regions: List[Territory] = []
+        disconnected_regions: list[Territory] = []
         visited: set = set()
 
         all_positions = BoardManager._generate_all_positions_for_board(board)
@@ -399,14 +403,14 @@ class BoardManager:
     def _find_regions_without_marker_border(
         board: BoardState,
         active_players: set,
-    ) -> List[Territory]:
+    ) -> list[Territory]:
         """
         Find regions surrounded only by collapsed spaces and edges (no marker
         borders).
 
         Mirrors the TS BoardManager.findRegionsWithoutMarkerBorder helper.
         """
-        disconnected_regions: List[Territory] = []
+        disconnected_regions: list[Territory] = []
         visited: set = set()
 
         all_positions = BoardManager._generate_all_positions_for_board(board)
@@ -465,7 +469,7 @@ class BoardManager:
         board: BoardState,
         border_color: int,
         visited: set,
-    ) -> List[Position]:
+    ) -> list[Position]:
         """
         Flood-fill to find a region where markers of `border_color` act as
         borders.
@@ -474,8 +478,8 @@ class BoardManager:
         all other spaces (empty, stacks, other-colour markers) are part of the
         region.
         """
-        region: List[Position] = []
-        queue: List[Position] = [start]
+        region: list[Position] = []
+        queue: list[Position] = [start]
         local_visited: set = set()
 
         while queue:
@@ -521,15 +525,15 @@ class BoardManager:
         start: Position,
         board: BoardState,
         visited: set,
-    ) -> List[Position]:
+    ) -> list[Position]:
         """
         Flood-fill to find a region where only collapsed spaces and edges act
         as borders (markers do not terminate the fill).
 
         This mirrors TS BoardManager.exploreRegionWithoutMarkerBorder.
         """
-        region: List[Position] = []
-        queue: List[Position] = [start]
+        region: list[Position] = []
+        queue: list[Position] = [start]
         local_visited: set = set()
 
         while queue:
@@ -566,7 +570,7 @@ class BoardManager:
 
     @staticmethod
     def _is_region_bordered_by_collapsed_only(
-        region_spaces: List[Position],
+        region_spaces: list[Position],
         board: BoardState,
     ) -> bool:
         """
@@ -575,7 +579,7 @@ class BoardManager:
 
         Mirrors TS BoardManager.isRegionBorderedByCollapsedOnly.
         """
-        region_keys = set(p.to_key() for p in region_spaces)
+        region_keys = {p.to_key() for p in region_spaces}
 
         for space in region_spaces:
             neighbors = BoardManager._get_territory_neighbors(
@@ -614,7 +618,7 @@ class BoardManager:
 
     @staticmethod
     def _get_represented_players(
-        region_spaces: List[Position],
+        region_spaces: list[Position],
         board: BoardState,
     ) -> set:
         """Get all players represented in a region by their ring stacks."""
@@ -627,9 +631,9 @@ class BoardManager:
 
     @staticmethod
     def get_border_marker_positions(
-        spaces: List[Position],
+        spaces: list[Position],
         board: BoardState,
-    ) -> List[Position]:
+    ) -> list[Position]:
         """
         Get border marker positions for a disconnected region.
 
@@ -641,7 +645,7 @@ class BoardManager:
           square boards) to capture the entire connected marker ring,
           including diagonal corners.
         """
-        region_keys = set(p.to_key() for p in spaces)
+        region_keys = {p.to_key() for p in spaces}
 
         # Step 1: territory-adjacent marker seeds.
         seed_map: dict[str, Position] = {}
@@ -664,7 +668,7 @@ class BoardManager:
 
         # Step 2: BFS through markers to capture the full border ring.
         border_markers: dict[str, Position] = dict(seed_map)
-        queue: List[Position] = list(seed_map.values())
+        queue: list[Position] = list(seed_map.values())
         visited: set = set(seed_map.keys())
 
         while queue:
@@ -674,7 +678,7 @@ class BoardManager:
             # For hex boards, TS's getMooreNeighbors effectively contributes
             # no additional neighbors; we mirror that by skipping expansion.
             if board.type in (BoardType.HEXAGONAL, BoardType.HEX8):
-                neighbors: List[Position] = []
+                neighbors: list[Position] = []
             else:
                 neighbors = []
                 directions = BoardManager._get_all_directions(board.type)
@@ -711,7 +715,7 @@ class BoardManager:
     @staticmethod
     def _get_territory_neighbors(
         pos: Position, board_type: BoardType
-    ) -> List[Position]:
+    ) -> list[Position]:
         if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             return [
                 Position(
@@ -751,7 +755,7 @@ class BoardManager:
     @staticmethod
     def _get_line_directions(
         board_type: BoardType,
-    ) -> List[Tuple[int, int, Optional[int]]]:
+    ) -> list[tuple[int, int, int | None]]:
         """
         Canonical line directions for line detection.
 
@@ -777,10 +781,10 @@ class BoardManager:
     @staticmethod
     def _find_line_in_direction(
         start: Position,
-        direction: Tuple[int, int, Optional[int]],
+        direction: tuple[int, int, int | None],
         player: int,
         board: BoardState,
-    ) -> List[Position]:
+    ) -> list[Position]:
         """
         Find consecutive markers in a given direction for a player.
 
@@ -789,7 +793,7 @@ class BoardManager:
         - Collapsed spaces and stacks break lines.
         - Expands in both forward and backward directions.
         """
-        line: List[Position] = [start]
+        line: list[Position] = [start]
 
         # Forward
         current = start
@@ -832,7 +836,7 @@ class BoardManager:
     @staticmethod
     def _get_all_directions(
         board_type: BoardType
-    ) -> List[Tuple[int, int, Optional[int]]]:
+    ) -> list[tuple[int, int, int | None]]:
         if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             return [
                 (1, 0, -1), (0, 1, -1), (-1, 1, 0),
@@ -851,7 +855,7 @@ class BoardManager:
     @staticmethod
     def _add_direction(
         pos: Position,
-        direction: Tuple[int, int, Optional[int]],
+        direction: tuple[int, int, int | None],
         scale: int = 1
     ) -> Position:
         return Position(

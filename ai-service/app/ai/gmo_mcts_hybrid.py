@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 import numpy as np
 import torch
@@ -42,7 +41,7 @@ class GMOMCTSConfig:
     uncertainty_exploration_bonus: float = 0.3  # Bonus for uncertain moves
 
     # GMO config
-    gmo_config: Optional[GMOConfig] = None
+    gmo_config: GMOConfig | None = None
 
     # Device
     device: str = "cpu"
@@ -54,8 +53,8 @@ class MCTSNode:
     def __init__(
         self,
         state: GameState,
-        parent: Optional['MCTSNode'] = None,
-        move: Optional[Move] = None,
+        parent: MCTSNode | None = None,
+        move: Move | None = None,
         prior: float = 1.0,
     ):
         self.state = state
@@ -63,7 +62,7 @@ class MCTSNode:
         self.move = move  # Move that led to this node
         self.prior = prior
 
-        self.children: Dict[str, 'MCTSNode'] = {}
+        self.children: dict[str, MCTSNode] = {}
         self.visit_count = 0
         self.value_sum = 0.0
         self.is_expanded = False
@@ -96,7 +95,7 @@ class GMOMCTSHybrid(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        hybrid_config: Optional[GMOMCTSConfig] = None,
+        hybrid_config: GMOMCTSConfig | None = None,
     ):
         super().__init__(player_number, config)
 
@@ -118,8 +117,8 @@ class GMOMCTSHybrid(BaseAI):
     def _get_gmo_priors(
         self,
         state: GameState,
-        legal_moves: List[Move],
-    ) -> Dict[str, float]:
+        legal_moves: list[Move],
+    ) -> dict[str, float]:
         """Get GMO-based prior probabilities for moves.
 
         Returns dict mapping move strings to prior probabilities.
@@ -163,7 +162,7 @@ class GMOMCTSHybrid(BaseAI):
         w = self.hybrid_config.gmo_prior_weight
         blended_probs = w * probs + (1 - w) * uniform
 
-        return {self._move_key(m): p for m, p in zip(legal_moves, blended_probs)}
+        return {self._move_key(m): p for m, p in zip(legal_moves, blended_probs, strict=False)}
 
     def _move_key(self, move: Move) -> str:
         """Create unique string key for a move."""
@@ -190,8 +189,8 @@ class GMOMCTSHybrid(BaseAI):
     def _expand(
         self,
         node: MCTSNode,
-        legal_moves: List[Move],
-        priors: Dict[str, float],
+        legal_moves: list[Move],
+        priors: dict[str, float],
     ) -> None:
         """Expand a node with all legal moves."""
         from ..game_engine import GameEngine
@@ -256,7 +255,7 @@ class GMOMCTSHybrid(BaseAI):
             value = -value
             current = current.parent
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select move using GMO-guided MCTS."""
         from ..game_engine import GameEngine
         from ..models import GameStatus
@@ -315,7 +314,7 @@ class GMOMCTSHybrid(BaseAI):
             # Greedy selection
             best_visits = -1
             best_move = None
-            for move_key, child in root.children.items():
+            for _move_key, child in root.children.items():
                 if child.visit_count > best_visits:
                     best_visits = child.visit_count
                     best_move = child.move
@@ -362,7 +361,7 @@ def create_gmo_mcts_hybrid(
     player_number: int,
     num_simulations: int = 100,
     device: str = "cpu",
-    gmo_checkpoint: Optional[str] = None,
+    gmo_checkpoint: str | None = None,
 ) -> GMOMCTSHybrid:
     """Create a GMO-MCTS hybrid AI.
 

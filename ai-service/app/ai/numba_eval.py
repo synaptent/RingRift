@@ -5,7 +5,7 @@ These functions are compiled to native machine code for significant speedups
 in the most performance-critical evaluation loops.
 """
 
-from typing import Tuple
+
 import numpy as np
 
 try:
@@ -59,7 +59,7 @@ HEX_DIRECTIONS = np.array(
 
 
 @njit(cache=True)
-def compute_offset_square(q: int, r: int, dir_idx: int, distance: int) -> Tuple[int, int]:
+def compute_offset_square(q: int, r: int, dir_idx: int, distance: int) -> tuple[int, int]:
     """Compute offset position for square board."""
     dq = SQUARE_DIRECTIONS[dir_idx, 0]
     dr = SQUARE_DIRECTIONS[dir_idx, 1]
@@ -67,7 +67,7 @@ def compute_offset_square(q: int, r: int, dir_idx: int, distance: int) -> Tuple[
 
 
 @njit(cache=True)
-def compute_offset_hex(q: int, r: int, dir_idx: int, distance: int) -> Tuple[int, int]:
+def compute_offset_hex(q: int, r: int, dir_idx: int, distance: int) -> tuple[int, int]:
     """Compute offset position for hex board."""
     dq = HEX_DIRECTIONS[dir_idx, 0]
     dr = HEX_DIRECTIONS[dir_idx, 1]
@@ -96,7 +96,7 @@ def encode_key(q: int, r: int) -> int:
 
 
 @njit(cache=True)
-def decode_key(key: int) -> Tuple[int, int]:
+def decode_key(key: int) -> tuple[int, int]:
     """Decode integer key back to (q, r)."""
     q = (key >> 16) - 32768
     r = (key & 0xFFFF) - 32768
@@ -292,8 +292,8 @@ def compute_centroid_distance_sum_numba(
     cr /= n
 
     # Round to nearest integer for distance calculation
-    cq_int = int(round(cq))
-    cr_int = int(round(cr))
+    cq_int = round(cq)
+    cr_int = round(cr)
 
     total_dist = 0.0
     for i in range(n):

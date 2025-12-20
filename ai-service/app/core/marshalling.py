@@ -29,15 +29,12 @@ import dataclasses
 import json
 from abc import ABC, abstractmethod
 from base64 import b64decode, b64encode
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
     Generic,
-    Optional,
-    Type,
     TypeVar,
     Union,
     get_type_hints,
@@ -45,14 +42,14 @@ from typing import (
 from uuid import UUID
 
 __all__ = [
+    "Codec",
     "Serializable",
-    "serialize",
+    "SerializationError",
     "deserialize",
-    "to_json",
     "from_json",
     "register_codec",
-    "Codec",
-    "SerializationError",
+    "serialize",
+    "to_json",
 ]
 
 T = TypeVar("T")
@@ -78,7 +75,7 @@ class Codec(ABC, Generic[T]):
 
     @property
     @abstractmethod
-    def python_type(self) -> Type[T]:
+    def python_type(self) -> type[T]:
         """The Python type this codec handles."""
         pass
 
@@ -97,23 +94,23 @@ class CodecRegistry:
     """Registry for type codecs."""
 
     def __init__(self):
-        self._by_type: Dict[Type, Codec] = {}
-        self._by_name: Dict[str, Codec] = {}
+        self._by_type: dict[type, Codec] = {}
+        self._by_name: dict[str, Codec] = {}
 
     def register(self, codec: Codec) -> None:
         """Register a codec."""
         self._by_type[codec.python_type] = codec
         self._by_name[codec.type_name] = codec
 
-    def get_by_type(self, type_: Type) -> Optional[Codec]:
+    def get_by_type(self, type_: type) -> Codec | None:
         """Get codec for a Python type."""
         return self._by_type.get(type_)
 
-    def get_by_name(self, name: str) -> Optional[Codec]:
+    def get_by_name(self, name: str) -> Codec | None:
         """Get codec by type name."""
         return self._by_name.get(name)
 
-    def has_type(self, type_: Type) -> bool:
+    def has_type(self, type_: type) -> bool:
         """Check if type has a codec."""
         return type_ in self._by_type
 
@@ -161,7 +158,7 @@ class DateTimeCodec(Codec[datetime]):
         return "datetime"
 
     @property
-    def python_type(self) -> Type[datetime]:
+    def python_type(self) -> type[datetime]:
         return datetime
 
     def encode(self, value: datetime) -> str:
@@ -179,7 +176,7 @@ class DateCodec(Codec[date]):
         return "date"
 
     @property
-    def python_type(self) -> Type[date]:
+    def python_type(self) -> type[date]:
         return date
 
     def encode(self, value: date) -> str:
@@ -197,7 +194,7 @@ class TimeDeltaCodec(Codec[timedelta]):
         return "timedelta"
 
     @property
-    def python_type(self) -> Type[timedelta]:
+    def python_type(self) -> type[timedelta]:
         return timedelta
 
     def encode(self, value: timedelta) -> float:
@@ -215,7 +212,7 @@ class UUIDCodec(Codec[UUID]):
         return "uuid"
 
     @property
-    def python_type(self) -> Type[UUID]:
+    def python_type(self) -> type[UUID]:
         return UUID
 
     def encode(self, value: UUID) -> str:
@@ -233,7 +230,7 @@ class PathCodec(Codec[Path]):
         return "path"
 
     @property
-    def python_type(self) -> Type[Path]:
+    def python_type(self) -> type[Path]:
         return Path
 
     def encode(self, value: Path) -> str:
@@ -251,7 +248,7 @@ class BytesCodec(Codec[bytes]):
         return "bytes"
 
     @property
-    def python_type(self) -> Type[bytes]:
+    def python_type(self) -> type[bytes]:
         return bytes
 
     def encode(self, value: bytes) -> str:
@@ -269,7 +266,7 @@ class SetCodec(Codec[set]):
         return "set"
 
     @property
-    def python_type(self) -> Type[set]:
+    def python_type(self) -> type[set]:
         return set
 
     def encode(self, value: set) -> list:
@@ -287,7 +284,7 @@ class FrozenSetCodec(Codec[frozenset]):
         return "frozenset"
 
     @property
-    def python_type(self) -> Type[frozenset]:
+    def python_type(self) -> type[frozenset]:
         return frozenset
 
     def encode(self, value: frozenset) -> list:
@@ -323,17 +320,17 @@ try:
             return "ndarray"
 
         @property
-        def python_type(self) -> Type[np.ndarray]:
+        def python_type(self) -> type[np.ndarray]:
             return np.ndarray
 
-        def encode(self, value: np.ndarray) -> Dict[str, Any]:
+        def encode(self, value: np.ndarray) -> dict[str, Any]:
             return {
                 "dtype": str(value.dtype),
                 "shape": list(value.shape),
                 "data": b64encode(value.tobytes()).decode("ascii"),
             }
 
-        def decode(self, data: Dict[str, Any]) -> np.ndarray:
+        def decode(self, data: dict[str, Any]) -> np.ndarray:
             arr = np.frombuffer(
                 b64decode(data["data"].encode("ascii")),
                 dtype=np.dtype(data["dtype"]),
@@ -356,10 +353,10 @@ try:
             return "tensor"
 
         @property
-        def python_type(self) -> Type[torch.Tensor]:
+        def python_type(self) -> type[torch.Tensor]:
             return torch.Tensor
 
-        def encode(self, value: torch.Tensor) -> Dict[str, Any]:
+        def encode(self, value: torch.Tensor) -> dict[str, Any]:
             np_arr = value.detach().cpu().numpy()
             return {
                 "dtype": str(np_arr.dtype),
@@ -367,7 +364,7 @@ try:
                 "data": b64encode(np_arr.tobytes()).decode("ascii"),
             }
 
-        def decode(self, data: Dict[str, Any]) -> torch.Tensor:
+        def decode(self, data: dict[str, Any]) -> torch.Tensor:
             import numpy as np
             arr = np.frombuffer(
                 b64decode(data["data"].encode("ascii")),
@@ -445,7 +442,7 @@ def _serialize_value(value: Any, include_type: bool = False) -> Any:
 
 def _deserialize_value(
     data: Any,
-    target_type: Optional[Type] = None,
+    target_type: type | None = None,
 ) -> Any:
     """Deserialize a single value."""
     if data is None:
@@ -498,7 +495,7 @@ def _deserialize_value(
     return data
 
 
-def _deserialize_to_type(data: Any, target_type: Type[T]) -> T:
+def _deserialize_to_type(data: Any, target_type: type[T]) -> T:
     """Deserialize data to a specific type."""
     # Handle None
     if data is None:
@@ -544,7 +541,7 @@ def _deserialize_to_type(data: Any, target_type: Type[T]) -> T:
 
     # Dict
     if origin is dict:
-        key_type, value_type = target_type.__args__ if hasattr(target_type, "__args__") else (Any, Any)
+        _key_type, value_type = target_type.__args__ if hasattr(target_type, "__args__") else (Any, Any)
         return {k: _deserialize_to_type(v, value_type) for k, v in data.items()}
 
     # Set
@@ -557,7 +554,7 @@ def _deserialize_to_type(data: Any, target_type: Type[T]) -> T:
         if hasattr(target_type, "__args__"):
             return tuple(
                 _deserialize_to_type(v, t)
-                for v, t in zip(data, target_type.__args__)
+                for v, t in zip(data, target_type.__args__, strict=False)
             )
         return tuple(data)
 
@@ -565,7 +562,7 @@ def _deserialize_to_type(data: Any, target_type: Type[T]) -> T:
     return data
 
 
-def _deserialize_dataclass(data: Dict[str, Any], cls: Type[T]) -> T:
+def _deserialize_dataclass(data: dict[str, Any], cls: type[T]) -> T:
     """Deserialize a dict to a dataclass."""
     if not dataclasses.is_dataclass(cls):
         raise SerializationError(f"{cls} is not a dataclass")
@@ -610,7 +607,7 @@ def serialize(
 
 def deserialize(
     data: Any,
-    target_type: Optional[Type[T]] = None,
+    target_type: type[T] | None = None,
 ) -> T:
     """Deserialize data to an object.
 
@@ -651,7 +648,7 @@ def to_json(
 
 def from_json(
     json_str: str,
-    target_type: Optional[Type[T]] = None,
+    target_type: type[T] | None = None,
 ) -> T:
     """Deserialize JSON string to object.
 
@@ -686,7 +683,7 @@ class Serializable:
         restored = Config.from_json(json_str)
     """
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
         return serialize(self)
 
@@ -695,11 +692,11 @@ class Serializable:
         return to_json(self, pretty=pretty)
 
     @classmethod
-    def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
+    def from_dict(cls: type[T], data: dict[str, Any]) -> T:
         """Deserialize from dictionary."""
         return deserialize(data, cls)
 
     @classmethod
-    def from_json(cls: Type[T], json_str: str) -> T:
+    def from_json(cls: type[T], json_str: str) -> T:
         """Deserialize from JSON string."""
         return from_json(json_str, cls)

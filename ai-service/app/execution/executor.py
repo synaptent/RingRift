@@ -33,16 +33,12 @@ import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
 
-from app.core.error_handler import retry_async, RetryableError
 from app.utils.resource_guard import (
-    can_proceed,
-    wait_for_resources,
-    check_memory,
-    check_cpu,
-    get_resource_status,
     LIMITS,
+    can_proceed,
+    get_resource_status,
+    wait_for_resources,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,11 +105,11 @@ class SSHConfig:
     """SSH connection configuration."""
 
     host: str
-    user: Optional[str] = None
+    user: str | None = None
     port: int = 22
-    key_path: Optional[str] = None
+    key_path: str | None = None
     connect_timeout: int = 10
-    options: Dict[str, str] = field(default_factory=dict)
+    options: dict[str, str] = field(default_factory=dict)
 
     @property
     def ssh_target(self) -> str:
@@ -122,7 +118,7 @@ class SSHConfig:
             return f"{self.user}@{self.host}"
         return self.host
 
-    def build_ssh_command(self) -> List[str]:
+    def build_ssh_command(self) -> list[str]:
         """Build the base SSH command with options."""
         cmd = ["ssh"]
 
@@ -154,9 +150,9 @@ class BaseExecutor(ABC):
     async def run(
         self,
         command: str,
-        timeout: Optional[int] = None,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        timeout: int | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         capture_output: bool = True,
     ) -> ExecutionResult:
         """Execute a command.
@@ -190,7 +186,7 @@ class LocalExecutor(BaseExecutor):
 
     def __init__(
         self,
-        working_dir: Optional[str] = None,
+        working_dir: str | None = None,
         check_resources: bool = False,
         required_mem_gb: float = 1.0,
     ):
@@ -212,9 +208,9 @@ class LocalExecutor(BaseExecutor):
     async def run(
         self,
         command: str,
-        timeout: Optional[int] = None,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        timeout: int | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         capture_output: bool = True,
     ) -> ExecutionResult:
         """Execute a local command."""
@@ -299,9 +295,9 @@ class SSHExecutor(BaseExecutor):
     def __init__(
         self,
         host: str,
-        user: Optional[str] = None,
+        user: str | None = None,
         port: int = 22,
-        key_path: Optional[str] = None,
+        key_path: str | None = None,
         connect_timeout: int = 10,
         max_retries: int = 3,
         retry_delay: float = 2.0,
@@ -315,7 +311,7 @@ class SSHExecutor(BaseExecutor):
         )
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self._available: Optional[bool] = None
+        self._available: bool | None = None
 
     @property
     def name(self) -> str:
@@ -324,9 +320,9 @@ class SSHExecutor(BaseExecutor):
     async def run(
         self,
         command: str,
-        timeout: Optional[int] = None,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        timeout: int | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         capture_output: bool = True,
     ) -> ExecutionResult:
         """Execute a command via SSH."""
@@ -391,9 +387,9 @@ class SSHExecutor(BaseExecutor):
     async def run_with_retry(
         self,
         command: str,
-        timeout: Optional[int] = None,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        timeout: int | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> ExecutionResult:
         """Execute with automatic retry on transient failures."""
         last_result = None
@@ -444,10 +440,10 @@ class ExecutorPool:
     """Pool of executors for parallel command execution."""
 
     def __init__(self):
-        self.executors: Dict[str, BaseExecutor] = {}
+        self.executors: dict[str, BaseExecutor] = {}
         self._local = LocalExecutor()
 
-    def add_local(self, name: str = "local", working_dir: Optional[str] = None) -> None:
+    def add_local(self, name: str = "local", working_dir: str | None = None) -> None:
         """Add local executor to the pool."""
         self.executors[name] = LocalExecutor(working_dir)
 
@@ -455,18 +451,18 @@ class ExecutorPool:
         self,
         name: str,
         host: str,
-        user: Optional[str] = None,
+        user: str | None = None,
         port: int = 22,
-        key_path: Optional[str] = None,
+        key_path: str | None = None,
     ) -> None:
         """Add SSH executor to the pool."""
         self.executors[name] = SSHExecutor(host, user, port, key_path)
 
-    def get(self, name: str) -> Optional[BaseExecutor]:
+    def get(self, name: str) -> BaseExecutor | None:
         """Get an executor by name."""
         return self.executors.get(name)
 
-    async def check_all_available(self) -> Dict[str, bool]:
+    async def check_all_available(self) -> dict[str, bool]:
         """Check availability of all executors."""
         tasks = {
             name: executor.check_available()
@@ -487,7 +483,7 @@ class ExecutorPool:
         self,
         executor_name: str,
         command: str,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> ExecutionResult:
         """Run command on a specific executor."""
         executor = self.executors.get(executor_name)
@@ -505,9 +501,9 @@ class ExecutorPool:
     async def run_all(
         self,
         command: str,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
         only_available: bool = True,
-    ) -> Dict[str, ExecutionResult]:
+    ) -> dict[str, ExecutionResult]:
         """Run command on all executors in parallel."""
         if only_available:
             available = await self.check_all_available()
@@ -547,9 +543,9 @@ class ExecutorPool:
 
 async def run_command(
     command: str,
-    timeout: Optional[int] = None,
-    cwd: Optional[str] = None,
-    env: Optional[Dict[str, str]] = None,
+    timeout: int | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> ExecutionResult:
     """Run a local command (convenience function)."""
     executor = LocalExecutor()
@@ -558,9 +554,9 @@ async def run_command(
 
 def run_command_sync(
     command: str,
-    timeout: Optional[int] = None,
-    cwd: Optional[str] = None,
-    env: Optional[Dict[str, str]] = None,
+    timeout: int | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
     capture_output: bool = True,
 ) -> ExecutionResult:
     """Synchronous version of run_command for non-async contexts."""
@@ -610,8 +606,8 @@ def run_command_sync(
 async def run_ssh_command(
     host: str,
     command: str,
-    user: Optional[str] = None,
-    timeout: Optional[int] = None,
+    user: str | None = None,
+    timeout: int | None = None,
     max_retries: int = 3,
 ) -> ExecutionResult:
     """Run a command via SSH (convenience function)."""
@@ -622,8 +618,8 @@ async def run_ssh_command(
 async def run_ssh_command_async(
     host: str,
     command: str,
-    user: Optional[str] = None,
-    timeout: Optional[int] = None,
+    user: str | None = None,
+    timeout: int | None = None,
 ) -> ExecutionResult:
     """Alias for run_ssh_command for naming consistency."""
     return await run_ssh_command(host, command, user, timeout)
@@ -632,9 +628,9 @@ async def run_ssh_command_async(
 def run_ssh_command_sync(
     host: str,
     command: str,
-    user: Optional[str] = None,
+    user: str | None = None,
     port: int = 22,
-    key_path: Optional[str] = None,
+    key_path: str | None = None,
     timeout: int = 60,
 ) -> ExecutionResult:
     """Synchronous SSH command execution."""

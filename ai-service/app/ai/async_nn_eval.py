@@ -16,11 +16,9 @@ import os
 import queue
 import threading
 import time
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Deque, List, Optional, Tuple
-
-from collections import deque
 
 import numpy as np
 
@@ -28,7 +26,7 @@ from ..models import GameState
 from .neural_net import NeuralNetAI
 
 
-def _is_truthy_env(name: str) -> Optional[bool]:
+def _is_truthy_env(name: str) -> bool | None:
     val = os.environ.get(name, "").strip().lower()
     if not val:
         return None
@@ -66,9 +64,9 @@ def _parse_positive_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class _EvalRequest:
     neural_net: NeuralNetAI
-    game_states: List[GameState]
+    game_states: list[GameState]
     future: Future
-    value_head: Optional[int] = None
+    value_head: int | None = None
 
 
 class _GlobalNNMicroBatcher:
@@ -93,9 +91,9 @@ class _GlobalNNMicroBatcher:
     def submit(
         self,
         neural_net: NeuralNetAI,
-        game_states: List[GameState],
+        game_states: list[GameState],
         *,
-        value_head: Optional[int] = None,
+        value_head: int | None = None,
     ) -> Future:
         fut: Future = Future()
         self._queue.put(
@@ -112,7 +110,7 @@ class _GlobalNNMicroBatcher:
         self._stop.set()
 
     def _run(self) -> None:
-        pending: Deque[_EvalRequest] = deque()
+        pending: deque[_EvalRequest] = deque()
 
         while not self._stop.is_set():
             if not pending:
@@ -136,7 +134,7 @@ class _GlobalNNMicroBatcher:
             # Process a compatible group starting from the oldest request.
             self._process_one_group(pending)
 
-    def _process_one_group(self, pending: Deque[_EvalRequest]) -> None:
+    def _process_one_group(self, pending: deque[_EvalRequest]) -> None:
         if not pending:
             return
 
@@ -149,7 +147,7 @@ class _GlobalNNMicroBatcher:
             return
 
         group: list[_EvalRequest] = []
-        deferred: Deque[_EvalRequest] = deque()
+        deferred: deque[_EvalRequest] = deque()
         total_states = 0
 
         while pending:
@@ -236,7 +234,7 @@ class _GlobalNNMicroBatcher:
         )
 
 
-_GLOBAL_BATCHER: Optional[_GlobalNNMicroBatcher] = None
+_GLOBAL_BATCHER: _GlobalNNMicroBatcher | None = None
 _GLOBAL_BATCHER_LOCK = threading.RLock()
 _GLOBAL_BATCHER_REFS = 0
 
@@ -281,10 +279,10 @@ class AsyncNeuralBatcher:
         self.neural_net = neural_net
         self._lock = threading.RLock()
         self._use_microbatcher = _should_use_microbatcher(neural_net)
-        self._global_batcher: Optional[_GlobalNNMicroBatcher] = (
+        self._global_batcher: _GlobalNNMicroBatcher | None = (
             _acquire_global_batcher() if self._use_microbatcher else None
         )
-        self._executor: Optional[ThreadPoolExecutor] = (
+        self._executor: ThreadPoolExecutor | None = (
             None
             if self._use_microbatcher
             else ThreadPoolExecutor(max_workers=max_workers)
@@ -292,10 +290,10 @@ class AsyncNeuralBatcher:
 
     def evaluate(
         self,
-        game_states: List[GameState],
+        game_states: list[GameState],
         *,
-        value_head: Optional[int] = None,
-    ) -> Tuple[List[float], np.ndarray]:
+        value_head: int | None = None,
+    ) -> tuple[list[float], np.ndarray]:
         if self._use_microbatcher and self._global_batcher is not None:
             return self.submit(game_states, value_head=value_head).result()
 
@@ -304,9 +302,9 @@ class AsyncNeuralBatcher:
 
     def submit(
         self,
-        game_states: List[GameState],
+        game_states: list[GameState],
         *,
-        value_head: Optional[int] = None,
+        value_head: int | None = None,
     ) -> Future:
         if self._use_microbatcher and self._global_batcher is not None:
             return self._global_batcher.submit(

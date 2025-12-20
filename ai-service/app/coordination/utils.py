@@ -35,16 +35,11 @@ import logging
 import statistics
 import time
 from collections import deque
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import (
     Any,
-    Callable,
-    Deque,
-    Dict,
     Generic,
-    Iterator,
-    List,
-    Optional,
     TypeVar,
 )
 
@@ -65,7 +60,7 @@ class HistoryEntry(Generic[T]):
 
     value: T
     timestamp: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BoundedHistory(Generic[T]):
@@ -103,7 +98,7 @@ class BoundedHistory(Generic[T]):
         """
         self.max_size = max_size
         self.track_timestamps = track_timestamps
-        self._entries: Deque[HistoryEntry[T]] = deque(maxlen=max_size)
+        self._entries: deque[HistoryEntry[T]] = deque(maxlen=max_size)
         self._total_added: int = 0
 
     def append(self, value: T, **metadata) -> None:
@@ -121,7 +116,7 @@ class BoundedHistory(Generic[T]):
         self._entries.append(entry)
         self._total_added += 1
 
-    def extend(self, values: List[T]) -> None:
+    def extend(self, values: list[T]) -> None:
         """Add multiple items to history.
 
         Args:
@@ -134,7 +129,7 @@ class BoundedHistory(Generic[T]):
         """Clear all history."""
         self._entries.clear()
 
-    def get_recent(self, n: int) -> List[T]:
+    def get_recent(self, n: int) -> list[T]:
         """Get the n most recent items.
 
         Args:
@@ -146,7 +141,7 @@ class BoundedHistory(Generic[T]):
         entries = list(self._entries)[-n:]
         return [e.value for e in entries]
 
-    def get_oldest(self, n: int) -> List[T]:
+    def get_oldest(self, n: int) -> list[T]:
         """Get the n oldest items.
 
         Args:
@@ -158,7 +153,7 @@ class BoundedHistory(Generic[T]):
         entries = list(self._entries)[:n]
         return [e.value for e in entries]
 
-    def get_all(self) -> List[T]:
+    def get_all(self) -> list[T]:
         """Get all items as a list.
 
         Returns:
@@ -166,7 +161,7 @@ class BoundedHistory(Generic[T]):
         """
         return [e.value for e in self._entries]
 
-    def get_entries(self) -> List[HistoryEntry[T]]:
+    def get_entries(self) -> list[HistoryEntry[T]]:
         """Get all entries with timestamps and metadata.
 
         Returns:
@@ -174,7 +169,7 @@ class BoundedHistory(Generic[T]):
         """
         return list(self._entries)
 
-    def filter(self, predicate: Callable[[T], bool]) -> List[T]:
+    def filter(self, predicate: Callable[[T], bool]) -> list[T]:
         """Filter items by predicate.
 
         Args:
@@ -187,9 +182,9 @@ class BoundedHistory(Generic[T]):
 
     def filter_by_time(
         self,
-        since: Optional[float] = None,
-        until: Optional[float] = None,
-    ) -> List[T]:
+        since: float | None = None,
+        until: float | None = None,
+    ) -> list[T]:
         """Filter items by timestamp range.
 
         Args:
@@ -220,28 +215,28 @@ class BoundedHistory(Generic[T]):
         return sum(1 for e in self._entries if predicate(e.value))
 
     @property
-    def oldest(self) -> Optional[T]:
+    def oldest(self) -> T | None:
         """Get oldest item, or None if empty."""
         if self._entries:
             return self._entries[0].value
         return None
 
     @property
-    def newest(self) -> Optional[T]:
+    def newest(self) -> T | None:
         """Get newest item, or None if empty."""
         if self._entries:
             return self._entries[-1].value
         return None
 
     @property
-    def oldest_timestamp(self) -> Optional[float]:
+    def oldest_timestamp(self) -> float | None:
         """Get timestamp of oldest item."""
         if self._entries:
             return self._entries[0].timestamp
         return None
 
     @property
-    def newest_timestamp(self) -> Optional[float]:
+    def newest_timestamp(self) -> float | None:
         """Get timestamp of newest item."""
         if self._entries:
             return self._entries[-1].timestamp
@@ -329,15 +324,15 @@ class MetricsAccumulator:
         self.name = name
         self.higher_is_better = higher_is_better
 
-        self._values: Deque[float] = deque(maxlen=window_size)
-        self._timestamps: Deque[float] = deque(maxlen=window_size)
+        self._values: deque[float] = deque(maxlen=window_size)
+        self._timestamps: deque[float] = deque(maxlen=window_size)
         self._total: float = 0.0
         self._count: int = 0
-        self._min: Optional[float] = None
-        self._max: Optional[float] = None
-        self._best: Optional[float] = None
+        self._min: float | None = None
+        self._max: float | None = None
+        self._best: float | None = None
 
-    def add(self, value: float, timestamp: Optional[float] = None) -> None:
+    def add(self, value: float, timestamp: float | None = None) -> None:
         """Add a value to the accumulator.
 
         Args:
@@ -356,14 +351,10 @@ class MetricsAccumulator:
             self._max = value
 
         # Update best
-        if self._best is None:
-            self._best = value
-        elif self.higher_is_better and value > self._best:
-            self._best = value
-        elif not self.higher_is_better and value < self._best:
+        if self._best is None or (self.higher_is_better and value > self._best) or (not self.higher_is_better and value < self._best):
             self._best = value
 
-    def add_batch(self, values: List[float]) -> None:
+    def add_batch(self, values: list[float]) -> None:
         """Add multiple values at once.
 
         Args:
@@ -417,17 +408,17 @@ class MetricsAccumulator:
         return sum(self._values) / len(self._values)
 
     @property
-    def min_value(self) -> Optional[float]:
+    def min_value(self) -> float | None:
         """Minimum value seen."""
         return self._min
 
     @property
-    def max_value(self) -> Optional[float]:
+    def max_value(self) -> float | None:
         """Maximum value seen."""
         return self._max
 
     @property
-    def best_value(self) -> Optional[float]:
+    def best_value(self) -> float | None:
         """Best value seen (based on higher_is_better)."""
         return self._best
 
@@ -480,13 +471,13 @@ class MetricsAccumulator:
         return self.trend < 0
 
     @property
-    def current(self) -> Optional[float]:
+    def current(self) -> float | None:
         """Most recent value."""
         if self._values:
             return self._values[-1]
         return None
 
-    def get_recent(self, n: int) -> List[float]:
+    def get_recent(self, n: int) -> list[float]:
         """Get n most recent values."""
         return list(self._values)[-n:]
 
@@ -503,7 +494,7 @@ class MetricsAccumulator:
             trend=self.trend,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "name": self.name,
@@ -559,7 +550,7 @@ class CallbackRegistry(Generic[T]):
             name: Name for logging
         """
         self.name = name
-        self._callbacks: List[Callable[[T], Any]] = []
+        self._callbacks: list[Callable[[T], Any]] = []
         self._invocation_count: int = 0
         self._error_count: int = 0
 
@@ -592,7 +583,7 @@ class CallbackRegistry(Generic[T]):
         """Clear all registered callbacks."""
         self._callbacks.clear()
 
-    async def invoke_all(self, data: T) -> List[Exception]:
+    async def invoke_all(self, data: T) -> list[Exception]:
         """Invoke all callbacks with data.
 
         Handles both sync and async callbacks. Errors are caught and
@@ -604,7 +595,7 @@ class CallbackRegistry(Generic[T]):
         Returns:
             List of exceptions from failed callbacks
         """
-        errors: List[Exception] = []
+        errors: list[Exception] = []
 
         for callback in self._callbacks:
             self._invocation_count += 1
@@ -621,7 +612,7 @@ class CallbackRegistry(Generic[T]):
 
         return errors
 
-    def invoke_all_sync(self, data: T) -> List[Exception]:
+    def invoke_all_sync(self, data: T) -> list[Exception]:
         """Invoke all sync callbacks (ignores async ones).
 
         Args:
@@ -630,7 +621,7 @@ class CallbackRegistry(Generic[T]):
         Returns:
             List of exceptions from failed callbacks
         """
-        errors: List[Exception] = []
+        errors: list[Exception] = []
 
         for callback in self._callbacks:
             if asyncio.iscoroutinefunction(callback):
@@ -670,7 +661,7 @@ class CallbackRegistry(Generic[T]):
             return 0.0
         return self._error_count / self._invocation_count
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get registry statistics."""
         return {
             "name": self.name,
@@ -683,8 +674,8 @@ class CallbackRegistry(Generic[T]):
 
 __all__ = [
     "BoundedHistory",
+    "CallbackRegistry",
     "HistoryEntry",
     "MetricsAccumulator",
     "MetricsSnapshot",
-    "CallbackRegistry",
 ]

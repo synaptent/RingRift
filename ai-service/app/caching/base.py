@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 __all__ = [
     "Cache",
+    "CacheConfig",
     "CacheEntry",
     "CacheStats",
-    "CacheConfig",
 ]
 
 K = TypeVar("K")  # Key type
@@ -32,7 +33,7 @@ class CacheEntry(Generic[V]):
     created_at: float = field(default_factory=time.time)
     last_accessed: float = field(default_factory=time.time)
     access_count: int = 0
-    ttl_seconds: Optional[float] = None
+    ttl_seconds: float | None = None
 
     def is_expired(self) -> bool:
         """Check if this entry has expired."""
@@ -59,7 +60,7 @@ class CacheStats:
     evictions: int = 0
     expirations: int = 0
     size: int = 0
-    max_size: Optional[int] = None
+    max_size: int | None = None
 
     @property
     def total_requests(self) -> int:
@@ -84,8 +85,8 @@ class CacheStats:
 @dataclass
 class CacheConfig:
     """Configuration for a cache instance."""
-    max_size: Optional[int] = None  # None = unlimited
-    ttl_seconds: Optional[float] = None  # None = no expiration
+    max_size: int | None = None  # None = unlimited
+    ttl_seconds: float | None = None  # None = no expiration
     cleanup_interval_seconds: float = 60.0  # How often to run cleanup
     eviction_policy: str = "lru"  # "lru", "lfu", "fifo"
 
@@ -105,7 +106,7 @@ class Cache(ABC, Generic[K, V]):
                 ...
     """
 
-    def __init__(self, config: Optional[CacheConfig] = None):
+    def __init__(self, config: CacheConfig | None = None):
         """Initialize the cache.
 
         Args:
@@ -120,7 +121,7 @@ class Cache(ABC, Generic[K, V]):
         return self._stats
 
     @abstractmethod
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: K, default: V | None = None) -> V | None:
         """Get a value from the cache.
 
         Args:
@@ -137,7 +138,7 @@ class Cache(ABC, Generic[K, V]):
         self,
         key: K,
         value: V,
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ) -> None:
         """Set a value in the cache.
 
@@ -181,7 +182,7 @@ class Cache(ABC, Generic[K, V]):
         self,
         key: K,
         factory: Callable[[], V],
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ) -> V:
         """Get a value or compute and cache it if missing.
 
@@ -205,7 +206,7 @@ class Cache(ABC, Generic[K, V]):
         self,
         key: K,
         factory: Callable[[], Any],  # Can return Awaitable[V]
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ) -> V:
         """Async version of get_or_set.
 

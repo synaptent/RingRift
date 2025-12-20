@@ -53,7 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class ConflictResolution(Enum):
@@ -68,6 +68,8 @@ class ConflictResolution(Enum):
     RAISE = "raise"  # Raise an error
 
 # Path setup
+import contextlib
+
 from app.utils.paths import AI_SERVICE_ROOT
 
 
@@ -80,9 +82,9 @@ class EloDrift:
     participants_in_source: int
     participants_in_target: int
     participants_in_both: int
-    rating_diffs: Dict[str, float] = field(default_factory=dict)
-    board_type: Optional[str] = None
-    num_players: Optional[int] = None
+    rating_diffs: dict[str, float] = field(default_factory=dict)
+    board_type: str | None = None
+    num_players: int | None = None
 
     @property
     def max_rating_diff(self) -> float:
@@ -103,7 +105,7 @@ class EloDrift:
         """Whether drift is significant enough to warrant action."""
         return self.max_rating_diff > 50 or self.avg_rating_diff > 25
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "source": self.source,
             "target": self.target,
@@ -124,7 +126,7 @@ class EloDrift:
 class DriftHistory:
     """Historical drift tracking for trend analysis."""
     config_key: str  # e.g., "square8_2p"
-    snapshots: List[Dict[str, Any]] = field(default_factory=list)
+    snapshots: list[dict[str, Any]] = field(default_factory=list)
     max_snapshots: int = 100  # Keep last 100 snapshots
 
     def add_snapshot(self, drift: EloDrift) -> None:
@@ -180,7 +182,7 @@ class DriftHistory:
             return 0.0
         return sum(s["max_rating_diff"] for s in recent) / len(recent)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "config_key": self.config_key,
             "trend": self.trend,
@@ -201,9 +203,9 @@ class SyncResult:
     matches_conflict: int  # Same ID but different data (unresolved)
     matches_resolved: int = 0  # Conflicts resolved via conflict resolution strategy
     participants_added: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "remote_host": self.remote_host,
             "synced_at": self.synced_at,
@@ -221,15 +223,15 @@ class ReconciliationReport:
     """Full reconciliation report across all nodes."""
     started_at: str
     completed_at: str
-    nodes_synced: List[str]
-    nodes_failed: List[str]
+    nodes_synced: list[str]
+    nodes_failed: list[str]
     total_matches_added: int
     total_matches_skipped: int
     total_conflicts: int
     total_resolved: int
     drift_detected: bool
     max_drift: float
-    sync_results: List[SyncResult] = field(default_factory=list)
+    sync_results: list[SyncResult] = field(default_factory=list)
 
     def summary(self) -> str:
         """Human-readable summary."""
@@ -271,8 +273,8 @@ class EloReconciler:
 
     def __init__(
         self,
-        local_db_path: Optional[Path] = None,
-        remote_hosts_config: Optional[Path] = None,
+        local_db_path: Path | None = None,
+        remote_hosts_config: Path | None = None,
         ssh_timeout: int = 30,
         conflict_resolution: ConflictResolution = ConflictResolution.SKIP,
         track_history: bool = True,
@@ -284,7 +286,7 @@ class EloReconciler:
         self.conflict_resolution = conflict_resolution
         self.track_history = track_history
         self.persist_history = persist_history
-        self._drift_history: Dict[str, DriftHistory] = {}  # config_key -> DriftHistory
+        self._drift_history: dict[str, DriftHistory] = {}  # config_key -> DriftHistory
 
         # Load persisted history if available
         if self.track_history and self.persist_history:
@@ -339,15 +341,15 @@ class EloReconciler:
             # Non-fatal - start fresh if history is corrupted
             print(f"[EloReconciler] Warning: Failed to load drift history: {e}")
 
-    def get_drift_history(self, config_key: str) -> Optional[DriftHistory]:
+    def get_drift_history(self, config_key: str) -> DriftHistory | None:
         """Get drift history for a specific configuration."""
         return self._drift_history.get(config_key)
 
-    def get_all_drift_histories(self) -> Dict[str, DriftHistory]:
+    def get_all_drift_histories(self) -> dict[str, DriftHistory]:
         """Get all drift histories."""
         return self._drift_history.copy()
 
-    def _record_drift(self, drift: EloDrift, board_type: Optional[str], num_players: Optional[int]) -> None:
+    def _record_drift(self, drift: EloDrift, board_type: str | None, num_players: int | None) -> None:
         """Record drift in history."""
         if not self.track_history:
             return
@@ -363,9 +365,9 @@ class EloReconciler:
 
     def check_drift(
         self,
-        remote_db_path: Optional[Path] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        remote_db_path: Path | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> EloDrift:
         """Check Elo drift between local and another database.
 
@@ -446,8 +448,8 @@ class EloReconciler:
     def _emit_drift_metrics(
         self,
         drift: EloDrift,
-        board_type: Optional[str],
-        num_players: Optional[int],
+        board_type: str | None,
+        num_players: int | None,
     ) -> None:
         """Emit Prometheus metrics for drift detection."""
         try:
@@ -495,7 +497,7 @@ class EloReconciler:
 import sqlite3
 import json
 from pathlib import Path
-db_path = Path({repr(remote_db_path)}).expanduser()
+db_path = Path({remote_db_path!r}).expanduser()
 if not db_path.exists():
     print(json.dumps(dict(error=\"DB not found\")))
 else:
@@ -593,10 +595,8 @@ else:
             return result
         finally:
             # Cleanup temp file
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 os.unlink(temp_export)
-            except FileNotFoundError:
-                pass
 
     def _emit_sync_metrics(self, result: SyncResult) -> None:
         """Emit Prometheus metrics for a sync result."""
@@ -615,7 +615,7 @@ else:
         self,
         remote_host: str,
         synced_at: str,
-        matches: List[Dict[str, Any]],
+        matches: list[dict[str, Any]],
     ) -> SyncResult:
         """Import matches into local DB.
 
@@ -787,8 +787,8 @@ else:
 
     def _is_newer_timestamp(
         self,
-        incoming: Optional[str],
-        existing: Optional[str],
+        incoming: str | None,
+        existing: str | None,
     ) -> bool:
         """Compare timestamps to determine if incoming is newer.
 
@@ -812,7 +812,7 @@ else:
     def _update_match(
         self,
         cursor: sqlite3.Cursor,
-        match: Dict[str, Any],
+        match: dict[str, Any],
         remote_host: str,
     ) -> None:
         """Update an existing match with new data (for conflict resolution)."""
@@ -852,7 +852,7 @@ else:
 
     def reconcile_all(
         self,
-        hosts: Optional[List[str]] = None,
+        hosts: list[str] | None = None,
     ) -> ReconciliationReport:
         """Run full reconciliation across all known P2P nodes.
 
@@ -908,9 +908,9 @@ else:
     def _get_ratings(
         self,
         db_path: Path,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-    ) -> Dict[str, float]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> dict[str, float]:
         """Get ratings from a database.
 
         Handles multiple schema variations:
@@ -968,14 +968,14 @@ else:
     def _count_participants(
         self,
         db_path: Path,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> int:
         """Count participants in a database."""
         ratings = self._get_ratings(db_path, board_type, num_players)
         return len(ratings)
 
-    def _load_p2p_hosts(self) -> List[str]:
+    def _load_p2p_hosts(self) -> list[str]:
         """Load P2P hosts from config."""
         if not self.remote_hosts_config.exists():
             return []
@@ -1010,8 +1010,8 @@ def sync_elo_from_remote(
 
 
 def check_elo_drift(
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
 ) -> EloDrift:
     """Convenience function to check local Elo drift."""
     reconciler = EloReconciler()

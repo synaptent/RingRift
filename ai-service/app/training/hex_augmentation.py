@@ -24,8 +24,8 @@ The 12 D6 transformations are:
 - 6-11: Reflections S * R^k for k = 0..5
 """
 
+
 import numpy as np
-from typing import List, Tuple, Optional
 
 # Number of hex directions for movement encoding (constant across all hex sizes)
 NUM_HEX_DIRS = 6
@@ -129,21 +129,21 @@ class HexSymmetryTransform:
         self._build_direction_maps()
 
     @staticmethod
-    def get_all_transforms() -> List[int]:
+    def get_all_transforms() -> list[int]:
         """Returns list of all 12 transformation IDs [0, 1, ..., 11]."""
         return list(range(12))
 
-    def _axial_to_canonical(self, q: int, r: int) -> Tuple[int, int]:
+    def _axial_to_canonical(self, q: int, r: int) -> tuple[int, int]:
         """Convert axial coords (q, r) to canonical grid coords (cx, cy)."""
         return q + self.radius, r + self.radius
 
-    def _canonical_to_axial(self, cx: int, cy: int) -> Tuple[int, int]:
+    def _canonical_to_axial(self, cx: int, cy: int) -> tuple[int, int]:
         """Convert canonical grid coords (cx, cy) to axial coords (q, r)."""
         return cx - self.radius, cy - self.radius
 
     def _transform_axial(
         self, q: int, r: int, transform_id: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Apply transformation to axial coordinates.
 
@@ -189,7 +189,7 @@ class HexSymmetryTransform:
 
     def _inverse_transform_axial(
         self, q: int, r: int, transform_id: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Apply inverse transformation to axial coordinates.
 
@@ -392,7 +392,7 @@ class HexSymmetryTransform:
         self,
         move_idx: int,
         transform_id: int,
-        board_size: Optional[int] = None,
+        board_size: int | None = None,
     ) -> int:
         """
         Transform a single move index.
@@ -425,7 +425,7 @@ class HexSymmetryTransform:
         policy_indices: np.ndarray,
         policy_values: np.ndarray,
         transform_id: int,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Transform a sparse policy representation.
 
@@ -499,9 +499,9 @@ def augment_hex_sample(
     globals_vec: np.ndarray,
     policy_indices: np.ndarray,
     policy_values: np.ndarray,
-    transform: Optional[HexSymmetryTransform] = None,
-    board_size: Optional[int] = None,
-) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    transform: HexSymmetryTransform | None = None,
+    board_size: int | None = None,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """
     Apply all 12 D6 transformations to a single training sample.
 

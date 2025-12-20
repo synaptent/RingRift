@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 from statistics import NormalDist
-from typing import Tuple
 
 
 def _z_for_confidence(confidence: float) -> float:
@@ -38,7 +37,7 @@ def wilson_score_interval(
     wins: int,
     total: int,
     confidence: float = 0.95,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Return Wilson score confidence interval for a binomial win rate.
 
     Args:

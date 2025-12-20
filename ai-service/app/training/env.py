@@ -1,17 +1,17 @@
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional, Tuple, List, Dict, Any, Literal
+from typing import Any, Literal
 
+from app.game_engine import GameEngine, PhaseRequirement, PhaseRequirementType
 from app.models import (
-    GameState,
-    Move,
     BoardType,
-    GameStatus,
     GamePhase,
+    GameState,
+    GameStatus,
+    Move,
     MoveType,
 )
-from app.game_engine import GameEngine, PhaseRequirement, PhaseRequirementType
 from app.rules.default_engine import DefaultRulesEngine
 from app.rules.fsm import TurnFSM, get_fsm_mode
 from app.training.seed_utils import seed_all
@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 REPETITION_THRESHOLD = int(os.getenv("RINGRIFT_REPETITION_THRESHOLD", "0"))
 
 
-THEORETICAL_MAX_MOVES: Dict[BoardType, Dict[int, int]] = {
+THEORETICAL_MAX_MOVES: dict[BoardType, dict[int, int]] = {
     BoardType.SQUARE8: {
         2: 500,   # ~100 max observed * 5x headroom (all 2p games complete)
         3: 800,   # ~120 max observed * 6x headroom (accounts for longer games)
@@ -119,7 +119,7 @@ def get_theoretical_max_moves(board_type: BoardType, num_players: int) -> int:
 # and GA heuristic scripts under ``ai-service/scripts``.
 # It serves as a single source of truth for default board
 # sets and evaluation kwargs.
-DEFAULT_TRAINING_EVAL_CONFIG: Dict[str, Any] = {
+DEFAULT_TRAINING_EVAL_CONFIG: dict[str, Any] = {
     "boards": [
         BoardType.SQUARE8,
         BoardType.SQUARE19,
@@ -146,7 +146,7 @@ DEFAULT_TRAINING_EVAL_CONFIG: Dict[str, Any] = {
 # Callers that need a simple 2-player training configuration should prefer
 # this preset (via `get_two_player_training_kwargs`) over re-encoding
 # boards / eval_mode / state_pool_id / eval_randomness by hand.
-TWO_PLAYER_TRAINING_PRESET: Dict[str, Any] = {
+TWO_PLAYER_TRAINING_PRESET: dict[str, Any] = {
     **DEFAULT_TRAINING_EVAL_CONFIG,
     "eval_randomness": 0.02,
 }
@@ -159,7 +159,7 @@ TWO_PLAYER_TRAINING_PRESET: Dict[str, Any] = {
 # - Square8 uses the full structural evaluator (historical behaviour).
 # - Square19 and Hexagonal boards default to the lightweight evaluator
 #   that omits Tier-2 structural/global features for better throughput.
-TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD: Dict[BoardType, str] = {
+TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD: dict[BoardType, str] = {
     BoardType.SQUARE8: "full",
     BoardType.SQUARE19: "light",
     BoardType.HEXAGONAL: "light",
@@ -167,10 +167,10 @@ TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD: Dict[BoardType, str] = {
 
 
 def build_training_eval_kwargs(
-    games_per_eval: Optional[int] = None,
-    eval_randomness: Optional[float] = None,
-    seed: Optional[int] = None,
-) -> Dict[str, Any]:
+    games_per_eval: int | None = None,
+    eval_randomness: float | None = None,
+    seed: int | None = None,
+) -> dict[str, Any]:
     """Build canonical kwargs for heuristic training evaluation.
 
     This helper centralises defaults for multi-board, multi-start
@@ -182,7 +182,7 @@ def build_training_eval_kwargs(
     but should keep semantics aligned with DEFAULT_TRAINING_EVAL_CONFIG
     to ensure comparable results across runs.
     """
-    cfg: Dict[str, Any] = dict(DEFAULT_TRAINING_EVAL_CONFIG)
+    cfg: dict[str, Any] = dict(DEFAULT_TRAINING_EVAL_CONFIG)
     if games_per_eval is not None:
         cfg["games_per_eval"] = games_per_eval
     if eval_randomness is not None:
@@ -195,7 +195,7 @@ def build_training_eval_kwargs(
 def get_two_player_training_kwargs(
     games_per_eval: int,
     seed: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return canonical kwargs for 2-player heuristic training evaluation.
 
     The returned dict is suitable for splatting into
@@ -209,7 +209,7 @@ def get_two_player_training_kwargs(
     Callers remain free to override any of the keys (for example,
     ``eval_mode`` or ``eval_randomness``) after calling this helper.
     """
-    cfg: Dict[str, Any] = dict(TWO_PLAYER_TRAINING_PRESET)
+    cfg: dict[str, Any] = dict(TWO_PLAYER_TRAINING_PRESET)
     cfg["games_per_eval"] = games_per_eval
     cfg["seed"] = seed
     return cfg
@@ -259,16 +259,16 @@ class TrainingEnvConfig:
 
     board_type: BoardType = BoardType.SQUARE8
     num_players: int = 2
-    max_moves: Optional[int] = None
+    max_moves: int | None = None
     reward_mode: Literal["terminal", "shaped"] = "terminal"
-    seed: Optional[int] = None
+    seed: int | None = None
     use_default_rules_engine: bool = True
     # Experimental overrides for ablation studies
-    rings_per_player: Optional[int] = None  # Override default rings per player
+    rings_per_player: int | None = None  # Override default rings per player
     lps_rounds_required: int = 3  # LPS victory threshold (default: 3 consecutive rounds)
 
 
-def make_env(config: Optional[TrainingEnvConfig] = None) -> "RingRiftEnv":
+def make_env(config: TrainingEnvConfig | None = None) -> "RingRiftEnv":
     """Construct the canonical RingRift training environment.
 
     This helper centralises how environments are created so that all
@@ -393,9 +393,9 @@ class RingRiftEnv:
         reward_on: str = "terminal",  # "terminal" or "shaped"
         num_players: int = 2,
         *,
-        default_seed: Optional[int] = None,
+        default_seed: int | None = None,
         use_default_rules_engine: bool = True,
-        rings_per_player: Optional[int] = None,
+        rings_per_player: int | None = None,
         lps_rounds_required: int = 3,
     ):
         self.board_type = board_type
@@ -403,11 +403,11 @@ class RingRiftEnv:
         self.reward_on = reward_on
         self.num_players = num_players
         self._default_seed = default_seed
-        self._state: Optional[GameState] = None
+        self._state: GameState | None = None
         self._move_count: int = 0
 
         # Position repetition tracking for draw detection
-        self._position_counts: Dict[int, int] = {}
+        self._position_counts: dict[int, int] = {}
         self._repetition_threshold = REPETITION_THRESHOLD
 
         # Experimental overrides for ablation studies
@@ -415,7 +415,7 @@ class RingRiftEnv:
         self._lps_rounds_required = lps_rounds_required
 
         self._use_default_rules_engine = use_default_rules_engine
-        self._rules_engine: Optional[DefaultRulesEngine] = None
+        self._rules_engine: DefaultRulesEngine | None = None
         if use_default_rules_engine:
             # Shadow-contract / mutator-first behaviour is controlled by
             # environment flags (see DefaultRulesEngine); we do not override
@@ -432,13 +432,13 @@ class RingRiftEnv:
         # - "off" (default): No validation
         # - "shadow": Logs violations but continues processing
         # - "active": Raises FSMValidationError on violations (fail-fast)
-        self._fsm: Optional[TurnFSM] = None
+        self._fsm: TurnFSM | None = None
         fsm_mode = get_fsm_mode()
         if fsm_mode != "off":
             self._fsm = TurnFSM(mode=fsm_mode)
             logger.info(f"FSM validation enabled in '{fsm_mode}' mode")
 
-    def reset(self, seed: Optional[int] = None) -> GameState:
+    def reset(self, seed: int | None = None) -> GameState:
         """Reset the environment and return the initial observation.
 
         Parameters
@@ -500,7 +500,7 @@ class RingRiftEnv:
         assert self._state is not None, "Call reset() before using env"
         return self._state
 
-    def legal_moves(self) -> List[Move]:
+    def legal_moves(self) -> list[Move]:
         """Return legal moves for the current player.
 
         Per RR-CANON-R076, the core rules layer (GameEngine.get_valid_moves)
@@ -628,7 +628,7 @@ class RingRiftEnv:
 
     def step(
         self, move: Move
-    ) -> Tuple[GameState, float, bool, Dict[str, Any]]:
+    ) -> tuple[GameState, float, bool, dict[str, Any]]:
         """Apply a move and advance the environment.
 
         Parameters
@@ -681,7 +681,6 @@ class RingRiftEnv:
         # additional bookkeeping moves (e.g., no_territory_action) appended
         # by the rules engine, but is currently unused.
 
-        actor_player = self._state.current_player
 
         # Apply move via the canonical Python rules engine.
         # Use trace_mode=True to prevent automatic phase skipping (e.g., jumping
@@ -812,7 +811,7 @@ class RingRiftEnv:
         done = terminated_by_rules or terminated_by_budget or terminated_by_repetition
 
         reward = 0.0
-        info: Dict[str, Any] = {
+        info: dict[str, Any] = {
             "winner": self._state.winner,
             "move_count": self._move_count,
             "auto_generated_moves": auto_generated_moves,
@@ -891,7 +890,7 @@ class RingRiftEnv:
 
             # Rings eliminated are keyed by causing player id as strings
             # in GameState; expose a simpler int-keyed mapping.
-            rings_eliminated: Dict[int, int] = {}
+            rings_eliminated: dict[int, int] = {}
             for pid_str, count in self._state.board.eliminated_rings.items():
                 try:
                     pid = int(pid_str)
@@ -901,7 +900,7 @@ class RingRiftEnv:
             info["rings_eliminated"] = rings_eliminated
 
             # Territory spaces per player from the Player models.
-            territory_spaces: Dict[int, int] = {}
+            territory_spaces: dict[int, int] = {}
             for player in self._state.players:
                 territory_spaces[player.player_number] = (
                     player.territory_spaces

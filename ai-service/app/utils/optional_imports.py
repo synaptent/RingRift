@@ -25,52 +25,52 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # Helper functions
-    "get_module",
-    "require_module",
-    "get_availability_summary",
-    "log_availability",
-    # Availability flags
-    "NUMPY_AVAILABLE",
-    "TORCH_AVAILABLE",
-    "CUDA_AVAILABLE",
-    "MPS_AVAILABLE",
     "AIOHTTP_AVAILABLE",
     "ASYNCIO_AVAILABLE",
-    "WEBSOCKETS_AVAILABLE",
-    "HTTPX_AVAILABLE",
-    "PROMETHEUS_AVAILABLE",
-    "PANDAS_AVAILABLE",
-    "SCIPY_AVAILABLE",
-    "H5PY_AVAILABLE",
-    "PARAMIKO_AVAILABLE",
+    "CUDA_AVAILABLE",
     "FABRIC_AVAILABLE",
-    "YAML_AVAILABLE",
-    "RICH_AVAILABLE",
+    "H5PY_AVAILABLE",
+    "HTTPX_AVAILABLE",
     "MATPLOTLIB_AVAILABLE",
+    "MPS_AVAILABLE",
+    # Availability flags
+    "NUMPY_AVAILABLE",
     "OPENTELEMETRY_AVAILABLE",
+    "PANDAS_AVAILABLE",
+    "PARAMIKO_AVAILABLE",
+    "PROMETHEUS_AVAILABLE",
+    "RICH_AVAILABLE",
+    "SCIPY_AVAILABLE",
+    "TORCH_AVAILABLE",
+    "WEBSOCKETS_AVAILABLE",
+    "YAML_AVAILABLE",
+    "aiohttp",
+    "fabric",
+    "get_availability_summary",
+    # Helper functions
+    "get_module",
+    "h5py",
+    "httpx",
+    "log_availability",
+    "matplotlib",
+    "np",
     # Module aliases
     "numpy",
-    "np",
-    "torch",
-    "aiohttp",
-    "websockets",
-    "httpx",
-    "prometheus_client",
     "pandas",
-    "pd",
-    "scipy",
-    "h5py",
     "paramiko",
-    "fabric",
-    "yaml",
+    "pd",
+    "prometheus_client",
+    "require_module",
     "rich",
-    "matplotlib",
+    "scipy",
+    "torch",
+    "websockets",
+    "yaml",
 ]
 
 
@@ -78,7 +78,7 @@ __all__ = [
 # Helper functions
 # =============================================================================
 
-def _try_import(module_name: str, package: Optional[str] = None) -> tuple[Any, bool]:
+def _try_import(module_name: str, package: str | None = None) -> tuple[Any, bool]:
     """Try to import a module, returning (module, available) tuple.
 
     Args:
@@ -95,7 +95,7 @@ def _try_import(module_name: str, package: Optional[str] = None) -> tuple[Any, b
         return None, False
 
 
-def get_module(module_name: str) -> Optional[Any]:
+def get_module(module_name: str) -> Any | None:
     """Get a module if available, None otherwise.
 
     Args:
@@ -221,8 +221,8 @@ rich, RICH_AVAILABLE = _try_import("rich")
 
 if RICH_AVAILABLE:
     from rich.console import Console
-    from rich.table import Table
     from rich.progress import Progress
+    from rich.table import Table
     rich_console = Console()
 else:
     Console = None

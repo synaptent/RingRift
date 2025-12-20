@@ -31,8 +31,9 @@ import asyncio
 import functools
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -94,7 +95,7 @@ class RateLimiter:
         self,
         rate: float,
         per_seconds: float = 1.0,
-        burst: Optional[float] = None,
+        burst: float | None = None,
     ):
         """Initialize the rate limiter.
 
@@ -189,7 +190,7 @@ class KeyedRateLimiter:
         self,
         rate: float,
         per_seconds: float = 1.0,
-        burst: Optional[float] = None,
+        burst: float | None = None,
     ):
         """Initialize the keyed rate limiter.
 
@@ -202,7 +203,7 @@ class KeyedRateLimiter:
         self.per_seconds = per_seconds
         self.burst = burst
 
-        self._limiters: Dict[str, RateLimiter] = {}
+        self._limiters: dict[str, RateLimiter] = {}
         self._lock = threading.Lock()
 
     def _get_limiter(self, key: str) -> RateLimiter:
@@ -264,7 +265,7 @@ class KeyedRateLimiter:
 def rate_limit(
     rate: float,
     per_seconds: float = 1.0,
-    burst: Optional[float] = None,
+    burst: float | None = None,
     wait: bool = True,
 ) -> Callable[[F], F]:
     """Decorator to rate limit a function.
@@ -305,7 +306,7 @@ def rate_limit(
 def rate_limit_async(
     rate: float,
     per_seconds: float = 1.0,
-    burst: Optional[float] = None,
+    burst: float | None = None,
     wait: bool = True,
 ) -> Callable[[F], F]:
     """Async decorator to rate limit a function.
@@ -341,9 +342,9 @@ class RateLimitExceeded(Exception):
 
 __all__ = [
     "Cooldown",
-    "RateLimiter",
     "KeyedRateLimiter",
+    "RateLimitExceeded",
+    "RateLimiter",
     "rate_limit",
     "rate_limit_async",
-    "RateLimitExceeded",
 ]

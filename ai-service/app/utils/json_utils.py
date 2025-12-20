@@ -17,20 +17,21 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Union
 from uuid import UUID
 
 __all__ = [
     "JSONEncoder",
-    "dumps",
     "dump",
-    "pretty_dumps",
+    "dumps",
     "json_default",
     "load_json",
+    "pretty_dumps",
     "save_json",
 ]
 
@@ -95,7 +96,7 @@ class JSONEncoder(json.JSONEncoder):
 def dumps(
     obj: Any,
     *,
-    indent: Optional[int] = None,
+    indent: int | None = None,
     sort_keys: bool = False,
     ensure_ascii: bool = False,
     **kwargs: Any,
@@ -129,7 +130,7 @@ def dump(
     obj: Any,
     fp: Any,
     *,
-    indent: Optional[int] = None,
+    indent: int | None = None,
     sort_keys: bool = False,
     ensure_ascii: bool = False,
     **kwargs: Any,
@@ -245,8 +246,8 @@ def save_json(
         atomic: If True, write to temp file first then rename (safer)
         **kwargs: Additional arguments passed to dump()
     """
-    import tempfile
     import os
+    import tempfile
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,10 +264,8 @@ def save_json(
             os.replace(tmp_path, path)
         except Exception:
             # Clean up temp file on error
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
             raise
     else:
         with path.open("w", encoding="utf-8") as f:

@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ class MetricsBackend(ABC):
         pass
 
     @abstractmethod
-    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], step: int) -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         """Log multiple related scalar values."""
         pass
 
@@ -86,7 +85,7 @@ class TensorBoardBackend(MetricsBackend):
     def log_scalar(self, tag: str, value: float, step: int) -> None:
         self.writer.add_scalar(tag, value, step)
 
-    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], step: int) -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         self.writer.add_scalars(main_tag, tag_scalar_dict, step)
 
     def log_histogram(self, tag: str, values: Any, step: int) -> None:
@@ -107,8 +106,8 @@ class WandBBackend(MetricsBackend):
         self,
         experiment_name: str,
         project: str = "ringrift-ai",
-        config: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
+        config: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
     ):
         try:
             import wandb
@@ -132,7 +131,7 @@ class WandBBackend(MetricsBackend):
     def log_scalar(self, tag: str, value: float, step: int) -> None:
         self.wandb.log({tag: value}, step=step)
 
-    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], step: int) -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         prefixed = {f"{main_tag}/{k}": v for k, v in tag_scalar_dict.items()}
         self.wandb.log(prefixed, step=step)
 
@@ -158,7 +157,7 @@ class ConsoleBackend(MetricsBackend):
     def log_scalar(self, tag: str, value: float, step: int) -> None:
         print(f"[{self.experiment_name}] Step {step}: {tag} = {value:.6f}")
 
-    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], step: int) -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         values_str = ", ".join(f"{k}={v:.6f}" for k, v in tag_scalar_dict.items())
         print(f"[{self.experiment_name}] Step {step}: {main_tag} {{ {values_str} }}")
 
@@ -182,14 +181,14 @@ class JSONFileBackend(MetricsBackend):
         self.log_path = Path(log_dir) / experiment_name
         self.log_path.mkdir(parents=True, exist_ok=True)
         self.metrics_file = self.log_path / "metrics.jsonl"
-        self.metrics: List[Dict[str, Any]] = []
+        self.metrics: list[dict[str, Any]] = []
         logger.info(f"JSON logging to: {self.metrics_file}")
 
     def log_scalar(self, tag: str, value: float, step: int) -> None:
         entry = {"step": step, "tag": tag, "value": value, "type": "scalar"}
         self._write_entry(entry)
 
-    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], step: int) -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         entry = {
             "step": step,
             "tag": main_tag,
@@ -218,7 +217,7 @@ class JSONFileBackend(MetricsBackend):
         entry = {"step": step, "tag": tag, "text": text, "type": "text"}
         self._write_entry(entry)
 
-    def _write_entry(self, entry: Dict[str, Any]) -> None:
+    def _write_entry(self, entry: dict[str, Any]) -> None:
         entry["timestamp"] = datetime.now().isoformat()
         with open(self.metrics_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
@@ -252,11 +251,11 @@ class MetricsLogger:
     def __init__(
         self,
         experiment_name: str,
-        backends: Optional[List[str]] = None,
+        backends: list[str] | None = None,
         log_dir: str = "logs/training",
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         wandb_project: str = "ringrift-ai",
-        wandb_tags: Optional[List[str]] = None,
+        wandb_tags: list[str] | None = None,
     ):
         """Initialize the metrics logger.
 
@@ -271,7 +270,7 @@ class MetricsLogger:
         """
         self.experiment_name = experiment_name
         self.config = config or {}
-        self.backends: List[MetricsBackend] = []
+        self.backends: list[MetricsBackend] = []
 
         if backends is None:
             backends = ["tensorboard", "json"]
@@ -315,7 +314,7 @@ class MetricsLogger:
             except Exception as e:
                 logger.warning(f"Error logging to {type(backend).__name__}: {e}")
 
-    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], step: int) -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         """Log multiple related scalar values to all backends."""
         for backend in self.backends:
             try:
@@ -339,7 +338,7 @@ class MetricsLogger:
             except Exception as e:
                 logger.warning(f"Error logging to {type(backend).__name__}: {e}")
 
-    def log_config(self, config: Dict[str, Any]) -> None:
+    def log_config(self, config: dict[str, Any]) -> None:
         """Log configuration/hyperparameters."""
         self.config.update(config)
         config_str = json.dumps(config, indent=2)

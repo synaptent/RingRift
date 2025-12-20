@@ -10,11 +10,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.optim as optim
@@ -58,9 +56,9 @@ class SelfPlayDataset(Dataset):
     ):
         self.state_encoder = state_encoder
         self.move_encoder = move_encoder
-        self.samples: List[Tuple[torch.Tensor, torch.Tensor, float]] = []
+        self.samples: list[tuple[torch.Tensor, torch.Tensor, float]] = []
 
-    def add_game(self, moves: List[Dict], winner: int) -> int:
+    def add_game(self, moves: list[dict], winner: int) -> int:
         """Add a game to the dataset.
 
         Args:
@@ -104,8 +102,8 @@ class SelfPlayDataset(Dataset):
 
     def add_full_game(
         self,
-        game_states: List[GameState],
-        moves: List[Move],
+        game_states: list[GameState],
+        moves: list[Move],
         winner: int,
     ) -> int:
         """Add a game with full state information.
@@ -122,7 +120,7 @@ class SelfPlayDataset(Dataset):
             return 0
 
         samples_added = 0
-        for i, (state, move) in enumerate(zip(game_states, moves)):
+        for i, (state, move) in enumerate(zip(game_states, moves, strict=False)):
             try:
                 player = move.player
 
@@ -150,14 +148,14 @@ class SelfPlayDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         state_features, move_embed, outcome = self.samples[idx]
         return state_features, move_embed, torch.tensor(outcome, dtype=torch.float32)
 
 
 def collate_fn(batch):
     """Custom collate function."""
-    states, moves, outcomes = zip(*batch)
+    states, moves, outcomes = zip(*batch, strict=False)
     return torch.stack(states), torch.stack(moves), torch.stack(outcomes)
 
 
@@ -235,7 +233,7 @@ def play_game(
     board_type: BoardType = BoardType.SQUARE8,
     max_moves: int = 500,
     collect_states: bool = True,
-) -> Tuple[int, List[GameState], List[Move]]:
+) -> tuple[int, list[GameState], list[Move]]:
     """Play a game between two AIs.
 
     Args:
@@ -281,7 +279,7 @@ def generate_selfplay_games(
     dataset: SelfPlayDataset,
     opponent_type: str = "self",
     board_type: BoardType = BoardType.SQUARE8,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Generate self-play games and add to dataset.
 
     Args:
@@ -390,7 +388,7 @@ def train_on_dataset(
     value_net.train()
 
     final_loss = 0.0
-    for epoch in range(num_epochs):
+    for _epoch in range(num_epochs):
         total_loss = 0.0
         num_batches = 0
 

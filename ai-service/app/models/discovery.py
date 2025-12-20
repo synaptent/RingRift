@@ -28,7 +28,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import torch
 
@@ -52,23 +52,23 @@ class ModelInfo:
     model_type: str  # "nn" or "nnue"
     board_type: str  # "square8", "square19", "hexagonal"
     num_players: int = 2
-    elo: Optional[float] = None
-    architecture_version: Optional[str] = None
-    created_at: Optional[str] = None
+    elo: float | None = None
+    architecture_version: str | None = None
+    created_at: str | None = None
     size_bytes: int = 0
     source: str = "filename"  # How board_type was determined: "sidecar", "checkpoint", "filename"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ModelInfo":
+    def from_dict(cls, data: dict[str, Any]) -> "ModelInfo":
         """Create from dictionary."""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-def detect_board_type_from_name(name: str) -> Tuple[Optional[str], Optional[int]]:
+def detect_board_type_from_name(name: str) -> tuple[str | None, int | None]:
     """Detect board type and num_players from model filename.
 
     Returns:
@@ -105,7 +105,7 @@ def detect_board_type_from_name(name: str) -> Tuple[Optional[str], Optional[int]
     return board_type, num_players
 
 
-def read_model_sidecar(model_path: Path) -> Optional[Dict[str, Any]]:
+def read_model_sidecar(model_path: Path) -> dict[str, Any] | None:
     """Read sidecar JSON for a model if it exists.
 
     Sidecar file is {model_path}.json (e.g., model.pth -> model.pth.json)
@@ -124,9 +124,9 @@ def write_model_sidecar(
     model_path: Path,
     board_type: str,
     num_players: int = 2,
-    elo: Optional[float] = None,
-    architecture_version: Optional[str] = None,
-    extra_metadata: Optional[Dict[str, Any]] = None,
+    elo: float | None = None,
+    architecture_version: str | None = None,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> Path:
     """Write sidecar JSON for a model.
 
@@ -164,7 +164,7 @@ def write_model_sidecar(
     return sidecar_path
 
 
-def extract_metadata_from_checkpoint(model_path: Path) -> Optional[Dict[str, Any]]:
+def extract_metadata_from_checkpoint(model_path: Path) -> dict[str, Any] | None:
     """Extract metadata from a .pth checkpoint without fully loading the model.
 
     This uses torch.load with weights_only=False to access metadata.
@@ -201,7 +201,7 @@ def extract_metadata_from_checkpoint(model_path: Path) -> Optional[Dict[str, Any
         return None
 
 
-def get_model_info(model_path: Path, model_type: str = "nn") -> Optional[ModelInfo]:
+def get_model_info(model_path: Path, model_type: str = "nn") -> ModelInfo | None:
     """Get ModelInfo for a single model, trying all detection methods.
 
     Detection order (optimized for speed):
@@ -268,13 +268,13 @@ def get_model_info(model_path: Path, model_type: str = "nn") -> Optional[ModelIn
 
 
 def discover_models(
-    models_dir: Optional[Path] = None,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-    model_type: Optional[str] = None,
+    models_dir: Path | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
+    model_type: str | None = None,
     include_unknown: bool = False,
     generate_sidecars: bool = False,
-) -> List[ModelInfo]:
+) -> list[ModelInfo]:
     """Discover all models matching the given criteria.
 
     This is the canonical discovery function that should be used everywhere.
@@ -385,7 +385,7 @@ def discover_models(
     return results
 
 
-def generate_all_sidecars(models_dir: Optional[Path] = None, overwrite: bool = False) -> int:
+def generate_all_sidecars(models_dir: Path | None = None, overwrite: bool = False) -> int:
     """Generate sidecar JSON files for all models.
 
     This is a migration utility to bootstrap sidecars for existing models.

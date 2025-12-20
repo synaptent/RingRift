@@ -10,17 +10,16 @@ Provides utilities for formatted console output:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any
 
 __all__ = [
-    "print_status",
-    "print_error",
-    "print_success",
-    "print_warning",
-    "print_table",
-    "print_progress",
     "ProgressBar",
+    "print_error",
+    "print_progress",
+    "print_status",
+    "print_success",
+    "print_table",
+    "print_warning",
 ]
 
 # ANSI color codes (used when terminal supports it)
@@ -86,9 +85,9 @@ def print_warning(message: str) -> None:
 
 
 def print_table(
-    data: List[Dict[str, Any]],
-    columns: Optional[List[str]] = None,
-    headers: Optional[Dict[str, str]] = None,
+    data: list[dict[str, Any]],
+    columns: list[str] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> None:
     """Print data as a formatted table.
 
@@ -124,7 +123,7 @@ def print_table(
 
     # Print header
     header_row = " | ".join(
-        h.ljust(w) for h, w in zip(display_headers, widths)
+        h.ljust(w) for h, w in zip(display_headers, widths, strict=False)
     )
     print(_color(header_row, "bold"))
     print("-" * len(header_row))
@@ -220,7 +219,7 @@ class ProgressBar:
         """Complete the progress bar."""
         self.set(self.total)
 
-    def __enter__(self) -> "ProgressBar":
+    def __enter__(self) -> ProgressBar:
         return self
 
     def __exit__(self, *args: Any) -> None:

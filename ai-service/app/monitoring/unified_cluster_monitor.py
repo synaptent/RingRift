@@ -22,17 +22,18 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
-import os
 import socket
 import sqlite3
 import time
 import urllib.request
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable
+from typing import Any
 
 # Import yaml at module level for test patchability
 try:
@@ -45,8 +46,11 @@ logger = logging.getLogger(__name__)
 # Try to import optional dependencies
 try:
     from app.distributed.health_checks import (
-        HealthChecker, HealthSummary, ComponentHealth,
-        HealthRecoveryIntegration, integrate_health_with_recovery
+        ComponentHealth,
+        HealthChecker,
+        HealthRecoveryIntegration,
+        HealthSummary,
+        integrate_health_with_recovery,
     )
     HAS_HEALTH_CHECKS = True
 except ImportError:
@@ -75,9 +79,7 @@ except ImportError:
 
 # Legacy event bus (fallback if router unavailable)
 try:
-    from app.distributed.data_events import (
-        DataEvent, DataEventType, get_event_bus
-    )
+    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
     HAS_EVENT_BUS = True
 except ImportError:
     HAS_EVENT_BUS = False
@@ -96,7 +98,7 @@ class ClusterNodeStatus:
     memory_used_gb: float = 0.0
     disk_used_percent: float = 0.0
     selfplay_rate: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -111,55 +113,55 @@ class NodeHealth:
     selfplay_active: bool = False
     games_played: int = 0
     gpu_util: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
 class LeaderHealth:
     """Health status of the cluster leader node."""
     is_leader: bool = False
-    node_id: Optional[str] = None
+    node_id: str | None = None
     selfplay_jobs: int = 0
     selfplay_rate: float = 0.0
     training_nnue_running: int = 0
     training_cmaes_running: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
 class ClusterHealth:
     """Overall cluster health status (test-compatible API)."""
-    nodes: Dict[str, NodeHealth] = field(default_factory=dict)
-    leader: Optional[LeaderHealth] = None
+    nodes: dict[str, NodeHealth] = field(default_factory=dict)
+    leader: LeaderHealth | None = None
     total_nodes: int = 0
     healthy_nodes: int = 0
     total_games: int = 0
     avg_gpu_util: float = 0.0
-    timestamp: Optional[datetime] = None
-    alerts: List[str] = field(default_factory=list)
-    critical_alerts: List[str] = field(default_factory=list)
+    timestamp: datetime | None = None
+    alerts: list[str] = field(default_factory=list)
+    critical_alerts: list[str] = field(default_factory=list)
 
 
 @dataclass
 class TrainingStatus:
     """Current training status."""
     is_training: bool = False
-    config_key: Optional[str] = None
+    config_key: str | None = None
     epoch: int = 0
     total_epochs: int = 0
     val_loss: float = float("inf")
     best_val_loss: float = float("inf")
-    started_at: Optional[float] = None
-    node: Optional[str] = None
+    started_at: float | None = None
+    node: str | None = None
 
 
 @dataclass
 class EloStatus:
     """Current Elo status."""
     best_elo: float = 1500.0
-    best_model: Optional[str] = None
+    best_model: str | None = None
     recent_matches: int = 0
-    last_evaluation: Optional[float] = None
+    last_evaluation: float | None = None
     elo_trend: float = 0.0  # Positive = improving
     target_elo: float = 2000.0
     gap_to_target: float = 500.0
@@ -182,12 +184,12 @@ class ClusterStatus:
     healthy: bool
     node_count: int
     healthy_nodes: int
-    nodes: List[ClusterNodeStatus]
+    nodes: list[ClusterNodeStatus]
     training: TrainingStatus
     elo: EloStatus
     data_quality: DataQualityStatus
-    health_summary: Optional[Dict[str, Any]] = None
-    alerts: List[str] = field(default_factory=list)
+    health_summary: dict[str, Any] | None = None
+    alerts: list[str] = field(default_factory=list)
 
 
 # Path to cluster config file
@@ -197,11 +199,11 @@ CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "distributed_host
 class ClusterConfig:
     """Cluster configuration loaded from distributed_hosts.yaml."""
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """Load cluster configuration from YAML file."""
         self.config_path = config_path or CONFIG_PATH
-        self.nodes: Dict[str, Dict[str, Any]] = {}
-        self.leader_url: Optional[str] = None
+        self.nodes: dict[str, dict[str, Any]] = {}
+        self.leader_url: str | None = None
         self._load_config()
 
     def _load_config(self) -> None:
@@ -243,7 +245,7 @@ class ClusterConfig:
         except Exception as e:
             logger.error(f"Failed to load cluster config: {e}")
 
-    def get_node_names(self) -> List[str]:
+    def get_node_names(self) -> list[str]:
         """Get list of all node names."""
         return list(self.nodes.keys())
 
@@ -262,8 +264,8 @@ class UnifiedClusterMonitor:
 
     def __init__(
         self,
-        config: Optional[ClusterConfig] = None,
-        webhook_url: Optional[str] = None,
+        config: ClusterConfig | None = None,
+        webhook_url: str | None = None,
         check_interval: int = 60,
         deep_checks: bool = False,
         recovery_manager=None,
@@ -283,7 +285,7 @@ class UnifiedClusterMonitor:
             auto_recover: Whether to auto-recover on failures
         """
         self._running = False
-        self._callbacks: List[Callable] = []
+        self._callbacks: list[Callable] = []
 
         # Config and settings
         self.config = config or ClusterConfig()
@@ -299,7 +301,7 @@ class UnifiedClusterMonitor:
 
         # Alert cooldown tracking
         self._alert_cooldown = 300  # 5 minutes
-        self._last_alerts: Dict[str, float] = {}
+        self._last_alerts: dict[str, float] = {}
 
         # Initialize sub-monitors
         self.health_checker = HealthChecker() if HAS_HEALTH_CHECKS else None
@@ -320,12 +322,10 @@ class UnifiedClusterMonitor:
         # Legacy cluster config
         self._cluster_config = None
         if HAS_CLUSTER_CONFIG:
-            try:
+            with contextlib.suppress(Exception):
                 self._cluster_config = get_cluster_config()
-            except Exception:
-                pass
 
-    def _http_get_json(self, url: str, timeout: int = 5) -> Dict[str, Any]:
+    def _http_get_json(self, url: str, timeout: int = 5) -> dict[str, Any]:
         """Fetch JSON from HTTP endpoint."""
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ClusterMonitor/1.0"})
@@ -381,7 +381,7 @@ class UnifiedClusterMonitor:
         health.error = "Failed to reach node via primary and Tailscale URLs"
         return health
 
-    def check_leader(self) -> Optional[LeaderHealth]:
+    def check_leader(self) -> LeaderHealth | None:
         """Check leader node health."""
         if not self.config.leader_url:
             return None
@@ -562,7 +562,7 @@ class UnifiedClusterMonitor:
             alerts=alerts
         )
 
-    async def _get_node_statuses(self) -> List[ClusterNodeStatus]:
+    async def _get_node_statuses(self) -> list[ClusterNodeStatus]:
         """Get status of all cluster nodes."""
         nodes = []
 
@@ -708,12 +708,12 @@ class UnifiedClusterMonitor:
 
     def _compile_alerts(
         self,
-        health_summary: Optional[Dict],
-        nodes: List[ClusterNodeStatus],
+        health_summary: dict | None,
+        nodes: list[ClusterNodeStatus],
         training: TrainingStatus,
         elo: EloStatus,
         data_quality: DataQualityStatus
-    ) -> List[str]:
+    ) -> list[str]:
         """Compile alerts from all status sources."""
         alerts = []
 
@@ -784,7 +784,7 @@ class UnifiedClusterMonitor:
 
     async def _emit_event(
         self,
-        event_type: "DataEventType",
+        event_type: DataEventType,
         payload: dict,
     ) -> None:
         """Emit an event via unified router or fallback to direct bus.

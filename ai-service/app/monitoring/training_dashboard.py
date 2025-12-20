@@ -35,16 +35,16 @@ import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
+import numpy as np
 
 from app.utils.datetime_utils import iso_now, time_ago, to_iso, utc_now
-from app.utils.paths import AI_SERVICE_ROOT
 from app.utils.optional_imports import (
     PROMETHEUS_AVAILABLE as HAS_PROMETHEUS,
     Gauge,
 )
-
-import numpy as np
+from app.utils.paths import AI_SERVICE_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ class EloSnapshot:
     win_rate: float
     board_type: str
     num_players: int
-    confidence_interval: Tuple[float, float] = (0.0, 0.0)
+    confidence_interval: tuple[float, float] = (0.0, 0.0)
 
 
 @dataclass
@@ -185,7 +185,7 @@ class Alert:
     severity: str  # "info", "warning", "error", "critical"
     category: str  # "training", "cluster", "model", "selfplay"
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     acknowledged: bool = False
 
 
@@ -390,10 +390,10 @@ class MetricsDatabase:
 
     def get_training_metrics(
         self,
-        since: Optional[datetime] = None,
-        model_id: Optional[str] = None,
+        since: datetime | None = None,
+        model_id: str | None = None,
         limit: int = 1000,
-    ) -> List[TrainingMetrics]:
+    ) -> list[TrainingMetrics]:
         """Query training metrics."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -425,11 +425,11 @@ class MetricsDatabase:
 
     def get_elo_history(
         self,
-        model_id: Optional[str] = None,
-        board_type: Optional[str] = None,
-        since: Optional[datetime] = None,
+        model_id: str | None = None,
+        board_type: str | None = None,
+        since: datetime | None = None,
         limit: int = 1000,
-    ) -> List[EloSnapshot]:
+    ) -> list[EloSnapshot]:
         """Query Elo history."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -464,10 +464,10 @@ class MetricsDatabase:
 
     def get_cluster_metrics(
         self,
-        host_name: Optional[str] = None,
-        since: Optional[datetime] = None,
+        host_name: str | None = None,
+        since: datetime | None = None,
         limit: int = 1000,
-    ) -> List[ClusterMetrics]:
+    ) -> list[ClusterMetrics]:
         """Query cluster metrics."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -498,11 +498,11 @@ class MetricsDatabase:
 
     def get_alerts(
         self,
-        severity: Optional[str] = None,
-        category: Optional[str] = None,
+        severity: str | None = None,
+        category: str | None = None,
         unacknowledged_only: bool = False,
         limit: int = 100,
-    ) -> List[Alert]:
+    ) -> list[Alert]:
         """Query alerts."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -544,8 +544,8 @@ class MetricsCollector:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
-        alert_thresholds: Optional[Dict[str, Any]] = None,
+        db_path: Path | None = None,
+        alert_thresholds: dict[str, Any] | None = None,
     ):
         """Initialize collector.
 
@@ -580,8 +580,8 @@ class MetricsCollector:
         }
 
         # Moving averages for anomaly detection
-        self._loss_history: List[float] = []
-        self._elo_history: Dict[str, float] = {}
+        self._loss_history: list[float] = []
+        self._elo_history: dict[str, float] = {}
 
     def record_training_step(
         self,
@@ -633,7 +633,7 @@ class MetricsCollector:
         win_rate: float,
         board_type: str,
         num_players: int,
-        confidence_interval: Tuple[float, float] = (0.0, 0.0),
+        confidence_interval: tuple[float, float] = (0.0, 0.0),
     ):
         """Record Elo snapshot."""
         snapshot = EloSnapshot(
@@ -742,8 +742,8 @@ class MetricsCollector:
         parity_passed: bool,
         parity_failure_rate: float,
         games_checked: int,
-        holdout_loss: Optional[float] = None,
-        overfit_gap: Optional[float] = None,
+        holdout_loss: float | None = None,
+        overfit_gap: float | None = None,
     ):
         """Record data quality metrics for dashboard display.
 
@@ -876,7 +876,7 @@ class MetricsCollector:
         severity: str,
         category: str,
         message: str,
-        details: Dict[str, Any],
+        details: dict[str, Any],
     ):
         """Create and store an alert."""
         alert = Alert(
@@ -889,7 +889,7 @@ class MetricsCollector:
         self.db.insert_alert(alert)
         logger.warning(f"[ALERT] [{severity.upper()}] {message}")
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get summary of current metrics."""
         now = utc_now()
         one_hour_ago = time_ago(hours=1)
@@ -941,7 +941,7 @@ class DashboardServer:
     def __init__(
         self,
         collector: MetricsCollector,
-        static_dir: Optional[Path] = None,
+        static_dir: Path | None = None,
     ):
         """Initialize server.
 
@@ -1129,17 +1129,17 @@ class DashboardServer:
 </html>"""
         return html
 
-    def _handle_api_summary(self) -> Dict[str, Any]:
+    def _handle_api_summary(self) -> dict[str, Any]:
         """Handle API summary request."""
         return self.collector.get_summary()
 
-    def _handle_api_training(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def _handle_api_training(self, hours: int = 24) -> list[dict[str, Any]]:
         """Handle API training metrics request."""
         since = time_ago(hours=hours)
         metrics = self.collector.db.get_training_metrics(since=since, limit=1000)
         return [asdict(m) for m in metrics]
 
-    def _handle_api_elo(self, hours: int = 168) -> List[Dict[str, Any]]:
+    def _handle_api_elo(self, hours: int = 168) -> list[dict[str, Any]]:
         """Handle API Elo history request."""
         since = time_ago(hours=hours)
         snapshots = self.collector.db.get_elo_history(since=since, limit=500)
@@ -1150,8 +1150,8 @@ class DashboardServer:
 
         Uses simple HTTP server for compatibility.
         """
-        from http.server import HTTPServer, BaseHTTPRequestHandler
         import urllib.parse
+        from http.server import BaseHTTPRequestHandler, HTTPServer
 
         dashboard = self
 

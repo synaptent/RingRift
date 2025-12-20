@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Union
 
 import numpy as np
 
@@ -62,7 +62,7 @@ class DataAugmentor:
     def __init__(
         self,
         board_type: Union[str, BoardType],
-        config: Optional[AugmentationConfig] = None,
+        config: AugmentationConfig | None = None,
     ):
         """
         Initialize augmentor for specific board type.
@@ -105,7 +105,7 @@ class DataAugmentor:
             f"{self.num_transforms} transforms"
         )
 
-    def get_all_transforms(self) -> List[int]:
+    def get_all_transforms(self) -> list[int]:
         """Get list of all transform IDs."""
         return list(range(self.num_transforms))
 
@@ -129,7 +129,7 @@ class DataAugmentor:
         policy_indices: np.ndarray,
         policy_values: np.ndarray,
         transform_id: int,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Transform sparse policy."""
         return self.transformer.transform_sparse_policy(
             policy_indices, policy_values, transform_id
@@ -149,8 +149,8 @@ class DataAugmentor:
         globals_vec: np.ndarray,
         policy_indices: np.ndarray,
         policy_values: np.ndarray,
-        transforms: Optional[List[int]] = None,
-    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+        transforms: list[int] | None = None,
+    ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """
         Augment a single training sample with multiple transforms.
 
@@ -180,7 +180,7 @@ class DataAugmentor:
                 transforms = random.sample(available, k)
                 # Always include identity if not excluded
                 if not self.config.exclude_identity and 0 not in transforms:
-                    transforms = [0] + transforms[:k-1]
+                    transforms = [0, *transforms[:k - 1]]
 
         augmented = []
         for t in transforms:
@@ -202,8 +202,8 @@ class DataAugmentor:
         features: np.ndarray,
         policy_indices: np.ndarray,
         policy_values: np.ndarray,
-        globals_vec: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
+        globals_vec: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
         """
         Apply a single random augmentation to a sample.
 
@@ -240,10 +240,10 @@ class DataAugmentor:
         self,
         features_batch: np.ndarray,
         globals_batch: np.ndarray,
-        policy_indices_batch: List[np.ndarray],
-        policy_values_batch: List[np.ndarray],
+        policy_indices_batch: list[np.ndarray],
+        policy_values_batch: list[np.ndarray],
         same_transform: bool = False,
-    ) -> Tuple[np.ndarray, np.ndarray, List[np.ndarray], List[np.ndarray]]:
+    ) -> tuple[np.ndarray, np.ndarray, list[np.ndarray], list[np.ndarray]]:
         """
         Apply random augmentation to a batch of samples.
 
@@ -319,8 +319,7 @@ class AugmentedDataLoader:
                 yield self._augment_batch_random(batch)
             elif self.mode == "expand":
                 # Yield all augmented versions
-                for aug_batch in self._augment_batch_expand(batch):
-                    yield aug_batch
+                yield from self._augment_batch_expand(batch)
             else:
                 yield batch
 

@@ -31,46 +31,49 @@ CUDA provides the expected speedups. MPS optimization would require eliminating
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 import time
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Union
 
 import numpy as np
 import torch
 
 from .gpu_batch import get_device
-from .gpu_game_types import GameStatus, GamePhase
-from .gpu_line_detection import detect_lines_vectorized, process_lines_batch
-from .gpu_territory import compute_territory_batch
-from .gpu_move_generation import (
-    BatchMoves,
-    generate_placement_moves_batch,
-    generate_movement_moves_batch,
-    generate_capture_moves_batch,
-    generate_chain_capture_moves_from_position,
-    apply_single_chain_capture,
-    generate_recovery_moves_batch,
-)
-from .gpu_selection import select_moves_vectorized, select_moves_heuristic
 from .gpu_batch_state import BatchGameState
-from .gpu_heuristic import evaluate_positions_batch
+from .gpu_game_types import GamePhase, GameStatus
+from .gpu_line_detection import detect_lines_vectorized, process_lines_batch
 from .gpu_move_application import (
-    apply_recovery_moves_vectorized,
+    apply_capture_moves_batch,
+    apply_movement_moves_batch,
     apply_no_action_moves_batch,
     apply_placement_moves_batch,
-    apply_movement_moves_batch,
-    apply_capture_moves_batch,
+    apply_recovery_moves_vectorized,
 )
+from .gpu_move_generation import (
+    BatchMoves,
+    apply_single_chain_capture,
+    generate_capture_moves_batch,
+    generate_chain_capture_moves_from_position,
+    generate_movement_moves_batch,
+    generate_placement_moves_batch,
+    generate_recovery_moves_batch,
+)
+from .gpu_selection import select_moves_heuristic, select_moves_vectorized
+from .gpu_territory import compute_territory_batch
 from .shadow_validation import (
-    ShadowValidator, create_shadow_validator,
-    AsyncShadowValidator, create_async_shadow_validator,
-    StateValidator, create_state_validator,
+    AsyncShadowValidator,
+    ShadowValidator,
+    StateValidator,
+    create_async_shadow_validator,
+    create_shadow_validator,
+    create_state_validator,
 )
 
 if TYPE_CHECKING:
-    from app.models import BoardType
     from app.ai.nnue_policy import RingRiftNNUEWithPolicy
+    from app.models import BoardType
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +111,7 @@ class ParallelGameRunner:
         batch_size: int = 64,
         board_size: int = 8,
         num_players: int = 2,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         shadow_validation: bool = False,
         shadow_sample_rate: float = 0.05,
         shadow_threshold: float = 0.001,
@@ -117,9 +120,9 @@ class ParallelGameRunner:
         state_sample_rate: float = 0.01,
         state_threshold: float = 0.001,
         swap_enabled: bool = False,
-        lps_victory_rounds: Optional[int] = None,
-        rings_per_player: Optional[int] = None,
-        board_type: Optional[str] = None,
+        lps_victory_rounds: int | None = None,
+        rings_per_player: int | None = None,
+        board_type: str | None = None,
         use_heuristic_selection: bool = False,
         weight_noise: float = 0.0,
         temperature: float = 1.0,
@@ -172,7 +175,7 @@ class ParallelGameRunner:
         self.noise_scale = noise_scale
         self.random_opening_moves = random_opening_moves
         self.use_policy_selection = False
-        self.policy_model: Optional["RingRiftNNUEWithPolicy"] = None
+        self.policy_model: RingRiftNNUEWithPolicy | None = None
         # Default LPS victory rounds to 3 if not specified
         self.lps_victory_rounds = lps_victory_rounds if lps_victory_rounds is not None else 3
         self.rings_per_player = rings_per_player
@@ -197,7 +200,7 @@ class ParallelGameRunner:
 
         # Shadow validation for GPU/CPU parity checking (Phase 2 - move generation)
         # Use async validator by default to prevent GPU blocking during validation
-        self.shadow_validator: Optional[Union[ShadowValidator, AsyncShadowValidator]] = None
+        self.shadow_validator: Union[ShadowValidator, AsyncShadowValidator] | None = None
         self._async_shadow_validation = async_shadow_validation
         if shadow_validation:
             if async_shadow_validation:
@@ -223,7 +226,7 @@ class ParallelGameRunner:
                 )
 
         # State validation for CPU oracle mode (A1 - state parity)
-        self.state_validator: Optional[StateValidator] = None
+        self.state_validator: StateValidator | None = None
         if state_validation:
             self.state_validator = create_state_validator(
                 sample_rate=state_sample_rate,
@@ -268,7 +271,7 @@ class ParallelGameRunner:
         """
         self.temperature = temperature
 
-    def load_policy_model(self, model_path: Optional[str] = None) -> bool:
+    def load_policy_model(self, model_path: str | None = None) -> bool:
         """Load policy model for policy-based move selection.
 
         Args:
@@ -278,8 +281,8 @@ class ParallelGameRunner:
             True if model loaded successfully, False otherwise.
         """
         try:
-            from .nnue_policy import RingRiftNNUEWithPolicy
             from ..models import BoardType
+            from .nnue_policy import RingRiftNNUEWithPolicy
 
             if model_path is None:
                 board_type_str = self.board_type or "square8"
@@ -330,7 +333,7 @@ class ParallelGameRunner:
 
     def _select_moves(
         self,
-        moves: "BatchMoves",
+        moves: BatchMoves,
         active_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Select moves using configured selection strategy.
@@ -386,7 +389,7 @@ class ParallelGameRunner:
 
     def _select_moves_policy(
         self,
-        moves: "BatchMoves",
+        moves: BatchMoves,
         active_mask: torch.Tensor,
         temperature: float = 1.0,
     ) -> torch.Tensor:
@@ -514,10 +517,10 @@ class ParallelGameRunner:
     def _extract_features_batched(
         self,
         game_indices: torch.Tensor,
-        board_type: "BoardType",
+        board_type: BoardType,
         feature_dim: int,
         device: torch.device,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         """Extract NNUE features for multiple games using vectorized operations.
 
         This is much more efficient than the per-game extraction as it uses
@@ -635,8 +638,8 @@ class ParallelGameRunner:
     def _extract_features_for_game(
         self,
         game_idx: int,
-        board_type: "BoardType",
-    ) -> Optional["np.ndarray"]:
+        board_type: BoardType,
+    ) -> np.ndarray | None:
         """Extract NNUE features from batch state for a single game.
 
         This is a simplified implementation that extracts features game-by-game.
@@ -644,6 +647,7 @@ class ParallelGameRunner:
         """
         try:
             import numpy as np
+
             from .nnue import get_feature_dim
 
             feature_dim = get_feature_dim(board_type)
@@ -693,10 +697,10 @@ class ParallelGameRunner:
     @torch.no_grad()
     def run_games(
         self,
-        weights_list: Optional[List[Dict[str, float]]] = None,
+        weights_list: list[dict[str, float]] | None = None,
         max_moves: int = 10000,
-        callback: Optional[Callable[[int, BatchGameState], None]] = None,
-    ) -> Dict[str, Any]:
+        callback: Callable[[int, BatchGameState], None] | None = None,
+    ) -> dict[str, Any]:
         """Run all games to completion.
 
         Args:
@@ -787,7 +791,7 @@ class ParallelGameRunner:
 
         return results
 
-    def get_validation_reports(self) -> Dict[str, Any]:
+    def get_validation_reports(self) -> dict[str, Any]:
         """Get validation reports from both shadow and state validators.
 
         Returns:
@@ -818,7 +822,7 @@ class ParallelGameRunner:
         if self.state_validator:
             self.state_validator.reset_stats()
 
-    def _step_games(self, weights_list: List[Dict[str, float]]) -> None:
+    def _step_games(self, weights_list: list[dict[str, float]]) -> None:
         """Execute one phase step for all active games using full rules FSM.
 
         Phase flow per turn (per RR-CANON):
@@ -869,7 +873,7 @@ class ParallelGameRunner:
 
     def _validate_placement_moves_sample(
         self,
-        moves: "BatchMoves",
+        moves: BatchMoves,
         mask: torch.Tensor,
     ) -> None:
         """Shadow validate a sample of placement moves against CPU rules.
@@ -924,8 +928,8 @@ class ParallelGameRunner:
 
     def _validate_movement_moves_sample(
         self,
-        movement_moves: "BatchMoves",
-        capture_moves: "BatchMoves",
+        movement_moves: BatchMoves,
+        capture_moves: BatchMoves,
         mask: torch.Tensor,
     ) -> None:
         """Shadow validate a sample of movement/capture moves against CPU rules.
@@ -1006,6 +1010,9 @@ class ParallelGameRunner:
         - any legal non-capture movement or overtaking capture.
 
         Recovery and forced elimination do NOT count as real actions.
+
+        Note: For better performance, use _check_real_actions_batch() which
+        batches move generation across multiple games.
         """
         # Placement: treat any remaining rings in hand as a real action.
         if self.state.rings_in_hand[g, player].item() > 0:
@@ -1031,16 +1038,82 @@ class ParallelGameRunner:
         finally:
             self.state.current_player[g] = prev_player
 
+    def _check_real_actions_batch(
+        self,
+        game_mask: torch.Tensor,
+        player: int,
+    ) -> torch.Tensor:
+        """Check if player has real actions in all games specified by mask.
+
+        Batched version of _player_has_real_action_gpu for better GPU performance.
+        Runs move generation once for all games instead of per-game.
+
+        Args:
+            game_mask: Boolean mask of games to check
+            player: Player number to check for real actions
+
+        Returns:
+            Boolean tensor (batch_size,) indicating which games have real actions
+        """
+        device = self.device
+        batch_size = self.batch_size
+
+        # Initialize result - False for all games
+        has_action = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+        if not game_mask.any():
+            return has_action
+
+        # Check 1: Rings in hand counts as real action (vectorized)
+        rings_check = self.state.rings_in_hand[:, player] > 0
+        has_action = has_action | (game_mask & rings_check)
+
+        # Games that still need move generation check
+        needs_move_check = game_mask & ~has_action
+
+        if not needs_move_check.any():
+            return has_action
+
+        # Check 2: Must control at least one stack (vectorized)
+        controls_stack = (self.state.stack_owner == player).any(dim=(1, 2))
+        needs_move_check = needs_move_check & controls_stack
+
+        if not needs_move_check.any():
+            return has_action
+
+        # Check 3: Generate moves for remaining games (batched)
+        # Save and set current_player for all games being checked
+        prev_players = self.state.current_player.clone()
+        self.state.current_player[needs_move_check] = player
+
+        try:
+            # Generate moves for all games at once
+            movement_moves = generate_movement_moves_batch(self.state, needs_move_check)
+            capture_moves = generate_capture_moves_batch(self.state, needs_move_check)
+
+            # Check which games have moves (vectorized)
+            has_movement = movement_moves.moves_per_game > 0
+            has_capture = capture_moves.moves_per_game > 0
+            has_action = has_action | (needs_move_check & (has_movement | has_capture))
+        finally:
+            # Restore original players
+            self.state.current_player = prev_players
+
+        return has_action
+
     def _maybe_apply_lps_victory_at_turn_start(
         self,
         mask: torch.Tensor,
-        player_has_rings: Optional[torch.Tensor] = None,
+        player_has_rings: torch.Tensor | None = None,
     ) -> None:
         """Apply RR-CANON-R172 LPS victory at the start of a player's turn.
 
         This is called after updating round tracking in ``ring_placement``.
         We only run the expensive real-action check when a candidate has
         already achieved the required consecutive exclusive rounds.
+
+        Optimized for GPU/MPS: Uses batched move generation per-player instead
+        of per-game to minimize CPU-GPU synchronization.
         """
         active_mask = mask & self.state.get_active_mask()
         if not active_mask.any():
@@ -1062,41 +1135,63 @@ class ParallelGameRunner:
         if player_has_rings is None:
             player_has_rings = self._compute_player_ring_status_batch()
 
-        # Pre-extract GPU tensors to CPU to minimize synchronization overhead
-        # (MPS performance optimization - reduces .item() calls per iteration)
-        game_indices = torch.where(candidate_mask)[0]
-        game_status_cpu = self.state.game_status[game_indices].cpu().numpy()
-        candidates_cpu = self.state.lps_consecutive_exclusive_player[game_indices].cpu().numpy()
-        player_has_rings_cpu = player_has_rings[game_indices].cpu().numpy()
+        # === BATCHED APPROACH ===
+        # Instead of checking per-game, we batch by player:
+        # 1. For each player, check which candidate games need that player checked
+        # 2. Run batched move generation once per player
+        # 3. Aggregate results
 
-        for i, g in enumerate(game_indices.tolist()):
-            if game_status_cpu[i] != GameStatus.ACTIVE:
+        # Pre-compute real actions for each player across all candidate games
+        # Shape: (num_players + 1, batch_size) - player 0 unused
+        real_actions_by_player = {}
+        for pid in range(1, self.num_players + 1):
+            # Only check games where this player has rings (optimization)
+            games_to_check = candidate_mask & (player_has_rings[:, pid] > 0)
+            if games_to_check.any():
+                real_actions_by_player[pid] = self._check_real_actions_batch(
+                    games_to_check, pid
+                )
+            else:
+                real_actions_by_player[pid] = torch.zeros(
+                    self.batch_size, dtype=torch.bool, device=self.device
+                )
+
+        # Now determine winners using the pre-computed results (fully vectorized)
+        candidates = self.state.lps_consecutive_exclusive_player
+
+        # For each candidate game, check if candidate has action and others don't
+        for pid in range(1, self.num_players + 1):
+            # Games where this player is the candidate
+            is_candidate = candidate_mask & (candidates == pid)
+            if not is_candidate.any():
                 continue
 
-            candidate = int(candidates_cpu[i])
-            if candidate <= 0:
+            # Candidate must have real action
+            candidate_has_action = real_actions_by_player[pid]
+            valid_candidates = is_candidate & candidate_has_action
+
+            if not valid_candidates.any():
                 continue
 
-            # Note: _player_has_real_action_gpu still causes GPU sync - would need
-            # batched move generation to fully optimize (see GPU_PIPELINE_ROADMAP.md)
-            if not self._player_has_real_action_gpu(g, candidate):
-                continue
-
-            others_have_real = False
-            for pid in range(1, self.num_players + 1):
-                if pid == candidate:
+            # Check if any other player has real action
+            others_have_action = torch.zeros(
+                self.batch_size, dtype=torch.bool, device=self.device
+            )
+            for other_pid in range(1, self.num_players + 1):
+                if other_pid == pid:
                     continue
-                if not bool(player_has_rings_cpu[i, pid]):
-                    continue
-                if self._player_has_real_action_gpu(g, pid):
-                    others_have_real = True
-                    break
+                # Only consider players with rings
+                other_has_rings = player_has_rings[:, other_pid] > 0
+                others_have_action = others_have_action | (
+                    other_has_rings & real_actions_by_player[other_pid]
+                )
 
-            if others_have_real:
-                continue
+            # Winner: candidate has action AND no others have action
+            winners = valid_candidates & ~others_have_action
 
-            self.state.winner[g] = candidate
-            self.state.game_status[g] = GameStatus.COMPLETED
+            if winners.any():
+                self.state.winner[winners] = pid
+                self.state.game_status[winners] = GameStatus.COMPLETED
 
     def _update_lps_round_tracking_for_current_player(
         self,
@@ -1218,7 +1313,7 @@ class ParallelGameRunner:
     def _step_placement_phase(
         self,
         mask: torch.Tensor,
-        weights_list: List[Dict[str, float]],
+        weights_list: list[dict[str, float]],
     ) -> None:
         """Handle RING_PLACEMENT phase for games in mask.
 
@@ -1281,7 +1376,7 @@ class ParallelGameRunner:
     def _step_movement_phase(
         self,
         mask: torch.Tensor,
-        weights_list: List[Dict[str, float]],
+        weights_list: list[dict[str, float]],
     ) -> None:
         """Handle MOVEMENT phase for games in mask.
 
@@ -1547,7 +1642,7 @@ class ParallelGameRunner:
 
         # For games where the next player is eliminated, find the next non-eliminated player
         # This handles the uncommon case where we need to skip eliminated players
-        for skip_round in range(self.num_players):
+        for _skip_round in range(self.num_players):
             # Check which games have an eliminated next player
             # Use gather to check player_has_rings[g, next_players[g]]
             next_player_has_rings = torch.gather(
@@ -1677,10 +1772,7 @@ class ParallelGameRunner:
 
         # Check buried rings (rings in opponent-controlled stacks)
         # buried_rings uses 1-indexed players (shape is batch_size x num_players+1)
-        if self.state.buried_rings[g, player].item() > 0:
-            return True
-
-        return False
+        return self.state.buried_rings[g, player].item() > 0
 
     def _apply_single_capture(self, g: int, move_idx: int, moves: BatchMoves) -> None:
         """Apply a single capture move for game g at global index move_idx.
@@ -1882,7 +1974,7 @@ class ParallelGameRunner:
         single_game_mask = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
         single_game_mask[g] = True
 
-        for iteration in range(max_iterations):
+        for _iteration in range(max_iterations):
             # Check for lines for the current player using vectorized detection
             _, line_counts = detect_lines_vectorized(self.state, player, single_game_mask)
 
@@ -1902,7 +1994,7 @@ class ParallelGameRunner:
     def _select_best_moves(
         self,
         moves: BatchMoves,
-        weights_list: List[Dict[str, float]],
+        weights_list: list[dict[str, float]],
         active_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Select the best move for each game using heuristic evaluation.
@@ -2068,7 +2160,7 @@ class ParallelGameRunner:
 
                 self.state.game_status[g] = GameStatus.COMPLETED
 
-    def _default_weights(self) -> Dict[str, float]:
+    def _default_weights(self) -> dict[str, float]:
         """Default heuristic weights."""
         return {
             "stack_count": 1.0,
@@ -2077,7 +2169,7 @@ class ParallelGameRunner:
             "center_control": 0.3,
         }
 
-    def _apply_weight_noise(self, weights: Dict[str, float]) -> Dict[str, float]:
+    def _apply_weight_noise(self, weights: dict[str, float]) -> dict[str, float]:
         """Apply multiplicative noise to weights for training diversity.
 
         Each weight is multiplied by a random factor in [1-noise, 1+noise].
@@ -2099,7 +2191,7 @@ class ParallelGameRunner:
             noisy_weights[key] = value * noise_factor
         return noisy_weights
 
-    def _generate_weights_list(self) -> List[Dict[str, float]]:
+    def _generate_weights_list(self) -> list[dict[str, float]]:
         """Generate per-game weights with optional noise.
 
         Returns:
@@ -2113,7 +2205,7 @@ class ParallelGameRunner:
             # Each game gets unique noisy weights
             return [self._apply_weight_noise(base_weights) for _ in range(self.batch_size)]
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get performance statistics."""
         return {
             "games_completed": self._games_completed,
@@ -2129,7 +2221,7 @@ class ParallelGameRunner:
             ),
         }
 
-    def get_shadow_validation_report(self) -> Optional[Dict[str, Any]]:
+    def get_shadow_validation_report(self) -> dict[str, Any] | None:
         """Get shadow validation statistics if enabled.
 
         Returns:
@@ -2153,13 +2245,13 @@ class ParallelGameRunner:
 
 
 def evaluate_candidate_fitness_gpu(
-    candidate_weights: Dict[str, float],
-    opponent_weights: Dict[str, float],
+    candidate_weights: dict[str, float],
+    opponent_weights: dict[str, float],
     num_games: int = 10,
     board_size: int = 8,
     num_players: int = 2,
     max_moves: int = 10000,
-    device: Optional[torch.device] = None,
+    device: torch.device | None = None,
 ) -> float:
     """Evaluate CMA-ES candidate fitness using GPU parallel games.
 
@@ -2215,11 +2307,11 @@ def evaluate_candidate_fitness_gpu(
 
 
 def benchmark_parallel_games(
-    batch_sizes: List[int] = [1, 8, 32, 64, 128, 256],
+    batch_sizes: list[int] | None = None,
     board_size: int = 8,
     max_moves: int = 100,
-    device: Optional[torch.device] = None,
-) -> Dict[str, List[float]]:
+    device: torch.device | None = None,
+) -> dict[str, list[float]]:
     """Benchmark parallel game simulation performance.
 
     Args:
@@ -2231,6 +2323,8 @@ def benchmark_parallel_games(
     Returns:
         Dictionary with benchmark results
     """
+    if batch_sizes is None:
+        batch_sizes = [1, 8, 32, 64, 128, 256]
     results = {
         "batch_size": [],
         "games_per_second": [],

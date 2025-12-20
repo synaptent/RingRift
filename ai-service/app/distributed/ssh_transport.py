@@ -36,21 +36,20 @@ import json
 import logging
 import os
 import shlex
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Import circuit breaker for fault tolerance
 try:
     from app.distributed.circuit_breaker import (
-        get_operation_breaker,
-        get_adaptive_timeout,
         CircuitOpenError,
         CircuitState,
+        get_adaptive_timeout,
+        get_operation_breaker,
     )
     HAS_CIRCUIT_BREAKER = True
 except ImportError:
@@ -114,7 +113,7 @@ class SSHCommandResult:
     stderr: str = ""
     return_code: int = -1
     elapsed_ms: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class SSHTransport:
@@ -130,13 +129,13 @@ class SSHTransport:
     - Health tracking per node
     """
 
-    def __init__(self, control_path_dir: Optional[Path] = None):
+    def __init__(self, control_path_dir: Path | None = None):
         """Initialize SSH transport.
 
         Args:
             control_path_dir: Directory for SSH ControlMaster sockets
         """
-        self._addresses: Dict[str, SSHAddress] = {}
+        self._addresses: dict[str, SSHAddress] = {}
         self._lock = asyncio.Lock()
 
         # SSH ControlMaster directory for connection pooling
@@ -159,7 +158,7 @@ class SSHTransport:
         safe_id = node_id.replace("/", "_").replace(":", "_")[:20]
         return str(self._control_path_dir / f"ctrl_{safe_id}")
 
-    def _get_ssh_address(self, node_id: str) -> Optional[SSHAddress]:
+    def _get_ssh_address(self, node_id: str) -> SSHAddress | None:
         """Get SSH address for a node, using cache or registry.
 
         Args:
@@ -222,7 +221,7 @@ class SSHTransport:
         addr: SSHAddress,
         remote_command: str,
         use_control_master: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
         """Build SSH command with proper options.
 
         Args:
@@ -373,9 +372,9 @@ class SSHTransport:
         self,
         node_id: str,
         command_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         retries: int = SSH_MAX_RETRIES,
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Send a P2P command to a node via SSH.
 
         This is the main entry point for SSH-based P2P communication.
@@ -423,7 +422,7 @@ class SSHTransport:
 
         return False, None
 
-    async def check_connectivity(self, node_id: str) -> Tuple[bool, str]:
+    async def check_connectivity(self, node_id: str) -> tuple[bool, str]:
         """Check if a node is reachable via SSH.
 
         Args:
@@ -440,7 +439,7 @@ class SSHTransport:
             error = result.error or result.stderr or "Unknown error"
             return False, f"SSH failed: {error}"
 
-    async def get_node_status(self, node_id: str) -> Optional[Dict[str, Any]]:
+    async def get_node_status(self, node_id: str) -> dict[str, Any] | None:
         """Get P2P status from a node via SSH.
 
         Args:
@@ -465,8 +464,8 @@ class SSHTransport:
     async def send_heartbeat(
         self,
         node_id: str,
-        self_info: Dict[str, Any],
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        self_info: dict[str, Any],
+    ) -> tuple[bool, dict[str, Any] | None]:
         """Send heartbeat to a node via SSH.
 
         This is used as a fallback when HTTP heartbeats fail.
@@ -485,8 +484,8 @@ class SSHTransport:
         node_id: str,
         target_node_id: str,
         command_type: str,
-        payload: Dict[str, Any],
-    ) -> Tuple[bool, Optional[str]]:
+        payload: dict[str, Any],
+    ) -> tuple[bool, str | None]:
         """Relay a command through one node to another.
 
         Useful when node A can reach node B via SSH, but node B
@@ -551,7 +550,7 @@ class SSHTransport:
 
 
 # Global instance
-_transport: Optional[SSHTransport] = None
+_transport: SSHTransport | None = None
 
 
 def get_ssh_transport() -> SSHTransport:
@@ -562,7 +561,7 @@ def get_ssh_transport() -> SSHTransport:
     return _transport
 
 
-async def probe_vast_nodes_via_ssh() -> Dict[str, Tuple[bool, str]]:
+async def probe_vast_nodes_via_ssh() -> dict[str, tuple[bool, str]]:
     """Probe all Vast nodes via SSH and return connectivity status.
 
     Returns:
@@ -583,7 +582,7 @@ async def probe_vast_nodes_via_ssh() -> Dict[str, Tuple[bool, str]]:
         tasks = [transport.check_connectivity(node_id) for node_id in vast_nodes]
         connectivity = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for node_id, result in zip(vast_nodes, connectivity):
+        for node_id, result in zip(vast_nodes, connectivity, strict=False):
             if isinstance(result, Exception):
                 results[node_id] = (False, str(result))
             else:

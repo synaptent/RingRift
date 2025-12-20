@@ -24,18 +24,16 @@ GPU Acceleration (default enabled):
 - Shadow validation available via RINGRIFT_GPU_MAXN_SHADOW_VALIDATE=1
 """
 
-from typing import Optional, List, Dict, Tuple, Any, TYPE_CHECKING
 import logging
 import os
 import time
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
-from .heuristic_ai import HeuristicAI
-from .bounded_transposition_table import BoundedTranspositionTable
-from .zobrist import ZobristHash
-from ..models import GameState, Move, AIConfig, GamePhase, BoardType
+from ..models import AIConfig, BoardType, GameState, Move
 from ..rules.mutable_state import MutableGameState
+from .bounded_transposition_table import BoundedTranspositionTable
+from .heuristic_ai import HeuristicAI
+from .zobrist import ZobristHash
 
 if TYPE_CHECKING:
     import torch
@@ -80,27 +78,27 @@ class MaxNAI(HeuristicAI):
         self.nodes_visited: int = 0
 
         # Cache number of players (detected on first call)
-        self._num_players: Optional[int] = None
+        self._num_players: int | None = None
 
         # GPU acceleration state (lazy initialized)
         self._gpu_enabled: bool = not _GPU_MAXN_DISABLE
-        self._gpu_available: Optional[bool] = None  # None = not yet checked
-        self._gpu_device: Optional["torch.device"] = None
-        self._gpu_evaluator: Optional[Any] = None  # GPUHeuristicEvaluator
+        self._gpu_available: bool | None = None  # None = not yet checked
+        self._gpu_device: torch.device | None = None
+        self._gpu_evaluator: Any | None = None  # GPUHeuristicEvaluator
 
         # Leaf buffer for batched GPU evaluation
         # Stores (immutable_state, state_hash) - immutable to avoid mutation during search
-        self._leaf_buffer: List[Tuple[GameState, int]] = []
-        self._leaf_results: Dict[int, Dict[int, float]] = {}  # hash -> {player: score}
+        self._leaf_buffer: list[tuple[GameState, int]] = []
+        self._leaf_results: dict[int, dict[int, float]] = {}  # hash -> {player: score}
         self._gpu_batch_size: int = getattr(config, 'gpu_batch_size', 64)
         self._gpu_min_batch: int = getattr(config, 'gpu_min_batch', 4)
 
         # Board configuration (detected on first call)
-        self._board_size: Optional[int] = None
-        self._board_type: Optional[BoardType] = None
+        self._board_size: int | None = None
+        self._board_type: BoardType | None = None
 
         # Shadow validation for GPU/CPU parity checking
-        self._shadow_validator: Optional[Any] = None
+        self._shadow_validator: Any | None = None
         if _GPU_MAXN_SHADOW_VALIDATE:
             self._init_shadow_validator()
 
@@ -237,7 +235,7 @@ class MaxNAI(HeuristicAI):
 
             # Store results indexed by state hash
             for i, state_hash in enumerate(hashes):
-                player_scores: Dict[int, float] = {}
+                player_scores: dict[int, float] = {}
                 for player_num in range(1, num_players + 1):
                     player_scores[player_num] = float(scores_tensor[i, player_num].item())
                 self._leaf_results[state_hash] = player_scores
@@ -262,8 +260,8 @@ class MaxNAI(HeuristicAI):
 
     def _validate_batch(
         self,
-        states: List[GameState],
-        hashes: List[int],
+        states: list[GameState],
+        hashes: list[int],
     ) -> None:
         """Validate GPU results against CPU for a sample of positions."""
         if self._shadow_validator is None:
@@ -272,7 +270,7 @@ class MaxNAI(HeuristicAI):
         import random
         sample_rate = 0.05  # Check 5% of batch
 
-        for i, (state, state_hash) in enumerate(zip(states, hashes)):
+        for _i, (state, state_hash) in enumerate(zip(states, hashes, strict=False)):
             if random.random() > sample_rate:
                 continue
 
@@ -296,7 +294,7 @@ class MaxNAI(HeuristicAI):
                             f"GPU={gpu_score:.2f}, CPU={cpu_score:.2f} ({divergence:.1%})"
                         )
 
-    def _evaluate_all_players_cpu(self, state: MutableGameState) -> Dict[int, float]:
+    def _evaluate_all_players_cpu(self, state: MutableGameState) -> dict[int, float]:
         """CPU fallback for evaluating position for all players."""
         # Check for terminal state
         if state.is_game_over():
@@ -324,7 +322,7 @@ class MaxNAI(HeuristicAI):
         self.player_number = original_player
         return scores
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using Max-N search.
 
         Returns:
@@ -363,7 +361,7 @@ class MaxNAI(HeuristicAI):
         mutable_state = MutableGameState.from_immutable(game_state)
 
         best_move = valid_moves[0]
-        best_score = float('-inf')
+        float('-inf')
 
         # Iterative deepening
         for depth in range(1, max_depth + 1):
@@ -394,7 +392,6 @@ class MaxNAI(HeuristicAI):
 
             if current_best_move:
                 best_move = current_best_move
-                best_score = current_best_score
 
         # Final flush for any remaining leaves
         if self._gpu_available:
@@ -406,7 +403,7 @@ class MaxNAI(HeuristicAI):
         self,
         state: MutableGameState,
         depth: int
-    ) -> Dict[int, float]:
+    ) -> dict[int, float]:
         """Recursive Max-N search.
 
         Args:
@@ -419,9 +416,8 @@ class MaxNAI(HeuristicAI):
         self.nodes_visited += 1
 
         # Time check
-        if self.nodes_visited % 500 == 0:
-            if time.time() - self.start_time > self.time_limit:
-                return self._evaluate_all_players(state)
+        if self.nodes_visited % 500 == 0 and time.time() - self.start_time > self.time_limit:
+            return self._evaluate_all_players(state)
 
         # Terminal conditions
         if state.is_game_over() or depth == 0:
@@ -441,7 +437,7 @@ class MaxNAI(HeuristicAI):
             return self._evaluate_all_players(state)
 
         # Current player picks move that maximizes their own score
-        best_scores: Optional[Dict[int, float]] = None
+        best_scores: dict[int, float] | None = None
         best_my_score = float('-inf')
 
         for move in valid_moves:
@@ -468,7 +464,7 @@ class MaxNAI(HeuristicAI):
 
         return best_scores
 
-    def _evaluate_all_players(self, state: MutableGameState) -> Dict[int, float]:
+    def _evaluate_all_players(self, state: MutableGameState) -> dict[int, float]:
         """Evaluate position for ALL players.
 
         Returns a score vector where each player's score reflects
@@ -534,7 +530,7 @@ class BRSAI(HeuristicAI):
         self.start_time: float = 0.0
         self.time_limit: float = 0.0
         self.nodes_visited: int = 0
-        self._num_players: Optional[int] = None
+        self._num_players: int | None = None
 
         logger.debug(
             f"BRSAI(player={player_number}, difficulty={config.difficulty})"
@@ -549,7 +545,7 @@ class BRSAI(HeuristicAI):
         else:
             return 1
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using Best-Reply Search.
 
         For each candidate move, simulates future rounds where each

@@ -32,24 +32,17 @@ Usage:
 from __future__ import annotations
 
 import logging
-import functools
-from typing import Any, Callable, Optional, Sequence, Type, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 from app.core.error_handler import (
-    retry,
-    retry_async,
+    ErrorAggregator,
     RetryPolicy,
     RetryStrategy,
-    DEFAULT_RETRY_POLICY,
-    AGGRESSIVE_RETRY_POLICY,
+    retry,
     safe_execute,
-    safe_execute_async,
-    ErrorAggregator,
-    with_emergency_halt_check,
 )
 from app.errors import (
-    RingRiftError,
-    RetryableError,
     FatalError,
 )
 
@@ -60,27 +53,27 @@ F = TypeVar("F", bound=Callable[..., Any])
 AF = TypeVar("AF", bound=Callable[..., Any])
 
 __all__ = [
-    # Exception types
-    "TrainingError",
     "CheckpointError",
+    "DataLoadError",
     "EvaluationError",
     "SelfplayError",
-    "DataLoadError",
+    # Exception types
+    "TrainingError",
+    # Error aggregation
+    "TrainingErrorAggregator",
     # Retry policies
     "TrainingRetryPolicies",
+    "retry_checkpoint_load",
     # Decorators
     "retry_checkpoint_save",
-    "retry_checkpoint_load",
     "retry_data_load",
     "retry_evaluation",
     "retry_selfplay",
     "retry_training_step",
-    # Safe execution
-    "safe_training_step",
     "safe_checkpoint_save",
     "safe_evaluation",
-    # Error aggregation
-    "TrainingErrorAggregator",
+    # Safe execution
+    "safe_training_step",
 ]
 
 
@@ -91,13 +84,12 @@ __all__ = [
 # These re-exports maintain backward compatibility
 
 from app.errors import (
-    TrainingError,
     CheckpointError,
+    DataLoadError,
     EvaluationError,
     SelfplayError,
-    DataLoadError,
+    TrainingError,
 )
-
 
 # =============================================================================
 # Training Retry Policies
@@ -185,7 +177,7 @@ class TrainingRetryPolicies:
     @classmethod
     def checkpoint_save(
         cls,
-        exceptions: Sequence[Type[Exception]] = (IOError, OSError, CheckpointError),
+        exceptions: Sequence[type[Exception]] = (IOError, OSError, CheckpointError),
     ) -> Callable[[F], F]:
         """Get checkpoint save retry decorator.
 
@@ -203,7 +195,7 @@ class TrainingRetryPolicies:
     @classmethod
     def checkpoint_load(
         cls,
-        exceptions: Sequence[Type[Exception]] = (IOError, OSError, CheckpointError),
+        exceptions: Sequence[type[Exception]] = (IOError, OSError, CheckpointError),
     ) -> Callable[[F], F]:
         """Get checkpoint load retry decorator."""
         return retry(
@@ -214,7 +206,7 @@ class TrainingRetryPolicies:
     @classmethod
     def data_load(
         cls,
-        exceptions: Sequence[Type[Exception]] = (IOError, OSError, DataLoadError),
+        exceptions: Sequence[type[Exception]] = (IOError, OSError, DataLoadError),
     ) -> Callable[[F], F]:
         """Get data load retry decorator."""
         return retry(
@@ -225,7 +217,7 @@ class TrainingRetryPolicies:
     @classmethod
     def evaluation(
         cls,
-        exceptions: Sequence[Type[Exception]] = (EvaluationError, RuntimeError),
+        exceptions: Sequence[type[Exception]] = (EvaluationError, RuntimeError),
     ) -> Callable[[F], F]:
         """Get evaluation retry decorator."""
         return retry(
@@ -236,7 +228,7 @@ class TrainingRetryPolicies:
     @classmethod
     def selfplay(
         cls,
-        exceptions: Sequence[Type[Exception]] = (SelfplayError, RuntimeError),
+        exceptions: Sequence[type[Exception]] = (SelfplayError, RuntimeError),
     ) -> Callable[[F], F]:
         """Get selfplay retry decorator."""
         return retry(
@@ -247,7 +239,7 @@ class TrainingRetryPolicies:
     @classmethod
     def training_step(
         cls,
-        exceptions: Sequence[Type[Exception]] = (RuntimeError,),
+        exceptions: Sequence[type[Exception]] = (RuntimeError,),
     ) -> Callable[[F], F]:
         """Get training step retry decorator."""
         return retry(
@@ -472,10 +464,7 @@ class TrainingErrorAggregator(ErrorAggregator):
 
     def has_cuda_oom(self) -> bool:
         """Check if any CUDA OOM errors occurred."""
-        for e, _ in self.errors:
-            if isinstance(e, RuntimeError) and "out of memory" in str(e).lower():
-                return True
-        return False
+        return any(isinstance(e, RuntimeError) and "out of memory" in str(e).lower() for e, _ in self.errors)
 
     def get_error_types(self) -> dict[str, int]:
         """Get count of errors by type."""

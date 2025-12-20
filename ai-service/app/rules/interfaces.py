@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, List
+from typing import Protocol
 
 from app.models import GameState, Move
 
@@ -35,7 +35,7 @@ class RulesEngine(Protocol):
     Mirrors the TS rules engine responsibilities.
     """
 
-    def get_valid_moves(self, state: GameState, player: int) -> List[Move]:
+    def get_valid_moves(self, state: GameState, player: int) -> list[Move]:
         """Return all legal moves for `player` given `state`."""
         ...
 

@@ -43,7 +43,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Deque, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,8 @@ class ThresholdObservation:
 
     timestamp: float
     success: bool
-    measured_value: Optional[float] = None  # e.g., actual duration
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    measured_value: float | None = None  # e.g., actual duration
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class DynamicThreshold:
@@ -112,7 +112,7 @@ class DynamicThreshold:
         self.higher_is_more_permissive = higher_is_more_permissive
 
         # Observation history
-        self._observations: Deque[ThresholdObservation] = deque(maxlen=window_size)
+        self._observations: deque[ThresholdObservation] = deque(maxlen=window_size)
 
         # Adjustment tracking
         self._last_adjustment_time: float = 0.0
@@ -135,7 +135,7 @@ class DynamicThreshold:
     def record_outcome(
         self,
         success: bool,
-        measured_value: Optional[float] = None,
+        measured_value: float | None = None,
         **metadata,
     ) -> None:
         """Record an observation for threshold adjustment.
@@ -247,7 +247,7 @@ class DynamicThreshold:
         self._observations.clear()
         self._last_adjustment_time = 0.0
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get threshold statistics."""
         measured_values = [
             o.measured_value for o in self._observations
@@ -278,7 +278,7 @@ class ThresholdManager:
     """
 
     def __init__(self):
-        self._thresholds: Dict[str, DynamicThreshold] = {}
+        self._thresholds: dict[str, DynamicThreshold] = {}
 
     def register(self, threshold: DynamicThreshold) -> None:
         """Register a threshold.
@@ -289,7 +289,7 @@ class ThresholdManager:
         self._thresholds[threshold.name] = threshold
         logger.debug(f"[ThresholdManager] Registered threshold: {threshold.name}")
 
-    def get(self, name: str) -> Optional[DynamicThreshold]:
+    def get(self, name: str) -> DynamicThreshold | None:
         """Get a threshold by name.
 
         Args:
@@ -300,7 +300,7 @@ class ThresholdManager:
         """
         return self._thresholds.get(name)
 
-    def get_value(self, name: str, default: Optional[float] = None) -> Optional[float]:
+    def get_value(self, name: str, default: float | None = None) -> float | None:
         """Get current value of a threshold.
 
         Args:
@@ -315,7 +315,7 @@ class ThresholdManager:
             return threshold.value
         return default
 
-    def record(self, name: str, success: bool, measured_value: Optional[float] = None) -> bool:
+    def record(self, name: str, success: bool, measured_value: float | None = None) -> bool:
         """Record an observation for a threshold.
 
         Args:
@@ -337,14 +337,14 @@ class ThresholdManager:
         for threshold in self._thresholds.values():
             threshold.reset()
 
-    def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_stats(self) -> dict[str, dict[str, Any]]:
         """Get statistics for all thresholds."""
         return {
             name: threshold.get_stats()
             for name, threshold in self._thresholds.items()
         }
 
-    def get_health(self) -> Dict[str, Any]:
+    def get_health(self) -> dict[str, Any]:
         """Get health summary for all thresholds."""
         stats = self.get_all_stats()
 
@@ -365,7 +365,7 @@ class ThresholdManager:
 # Global Manager and Pre-configured Thresholds
 # =============================================================================
 
-_threshold_manager: Optional[ThresholdManager] = None
+_threshold_manager: ThresholdManager | None = None
 
 
 def get_threshold_manager() -> ThresholdManager:
@@ -434,10 +434,10 @@ def _initialize_default_thresholds(manager: ThresholdManager) -> None:
 
 
 __all__ = [
-    "DynamicThreshold",
-    "ThresholdObservation",
     "AdjustmentStrategy",
+    "DynamicThreshold",
     "ThresholdManager",
+    "ThresholdObservation",
     "get_threshold_manager",
     "reset_threshold_manager",
 ]

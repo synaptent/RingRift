@@ -48,25 +48,26 @@ The following SLOs are derived from [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) §
 
 ### Critical Priority (Zero Tolerance)
 
-| SLO                  | Target                       | Measurement                          | Source           |
-| -------------------- | ---------------------------- | ------------------------------------ | ---------------- |
-| Service Availability | ≥99.9%                       | successful_requests / total_requests | PROJECT_GOALS.md |
-| Error Rate           | ≤1% (staging) / ≤0.5% (prod) | http_req_failed rate                 | thresholds.json  |
-| Contract Failures    | 0                            | contract_failures_total              | thresholds.json  |
-| Lifecycle Mismatches | 0                            | id_lifecycle_mismatches_total        | thresholds.json  |
+| SLO                  | Target                         | Measurement                          | Source           |
+| -------------------- | ------------------------------ | ------------------------------------ | ---------------- |
+| Service Availability | ≥99.9%                         | successful_requests / total_requests | PROJECT_GOALS.md |
+| Error Rate           | ≤1% (staging) / ≤0.5% (prod)   | http_req_failed rate                 | thresholds.json  |
+| True Error Rate      | ≤0.5% (staging) / ≤0.2% (prod) | true_errors_total / total_requests   | thresholds.json  |
+| Contract Failures    | 0                              | contract_failures_total              | thresholds.json  |
+| Lifecycle Mismatches | 0                              | id_lifecycle_mismatches_total        | thresholds.json  |
 
 ### High Priority
 
-| SLO                     | Target                      | Measurement                       | Source            |
-| ----------------------- | --------------------------- | --------------------------------- | ----------------- |
-| API Latency (p95)       | <500ms                      | http_req_duration p95             | PROJECT_GOALS.md  |
-| Move Latency (p95)      | <500ms                      | move_latency p95                  | thresholds.json   |
-| WebSocket Connect (p95) | <1000ms                     | ws_connecting p95                 | baseline.json     |
-| AI Response (p95)       | <1000ms                     | ai_response_time p95              | PROJECT_GOALS.md  |
-| Concurrent Games        | ≥100 (prod) / ≥20 (staging) | concurrent_games                  | target-scale.json |
-| Concurrent Players      | ≥300 (prod) / ≥60 (staging) | concurrent_vus                    | target-scale.json |
-| WebSocket Success Rate  | ≥99%                        | websocket_connection_success_rate | thresholds.json   |
-| Move Stall Rate         | ≤0.5%                       | stalled_moves / total_moves       | thresholds.json   |
+| SLO                     | Target                           | Measurement                       | Source            |
+| ----------------------- | -------------------------------- | --------------------------------- | ----------------- |
+| API Latency (p95)       | <500ms                           | http_req_duration p95             | PROJECT_GOALS.md  |
+| Move Latency (p95)      | ≤300ms (staging) / ≤200ms (prod) | move_latency p95                  | PROJECT_GOALS.md  |
+| WebSocket Connect (p95) | <1000ms                          | ws_connecting p95                 | baseline.json     |
+| AI Response (p95)       | <1000ms                          | ai_response_time p95              | PROJECT_GOALS.md  |
+| Concurrent Games        | ≥100 (prod) / ≥20 (staging)      | concurrent_games                  | target-scale.json |
+| Concurrent Players      | ≥300 (prod) / ≥60 (staging)      | concurrent_vus                    | target-scale.json |
+| WebSocket Success Rate  | ≥99%                             | websocket_connection_success_rate | thresholds.json   |
+| Move Stall Rate         | ≤0.5%                            | stalled_moves / total_moves       | thresholds.json   |
 
 ### Medium Priority
 

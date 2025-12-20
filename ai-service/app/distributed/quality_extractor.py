@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from app.distributed.unified_manifest import GameQualityMetadata
 
@@ -81,8 +82,8 @@ DEFAULT_CONFIG = QualityExtractorConfig()
 
 
 def extract_game_quality(
-    game_row: Dict[str, Any],
-    elo_lookup: Optional[Callable[[str], float]] = None,
+    game_row: dict[str, Any],
+    elo_lookup: Callable[[str], float] | None = None,
     config: QualityExtractorConfig = DEFAULT_CONFIG,
 ) -> GameQualityMetadata:
     """Extract quality metadata from a game database row.
@@ -174,11 +175,11 @@ def extract_game_quality(
 
 def extract_batch_quality(
     db_path: Path,
-    game_ids: Optional[List[str]] = None,
-    elo_lookup: Optional[Callable[[str], float]] = None,
+    game_ids: list[str] | None = None,
+    elo_lookup: Callable[[str], float] | None = None,
     config: QualityExtractorConfig = DEFAULT_CONFIG,
     limit: int = 10000,
-) -> List[GameQualityMetadata]:
+) -> list[GameQualityMetadata]:
     """Extract quality metadata for a batch of games from a database.
 
     Args:
@@ -212,7 +213,7 @@ def extract_batch_quality(
 
         columns = f"{base_columns}, quality_score" if has_quality_column else base_columns
         query = f"SELECT {columns} FROM games"
-        params: List[Any] = []
+        params: list[Any] = []
 
         if game_ids:
             placeholders = ",".join("?" * len(game_ids))
@@ -242,9 +243,9 @@ def extract_batch_quality(
 
 def extract_quality_from_synced_db(
     local_dir: Path,
-    elo_lookup: Optional[Callable[[str], float]] = None,
+    elo_lookup: Callable[[str], float] | None = None,
     config: QualityExtractorConfig = DEFAULT_CONFIG,
-) -> Dict[str, List[GameQualityMetadata]]:
+) -> dict[str, list[GameQualityMetadata]]:
     """Extract quality metadata from all databases in a synced directory.
 
     Args:
@@ -255,7 +256,7 @@ def extract_quality_from_synced_db(
     Returns:
         Dict mapping database filename to list of GameQualityMetadata
     """
-    results: Dict[str, List[GameQualityMetadata]] = {}
+    results: dict[str, list[GameQualityMetadata]] = {}
 
     if not local_dir.exists():
         logger.warning(f"Sync directory not found: {local_dir}")
@@ -273,7 +274,7 @@ def extract_quality_from_synced_db(
     return results
 
 
-def get_elo_lookup_from_service() -> Optional[Callable[[str], float]]:
+def get_elo_lookup_from_service() -> Callable[[str], float] | None:
     """Get an Elo lookup function from the EloService.
 
     Returns:

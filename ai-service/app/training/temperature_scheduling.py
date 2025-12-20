@@ -5,14 +5,13 @@ Controls exploration vs exploitation during self-play game generation
 through sophisticated temperature schedules.
 """
 
+import logging
 import math
 import random
-import logging
-from typing import Dict, List, Optional, Callable, Tuple, Any
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from abc import ABC, abstractmethod
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,8 @@ class TemperatureConfig:
     decay_end_move: int = 60           # When to reach final temp
     min_temp: float = 0.01             # Absolute minimum
     max_temp: float = 2.0              # Absolute maximum
-    step_schedule: List[Tuple[int, float]] = field(default_factory=list)
-    adaptive_config: Dict[str, Any] = field(default_factory=dict)
+    step_schedule: list[tuple[int, float]] = field(default_factory=list)
+    adaptive_config: dict[str, Any] = field(default_factory=dict)
     add_noise: bool = False
     noise_scale: float = 0.1
 
@@ -50,8 +49,8 @@ class TemperatureSchedule(ABC):
     """Abstract base class for temperature schedules."""
 
     @abstractmethod
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         """Get temperature for a given move."""
         pass
 
@@ -67,8 +66,8 @@ class ConstantSchedule(TemperatureSchedule):
     def __init__(self, temperature: float = 1.0):
         self.temperature = temperature
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         return self.temperature
 
 
@@ -87,8 +86,8 @@ class LinearDecaySchedule(TemperatureSchedule):
         self.decay_start = decay_start
         self.decay_end = decay_end
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         if move_number <= self.decay_start:
             return self.initial_temp
 
@@ -115,8 +114,8 @@ class ExponentialDecaySchedule(TemperatureSchedule):
         self.decay_rate = decay_rate
         self.decay_start = decay_start
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         if move_number <= self.decay_start:
             return self.initial_temp
 
@@ -128,7 +127,7 @@ class ExponentialDecaySchedule(TemperatureSchedule):
 class StepSchedule(TemperatureSchedule):
     """Step function temperature changes at specified moves."""
 
-    def __init__(self, steps: List[Tuple[int, float]], default_temp: float = 1.0):
+    def __init__(self, steps: list[tuple[int, float]], default_temp: float = 1.0):
         """
         Args:
             steps: List of (move_number, temperature) tuples, sorted by move
@@ -137,8 +136,8 @@ class StepSchedule(TemperatureSchedule):
         self.steps = sorted(steps, key=lambda x: x[0])
         self.default_temp = default_temp
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         temp = self.default_temp
         for step_move, step_temp in self.steps:
             if move_number >= step_move:
@@ -163,8 +162,8 @@ class CosineAnnealingSchedule(TemperatureSchedule):
         self.period_moves = period_moves
         self.num_cycles = num_cycles
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         # Cosine annealing with warm restarts
         cycle_length = self.period_moves // self.num_cycles
         move_in_cycle = move_number % cycle_length
@@ -238,8 +237,8 @@ class AdaptiveSchedule(TemperatureSchedule):
             return min(1.0, entropy / 2.0)  # Normalize
         return 0.5
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         complexity = self._estimate_complexity(game_state)
         phase = self._estimate_phase(move_number, game_state)
         uncertainty = self._get_uncertainty(game_state)
@@ -281,8 +280,8 @@ class CurriculumSchedule(TemperatureSchedule):
         self.transition_start = transition_start
         self.transition_end = transition_end
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         if training_progress is None:
             training_progress = 0.0
 
@@ -314,7 +313,7 @@ class MixedSchedule(TemperatureSchedule):
     Combines multiple schedules with different weights.
     """
 
-    def __init__(self, schedules: List[Tuple[TemperatureSchedule, float]]):
+    def __init__(self, schedules: list[tuple[TemperatureSchedule, float]]):
         """
         Args:
             schedules: List of (schedule, weight) tuples
@@ -323,8 +322,8 @@ class MixedSchedule(TemperatureSchedule):
         total_weight = sum(w for _, w in schedules)
         self.schedules = [(s, w / total_weight) for s, w in schedules]
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None,
-                        training_progress: Optional[float] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None,
+                        training_progress: float | None = None) -> float:
         temp = 0.0
         for schedule, weight in self.schedules:
             temp += weight * schedule.get_temperature(move_number, game_state, training_progress)
@@ -336,12 +335,12 @@ class TemperatureScheduler:
     Main interface for temperature scheduling in self-play.
     """
 
-    def __init__(self, config: Optional[TemperatureConfig] = None):
+    def __init__(self, config: TemperatureConfig | None = None):
         self.config = config or TemperatureConfig()
         self.schedule = self._create_schedule()
         self._training_progress = 0.0
         self._game_count = 0
-        self._move_temperatures: List[float] = []
+        self._move_temperatures: list[float] = []
 
     def _create_schedule(self) -> TemperatureSchedule:
         """Create schedule based on configuration."""
@@ -401,7 +400,7 @@ class TemperatureScheduler:
         else:
             return LinearDecaySchedule()
 
-    def get_temperature(self, move_number: int, game_state: Optional[Any] = None) -> float:
+    def get_temperature(self, move_number: int, game_state: Any | None = None) -> float:
         """Get temperature for a move."""
         temp = self.schedule.get_temperature(
             move_number, game_state, self._training_progress
@@ -429,7 +428,7 @@ class TemperatureScheduler:
         self._game_count += 1
         self._move_temperatures = []
 
-    def get_game_stats(self) -> Dict[str, float]:
+    def get_game_stats(self) -> dict[str, float]:
         """Get temperature statistics for the current game."""
         if not self._move_temperatures:
             return {}
@@ -464,7 +463,7 @@ class AlphaZeroTemperature:
             return self.exploration_temp
         return self.exploitation_temp
 
-    def sample_move(self, policy: List[float], move_number: int) -> int:
+    def sample_move(self, policy: list[float], move_number: int) -> int:
         """Sample a move from policy with temperature."""
         temp = self.get_temperature(move_number)
 
@@ -507,7 +506,7 @@ class DirichletNoiseTemperature:
         self.noise_fraction = noise_fraction
         self.exploration_moves = exploration_moves
 
-    def apply_noise(self, policy: List[float], move_number: int) -> List[float]:
+    def apply_noise(self, policy: list[float], move_number: int) -> list[float]:
         """Apply Dirichlet noise to policy for root exploration."""
         if move_number >= self.exploration_moves:
             return policy
@@ -520,7 +519,7 @@ class DirichletNoiseTemperature:
 
         # Mix policy with noise
         mixed = []
-        for p, n in zip(policy, noise):
+        for p, n in zip(policy, noise, strict=False):
             mixed_p = (1 - self.noise_fraction) * p + self.noise_fraction * n
             mixed.append(mixed_p)
 
@@ -531,7 +530,7 @@ class DirichletNoiseTemperature:
 
         return mixed
 
-    def apply_temperature(self, policy: List[float], move_number: int) -> List[float]:
+    def apply_temperature(self, policy: list[float], move_number: int) -> list[float]:
         """Apply temperature to policy."""
         if move_number >= self.exploration_moves:
             # Argmax (greedy)
@@ -546,8 +545,8 @@ class DirichletNoiseTemperature:
 
         return temp_policy
 
-    def process_policy(self, policy: List[float], move_number: int,
-                       add_noise: bool = True) -> List[float]:
+    def process_policy(self, policy: list[float], move_number: int,
+                       add_noise: bool = True) -> list[float]:
         """Process policy with noise and temperature."""
         if add_noise:
             policy = self.apply_noise(policy, move_number)

@@ -10,9 +10,10 @@ Extends CoordinatorBase for standardized lifecycle management and stats.
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from app.coordination.coordinator_base import CoordinatorBase, CoordinatorStatus
 
@@ -74,7 +75,7 @@ class RecoveryEvent:
     target_id: str
     result: RecoveryResult
     reason: str
-    error: Optional[str] = None
+    error: str | None = None
     duration_seconds: float = 0.0
 
 
@@ -118,16 +119,16 @@ class RecoveryManager(CoordinatorBase):
 
     def __init__(
         self,
-        config: Optional[RecoveryConfig] = None,
-        notifier: Optional[Any] = None,
+        config: RecoveryConfig | None = None,
+        notifier: Any | None = None,
     ):
         super().__init__(name="RecoveryManager")
         self.config = config or RecoveryConfig()
 
         # State tracking
-        self._node_states: Dict[str, NodeRecoveryState] = {}
-        self._job_states: Dict[str, JobRecoveryState] = {}
-        self._recovery_history: List[RecoveryEvent] = []
+        self._node_states: dict[str, NodeRecoveryState] = {}
+        self._job_states: dict[str, JobRecoveryState] = {}
+        self._recovery_history: list[RecoveryEvent] = []
 
         # Set initial dependencies if provided
         if notifier:
@@ -163,19 +164,19 @@ class RecoveryManager(CoordinatorBase):
         return self.get_dependency("work_queue")
 
     @property
-    def _notifier(self) -> Optional[Any]:
+    def _notifier(self) -> Any | None:
         return self.get_dependency("notifier")
 
     @property
-    def _kill_job_callback(self) -> Optional[Callable]:
+    def _kill_job_callback(self) -> Callable | None:
         return self.get_dependency("kill_job_callback")
 
     @property
-    def _restart_services_callback(self) -> Optional[Callable]:
+    def _restart_services_callback(self) -> Callable | None:
         return self.get_dependency("restart_services_callback")
 
     @property
-    def _reboot_node_callback(self) -> Optional[Callable]:
+    def _reboot_node_callback(self) -> Callable | None:
         return self.get_dependency("reboot_node_callback")
 
     def _get_node_state(self, node_id: str) -> NodeRecoveryState:
@@ -207,10 +208,7 @@ class RecoveryManager(CoordinatorBase):
             return False
 
         # Check cooldown
-        if time.time() - state.last_attempt_time < self.config.recovery_attempt_cooldown:
-            return False
-
-        return True
+        return not time.time() - state.last_attempt_time < self.config.recovery_attempt_cooldown
 
     def _can_attempt_job_recovery(self, work_id: str) -> bool:
         """Check if we can attempt recovery on this job."""
@@ -430,7 +428,7 @@ class RecoveryManager(CoordinatorBase):
         target_id: str,
         result: RecoveryResult,
         reason: str,
-        error: Optional[str] = None,
+        error: str | None = None,
         duration: float = 0.0,
     ) -> None:
         """Record a recovery event."""
@@ -460,7 +458,7 @@ class RecoveryManager(CoordinatorBase):
         if work_id in self._job_states:
             del self._job_states[work_id]
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get recovery statistics for monitoring.
 
         Implements CoordinatorBase.get_stats() interface.
@@ -494,7 +492,7 @@ class RecoveryManager(CoordinatorBase):
         })
         return base_stats
 
-    def get_recovery_stats(self) -> Dict[str, Any]:
+    def get_recovery_stats(self) -> dict[str, Any]:
         """Legacy sync wrapper for get_stats().
 
         Deprecated: Use await get_stats() instead.
@@ -509,7 +507,7 @@ class RecoveryManager(CoordinatorBase):
             # No running loop, safe to create one
             return asyncio.run(self.get_stats())
 
-    def _get_recovery_stats_sync(self) -> Dict[str, Any]:
+    def _get_recovery_stats_sync(self) -> dict[str, Any]:
         """Synchronous version of recovery stats (no base stats)."""
         recent_events = [e for e in self._recovery_history if time.time() - e.timestamp < 3600]
 
@@ -539,9 +537,9 @@ class RecoveryManager(CoordinatorBase):
 
     def find_stuck_jobs(
         self,
-        running_items: List["WorkItem"],
-        timeout_multiplier: Optional[float] = None,
-    ) -> List[tuple["WorkItem", float]]:
+        running_items: list["WorkItem"],
+        timeout_multiplier: float | None = None,
+    ) -> list[tuple["WorkItem", float]]:
         """
         Find jobs that appear to be stuck.
 
@@ -570,7 +568,7 @@ class RecoveryManager(CoordinatorBase):
         return stuck_jobs
 
 
-def load_recovery_config_from_yaml(yaml_config: Dict[str, Any]) -> RecoveryConfig:
+def load_recovery_config_from_yaml(yaml_config: dict[str, Any]) -> RecoveryConfig:
     """Load RecoveryConfig from YAML configuration dict."""
     self_healing = yaml_config.get("self_healing", {})
 
@@ -591,7 +589,7 @@ def load_recovery_config_from_yaml(yaml_config: Dict[str, Any]) -> RecoveryConfi
 # Singleton and Event Wiring (December 2025)
 # =============================================================================
 
-_recovery_manager: Optional[RecoveryManager] = None
+_recovery_manager: RecoveryManager | None = None
 
 
 def get_recovery_manager() -> RecoveryManager:
@@ -666,18 +664,18 @@ def wire_recovery_events() -> RecoveryManager:
 
 
 __all__ = [
+    "JobRecoveryState",
+    "NodeRecoveryState",
     # Enums
     "RecoveryAction",
-    "RecoveryResult",
     # Data classes
     "RecoveryConfig",
     "RecoveryEvent",
-    "NodeRecoveryState",
-    "JobRecoveryState",
     # Main class
     "RecoveryManager",
+    "RecoveryResult",
+    "get_recovery_manager",
     # Functions
     "load_recovery_config_from_yaml",
-    "get_recovery_manager",
     "wire_recovery_events",
 ]

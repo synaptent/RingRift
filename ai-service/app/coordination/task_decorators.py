@@ -39,9 +39,10 @@ import functools
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +61,10 @@ class TaskContext:
     task_id: str
     task_type: str
     start_time: float
-    board_type: Optional[str] = None
-    num_players: Optional[int] = None
-    node_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    board_type: str | None = None
+    num_players: int | None = None
+    node_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def elapsed_seconds(self) -> float:
         """Get elapsed time since task start."""
@@ -72,10 +73,11 @@ class TaskContext:
 
 # Thread-local storage for task context
 import threading
+
 _task_context_var = threading.local()
 
 
-def get_current_task_context() -> Optional[TaskContext]:
+def get_current_task_context() -> TaskContext | None:
     """Get the current task context if inside a coordinated task.
 
     Returns:
@@ -90,7 +92,7 @@ def get_current_task_context() -> Optional[TaskContext]:
     return getattr(_task_context_var, 'context', None)
 
 
-def _set_task_context(ctx: Optional[TaskContext]) -> None:
+def _set_task_context(ctx: TaskContext | None) -> None:
     """Set the current task context (internal use)."""
     _task_context_var.context = ctx
 
@@ -107,7 +109,7 @@ def _extract_board_info(
     kwargs: dict,
     board_type_param: str = "board_type",
     num_players_param: str = "num_players",
-) -> tuple[Optional[str], Optional[int]]:
+) -> tuple[str | None, int | None]:
     """Extract board_type and num_players from function arguments."""
     board_type = kwargs.get(board_type_param)
     num_players = kwargs.get(num_players_param)
@@ -116,9 +118,9 @@ def _extract_board_info(
     if not board_type:
         config = kwargs.get("config") or (args[0] if args and hasattr(args[0], 'board_type') else None)
         if config and hasattr(config, 'board_type'):
-            board_type = getattr(config, 'board_type')
+            board_type = config.board_type
             if hasattr(config, 'num_players'):
-                num_players = getattr(config, 'num_players')
+                num_players = config.num_players
 
     return board_type, num_players
 
@@ -137,7 +139,7 @@ def _emit_task_started(
         if ctx.task_type == "training":
             import asyncio
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(emit_training_started(
                     job_id=ctx.task_id,
                     board_type=ctx.board_type or "",
@@ -208,7 +210,7 @@ def _emit_task_complete_sync(
         # Try to schedule async emission
         import asyncio
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             asyncio.create_task(_emit_task_complete_async(ctx, result, emit_events))
         except RuntimeError:
             # No event loop, use sync fallback
@@ -276,7 +278,7 @@ def _emit_task_failed_sync(
     try:
         import asyncio
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             asyncio.create_task(_emit_task_failed_async(ctx, error, emit_events))
         except RuntimeError:
             from app.coordination.event_emitters import emit_training_complete_sync
@@ -477,9 +479,9 @@ def coordinate_async_task(
 @contextmanager
 def task_context(
     task_type: str,
-    task_id: Optional[str] = None,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    task_id: str | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     emit_events: bool = True,
 ):
     """Context manager for coordinated task blocks.
@@ -523,11 +525,11 @@ def task_context(
 
 
 __all__ = [
-    # Decorators
-    "coordinate_task",
-    "coordinate_async_task",
     # Context
     "TaskContext",
+    "coordinate_async_task",
+    # Decorators
+    "coordinate_task",
     "get_current_task_context",
     "task_context",
 ]

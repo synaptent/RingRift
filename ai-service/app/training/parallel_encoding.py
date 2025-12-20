@@ -30,10 +30,10 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Lazy imports to avoid circular dependencies and speed up worker init
-_ENCODER_CACHE: Dict[str, Any] = {}
+_ENCODER_CACHE: dict[str, Any] = {}
 
 
 def _get_encoder(
@@ -72,8 +72,8 @@ def _get_neural_net_encoder(board_type_str: str, feature_version: int = 2):
     """Get or create a cached NeuralNetAI encoder for square boards."""
     cache_key = f"nn_{board_type_str}_fv{feature_version}"
     if cache_key not in _ENCODER_CACHE:
-        from app.models import AIConfig, BoardType
         from app.ai.neural_net import NeuralNetAI
+        from app.models import AIConfig, BoardType
 
         os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
 
@@ -122,12 +122,12 @@ class EncodedSample:
 class GameEncodingResult:
     """Result of encoding a single game."""
     game_id: str
-    samples: List[EncodedSample]
-    error: Optional[str] = None
+    samples: list[EncodedSample]
+    error: str | None = None
 
 
 def _encode_single_game(
-    game_data: Dict[str, Any],
+    game_data: dict[str, Any],
     board_type_str: str,
     num_players: int,
     encoder_version: str,
@@ -156,9 +156,9 @@ def _encode_single_game(
     Returns:
         GameEncodingResult with encoded samples or error
     """
-    from app.models import BoardType, GameState
-    from app.game_engine import GameEngine
     from app.ai.neural_net import INVALID_MOVE_INDEX, encode_move_for_board
+    from app.game_engine import GameEngine
+    from app.models import BoardType
 
     game_id = game_data.get("game_id", "unknown")
 
@@ -188,8 +188,8 @@ def _encode_single_game(
             )
 
         # First pass: replay game and collect samples (without values yet)
-        pending_samples: List[Tuple[np.ndarray, np.ndarray, int, int, int, str, int]] = []
-        history_frames: List[np.ndarray] = []
+        pending_samples: list[tuple[np.ndarray, np.ndarray, int, int, int, str, int]] = []
+        history_frames: list[np.ndarray] = []
         current_state = initial_state
         total_moves = len(moves)
 
@@ -199,7 +199,7 @@ def _encode_single_game(
             # Apply move to get next state
             try:
                 current_state = GameEngine.apply_move(current_state, move, trace_mode=True)
-            except Exception as e:
+            except Exception:
                 # Skip rest of game on replay error
                 break
 
@@ -260,7 +260,7 @@ def _encode_single_game(
             values_vec = _compute_multi_player_values(final_state, num_players)
 
         # Build final samples with computed values
-        samples: List[EncodedSample] = []
+        samples: list[EncodedSample] = []
         for stacked, globals_vec, idx, move_idx, perspective, phase_str, n_players in pending_samples:
             value = _value_from_final_ranking(final_state, perspective, num_players) if final_state else 0.0
 
@@ -285,7 +285,7 @@ def _encode_single_game(
 
 def _build_stacked_features(
     current: np.ndarray,
-    history: List[np.ndarray],
+    history: list[np.ndarray],
     history_length: int,
 ) -> np.ndarray:
     """Build stacked features with history frames."""
@@ -295,11 +295,11 @@ def _build_stacked_features(
     while len(hist) < history_length:
         hist.append(np.zeros_like(current))
 
-    return np.concatenate([current] + hist, axis=0)
+    return np.concatenate([current, *hist], axis=0)
 
 
 def _compute_multi_player_values(
-    final_state: "GameState",
+    final_state: GameState,
     num_players: int,
     max_players: int = 4,
 ) -> np.ndarray:
@@ -318,7 +318,7 @@ def _compute_multi_player_values(
 
     player_scores.sort(key=lambda x: x[1], reverse=True)
 
-    player_ranks: Dict[int, int] = {}
+    player_ranks: dict[int, int] = {}
     for rank, (player_num, _) in enumerate(player_scores, start=1):
         player_ranks[player_num] = rank
 
@@ -337,7 +337,7 @@ def _compute_multi_player_values(
 
 
 def _value_from_final_ranking(
-    final_state: "GameState",
+    final_state: GameState,
     perspective: int,
     num_players: int,
 ) -> float:
@@ -377,8 +377,8 @@ class ParallelEncoder:
 
     def __init__(
         self,
-        board_type: "BoardType",
-        num_workers: Optional[int] = None,
+        board_type: BoardType,
+        num_workers: int | None = None,
         encoder_version: str = "v3",
         feature_version: int = 2,
         history_length: int = 3,
@@ -397,7 +397,6 @@ class ParallelEncoder:
             sample_every: Sample every Nth move
             use_board_aware_encoding: Use board-specific policy encoding
         """
-        from app.models import BoardType
 
         self.board_type = board_type
         self.board_type_str = board_type.value
@@ -413,7 +412,7 @@ class ParallelEncoder:
         self.num_workers = num_workers
 
         # Create process pool
-        self._executor: Optional[ProcessPoolExecutor] = None
+        self._executor: ProcessPoolExecutor | None = None
 
     def _get_executor(self) -> ProcessPoolExecutor:
         """Get or create the process pool executor."""
@@ -433,10 +432,10 @@ class ParallelEncoder:
 
     def encode_games_batch(
         self,
-        games: List[Dict[str, Any]],
+        games: list[dict[str, Any]],
         num_players: int,
         show_progress: bool = True,
-    ) -> Tuple[List[EncodedSample], List[str]]:
+    ) -> tuple[list[EncodedSample], list[str]]:
         """
         Encode a batch of games in parallel.
 
@@ -465,8 +464,8 @@ class ParallelEncoder:
             use_board_aware_encoding=self.use_board_aware_encoding,
         )
 
-        all_samples: List[EncodedSample] = []
-        errors: List[str] = []
+        all_samples: list[EncodedSample] = []
+        errors: list[str] = []
 
         # Use map for simpler, more reliable parallel processing
         # Process in chunks for better progress reporting
@@ -540,7 +539,7 @@ class ParallelEncoder:
 
         # Process remaining
         if batch:
-            samples, errors = self.encode_games_batch(
+            samples, _errors = self.encode_games_batch(
                 batch, num_players, show_progress=False
             )
             if callback:
@@ -561,8 +560,8 @@ class ParallelEncoder:
 
 
 def samples_to_arrays(
-    samples: List[EncodedSample],
-) -> Dict[str, np.ndarray]:
+    samples: list[EncodedSample],
+) -> dict[str, np.ndarray]:
     """
     Convert a list of EncodedSample to numpy arrays suitable for NPZ.
 
@@ -606,16 +605,16 @@ def samples_to_arrays(
 
 # Convenience function for direct use
 def parallel_encode_games(
-    games: List[Dict[str, Any]],
-    board_type: "BoardType",
+    games: list[dict[str, Any]],
+    board_type: BoardType,
     num_players: int,
-    num_workers: Optional[int] = None,
+    num_workers: int | None = None,
     encoder_version: str = "v3",
     feature_version: int = 2,
     history_length: int = 3,
     sample_every: int = 1,
     use_board_aware_encoding: bool = False,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Convenience function to parallel encode games and return arrays.
 

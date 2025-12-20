@@ -44,7 +44,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Union
 
 # Import path utilities (graceful fallback for bootstrap)
 try:
@@ -76,7 +76,7 @@ def _get_env_format_style() -> str:
     return style
 
 
-def _get_env_log_file() -> Optional[str]:
+def _get_env_log_file() -> str | None:
     """Get log file path from environment."""
     return os.environ.get("RINGRIFT_LOG_FILE")
 
@@ -124,7 +124,7 @@ class JSONFormatter(logging.Formatter):
         self.include_exception = include_exception
 
     def format(self, record: logging.LogRecord) -> str:
-        log_obj: Dict[str, Any] = {
+        log_obj: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created).isoformat(),
             "level": record.levelname,
             "logger": record.name,
@@ -181,11 +181,11 @@ def create_formatter(format_style: str) -> logging.Formatter:
 
 
 def setup_logging(
-    name: Optional[str] = None,
-    level: Optional[Union[int, str]] = None,
-    format_style: Optional[str] = None,
-    log_file: Optional[Union[str, Path]] = None,
-    log_dir: Optional[Union[str, Path]] = None,
+    name: str | None = None,
+    level: Union[int, str] | None = None,
+    format_style: str | None = None,
+    log_file: Union[str, Path] | None = None,
+    log_dir: Union[str, Path] | None = None,
     console: bool = True,
     propagate: bool = False,
 ) -> logging.Logger:
@@ -301,7 +301,7 @@ def get_logger(name: str) -> logging.Logger:
 
 def configure_third_party_loggers(
     quiet: bool = True,
-    verbose_packages: Optional[list[str]] = None,
+    verbose_packages: list[str] | None = None,
 ) -> None:
     """Configure logging levels for common third-party packages.
 
@@ -385,7 +385,7 @@ def production_logger(name: str) -> logging.Logger:
 
 def script_logger(
     script_name: str,
-    log_dir: Optional[Union[str, Path]] = None,
+    log_dir: Union[str, Path] | None = None,
 ) -> logging.Logger:
     """Get a logger configured for long-running scripts.
 

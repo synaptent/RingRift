@@ -20,22 +20,22 @@ Stalemate Tiebreakers:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 __all__ = [
-    "derive_victory_type",
-    "derive_stalemate_tiebreaker",
-    "validate_victory_type",
-    "validate_stalemate_tiebreaker",
-    "VICTORY_TYPES",
     "STALEMATE_TIEBREAKERS",
+    "VICTORY_TYPES",
+    "derive_stalemate_tiebreaker",
+    "derive_victory_type",
+    "validate_stalemate_tiebreaker",
+    "validate_victory_type",
 ]
 
 if TYPE_CHECKING:
     from app.models import GameState
 
 
-def derive_stalemate_tiebreaker(game_state: "GameState") -> str:
+def derive_stalemate_tiebreaker(game_state: GameState) -> str:
     """Determine which tiebreaker resolved a stalemate victory.
 
     The tiebreaker ladder per game_engine.py is:
@@ -88,10 +88,7 @@ def derive_stalemate_tiebreaker(game_state: "GameState") -> str:
     # A tiebreaker "determines" the winner if winner has strictly higher than all others
     def winner_has_unique_max(key: str) -> bool:
         winner_val = winner_scores[key]
-        for pid, s in scores.items():
-            if pid != winner and s[key] >= winner_val:
-                return False
-        return True
+        return all(not (pid != winner and s[key] >= winner_val) for pid, s in scores.items())
 
     if winner_has_unique_max("collapsed"):
         return "territory"
@@ -107,9 +104,9 @@ def derive_stalemate_tiebreaker(game_state: "GameState") -> str:
 
 
 def derive_victory_type(
-    game_state: "GameState",
-    max_moves: Optional[int] = None,
-) -> Tuple[str, Optional[str]]:
+    game_state: GameState,
+    max_moves: int | None = None,
+) -> tuple[str, str | None]:
     """Derive the victory type from the final game state.
 
     Per GAME_RECORD_SPEC.md, canonical termination reasons are:
@@ -203,6 +200,6 @@ def validate_victory_type(victory_type: str) -> bool:
     return victory_type in VICTORY_TYPES
 
 
-def validate_stalemate_tiebreaker(tiebreaker: Optional[str]) -> bool:
+def validate_stalemate_tiebreaker(tiebreaker: str | None) -> bool:
     """Check if a stalemate_tiebreaker string is valid."""
     return tiebreaker is None or tiebreaker in STALEMATE_TIEBREAKERS

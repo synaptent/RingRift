@@ -38,11 +38,12 @@ import socket
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 # Default database location
 DEFAULT_MONITOR_DB = Path("/tmp/ringrift_coordination/queue_monitor.db")
@@ -151,7 +152,7 @@ class QueueStatus:
     last_updated: float
     trend: str  # "rising", "stable", "falling"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "queue_type": self.queue_type.value,
             "current_depth": self.current_depth,
@@ -179,14 +180,14 @@ class QueueMonitor:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
-        config: Optional[Dict[QueueType, Dict[str, int]]] = None,
+        db_path: Path | None = None,
+        config: dict[QueueType, dict[str, int]] | None = None,
     ):
         self.db_path = db_path or DEFAULT_MONITOR_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.config = config or DEFAULT_QUEUE_CONFIG
         self._local = threading.local()
-        self._backpressure_callbacks: Dict[QueueType, List[Callable[[BackpressureLevel], None]]] = {}
+        self._backpressure_callbacks: dict[QueueType, list[Callable[[BackpressureLevel], None]]] = {}
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -328,7 +329,7 @@ class QueueMonitor:
         conn.commit()
         return backpressure
 
-    def get_status(self, queue_type: QueueType) -> Optional[QueueStatus]:
+    def get_status(self, queue_type: QueueType) -> QueueStatus | None:
         """Get current status of a queue."""
         conn = self._get_connection()
         cursor = conn.execute(
@@ -351,7 +352,7 @@ class QueueMonitor:
             trend=row["trend"],
         )
 
-    def get_all_status(self) -> Dict[str, QueueStatus]:
+    def get_all_status(self) -> dict[str, QueueStatus]:
         """Get status of all monitored queues."""
         return {
             qt.value: status
@@ -399,7 +400,7 @@ class QueueMonitor:
         queue_type: QueueType,
         hours: int = 24,
         resolution_minutes: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get queue depth history for graphing."""
         conn = self._get_connection()
         cutoff = time.time() - (hours * 3600)
@@ -428,7 +429,7 @@ class QueueMonitor:
             for row in cursor.fetchall()
         ]
 
-    def get_backpressure_events(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_backpressure_events(self, hours: int = 24) -> list[dict[str, Any]]:
         """Get recent backpressure events."""
         conn = self._get_connection()
         cutoff = time.time() - (hours * 3600)
@@ -460,7 +461,7 @@ class QueueMonitor:
         conn.commit()
         return cursor.rowcount
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get monitoring statistics."""
         all_status = self.get_all_status()
         events = self.get_backpressure_events(hours=24)
@@ -482,11 +483,11 @@ class QueueMonitor:
 
 
 # Global singleton
-_monitor: Optional[QueueMonitor] = None
+_monitor: QueueMonitor | None = None
 _monitor_lock = threading.RLock()
 
 
-def get_queue_monitor(db_path: Optional[Path] = None) -> QueueMonitor:
+def get_queue_monitor(db_path: Path | None = None) -> QueueMonitor:
     """Get the global queue monitor singleton."""
     global _monitor
     with _monitor_lock:
@@ -536,7 +537,7 @@ def get_throttle_factor(queue_type: QueueType) -> float:
     return get_queue_monitor().get_throttle_factor(queue_type)
 
 
-def get_queue_stats() -> Dict[str, Any]:
+def get_queue_stats() -> dict[str, Any]:
     """Get queue monitoring statistics."""
     return get_queue_monitor().get_stats()
 
@@ -596,21 +597,21 @@ if __name__ == "__main__":
 __all__ = [
     # Constants
     "DEFAULT_QUEUE_CONFIG",
-    # Enums
-    "QueueType",
     "BackpressureLevel",
-    # Data classes
-    "QueueStatus",
     "QueueMetric",
     # Main class
     "QueueMonitor",
+    # Data classes
+    "QueueStatus",
+    # Enums
+    "QueueType",
+    "check_backpressure",
     # Functions
     "get_queue_monitor",
-    "reset_queue_monitor",
-    "report_queue_depth",
-    "check_backpressure",
-    "should_throttle_production",
-    "should_stop_production",
-    "get_throttle_factor",
     "get_queue_stats",
+    "get_throttle_factor",
+    "report_queue_depth",
+    "reset_queue_monitor",
+    "should_stop_production",
+    "should_throttle_production",
 ]

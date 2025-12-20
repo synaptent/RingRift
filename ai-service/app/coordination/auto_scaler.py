@@ -9,7 +9,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.coordination.work_queue import WorkQueue
@@ -63,7 +63,7 @@ class ScalingDecision:
     """Result of scaling evaluation."""
     action: ScalingAction
     count: int = 0
-    node_ids: List[str] = field(default_factory=list)
+    node_ids: list[str] = field(default_factory=list)
     reason: str = ""
     estimated_cost_change: float = 0.0
 
@@ -74,10 +74,10 @@ class ScaleEvent:
     timestamp: float
     action: ScalingAction
     count: int
-    node_ids: List[str]
+    node_ids: list[str]
     reason: str
     success: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -101,26 +101,26 @@ class AutoScaler:
 
     def __init__(
         self,
-        config: Optional[ScalingConfig] = None,
-        vast_client: Optional[Any] = None,  # VastClient when available
+        config: ScalingConfig | None = None,
+        vast_client: Any | None = None,  # VastClient when available
     ):
         self.config = config or ScalingConfig()
         self.vast_client = vast_client
 
         # State tracking
         self._last_scale_time: float = 0
-        self._scale_history: List[ScaleEvent] = []
-        self._active_instances: Dict[str, NodeMetrics] = {}
-        self._node_idle_since: Dict[str, float] = {}  # node_id -> timestamp
+        self._scale_history: list[ScaleEvent] = []
+        self._active_instances: dict[str, NodeMetrics] = {}
+        self._node_idle_since: dict[str, float] = {}  # node_id -> timestamp
 
         # Cost tracking
         self._cost_start_time: float = time.time()
-        self._cost_samples: List[tuple] = []  # (timestamp, hourly_cost)
+        self._cost_samples: list[tuple] = []  # (timestamp, hourly_cost)
         self._total_cost_accumulated: float = 0.0  # Cumulative cost in $
         self._last_cost_update: float = time.time()
 
         # Reference to work queue (set by orchestrator)
-        self._work_queue: Optional["WorkQueue"] = None
+        self._work_queue: WorkQueue | None = None
 
     def set_work_queue(self, work_queue: "WorkQueue") -> None:
         """Set the work queue reference."""
@@ -164,7 +164,7 @@ class AutoScaler:
         by_status = status.get("by_status", {})
         return by_status.get("running", 0) + by_status.get("claimed", 0)
 
-    def _get_idle_nodes(self) -> List[str]:
+    def _get_idle_nodes(self) -> list[str]:
         """Get list of nodes that have been idle beyond the threshold."""
         idle_threshold = time.time() - (self.config.gpu_idle_minutes * 60)
         idle_nodes = []
@@ -198,7 +198,7 @@ class AutoScaler:
 
         self._last_cost_update = now
 
-    def get_cost_metrics(self) -> Dict[str, Any]:
+    def get_cost_metrics(self) -> dict[str, Any]:
         """Get cost tracking metrics.
 
         Returns:
@@ -376,7 +376,7 @@ class AutoScaler:
         self,
         decision: ScalingDecision,
         success: bool,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """Record a scaling event for history tracking."""
         event = ScaleEvent(
@@ -402,7 +402,7 @@ class AutoScaler:
             f"success={success}, reason={decision.reason}"
         )
 
-    def get_scaling_stats(self) -> Dict[str, Any]:
+    def get_scaling_stats(self) -> dict[str, Any]:
         """Get scaling statistics for monitoring."""
         recent_events = [e for e in self._scale_history if time.time() - e.timestamp < 3600]
 
@@ -458,14 +458,14 @@ class MonitoringAwareAutoScaler(AutoScaler):
 
     def __init__(
         self,
-        config: Optional[ScalingConfig] = None,
-        vast_client: Optional[Any] = None,
+        config: ScalingConfig | None = None,
+        vast_client: Any | None = None,
     ):
         super().__init__(config, vast_client)
 
         # Monitoring state (December 2025)
-        self._monitoring_alerts: Dict[str, float] = {}  # alert_key -> timestamp
-        self._unhealthy_nodes: Dict[str, float] = {}    # node_id -> timestamp
+        self._monitoring_alerts: dict[str, float] = {}  # alert_key -> timestamp
+        self._unhealthy_nodes: dict[str, float] = {}    # node_id -> timestamp
         self._cluster_healthy: bool = True
         self._resource_constrained: bool = False
         self._event_subscribed: bool = False
@@ -578,16 +578,15 @@ class MonitoringAwareAutoScaler(AutoScaler):
         decision = await super().evaluate()
 
         # If cluster is unhealthy, be conservative
-        if not self._cluster_healthy:
-            if decision.action == ScalingAction.SCALE_UP:
-                # Reduce scale-up during cluster issues
-                reduced_count = max(1, decision.count // 2)
-                return ScalingDecision(
-                    action=ScalingAction.SCALE_UP,
-                    count=reduced_count,
-                    reason=f"{decision.reason}_reduced_cluster_unhealthy",
-                    estimated_cost_change=decision.estimated_cost_change * (reduced_count / max(1, decision.count)),
-                )
+        if not self._cluster_healthy and decision.action == ScalingAction.SCALE_UP:
+            # Reduce scale-up during cluster issues
+            reduced_count = max(1, decision.count // 2)
+            return ScalingDecision(
+                action=ScalingAction.SCALE_UP,
+                count=reduced_count,
+                reason=f"{decision.reason}_reduced_cluster_unhealthy",
+                estimated_cost_change=decision.estimated_cost_change * (reduced_count / max(1, decision.count)),
+            )
 
         # If we have unhealthy nodes, prioritize them for scale-down
         if decision.action == ScalingAction.SCALE_DOWN and self._unhealthy_nodes:
@@ -606,7 +605,7 @@ class MonitoringAwareAutoScaler(AutoScaler):
 
         return decision
 
-    def get_monitoring_status(self) -> Dict[str, Any]:
+    def get_monitoring_status(self) -> dict[str, Any]:
         """Get monitoring integration status."""
         return {
             "event_subscribed": self._event_subscribed,
@@ -617,7 +616,7 @@ class MonitoringAwareAutoScaler(AutoScaler):
         }
 
 
-def load_scaling_config_from_yaml(yaml_config: Dict[str, Any]) -> ScalingConfig:
+def load_scaling_config_from_yaml(yaml_config: dict[str, Any]) -> ScalingConfig:
     """Load ScalingConfig from YAML configuration dict."""
     auto_scaling = yaml_config.get("auto_scaling", {})
 
@@ -639,8 +638,8 @@ def load_scaling_config_from_yaml(yaml_config: Dict[str, Any]) -> ScalingConfig:
 
 
 def create_monitoring_aware_scaler(
-    config: Optional[ScalingConfig] = None,
-    vast_client: Optional[Any] = None,
+    config: ScalingConfig | None = None,
+    vast_client: Any | None = None,
     subscribe_events: bool = True,
 ) -> MonitoringAwareAutoScaler:
     """Create an AutoScaler with monitoring event integration.
@@ -666,17 +665,17 @@ def create_monitoring_aware_scaler(
 # =============================================================================
 
 __all__ = [
+    # Classes
+    "AutoScaler",
+    "MonitoringAwareAutoScaler",
+    "NodeMetrics",
+    "ScaleEvent",
     # Enums
     "ScalingAction",
     # Data classes
     "ScalingConfig",
     "ScalingDecision",
-    "ScaleEvent",
-    "NodeMetrics",
-    # Classes
-    "AutoScaler",
-    "MonitoringAwareAutoScaler",
+    "create_monitoring_aware_scaler",
     # Functions
     "load_scaling_config_from_yaml",
-    "create_monitoring_aware_scaler",
 ]

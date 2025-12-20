@@ -126,8 +126,8 @@
       },
 
       "availability": {
-        "core_gameplay_uptime_percent": 99.5,
-        "monthly_error_budget_percent": 0.5
+        "core_gameplay_uptime_percent": 99.9,
+        "monthly_error_budget_percent": 0.1
       }
     }
   },

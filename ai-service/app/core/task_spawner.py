@@ -34,31 +34,26 @@ import asyncio
 import logging
 import threading
 import time
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     Any,
-    AsyncGenerator,
-    Callable,
-    Coroutine,
-    Dict,
     Generic,
-    List,
-    Optional,
     TypeVar,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "TaskSpawner",
+    "RestartPolicy",
     "SpawnedTask",
     "TaskGroup",
-    "RestartPolicy",
+    "TaskSpawner",
     "TaskState",
-    "spawn",
     "get_spawner",
+    "spawn",
 ]
 
 T = TypeVar("T")
@@ -90,7 +85,7 @@ class TaskResult:
     """Result of a completed task."""
     success: bool
     result: Any = None
-    error: Optional[Exception] = None
+    error: Exception | None = None
     duration: float = 0.0
     restarts: int = 0
 
@@ -111,15 +106,15 @@ class SpawnedTask(Generic[T]):
     name: str
     state: TaskState = TaskState.PENDING
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    started_at: float | None = None
+    completed_at: float | None = None
     restarts: int = 0
-    last_error: Optional[Exception] = None
-    _task: Optional[asyncio.Task] = field(default=None, repr=False)
+    last_error: Exception | None = None
+    _task: asyncio.Task | None = field(default=None, repr=False)
     _result: Any = field(default=None, repr=False)
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Get task duration in seconds."""
         if self.started_at is None:
             return None
@@ -149,7 +144,7 @@ class SpawnedTask(Generic[T]):
             return True
         return False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -182,16 +177,16 @@ class TaskGroup:
         await group.cancel_all()  # Or cancel all
     """
 
-    def __init__(self, name: str, spawner: "TaskSpawner"):
+    def __init__(self, name: str, spawner: TaskSpawner):
         self.name = name
         self._spawner = spawner
-        self._tasks: Dict[str, SpawnedTask] = {}
+        self._tasks: dict[str, SpawnedTask] = {}
         self._lock = asyncio.Lock()
 
     async def spawn(
         self,
         coro: Coroutine[Any, Any, T],
-        name: Optional[str] = None,
+        name: str | None = None,
         **kwargs: Any,
     ) -> SpawnedTask[T]:
         """Spawn a task in this group."""
@@ -200,7 +195,7 @@ class TaskGroup:
             self._tasks[task.name] = task
         return task
 
-    async def wait_all(self, timeout: Optional[float] = None) -> List[SpawnedTask]:
+    async def wait_all(self, timeout: float | None = None) -> list[SpawnedTask]:
         """Wait for all tasks to complete."""
         async with self._lock:
             tasks = list(self._tasks.values())
@@ -209,13 +204,11 @@ class TaskGroup:
             return []
 
         aws = [t.wait() for t in tasks if t._task]
-        try:
+        with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(
                 asyncio.gather(*aws, return_exceptions=True),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
-            pass
 
         return tasks
 
@@ -232,7 +225,7 @@ class TaskGroup:
         return cancelled
 
     @property
-    def tasks(self) -> List[SpawnedTask]:
+    def tasks(self) -> list[SpawnedTask]:
         """Get all tasks in group."""
         return list(self._tasks.values())
 
@@ -287,7 +280,7 @@ class TaskSpawner:
 
     def __init__(
         self,
-        max_concurrent: Optional[int] = None,
+        max_concurrent: int | None = None,
         default_restart_policy: RestartPolicy = RestartPolicy.NEVER,
     ):
         """Initialize spawner.
@@ -298,9 +291,9 @@ class TaskSpawner:
         """
         self._max_concurrent = max_concurrent
         self._default_restart_policy = default_restart_policy
-        self._tasks: Dict[str, SpawnedTask] = {}
-        self._groups: Dict[str, TaskGroup] = {}
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._tasks: dict[str, SpawnedTask] = {}
+        self._groups: dict[str, TaskGroup] = {}
+        self._semaphore: asyncio.Semaphore | None = None
         self._lock = asyncio.Lock()
         self._counter = 0
         self._shutting_down = False
@@ -319,13 +312,13 @@ class TaskSpawner:
     async def spawn(
         self,
         coro: Coroutine[Any, Any, T],
-        name: Optional[str] = None,
-        restart_policy: Optional[RestartPolicy] = None,
+        name: str | None = None,
+        restart_policy: RestartPolicy | None = None,
         max_restarts: int = 3,
         restart_delay: float = 1.0,
-        group: Optional[str] = None,
-        on_complete: Optional[Callable[[SpawnedTask], None]] = None,
-        on_error: Optional[Callable[[SpawnedTask, Exception], None]] = None,
+        group: str | None = None,
+        on_complete: Callable[[SpawnedTask], None] | None = None,
+        on_error: Callable[[SpawnedTask, Exception], None] | None = None,
     ) -> SpawnedTask[T]:
         """Spawn a supervised task.
 
@@ -363,7 +356,7 @@ class TaskSpawner:
             spawned.state = TaskState.RUNNING
 
             restarts = 0
-            last_error: Optional[Exception] = None
+            _last_error: Exception | None = None
 
             while True:
                 try:
@@ -395,7 +388,6 @@ class TaskSpawner:
                     raise
 
                 except Exception as e:
-                    last_error = e
                     spawned.last_error = e
                     spawned.restarts = restarts
                     self._stats["tasks_failed"] += 1
@@ -465,7 +457,7 @@ class TaskSpawner:
         self._groups[name] = group
         return group
 
-    def get_group(self, name: str) -> Optional[TaskGroup]:
+    def get_group(self, name: str) -> TaskGroup | None:
         """Get a task group by name."""
         return self._groups.get(name)
 
@@ -473,7 +465,7 @@ class TaskSpawner:
     async def limited(
         self,
         max_concurrent: int,
-    ) -> AsyncGenerator["LimitedSpawner", None]:
+    ) -> AsyncGenerator[LimitedSpawner, None]:
         """Context manager for concurrency-limited spawning.
 
         Args:
@@ -493,7 +485,7 @@ class TaskSpawner:
         finally:
             await limited.wait_all()
 
-    async def get_task(self, name: str) -> Optional[SpawnedTask]:
+    async def get_task(self, name: str) -> SpawnedTask | None:
         """Get a task by name."""
         async with self._lock:
             return self._tasks.get(name)
@@ -545,7 +537,7 @@ class TaskSpawner:
 
         logger.info("Task spawner shutdown complete")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get spawner statistics."""
         running = sum(1 for t in self._tasks.values() if t.is_running)
         completed = sum(1 for t in self._tasks.values() if t.is_done)
@@ -553,6 +545,7 @@ class TaskSpawner:
         return {
             **self._stats,
             "tasks_running": running,
+            "tasks_completed": completed,
             "tasks_tracked": len(self._tasks),
             "groups": len(self._groups),
             "shutting_down": self._shutting_down,
@@ -560,9 +553,9 @@ class TaskSpawner:
 
     def list_tasks(
         self,
-        state: Optional[TaskState] = None,
-        group: Optional[str] = None,
-    ) -> List[SpawnedTask]:
+        state: TaskState | None = None,
+        group: str | None = None,
+    ) -> list[SpawnedTask]:
         """List tasks matching criteria."""
         tasks = list(self._tasks.values())
 
@@ -584,7 +577,7 @@ class LimitedSpawner:
     def __init__(self, parent: TaskSpawner, max_concurrent: int):
         self._parent = parent
         self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._tasks: List[SpawnedTask] = []
+        self._tasks: list[SpawnedTask] = []
 
     async def spawn(
         self,
@@ -611,7 +604,7 @@ class LimitedSpawner:
 # Global Instance
 # =============================================================================
 
-_spawner: Optional[TaskSpawner] = None
+_spawner: TaskSpawner | None = None
 _spawner_lock = threading.Lock()
 
 

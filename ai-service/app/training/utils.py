@@ -5,13 +5,13 @@ This module provides commonly-used utility functions to avoid duplication
 across the training codebase.
 """
 
-from typing import Optional, Any
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Lazy torch import cache
-_torch: Optional[Any] = None
+_torch: Any | None = None
 
 
 def get_torch():
@@ -31,7 +31,7 @@ def get_torch():
     return _torch
 
 
-def get_device(prefer_cuda: bool = True, device_id: Optional[int] = None):
+def get_device(prefer_cuda: bool = True, device_id: int | None = None):
     """
     Get the best available compute device.
 
@@ -106,6 +106,7 @@ def seed_all(seed: int):
         seed: Random seed value
     """
     import random
+
     import numpy as np
 
     random.seed(seed)

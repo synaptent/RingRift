@@ -17,11 +17,12 @@ Key Features:
 
 import logging
 import os
-from typing import Any, Iterator, List, Optional, Tuple, Union
+from collections.abc import Iterator
+from typing import Any, Union
 
 import numpy as np
 
-from app.utils.resource_guard import check_memory, get_memory_usage, LIMITS
+from app.utils.resource_guard import LIMITS, check_memory, get_memory_usage
 
 try:
     import h5py
@@ -59,7 +60,7 @@ class FileHandle:
         self.path = path
         self.filter_empty_policies = filter_empty_policies
         self._data: Any = None
-        self._format: Optional[str] = None
+        self._format: str | None = None
         self._total_samples = 0
         self._valid_indices: np.ndarray = np.array([], dtype=np.int64)
         self._has_multi_player_values: bool = False
@@ -188,7 +189,7 @@ class FileHandle:
         """Maximum players in multi-player value vectors (default: 4)."""
         return self._max_players
 
-    def get_victory_type_weights(self) -> Optional[np.ndarray]:
+    def get_victory_type_weights(self) -> np.ndarray | None:
         """
         Compute sample weights for victory-type-balanced sampling.
 
@@ -209,7 +210,7 @@ class FileHandle:
 
         # Count victory types
         unique, counts = np.unique(victory_types, return_counts=True)
-        type_counts = dict(zip(unique, counts))
+        type_counts = dict(zip(unique, counts, strict=False))
 
         # Compute inverse frequency weights (normalized to sum to len)
         weights = np.zeros(len(self._valid_indices), dtype=np.float32)
@@ -221,12 +222,12 @@ class FileHandle:
 
         logger.info(
             f"Victory type distribution in {self.path}: "
-            f"{dict(zip(unique, counts))}"
+            f"{dict(zip(unique, counts, strict=False))}"
         )
 
         return weights
 
-    def get_sample(self, idx: int) -> Tuple[
+    def get_sample(self, idx: int) -> tuple[
         np.ndarray, np.ndarray, float, np.ndarray, np.ndarray
     ]:
         """
@@ -271,7 +272,7 @@ class FileHandle:
 
     def get_batch(
         self, indices: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List, List]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list, list]:
         """
         Get a batch of samples by indices.
 
@@ -293,9 +294,9 @@ class FileHandle:
             # (can't do fancy indexing on mmap'd arrays efficiently)
             features_list = []
             globals_list = []
-            values_list: List[float] = []
-            policy_indices_list: List[np.ndarray] = []
-            policy_values_list: List[np.ndarray] = []
+            values_list: list[float] = []
+            policy_indices_list: list[np.ndarray] = []
+            policy_values_list: list[np.ndarray] = []
 
             for actual_idx in actual_indices:
                 idx = int(actual_idx)
@@ -353,9 +354,9 @@ class FileHandle:
 
     def get_sample_with_mp(
         self, idx: int
-    ) -> Tuple[
+    ) -> tuple[
         np.ndarray, np.ndarray, float, np.ndarray, np.ndarray,
-        Optional[np.ndarray], Optional[int]
+        np.ndarray | None, int | None
     ]:
         """
         Get a single sample by index, including multi-player values if available.
@@ -372,8 +373,8 @@ class FileHandle:
         base = self.get_sample(idx)
         features, globals_vec, value, policy_indices, policy_values = base
 
-        values_mp: Optional[np.ndarray] = None
-        num_players: Optional[int] = None
+        values_mp: np.ndarray | None = None
+        num_players: int | None = None
 
         if self._has_multi_player_values:
             actual_idx = int(self._valid_indices[idx])
@@ -387,9 +388,9 @@ class FileHandle:
 
     def get_batch_with_mp(
         self, indices: np.ndarray
-    ) -> Tuple[
-        np.ndarray, np.ndarray, np.ndarray, List, List,
-        Optional[np.ndarray], Optional[np.ndarray]
+    ) -> tuple[
+        np.ndarray, np.ndarray, np.ndarray, list, list,
+        np.ndarray | None, np.ndarray | None
     ]:
         """
         Get a batch of samples including multi-player values if available.
@@ -408,8 +409,8 @@ class FileHandle:
         (features_batch, globals_batch, values_batch,
          policy_indices_list, policy_values_list) = base
 
-        values_mp_batch: Optional[np.ndarray] = None
-        num_players_batch: Optional[np.ndarray] = None
+        values_mp_batch: np.ndarray | None = None
+        num_players_batch: np.ndarray | None = None
 
         if self._has_multi_player_values:
             actual_indices = self._valid_indices[indices]
@@ -483,11 +484,11 @@ class StreamingDataLoader:
 
     def __init__(
         self,
-        data_paths: Union[str, List[str]],
+        data_paths: Union[str, list[str]],
         batch_size: int = 32,
         shuffle: bool = True,
         filter_empty_policies: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         drop_last: bool = False,
         policy_size: int = 55000,
         rank: int = 0,
@@ -521,8 +522,8 @@ class StreamingDataLoader:
         self.world_size = world_size
 
         self._rng = np.random.default_rng(seed)
-        self._file_handles: List[FileHandle] = []
-        self._file_offsets: List[int] = []  # Cumulative sample counts
+        self._file_handles: list[FileHandle] = []
+        self._file_offsets: list[int] = []  # Cumulative sample counts
         self._total_samples = 0
 
         self._initialize_files()
@@ -585,7 +586,7 @@ class StreamingDataLoader:
                 return fh.max_players
         return 4  # Default
 
-    def _global_to_file_index(self, global_idx: int) -> Tuple[int, int]:
+    def _global_to_file_index(self, global_idx: int) -> tuple[int, int]:
         """
         Convert global sample index to (file_index, local_index).
 
@@ -612,8 +613,8 @@ class StreamingDataLoader:
 
     def _batch_sparse_to_dense_policies(
         self,
-        pol_indices_list: List[np.ndarray],
-        pol_values_list: List[np.ndarray],
+        pol_indices_list: list[np.ndarray],
+        pol_values_list: list[np.ndarray],
         batch_size: int,
     ) -> np.ndarray:
         """
@@ -635,7 +636,7 @@ class StreamingDataLoader:
         policy_idx_parts = []
         value_parts = []
 
-        for i, (indices, values) in enumerate(zip(pol_indices_list, pol_values_list)):
+        for i, (indices, values) in enumerate(zip(pol_indices_list, pol_values_list, strict=False)):
             if len(indices) > 0:
                 n = len(indices)
                 batch_idx_parts.append(np.full(n, i, dtype=np.int64))
@@ -651,9 +652,9 @@ class StreamingDataLoader:
 
         return policies
 
-    def __iter__(self) -> Iterator[Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        Tuple[torch.Tensor, torch.Tensor]
+    def __iter__(self) -> Iterator[tuple[
+        tuple[torch.Tensor, torch.Tensor],
+        tuple[torch.Tensor, torch.Tensor]
     ]]:
         """
         Iterate over batches of data.
@@ -719,8 +720,8 @@ class StreamingDataLoader:
             initialized = False
 
             # Collect all policy data for batch conversion
-            all_pol_indices: List[np.ndarray] = [None] * batch_size_actual
-            all_pol_values: List[np.ndarray] = [None] * batch_size_actual
+            all_pol_indices: list[np.ndarray] = [None] * batch_size_actual
+            all_pol_values: list[np.ndarray] = [None] * batch_size_actual
 
             # Load from each file
             for file_idx, positions in file_groups.items():
@@ -734,11 +735,11 @@ class StreamingDataLoader:
                 # Initialize arrays on first file with correct shape
                 if not initialized:
                     features_batch = np.zeros(
-                        (batch_size_actual,) + features.shape[1:],
+                        (batch_size_actual, *features.shape[1:]),
                         dtype=np.float32
                     )
                     globals_batch = np.zeros(
-                        (batch_size_actual,) + globals_vec.shape[1:],
+                        (batch_size_actual, *globals_vec.shape[1:]),
                         dtype=np.float32
                     )
                     initialized = True
@@ -823,11 +824,11 @@ class StreamingDataLoader:
         if self.seed is not None:
             self._rng = np.random.default_rng(self.seed + epoch)
 
-    def iter_with_mp(self) -> Iterator[Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        Tuple[torch.Tensor, torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+    def iter_with_mp(self) -> Iterator[tuple[
+        tuple[torch.Tensor, torch.Tensor],
+        tuple[torch.Tensor, torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]]:
         """
         Iterate over batches including multi-player value vectors.
@@ -891,10 +892,10 @@ class StreamingDataLoader:
             globals_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             values_batch = np.zeros(batch_size_actual, dtype=np.float32)
             # Collect sparse policies for batch conversion (optimized)
-            all_pol_indices: List[np.ndarray] = [np.array([], dtype=np.int64)] * batch_size_actual
-            all_pol_values: List[np.ndarray] = [np.array([], dtype=np.float32)] * batch_size_actual
-            values_mp_batch: Optional[np.ndarray] = None
-            num_players_batch: Optional[np.ndarray] = None
+            all_pol_indices: list[np.ndarray] = [np.array([], dtype=np.int64)] * batch_size_actual
+            all_pol_values: list[np.ndarray] = [np.array([], dtype=np.float32)] * batch_size_actual
+            values_mp_batch: np.ndarray | None = None
+            num_players_batch: np.ndarray | None = None
             if use_mp:
                 values_mp_batch = np.zeros(
                     (batch_size_actual, self.max_players), dtype=np.float32
@@ -915,11 +916,11 @@ class StreamingDataLoader:
                 # Initialize arrays on first file with correct shape
                 if not initialized:
                     features_batch = np.zeros(
-                        (batch_size_actual,) + features.shape[1:],
+                        (batch_size_actual, *features.shape[1:]),
                         dtype=np.float32
                     )
                     globals_batch = np.zeros(
-                        (batch_size_actual,) + globals_vec.shape[1:],
+                        (batch_size_actual, *globals_vec.shape[1:]),
                         dtype=np.float32
                     )
                     initialized = True
@@ -946,8 +947,8 @@ class StreamingDataLoader:
             values_tensor = torch.from_numpy(values_batch).unsqueeze(1)
             policies_tensor = torch.from_numpy(policies_batch)
 
-            values_mp_tensor: Optional[torch.Tensor] = None
-            num_players_tensor: Optional[torch.Tensor] = None
+            values_mp_tensor: torch.Tensor | None = None
+            num_players_tensor: torch.Tensor | None = None
             if use_mp and values_mp_batch is not None:
                 values_mp_tensor = torch.from_numpy(values_mp_batch)
                 num_players_tensor = torch.from_numpy(num_players_batch)
@@ -985,11 +986,11 @@ class StreamingDataset(IterableDataset):  # type: ignore[type-arg]
 
     def __init__(
         self,
-        data_paths: Union[str, List[str]],
+        data_paths: Union[str, list[str]],
         batch_size: int = 32,
         shuffle: bool = True,
         filter_empty_policies: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         drop_last: bool = False,
         policy_size: int = 55000,
         rank: int = 0,
@@ -1027,9 +1028,9 @@ class StreamingDataset(IterableDataset):  # type: ignore[type-arg]
         self._epoch = epoch
         self.loader.set_epoch(epoch)
 
-    def __iter__(self) -> Iterator[Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        Tuple[torch.Tensor, torch.Tensor]
+    def __iter__(self) -> Iterator[tuple[
+        tuple[torch.Tensor, torch.Tensor],
+        tuple[torch.Tensor, torch.Tensor]
     ]]:
         """Iterate over batches."""
         self.loader.set_epoch(self._epoch)
@@ -1061,11 +1062,11 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
 
     def __init__(
         self,
-        data_paths: Union[str, List[str]],
+        data_paths: Union[str, list[str]],
         batch_size: int = 32,
         shuffle: bool = True,
         filter_empty_policies: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         drop_last: bool = False,
         policy_size: int = 55000,
         rank: int = 0,
@@ -1073,9 +1074,9 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
         # Weighting parameters
         sampling_weights: str = 'uniform',
         late_game_exponent: float = 2.0,
-        phase_weights: Optional[dict] = None,
-        engine_weights: Optional[dict] = None,
-        file_weights: Optional[Union[List[float], dict]] = None,
+        phase_weights: dict | None = None,
+        engine_weights: dict | None = None,
+        file_weights: Union[list[float], dict] | None = None,
         file_weight_mode: str = 'recency',
     ):
         """
@@ -1138,9 +1139,9 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
         self.file_weight_mode = file_weight_mode
 
         # Compute sample weights lazily
-        self._sample_weights: Optional[np.ndarray] = None
+        self._sample_weights: np.ndarray | None = None
         self._metadata_available = False
-        self._file_weights: Optional[np.ndarray] = None
+        self._file_weights: np.ndarray | None = None
 
         # Compute per-file weights
         self._compute_file_weights()
@@ -1283,10 +1284,10 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
             return weights
 
         # Collect metadata from all files
-        all_move_numbers: List[np.ndarray] = []
-        all_total_moves: List[np.ndarray] = []
-        all_phases: List[np.ndarray] = []
-        all_engines: List[np.ndarray] = []
+        all_move_numbers: list[np.ndarray] = []
+        all_total_moves: list[np.ndarray] = []
+        all_phases: list[np.ndarray] = []
+        all_engines: list[np.ndarray] = []
 
         metadata_found = True
 
@@ -1382,7 +1383,7 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
 
         if self.sampling_weights == 'victory_type':
             # Victory-type balanced sampling: weight inversely to frequency
-            all_victory_types: List[np.ndarray] = []
+            all_victory_types: list[np.ndarray] = []
             victory_type_found = True
 
             for handle in self._file_handles:
@@ -1402,7 +1403,7 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
                 victory_types = np.concatenate(all_victory_types)
                 # Count each victory type
                 unique, counts = np.unique(victory_types, return_counts=True)
-                type_counts = dict(zip(unique, counts))
+                type_counts = dict(zip(unique, counts, strict=False))
 
                 # Inverse frequency weighting
                 victory_weights = np.array([
@@ -1446,9 +1447,9 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
 
         return weights
 
-    def __iter__(self) -> Iterator[Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        Tuple[torch.Tensor, torch.Tensor]
+    def __iter__(self) -> Iterator[tuple[
+        tuple[torch.Tensor, torch.Tensor],
+        tuple[torch.Tensor, torch.Tensor]
     ]]:
         """
         Iterate over batches with weighted sampling.
@@ -1521,8 +1522,8 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
             globals_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             values_batch = np.zeros(batch_size_actual, dtype=np.float32)
             # Collect sparse policies for batch conversion (optimized)
-            all_pol_indices: List[np.ndarray] = [np.array([], dtype=np.int64)] * batch_size_actual
-            all_pol_values: List[np.ndarray] = [np.array([], dtype=np.float32)] * batch_size_actual
+            all_pol_indices: list[np.ndarray] = [np.array([], dtype=np.int64)] * batch_size_actual
+            all_pol_values: list[np.ndarray] = [np.array([], dtype=np.float32)] * batch_size_actual
             initialized = False
 
             for file_idx, positions in file_groups.items():
@@ -1534,11 +1535,11 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
 
                 if not initialized:
                     features_batch = np.zeros(
-                        (batch_size_actual,) + features.shape[1:],
+                        (batch_size_actual, *features.shape[1:]),
                         dtype=np.float32
                     )
                     globals_batch = np.zeros(
-                        (batch_size_actual,) + globals_vec.shape[1:],
+                        (batch_size_actual, *globals_vec.shape[1:]),
                         dtype=np.float32
                     )
                     initialized = True
@@ -1603,9 +1604,9 @@ def get_sample_count(data_path: str) -> int:
 
 
 def merge_data_files(
-    input_paths: List[str],
+    input_paths: list[str],
     output_path: str,
-    max_samples: Optional[int] = None,
+    max_samples: int | None = None,
     use_hdf5: bool = False,
     memory_check_interval: int = 10000,
 ) -> int:
@@ -1637,11 +1638,11 @@ def merge_data_files(
         )
 
     # Collect all data
-    all_features: List[np.ndarray] = []
-    all_globals: List[np.ndarray] = []
-    all_values: List[float] = []
-    all_policy_indices: List[np.ndarray] = []
-    all_policy_values: List[np.ndarray] = []
+    all_features: list[np.ndarray] = []
+    all_globals: list[np.ndarray] = []
+    all_values: list[float] = []
+    all_policy_indices: list[np.ndarray] = []
+    all_policy_values: list[np.ndarray] = []
 
     total_count = 0
 
@@ -1763,8 +1764,8 @@ class PrefetchIterator:
         data_iter: Iterator,
         prefetch_count: int = 2,
         pin_memory: bool = False,
-        device: Optional[str] = None,
-        transfer_to_device: Optional[torch.device] = None,
+        device: str | None = None,
+        transfer_to_device: torch.device | None = None,
         non_blocking: bool = True,
     ):
         """
@@ -1798,7 +1799,7 @@ class PrefetchIterator:
         self._sentinel = object()
 
         # Exception holder for propagating errors from worker thread
-        self._exception: Optional[Exception] = None
+        self._exception: Exception | None = None
 
         # Start the prefetch thread
         self._worker = threading.Thread(target=self._prefetch_worker, daemon=True)
@@ -1878,7 +1879,7 @@ def prefetch_loader(
     prefetch_count: int = 2,
     pin_memory: bool = False,
     use_mp: bool = False,
-    transfer_to_device: Optional[torch.device] = None,
+    transfer_to_device: torch.device | None = None,
     non_blocking: bool = True,
 ) -> PrefetchIterator:
     """

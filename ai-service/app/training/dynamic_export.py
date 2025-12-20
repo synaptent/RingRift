@@ -26,8 +26,7 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -37,14 +36,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExportSettings:
     """Computed export settings for a config."""
-    max_games: Optional[int]  # None = no limit
+    max_games: int | None  # None = no limit
     sample_every: int  # Sample every Nth move
     epochs: int  # Recommended training epochs
     batch_size: int  # Recommended batch size
     estimated_samples: int  # Estimated output samples
     data_tier: str  # "small", "medium", "large", "xlarge"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "max_games": self.max_games,
             "sample_every": self.sample_every,
@@ -100,7 +99,7 @@ BOARD_ADJUSTMENTS = {
 }
 
 
-def count_games_in_db(db_path: str, board_type: Optional[str] = None, num_players: Optional[int] = None) -> int:
+def count_games_in_db(db_path: str, board_type: str | None = None, num_players: int | None = None) -> int:
     """Count games in a database, optionally filtered by board/players."""
     if not os.path.exists(db_path):
         return 0
@@ -130,9 +129,9 @@ def count_games_in_db(db_path: str, board_type: Optional[str] = None, num_player
 
 
 def count_games_in_dbs(
-    db_paths: List[str],
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    db_paths: list[str],
+    board_type: str | None = None,
+    num_players: int | None = None,
 ) -> int:
     """Count total games across multiple databases."""
     total = 0
@@ -153,7 +152,7 @@ def estimate_samples(
     game_count: int,
     board_type: str,
     sample_every: int,
-    max_games: Optional[int] = None,
+    max_games: int | None = None,
 ) -> int:
     """Estimate number of training samples from games."""
     effective_games = min(game_count, max_games) if max_games else game_count
@@ -163,11 +162,11 @@ def estimate_samples(
 
 
 def get_export_settings(
-    db_paths: List[str],
+    db_paths: list[str],
     board_type: str,
     num_players: int,
-    target_samples: Optional[int] = None,
-    target_epochs: Optional[int] = None,
+    target_samples: int | None = None,
+    target_epochs: int | None = None,
 ) -> ExportSettings:
     """Compute optimal export settings based on available data.
 
@@ -235,7 +234,7 @@ def get_export_settings(
 
 def get_config_export_settings(
     config_key: str,
-    db_paths: Optional[List[str]] = None,
+    db_paths: list[str] | None = None,
 ) -> ExportSettings:
     """Get export settings for a config key (e.g., "square8_2p").
 
@@ -268,7 +267,7 @@ def get_config_export_settings(
 
 
 # Legacy compatibility: dict of settings per config
-def get_legacy_export_dict(configs: List[str], db_paths: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+def get_legacy_export_dict(configs: list[str], db_paths: list[str] | None = None) -> dict[str, dict[str, Any]]:
     """Get export settings as a dict (legacy format for multi_config_training_loop).
 
     Args:

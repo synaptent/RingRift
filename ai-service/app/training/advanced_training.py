@@ -25,10 +25,11 @@ import os
 import subprocess
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
 
 import numpy as np
 import torch
@@ -55,8 +56,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LRFinderResult:
     """Results from learning rate finder."""
-    lrs: List[float]
-    losses: List[float]
+    lrs: list[float]
+    losses: list[float]
     suggested_lr: float
     min_lr: float
     max_lr: float
@@ -87,7 +88,7 @@ class LRFinder:
         model: nn.Module,
         optimizer: optim.Optimizer,
         criterion: nn.Module,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
     ):
         """
         Args:
@@ -110,7 +111,7 @@ class LRFinder:
         train_loader: DataLoader,
         min_lr: float = 1e-7,
         max_lr: float = 10.0,
-        num_iter: Optional[int] = None,
+        num_iter: int | None = None,
         step_mode: str = "exp",
         smooth_factor: float = 0.05,
         diverge_threshold: float = 5.0,
@@ -245,8 +246,8 @@ class LRFinder:
 
     def _analyze_results(
         self,
-        lrs: List[float],
-        losses: List[float],
+        lrs: list[float],
+        losses: list[float],
         min_lr: float,
         max_lr: float,
     ) -> LRFinderResult:
@@ -298,12 +299,12 @@ class LRFinder:
             steepest_lr=steepest_lr,
         )
 
-    def plot(self, result: LRFinderResult, save_path: Optional[str] = None):
+    def plot(self, result: LRFinderResult, save_path: str | None = None):
         """Plot LR finder results."""
         try:
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(figsize=(10, 6))
+            _fig, ax = plt.subplots(figsize=(10, 6))
 
             ax.plot(result.lrs, result.losses, 'b-', linewidth=2)
             ax.set_xscale('log')
@@ -353,7 +354,7 @@ class GradientCheckpointing:
     def __init__(
         self,
         model: nn.Module,
-        checkpoint_layers: Optional[List[str]] = None,
+        checkpoint_layers: list[str] | None = None,
     ):
         """
         Args:
@@ -401,7 +402,7 @@ class GradientCheckpointing:
         self._enabled = False
         logger.info("Gradient checkpointing disabled")
 
-    def _find_checkpoint_layers(self) -> List[Tuple[str, nn.Module]]:
+    def _find_checkpoint_layers(self) -> list[tuple[str, nn.Module]]:
         """Find layers suitable for checkpointing."""
         if self.checkpoint_layers:
             # Use specified layers
@@ -418,9 +419,7 @@ class GradientCheckpointing:
 
             # Checkpoint large layers
             if any(keyword in name.lower() for keyword in
-                   ['block', 'layer', 'encoder', 'decoder', 'transformer']):
-                layers.append((name, module))
-            elif isinstance(module, (nn.TransformerEncoderLayer,
+                   ['block', 'layer', 'encoder', 'decoder', 'transformer']) or isinstance(module, (nn.TransformerEncoderLayer,
                                     nn.TransformerDecoderLayer)):
                 layers.append((name, module))
 
@@ -460,7 +459,7 @@ class GradientCheckpointing:
 
     @staticmethod
     def checkpoint_sequential(
-        functions: List[nn.Module],
+        functions: list[nn.Module],
         segments: int,
         input: torch.Tensor,
     ) -> torch.Tensor:
@@ -487,9 +486,9 @@ class GradientCheckpointing:
 
 def estimate_memory_savings(
     model: nn.Module,
-    input_shape: Tuple[int, ...],
+    input_shape: tuple[int, ...],
     device: torch.device,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Estimate memory savings from gradient checkpointing.
 
@@ -578,7 +577,7 @@ class OpponentStats:
     wins: int = 0
     losses: int = 0
     draws: int = 0
-    last_played: Optional[datetime] = None
+    last_played: datetime | None = None
     generation: int = 0
     priority_score: float = 1.0
 
@@ -626,7 +625,7 @@ class PFSPOpponentPool:
         self.recency_weight = recency_weight
         self.min_games_for_priority = min_games_for_priority
 
-        self._opponents: Dict[str, OpponentStats] = {}
+        self._opponents: dict[str, OpponentStats] = {}
         self._game_history: deque = deque(maxlen=1000)
 
     def add_opponent(
@@ -634,7 +633,7 @@ class PFSPOpponentPool:
         model_path: str,
         elo: float = 1500.0,
         generation: int = 0,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> None:
         """Add an opponent to the pool."""
         if model_path in self._opponents:
@@ -664,9 +663,9 @@ class PFSPOpponentPool:
     def sample_opponent(
         self,
         current_elo: float = 1500.0,
-        exclude: Optional[List[str]] = None,
+        exclude: list[str] | None = None,
         strategy: str = "pfsp",
-    ) -> Optional[OpponentStats]:
+    ) -> OpponentStats | None:
         """
         Sample an opponent from the pool.
 
@@ -707,7 +706,7 @@ class PFSPOpponentPool:
 
     def _pfsp_sample(
         self,
-        candidates: List[OpponentStats],
+        candidates: list[OpponentStats],
         current_elo: float,
     ) -> OpponentStats:
         """PFSP sampling: prioritize hard opponents."""
@@ -821,7 +820,7 @@ class PFSPOpponentPool:
         logger.info(f"Evicting opponent {to_evict} from pool")
         del self._opponents[to_evict]
 
-    def get_pool_stats(self) -> Dict[str, Any]:
+    def get_pool_stats(self) -> dict[str, Any]:
         """Get statistics about the opponent pool."""
         if not self._opponents:
             return {'size': 0}
@@ -838,7 +837,7 @@ class PFSPOpponentPool:
             'avg_games_per_opponent': np.mean(games),
         }
 
-    def get_opponents(self) -> List[OpponentStats]:
+    def get_opponents(self) -> list[OpponentStats]:
         """Get all opponents in the pool."""
         return list(self._opponents.values())
 
@@ -876,7 +875,7 @@ class PFSPOpponentPool:
         """Load pool state from file."""
         import json
 
-        with open(path, 'r') as f:
+        with open(path) as f:
             data = json.load(f)
 
         for p, o in data['opponents'].items():
@@ -930,7 +929,7 @@ class CMAESAutoTuner:
         cmaes_script: str = "scripts/run_gpu_cmaes.py",
         board_type: str = "square8",
         num_players: int = 2,
-        plateau_config: Optional[PlateauConfig] = None,
+        plateau_config: PlateauConfig | None = None,
         output_dir: str = "logs/cmaes_auto",
         min_epochs_between_tuning: int = 50,
         max_auto_tunes: int = 5,
@@ -963,9 +962,9 @@ class CMAESAutoTuner:
 
     def step(
         self,
-        current_elo: Optional[float] = None,
-        current_loss: Optional[float] = None,
-        current_win_rate: Optional[float] = None,
+        current_elo: float | None = None,
+        current_loss: float | None = None,
+        current_win_rate: float | None = None,
     ) -> None:
         """
         Update with current training metrics.
@@ -1023,7 +1022,7 @@ class CMAESAutoTuner:
         generations: int = 30,
         population_size: int = 15,
         games_per_eval: int = 30,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Run CMA-ES optimization.
 
@@ -1103,7 +1102,7 @@ class CMAESAutoTuner:
         finally:
             self._is_tuning = False
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current auto-tuner status."""
         return {
             'current_epoch': self._current_epoch,
@@ -1140,7 +1139,7 @@ def create_advanced_training_suite(
     enable_checkpointing: bool = True,
     enable_pfsp: bool = True,
     enable_auto_tuning: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create a suite of advanced training utilities.
 
@@ -1192,7 +1191,7 @@ class StabilityMetrics:
     loss_variance: float
     param_update_ratio: float
     is_stable: bool
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class TrainingStabilityMonitor:
@@ -1222,11 +1221,11 @@ class TrainingStabilityMonitor:
 
         self._loss_history: deque = deque(maxlen=loss_history_size)
         self._gradient_history: deque = deque(maxlen=loss_history_size)
-        self._last_params: Optional[Dict[str, torch.Tensor]] = None
+        self._last_params: dict[str, torch.Tensor] | None = None
         self._recovery_triggered = False
         self._stability_score = 1.0
 
-    def check_gradients(self, model: nn.Module) -> Tuple[float, List[str]]:
+    def check_gradients(self, model: nn.Module) -> tuple[float, list[str]]:
         """Check gradient health across all parameters."""
         warnings = []
         total_norm = 0.0
@@ -1253,7 +1252,7 @@ class TrainingStabilityMonitor:
 
         return total_norm, warnings
 
-    def check_loss(self, loss: float) -> Tuple[bool, List[str]]:
+    def check_loss(self, loss: float) -> tuple[bool, list[str]]:
         """Check if loss is healthy."""
         warnings = []
         is_healthy = True
@@ -1265,7 +1264,7 @@ class TrainingStabilityMonitor:
             self._loss_history.append(loss)
 
             if len(self._loss_history) >= 10:
-                recent_mean = np.mean(list(self._loss_history)[-10:])
+                np.mean(list(self._loss_history)[-10:])
                 overall_mean = np.mean(list(self._loss_history))
                 overall_std = np.std(list(self._loss_history))
 
@@ -1274,7 +1273,7 @@ class TrainingStabilityMonitor:
 
         return is_healthy, warnings
 
-    def check_param_updates(self, model: nn.Module) -> Tuple[float, List[str]]:
+    def check_param_updates(self, model: nn.Module) -> tuple[float, list[str]]:
         """Check parameter update ratios."""
         warnings = []
         update_ratios = []
@@ -1303,7 +1302,7 @@ class TrainingStabilityMonitor:
         self,
         model: nn.Module,
         loss: float,
-        optimizer: Optional[optim.Optimizer] = None,
+        optimizer: optim.Optimizer | None = None,
     ) -> StabilityMetrics:
         """Run all stability checks and return metrics."""
         all_warnings = []
@@ -1328,9 +1327,8 @@ class TrainingStabilityMonitor:
             self._stability_score = max(0.0, self._stability_score - 0.1)
 
         # Auto-recovery if enabled
-        if self.auto_recover and not is_stable and optimizer is not None:
-            if len(all_warnings) > 3:
-                self._trigger_recovery(optimizer)
+        if self.auto_recover and not is_stable and optimizer is not None and len(all_warnings) > 3:
+            self._trigger_recovery(optimizer)
 
         return StabilityMetrics(
             gradient_norm=grad_norm,
@@ -1360,7 +1358,7 @@ class TrainingStabilityMonitor:
         """Get current stability score (0-1)."""
         return self._stability_score
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get stability summary."""
         return {
             'stability_score': self._stability_score,
@@ -1397,8 +1395,8 @@ class AdaptivePrecisionManager:
 
         self._overflow_count = 0
         self._step_count = 0
-        self._precision_history: List[str] = []
-        self._scaler: Optional[torch.cuda.amp.GradScaler] = None
+        self._precision_history: list[str] = []
+        self._scaler: torch.cuda.amp.GradScaler | None = None
 
         self._precision_map = {
             "fp32": torch.float32,
@@ -1406,7 +1404,7 @@ class AdaptivePrecisionManager:
             "bf16": torch.bfloat16,
         }
 
-    def setup(self, device: torch.device) -> Optional[torch.cuda.amp.GradScaler]:
+    def setup(self, device: torch.device) -> torch.cuda.amp.GradScaler | None:
         """Setup precision management."""
         if device.type != "cuda":
             self.current_precision = "fp32"
@@ -1466,7 +1464,7 @@ class AdaptivePrecisionManager:
 
         self._precision_history.append(self.current_precision)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get precision management stats."""
         return {
             'current_precision': self.current_precision,
@@ -1488,8 +1486,8 @@ class ProgressiveLayerUnfreezing:
     def __init__(
         self,
         model: nn.Module,
-        unfreeze_schedule: Optional[Dict[int, List[str]]] = None,
-        lr_multipliers: Optional[Dict[str, float]] = None,
+        unfreeze_schedule: dict[int, list[str]] | None = None,
+        lr_multipliers: dict[str, float] | None = None,
         total_epochs: int = 50,
     ):
         self.model = model
@@ -1498,9 +1496,9 @@ class ProgressiveLayerUnfreezing:
         self.total_epochs = total_epochs
 
         self._frozen_layers: set = set()
-        self._unfrozen_at_epoch: Dict[str, int] = {}
+        self._unfrozen_at_epoch: dict[str, int] = {}
 
-    def freeze_all_except(self, layer_names: List[str]) -> None:
+    def freeze_all_except(self, layer_names: list[str]) -> None:
         """Freeze all layers except specified ones."""
         for name, param in self.model.named_parameters():
             should_freeze = True
@@ -1513,7 +1511,7 @@ class ProgressiveLayerUnfreezing:
             if should_freeze:
                 self._frozen_layers.add(name)
 
-    def freeze_layers(self, layer_names: List[str]) -> None:
+    def freeze_layers(self, layer_names: list[str]) -> None:
         """Freeze specific layers."""
         for name, param in self.model.named_parameters():
             for frozen_name in layer_names:
@@ -1522,7 +1520,7 @@ class ProgressiveLayerUnfreezing:
                     self._frozen_layers.add(name)
                     break
 
-    def unfreeze_layers(self, layer_names: List[str], epoch: int) -> List[str]:
+    def unfreeze_layers(self, layer_names: list[str], epoch: int) -> list[str]:
         """Unfreeze specific layers."""
         unfrozen = []
         for name, param in self.model.named_parameters():
@@ -1535,7 +1533,7 @@ class ProgressiveLayerUnfreezing:
                     break
         return unfrozen
 
-    def step(self, epoch: int, optimizer: optim.Optimizer) -> List[str]:
+    def step(self, epoch: int, optimizer: optim.Optimizer) -> list[str]:
         """Update layer freezing based on epoch."""
         unfrozen = []
 
@@ -1573,7 +1571,7 @@ class ProgressiveLayerUnfreezing:
         # Replace optimizer param groups
         optimizer.param_groups = trainable_params
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get layer freezing status."""
         return {
             'frozen_count': len(self._frozen_layers),
@@ -1586,7 +1584,7 @@ class ProgressiveLayerUnfreezing:
         model: nn.Module,
         total_epochs: int,
         num_stages: int = 4,
-    ) -> Dict[int, List[str]]:
+    ) -> dict[int, list[str]]:
         """Create a default unfreezing schedule."""
         schedule = {}
         layers = [name for name, _ in model.named_modules()
@@ -1619,7 +1617,7 @@ class SWAWithRestarts:
         self,
         model: nn.Module,
         swa_start: float = 0.75,
-        swa_lr: Optional[float] = None,
+        swa_lr: float | None = None,
         restart_period: int = 10,
         num_restarts: int = 3,
     ):
@@ -1629,7 +1627,7 @@ class SWAWithRestarts:
         self.restart_period = restart_period
         self.num_restarts = num_restarts
 
-        self._swa_model: Optional[torch.optim.swa_utils.AveragedModel] = None
+        self._swa_model: torch.optim.swa_utils.AveragedModel | None = None
         self._restart_count = 0
         self._steps_since_restart = 0
         self._is_averaging = False
@@ -1686,7 +1684,7 @@ class SWAWithRestarts:
 
         logger.info(f"SWA restart {self._restart_count}/{self.num_restarts}")
 
-    def get_averaged_model(self) -> Optional[nn.Module]:
+    def get_averaged_model(self) -> nn.Module | None:
         """Get the SWA averaged model."""
         return self._swa_model
 
@@ -1695,7 +1693,7 @@ class SWAWithRestarts:
         if self._swa_model is not None:
             torch.optim.swa_utils.update_bn(loader, self._swa_model, device=device)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get SWA statistics."""
         return {
             'is_averaging': self._is_averaging,
@@ -1739,7 +1737,7 @@ class SmartCheckpointManager:
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-        self._checkpoints: List[Tuple[float, Path]] = []
+        self._checkpoints: list[tuple[float, Path]] = []
         self._last_save_epoch = -1
         self._last_loss = float('inf')
         self._adaptive_interval = min_interval_epochs
@@ -1771,7 +1769,7 @@ class SmartCheckpointManager:
         optimizer: optim.Optimizer,
         epoch: int,
         loss: float,
-        extra: Optional[Dict[str, Any]] = None,
+        extra: dict[str, Any] | None = None,
     ) -> Path:
         """Save checkpoint."""
         checkpoint_path = self.save_dir / f"checkpoint_epoch{epoch:04d}_loss{loss:.4f}.pt"
@@ -1805,7 +1803,7 @@ class SmartCheckpointManager:
 
         return checkpoint_path
 
-    def get_best_checkpoint(self) -> Optional[Path]:
+    def get_best_checkpoint(self) -> Path | None:
         """Get path to best checkpoint."""
         if self._checkpoints:
             return self._checkpoints[0][1]
@@ -1814,9 +1812,9 @@ class SmartCheckpointManager:
     def load_best(
         self,
         model: nn.Module,
-        optimizer: Optional[optim.Optimizer] = None,
+        optimizer: optim.Optimizer | None = None,
         device: torch.device = torch.device('cpu'),
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Load best checkpoint."""
         best_path = self.get_best_checkpoint()
         if best_path is None or not best_path.exists():
@@ -1831,7 +1829,7 @@ class SmartCheckpointManager:
         logger.info(f"Loaded best checkpoint from epoch {checkpoint['epoch']}")
         return checkpoint
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get checkpoint stats."""
         return {
             'num_checkpoints': len(self._checkpoints),
@@ -1854,7 +1852,7 @@ def create_phase4_training_suite(
     enable_progressive_unfreezing: bool = False,
     enable_swa_restarts: bool = True,
     enable_smart_checkpoints: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create Phase 4 training utilities suite.
 
@@ -1931,8 +1929,8 @@ class GradientAccumulationScheduler:
 
         self._step_count = 0
         self._memory_history: deque = deque(maxlen=100)
-        self._accumulation_history: List[Tuple[int, int]] = []
-        self._effective_batch_sizes: List[int] = []
+        self._accumulation_history: list[tuple[int, int]] = []
+        self._effective_batch_sizes: list[int] = []
 
     def get_memory_usage(self) -> float:
         """Get current GPU memory usage fraction."""
@@ -2008,7 +2006,7 @@ class GradientAccumulationScheduler:
         """Scale loss for gradient accumulation."""
         return loss / self.accumulation_steps
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get accumulation statistics."""
         return {
             'current_accumulation': self.accumulation_steps,
@@ -2035,7 +2033,7 @@ class MemoryEfficientAttention:
         self.chunk_size = chunk_size
         self.dropout = dropout
         self._use_flash = use_flash_attention and self._check_flash_available()
-        self._attention_stats: Dict[str, float] = {}
+        self._attention_stats: dict[str, float] = {}
 
     def _check_flash_available(self) -> bool:
         """Check if Flash Attention 2 is available."""
@@ -2054,7 +2052,7 @@ class MemoryEfficientAttention:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_mask: Optional[torch.Tensor] = None,
+        attn_mask: torch.Tensor | None = None,
         is_causal: bool = False,
     ) -> torch.Tensor:
         """
@@ -2080,7 +2078,7 @@ class MemoryEfficientAttention:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_mask: Optional[torch.Tensor],
+        attn_mask: torch.Tensor | None,
         is_causal: bool,
     ) -> torch.Tensor:
         """Use PyTorch's scaled_dot_product_attention or flash-attn."""
@@ -2108,11 +2106,11 @@ class MemoryEfficientAttention:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_mask: Optional[torch.Tensor],
+        attn_mask: torch.Tensor | None,
         is_causal: bool,
     ) -> torch.Tensor:
         """Chunked attention for memory efficiency when flash is unavailable."""
-        B, N, H, D = query.shape
+        _B, N, _H, D = query.shape
         S = key.shape[1]
 
         scale = D ** -0.5
@@ -2179,10 +2177,10 @@ class ActivationCheckpointingManager:
         self.adaptive = adaptive
 
         self._checkpointed_layers: set = set()
-        self._layer_costs: Dict[str, float] = {}
+        self._layer_costs: dict[str, float] = {}
         self._memory_saved = 0
 
-    def analyze_model(self) -> Dict[str, Any]:
+    def analyze_model(self) -> dict[str, Any]:
         """Analyze model to determine checkpointing strategy."""
         layer_info = {}
 
@@ -2231,7 +2229,6 @@ class ActivationCheckpointingManager:
 
     def wrap_model(self) -> nn.Module:
         """Wrap model with activation checkpointing."""
-        from torch.utils.checkpoint import checkpoint_sequential
 
         def checkpoint_wrapper(module):
             """Wrapper that applies checkpointing to forward pass."""
@@ -2253,7 +2250,7 @@ class ActivationCheckpointingManager:
 
         return self.model
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get checkpointing statistics."""
         return {
             'checkpointed_layers': list(self._checkpointed_layers),
@@ -2312,7 +2309,7 @@ class DistributedDataParallelManager:
 
         logger.info(f"DDP initialized: rank {rank}/{world_size}, local_rank {self._local_rank}")
 
-    def wrap_model(self, model: nn.Module, device_ids: Optional[List[int]] = None) -> nn.Module:
+    def wrap_model(self, model: nn.Module, device_ids: list[int] | None = None) -> nn.Module:
         """Wrap model with DistributedDataParallel."""
         if not self._initialized:
             raise RuntimeError("DDP not initialized. Call setup() first.")
@@ -2364,7 +2361,7 @@ class DistributedDataParallelManager:
         """Check if this is the main process."""
         return self._rank == 0
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get DDP statistics."""
         return {
             'initialized': self._initialized,
@@ -2403,7 +2400,7 @@ class DynamicLossScaler:
 
         self._growth_tracker = 0
         self._overflow_count = 0
-        self._scale_history: List[Tuple[int, float]] = []
+        self._scale_history: list[tuple[int, float]] = []
         self._step_count = 0
 
     def scale_loss(self, loss: torch.Tensor) -> torch.Tensor:
@@ -2455,7 +2452,7 @@ class DynamicLossScaler:
                 self._scale_history.append((self._step_count, self.scale))
                 logger.debug(f"Loss scale increased to {self.scale}")
 
-    def step(self, optimizer: optim.Optimizer, closure: Optional[Callable] = None) -> bool:
+    def step(self, optimizer: optim.Optimizer, closure: Callable | None = None) -> bool:
         """
         Perform optimizer step with loss scaling.
 
@@ -2478,7 +2475,7 @@ class DynamicLossScaler:
             self.update(overflow=True)
             return False
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get scaler statistics."""
         return {
             'current_scale': self.scale,
@@ -2509,8 +2506,8 @@ class ZeROOptimizer:
         self.rank = rank
         self.overlap_communication = overlap_communication
 
-        self._param_to_partition: Dict[int, int] = {}
-        self._partition_params: Dict[int, List[torch.Tensor]] = {}
+        self._param_to_partition: dict[int, int] = {}
+        self._partition_params: dict[int, list[torch.Tensor]] = {}
 
         if world_size > 1:
             self._partition_parameters()
@@ -2530,7 +2527,7 @@ class ZeROOptimizer:
                 self._partition_params[partition] = []
             self._partition_params[partition].append(param)
 
-    def step(self, closure: Optional[Callable] = None) -> None:
+    def step(self, closure: Callable | None = None) -> None:
         """Perform optimizer step with state partitioning."""
         if self.world_size == 1:
             self.optimizer.step(closure)
@@ -2544,9 +2541,8 @@ class ZeROOptimizer:
         # Zero gradients for parameters not in our partition
         for group in self.optimizer.param_groups:
             for param in group['params']:
-                if id(param) not in [id(p) for p in my_params]:
-                    if param.grad is not None:
-                        param.grad.zero_()
+                if id(param) not in [id(p) for p in my_params] and param.grad is not None:
+                    param.grad.zero_()
 
         # Step optimizer
         self.optimizer.step(closure)
@@ -2591,7 +2587,7 @@ class ElasticTrainingManager:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self._current_workers = 1
-        self._worker_history: List[Tuple[float, int]] = []
+        self._worker_history: list[tuple[float, int]] = []
         self._last_checkpoint_step = 0
 
     def register_worker(self, worker_id: str) -> int:
@@ -2613,7 +2609,7 @@ class ElasticTrainingManager:
         model: nn.Module,
         optimizer: optim.Optimizer,
         step: int,
-        extra: Optional[Dict] = None,
+        extra: dict | None = None,
     ) -> Path:
         """Save checkpoint for elastic recovery."""
         checkpoint_path = self.checkpoint_dir / f"elastic_step_{step}.pt"
@@ -2643,7 +2639,7 @@ class ElasticTrainingManager:
         self,
         model: nn.Module,
         optimizer: optim.Optimizer,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Load latest elastic checkpoint."""
         checkpoints = sorted(self.checkpoint_dir.glob("elastic_step_*.pt"))
 
@@ -2663,7 +2659,7 @@ class ElasticTrainingManager:
         """Get batch size adjusted for current worker count."""
         return base_batch_size * self._current_workers
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get elastic training statistics."""
         return {
             'current_workers': self._current_workers,
@@ -2684,7 +2680,7 @@ class StreamingNPZLoader:
 
     def __init__(
         self,
-        paths: List[str],
+        paths: list[str],
         chunk_size: int = 10000,
         prefetch_chunks: int = 2,
         shuffle: bool = True,
@@ -2697,7 +2693,7 @@ class StreamingNPZLoader:
         self.seed = seed
 
         self._rng = np.random.RandomState(seed)
-        self._current_chunk: Optional[Dict[str, np.ndarray]] = None
+        self._current_chunk: dict[str, np.ndarray] | None = None
         self._chunk_idx = 0
         self._file_idx = 0
         self._total_samples = 0
@@ -2720,7 +2716,7 @@ class StreamingNPZLoader:
                 except Exception as e:
                     logger.warning(f"Could not scan {path}: {e}")
 
-    def _load_chunk(self, path: str, start: int, end: int) -> Dict[str, np.ndarray]:
+    def _load_chunk(self, path: str, start: int, end: int) -> dict[str, np.ndarray]:
         """Load a chunk from file."""
         if path.startswith('s3://'):
             return self._load_s3_chunk(path, start, end)
@@ -2729,7 +2725,7 @@ class StreamingNPZLoader:
         else:
             return self._load_local_chunk(path, start, end)
 
-    def _load_local_chunk(self, path: str, start: int, end: int) -> Dict[str, np.ndarray]:
+    def _load_local_chunk(self, path: str, start: int, end: int) -> dict[str, np.ndarray]:
         """Load chunk from local file."""
         with np.load(path, allow_pickle=True) as data:
             chunk = {}
@@ -2739,11 +2735,12 @@ class StreamingNPZLoader:
                     chunk[key] = arr[start:min(end, len(arr))]
             return chunk
 
-    def _load_s3_chunk(self, path: str, start: int, end: int) -> Dict[str, np.ndarray]:
+    def _load_s3_chunk(self, path: str, start: int, end: int) -> dict[str, np.ndarray]:
         """Load chunk from S3."""
         try:
-            import boto3
             import io
+
+            import boto3
 
             # Parse S3 path
             path = path[5:]  # Remove s3://
@@ -2764,11 +2761,12 @@ class StreamingNPZLoader:
             logger.error("boto3 required for S3 streaming")
             return {}
 
-    def _load_gcs_chunk(self, path: str, start: int, end: int) -> Dict[str, np.ndarray]:
+    def _load_gcs_chunk(self, path: str, start: int, end: int) -> dict[str, np.ndarray]:
         """Load chunk from Google Cloud Storage."""
         try:
-            from google.cloud import storage
             import io
+
+            from google.cloud import storage
 
             # Parse GCS path
             path = path[5:]  # Remove gs://
@@ -2843,9 +2841,9 @@ class TrainingProfiler:
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        self._profiler: Optional[torch.profiler.profile] = None
+        self._profiler: torch.profiler.profile | None = None
         self._step_count = 0
-        self._profile_results: List[Dict] = []
+        self._profile_results: list[dict] = []
 
     def create_profiler(self) -> torch.profiler.profile:
         """Create and return a PyTorch profiler."""
@@ -2877,7 +2875,7 @@ class TrainingProfiler:
             self._profiler.step()
             self._step_count += 1
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get profiling summary."""
         if self._profiler is None:
             return {}
@@ -2904,7 +2902,7 @@ class TrainingProfiler:
             logger.warning(f"Could not generate profile summary: {e}")
             return {}
 
-    def export_chrome_trace(self, path: Optional[Path] = None) -> Path:
+    def export_chrome_trace(self, path: Path | None = None) -> Path:
         """Export trace for Chrome tracing."""
         if self._profiler is None:
             raise RuntimeError("Profiler not created")
@@ -2934,8 +2932,8 @@ class ABModelTester:
         self.min_games = min_games
         self.elo_k_factor = elo_k_factor
 
-        self._results: Dict[str, List[Dict]] = {}
-        self._elo_ratings: Dict[str, float] = {}
+        self._results: dict[str, list[dict]] = {}
+        self._elo_ratings: dict[str, float] = {}
 
     def register_model(self, model_id: str, initial_elo: float = 1500.0) -> None:
         """Register a model for A/B testing."""
@@ -2948,7 +2946,7 @@ class ABModelTester:
         model_b: str,
         winner: str,  # model_a, model_b, or draw
         game_length: int = 0,
-        extra: Optional[Dict] = None,
+        extra: dict | None = None,
     ) -> None:
         """Record a game result."""
         result = {
@@ -2985,7 +2983,7 @@ class ABModelTester:
         self._elo_ratings[model_a] = elo_a + self.elo_k_factor * (actual_a - expected_a)
         self._elo_ratings[model_b] = elo_b + self.elo_k_factor * (actual_b - expected_b)
 
-    def get_comparison(self, model_a: str, model_b: str) -> Dict[str, Any]:
+    def get_comparison(self, model_a: str, model_b: str) -> dict[str, Any]:
         """Get statistical comparison between two models."""
         # Find head-to-head games
         h2h_games = [
@@ -3039,7 +3037,7 @@ class ABModelTester:
             'elo_difference': self._elo_ratings.get(model_a, 1500.0) - self._elo_ratings.get(model_b, 1500.0),
         }
 
-    def _wilson_ci(self, successes: int, total: int) -> Tuple[float, float]:
+    def _wilson_ci(self, successes: int, total: int) -> tuple[float, float]:
         """Calculate Wilson score confidence interval."""
         import scipy.stats as stats
 
@@ -3055,7 +3053,7 @@ class ABModelTester:
 
         return max(0.0, center - spread), min(1.0, center + spread)
 
-    def get_leaderboard(self) -> List[Dict[str, Any]]:
+    def get_leaderboard(self) -> list[dict[str, Any]]:
         """Get sorted leaderboard of all models."""
         leaderboard = []
         for model_id, elo in sorted(self._elo_ratings.items(), key=lambda x: -x[1]):
@@ -3082,7 +3080,7 @@ def create_phase5_production_suite(
     enable_ab_testing: bool = True,
     distributed_world_size: int = 1,
     distributed_rank: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create Phase 5 production optimization suite.
 
@@ -3192,12 +3190,12 @@ class UncertaintySampler:
         """
         self.model = model
         self.config = config
-        self._cache: Dict[int, float] = {}  # sample_id -> uncertainty
+        self._cache: dict[int, float] = {}  # sample_id -> uncertainty
 
     def compute_uncertainty_mc_dropout(
         self,
         inputs: torch.Tensor,
-        sample_ids: Optional[List[int]] = None,
+        sample_ids: list[int] | None = None,
     ) -> torch.Tensor:
         """Compute uncertainty using MC Dropout.
 
@@ -3212,7 +3210,7 @@ class UncertaintySampler:
             Uncertainty scores (batch_size,)
         """
         self.model.train()  # Enable dropout
-        batch_size = inputs.size(0)
+        inputs.size(0)
 
         value_preds = []
         policy_preds = []
@@ -3301,7 +3299,7 @@ class UncertaintySampler:
 
         return torch.tensor(uncertainties, device=inputs.device)
 
-    def get_cached_uncertainty(self, sample_id: int) -> Optional[float]:
+    def get_cached_uncertainty(self, sample_id: int) -> float | None:
         """Get cached uncertainty for a sample."""
         return self._cache.get(sample_id)
 
@@ -3356,8 +3354,8 @@ class UncertaintyWeightedSampler(WeightedSamplerBase):
     def __init__(
         self,
         dataset_size: int,
-        uncertainty_scores: Optional[np.ndarray] = None,
-        config: Optional[UncertaintyConfig] = None,
+        uncertainty_scores: np.ndarray | None = None,
+        config: UncertaintyConfig | None = None,
     ):
         """Initialize the weighted sampler.
 

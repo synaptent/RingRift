@@ -58,11 +58,12 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from app.coordination.coordinator_base import (
     CoordinatorBase,
@@ -75,13 +76,13 @@ logger = logging.getLogger(__name__)
 # Backpressure integration (December 2025)
 try:
     from app.coordination.queue_monitor import (
-        QueueType,
         BackpressureLevel,
+        QueueType,
         check_backpressure,
-        should_throttle_production,
-        should_stop_production,
         get_throttle_factor,
         report_queue_depth,
+        should_stop_production,
+        should_throttle_production,
     )
     HAS_QUEUE_MONITOR = True
 except ImportError:
@@ -105,17 +106,18 @@ except ImportError:
         pass
 
 # Default paths
-from app.utils.paths import DATA_DIR, CONFIG_DIR
+from app.utils.paths import CONFIG_DIR, DATA_DIR
+
 DEFAULT_COORDINATOR_DB = DATA_DIR / "coordination" / "sync_coordinator.db"
 HOST_CONFIG_PATH = CONFIG_DIR / "remote_hosts.yaml"
 
 # Thresholds - import from centralized config (December 2025)
 try:
     from app.config.thresholds import (
-        STALE_DATA_THRESHOLD_SECONDS,
         CRITICAL_STALE_THRESHOLD_SECONDS,
-        MAX_SYNC_QUEUE_SIZE,
         FRESHNESS_CHECK_INTERVAL,
+        MAX_SYNC_QUEUE_SIZE,
+        STALE_DATA_THRESHOLD_SECONDS,
     )
 except ImportError:
     # Try coordination_defaults first
@@ -178,7 +180,7 @@ class HostDataState:
     sync_in_progress: bool = False
     sync_failures_24h: int = 0
     last_error: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def seconds_since_sync(self) -> float:
@@ -218,7 +220,7 @@ class HostDataState:
 
         return score
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "host": self.host,
             "host_type": self.host_type.value,
@@ -244,9 +246,9 @@ class SyncRecommendation:
     reason: str
     estimated_games: int = 0
     estimated_duration_seconds: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "host": self.host,
             "action": self.action.value,
@@ -262,15 +264,15 @@ class ClusterDataStatus:
     """Overall cluster data synchronization status."""
     total_hosts: int
     healthy_hosts: int
-    stale_hosts: List[str]
-    critical_hosts: List[str]
-    syncing_hosts: List[str]
-    unreachable_hosts: List[str]
+    stale_hosts: list[str]
+    critical_hosts: list[str]
+    syncing_hosts: list[str]
+    unreachable_hosts: list[str]
     total_games_cluster: int
     estimated_unsynced_games: int
     last_full_sync_time: float
-    recommendations: List[SyncRecommendation]
-    host_states: Dict[str, HostDataState]
+    recommendations: list[SyncRecommendation]
+    host_states: dict[str, HostDataState]
 
     @property
     def cluster_health_score(self) -> float:
@@ -301,7 +303,7 @@ class ClusterDataStatus:
 
         return max(0, min(100, score))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "total_hosts": self.total_hosts,
             "healthy_hosts": self.healthy_hosts,
@@ -336,14 +338,14 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
     4. Automatic recovery from sync failures
     """
 
-    _instance: Optional["SyncScheduler"] = None
+    _instance: SyncScheduler | None = None
     _singleton_lock = threading.RLock()
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         CoordinatorBase.__init__(self, name="SyncScheduler")
-        self._host_states: Dict[str, HostDataState] = {}
-        self._sync_queue: List[SyncRecommendation] = []
-        self._callbacks: List[Callable[[SyncRecommendation], None]] = []
+        self._host_states: dict[str, HostDataState] = {}
+        self._sync_queue: list[SyncRecommendation] = []
+        self._callbacks: list[Callable[[SyncRecommendation], None]] = []
         self._last_full_sync_time: float = 0.0
 
         # Initialize SQLite persistence
@@ -357,7 +359,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
         self._status = CoordinatorStatus.READY
 
     @classmethod
-    def get_instance(cls, db_path: Optional[Path] = None) -> "SyncScheduler":
+    def get_instance(cls, db_path: Path | None = None) -> SyncScheduler:
         """Get or create singleton instance."""
         with cls._singleton_lock:
             if cls._instance is None:
@@ -531,7 +533,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
         self,
         host: str,
         host_type: HostType = HostType.PERSISTENT,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Register a host for sync coordination."""
         if host not in self._host_states:
@@ -546,9 +548,9 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
     def update_host_state(
         self,
         host: str,
-        total_games: Optional[int] = None,
-        estimated_unsynced: Optional[int] = None,
-        is_reachable: Optional[bool] = None,
+        total_games: int | None = None,
+        estimated_unsynced: int | None = None,
+        is_reachable: bool | None = None,
         heartbeat: bool = False,
     ) -> None:
         """Update the data state for a host."""
@@ -694,11 +696,11 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
             host_states=dict(self._host_states),
         )
 
-    def get_host_state(self, host: str) -> Optional[HostDataState]:
+    def get_host_state(self, host: str) -> HostDataState | None:
         """Get the data state for a specific host."""
         return self._host_states.get(host)
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get sync coordinator statistics.
 
         Implements CoordinatorBase.get_stats() interface.
@@ -725,7 +727,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
         })
         return base_stats
 
-    def get_stats_sync(self) -> Dict[str, Any]:
+    def get_stats_sync(self) -> dict[str, Any]:
         """Synchronous version of get_stats for non-async contexts."""
         status = self.get_cluster_status()
         return {
@@ -752,7 +754,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
         self,
         max_recommendations: int = 5,
         respect_backpressure: bool = True,
-    ) -> List[SyncRecommendation]:
+    ) -> list[SyncRecommendation]:
         """Get prioritized sync recommendations for the cluster.
 
         Args:
@@ -784,7 +786,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
         ]
         scored_hosts.sort(key=lambda x: x[2], reverse=True)
 
-        for host, state, score in scored_hosts[:max_recommendations]:
+        for host, state, _score in scored_hosts[:max_recommendations]:
             # Determine action and priority
             if state.is_critical:
                 action = SyncAction.SYNC_NOW
@@ -830,7 +832,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
     # Backpressure Integration (December 2025)
     # =========================================================================
 
-    def check_sync_backpressure(self) -> Dict[str, Any]:
+    def check_sync_backpressure(self) -> dict[str, Any]:
         """Check if sync operations should be throttled due to backpressure.
 
         Returns:
@@ -894,7 +896,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
             "reason": "No backpressure",
         }
 
-    def report_sync_queue_depth(self, depth: Optional[int] = None) -> None:
+    def report_sync_queue_depth(self, depth: int | None = None) -> None:
         """Report the current sync queue depth for backpressure tracking.
 
         Args:
@@ -941,7 +943,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
 
         return True
 
-    def get_next_sync_target(self) -> Optional[str]:
+    def get_next_sync_target(self) -> str | None:
         """Get the highest priority host that should be synced next."""
         recommendations = self.get_sync_recommendations(max_recommendations=1)
         if recommendations and recommendations[0].action in (SyncAction.SYNC_NOW, SyncAction.SCHEDULE_SYNC):
@@ -956,7 +958,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
     async def execute_priority_sync(
         self,
         max_syncs: int = 3,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute sync operations for highest priority hosts.
 
         This bridges the scheduling logic in this module with the execution
@@ -1102,7 +1104,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
 # Module-level convenience functions
 # =============================================================================
 
-_coordinator: Optional[SyncScheduler] = None
+_coordinator: SyncScheduler | None = None
 
 
 def get_sync_coordinator() -> SyncScheduler:
@@ -1119,12 +1121,12 @@ def get_cluster_data_status() -> ClusterDataStatus:
     return get_sync_coordinator().get_cluster_status()
 
 
-def get_sync_recommendations(max_recommendations: int = 5) -> List[SyncRecommendation]:
+def get_sync_recommendations(max_recommendations: int = 5) -> list[SyncRecommendation]:
     """Get prioritized sync recommendations."""
     return get_sync_coordinator().get_sync_recommendations(max_recommendations)
 
 
-def get_next_sync_target() -> Optional[str]:
+def get_next_sync_target() -> str | None:
     """Get the highest priority host to sync next."""
     return get_sync_coordinator().get_next_sync_target()
 
@@ -1132,7 +1134,7 @@ def get_next_sync_target() -> Optional[str]:
 def register_host(
     host: str,
     host_type: HostType = HostType.PERSISTENT,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Register a host for sync coordination."""
     get_sync_coordinator().register_host(host, host_type, metadata)
@@ -1140,9 +1142,9 @@ def register_host(
 
 def update_host_state(
     host: str,
-    total_games: Optional[int] = None,
-    estimated_unsynced: Optional[int] = None,
-    is_reachable: Optional[bool] = None,
+    total_games: int | None = None,
+    estimated_unsynced: int | None = None,
+    is_reachable: bool | None = None,
     heartbeat: bool = False,
 ) -> None:
     """Update the data state for a host."""
@@ -1175,7 +1177,7 @@ def record_games_generated(host: str, games: int) -> None:
     get_sync_coordinator().record_games_generated(host, games)
 
 
-async def execute_priority_sync(max_syncs: int = 3) -> Dict[str, Any]:
+async def execute_priority_sync(max_syncs: int = 3) -> dict[str, Any]:
     """Execute sync operations for highest priority hosts.
 
     This bridges the scheduling layer with the distributed execution layer.
@@ -1218,7 +1220,7 @@ def reset_sync_coordinator() -> None:
 SyncCoordinator = SyncScheduler
 
 
-def get_sync_scheduler(db_path: Optional[Path] = None) -> SyncScheduler:
+def get_sync_scheduler(db_path: Path | None = None) -> SyncScheduler:
     """Get the sync scheduler singleton.
 
     This is the preferred function for getting the scheduling coordinator.
@@ -1249,7 +1251,7 @@ def wire_sync_events() -> SyncScheduler:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -1296,30 +1298,30 @@ def wire_sync_events() -> SyncScheduler:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "SyncPriority",
-    "HostType",
-    "SyncAction",
+    "ClusterDataStatus",
     # Data classes
     "HostDataState",
+    "HostType",
+    "SyncAction",
+    "SyncCoordinator",  # Deprecated alias
+    # Enums
+    "SyncPriority",
     "SyncRecommendation",
-    "ClusterDataStatus",
     # Main class
     "SyncScheduler",
-    "SyncCoordinator",  # Deprecated alias
+    "execute_priority_sync",
+    "get_cluster_data_status",
+    "get_next_sync_target",
     # Functions
     "get_sync_coordinator",
-    "get_sync_scheduler",
-    "get_cluster_data_status",
     "get_sync_recommendations",
-    "get_next_sync_target",
-    "register_host",
-    "update_host_state",
-    "record_sync_start",
-    "record_sync_complete",
+    "get_sync_scheduler",
     "record_games_generated",
-    "execute_priority_sync",
+    "record_sync_complete",
+    "record_sync_start",
+    "register_host",
     "reset_sync_coordinator",
     "reset_sync_scheduler",
+    "update_host_state",
     "wire_sync_events",
 ]

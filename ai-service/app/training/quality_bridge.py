@@ -34,20 +34,20 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.training.streaming_pipeline import StreamingDataPipeline
-    from app.training.hot_data_buffer import HotDataBuffer
     from app.training.data_pipeline_controller import DataPipelineController
+    from app.training.hot_data_buffer import HotDataBuffer
+    from app.training.streaming_pipeline import StreamingDataPipeline
 
 # Import centralized quality thresholds
 try:
     from app.quality.thresholds import (
-        MIN_QUALITY_FOR_TRAINING,
         HIGH_QUALITY_THRESHOLD,
+        MIN_QUALITY_FOR_TRAINING,
     )
 except ImportError:
     MIN_QUALITY_FOR_TRAINING = 0.3
@@ -56,8 +56,8 @@ except ImportError:
 # Import metrics functions for Prometheus reporting
 try:
     from app.metrics.orchestrator import (
-        update_quality_bridge_status,
         record_training_data_quality,
+        update_quality_bridge_status,
     )
     HAS_QUALITY_METRICS = True
 except ImportError:
@@ -117,12 +117,12 @@ class QualityBridge:
     4. Computing unified quality metrics for monitoring
     """
 
-    _instance: Optional["QualityBridge"] = None
+    _instance: QualityBridge | None = None
 
     def __init__(
         self,
-        config: Optional[QualityBridgeConfig] = None,
-        manifest_path: Optional[Path] = None,
+        config: QualityBridgeConfig | None = None,
+        manifest_path: Path | None = None,
     ):
         """Initialize the quality bridge.
 
@@ -134,8 +134,8 @@ class QualityBridge:
         self._manifest_path = manifest_path
 
         # Quality lookup tables
-        self._quality_lookup: Dict[str, float] = {}
-        self._elo_lookup: Dict[str, float] = {}
+        self._quality_lookup: dict[str, float] = {}
+        self._elo_lookup: dict[str, float] = {}
         self._last_refresh: float = 0.0
         self._stats = QualityStats()
 
@@ -148,9 +148,9 @@ class QualityBridge:
     @classmethod
     def get_instance(
         cls,
-        config: Optional[QualityBridgeConfig] = None,
-        manifest_path: Optional[Path] = None,
-    ) -> "QualityBridge":
+        config: QualityBridgeConfig | None = None,
+        manifest_path: Path | None = None,
+    ) -> QualityBridge:
         """Get or create the singleton instance."""
         if cls._instance is None:
             cls._instance = cls(config, manifest_path)
@@ -307,7 +307,7 @@ class QualityBridge:
             except Exception as e:
                 logger.debug(f"Failed to record quality metrics: {e}")
 
-    def get_quality_lookup(self, auto_refresh: bool = True) -> Dict[str, float]:
+    def get_quality_lookup(self, auto_refresh: bool = True) -> dict[str, float]:
         """Get quality score lookup dictionary.
 
         Args:
@@ -320,7 +320,7 @@ class QualityBridge:
             self.refresh()
         return self._quality_lookup.copy()
 
-    def get_elo_lookup(self, auto_refresh: bool = True) -> Dict[str, float]:
+    def get_elo_lookup(self, auto_refresh: bool = True) -> dict[str, float]:
         """Get Elo score lookup dictionary.
 
         Args:
@@ -333,7 +333,7 @@ class QualityBridge:
             self.refresh()
         return self._elo_lookup.copy()
 
-    def get_game_quality(self, game_id: str) -> Optional[float]:
+    def get_game_quality(self, game_id: str) -> float | None:
         """Get quality score for a specific game.
 
         Args:
@@ -346,7 +346,7 @@ class QualityBridge:
             self.refresh()
         return self._quality_lookup.get(game_id)
 
-    def get_game_elo(self, game_id: str) -> Optional[float]:
+    def get_game_elo(self, game_id: str) -> float | None:
         """Get average Elo for a specific game.
 
         Args:
@@ -359,7 +359,7 @@ class QualityBridge:
             self.refresh()
         return self._elo_lookup.get(game_id)
 
-    def is_high_quality(self, game_id: str, threshold: Optional[float] = None) -> bool:
+    def is_high_quality(self, game_id: str, threshold: float | None = None) -> bool:
         """Check if a game meets the quality threshold.
 
         Args:
@@ -377,10 +377,10 @@ class QualityBridge:
 
     def get_high_quality_game_ids(
         self,
-        min_quality: Optional[float] = None,
-        min_elo: Optional[float] = None,
+        min_quality: float | None = None,
+        min_elo: float | None = None,
         limit: int = 10000,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get list of high-quality game IDs.
 
         Args:
@@ -416,8 +416,8 @@ class QualityBridge:
 
     def configure_streaming_pipeline(
         self,
-        pipeline: "StreamingDataPipeline",
-        quality_weight: Optional[float] = None,
+        pipeline: StreamingDataPipeline,
+        quality_weight: float | None = None,
     ) -> int:
         """Configure a StreamingDataPipeline with quality lookups.
 
@@ -452,7 +452,7 @@ class QualityBridge:
 
     def configure_hot_data_buffer(
         self,
-        buffer: "HotDataBuffer",
+        buffer: HotDataBuffer,
     ) -> int:
         """Configure a HotDataBuffer with quality lookups.
 
@@ -477,11 +477,11 @@ class QualityBridge:
 
     def auto_calibrate_hot_buffer(
         self,
-        buffer: "HotDataBuffer",
+        buffer: HotDataBuffer,
         min_quality_percentile: float = 0.1,
         evict_below_percentile: bool = True,
         recompute_quality: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Auto-calibrate a HotDataBuffer's quality thresholds.
 
         This method:
@@ -504,7 +504,7 @@ class QualityBridge:
             - calibration: Calibrated threshold values
             - evicted: Number of low-quality games evicted
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "configured": 0,
             "recomputed": 0,
             "distribution": {},
@@ -549,7 +549,7 @@ class QualityBridge:
 
     def configure_data_pipeline_controller(
         self,
-        controller: "DataPipelineController",
+        controller: DataPipelineController,
     ) -> int:
         """Configure a DataPipelineController with quality lookups.
 
@@ -587,7 +587,7 @@ class QualityBridge:
         """Get quality bridge statistics."""
         return self._stats
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get detailed status information."""
         return {
             "enabled": self._config.enable_quality_scoring,
@@ -616,23 +616,23 @@ class QualityBridge:
 # =============================================================================
 
 def get_quality_bridge(
-    config: Optional[QualityBridgeConfig] = None,
+    config: QualityBridgeConfig | None = None,
 ) -> QualityBridge:
     """Get the singleton QualityBridge instance."""
     return QualityBridge.get_instance(config)
 
 
-def get_quality_lookup() -> Dict[str, float]:
+def get_quality_lookup() -> dict[str, float]:
     """Get quality lookup dictionary."""
     return get_quality_bridge().get_quality_lookup()
 
 
-def get_elo_lookup() -> Dict[str, float]:
+def get_elo_lookup() -> dict[str, float]:
     """Get Elo lookup dictionary."""
     return get_quality_bridge().get_elo_lookup()
 
 
-def get_game_quality(game_id: str) -> Optional[float]:
+def get_game_quality(game_id: str) -> float | None:
     """Get quality score for a specific game."""
     return get_quality_bridge().get_game_quality(game_id)
 
@@ -643,11 +643,11 @@ def is_high_quality_game(game_id: str, threshold: float = HIGH_QUALITY_THRESHOLD
 
 
 def auto_calibrate_buffer(
-    buffer: "HotDataBuffer",
+    buffer: HotDataBuffer,
     min_quality_percentile: float = 0.1,
     evict_below_percentile: bool = True,
     recompute_quality: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Auto-calibrate a HotDataBuffer's quality thresholds (convenience function).
 
     See QualityBridge.auto_calibrate_hot_buffer for full documentation.
@@ -664,10 +664,10 @@ __all__ = [
     "QualityBridge",
     "QualityBridgeConfig",
     "QualityStats",
-    "get_quality_bridge",
-    "get_quality_lookup",
+    "auto_calibrate_buffer",
     "get_elo_lookup",
     "get_game_quality",
+    "get_quality_bridge",
+    "get_quality_lookup",
     "is_high_quality_game",
-    "auto_calibrate_buffer",
 ]

@@ -5,11 +5,9 @@ Provides attention-based architectures for board game AI,
 including hybrid CNN-Transformer models.
 """
 
-import math
 import logging
-from typing import Optional, Tuple
+import math
 from dataclasses import dataclass
-
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +27,7 @@ if TORCH_AVAILABLE:
     @dataclass
     class TransformerConfig:
         """Configuration for transformer model."""
-        board_size: Tuple[int, int] = (8, 8)
+        board_size: tuple[int, int] = (8, 8)
         input_channels: int = 18
         embed_dim: int = 256
         num_heads: int = 8
@@ -48,7 +46,7 @@ if TORCH_AVAILABLE:
     class PositionalEncoding2D(nn.Module):
         """2D positional encoding for board positions."""
 
-        def __init__(self, embed_dim: int, board_size: Tuple[int, int]):
+        def __init__(self, embed_dim: int, board_size: tuple[int, int]):
             super().__init__()
             self.embed_dim = embed_dim
             self.board_size = board_size
@@ -128,7 +126,7 @@ if TORCH_AVAILABLE:
         def forward(
             self,
             x: torch.Tensor,
-            mask: Optional[torch.Tensor] = None
+            mask: torch.Tensor | None = None
         ) -> torch.Tensor:
             B, N, C = x.shape
 
@@ -186,7 +184,7 @@ if TORCH_AVAILABLE:
                 nn.Dropout(dropout)
             )
 
-        def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
             # Pre-norm attention
             x = x + self.attn(self.norm1(x), mask)
             # Pre-norm MLP
@@ -272,7 +270,7 @@ if TORCH_AVAILABLE:
             self,
             x: torch.Tensor,
             _return_attention: bool = False
-        ) -> Tuple[torch.Tensor, torch.Tensor]:
+        ) -> tuple[torch.Tensor, torch.Tensor]:
             """
             Forward pass.
 
@@ -318,7 +316,7 @@ if TORCH_AVAILABLE:
 
             return policy, value
 
-        def forward_with_features(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        def forward_with_features(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             """Forward pass returning intermediate features."""
             B, C, H, W = x.shape
 
@@ -430,7 +428,7 @@ if TORCH_AVAILABLE:
                 nn.Tanh()
             )
 
-        def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             B = x.size(0)
 
             # CNN feature extraction
@@ -508,7 +506,7 @@ if TORCH_AVAILABLE:
                 nn.Tanh()
             )
 
-        def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             B, C, H, W = x.shape
 
             x = x.view(B, C, H * W).transpose(1, 2)
@@ -610,7 +608,7 @@ if TORCH_AVAILABLE:
 
 def create_model(
     model_type: str = "hybrid",
-    board_size: Tuple[int, int] = (8, 8),
+    board_size: tuple[int, int] = (8, 8),
     input_channels: int = 18,
     embed_dim: int = 256,
     num_heads: int = 8,

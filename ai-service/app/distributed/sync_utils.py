@@ -14,7 +14,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.distributed.hosts import HostConfig
@@ -75,8 +75,8 @@ def rsync_directory(
     host: "HostConfig",
     remote_dir: str,
     local_dir: Path,
-    include_patterns: Optional[List[str]] = None,
-    exclude_patterns: Optional[List[str]] = None,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
     timeout: int = 300,
     delete: bool = False,
 ) -> bool:

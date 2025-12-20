@@ -29,7 +29,6 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -89,7 +88,7 @@ class GMOConfig:
 # =============================================================================
 
 # Move type to index mapping
-MOVE_TYPE_TO_IDX: Dict[MoveType, int] = {
+MOVE_TYPE_TO_IDX: dict[MoveType, int] = {
     MoveType.PLACE_RING: 0,
     MoveType.MOVE_STACK: 1,
     MoveType.OVERTAKING_CAPTURE: 2,
@@ -140,7 +139,7 @@ class MoveEncoder(nn.Module):
             nn.Linear(embed_dim, embed_dim),
         )
 
-    def _pos_to_idx(self, pos: Optional[Position]) -> int:
+    def _pos_to_idx(self, pos: Position | None) -> int:
         """Convert position to index (0 for None)."""
         if pos is None:
             return self.num_positions  # Use last index for None
@@ -176,7 +175,7 @@ class MoveEncoder(nn.Module):
         concat = torch.cat([type_emb, from_emb, to_emb, placement_emb], dim=-1)
         return self.projection(concat).squeeze(0)
 
-    def encode_moves(self, moves: List[Move]) -> torch.Tensor:
+    def encode_moves(self, moves: list[Move]) -> torch.Tensor:
         """Encode multiple moves to embedding matrix."""
         embeddings = [self.encode_move(m) for m in moves]
         return torch.stack(embeddings)
@@ -224,7 +223,7 @@ class StateEncoder(nn.Module):
         num_positions = board_size * board_size
 
         # Extract stack features
-        for key, stack in state.board.stacks.items():
+        for _key, stack in state.board.stacks.items():
             pos = stack.position
             idx = pos.y * board_size + pos.x
 
@@ -241,7 +240,7 @@ class StateEncoder(nn.Module):
                     features[plane_idx * num_positions + idx] = 1.0
 
         # Territory ownership (planes 8-11)
-        for key, territory in state.board.territories.items():
+        for _key, territory in state.board.territories.items():
             if 1 <= territory.controlling_player <= 4:
                 plane_idx = 8 + territory.controlling_player - 1
                 for space in territory.spaces:
@@ -306,7 +305,7 @@ class GMOValueNetWithUncertainty(nn.Module):
         self,
         state_embed: torch.Tensor,
         move_embed: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass.
 
         Args:
@@ -400,7 +399,7 @@ def estimate_uncertainty(
     move_embed: torch.Tensor,
     value_net: GMOValueNetWithUncertainty,
     n_samples: int = 10,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Estimate value and uncertainty using MC Dropout.
 
     Args:
@@ -463,7 +462,7 @@ def optimize_move_with_entropy(
         optimizer.zero_grad()
 
         # Estimate value and uncertainty
-        mean_value, entropy, variance = estimate_uncertainty(
+        mean_value, _entropy, variance = estimate_uncertainty(
             state_embed, move_embed, value_net, config.mc_samples
         )
 
@@ -485,9 +484,9 @@ def optimize_move_with_entropy(
 def project_to_legal_move(
     optimized_embed: torch.Tensor,
     move_embeds: torch.Tensor,
-    legal_moves: List[Move],
+    legal_moves: list[Move],
     temperature: float = 0.0,
-) -> Tuple[Move, int]:
+) -> tuple[Move, int]:
     """Project optimized embedding to nearest legal move.
 
     Args:
@@ -547,7 +546,7 @@ class GMOAI(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        gmo_config: Optional[GMOConfig] = None,
+        gmo_config: GMOConfig | None = None,
     ):
         super().__init__(player_number, config)
 
@@ -609,7 +608,7 @@ class GMOAI(BaseAI):
         torch.save(checkpoint, checkpoint_path)
         logger.info(f"Saved GMO checkpoint to {checkpoint_path}")
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using gradient move optimization.
 
         Algorithm:
@@ -658,7 +657,7 @@ class GMOAI(BaseAI):
         candidates = []
         for idx, move_embed in enumerate(move_embeds):
             with torch.no_grad():
-                mean_val, entropy, var = estimate_uncertainty(
+                mean_val, _entropy, var = estimate_uncertainty(
                     state_embed, move_embed, self.value_net,
                     self.gmo_config.mc_samples
                 )
@@ -683,7 +682,7 @@ class GMOAI(BaseAI):
 
         # Create config with current exploration temp
         optim_config = GMOConfig(
-            **{k: v for k, v in self.gmo_config.__dict__.items()}
+            **dict(self.gmo_config.__dict__.items())
         )
         optim_config.exploration_temp = exploration_temp
 
@@ -751,8 +750,8 @@ class GMOAI(BaseAI):
     def get_move_predictions_with_uncertainty(
         self,
         game_state: GameState,
-        legal_moves: List[Move],
-    ) -> List[Tuple[float, float]]:
+        legal_moves: list[Move],
+    ) -> list[tuple[float, float]]:
         """Get value predictions with uncertainty for all moves.
 
         Used for calibration studies to evaluate uncertainty quality.
@@ -786,7 +785,7 @@ class GMOAI(BaseAI):
 
         return predictions
 
-    def reset_for_new_game(self, *, rng_seed: Optional[int] = None) -> None:
+    def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset state for new game."""
         super().reset_for_new_game(rng_seed=rng_seed)
         self.novelty_tracker.reset()
@@ -824,8 +823,8 @@ def gmo_combined_loss(
     state_encoder: StateEncoder,
     move_encoder: MoveEncoder,
     value_net: GMOValueNetWithUncertainty,
-    states: List[GameState],
-    moves: List[Move],
+    states: list[GameState],
+    moves: list[Move],
     outcomes: torch.Tensor,
 ) -> torch.Tensor:
     """Combined training loss for GMO networks.

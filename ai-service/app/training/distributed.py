@@ -64,9 +64,10 @@ import logging
 import os
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class DistributedConfig:
     backend: str = "nccl"
     master_addr: str = "localhost"
     master_port: int = 29500
-    init_method: Optional[str] = None
+    init_method: str | None = None
     gradient_sync_every: int = 1
     use_sync_batchnorm: bool = True
     checkpoint_dir: str = "data/distributed_checkpoints"
@@ -127,9 +128,9 @@ class DistributedTrainer:
 
     def __init__(
         self,
-        model: "nn.Module",
+        model: nn.Module,
         config: DistributedConfig,
-        optimizer: Optional["torch.optim.Optimizer"] = None,
+        optimizer: torch.optim.Optimizer | None = None,
     ):
         import warnings
         warnings.warn(
@@ -144,12 +145,12 @@ class DistributedTrainer:
         self.model = model
         self.config = config
         self.optimizer = optimizer
-        self.ddp_model: Optional[DDP] = None
+        self.ddp_model: DDP | None = None
         self.is_initialized = False
         self.step_count = 0
         self.checkpoint_dir = Path(config.checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.nodes: Dict[int, NodeInfo] = {}
+        self.nodes: dict[int, NodeInfo] = {}
 
     def setup(self) -> bool:
         """Initialize distributed training environment."""
@@ -222,7 +223,7 @@ class DistributedTrainer:
             dist.destroy_process_group()
             self.is_initialized = False
 
-    def train_step(self, batch: Tuple[torch.Tensor, ...], loss_fn: Callable) -> float:
+    def train_step(self, batch: tuple[torch.Tensor, ...], loss_fn: Callable) -> float:
         if not self.is_initialized or self.ddp_model is None:
             raise RuntimeError("Distributed trainer not initialized")
 
@@ -247,7 +248,7 @@ class DistributedTrainer:
 
         return loss.item()
 
-    def save_checkpoint(self, path: Optional[Path] = None):
+    def save_checkpoint(self, path: Path | None = None):
         if self.config.rank != 0:
             return
         path = path or (self.checkpoint_dir / f"checkpoint_{self.step_count}.pt")
@@ -290,7 +291,7 @@ class DistributedTrainer:
 
 
 def create_distributed_trainer(
-    model: "nn.Module",
+    model: nn.Module,
     world_size: int = 1,
     rank: int = 0,
     backend: str = "nccl",
@@ -311,9 +312,9 @@ def create_distributed_trainer(
 
 def setup_distributed(
     local_rank: int = -1,
-    rank: Optional[int] = None,
-    world_size: Optional[int] = None,
-    backend: Optional[str] = None,
+    rank: int | None = None,
+    world_size: int | None = None,
+    backend: str | None = None,
 ) -> None:
     """Initialize distributed training process group.
 
@@ -406,7 +407,7 @@ def synchronize() -> None:
         dist.barrier()
 
 
-def reduce_tensor(tensor: "torch.Tensor", op: str = "sum") -> "torch.Tensor":
+def reduce_tensor(tensor: torch.Tensor, op: str = "sum") -> torch.Tensor:
     """Reduce tensor across all processes.
 
     Args:
@@ -470,7 +471,7 @@ def broadcast_object(obj: Any, src: int = 0) -> Any:
     return object_list[0]
 
 
-def get_device_for_rank() -> "torch.device":
+def get_device_for_rank() -> torch.device:
     """Get the device for the current rank.
 
     Returns:
@@ -488,7 +489,7 @@ def get_distributed_sampler(
     shuffle: bool = True,
     seed: int = 0,
     drop_last: bool = False,
-) -> Optional["DistributedSampler"]:
+) -> DistributedSampler | None:
     """Create a DistributedSampler for the dataset.
 
     Args:
@@ -514,11 +515,11 @@ def get_distributed_sampler(
 
 
 def wrap_model_ddp(
-    model: "nn.Module",
+    model: nn.Module,
     device: Any,
     find_unused_parameters: bool = False,
     broadcast_buffers: bool = True,
-) -> "nn.Module":
+) -> nn.Module:
     """Wrap model with DistributedDataParallel.
 
     Args:
@@ -556,6 +557,7 @@ def seed_everything(seed: int = 42, rank_offset: bool = False) -> None:
         rank_offset: If True, add rank to seed for different random states per process
     """
     import random
+
     import numpy as np
 
     if rank_offset and HAS_TORCH_DISTRIBUTED and dist.is_initialized():
@@ -572,7 +574,7 @@ def seed_everything(seed: int = 42, rank_offset: bool = False) -> None:
 
 def scale_learning_rate(
     base_lr: float,
-    world_size: Optional[int] = None,
+    world_size: int | None = None,
     scale_type: str = "linear",
 ) -> float:
     """Scale learning rate for distributed training.
@@ -606,11 +608,11 @@ class DistributedMetrics:
     """Track and aggregate metrics across distributed processes."""
 
     def __init__(self):
-        self._sums: Dict[str, float] = {}
-        self._counts: Dict[str, int] = {}
+        self._sums: dict[str, float] = {}
+        self._counts: dict[str, int] = {}
 
     @property
-    def _metrics(self) -> Dict[str, float]:
+    def _metrics(self) -> dict[str, float]:
         """Alias for backward compatibility."""
         return self._sums
 
@@ -631,7 +633,7 @@ class DistributedMetrics:
         """Add a metric value. Alias for update()."""
         self.update(name, value, count)
 
-    def reduce_all(self) -> Dict[str, float]:
+    def reduce_all(self) -> dict[str, float]:
         """Reduce metrics across all processes and return averages."""
         if not HAS_TORCH_DISTRIBUTED or not dist.is_initialized():
             return {k: v / max(self._counts[k], 1) for k, v in self._sums.items()}
@@ -653,7 +655,7 @@ class DistributedMetrics:
 
         return result
 
-    def reduce_and_reset(self) -> Dict[str, float]:
+    def reduce_and_reset(self) -> dict[str, float]:
         """Reduce metrics and reset accumulators."""
         result = self.reduce_all()
         self.reset()

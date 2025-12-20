@@ -43,9 +43,10 @@ from __future__ import annotations
 import logging
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +79,8 @@ class NodeInfo:
     ip_address: str = ""
     role: NodeRole = NodeRole.FOLLOWER
     last_heartbeat: float = field(default_factory=time.time)
-    leader_domains: Set[str] = field(default_factory=set)
-    capabilities: Set[str] = field(default_factory=set)
+    leader_domains: set[str] = field(default_factory=set)
+    capabilities: set[str] = field(default_factory=set)
     joined_at: float = field(default_factory=time.time)
 
     @property
@@ -96,7 +97,7 @@ class LeadershipRecord:
     leader_node_id: str
     elected_at: float = field(default_factory=time.time)
     term: int = 1
-    previous_leader: Optional[str] = None
+    previous_leader: str | None = None
     election_reason: str = ""
 
 
@@ -118,7 +119,7 @@ class LeadershipStats:
 
     total_nodes: int = 0
     online_nodes: int = 0
-    leaders_by_domain: Dict[str, str] = field(default_factory=dict)
+    leaders_by_domain: dict[str, str] = field(default_factory=dict)
     total_elections: int = 0
     total_failovers: int = 0
     current_term: int = 0
@@ -134,7 +135,7 @@ class LeadershipCoordinator:
 
     def __init__(
         self,
-        local_node_id: Optional[str] = None,
+        local_node_id: str | None = None,
         heartbeat_timeout: float = 30.0,
         election_timeout: float = 10.0,
         max_event_history: int = 200,
@@ -153,7 +154,7 @@ class LeadershipCoordinator:
         self.max_event_history = max_event_history
 
         # Node tracking
-        self._nodes: Dict[str, NodeInfo] = {}
+        self._nodes: dict[str, NodeInfo] = {}
         self._local_node = NodeInfo(
             node_id=self.local_node_id,
             hostname=socket.gethostname(),
@@ -161,18 +162,18 @@ class LeadershipCoordinator:
         self._nodes[self.local_node_id] = self._local_node
 
         # Leadership tracking by domain
-        self._leadership: Dict[str, LeadershipRecord] = {}
+        self._leadership: dict[str, LeadershipRecord] = {}
         self._current_term = 0
 
         # Event history
-        self._events: List[LeadershipEvent] = []
+        self._events: list[LeadershipEvent] = []
 
         # Statistics
         self._total_elections = 0
         self._total_failovers = 0
 
         # Callbacks
-        self._leader_change_callbacks: List[Callable[[str, str, str], None]] = []  # domain, old, new
+        self._leader_change_callbacks: list[Callable[[str, str, str], None]] = []  # domain, old, new
 
         # Subscription state
         self._subscribed = False
@@ -278,29 +279,28 @@ class LeadershipCoordinator:
         domain = payload.get("domain", "cluster")
         node_id = payload.get("node_id", "")
 
-        if domain in self._leadership:
-            if self._leadership[domain].leader_node_id == node_id:
-                old_leader = self._leadership[domain].leader_node_id
-                del self._leadership[domain]
-                self._total_failovers += 1
+        if domain in self._leadership and self._leadership[domain].leader_node_id == node_id:
+            old_leader = self._leadership[domain].leader_node_id
+            del self._leadership[domain]
+            self._total_failovers += 1
 
-                # Update node info
-                if node_id in self._nodes:
-                    self._nodes[node_id].leader_domains.discard(domain)
+            # Update node info
+            if node_id in self._nodes:
+                self._nodes[node_id].leader_domains.discard(domain)
 
-                # Record event
-                self._record_event("lost", domain, node_id, payload.get("reason", ""))
+            # Record event
+            self._record_event("lost", domain, node_id, payload.get("reason", ""))
 
-                # Notify callbacks
-                for callback in self._leader_change_callbacks:
-                    try:
-                        callback(domain, old_leader, "")
-                    except Exception as e:
-                        logger.error(f"[LeadershipCoordinator] Callback error: {e}")
+            # Notify callbacks
+            for callback in self._leader_change_callbacks:
+                try:
+                    callback(domain, old_leader, "")
+                except Exception as e:
+                    logger.error(f"[LeadershipCoordinator] Callback error: {e}")
 
-                logger.warning(
-                    f"[LeadershipCoordinator] Leader lost for {domain}: {node_id}"
-                )
+            logger.warning(
+                f"[LeadershipCoordinator] Leader lost for {domain}: {node_id}"
+            )
 
     async def _on_leader_stepdown(self, event) -> None:
         """Handle LEADER_STEPDOWN event."""
@@ -308,29 +308,28 @@ class LeadershipCoordinator:
         domain = payload.get("domain", "cluster")
         node_id = payload.get("node_id", "")
 
-        if domain in self._leadership:
-            if self._leadership[domain].leader_node_id == node_id:
-                old_leader = self._leadership[domain].leader_node_id
-                del self._leadership[domain]
+        if domain in self._leadership and self._leadership[domain].leader_node_id == node_id:
+            old_leader = self._leadership[domain].leader_node_id
+            del self._leadership[domain]
 
-                # Update node info
-                if node_id in self._nodes:
-                    self._nodes[node_id].role = NodeRole.FOLLOWER
-                    self._nodes[node_id].leader_domains.discard(domain)
+            # Update node info
+            if node_id in self._nodes:
+                self._nodes[node_id].role = NodeRole.FOLLOWER
+                self._nodes[node_id].leader_domains.discard(domain)
 
-                # Record event
-                self._record_event("stepdown", domain, node_id, payload.get("reason", ""))
+            # Record event
+            self._record_event("stepdown", domain, node_id, payload.get("reason", ""))
 
-                # Notify callbacks
-                for callback in self._leader_change_callbacks:
-                    try:
-                        callback(domain, old_leader, "")
-                    except Exception as e:
-                        logger.error(f"[LeadershipCoordinator] Callback error: {e}")
+            # Notify callbacks
+            for callback in self._leader_change_callbacks:
+                try:
+                    callback(domain, old_leader, "")
+                except Exception as e:
+                    logger.error(f"[LeadershipCoordinator] Callback error: {e}")
 
-                logger.info(
-                    f"[LeadershipCoordinator] Leader stepped down for {domain}: {node_id}"
-                )
+            logger.info(
+                f"[LeadershipCoordinator] Leader stepped down for {domain}: {node_id}"
+            )
 
     async def _on_host_online(self, event) -> None:
         """Handle HOST_ONLINE event."""
@@ -385,7 +384,7 @@ class LeadershipCoordinator:
             return False
         return self._leadership[domain].leader_node_id == self.local_node_id
 
-    def get_leader(self, domain: str = "cluster") -> Optional[str]:
+    def get_leader(self, domain: str = "cluster") -> str | None:
         """Get the current leader for a domain.
 
         Args:
@@ -465,23 +464,23 @@ class LeadershipCoordinator:
         """
         self._leader_change_callbacks.append(callback)
 
-    def get_node(self, node_id: str) -> Optional[NodeInfo]:
+    def get_node(self, node_id: str) -> NodeInfo | None:
         """Get info for a specific node."""
         return self._nodes.get(node_id)
 
-    def get_all_nodes(self) -> List[NodeInfo]:
+    def get_all_nodes(self) -> list[NodeInfo]:
         """Get all known nodes."""
         return list(self._nodes.values())
 
-    def get_online_nodes(self) -> List[NodeInfo]:
+    def get_online_nodes(self) -> list[NodeInfo]:
         """Get all online nodes."""
         return [n for n in self._nodes.values() if n.is_alive and n.role != NodeRole.OFFLINE]
 
-    def get_leaders(self) -> Dict[str, str]:
+    def get_leaders(self) -> dict[str, str]:
         """Get all current leaders by domain."""
         return {domain: record.leader_node_id for domain, record in self._leadership.items()}
 
-    def get_event_history(self, limit: int = 50) -> List[LeadershipEvent]:
+    def get_event_history(self, limit: int = 50) -> list[LeadershipEvent]:
         """Get recent leadership events."""
         return self._events[-limit:]
 
@@ -505,7 +504,7 @@ class LeadershipCoordinator:
             cluster_healthy=healthy,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring."""
         stats = self.get_stats()
 
@@ -528,7 +527,7 @@ class LeadershipCoordinator:
 # Singleton and convenience functions
 # =============================================================================
 
-_leadership_coordinator: Optional[LeadershipCoordinator] = None
+_leadership_coordinator: LeadershipCoordinator | None = None
 
 
 def get_leadership_coordinator() -> LeadershipCoordinator:
@@ -555,7 +554,7 @@ def is_leader(domain: str = "cluster") -> bool:
     return get_leadership_coordinator().is_leader(domain)
 
 
-def get_current_leader(domain: str = "cluster") -> Optional[str]:
+def get_current_leader(domain: str = "cluster") -> str | None:
     """Convenience function to get current leader."""
     return get_leadership_coordinator().get_leader(domain)
 
@@ -563,13 +562,13 @@ def get_current_leader(domain: str = "cluster") -> Optional[str]:
 __all__ = [
     "LeadershipCoordinator",
     "LeadershipDomain",
-    "NodeRole",
-    "NodeInfo",
-    "LeadershipRecord",
     "LeadershipEvent",
+    "LeadershipRecord",
     "LeadershipStats",
-    "get_leadership_coordinator",
-    "wire_leadership_events",
-    "is_leader",
+    "NodeInfo",
+    "NodeRole",
     "get_current_leader",
+    "get_leadership_coordinator",
+    "is_leader",
+    "wire_leadership_events",
 ]

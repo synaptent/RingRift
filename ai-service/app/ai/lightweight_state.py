@@ -14,7 +14,6 @@ Performance gains:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
 
@@ -46,7 +45,7 @@ class LightweightStack:
     """Minimal stack representation."""
 
     position_key: str
-    rings: List[int]  # Player numbers from bottom to top
+    rings: list[int]  # Player numbers from bottom to top
     controlling_player: int
 
     @property
@@ -83,30 +82,30 @@ class MoveUndo:
     """
 
     # Stack changes
-    added_stack_keys: List[str] = field(default_factory=list)
-    removed_stacks: Dict[str, LightweightStack] = field(default_factory=dict)
-    modified_stacks: Dict[str, LightweightStack] = field(default_factory=dict)  # Original state
+    added_stack_keys: list[str] = field(default_factory=list)
+    removed_stacks: dict[str, LightweightStack] = field(default_factory=dict)
+    modified_stacks: dict[str, LightweightStack] = field(default_factory=dict)  # Original state
 
     # Marker changes
-    added_marker_keys: List[str] = field(default_factory=list)
-    removed_markers: Dict[str, LightweightMarker] = field(default_factory=dict)
+    added_marker_keys: list[str] = field(default_factory=list)
+    removed_markers: dict[str, LightweightMarker] = field(default_factory=dict)
 
     # Player changes (player_number -> original values)
-    player_rings_in_hand: Dict[int, int] = field(default_factory=dict)
-    player_eliminated_rings: Dict[int, int] = field(default_factory=dict)
-    player_territory_spaces: Dict[int, int] = field(default_factory=dict)
+    player_rings_in_hand: dict[int, int] = field(default_factory=dict)
+    player_eliminated_rings: dict[int, int] = field(default_factory=dict)
+    player_territory_spaces: dict[int, int] = field(default_factory=dict)
 
     # Territory changes
-    added_territory_keys: List[str] = field(default_factory=list)
-    removed_territories: Dict[str, int] = field(default_factory=dict)  # key -> owner
-    modified_territories: Dict[str, int] = field(default_factory=dict)  # key -> original owner
+    added_territory_keys: list[str] = field(default_factory=list)
+    removed_territories: dict[str, int] = field(default_factory=dict)  # key -> owner
+    modified_territories: dict[str, int] = field(default_factory=dict)  # key -> original owner
 
     # Collapsed space changes
-    added_collapsed_keys: List[str] = field(default_factory=list)
+    added_collapsed_keys: list[str] = field(default_factory=list)
 
     # Phase/turn changes
-    original_current_player: Optional[int] = None
-    original_phase: Optional[LightweightPhase] = None
+    original_current_player: int | None = None
+    original_phase: LightweightPhase | None = None
 
 
 class LightweightState:
@@ -126,37 +125,37 @@ class LightweightState:
     """
 
     __slots__ = [
-        "board_type",
+        "_position_key_cache",
         "board_size",
-        "stacks",
-        "markers",
+        "board_type",
         "collapsed_spaces",
-        "territories",
-        "players",
-        "current_player",
         "current_phase",
+        "current_player",
+        "markers",
+        "players",
+        "stacks",
+        "territories",
         "victory_rings",
         "victory_territory",
-        "_position_key_cache",
     ]
 
     def __init__(self):
         self.board_type: LightweightBoardType = LightweightBoardType.SQUARE8
         self.board_size: int = 8
-        self.stacks: Dict[str, LightweightStack] = {}
-        self.markers: Dict[str, LightweightMarker] = {}
-        self.collapsed_spaces: Dict[str, bool] = {}
-        self.territories: Dict[str, int] = {}  # position_key -> owner player
-        self.players: Dict[int, LightweightPlayer] = {}
+        self.stacks: dict[str, LightweightStack] = {}
+        self.markers: dict[str, LightweightMarker] = {}
+        self.collapsed_spaces: dict[str, bool] = {}
+        self.territories: dict[str, int] = {}  # position_key -> owner player
+        self.players: dict[int, LightweightPlayer] = {}
         self.current_player: int = 1
         self.current_phase: LightweightPhase = LightweightPhase.RING_PLACEMENT
         # Default for square8 2-player (RR-CANON-R061: ringsPerPlayer for 2p).
         self.victory_rings: int = 18
         self.victory_territory: int = 33
-        self._position_key_cache: Dict[Tuple[int, int], str] = {}
+        self._position_key_cache: dict[tuple[int, int], str] = {}
 
     @classmethod
-    def from_game_state(cls, game_state) -> "LightweightState":
+    def from_game_state(cls, game_state) -> LightweightState:
         """Convert a Pydantic GameState to lightweight representation.
 
         This is O(n) where n is board elements, but only done once per
@@ -421,7 +420,7 @@ class LightweightState:
         if undo.original_phase is not None:
             self.current_phase = undo.original_phase
 
-    def get_player(self, player_number: int) -> Optional[LightweightPlayer]:
+    def get_player(self, player_number: int) -> LightweightPlayer | None:
         """Get player by number."""
         return self.players.get(player_number)
 

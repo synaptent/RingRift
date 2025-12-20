@@ -21,14 +21,14 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
-import psutil
 import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +60,13 @@ except ImportError:
 # Import centralized thresholds (single source of truth)
 try:
     from app.config.thresholds import (
-        MEMORY_WARNING_PERCENT,
-        MEMORY_CRITICAL_PERCENT,
-        DISK_WARNING_PERCENT,
-        DISK_CRITICAL_PERCENT,
-        CPU_WARNING_PERCENT,
-        CPU_CRITICAL_PERCENT,
         CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+        CPU_CRITICAL_PERCENT,
+        CPU_WARNING_PERCENT,
+        DISK_CRITICAL_PERCENT,
+        DISK_WARNING_PERCENT,
+        MEMORY_CRITICAL_PERCENT,
+        MEMORY_WARNING_PERCENT,
     )
     # Use centralized thresholds
     MEMORY_WARNING_THRESHOLD = MEMORY_WARNING_PERCENT
@@ -88,9 +88,7 @@ except ImportError:
 
 # Event bus for health/recovery events (Phase 10 consolidation)
 try:
-    from app.distributed.data_events import (
-        DataEvent, DataEventType, get_event_bus
-    )
+    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
     HAS_EVENT_BUS = True
 except ImportError:
     HAS_EVENT_BUS = False
@@ -104,8 +102,8 @@ class ComponentHealth:
     healthy: bool
     status: str  # "ok", "warning", "error", "unknown"
     message: str = ""
-    last_activity: Optional[float] = None  # Unix timestamp
-    details: Dict[str, Any] = field(default_factory=dict)
+    last_activity: float | None = None  # Unix timestamp
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -113,12 +111,12 @@ class HealthSummary:
     """Overall health summary of all components."""
     healthy: bool
     timestamp: str
-    components: List[ComponentHealth]
-    issues: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    components: list[ComponentHealth]
+    issues: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
-    def component_status(self) -> Dict[str, str]:
+    def component_status(self) -> dict[str, str]:
         return {c.name: c.status for c in self.components}
 
 
@@ -131,7 +129,7 @@ class HealthChecker:
     EVALUATION_STALE_THRESHOLD = 7200  # 2 hours
     COORDINATOR_STALE_THRESHOLD = 86400  # 24 hours
 
-    def __init__(self, merged_db_path: Optional[Path] = None):
+    def __init__(self, merged_db_path: Path | None = None):
         self.elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
         # Default to selfplay.db which is the actual merged training database
         self.merged_db_path = merged_db_path or AI_SERVICE_ROOT / "data" / "games" / "selfplay.db"
@@ -631,8 +629,8 @@ class HealthRecoveryIntegration:
         self.check_interval = check_interval
         self.checker = HealthChecker()
         self._running = False
-        self._consecutive_failures: Dict[str, int] = {}
-        self._last_recovery_attempt: Dict[str, float] = {}
+        self._consecutive_failures: dict[str, int] = {}
+        self._last_recovery_attempt: dict[str, float] = {}
         self._recovery_cooldown = RECOVERY_COOLDOWN  # From thresholds.py
 
     async def check_and_recover(self) -> HealthSummary:
@@ -848,7 +846,7 @@ class HealthRecoveryIntegration:
         self._running = False
         logger.info("[Health→Recovery] Health monitoring stopped")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get integration status."""
         return {
             "running": self._running,

@@ -36,12 +36,9 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
 
 from app.metrics.unified_publisher import (
-    MetricsPublisher,
     MetricTimer,
-    get_metrics_publisher,
     publish_counter,
     publish_gauge,
     publish_histogram,
@@ -51,14 +48,14 @@ from app.metrics.unified_publisher import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "TrainingMetrics",
     "TrainingMetricNames",
+    "TrainingMetrics",
     "get_training_metrics",
-    "publish_training_step",
+    "publish_checkpoint_saved",
     "publish_epoch_completed",
     "publish_eval_result",
-    "publish_checkpoint_saved",
     "publish_selfplay_completed",
+    "publish_training_step",
     "time_training_epoch",
 ]
 
@@ -154,7 +151,7 @@ class TrainingMetrics:
         epoch: int,
         total_epochs: int,
         train_loss: float,
-        val_loss: Optional[float] = None,
+        val_loss: float | None = None,
         duration_seconds: float = 0.0,
         **extra_labels,
     ) -> None:

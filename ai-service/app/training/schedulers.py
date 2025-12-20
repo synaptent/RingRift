@@ -25,7 +25,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -39,7 +39,7 @@ def get_warmup_scheduler(
     warmup_epochs: int,
     total_epochs: int,
     scheduler_type: str = 'none',
-) -> Optional[Any]:
+) -> Any | None:
     """
     Create a learning rate scheduler with optional warmup.
 
@@ -91,7 +91,7 @@ def create_lr_scheduler(
     lr_min: float = 1e-6,
     lr_t0: int = 10,
     lr_t_mult: int = 2,
-) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
+) -> torch.optim.lr_scheduler.LRScheduler | None:
     """
     Create a learning rate scheduler with PyTorch's native implementations.
 
@@ -162,6 +162,6 @@ def create_lr_scheduler(
 
 
 __all__ = [
-    "get_warmup_scheduler",
     "create_lr_scheduler",
+    "get_warmup_scheduler",
 ]

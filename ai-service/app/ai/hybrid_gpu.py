@@ -28,14 +28,14 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
 
 import numpy as np
 import torch
@@ -43,15 +43,13 @@ import torch.nn as nn
 
 from .gpu_batch import (
     GPUBatchEvaluator,
-    GPUHeuristicEvaluator,
     GPUBoardState,
+    GPUHeuristicEvaluator,
     get_device,
-    compile_model,
 )
 from .heuristic_weights import (
-    HEURISTIC_WEIGHT_KEYS,
-    get_weights_for_player_count,
     get_weights_for_board,
+    get_weights_for_player_count,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,7 +63,7 @@ logger = logging.getLogger(__name__)
 def game_state_to_gpu_arrays(
     game_state,
     board_size: int = 8,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """Convert GameState to numpy arrays for GPU transfer.
 
     This extracts the essential board state into dense numpy arrays that can
@@ -109,7 +107,7 @@ def game_state_to_gpu_arrays(
         marker_owner[idx] = marker.player
 
     # Fill collapsed spaces
-    for pos_key in game_state.board.collapsed_spaces.keys():
+    for pos_key in game_state.board.collapsed_spaces:
         parts = pos_key.split(',')
         x, y = int(parts[0]), int(parts[1])
         idx = pos_to_idx(x, y)
@@ -140,7 +138,7 @@ def game_state_to_gpu_arrays(
 
 
 def batch_game_states_to_gpu(
-    game_states: List,
+    game_states: list,
     device: torch.device,
     board_size: int = 8,
 ) -> GPUBoardState:
@@ -183,12 +181,12 @@ class HybridGPUEvaluator:
 
     def __init__(
         self,
-        device: Optional[Union[str, torch.device]] = None,
-        model: Optional[nn.Module] = None,
+        device: Union[str, torch.device] | None = None,
+        model: nn.Module | None = None,
         board_size: int = 8,
         num_players: int = 2,
         use_heuristic: bool = True,
-        weights: Optional[Dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
     ):
         """Initialize hybrid GPU evaluator.
 
@@ -248,7 +246,7 @@ class HybridGPUEvaluator:
             f"(heuristic={use_heuristic}, board={board_size}x{board_size})"
         )
 
-    def _convert_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
+    def _convert_weights(self, weights: dict[str, float]) -> dict[str, float]:
         """Convert HeuristicAI weights to GPU heuristic format."""
         # Map WEIGHT_* keys to GPU heuristic keys
         return {
@@ -262,7 +260,7 @@ class HybridGPUEvaluator:
 
     def evaluate_positions(
         self,
-        game_states: List,
+        game_states: list,
         player_number: int,
     ) -> np.ndarray:
         """Evaluate batch of positions using GPU.
@@ -314,10 +312,10 @@ class HybridGPUEvaluator:
     def evaluate_moves(
         self,
         game_state,
-        moves: List,
+        moves: list,
         player_number: int,
         rules_engine,
-    ) -> List[Tuple[Any, float]]:
+    ) -> list[tuple[Any, float]]:
         """Evaluate moves using CPU rules + GPU evaluation.
 
         This is the main entry point for hybrid evaluation:
@@ -371,7 +369,7 @@ class HybridGPUEvaluator:
 
         return results
 
-    def get_performance_stats(self) -> Dict[str, float]:
+    def get_performance_stats(self) -> dict[str, float]:
         """Get performance statistics."""
         return {
             "eval_count": self._eval_count,
@@ -396,9 +394,9 @@ class HybridGPUEvaluator:
 class AsyncEvalRequest:
     """Request for async evaluation."""
     game_state: Any
-    moves: List
+    moves: list
     player_number: int
-    callback: Callable[[List[Tuple[Any, float]]], None]
+    callback: Callable[[list[tuple[Any, float]]], None]
     timestamp: float = field(default_factory=time.perf_counter)
 
 
@@ -437,12 +435,12 @@ class AsyncPipelineEvaluator:
 
         # Queues
         self._request_queue: queue.Queue[AsyncEvalRequest] = queue.Queue()
-        self._gpu_queue: queue.Queue[Tuple[List, List, List, List]] = queue.Queue()
+        self._gpu_queue: queue.Queue[tuple[list, list, list, list]] = queue.Queue()
 
         # Workers
         self._running = False
         self._cpu_pool = ThreadPoolExecutor(max_workers=cpu_workers)
-        self._gpu_thread: Optional[threading.Thread] = None
+        self._gpu_thread: threading.Thread | None = None
 
         # Stats
         self._requests_processed = 0
@@ -472,9 +470,9 @@ class AsyncPipelineEvaluator:
     def submit(
         self,
         game_state,
-        moves: List,
+        moves: list,
         player_number: int,
-        callback: Callable[[List[Tuple[Any, float]]], None],
+        callback: Callable[[list[tuple[Any, float]]], None],
     ) -> None:
         """Submit evaluation request to the pipeline.
 
@@ -554,10 +552,10 @@ class AsyncPipelineEvaluator:
 
     def _process_gpu_batch(
         self,
-        states: List,
-        indices_list: List[List[int]],
-        moves_list: List[List],
-        meta_list: List,
+        states: list,
+        indices_list: list[list[int]],
+        moves_list: list[list],
+        meta_list: list,
     ) -> None:
         """Process a batch on GPU and dispatch callbacks."""
         if not states:
@@ -572,7 +570,7 @@ class AsyncPipelineEvaluator:
 
         # Dispatch results to callbacks
         score_idx = 0
-        for indices, moves, meta in zip(indices_list, moves_list, meta_list):
+        for indices, moves, meta in zip(indices_list, moves_list, meta_list, strict=False):
             callback = meta[1]
             results = []
 
@@ -637,9 +635,9 @@ class HybridSelfPlayRunner:
 
     def run_game(
         self,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         max_moves: int = 10000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run a single game with hybrid evaluation.
 
         Args:
@@ -752,8 +750,8 @@ class HybridSelfPlayRunner:
         self,
         num_games: int,
         max_moves: int = 10000,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> List[Dict[str, Any]]:
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[dict[str, Any]]:
         """Run multiple games with hybrid evaluation.
 
         Args:
@@ -784,7 +782,7 @@ class HybridSelfPlayRunner:
 def create_hybrid_evaluator(
     board_type: str = "square8",
     num_players: int = 2,
-    model: Optional[nn.Module] = None,
+    model: nn.Module | None = None,
     prefer_gpu: bool = True,
 ) -> HybridGPUEvaluator:
     """Create a hybrid GPU evaluator with auto-configuration.
@@ -821,7 +819,7 @@ def benchmark_hybrid_evaluation(
     evaluator: HybridGPUEvaluator,
     rules_engine,
     num_positions: int = 1000,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Benchmark hybrid evaluation performance.
 
     Args:

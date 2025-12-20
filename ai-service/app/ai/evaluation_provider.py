@@ -32,9 +32,9 @@ class MinimaxAI(BaseAI):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from ..models import GameState, AIConfig
+from ..models import AIConfig, GameState
 
 
 @runtime_checkable
@@ -69,7 +69,7 @@ class EvaluationProvider(Protocol):
         """
         ...
 
-    def get_breakdown(self, game_state: GameState) -> Dict[str, float]:
+    def get_breakdown(self, game_state: GameState) -> dict[str, float]:
         """Get detailed evaluation breakdown.
 
         Parameters
@@ -106,10 +106,10 @@ class EvaluatorConfig:
 
     difficulty: int = 5
     eval_mode: str = "full"
-    heuristic_profile_id: Optional[str] = None
+    heuristic_profile_id: str | None = None
 
     @classmethod
-    def from_ai_config(cls, config: AIConfig) -> "EvaluatorConfig":
+    def from_ai_config(cls, config: AIConfig) -> EvaluatorConfig:
         """Create evaluator config from AIConfig.
 
         Parameters
@@ -202,7 +202,7 @@ class HeuristicEvaluator:
     def __init__(
         self,
         player_number: int,
-        config: Optional[EvaluatorConfig | AIConfig] = None,
+        config: EvaluatorConfig | AIConfig | None = None,
     ) -> None:
         self.player_number = player_number
 
@@ -218,7 +218,7 @@ class HeuristicEvaluator:
 
         # Lazy-loaded dependencies
         self._fast_geo = None
-        self._visible_stacks_cache: Dict = {}
+        self._visible_stacks_cache: dict = {}
 
         # Apply weight profile
         self._apply_weight_profile()
@@ -273,7 +273,7 @@ class HeuristicEvaluator:
         components = self._compute_components(game_state)
         return sum(components.values())
 
-    def get_breakdown(self, game_state: GameState) -> Dict[str, float]:
+    def get_breakdown(self, game_state: GameState) -> dict[str, float]:
         """Get detailed evaluation breakdown.
 
         Parameters
@@ -290,10 +290,10 @@ class HeuristicEvaluator:
         total = sum(components.values())
         return {"total": total, **components}
 
-    def _compute_components(self, game_state: GameState) -> Dict[str, float]:
+    def _compute_components(self, game_state: GameState) -> dict[str, float]:
         """Compute per-feature component scores."""
         self._visible_stacks_cache = {}
-        scores: Dict[str, float] = {}
+        scores: dict[str, float] = {}
 
         # Tier 0 (core) - always computed
         scores["stack_control"] = self._evaluate_stack_control(game_state)
@@ -347,7 +347,7 @@ class HeuristicEvaluator:
     # Helper methods (delegated from HeuristicAI)
     # =========================================================================
 
-    def _get_player_info(self, game_state: GameState, player_number: int = None):
+    def _get_player_info(self, game_state: GameState, player_number: int | None = None):
         """Get player info from game state."""
         target = player_number if player_number is not None else self.player_number
         for p in game_state.players:
@@ -802,9 +802,8 @@ class HeuristicEvaluator:
 
                 if has_m1:
                     score += self.WEIGHT_CONNECTED_NEIGHBOR
-                if has_m2 and not has_m1:
-                    if key1 not in collapsed and key1 not in stacks:
-                        score += self.WEIGHT_GAP_POTENTIAL
+                if has_m2 and not has_m1 and key1 not in collapsed and key1 not in stacks:
+                    score += self.WEIGHT_GAP_POTENTIAL
 
         return score * self.WEIGHT_LINE_CONNECTIVITY
 
@@ -999,7 +998,7 @@ class HeuristicEvaluator:
 # Factory function for easy creation
 def create_evaluator(
     player_number: int,
-    config: Optional[AIConfig] = None,
+    config: AIConfig | None = None,
     eval_mode: str = "full",
 ) -> HeuristicEvaluator:
     """Create a HeuristicEvaluator with the given configuration.

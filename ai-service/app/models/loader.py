@@ -26,13 +26,13 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
 import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -61,10 +61,10 @@ class ModelInfo:
     board_type: str
     num_players: int
     path: str
-    version: Optional[str] = None
-    elo: Optional[float] = None
-    stage: Optional[str] = None
-    architecture: Optional[str] = None
+    version: str | None = None
+    elo: float | None = None
+    stage: str | None = None
+    architecture: str | None = None
     loaded_from_cache: bool = False
 
 
@@ -80,7 +80,7 @@ class ModelCache:
     and manages memory by limiting cache size.
     """
 
-    _instance: Optional["ModelCache"] = None
+    _instance: ModelCache | None = None
     _lock = threading.RLock()
 
     # Default max cache sizes
@@ -88,7 +88,7 @@ class ModelCache:
     MAX_POLICY_MODELS = 2
     MAX_VALUE_MODELS = 2
 
-    def __new__(cls) -> "ModelCache":
+    def __new__(cls) -> ModelCache:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -101,18 +101,18 @@ class ModelCache:
             return
 
         self._initialized = True
-        self._nnue_cache: Dict[str, Tuple[nn.Module, ModelInfo]] = {}
-        self._policy_cache: Dict[str, Tuple[nn.Module, ModelInfo]] = {}
-        self._value_cache: Dict[str, Tuple[nn.Module, ModelInfo]] = {}
+        self._nnue_cache: dict[str, tuple[nn.Module, ModelInfo]] = {}
+        self._policy_cache: dict[str, tuple[nn.Module, ModelInfo]] = {}
+        self._value_cache: dict[str, tuple[nn.Module, ModelInfo]] = {}
         self._cache_lock = threading.RLock()
 
-    def _make_key(self, board_type: str, num_players: int, model_id: Optional[str] = None) -> str:
+    def _make_key(self, board_type: str, num_players: int, model_id: str | None = None) -> str:
         """Create a cache key."""
         if model_id:
             return f"{board_type}_{num_players}p_{model_id}"
         return f"{board_type}_{num_players}p_default"
 
-    def get_nnue(self, key: str) -> Optional[Tuple[nn.Module, ModelInfo]]:
+    def get_nnue(self, key: str) -> tuple[nn.Module, ModelInfo] | None:
         """Get a cached NNUE model."""
         with self._cache_lock:
             return self._nnue_cache.get(key)
@@ -126,7 +126,7 @@ class ModelCache:
                 self._evict_model(self._nnue_cache, oldest_key)
             self._nnue_cache[key] = (model, info)
 
-    def get_policy(self, key: str) -> Optional[Tuple[nn.Module, ModelInfo]]:
+    def get_policy(self, key: str) -> tuple[nn.Module, ModelInfo] | None:
         """Get a cached policy model."""
         with self._cache_lock:
             return self._policy_cache.get(key)
@@ -139,7 +139,7 @@ class ModelCache:
                 self._evict_model(self._policy_cache, oldest_key)
             self._policy_cache[key] = (model, info)
 
-    def get_value(self, key: str) -> Optional[Tuple[nn.Module, ModelInfo]]:
+    def get_value(self, key: str) -> tuple[nn.Module, ModelInfo] | None:
         """Get a cached value model."""
         with self._cache_lock:
             return self._value_cache.get(key)
@@ -152,14 +152,12 @@ class ModelCache:
                 self._evict_model(self._value_cache, oldest_key)
             self._value_cache[key] = (model, info)
 
-    def _evict_model(self, cache: Dict, key: str) -> None:
+    def _evict_model(self, cache: dict, key: str) -> None:
         """Evict a model from cache and free memory."""
         if key in cache:
             model, _ = cache.pop(key)
-            try:
+            with contextlib.suppress(Exception):
                 model.cpu()
-            except Exception:
-                pass
             del model
             gc.collect()
             logger.debug(f"Evicted model from cache: {key}")
@@ -174,15 +172,13 @@ class ModelCache:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                try:
+                with contextlib.suppress(Exception):
                     torch.mps.empty_cache()
-                except Exception:
-                    pass
 
             gc.collect()
             logger.info("Cleared all model caches")
 
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> dict[str, int]:
         """Get cache statistics."""
         with self._cache_lock:
             return {
@@ -211,9 +207,9 @@ class ModelLoader:
 
     def __init__(
         self,
-        base_path: Optional[Path] = None,
+        base_path: Path | None = None,
         use_cache: bool = True,
-        device: Optional[str] = None,
+        device: str | None = None,
     ):
         """Initialize the model loader.
 
@@ -228,7 +224,7 @@ class ModelLoader:
         self._device = device or self._detect_device()
         self._registry = None
 
-    def _detect_base_path(self, base_path: Optional[Path]) -> Path:
+    def _detect_base_path(self, base_path: Path | None) -> Path:
         """Detect the ai-service base path."""
         if base_path:
             return Path(base_path)
@@ -270,9 +266,9 @@ class ModelLoader:
         self,
         board_type: str,
         num_players: int,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         stage: str = "production",
-    ) -> Tuple[nn.Module, ModelInfo]:
+    ) -> tuple[nn.Module, ModelInfo]:
         """Load a NNUE model.
 
         Args:
@@ -302,7 +298,7 @@ class ModelLoader:
         path = self._find_nnue_path(board_type, num_players, model_id, stage)
 
         # Load model using the proper loader function which handles version migration
-        from app.ai.nnue import load_nnue_model, BoardType
+        from app.ai.nnue import BoardType, load_nnue_model
 
         # Convert string board_type to enum
         board_type_enum = BoardType(board_type) if isinstance(board_type, str) else board_type
@@ -356,7 +352,7 @@ class ModelLoader:
         self,
         board_type: str,
         num_players: int,
-        model_id: Optional[str],
+        model_id: str | None,
         stage: str,
     ) -> Path:
         """Find the path to a NNUE model."""
@@ -402,8 +398,8 @@ class ModelLoader:
         self,
         board_type: str,
         num_players: int,
-        model_id: Optional[str] = None,
-    ) -> Tuple[nn.Module, ModelInfo]:
+        model_id: str | None = None,
+    ) -> tuple[nn.Module, ModelInfo]:
         """Load a policy model.
 
         Args:
@@ -472,9 +468,9 @@ class ModelLoader:
 
     def get_available_models(
         self,
-        board_type: Optional[str] = None,
-        model_type: Optional[str] = None,
-    ) -> Dict[str, list]:
+        board_type: str | None = None,
+        model_type: str | None = None,
+    ) -> dict[str, list]:
         """List available models.
 
         Args:
@@ -484,7 +480,7 @@ class ModelLoader:
         Returns:
             Dict of model_type -> list of available models
         """
-        result: Dict[str, list] = {"nnue": [], "policy": [], "value": []}
+        result: dict[str, list] = {"nnue": [], "policy": [], "value": []}
 
         # Scan model directories
         for mtype, mdir in [
@@ -522,7 +518,7 @@ class ModelLoader:
 # Module-level convenience functions
 # =============================================================================
 
-_default_loader: Optional[ModelLoader] = None
+_default_loader: ModelLoader | None = None
 
 
 def get_loader() -> ModelLoader:
@@ -538,7 +534,7 @@ def get_model(
     model_type: str = "nnue",
     board_type: str = "square8",
     num_players: int = 2,
-) -> Tuple[nn.Module, ModelInfo]:
+) -> tuple[nn.Module, ModelInfo]:
     """Load a model by ID.
 
     Args:
@@ -565,7 +561,7 @@ def get_latest_model(
     num_players: int = 2,
     model_type: str = "nnue",
     stage: str = "production",
-) -> Tuple[nn.Module, ModelInfo]:
+) -> tuple[nn.Module, ModelInfo]:
     """Load the latest model for a configuration.
 
     Args:

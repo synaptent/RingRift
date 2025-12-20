@@ -21,34 +21,33 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 __all__ = [
+    # Constants
+    "BOARD_MEMORY_REQUIREMENTS",
+    "DEFAULT_SSH_KEY",
+    "HostConfig",
     # Data classes
     "HostMemoryInfo",
-    "HostConfig",
-    # Host configuration
-    "load_remote_hosts",
-    "load_ready_hosts",
-    "filter_ready_hosts",
-    # Memory detection
-    "get_local_memory_gb",
-    "get_remote_memory_gb",
-    "detect_host_memory",
-    "detect_all_host_memory",
+    # SSH utilities
+    "SSHExecutor",
     "clear_memory_cache",
+    "detect_all_host_memory",
+    "detect_host_memory",
+    "filter_ready_hosts",
     # Host filtering
     "get_eligible_hosts_for_board",
     "get_high_memory_hosts",
     # Host status
     "get_host_status",
-    "is_host_ready",
-    # SSH utilities
-    "SSHExecutor",
+    # Memory detection
+    "get_local_memory_gb",
+    "get_remote_memory_gb",
     "get_ssh_executor",
-    # Constants
-    "BOARD_MEMORY_REQUIREMENTS",
-    "DEFAULT_SSH_KEY",
+    "is_host_ready",
+    "load_ready_hosts",
+    # Host configuration
+    "load_remote_hosts",
 ]
 
 logger = logging.getLogger(__name__)
@@ -62,7 +61,7 @@ TEMPLATE_CONFIG_PATH = "config/distributed_hosts.template.yaml"
 # - 16GB machine: only 8x8 works reliably
 # - 64GB machine: can run 19x19/hex with memory pressure
 # - 96GB machine: runs everything comfortably
-BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
+BOARD_MEMORY_REQUIREMENTS: dict[str, int] = {
     "square8": 8,      # 8GB minimum for 8x8 games
     "square19": 48,    # 48GB minimum for 19x19 games
     "hexagonal": 48,   # 48GB minimum for hex games
@@ -92,22 +91,22 @@ class HostConfig:
     """Configuration for a remote host."""
     name: str
     ssh_host: str
-    tailscale_ip: Optional[str] = None
-    ssh_user: Optional[str] = None
+    tailscale_ip: str | None = None
+    ssh_user: str | None = None
     ssh_port: int = 22
-    ssh_key: Optional[str] = None
-    memory_gb: Optional[int] = None
-    work_dir: Optional[str] = None
-    venv_activate: Optional[str] = None
-    python_path: Optional[str] = None
+    ssh_key: str | None = None
+    memory_gb: int | None = None
+    work_dir: str | None = None
+    venv_activate: str | None = None
+    python_path: str | None = None
     max_parallel_jobs: int = 1
     worker_port: int = 8765  # Default HTTP worker port
-    worker_url: Optional[str] = None  # Optional explicit worker URL
+    worker_url: str | None = None  # Optional explicit worker URL
     # Cloudflare Zero Trust support
-    cloudflare_tunnel: Optional[str] = None  # Cloudflare tunnel hostname (e.g., "host.example.com")
-    cloudflare_service_token_id: Optional[str] = None  # Service token ID for non-interactive auth
-    cloudflare_service_token_secret: Optional[str] = None  # Service token secret
-    properties: Dict = field(default_factory=dict)
+    cloudflare_tunnel: str | None = None  # Cloudflare tunnel hostname (e.g., "host.example.com")
+    cloudflare_service_token_id: str | None = None  # Service token ID for non-interactive auth
+    cloudflare_service_token_secret: str | None = None  # Service token secret
+    properties: dict = field(default_factory=dict)
 
     @property
     def ssh_target(self) -> str:
@@ -119,14 +118,14 @@ class HostConfig:
         return self.ssh_host
 
     @property
-    def ssh_targets(self) -> List[str]:
+    def ssh_targets(self) -> list[str]:
         """Return candidate SSH targets in priority order.
 
         When a ``tailscale_ip`` is configured, prefer it (mesh routing is often
         more reliable than public IPs / NATed providers). Fall back to the
         primary ``ssh_host``.
         """
-        candidates: List[str] = []
+        candidates: list[str] = []
         for raw in (self.tailscale_ip, self.ssh_host):
             if not raw:
                 continue
@@ -182,8 +181,8 @@ class HostConfig:
 
 
 # Global host configuration cache
-_HOST_CONFIG_CACHE: Dict[str, HostConfig] = {}
-_HOST_MEMORY_CACHE: Dict[str, HostMemoryInfo] = {}
+_HOST_CONFIG_CACHE: dict[str, HostConfig] = {}
+_HOST_MEMORY_CACHE: dict[str, HostMemoryInfo] = {}
 
 
 def get_ai_service_dir() -> Path:
@@ -192,7 +191,7 @@ def get_ai_service_dir() -> Path:
     return Path(__file__).parent.parent.parent
 
 
-def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig]:
+def load_remote_hosts(config_path: str | None = None) -> dict[str, HostConfig]:
     """Load remote host configuration from YAML file.
 
     Args:
@@ -228,7 +227,7 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig
 
     for path in paths_to_try:
         if os.path.exists(path):
-            with open(path, "r") as f:
+            with open(path) as f:
                 config = yaml.safe_load(f)
 
             hosts_dict = config.get("hosts", {})
@@ -283,7 +282,7 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig
     return {}
 
 
-def get_local_memory_gb() -> Tuple[int, int]:
+def get_local_memory_gb() -> tuple[int, int]:
     """Get total and available physical memory on local machine in GB.
 
     Returns:
@@ -336,7 +335,7 @@ def get_local_memory_gb() -> Tuple[int, int]:
 
     try:
         # Linux: read /proc/meminfo
-        with open("/proc/meminfo", "r") as f:
+        with open("/proc/meminfo") as f:
             for line in f:
                 if line.startswith("MemTotal:"):
                     kb = int(line.split()[1])
@@ -352,7 +351,7 @@ def get_local_memory_gb() -> Tuple[int, int]:
     return 8, 4
 
 
-def get_remote_memory_gb(host: HostConfig) -> Tuple[int, int]:
+def get_remote_memory_gb(host: HostConfig) -> tuple[int, int]:
     """Get total and available physical memory on remote host in GB via SSH.
 
     Args:
@@ -378,10 +377,7 @@ def get_remote_memory_gb(host: HostConfig) -> Tuple[int, int]:
         if config_total:
             total_gb = config_total
         else:
-            ssh_cmd = ssh_cmd_base + [
-                host.ssh_target,
-                "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'",
-            ]
+            ssh_cmd = [*ssh_cmd_base, host.ssh_target, "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'"]
             result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
             if result.returncode == 0 and result.stdout.strip():
                 bytes_total = int(result.stdout.strip())
@@ -400,7 +396,7 @@ else
     echo 4
 fi
 '''
-        ssh_cmd = ssh_cmd_base + [host.ssh_target, vm_stat_script]
+        ssh_cmd = [*ssh_cmd_base, host.ssh_target, vm_stat_script]
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
         if result.returncode == 0 and result.stdout.strip():
             available_gb = int(result.stdout.strip())
@@ -443,7 +439,7 @@ def detect_host_memory(host_name: str) -> HostMemoryInfo:
     return info
 
 
-def detect_all_host_memory(host_names: List[str]) -> Dict[str, HostMemoryInfo]:
+def detect_all_host_memory(host_names: list[str]) -> dict[str, HostMemoryInfo]:
     """Detect memory for all specified hosts.
 
     Args:
@@ -460,8 +456,8 @@ def detect_all_host_memory(host_names: List[str]) -> Dict[str, HostMemoryInfo]:
 
 def get_eligible_hosts_for_board(
     board_type: str,
-    host_names: List[str],
-) -> List[str]:
+    host_names: list[str],
+) -> list[str]:
     """Get hosts with enough memory for a given board type.
 
     Args:
@@ -482,7 +478,7 @@ def get_eligible_hosts_for_board(
     return eligible
 
 
-def get_high_memory_hosts(host_names: List[str]) -> List[str]:
+def get_high_memory_hosts(host_names: list[str]) -> list[str]:
     """Get hosts with high memory (48GB+) for heavy AI workloads.
 
     Args:
@@ -528,7 +524,7 @@ def is_host_ready(host: HostConfig) -> bool:
     return get_host_status(host) in READY_HOST_STATUSES
 
 
-def load_ready_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig]:
+def load_ready_hosts(config_path: str | None = None) -> dict[str, HostConfig]:
     """Load only hosts with status='ready' from YAML configuration.
 
     This is the preferred function for job dispatch - it filters out disabled,
@@ -544,7 +540,7 @@ def load_ready_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig]
     return {name: host for name, host in all_hosts.items() if is_host_ready(host)}
 
 
-def filter_ready_hosts(hosts: Dict[str, HostConfig]) -> Dict[str, HostConfig]:
+def filter_ready_hosts(hosts: dict[str, HostConfig]) -> dict[str, HostConfig]:
     """Filter a hosts dict to only include ready hosts.
 
     Args:
@@ -598,7 +594,7 @@ class SSHExecutor:
 
         return " ".join(proxy_parts)
 
-    def _build_ssh_cmd(self, ssh_target: str, use_cloudflare: bool = False) -> List[str]:
+    def _build_ssh_cmd(self, ssh_target: str, use_cloudflare: bool = False) -> list[str]:
         """Build the base SSH command.
 
         Options for reliable automated connections:
@@ -658,7 +654,7 @@ class SSHExecutor:
             )
         )
 
-    def _get_connection_attempts(self) -> List[Tuple[str, bool]]:
+    def _get_connection_attempts(self) -> list[tuple[str, bool]]:
         """Get list of (ssh_target, use_cloudflare) connection attempts to try.
 
         Returns:
@@ -682,7 +678,7 @@ class SSHExecutor:
         command: str,
         timeout: int = 60,
         capture_output: bool = True,
-        cwd: Optional[str] = None,
+        cwd: str | None = None,
     ) -> subprocess.CompletedProcess:
         """Run a command on the remote host.
 
@@ -709,9 +705,9 @@ class SSHExecutor:
         prefix = f"{venv_activate} && " if venv_activate else ""
         full_cmd = f"cd {work_dir} && {prefix}{command}"
 
-        last_result: Optional[subprocess.CompletedProcess] = None
+        last_result: subprocess.CompletedProcess | None = None
         for target, use_cloudflare in self._get_connection_attempts():
-            ssh_cmd = self._build_ssh_cmd(target, use_cloudflare=use_cloudflare) + [full_cmd]
+            ssh_cmd = [*self._build_ssh_cmd(target, use_cloudflare=use_cloudflare), full_cmd]
             try:
                 result = subprocess.run(
                     ssh_cmd,
@@ -738,7 +734,7 @@ class SSHExecutor:
         self,
         command: str,
         log_file: str,
-        cwd: Optional[str] = None,
+        cwd: str | None = None,
     ) -> subprocess.CompletedProcess:
         """Run a command asynchronously on the remote host (nohup + background).
 
@@ -761,9 +757,9 @@ class SSHExecutor:
         prefix = f"{venv_activate} && " if venv_activate else ""
         # Use nohup to detach from SSH session
         full_cmd = f"cd {work_dir} && {prefix}nohup {command} > {log_file} 2>&1 &"
-        last_result: Optional[subprocess.CompletedProcess] = None
+        last_result: subprocess.CompletedProcess | None = None
         for target, use_cloudflare in self._get_connection_attempts():
-            ssh_cmd = self._build_ssh_cmd(target, use_cloudflare=use_cloudflare) + [full_cmd]
+            ssh_cmd = [*self._build_ssh_cmd(target, use_cloudflare=use_cloudflare), full_cmd]
             try:
                 result = subprocess.run(
                     ssh_cmd,
@@ -797,7 +793,7 @@ class SSHExecutor:
 
         Connection priority: same as run() - tries direct SSH first, then Cloudflare.
         """
-        last_result: Optional[subprocess.CompletedProcess] = None
+        last_result: subprocess.CompletedProcess | None = None
         for target, use_cloudflare in self._get_connection_attempts():
             cmd = [
                 "scp",
@@ -839,7 +835,7 @@ class SSHExecutor:
 
         return last_result or subprocess.CompletedProcess([], returncode=255, stdout="", stderr="SCP failed")
 
-    def get_process_memory(self, pattern: str) -> Optional[int]:
+    def get_process_memory(self, pattern: str) -> int | None:
         """Get RSS memory usage in MB for processes matching a pattern.
 
         Args:
@@ -867,7 +863,7 @@ class SSHExecutor:
             return False
 
 
-def get_ssh_executor(host_name: str) -> Optional[SSHExecutor]:
+def get_ssh_executor(host_name: str) -> SSHExecutor | None:
     """Get an SSHExecutor for a configured host.
 
     Args:

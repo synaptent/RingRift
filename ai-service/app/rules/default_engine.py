@@ -1,26 +1,24 @@
 from __future__ import annotations
 
 import os
-from typing import List, Mapping
+from collections.abc import Mapping
 
 # Import from legacy module directly to avoid circular import
 from app._game_engine_legacy import PhaseRequirementType
+from app.models import GamePhase, GameState, GameStatus, Move, MoveType
 
-from app.models import GameState, GameStatus, GamePhase, Move, MoveType
-
-from .interfaces import RulesEngine, Validator, Mutator
-from .validators.placement import PlacementValidator
-from .validators.movement import MovementValidator
-from .validators.capture import CaptureValidator
-from .validators.line import LineValidator
-from .validators.territory import TerritoryValidator
-
-from .mutators.placement import PlacementMutator
-from .mutators.movement import MovementMutator
+from .interfaces import Mutator, RulesEngine, Validator
 from .mutators.capture import CaptureMutator
 from .mutators.line import LineMutator
+from .mutators.movement import MovementMutator
+from .mutators.placement import PlacementMutator
 from .mutators.territory import TerritoryMutator
 from .mutators.turn import TurnMutator
+from .validators.capture import CaptureValidator
+from .validators.line import LineValidator
+from .validators.movement import MovementValidator
+from .validators.placement import PlacementValidator
+from .validators.territory import TerritoryValidator
 
 
 class DefaultRulesEngine(RulesEngine):
@@ -57,14 +55,14 @@ class DefaultRulesEngine(RulesEngine):
         mutator_first: bool | None = None,
         skip_shadow_contracts: bool | None = None,
     ):
-        self.validators: List[Validator] = [
+        self.validators: list[Validator] = [
             PlacementValidator(),
             MovementValidator(),
             CaptureValidator(),
             LineValidator(),
             TerritoryValidator(),
         ]
-        self.mutators: List[Mutator] = [
+        self.mutators: list[Mutator] = [
             PlacementMutator(),
             MovementMutator(),
             CaptureMutator(),
@@ -130,7 +128,7 @@ class DefaultRulesEngine(RulesEngine):
             "RINGRIFT_FORCE_BOOKKEEPING_MOVES", ""
         ).lower() in {"1", "true", "yes", "on"}
 
-    def get_valid_moves(self, state: GameState, player: int) -> List[Move]:
+    def get_valid_moves(self, state: GameState, player: int) -> list[Move]:
         """Return all legal moves for ``player`` in ``state``.
 
         This is a **host-level** helper over the core GameEngine:
@@ -161,83 +159,82 @@ class DefaultRulesEngine(RulesEngine):
         # If we detect ANM (no moves, no requirement) for the current actor in
         # these phases, synthesize the required no_* action to keep the turn
         # canonical rather than aborting.
-        if self._force_bookkeeping_moves:
-            if (
-                state.current_player == player
-                and state.game_status == GameStatus.ACTIVE
-                and state.current_phase
-                in (GamePhase.LINE_PROCESSING, GamePhase.TERRITORY_PROCESSING)
+        if self._force_bookkeeping_moves and (
+            state.current_player == player
+            and state.game_status == GameStatus.ACTIVE
+            and state.current_phase
+            in (GamePhase.LINE_PROCESSING, GamePhase.TERRITORY_PROCESSING)
+        ):
+            requirement = GameEngine.get_phase_requirement(state, player)
+            bookkeeping_move = None
+            if requirement and requirement.type in (
+                PhaseRequirementType.NO_LINE_ACTION_REQUIRED,
+                PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
             ):
-                requirement = GameEngine.get_phase_requirement(state, player)
-                bookkeeping_move = None
-                if requirement and requirement.type in (
-                    PhaseRequirementType.NO_LINE_ACTION_REQUIRED,
-                    PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
-                ):
-                    bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
-                        requirement,
-                        state,
-                    )
-                elif not moves:
-                    req_type = (
-                        PhaseRequirementType.NO_LINE_ACTION_REQUIRED
-                        if state.current_phase == GamePhase.LINE_PROCESSING
-                        else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
-                    )
-                    req = PhaseRequirement(
-                        type=req_type,
-                        player=player,
-                        eligible_positions=[],
-                    )
-                    bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
-                        req,
-                        state,
-                    )
-                # ANM fallback: no moves and no explicit requirement from core,
-                # but forced bookkeeping is on — synthesize a no_* action to
-                # keep the turn canonical instead of aborting.
-                if bookkeeping_move is None and not moves:
-                    req_type = (
-                        PhaseRequirementType.NO_LINE_ACTION_REQUIRED
-                        if state.current_phase == GamePhase.LINE_PROCESSING
-                        else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
-                    )
-                    req = PhaseRequirement(
-                        type=req_type,
-                        player=player,
-                        eligible_positions=[],
-                    )
-                    bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
-                        req,
-                        state,
-                    )
-                if bookkeeping_move is not None:
-                    return [bookkeeping_move]
-                # If interactive decisions exist in these phases, keep them; but
-                # block anything else (e.g., elimination/placement) from leaking in.
-                moves = [
-                    m
-                    for m in moves
-                    if (
-                        state.current_phase == GamePhase.LINE_PROCESSING
-                        and m.type
-                        in {
-                            MoveType.PROCESS_LINE,
-                            MoveType.CHOOSE_LINE_OPTION,
-                            MoveType.CHOOSE_LINE_REWARD,  # legacy alias
-                        }
-                    )
-                    or (
-                        state.current_phase == GamePhase.TERRITORY_PROCESSING
-                        and m.type in {
-                            MoveType.PROCESS_TERRITORY_REGION,
-                            MoveType.CHOOSE_TERRITORY_OPTION,
-                            MoveType.ELIMINATE_RINGS_FROM_STACK,
-                            MoveType.SKIP_TERRITORY_PROCESSING,
-                            MoveType.NO_TERRITORY_ACTION,
-                        }
-                    )
-                ]
+                bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                    requirement,
+                    state,
+                )
+            elif not moves:
+                req_type = (
+                    PhaseRequirementType.NO_LINE_ACTION_REQUIRED
+                    if state.current_phase == GamePhase.LINE_PROCESSING
+                    else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
+                )
+                req = PhaseRequirement(
+                    type=req_type,
+                    player=player,
+                    eligible_positions=[],
+                )
+                bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                    req,
+                    state,
+                )
+            # ANM fallback: no moves and no explicit requirement from core,
+            # but forced bookkeeping is on — synthesize a no_* action to
+            # keep the turn canonical instead of aborting.
+            if bookkeeping_move is None and not moves:
+                req_type = (
+                    PhaseRequirementType.NO_LINE_ACTION_REQUIRED
+                    if state.current_phase == GamePhase.LINE_PROCESSING
+                    else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
+                )
+                req = PhaseRequirement(
+                    type=req_type,
+                    player=player,
+                    eligible_positions=[],
+                )
+                bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                    req,
+                    state,
+                )
+            if bookkeeping_move is not None:
+                return [bookkeeping_move]
+            # If interactive decisions exist in these phases, keep them; but
+            # block anything else (e.g., elimination/placement) from leaking in.
+            moves = [
+                m
+                for m in moves
+                if (
+                    state.current_phase == GamePhase.LINE_PROCESSING
+                    and m.type
+                    in {
+                        MoveType.PROCESS_LINE,
+                        MoveType.CHOOSE_LINE_OPTION,
+                        MoveType.CHOOSE_LINE_REWARD,  # legacy alias
+                    }
+                )
+                or (
+                    state.current_phase == GamePhase.TERRITORY_PROCESSING
+                    and m.type in {
+                        MoveType.PROCESS_TERRITORY_REGION,
+                        MoveType.CHOOSE_TERRITORY_OPTION,
+                        MoveType.ELIMINATE_RINGS_FROM_STACK,
+                        MoveType.SKIP_TERRITORY_PROCESSING,
+                        MoveType.NO_TERRITORY_ACTION,
+                    }
+                )
+            ]
 
         if not moves:
             # No interactive moves – only attempt to synthesize bookkeeping
@@ -419,9 +416,9 @@ class DefaultRulesEngine(RulesEngine):
         canonical GameEngine.apply_move result; callers are responsible for
         asserting equivalence where appropriate.
         """
+        from app.ai.zobrist import ZobristHash
         from app.board_manager import BoardManager
         from app.game_engine import GameEngine
-        from app.ai.zobrist import ZobristHash
 
         # --- 1. Copy-on-write for board and state ---
         board = state.board
@@ -536,8 +533,8 @@ class DefaultRulesEngine(RulesEngine):
         # Soft S-invariant check after the move; we currently do not enforce
         # monotonicity here, but the snapshot is available for diagnostics.
         after_snapshot = BoardManager.compute_progress_snapshot(new_state)
-        _ = after_snapshot  # noqa: F841 (reserved for future diagnostics)
-        _ = before_snapshot  # noqa: F841
+        _ = after_snapshot
+        _ = before_snapshot
 
         GameEngine._check_victory(new_state)
 

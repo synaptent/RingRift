@@ -39,18 +39,19 @@ import socket
 import sqlite3
 import threading
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 # Default database location
 DEFAULT_SYNC_DB = Path("/tmp/ringrift_coordination/sync_mutex.db")
 
 # Import centralized defaults (December 2025)
 try:
-    from app.config.coordination_defaults import SyncDefaults, HeartbeatDefaults
+    from app.config.coordination_defaults import HeartbeatDefaults, SyncDefaults
     LOCK_TIMEOUT_SECONDS = SyncDefaults.LOCK_TIMEOUT
     MAX_CONCURRENT_SYNCS_PER_HOST = SyncDefaults.MAX_CONCURRENT_PER_HOST
     MAX_GLOBAL_CONCURRENT_SYNCS = SyncDefaults.MAX_CONCURRENT_CLUSTER
@@ -86,7 +87,7 @@ class SyncLockInfo:
     def is_expired(self) -> bool:
         return time.time() > self.timeout_at
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "host": self.host,
             "operation": self.operation,
@@ -101,7 +102,7 @@ class SyncLockInfo:
 class SyncMutex:
     """SQLite-backed mutex for synchronizing file transfer operations."""
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or DEFAULT_SYNC_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
@@ -182,9 +183,8 @@ class SyncMutex:
         # Check global concurrent sync limit
         cursor = conn.execute('SELECT COUNT(*) FROM sync_locks')
         active_count = cursor.fetchone()[0]
-        if active_count >= MAX_GLOBAL_CONCURRENT_SYNCS:
-            if not wait:
-                return False
+        if active_count >= MAX_GLOBAL_CONCURRENT_SYNCS and not wait:
+            return False
             # Will try to wait below
 
         start_time = time.time()
@@ -266,7 +266,7 @@ class SyncMutex:
         )
         return cursor.fetchone() is not None
 
-    def get_lock_info(self, host: str) -> Optional[SyncLockInfo]:
+    def get_lock_info(self, host: str) -> SyncLockInfo | None:
         """Get information about a lock."""
         conn = self._get_connection()
         cursor = conn.execute(
@@ -286,7 +286,7 @@ class SyncMutex:
             )
         return None
 
-    def get_all_locks(self) -> List[SyncLockInfo]:
+    def get_all_locks(self) -> list[SyncLockInfo]:
         """Get all active locks."""
         conn = self._get_connection()
         self._cleanup_expired(conn)
@@ -437,7 +437,7 @@ class SyncMutex:
 
         return cleaned
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get sync mutex statistics."""
         conn = self._get_connection()
         self._cleanup_expired(conn)
@@ -476,11 +476,11 @@ class SyncMutex:
 
 
 # Global singleton instance
-_sync_mutex: Optional[SyncMutex] = None
+_sync_mutex: SyncMutex | None = None
 _mutex_lock = threading.RLock()
 
 
-def get_sync_mutex(db_path: Optional[Path] = None) -> SyncMutex:
+def get_sync_mutex(db_path: Path | None = None) -> SyncMutex:
     """Get the global sync mutex singleton."""
     global _sync_mutex
     with _mutex_lock:
@@ -522,7 +522,7 @@ def is_sync_locked(host: str) -> bool:
     return get_sync_mutex().is_locked(host)
 
 
-def get_sync_stats() -> Dict[str, Any]:
+def get_sync_stats() -> dict[str, Any]:
     """Get sync mutex statistics."""
     return get_sync_mutex().get_stats()
 
@@ -655,15 +655,15 @@ __all__ = [
     "SyncLockInfo",
     # Main class
     "SyncMutex",
+    "acquire_sync_lock",
+    "cleanup_crashed_sync_locks",
     # Functions
     "get_sync_mutex",
-    "reset_sync_mutex",
-    "acquire_sync_lock",
-    "release_sync_lock",
-    "is_sync_locked",
     "get_sync_stats",
+    "is_sync_locked",
+    "release_sync_lock",
+    "reset_sync_mutex",
+    "sync_heartbeat",
     "sync_lock",
     "sync_lock_required",
-    "sync_heartbeat",
-    "cleanup_crashed_sync_locks",
 ]

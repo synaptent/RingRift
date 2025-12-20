@@ -16,15 +16,15 @@ the legacy module.
 # module to match what GameEngine.get_phase_requirement() returns. Using
 # different enum classes causes comparison failures.
 from app._game_engine_legacy import (
-    GameEngine,
-    PhaseRequirementType,
-    PhaseRequirement,
     STRICT_NO_MOVE_INVARIANT,
+    GameEngine,
+    PhaseRequirement,
+    PhaseRequirementType,
 )
 
 __all__ = [
+    "STRICT_NO_MOVE_INVARIANT",
     "GameEngine",
     "PhaseRequirement",
     "PhaseRequirementType",
-    "STRICT_NO_MOVE_INVARIANT",
 ]

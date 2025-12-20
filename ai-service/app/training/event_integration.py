@@ -36,57 +36,56 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from app.core.event_bus import (
     Event,
-    EventBus,
     EventFilter,
     EventHandler,
     get_event_bus,
-    subscribe,
     publish,
+    subscribe,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "CheckpointEvent",
+    "CheckpointSavedEvent",
+    "EloChangedEvent",
+    "EpochCompletedEvent",
+    "EvaluationCompletedEvent",
+    "EvaluationEvent",
+    "ModelPromotedEvent",
+    "SelfplayCompletedEvent",
+    "SelfplayEvent",
+    "SelfplayStartedEvent",
+    "StepCompletedEvent",
+    "TrainingCompletedEvent",
     # Base event types
     "TrainingEvent",
-    "EvaluationEvent",
-    "CheckpointEvent",
-    "SelfplayEvent",
+    "TrainingFailedEvent",
     # Specific events
     "TrainingStartedEvent",
-    "TrainingCompletedEvent",
-    "TrainingFailedEvent",
-    "EpochCompletedEvent",
-    "StepCompletedEvent",
-    "EvaluationCompletedEvent",
-    "EloChangedEvent",
-    "CheckpointSavedEvent",
-    "ModelPromotedEvent",
-    "SelfplayStartedEvent",
-    "SelfplayCompletedEvent",
-    # Publishers
-    "publish_training_started",
-    "publish_training_completed",
-    "publish_training_failed",
-    "publish_epoch_completed",
-    "publish_step_completed",
-    "publish_evaluation_completed",
-    "publish_elo_changed",
-    "publish_checkpoint_saved",
-    "publish_model_promoted",
-    "publish_selfplay_started",
-    "publish_selfplay_completed",
-    # Subscriptions
-    "subscribe_to_training_events",
-    "subscribe_to_evaluation_events",
     # Topics
     "TrainingTopics",
+    "publish_checkpoint_saved",
+    "publish_elo_changed",
+    "publish_epoch_completed",
+    "publish_evaluation_completed",
+    "publish_model_promoted",
+    "publish_selfplay_completed",
+    "publish_selfplay_started",
+    "publish_step_completed",
+    "publish_training_completed",
+    "publish_training_failed",
+    # Publishers
+    "publish_training_started",
+    "subscribe_to_evaluation_events",
+    # Subscriptions
+    "subscribe_to_training_events",
 ]
 
 
@@ -199,7 +198,7 @@ class EpochCompletedEvent(TrainingEvent):
     epoch: int = 0
     total_epochs: int = 0
     train_loss: float = 0.0
-    val_loss: Optional[float] = None
+    val_loss: float | None = None
     learning_rate: float = 0.0
 
 
@@ -217,9 +216,9 @@ class EvaluationCompletedEvent(EvaluationEvent):
     """Published when evaluation completes."""
     games_played: int = 0
     win_rate: float = 0.0
-    baseline_results: Dict[str, float] = field(default_factory=dict)
+    baseline_results: dict[str, float] = field(default_factory=dict)
     passes_gating: bool = True
-    failed_baselines: List[str] = field(default_factory=list)
+    failed_baselines: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -237,7 +236,7 @@ class CheckpointSavedEvent(CheckpointEvent):
     """Published when checkpoint is saved."""
     is_best: bool = False
     elo_at_save: float = 0.0
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -336,7 +335,7 @@ async def publish_epoch_completed(
     epoch: int,
     total_epochs: int,
     train_loss: float,
-    val_loss: Optional[float] = None,
+    val_loss: float | None = None,
     learning_rate: float = 0.0,
     job_id: str = "",
 ) -> int:
@@ -383,9 +382,9 @@ async def publish_evaluation_completed(
     elo: float,
     games_played: int,
     win_rate: float,
-    baseline_results: Optional[Dict[str, float]] = None,
+    baseline_results: dict[str, float] | None = None,
     passes_gating: bool = True,
-    failed_baselines: Optional[List[str]] = None,
+    failed_baselines: list[str] | None = None,
     job_id: str = "",
 ) -> int:
     """Publish evaluation completed event."""
@@ -436,7 +435,7 @@ async def publish_checkpoint_saved(
     step: int,
     is_best: bool = False,
     elo_at_save: float = 0.0,
-    metrics: Optional[Dict[str, float]] = None,
+    metrics: dict[str, float] | None = None,
     job_id: str = "",
 ) -> int:
     """Publish checkpoint saved event."""
@@ -532,7 +531,6 @@ def publish_training_started_sync(
     **kwargs: Any,
 ) -> int:
     """Synchronously publish training started event."""
-    from app.core.event_bus import get_event_bus
     event = TrainingStartedEvent(
         topic=TrainingTopics.TRAINING_STARTED,
         config_key=config_key,
@@ -550,7 +548,6 @@ def publish_step_completed_sync(
     **kwargs: Any,
 ) -> int:
     """Synchronously publish step completed event."""
-    from app.core.event_bus import get_event_bus
     event = StepCompletedEvent(
         topic=TrainingTopics.STEP_COMPLETED,
         config_key=config_key,
@@ -569,7 +566,6 @@ def publish_checkpoint_saved_sync(
     **kwargs: Any,
 ) -> int:
     """Synchronously publish checkpoint saved event."""
-    from app.core.event_bus import get_event_bus
     event = CheckpointSavedEvent(
         topic=TrainingTopics.CHECKPOINT_SAVED,
         config_key=config_key,
@@ -657,7 +653,6 @@ def wire_background_evaluator_events(evaluator: Any) -> None:
         original_process(result)
 
         # Publish event (sync since we're in a thread)
-        from app.core.event_bus import get_event_bus
         bus = get_event_bus()
 
         event = EvaluationCompletedEvent(

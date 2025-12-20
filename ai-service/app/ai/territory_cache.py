@@ -9,9 +9,10 @@ This module provides faster region detection by:
 
 from __future__ import annotations
 
-import numpy as np
-from typing import Dict, List, Set, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+import numpy as np
 
 if TYPE_CHECKING:
     from ..models import BoardState, Territory
@@ -23,15 +24,15 @@ class BoardGeometryCache:
 
     Created once per board type, reused across all operations.
     """
-    _instances: Dict[str, 'BoardGeometryCache'] = {}
+    _instances: dict[str, BoardGeometryCache] = {}
 
     def __init__(self, board_type: str, size: int):
         self.board_type = board_type
         self.size = size
 
         # Build position mappings
-        self.position_to_idx: Dict[str, int] = {}
-        self.idx_to_position: List[str] = []
+        self.position_to_idx: dict[str, int] = {}
+        self.idx_to_position: list[str] = []
         self.num_positions = 0
 
         # Neighbor arrays (idx -> list of neighbor indices, -1 = invalid)
@@ -41,7 +42,7 @@ class BoardGeometryCache:
         self._build_geometry()
 
     @classmethod
-    def get(cls, board_type: str, size: int) -> 'BoardGeometryCache':
+    def get(cls, board_type: str, size: int) -> BoardGeometryCache:
         """Get or create cached geometry for board type."""
         key = f"{board_type}_{size}"
         if key not in cls._instances:
@@ -136,17 +137,17 @@ class RegionCache:
 
     # Cached regions by border color
     # Key: border_color (0 = no marker border), Value: list of region position sets
-    regions_by_border: Dict[int, List[Set[str]]] = field(default_factory=dict)
+    regions_by_border: dict[int, list[set[str]]] = field(default_factory=dict)
 
     # Active players when cache was computed
-    active_players: Set[int] = field(default_factory=set)
+    active_players: set[int] = field(default_factory=set)
 
     def is_valid(
         self,
-        markers: Dict[str, any],
-        collapsed: Dict[str, any],
-        stacks: Dict[str, any],
-        active_players: Set[int],
+        markers: dict[str, any],
+        collapsed: dict[str, any],
+        stacks: dict[str, any],
+        active_players: set[int],
     ) -> bool:
         """Check if cache is still valid."""
         # Simple hash comparison for invalidation
@@ -163,10 +164,10 @@ class RegionCache:
 
     def update_hashes(
         self,
-        markers: Dict[str, any],
-        collapsed: Dict[str, any],
-        stacks: Dict[str, any],
-        active_players: Set[int],
+        markers: dict[str, any],
+        collapsed: dict[str, any],
+        stacks: dict[str, any],
+        active_players: set[int],
     ):
         """Update cache hashes."""
         self.marker_hash = hash(frozenset(markers.keys()))
@@ -196,10 +197,10 @@ def _normalize_key_for_hex(key: str, board_type: str) -> str:
 
 
 def find_disconnected_regions_fast(
-    board: 'BoardState',
+    board: BoardState,
     player_number: int,
-    cache: Optional[RegionCache] = None,
-) -> List['Territory']:
+    cache: RegionCache | None = None,
+) -> list[Territory]:
     """
     Fast territory region detection using pre-computed geometry.
 
@@ -211,7 +212,6 @@ def find_disconnected_regions_fast(
     Returns:
         List of disconnected Territory objects
     """
-    from ..models import Territory
 
     # Get geometry cache
     board_type_str = board.type.value if hasattr(board.type, 'value') else str(board.type)
@@ -233,7 +233,7 @@ def find_disconnected_regions_fast(
         return _build_territories_from_cache(cache, geo, board, active_players)
 
     # Compute fresh
-    regions: List['Territory'] = []
+    regions: list[Territory] = []
 
     # Get marker colors
     marker_colors = set()
@@ -288,12 +288,12 @@ def find_disconnected_regions_fast(
 
 def _find_regions_with_border_color_fast(
     geo: BoardGeometryCache,
-    marker_at: Dict[int, int],  # idx -> player
-    collapsed: Set[int],
-    stack_at: Dict[int, int],  # idx -> controlling player
+    marker_at: dict[int, int],  # idx -> player
+    collapsed: set[int],
+    stack_at: dict[int, int],  # idx -> controlling player
     border_color: int,
-    active_players: Set[int],
-) -> List[Set[int]]:
+    active_players: set[int],
+) -> list[set[int]]:
     """
     Find regions where markers of border_color act as borders.
     Uses numpy-based flood fill for efficiency.
@@ -303,9 +303,7 @@ def _find_regions_with_border_color_fast(
 
     # Mark border positions as visited (they can't be part of regions)
     for idx in range(geo.num_positions):
-        if idx in collapsed:
-            visited[idx] = True
-        elif idx in marker_at and marker_at[idx] == border_color:
+        if idx in collapsed or (idx in marker_at and marker_at[idx] == border_color):
             visited[idx] = True
 
     # Flood fill from each unvisited position
@@ -353,11 +351,11 @@ def _find_regions_with_border_color_fast(
 
 def _find_regions_without_marker_border_fast(
     geo: BoardGeometryCache,
-    marker_at: Dict[int, int],
-    collapsed: Set[int],
-    stack_at: Dict[int, int],
-    active_players: Set[int],
-) -> List[Set[int]]:
+    marker_at: dict[int, int],
+    collapsed: set[int],
+    stack_at: dict[int, int],
+    active_players: set[int],
+) -> list[set[int]]:
     """
     Find regions bordered only by collapsed spaces and edges.
     """
@@ -444,10 +442,10 @@ def _find_regions_without_marker_border_fast(
 
 def _create_territory(
     geo: BoardGeometryCache,
-    region_indices: Set[int],
-) -> 'Territory':
+    region_indices: set[int],
+) -> Territory:
     """Create a Territory object from region indices."""
-    from ..models import Territory, Position
+    from ..models import Position, Territory
 
     positions = []
     for idx in region_indices:
@@ -468,9 +466,9 @@ def _create_territory(
 def _build_territories_from_cache(
     cache: RegionCache,
     geo: BoardGeometryCache,
-    board: 'BoardState',
-    active_players: Set[int],
-) -> List['Territory']:
+    board: BoardState,
+    active_players: set[int],
+) -> list[Territory]:
     """Reconstruct Territory objects from cached data."""
     # For now, just recompute (cache stores validation data)
     # Full implementation would store region positions

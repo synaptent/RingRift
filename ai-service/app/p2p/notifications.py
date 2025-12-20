@@ -6,12 +6,11 @@ Provides utilities for sending notifications about cluster events.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import aiohttp
@@ -58,10 +57,10 @@ class NotificationEvent:
     severity: str  # "info", "warning", "error", "critical"
     title: str
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-    def to_slack_payload(self) -> Dict[str, Any]:
+    def to_slack_payload(self) -> dict[str, Any]:
         """Convert to Slack message format."""
         # Severity colors
         colors = {
@@ -87,7 +86,7 @@ class NotificationEvent:
             "attachments": [attachment],
         }
 
-    def to_discord_payload(self) -> Dict[str, Any]:
+    def to_discord_payload(self) -> dict[str, Any]:
         """Convert to Discord embed format."""
         # Severity colors (Discord uses decimal)
         colors = {
@@ -110,7 +109,7 @@ class NotificationEvent:
 
         return {"embeds": [embed]}
 
-    def to_generic_payload(self) -> Dict[str, Any]:
+    def to_generic_payload(self) -> dict[str, Any]:
         """Convert to generic JSON payload."""
         return {
             "event_type": self.event_type,
@@ -125,10 +124,10 @@ class NotificationEvent:
 class NotificationManager:
     """Manages sending notifications with rate limiting."""
 
-    def __init__(self, config: Optional[WebhookConfig] = None):
+    def __init__(self, config: WebhookConfig | None = None):
         self.config = config or WebhookConfig()
         self._last_notification_time: float = 0
-        self._notifications_this_hour: List[float] = []
+        self._notifications_this_hour: list[float] = []
 
     def _can_send(self, severity: str) -> bool:
         """Check if we can send a notification."""
@@ -196,9 +195,9 @@ class NotificationManager:
 
     async def _send_to_url(
         self,
-        session: "aiohttp.ClientSession",
+        session: aiohttp.ClientSession,
         url: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
     ) -> bool:
         """Send payload to a URL."""
         try:
@@ -227,7 +226,7 @@ class NotificationManager:
 
 
 # Global notification manager
-_notification_manager: Optional[NotificationManager] = None
+_notification_manager: NotificationManager | None = None
 
 
 def get_notification_manager() -> NotificationManager:
@@ -243,7 +242,7 @@ def send_webhook_notification(
     title: str,
     message: str,
     severity: str = "info",
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
 ) -> bool:
     """Convenience function to send a webhook notification.
 

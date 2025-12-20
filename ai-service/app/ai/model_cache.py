@@ -25,10 +25,11 @@ games or soak batches::
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
 import time
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Singleton cache to share model instances across NeuralNetAI instances.
 # Key: (architecture_type, device_str, model_path, checkpoint_signature, board_type)
 # Value: (loaded model instance, creation_timestamp, last_access_timestamp)
-_MODEL_CACHE: Dict[Tuple[str, str, str, Any, str], Tuple[nn.Module, float, float]] = {}
+_MODEL_CACHE: dict[tuple[str, str, str, Any, str], tuple[nn.Module, float, float]] = {}
 
 # Cache configuration
 MODEL_CACHE_TTL_SECONDS = ONE_HOUR  # 1 hour TTL for cached models
@@ -58,10 +59,8 @@ def _clear_gpu_caches() -> None:
 
     # Clear MPS cache if available (PyTorch 2.0+)
     if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-        try:
+        with contextlib.suppress(Exception):
             torch.mps.empty_cache()
-        except Exception:
-            pass
 
 
 def evict_stale_models() -> int:
@@ -76,16 +75,14 @@ def evict_stale_models() -> int:
     keys_to_remove = []
 
     # First pass: remove models older than TTL
-    for key, (model, created_at, last_access) in _MODEL_CACHE.items():
+    for key, (model, _created_at, last_access) in _MODEL_CACHE.items():
         if now - last_access > MODEL_CACHE_TTL_SECONDS:
             keys_to_remove.append(key)
 
     for key in keys_to_remove:
         model, _, _ = _MODEL_CACHE.pop(key)
-        try:
+        with contextlib.suppress(Exception):
             model.cpu()
-        except Exception:
-            pass
         evicted += 1
 
     # Second pass: if still over limit, remove least recently used
@@ -100,10 +97,8 @@ def evict_stale_models() -> int:
             key, (model, _, _) = sorted_items.pop(0)
             if key in _MODEL_CACHE:
                 del _MODEL_CACHE[key]
-                try:
+                with contextlib.suppress(Exception):
                     model.cpu()
-                except Exception:
-                    pass
                 evicted += 1
 
     if evicted > 0:
@@ -126,10 +121,8 @@ def clear_model_cache() -> None:
 
     # Move models to CPU before clearing to release GPU memory
     for model, _, _ in _MODEL_CACHE.values():
-        try:
+        with contextlib.suppress(Exception):
             model.cpu()
-        except Exception:
-            pass
 
     _MODEL_CACHE.clear()
     _clear_gpu_caches()
@@ -146,7 +139,7 @@ def get_cached_model_count() -> int:
     return len(_MODEL_CACHE)
 
 
-def get_cache_ref() -> Dict[Tuple[str, str, str, Any, str], Tuple[nn.Module, float, float]]:
+def get_cache_ref() -> dict[tuple[str, str, str, Any, str], tuple[nn.Module, float, float]]:
     """Return a reference to the internal cache dict.
 
     This is used by NeuralNetAI for direct cache access. External callers
@@ -155,7 +148,7 @@ def get_cache_ref() -> Dict[Tuple[str, str, str, Any, str], Tuple[nn.Module, flo
     return _MODEL_CACHE
 
 
-def strip_module_prefix(state_dict: Dict[str, Any]) -> Dict[str, Any]:
+def strip_module_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
     """Normalize a PyTorch state_dict by stripping a leading ``module.`` prefix.
 
     Some training jobs save checkpoints from DistributedDataParallel (DDP),
@@ -170,9 +163,9 @@ def strip_module_prefix(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
     if not state_dict:
         return state_dict
-    if not any(isinstance(k, str) and k.startswith("module.") for k in state_dict.keys()):
+    if not any(isinstance(k, str) and k.startswith("module.") for k in state_dict):
         return state_dict
-    stripped: Dict[str, Any] = {}
+    stripped: dict[str, Any] = {}
     for key, value in state_dict.items():
         if isinstance(key, str) and key.startswith("module."):
             stripped[key[len("module."):]] = value

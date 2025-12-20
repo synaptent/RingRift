@@ -51,22 +51,23 @@ import logging
 import signal
 import threading
 import time
-from contextlib import contextmanager
+from collections.abc import Callable, Coroutine
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "ShutdownConfig",
+    "ShutdownHook",
     "ShutdownManager",
+    "ShutdownPhase",
     "get_shutdown_manager",
+    "is_shutting_down",
     "on_shutdown",
     "request_shutdown",
-    "is_shutting_down",
-    "ShutdownPhase",
-    "ShutdownHook",
-    "ShutdownConfig",
 ]
 
 
@@ -90,7 +91,7 @@ class ShutdownHook:
     is_async: bool = False
     critical: bool = False  # If True, shutdown waits for completion
 
-    def __lt__(self, other: "ShutdownHook") -> bool:
+    def __lt__(self, other: ShutdownHook) -> bool:
         # Higher priority runs first
         return self.priority > other.priority
 
@@ -120,24 +121,24 @@ class ShutdownManager:
     - Thread-safe operation
     """
 
-    _instance: Optional["ShutdownManager"] = None
+    _instance: ShutdownManager | None = None
     _lock = threading.Lock()
 
-    def __init__(self, config: Optional[ShutdownConfig] = None):
+    def __init__(self, config: ShutdownConfig | None = None):
         """Initialize shutdown manager.
 
         Args:
             config: Shutdown configuration
         """
         self.config = config or ShutdownConfig()
-        self._hooks: List[ShutdownHook] = []
+        self._hooks: list[ShutdownHook] = []
         self._phase = ShutdownPhase.RUNNING
         self._shutdown_event = threading.Event()
-        self._async_shutdown_event: Optional[asyncio.Event] = None
-        self._shutdown_reason: Optional[str] = None
+        self._async_shutdown_event: asyncio.Event | None = None
+        self._shutdown_reason: str | None = None
         self._hooks_lock = threading.Lock()
-        self._original_handlers: Dict[int, Any] = {}
-        self._drain_callbacks: List[Callable[[], None]] = []
+        self._original_handlers: dict[int, Any] = {}
+        self._drain_callbacks: list[Callable[[], None]] = []
 
         # Register signal handlers if configured
         if self.config.handle_signals:
@@ -147,7 +148,7 @@ class ShutdownManager:
         atexit.register(self._atexit_handler)
 
     @classmethod
-    def get_instance(cls) -> "ShutdownManager":
+    def get_instance(cls) -> ShutdownManager:
         """Get singleton instance."""
         if cls._instance is None:
             with cls._lock:
@@ -174,7 +175,7 @@ class ShutdownManager:
         return self._phase != ShutdownPhase.RUNNING
 
     @property
-    def shutdown_reason(self) -> Optional[str]:
+    def shutdown_reason(self) -> str | None:
         """Get the reason for shutdown."""
         return self._shutdown_reason
 
@@ -263,7 +264,7 @@ class ShutdownManager:
             except RuntimeError:
                 pass  # No running event loop
 
-    def wait_for_shutdown(self, timeout: Optional[float] = None) -> bool:
+    def wait_for_shutdown(self, timeout: float | None = None) -> bool:
         """Wait for shutdown signal.
 
         Args:
@@ -274,7 +275,7 @@ class ShutdownManager:
         """
         return self._shutdown_event.wait(timeout)
 
-    async def wait_for_shutdown_async(self, timeout: Optional[float] = None) -> bool:
+    async def wait_for_shutdown_async(self, timeout: float | None = None) -> bool:
         """Async version of wait_for_shutdown.
 
         Args:
@@ -416,7 +417,7 @@ class ShutdownManager:
             hooks = list(self._hooks)
 
         # Group by priority for concurrent execution at same level
-        priority_groups: Dict[int, List[ShutdownHook]] = {}
+        priority_groups: dict[int, list[ShutdownHook]] = {}
         for hook in hooks:
             if hook.priority not in priority_groups:
                 priority_groups[hook.priority] = []
@@ -427,7 +428,7 @@ class ShutdownManager:
             group = priority_groups[priority]
             await self._execute_hook_group_async(group)
 
-    async def _execute_hook_group_async(self, hooks: List[ShutdownHook]) -> None:
+    async def _execute_hook_group_async(self, hooks: list[ShutdownHook]) -> None:
         """Execute a group of hooks concurrently."""
         tasks = []
         for hook in hooks:
@@ -472,10 +473,8 @@ class ShutdownManager:
     def _restore_signal_handlers(self) -> None:
         """Restore original signal handlers."""
         for sig, handler in self._original_handlers.items():
-            try:
+            with suppress(ValueError, OSError):
                 signal.signal(sig, handler)
-            except (ValueError, OSError):
-                pass
 
     def _signal_handler(self, signum: int, frame: Any) -> None:
         """Handle shutdown signal."""
@@ -514,7 +513,7 @@ def on_shutdown(
     timeout: float = 10.0,
     async_handler: bool = False,
     critical: bool = False,
-    name: Optional[str] = None,
+    name: str | None = None,
 ) -> Callable:
     """Decorator to register a shutdown hook.
 

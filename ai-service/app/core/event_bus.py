@@ -35,35 +35,30 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import time
 import weakref
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from re import Pattern
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Pattern,
-    Type,
     TypeVar,
     Union,
 )
-import re
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "Event",
     "EventBus",
-    "EventHandler",
     "EventFilter",
+    "EventHandler",
     "get_event_bus",
-    "subscribe",
     "publish",
+    "subscribe",
 ]
 
 T = TypeVar("T", bound="Event")
@@ -88,9 +83,9 @@ class Event:
     timestamp: float = field(default_factory=time.time)
     source: str = ""
     correlation_id: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary."""
         return {
             "topic": self.topic,
@@ -115,7 +110,7 @@ class MetricEvent(Event):
     """Metric-related events."""
     metric_name: str = ""
     value: float = 0.0
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -154,11 +149,11 @@ class EventFilter:
 
     def __init__(
         self,
-        topic: Optional[str] = None,
-        topic_pattern: Optional[str] = None,
-        event_type: Optional[Type[Event]] = None,
-        source: Optional[str] = None,
-        predicate: Optional[Callable[[Event], bool]] = None,
+        topic: str | None = None,
+        topic_pattern: str | None = None,
+        event_type: type[Event] | None = None,
+        source: str | None = None,
+        predicate: Callable[[Event], bool] | None = None,
     ):
         """Initialize filter.
 
@@ -170,7 +165,7 @@ class EventFilter:
             predicate: Custom filter function
         """
         self.topic = topic
-        self.topic_pattern: Optional[Pattern] = None
+        self.topic_pattern: Pattern | None = None
         if topic_pattern:
             self.topic_pattern = re.compile(topic_pattern)
         self.event_type = event_type
@@ -191,10 +186,7 @@ class EventFilter:
         if self.source and event.source != self.source:
             return False
 
-        if self.predicate and not self.predicate(event):
-            return False
-
-        return True
+        return not (self.predicate and not self.predicate(event))
 
 
 # =============================================================================
@@ -215,13 +207,13 @@ class Subscription:
     priority: int = 0
     once: bool = False
     weak: bool = False
-    _handler_ref: Optional[weakref.ref] = None
+    _handler_ref: weakref.ref | None = None
 
     def __post_init__(self):
         if self.weak:
             self._handler_ref = weakref.ref(self.handler)
 
-    def get_handler(self) -> Optional[EventHandler]:
+    def get_handler(self) -> EventHandler | None:
         """Get the handler, resolving weak reference if needed."""
         if self.weak and self._handler_ref:
             return self._handler_ref()
@@ -265,11 +257,11 @@ class EventBus:
             max_history: Maximum events to keep in history
             enable_history: Whether to record event history
         """
-        self._subscriptions: Dict[str, List[Subscription]] = defaultdict(list)
-        self._pattern_subscriptions: List[Subscription] = []
-        self._all_subscriptions: List[Subscription] = []
+        self._subscriptions: dict[str, list[Subscription]] = defaultdict(list)
+        self._pattern_subscriptions: list[Subscription] = []
+        self._all_subscriptions: list[Subscription] = []
         self._lock = threading.RLock()
-        self._history: List[Event] = []
+        self._history: list[Event] = []
         self._max_history = max_history
         self._enable_history = enable_history
         self._stats = {
@@ -376,8 +368,8 @@ class EventBus:
 
     def unsubscribe(
         self,
-        handler: Optional[EventHandler] = None,
-        topic: Optional[str] = None,
+        handler: EventHandler | None = None,
+        topic: str | None = None,
     ) -> int:
         """Unsubscribe handler(s).
 
@@ -449,7 +441,7 @@ class EventBus:
         # Get matching subscriptions
         subscriptions = self._get_matching_subscriptions(event)
         delivered = 0
-        to_remove: List[Subscription] = []
+        to_remove: list[Subscription] = []
 
         for sub in subscriptions:
             handler = sub.get_handler()
@@ -513,9 +505,9 @@ class EventBus:
 
         return delivered
 
-    def _get_matching_subscriptions(self, event: Event) -> List[Subscription]:
+    def _get_matching_subscriptions(self, event: Event) -> list[Subscription]:
         """Get all subscriptions matching an event."""
-        matching: List[Subscription] = []
+        matching: list[Subscription] = []
 
         with self._lock:
             # Exact topic matches
@@ -554,9 +546,9 @@ class EventBus:
 
     def get_history(
         self,
-        topic: Optional[str] = None,
+        topic: str | None = None,
         limit: int = 100,
-    ) -> List[Event]:
+    ) -> list[Event]:
         """Get event history.
 
         Args:
@@ -578,8 +570,8 @@ class EventBus:
     async def replay(
         self,
         handler: EventHandler,
-        topic: Optional[str] = None,
-        since: Optional[float] = None,
+        topic: str | None = None,
+        since: float | None = None,
     ) -> int:
         """Replay historical events to a handler.
 
@@ -615,7 +607,7 @@ class EventBus:
         with self._lock:
             self._history.clear()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get event bus statistics."""
         with self._lock:
             return {
@@ -633,7 +625,7 @@ class EventBus:
 # Global Instance
 # =============================================================================
 
-_event_bus: Optional[EventBus] = None
+_event_bus: EventBus | None = None
 _bus_lock = threading.Lock()
 
 

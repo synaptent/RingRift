@@ -25,21 +25,23 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sqlite3
 import threading
 import time
 from collections import OrderedDict, deque
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Tuple
-
-from app.utils.checksum_utils import compute_string_checksum
+from typing import Any
 
 import numpy as np
+
+from app.utils.checksum_utils import compute_string_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +71,8 @@ class StreamingConfig:
 
     # Quality-based sampling (populated from manifest via DataPipelineController)
     # Dict mapping game_id -> quality_score [0, 1]
-    quality_lookup: Optional[Dict[str, float]] = None
-    elo_lookup: Optional[Dict[str, float]] = None
+    quality_lookup: dict[str, float] | None = None
+    elo_lookup: dict[str, float] | None = None
 
 
 @dataclass
@@ -83,8 +85,8 @@ class GameSample:
     state_hash: str
     timestamp: float
     value_target: float
-    policy_target: Optional[np.ndarray] = None
-    features: Optional[np.ndarray] = None
+    policy_target: np.ndarray | None = None
+    features: np.ndarray | None = None
     priority: float = 1.0
     quality_score: float = 0.5  # Manifest quality score [0, 1]
     avg_elo: float = 1500.0  # Average player Elo from manifest
@@ -103,12 +105,12 @@ class CircularBuffer:
         with self.lock:
             self.buffer.append(item)
 
-    def extend(self, items: List[Any]):
+    def extend(self, items: list[Any]):
         """Add multiple items to buffer."""
         with self.lock:
             self.buffer.extend(items)
 
-    def sample(self, n: int, weights: Optional[np.ndarray] = None) -> List[Any]:
+    def sample(self, n: int, weights: np.ndarray | None = None) -> list[Any]:
         """Sample n items from buffer."""
         with self.lock:
             if len(self.buffer) == 0:
@@ -130,7 +132,7 @@ class CircularBuffer:
 
             return [self.buffer[i] for i in indices]
 
-    def get_all(self) -> List[Any]:
+    def get_all(self) -> list[Any]:
         """Get all items in buffer."""
         with self.lock:
             return list(self.buffer)
@@ -151,15 +153,15 @@ class DatabasePoller:
     def __init__(
         self,
         db_path: Path,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ):
         self.db_path = db_path
         self.board_type = board_type
         self.num_players = num_players
         self._last_poll_time: float = 0
         self._last_game_count: int = 0
-        self._seen_game_ids: Set[str] = set()
+        self._seen_game_ids: set[str] = set()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get database connection."""
@@ -167,7 +169,7 @@ class DatabasePoller:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def get_new_games(self, limit: int = 1000) -> List[Dict[str, Any]]:
+    def get_new_games(self, limit: int = 1000) -> list[dict[str, Any]]:
         """Get newly completed games since last poll."""
         if not self.db_path.exists():
             return []
@@ -255,7 +257,7 @@ class DatabasePoller:
         self._last_poll_time = 0
 
 
-def extract_samples_from_game(game: Dict[str, Any]) -> List[GameSample]:
+def extract_samples_from_game(game: dict[str, Any]) -> list[GameSample]:
     """Extract training samples from a game record."""
     samples = []
 
@@ -281,7 +283,7 @@ def extract_samples_from_game(game: Dict[str, Any]) -> List[GameSample]:
         timestamp = time.time()
 
     # Create sample for each move
-    for move_idx, move in enumerate(move_history):
+    for move_idx, _move in enumerate(move_history):
         player = move_idx % num_players
 
         # Compute value target
@@ -327,9 +329,9 @@ class StreamingDataPipeline:
     def __init__(
         self,
         db_path: Path,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        config: Optional[StreamingConfig] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        config: StreamingConfig | None = None,
         db_pool_size: int = 2,
     ):
         """
@@ -353,12 +355,12 @@ class StreamingDataPipeline:
 
         # Async DB polling with ThreadPoolExecutor
         self._db_executor = ThreadPoolExecutor(max_workers=db_pool_size, thread_name_prefix="db_poll")
-        self._prefetch_task: Optional[asyncio.Task] = None
-        self._prefetch_buffer: List[Dict[str, Any]] = []
+        self._prefetch_task: asyncio.Task | None = None
+        self._prefetch_buffer: list[dict[str, Any]] = []
 
         # Tracking
         self._running = False
-        self._poll_task: Optional[asyncio.Task] = None
+        self._poll_task: asyncio.Task | None = None
         # Use OrderedDict for O(1) FIFO eviction (faster than set + list conversion)
         self._seen_hashes: OrderedDict[str, float] = OrderedDict()
         self._total_samples_ingested: int = 0
@@ -379,25 +381,21 @@ class StreamingDataPipeline:
         self._running = False
         if self._poll_task:
             self._poll_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._poll_task
-            except asyncio.CancelledError:
-                pass
         # Cancel any pending prefetch
         if self._prefetch_task and not self._prefetch_task.done():
             self._prefetch_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._prefetch_task
-            except asyncio.CancelledError:
-                pass
         # Shutdown executor
         self._db_executor.shutdown(wait=False)
         logger.info("Stopped streaming pipeline")
 
     def set_quality_lookup(
         self,
-        quality_lookup: Optional[Dict[str, float]] = None,
-        elo_lookup: Optional[Dict[str, float]] = None,
+        quality_lookup: dict[str, float] | None = None,
+        elo_lookup: dict[str, float] | None = None,
     ) -> None:
         """Set quality lookup tables for priority sampling.
 
@@ -424,7 +422,7 @@ class StreamingDataPipeline:
                     if elo_lookup and sample.game_id in elo_lookup:
                         sample.avg_elo = elo_lookup[sample.game_id]
 
-    async def _async_get_new_games(self, limit: int) -> List[Dict[str, Any]]:
+    async def _async_get_new_games(self, limit: int) -> list[dict[str, Any]]:
         """Run DB query in thread pool (non-blocking).
 
         This allows the async event loop to continue while waiting for
@@ -512,7 +510,7 @@ class StreamingDataPipeline:
             # Wait before next poll (prefetch continues in background)
             await asyncio.sleep(self.config.poll_interval_seconds)
 
-    def _compute_sample_weights(self, samples: List[GameSample]) -> np.ndarray:
+    def _compute_sample_weights(self, samples: list[GameSample]) -> np.ndarray:
         """Compute sampling weights based on recency, quality, and priority.
 
         Weight formula:
@@ -556,7 +554,7 @@ class StreamingDataPipeline:
 
         return weights
 
-    def get_batch(self, batch_size: int = 256) -> List[GameSample]:
+    def get_batch(self, batch_size: int = 256) -> list[GameSample]:
         """Get a batch of samples from the buffer.
 
         Args:
@@ -579,8 +577,8 @@ class StreamingDataPipeline:
     async def stream_batches(
         self,
         batch_size: int = 256,
-        max_batches: Optional[int] = None,
-    ) -> AsyncIterator[List[GameSample]]:
+        max_batches: int | None = None,
+    ) -> AsyncIterator[list[GameSample]]:
         """Stream training batches continuously.
 
         Args:
@@ -615,7 +613,7 @@ class StreamingDataPipeline:
             # Brief pause to allow buffer refill
             await asyncio.sleep(0.01)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get pipeline statistics."""
         return {
             "buffer_size": len(self.buffer),
@@ -628,7 +626,7 @@ class StreamingDataPipeline:
             "prefetch_active": self._prefetch_task is not None and not self._prefetch_task.done(),
         }
 
-    def update_priorities(self, updates: Dict[str, float]):
+    def update_priorities(self, updates: dict[str, float]):
         """Update sample priorities (for integration with PER).
 
         Args:
@@ -645,10 +643,10 @@ class MultiDBStreamingPipeline:
 
     def __init__(
         self,
-        db_paths: List[Path],
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        config: Optional[StreamingConfig] = None,
+        db_paths: list[Path],
+        board_type: str | None = None,
+        num_players: int | None = None,
+        config: StreamingConfig | None = None,
     ):
         """
         Initialize multi-database pipeline.
@@ -676,8 +674,8 @@ class MultiDBStreamingPipeline:
     async def stream_batches(
         self,
         batch_size: int = 256,
-        max_batches: Optional[int] = None,
-    ) -> AsyncIterator[List[GameSample]]:
+        max_batches: int | None = None,
+    ) -> AsyncIterator[list[GameSample]]:
         """Stream batches from all databases.
 
         Samples are drawn proportionally from each database's buffer.
@@ -705,7 +703,7 @@ class MultiDBStreamingPipeline:
 
             await asyncio.sleep(0.01)
 
-    def get_aggregate_stats(self) -> Dict[str, Any]:
+    def get_aggregate_stats(self) -> dict[str, Any]:
         """Get aggregated statistics across all pipelines."""
         stats = {
             "num_databases": len(self.pipelines),

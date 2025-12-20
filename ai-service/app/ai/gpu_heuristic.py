@@ -11,7 +11,7 @@ Implements comprehensive 45-weight heuristic evaluation per RR-CANON rules.
 
 from __future__ import annotations
 
-from typing import Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -19,9 +19,9 @@ if TYPE_CHECKING:
     from .gpu_parallel_games import BatchGameState
 
 
-def _precompute_weights(weights: Dict[str, float]) -> Dict[str, float]:
+def _precompute_weights(weights: dict[str, float]) -> dict[str, float]:
     """Precompute all weights upfront to avoid repeated dict lookups."""
-    def get_w(new_key: str, old_key: str = None, default: float = 0.0) -> float:
+    def get_w(new_key: str, old_key: str | None = None, default: float = 0.0) -> float:
         if new_key in weights:
             return weights[new_key]
         if old_key and old_key in weights:
@@ -70,8 +70,8 @@ def _precompute_weights(weights: Dict[str, float]) -> Dict[str, float]:
 
 
 def evaluate_positions_batch(
-    state: "BatchGameState",
-    weights: Dict[str, float],
+    state: BatchGameState,
+    weights: dict[str, float],
 ) -> torch.Tensor:
     """Evaluate all positions using comprehensive heuristic scoring.
 
@@ -217,10 +217,10 @@ def evaluate_positions_batch(
 
         # === STACK HEIGHT METRICS ===
         # Average stack height
-        avg_height = total_ring_count / (stack_count + 1e-6)
+        total_ring_count / (stack_count + 1e-6)
 
         # Tall stacks bonus (height 3+)
-        tall_stacks = ((state.stack_height >= 3) & player_stacks).sum(dim=(1, 2)).float()
+        ((state.stack_height >= 3) & player_stacks).sum(dim=(1, 2)).float()
 
         # === ADJACENCY METRICS ===
         # Count adjacent pairs of controlled stacks (vectorized)
@@ -500,7 +500,7 @@ def evaluate_positions_batch(
 
         # Sum across all opponent players using precomputed values
         # Create mask for opponent indices (all players except p)
-        opponent_indices = [opp for opp in range(1, num_players + 1) if opp != p]
+        [opp for opp in range(1, num_players + 1) if opp != p]
 
         # Use precomputed totals and subtract player p's values
         total_stack_count = all_stack_counts[:, 1:num_players+1].sum(dim=1)

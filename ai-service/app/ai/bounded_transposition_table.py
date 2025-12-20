@@ -1,7 +1,8 @@
 """Bounded transposition table with LRU eviction for memory-limited search."""
 
 from collections import OrderedDict
-from typing import Any, Hashable, Optional
+from collections.abc import Hashable
+from typing import Any
 
 
 class BoundedTranspositionTable:
@@ -45,7 +46,7 @@ class BoundedTranspositionTable:
             max_entries=max_entries, entry_size_estimate=entry_size_estimate
         )
 
-    def get(self, key: Hashable) -> Optional[Any]:
+    def get(self, key: Hashable) -> Any | None:
         """Get value, moving to end if found (LRU).
 
         Args:

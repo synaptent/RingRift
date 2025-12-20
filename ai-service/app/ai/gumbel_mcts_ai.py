@@ -32,16 +32,15 @@ from __future__ import annotations
 import logging
 import math
 import os
-import time
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple, cast, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ..models import AIConfig, BoardType, GameState, Move
+from ..rules.mutable_state import MoveUndo, MutableGameState
 from .base import BaseAI
-from .neural_net import NeuralNetAI, INVALID_MOVE_INDEX
-from ..models import GameState, Move, AIConfig, BoardType, MoveType
-from ..rules.mutable_state import MutableGameState, MoveUndo
+from .neural_net import INVALID_MOVE_INDEX, NeuralNetAI
 
 if TYPE_CHECKING:
     import torch
@@ -93,7 +92,7 @@ class GumbelAction:
             return self.policy_logit / 10.0  # Scale to reasonable range
 
         # Mix empirical Q with prior based on visit ratio
-        visit_ratio = self.visit_count / (max_visits + 1e-8)
+        self.visit_count / (max_visits + 1e-8)
         mix = c_visit / (c_visit + max_visits)
         return (1 - mix) * self.mean_value + mix * (self.policy_logit / 10.0)
 
@@ -102,9 +101,9 @@ class GumbelAction:
 class GumbelNode:
     """Lightweight node for Gumbel MCTS tree traversal."""
 
-    move: Optional[Move] = None
-    parent: Optional["GumbelNode"] = None
-    children: Dict[str, "GumbelNode"] = field(default_factory=dict)
+    move: Move | None = None
+    parent: GumbelNode | None = None
+    children: dict[str, GumbelNode] = field(default_factory=dict)
     visit_count: int = 0
     total_value: float = 0.0
     prior: float = 0.0
@@ -179,12 +178,12 @@ class GumbelMCTSAI(BaseAI):
         self.c_puct = 1.5  # Exploration constant for tree policy
 
         # Store search results for training data extraction
-        self._last_search_actions: Optional[List[GumbelAction]] = None
+        self._last_search_actions: list[GumbelAction] | None = None
 
         # GPU acceleration state (lazy initialized)
         self._gpu_batch_enabled: bool = not _GPU_GUMBEL_DISABLE
-        self._gpu_available: Optional[bool] = None  # None = not yet checked
-        self._gpu_device: Optional["torch.device"] = None
+        self._gpu_available: bool | None = None  # None = not yet checked
+        self._gpu_device: torch.device | None = None
 
         # Shadow validation for GPU batch vs sequential parity checking
         self._shadow_validate: bool = _GPU_GUMBEL_SHADOW_VALIDATE
@@ -195,7 +194,7 @@ class GumbelMCTSAI(BaseAI):
         self._gpu_batch_size: int = getattr(config, 'gpu_batch_size', 128)
 
         # Load neural network (required for Gumbel MCTS)
-        self.neural_net: Optional[NeuralNetAI] = None
+        self.neural_net: NeuralNetAI | None = None
         try:
             self.neural_net = NeuralNetAI(player_number, config)
             logger.info(
@@ -211,7 +210,7 @@ class GumbelMCTSAI(BaseAI):
             logger.warning(f"GumbelMCTSAI: failed to load neural net ({e})")
             self.neural_net = None
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select best move using Gumbel MCTS with Sequential Halving.
 
         Args:
@@ -244,7 +243,7 @@ class GumbelMCTSAI(BaseAI):
     def _gumbel_mcts_search(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
     ) -> Move:
         """Run Gumbel MCTS search with Sequential Halving.
 
@@ -278,7 +277,7 @@ class GumbelMCTSAI(BaseAI):
     def _get_policy_logits(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
     ) -> np.ndarray:
         """Get policy logits for valid moves from neural network.
 
@@ -321,9 +320,9 @@ class GumbelMCTSAI(BaseAI):
 
     def _gumbel_top_k_sample(
         self,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
         policy_logits: np.ndarray,
-    ) -> List[GumbelAction]:
+    ) -> list[GumbelAction]:
         """Sample top-k actions using Gumbel-Top-K.
 
         This samples k actions without replacement by adding Gumbel noise
@@ -411,7 +410,7 @@ class GumbelMCTSAI(BaseAI):
     def _simulate_actions_batched(
         self,
         game_state: GameState,
-        actions: List[GumbelAction],
+        actions: list[GumbelAction],
         sims_per_action: int,
     ) -> None:
         """Simulate all actions in a batch for GPU efficiency.
@@ -439,8 +438,8 @@ class GumbelMCTSAI(BaseAI):
 
         # Collect all states that need neural network evaluation
         # Format: (action_idx, sim_state, needs_flip)
-        evaluation_requests: List[Tuple[int, GameState, bool]] = []
-        terminal_values: Dict[int, List[float]] = {i: [] for i in range(len(actions))}
+        evaluation_requests: list[tuple[int, GameState, bool]] = []
+        terminal_values: dict[int, list[float]] = {i: [] for i in range(len(actions))}
 
         for action_idx, action in enumerate(actions):
             mstate = MutableGameState.from_immutable(game_state)
@@ -477,7 +476,7 @@ class GumbelMCTSAI(BaseAI):
 
             # Split into chunks if batch is too large
             batch_size = self._gpu_batch_size
-            all_values: List[float] = []
+            all_values: list[float] = []
 
             for i in range(0, len(states), batch_size):
                 batch_states = states[i:i + batch_size]
@@ -502,8 +501,8 @@ class GumbelMCTSAI(BaseAI):
 
     def _shadow_validate_batch(
         self,
-        requests: List[Tuple[int, GameState, bool]],
-        batch_values: List[float],
+        requests: list[tuple[int, GameState, bool]],
+        batch_values: list[float],
     ) -> None:
         """Validate batch NN results against sequential evaluation (5% sample).
 
@@ -585,7 +584,7 @@ class GumbelMCTSAI(BaseAI):
                 f"{self._shadow_divergence_count}/{self._shadow_total_checks} divergences ({rate:.2%})"
             )
 
-    def get_shadow_validation_stats(self) -> Dict[str, Any]:
+    def get_shadow_validation_stats(self) -> dict[str, Any]:
         """Get shadow validation statistics.
 
         Returns:
@@ -609,8 +608,8 @@ class GumbelMCTSAI(BaseAI):
     def validate_move_parity(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
-    ) -> Tuple[bool, Optional[str]]:
+        valid_moves: list[Move],
+    ) -> tuple[bool, str | None]:
         """Validate that GPU batch and CPU sequential paths select the same move.
 
         This is the ultimate parity check - it runs the full search with both
@@ -684,7 +683,7 @@ class GumbelMCTSAI(BaseAI):
     def _sequential_halving(
         self,
         game_state: GameState,
-        actions: List[GumbelAction],
+        actions: list[GumbelAction],
     ) -> GumbelAction:
         """Run Sequential Halving to find the best action.
 
@@ -716,7 +715,7 @@ class GumbelMCTSAI(BaseAI):
 
         remaining = list(actions)
 
-        for phase in range(num_phases):
+        for _phase in range(num_phases):
             if len(remaining) == 1:
                 break
 
@@ -821,7 +820,7 @@ class GumbelMCTSAI(BaseAI):
         Returns:
             Value estimate from the simulation.
         """
-        path: List[Tuple[GumbelNode, MoveUndo]] = []
+        path: list[tuple[GumbelNode, MoveUndo]] = []
         node = root
         depth = 0
 
@@ -909,7 +908,7 @@ class GumbelMCTSAI(BaseAI):
     def _select_puct_move(
         self,
         node: GumbelNode,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
     ) -> Move:
         """Select move using PUCT formula.
 
@@ -957,7 +956,7 @@ class GumbelMCTSAI(BaseAI):
         except Exception:
             return 0.0
 
-    def reset_for_new_game(self, *, rng_seed: Optional[int] = None) -> None:
+    def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset state for a new game.
 
         Args:
@@ -966,7 +965,7 @@ class GumbelMCTSAI(BaseAI):
         super().reset_for_new_game(rng_seed=rng_seed)
         # No persistent tree to reset in Gumbel MCTS (tree is built fresh each move)
 
-    def get_visit_distribution(self) -> Tuple[List[Move], List[float]]:
+    def get_visit_distribution(self) -> tuple[list[Move], list[float]]:
         """Extract normalized visit count distribution from the last search.
 
         Returns a tuple of (moves, visit_probabilities) representing the
@@ -990,8 +989,8 @@ class GumbelMCTSAI(BaseAI):
         if total_visits == 0:
             return [], []
 
-        moves: List[Move] = []
-        probs: List[float] = []
+        moves: list[Move] = []
+        probs: list[float] = []
 
         for action in visited_actions:
             moves.append(action.move)

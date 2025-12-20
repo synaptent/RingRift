@@ -33,15 +33,17 @@ See: docs/CONSOLIDATION_ROADMAP.md for consolidation context.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sqlite3
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from app.distributed.db_utils import ThreadLocalConnectionPool
@@ -71,10 +73,10 @@ class CoordinatorStats:
     operations_count: int = 0
     errors_count: int = 0
     last_operation_time: float = 0.0
-    last_error: Optional[str] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
+    last_error: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "status": self.status.value,
@@ -122,7 +124,7 @@ class CoordinatorProtocol(Protocol):
         """Shutdown and cleanup resources."""
         ...
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get current statistics."""
         ...
 
@@ -143,7 +145,7 @@ class CoordinatorBase(ABC):
     - async def get_stats(self) -> Dict[str, Any]: Custom stats
     """
 
-    def __init__(self, name: Optional[str] = None):
+    def __init__(self, name: str | None = None):
         """Initialize the coordinator base.
 
         Args:
@@ -160,10 +162,10 @@ class CoordinatorBase(ABC):
         self._operations_count = 0
         self._errors_count = 0
         self._last_operation_time: float = 0.0
-        self._last_error: Optional[str] = None
+        self._last_error: str | None = None
 
         # Dependency injection slots
-        self._dependencies: Dict[str, Any] = {}
+        self._dependencies: dict[str, Any] = {}
 
     @property
     def name(self) -> str:
@@ -307,14 +309,14 @@ class CoordinatorBase(ABC):
         self._operations_count += 1
         self._last_operation_time = time.time()
 
-    def record_error(self, error: Optional[Exception] = None) -> None:
+    def record_error(self, error: Exception | None = None) -> None:
         """Record an error."""
         self._errors_count += 1
         if error:
             self._last_error = str(error)
 
     @abstractmethod
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get current statistics.
 
         Subclasses should call super().get_stats() and extend.
@@ -369,8 +371,8 @@ class SQLitePersistenceMixin:
                 return '''CREATE TABLE IF NOT EXISTS my_table (...)'''
     """
 
-    _db_path: Optional[Path] = None
-    _db_pool: Optional["ThreadLocalConnectionPool"] = None  # December 2025 - consolidated
+    _db_path: Path | None = None
+    _db_pool: ThreadLocalConnectionPool | None = None  # December 2025 - consolidated
 
     def init_db(
         self,
@@ -450,7 +452,7 @@ class SingletonMixin:
                 return cls._get_or_create_instance()
     """
 
-    _instances: Dict[type, Any] = {}
+    _instances: dict[type, Any] = {}
     _instance_lock = threading.Lock()
 
     @classmethod
@@ -490,7 +492,7 @@ class CallbackMixin:
         coordinator.register_callback("job_complete", my_handler)
     """
 
-    _callbacks: Dict[str, List[Callable]]
+    _callbacks: dict[str, list[Callable]]
 
     def __init_callbacks__(self) -> None:
         """Initialize callbacks dictionary. Call in __init__."""
@@ -526,17 +528,15 @@ class CallbackMixin:
             callback: Callback to remove
         """
         if hasattr(self, "_callbacks") and event_type in self._callbacks:
-            try:
+            with contextlib.suppress(ValueError):
                 self._callbacks[event_type].remove(callback)
-            except ValueError:
-                pass
 
     async def invoke_callbacks(
         self,
         event_type: str,
         *args,
         **kwargs,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Invoke all callbacks for an event type.
 
         Args:
@@ -609,8 +609,8 @@ class EventDrivenMonitorMixin:
                 pass
     """
 
-    _event_handlers: Dict[str, List[Callable]]
-    _event_subscriptions: List[str]
+    _event_handlers: dict[str, list[Callable]]
+    _event_subscriptions: list[str]
     _event_bus_connected: bool
 
     def init_event_subscriptions(self) -> None:
@@ -622,7 +622,7 @@ class EventDrivenMonitorMixin:
     def register_event_handler(
         self,
         event_type: str,
-        handler: Callable[[Dict[str, Any]], Any],
+        handler: Callable[[dict[str, Any]], Any],
     ) -> None:
         """Register a handler for a specific event type.
 
@@ -637,7 +637,7 @@ class EventDrivenMonitorMixin:
         self._event_handlers[event_type].append(handler)
         logger.debug(f"Registered handler for event: {event_type}")
 
-    async def subscribe_to_events(self, event_types: List[str]) -> bool:
+    async def subscribe_to_events(self, event_types: list[str]) -> bool:
         """Subscribe to events from the unified event coordinator.
 
         Args:
@@ -667,7 +667,7 @@ class EventDrivenMonitorMixin:
             logger.warning(f"Failed to subscribe to events: {e}")
             return False
 
-    async def _dispatch_event(self, payload: Dict[str, Any]) -> None:
+    async def _dispatch_event(self, payload: dict[str, Any]) -> None:
         """Dispatch event to registered handlers.
 
         Args:
@@ -688,7 +688,7 @@ class EventDrivenMonitorMixin:
             except Exception as e:
                 logger.warning(f"Event handler error for {event_type}: {e}")
 
-    def get_event_status(self) -> Dict[str, Any]:
+    def get_event_status(self) -> dict[str, Any]:
         """Get status of event subscriptions.
 
         Returns:
@@ -738,19 +738,19 @@ class CoordinatorRegistry:
         await registry.shutdown_all(timeout=30.0)
     """
 
-    _instance: Optional["CoordinatorRegistry"] = None
+    _instance: CoordinatorRegistry | None = None
     _lock = threading.Lock()
 
     def __init__(self):
         """Initialize the registry. Use get_instance() instead."""
-        self._coordinators: Dict[str, CoordinatorBase] = {}
-        self._priorities: Dict[str, int] = {}
-        self._shutdown_order: List[str] = []
+        self._coordinators: dict[str, CoordinatorBase] = {}
+        self._priorities: dict[str, int] = {}
+        self._shutdown_order: list[str] = []
         self._shutting_down = False
         self._shutdown_complete = asyncio.Event()
 
     @classmethod
-    def get_instance(cls) -> "CoordinatorRegistry":
+    def get_instance(cls) -> CoordinatorRegistry:
         """Get the singleton registry instance."""
         if cls._instance is None:
             with cls._lock:
@@ -784,7 +784,7 @@ class CoordinatorRegistry:
         self._update_shutdown_order()
         logger.debug(f"Registered coordinator: {name} (priority={shutdown_priority})")
 
-    def unregister(self, name: str) -> Optional[CoordinatorBase]:
+    def unregister(self, name: str) -> CoordinatorBase | None:
         """Unregister a coordinator by name.
 
         Args:
@@ -800,11 +800,11 @@ class CoordinatorRegistry:
             logger.debug(f"Unregistered coordinator: {name}")
         return coord
 
-    def get(self, name: str) -> Optional[CoordinatorBase]:
+    def get(self, name: str) -> CoordinatorBase | None:
         """Get a coordinator by name."""
         return self._coordinators.get(name)
 
-    def list_coordinators(self) -> List[str]:
+    def list_coordinators(self) -> list[str]:
         """List all registered coordinator names."""
         return list(self._coordinators.keys())
 
@@ -824,7 +824,7 @@ class CoordinatorRegistry:
         self,
         timeout: float = 30.0,
         force_after_timeout: bool = True,
-    ) -> Dict[str, bool]:
+    ) -> dict[str, bool]:
         """Gracefully shutdown all registered coordinators.
 
         Args:
@@ -840,7 +840,7 @@ class CoordinatorRegistry:
             return {}
 
         self._shutting_down = True
-        results: Dict[str, bool] = {}
+        results: dict[str, bool] = {}
 
         logger.info(f"Starting graceful shutdown of {len(self._coordinators)} coordinators")
 
@@ -890,7 +890,7 @@ class CoordinatorRegistry:
                 timeout=timeout,
             )
 
-    def install_signal_handlers(self, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
+    def install_signal_handlers(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
         """Install signal handlers for graceful shutdown.
 
         Handles SIGTERM and SIGINT to trigger graceful shutdown.
@@ -924,7 +924,7 @@ class CoordinatorRegistry:
             except (ValueError, OSError) as e:
                 logger.warning(f"Could not install handler for {sig.name}: {e}")
 
-    def get_health_summary(self) -> Dict[str, Any]:
+    def get_health_summary(self) -> dict[str, Any]:
         """Get health summary of all registered coordinators.
 
         Returns:
@@ -959,7 +959,7 @@ def get_coordinator_registry() -> CoordinatorRegistry:
     return CoordinatorRegistry.get_instance()
 
 
-async def shutdown_all_coordinators(timeout: float = 30.0) -> Dict[str, bool]:
+async def shutdown_all_coordinators(timeout: float = 30.0) -> dict[str, bool]:
     """Shutdown all registered coordinators.
 
     Convenience function for shutdown_all on the global registry.
@@ -967,7 +967,7 @@ async def shutdown_all_coordinators(timeout: float = 30.0) -> Dict[str, bool]:
     return await get_coordinator_registry().shutdown_all(timeout=timeout)
 
 
-def get_all_coordinators() -> Dict[str, "CoordinatorBase"]:
+def get_all_coordinators() -> dict[str, CoordinatorBase]:
     """Get all registered coordinators.
 
     Returns:
@@ -983,7 +983,7 @@ def get_all_coordinators() -> Dict[str, "CoordinatorBase"]:
     return get_coordinator_registry()._coordinators.copy()
 
 
-def get_coordinator_statuses() -> Dict[str, Dict[str, Any]]:
+def get_coordinator_statuses() -> dict[str, dict[str, Any]]:
     """Get status of all registered coordinators.
 
     Returns:
@@ -1018,24 +1018,24 @@ def get_coordinator_statuses() -> Dict[str, Dict[str, Any]]:
 
 
 __all__ = [
-    # Enums and data classes
-    "CoordinatorStatus",
-    "CoordinatorStats",
-    # Protocols
-    "CoordinatorProtocol",
+    "CallbackMixin",
     # Base classes
     "CoordinatorBase",
+    # Protocols
+    "CoordinatorProtocol",
+    # Registry
+    "CoordinatorRegistry",
+    "CoordinatorStats",
+    # Enums and data classes
+    "CoordinatorStatus",
+    "EventDrivenMonitorMixin",
     # Mixins
     "SQLitePersistenceMixin",
     "SingletonMixin",
-    "CallbackMixin",
-    "EventDrivenMonitorMixin",
-    # Registry
-    "CoordinatorRegistry",
+    "get_all_coordinators",
+    "get_coordinator_registry",
+    "get_coordinator_statuses",
     # Functions
     "is_coordinator",
-    "get_coordinator_registry",
     "shutdown_all_coordinators",
-    "get_all_coordinators",
-    "get_coordinator_statuses",
 ]

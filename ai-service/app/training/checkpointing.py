@@ -46,9 +46,10 @@ import logging
 import os
 import signal
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 # Use centralized executor pool (December 2025)
 try:
@@ -65,12 +66,12 @@ import torch.nn as nn
 import torch.optim as optim
 
 from app.training.model_versioning import (
+    LegacyCheckpointError,
     ModelVersionManager,
     VersionMismatchError,
-    LegacyCheckpointError,
 )
 from app.training.training_enhancements import EarlyStopping
-from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
+from app.utils.resource_guard import LIMITS, check_disk_space, get_disk_usage
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,8 @@ def save_checkpoint(
     epoch: int,
     loss: float,
     path: str,
-    scheduler: Optional[Any] = None,
-    early_stopping: Optional[EarlyStopping] = None,
+    scheduler: Any | None = None,
+    early_stopping: EarlyStopping | None = None,
     use_versioning: bool = True,
 ) -> None:
     """
@@ -105,7 +106,7 @@ def save_checkpoint(
     dir_path = os.path.dirname(path) if os.path.dirname(path) else '.'
     if not check_disk_space(required_gb=1.0, path=dir_path, log_warning=False):
         disk_pct, available_gb, _ = get_disk_usage(dir_path)
-        raise IOError(
+        raise OSError(
             f"Insufficient disk space to save checkpoint: "
             f"{disk_pct:.1f}% used (limit: {LIMITS.DISK_MAX_PERCENT}%), "
             f"{available_gb:.1f}GB available. Path: {path}"
@@ -164,7 +165,7 @@ def save_checkpoint(
                 try:
                     with open(es_temp_path, 'rb') as f:
                         os.fsync(f.fileno())
-                except (OSError, IOError):
+                except OSError:
                     pass  # Best effort for early stopping state
                 es_temp_path.rename(es_path)
             except Exception as e:
@@ -202,7 +203,7 @@ def save_checkpoint(
             try:
                 with open(temp_path, 'rb') as f:
                     os.fsync(f.fileno())
-            except (OSError, IOError):
+            except OSError:
                 os.sync()  # Fallback for NFS/network filesystems
             temp_path.rename(path_obj)
         except Exception as e:
@@ -280,8 +281,8 @@ class AsyncCheckpointer:
         epoch: int,
         loss: float,
         path: str,
-        scheduler: Optional[Any] = None,
-        early_stopping: Optional[EarlyStopping] = None,
+        scheduler: Any | None = None,
+        early_stopping: EarlyStopping | None = None,
         use_versioning: bool = True,
     ) -> None:
         """
@@ -333,8 +334,8 @@ class AsyncCheckpointer:
         epoch: int,
         loss: float,
         path: str,
-        scheduler_state: Optional[dict],
-        early_stopping_state: Optional[dict],
+        scheduler_state: dict | None,
+        early_stopping_state: dict | None,
         use_versioning: bool,
     ) -> None:
         """Background worker that performs the actual save."""
@@ -406,8 +407,8 @@ class GracefulShutdownHandler:
 
     def __init__(self):
         self._shutdown_requested = False
-        self._original_handlers: Dict[int, Any] = {}
-        self._checkpoint_callback: Optional[Callable[[], None]] = None
+        self._original_handlers: dict[int, Any] = {}
+        self._checkpoint_callback: Callable[[], None] | None = None
 
     def setup(self, checkpoint_callback: Callable[[], None]) -> None:
         """
@@ -464,12 +465,12 @@ class GracefulShutdownHandler:
 def load_checkpoint(
     path: str,
     model: nn.Module,
-    optimizer: Optional[optim.Optimizer] = None,
-    scheduler: Optional[Any] = None,
-    early_stopping: Optional[EarlyStopping] = None,
-    device: Optional[torch.device] = None,
+    optimizer: optim.Optimizer | None = None,
+    scheduler: Any | None = None,
+    early_stopping: EarlyStopping | None = None,
+    device: torch.device | None = None,
     strict_versioning: bool = False,
-) -> Tuple[int, float]:
+) -> tuple[int, float]:
     """
     Load a training checkpoint with optional version validation.
 
@@ -558,8 +559,8 @@ def load_checkpoint(
 
 
 __all__ = [
-    "save_checkpoint",
-    "load_checkpoint",
     "AsyncCheckpointer",
     "GracefulShutdownHandler",
+    "load_checkpoint",
+    "save_checkpoint",
 ]

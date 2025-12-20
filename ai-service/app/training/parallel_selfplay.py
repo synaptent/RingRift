@@ -25,7 +25,7 @@ import random
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -35,7 +35,7 @@ from app.utils.paths import AI_SERVICE_ROOT
 logger = logging.getLogger(__name__)
 
 # Worker process global configuration (set by _init_worker)
-_worker_config: Dict[str, Any] = {}
+_worker_config: dict[str, Any] = {}
 
 
 @dataclass
@@ -49,7 +49,7 @@ class ParallelSelfplayConfig:
     num_players: int = 2
     max_moves: int = 10000
     engine: str = "descent"  # "descent", "mcts", "gumbel", or "ebmo"
-    nn_model_id: Optional[str] = None
+    nn_model_id: str | None = None
     multi_player_values: bool = False
     max_players: int = 4
     graded_outcomes: bool = False
@@ -79,18 +79,18 @@ class GameResult:
     features: np.ndarray  # (N, C, H, W)
     globals: np.ndarray  # (N, D)
     values: np.ndarray  # (N,)
-    policy_indices: List[np.ndarray]  # Sparse policy indices
-    policy_values: List[np.ndarray]  # Sparse policy values
-    values_mp: Optional[np.ndarray]  # (N, max_players) or None
-    num_players: Optional[np.ndarray]  # (N,) or None
+    policy_indices: list[np.ndarray]  # Sparse policy indices
+    policy_values: list[np.ndarray]  # Sparse policy values
+    values_mp: np.ndarray | None  # (N, max_players) or None
+    num_players: np.ndarray | None  # (N,) or None
     num_samples: int
     game_idx: int
     duration_sec: float
-    effective_temps: Optional[np.ndarray] = None  # (N,) Per-sample effective temperature
+    effective_temps: np.ndarray | None = None  # (N,) Per-sample effective temperature
     # Auxiliary task targets (2025-12)
-    game_lengths: Optional[np.ndarray] = None  # (N,) Total game length (same for all samples in game)
-    piece_counts: Optional[np.ndarray] = None  # (N,) Piece count at each sample
-    outcomes: Optional[np.ndarray] = None  # (N,) Outcome class: 0=loss, 1=draw, 2=win
+    game_lengths: np.ndarray | None = None  # (N,) Total game length (same for all samples in game)
+    piece_counts: np.ndarray | None = None  # (N,) Piece count at each sample
+    outcomes: np.ndarray | None = None  # (N,) Outcome class: 0=loss, 1=draw, 2=win
 
 
 def _worker_init(config_dict: dict) -> None:
@@ -105,7 +105,7 @@ def _worker_init(config_dict: dict) -> None:
     _worker_config = config_dict
 
 
-def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
+def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
     """
     Generate a single selfplay game in a worker process.
 
@@ -132,12 +132,12 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             sys.path.insert(0, ai_service_root)
 
         # Import dependencies in worker (avoid serialization issues)
-        from app.training.env import RingRiftEnv
         from app.ai.descent_ai import DescentAI
         from app.ai.mcts_ai import MCTSAI
-        from app.ai.nnue import extract_features_from_gamestate, get_board_size, FEATURE_PLANES
         from app.ai.neural_net import encode_move_for_board
+        from app.ai.nnue import FEATURE_PLANES, extract_features_from_gamestate, get_board_size
         from app.models import AIConfig
+        from app.training.env import RingRiftEnv
 
         # Conditionally import GumbelMCTSAI (heavy dependencies)
         GumbelMCTSAI = None
@@ -243,7 +243,7 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             if config.engine == "gumbel" and hasattr(ai, 'get_visit_distribution'):
                 # Gumbel-MCTS: use visit-count-based soft policy targets
                 moves, probs = ai.get_visit_distribution()
-                for mv, prob in zip(moves, probs):
+                for mv, prob in zip(moves, probs, strict=False):
                     idx = encode_move_for_board(mv, state.board)
                     if idx >= 0:  # Valid move encoding
                         policy_indices.append(idx)
@@ -267,7 +267,7 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             hist_frames = list(state_history[-config.history_length:])
             while len(hist_frames) < config.history_length:
                 hist_frames.insert(0, np.zeros_like(current_features))
-            stacked_features = np.concatenate([current_features] + hist_frames, axis=0)
+            stacked_features = np.concatenate([current_features, *hist_frames], axis=0)
 
             # Update history
             state_history.append(current_features.copy())
@@ -399,19 +399,19 @@ def _count_pieces(state) -> int:
 def generate_dataset_parallel(
     num_games: int = 100,
     output_file: str = "data/dataset_parallel.npz",
-    num_workers: Optional[int] = None,
+    num_workers: int | None = None,
     board_type: BoardType = BoardType.SQUARE8,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     max_moves: int = 10000,
     num_players: int = 2,
     history_length: int = 3,
     feature_version: int = 1,
     engine: str = "descent",
-    nn_model_id: Optional[str] = None,
+    nn_model_id: str | None = None,
     multi_player_values: bool = False,
     max_players: int = 4,
     graded_outcomes: bool = False,
-    progress_callback: Optional[callable] = None,
+    progress_callback: callable | None = None,
     # Gumbel-MCTS specific parameters
     gumbel_simulations: int = 64,
     gumbel_top_k: int = 16,
@@ -509,7 +509,7 @@ def generate_dataset_parallel(
     game_args = [(i, base_seed) for i in range(num_games)]
 
     # Run workers
-    results: List[GameResult] = []
+    results: list[GameResult] = []
     completed = 0
     start_time = time.time()
 

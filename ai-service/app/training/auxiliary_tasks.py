@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -87,7 +87,7 @@ class AuxiliaryTaskModule(nn.Module):
     def __init__(
         self,
         input_dim: int,
-        config: Optional[AuxTaskConfig] = None,
+        config: AuxTaskConfig | None = None,
     ):
         super().__init__()
         if not HAS_TORCH:
@@ -102,7 +102,7 @@ class AuxiliaryTaskModule(nn.Module):
     def forward(
         self,
         features: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Forward pass through all auxiliary heads.
 
         Args:
@@ -119,9 +119,9 @@ class AuxiliaryTaskModule(nn.Module):
 
     def compute_loss(
         self,
-        predictions: Dict[str, torch.Tensor],
-        targets: Dict[str, torch.Tensor],
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        predictions: dict[str, torch.Tensor],
+        targets: dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute total auxiliary loss.
 
         Args:
@@ -162,10 +162,10 @@ class AuxiliaryTargetExtractor:
 
     def extract_targets(
         self,
-        game_states: List[Any],
-        game_outcomes: List[int],
-        total_game_lengths: List[int],
-    ) -> Dict[str, np.ndarray]:
+        game_states: list[Any],
+        game_outcomes: list[int],
+        total_game_lengths: list[int],
+    ) -> dict[str, np.ndarray]:
         """Extract auxiliary targets from game data.
 
         Args:

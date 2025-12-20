@@ -1,15 +1,14 @@
+import json
 import os
 import shutil
-import json
-from typing import Optional
 
-from app.training.generate_data import generate_dataset, generate_dataset_gpu_parallel  # noqa: E402
-from app.training.train import train_model  # noqa: E402
-from app.models import AIConfig, BoardType  # noqa: E402
-from app.ai.descent_ai import DescentAI  # noqa: E402
-from app.training.tournament import Tournament  # noqa: E402
-from app.training.config import TrainConfig, get_model_version_for_board  # noqa: E402
-from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES  # noqa: E402
+from app.ai.descent_ai import DescentAI
+from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES
+from app.models import AIConfig
+from app.training.config import TrainConfig, get_model_version_for_board
+from app.training.generate_data import generate_dataset, generate_dataset_gpu_parallel
+from app.training.tournament import Tournament
+from app.training.train import train_model
 
 
 def export_heuristic_profiles(log_dir: str) -> None:
@@ -31,7 +30,7 @@ def export_heuristic_profiles(log_dir: str) -> None:
         print("Warning: failed to export heuristic profiles:", str(exc))
 
 
-def run_training_loop(config: Optional[TrainConfig] = None):
+def run_training_loop(config: TrainConfig | None = None):
     if config is None:
         config = TrainConfig()
 

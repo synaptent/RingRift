@@ -45,13 +45,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.execution.executor import (
-    ExecutionResult,
-    LocalExecutor,
-    SSHExecutor,
     ExecutorPool,
+    LocalExecutor,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,8 +72,8 @@ class WorkerStatus:
     cpu_percent: float = 0.0
     memory_percent: float = 0.0
     active_jobs: int = 0
-    last_seen: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    last_seen: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -86,14 +84,14 @@ class JobResult:
     worker: str
     output: Any
     duration_seconds: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def _materialize_model_output(
     model_output_path: str,
     run_dir: str,
     repo_root: Path,
-) -> Optional[str]:
+) -> str | None:
     report_path = Path(run_dir) / "nn_training_report.json"
     if not report_path.is_absolute():
         report_path = repo_root / report_path
@@ -103,7 +101,7 @@ def _materialize_model_output(
         return None
 
     try:
-        with open(report_path, "r", encoding="utf-8") as handle:
+        with open(report_path, encoding="utf-8") as handle:
             report = json.load(handle)
     except Exception as exc:
         logger.warning(f"Failed to read training report {report_path}: {exc}")
@@ -149,7 +147,7 @@ class OrchestratorBackend(ABC):
     """Abstract base class for orchestrator backends."""
 
     @abstractmethod
-    async def get_available_workers(self) -> List[WorkerStatus]:
+    async def get_available_workers(self) -> list[WorkerStatus]:
         """Get list of available workers."""
         pass
 
@@ -159,9 +157,9 @@ class OrchestratorBackend(ABC):
         games: int,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         **kwargs,
-    ) -> List[JobResult]:
+    ) -> list[JobResult]:
         """Run selfplay games on available workers.
 
         Args:
@@ -179,7 +177,7 @@ class OrchestratorBackend(ABC):
     @abstractmethod
     async def run_tournament(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: str = "square8",
         num_players: int = 2,
         games_per_pairing: int = 20,
@@ -223,9 +221,9 @@ class OrchestratorBackend(ABC):
     @abstractmethod
     async def sync_models(
         self,
-        model_paths: List[str],
-        target_workers: Optional[List[str]] = None,
-    ) -> Dict[str, bool]:
+        model_paths: list[str],
+        target_workers: list[str] | None = None,
+    ) -> dict[str, bool]:
         """Sync models to workers.
 
         Args:
@@ -240,9 +238,9 @@ class OrchestratorBackend(ABC):
     @abstractmethod
     async def sync_data(
         self,
-        source_workers: Optional[List[str]] = None,
-        target_path: Optional[str] = None,
-    ) -> Dict[str, int]:
+        source_workers: list[str] | None = None,
+        target_path: str | None = None,
+    ) -> dict[str, int]:
         """Sync data from workers to local.
 
         Args:
@@ -258,11 +256,11 @@ class OrchestratorBackend(ABC):
 class LocalBackend(OrchestratorBackend):
     """Execute all jobs locally."""
 
-    def __init__(self, working_dir: Optional[str] = None):
+    def __init__(self, working_dir: str | None = None):
         self.executor = LocalExecutor(working_dir)
         self._ai_service_root = Path(__file__).parent.parent.parent
 
-    async def get_available_workers(self) -> List[WorkerStatus]:
+    async def get_available_workers(self) -> list[WorkerStatus]:
         """Local backend has one worker - the local machine."""
         import psutil
 
@@ -281,9 +279,9 @@ class LocalBackend(OrchestratorBackend):
         games: int,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         **kwargs,
-    ) -> List[JobResult]:
+    ) -> list[JobResult]:
         """Run selfplay locally."""
         import time
         from uuid import uuid4
@@ -315,7 +313,7 @@ class LocalBackend(OrchestratorBackend):
 
     async def run_tournament(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: str = "square8",
         num_players: int = 2,
         games_per_pairing: int = 20,
@@ -407,17 +405,17 @@ class LocalBackend(OrchestratorBackend):
 
     async def sync_models(
         self,
-        model_paths: List[str],
-        target_workers: Optional[List[str]] = None,
-    ) -> Dict[str, bool]:
+        model_paths: list[str],
+        target_workers: list[str] | None = None,
+    ) -> dict[str, bool]:
         """No-op for local backend."""
         return {"local": True}
 
     async def sync_data(
         self,
-        source_workers: Optional[List[str]] = None,
-        target_path: Optional[str] = None,
-    ) -> Dict[str, int]:
+        source_workers: list[str] | None = None,
+        target_path: str | None = None,
+    ) -> dict[str, int]:
         """No-op for local backend."""
         return {"local": 0}
 
@@ -425,12 +423,12 @@ class LocalBackend(OrchestratorBackend):
 class SSHBackend(OrchestratorBackend):
     """Execute jobs via SSH on remote hosts."""
 
-    def __init__(self, hosts_config_path: Optional[str] = None):
+    def __init__(self, hosts_config_path: str | None = None):
         self.pool = ExecutorPool()
-        self._hosts: Dict[str, Dict] = {}
+        self._hosts: dict[str, dict] = {}
         self._load_hosts(hosts_config_path)
 
-    def _load_hosts(self, config_path: Optional[str]) -> None:
+    def _load_hosts(self, config_path: str | None) -> None:
         """Load hosts from configuration."""
         if config_path is None:
             try:
@@ -471,7 +469,7 @@ class SSHBackend(OrchestratorBackend):
 
         logger.info(f"Loaded {len(self._hosts)} SSH hosts")
 
-    async def get_available_workers(self) -> List[WorkerStatus]:
+    async def get_available_workers(self) -> list[WorkerStatus]:
         """Check which SSH hosts are available."""
         availability = await self.pool.check_all_available()
 
@@ -499,9 +497,9 @@ class SSHBackend(OrchestratorBackend):
         games: int,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         **kwargs,
-    ) -> List[JobResult]:
+    ) -> list[JobResult]:
         """Distribute selfplay across SSH workers."""
         import time
         from uuid import uuid4
@@ -589,7 +587,7 @@ class SSHBackend(OrchestratorBackend):
 
     async def run_tournament(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: str = "square8",
         num_players: int = 2,
         games_per_pairing: int = 20,
@@ -873,9 +871,9 @@ class SSHBackend(OrchestratorBackend):
 
     async def sync_models(
         self,
-        model_paths: List[str],
-        target_workers: Optional[List[str]] = None,
-    ) -> Dict[str, bool]:
+        model_paths: list[str],
+        target_workers: list[str] | None = None,
+    ) -> dict[str, bool]:
         """Sync models to workers via rsync over SSH."""
         workers = await self.get_available_workers()
         if target_workers:
@@ -905,9 +903,9 @@ class SSHBackend(OrchestratorBackend):
 
     async def sync_data(
         self,
-        source_workers: Optional[List[str]] = None,
-        target_path: Optional[str] = None,
-    ) -> Dict[str, int]:
+        source_workers: list[str] | None = None,
+        target_path: str | None = None,
+    ) -> dict[str, int]:
         """Sync data from workers via rsync."""
         if target_path is None:
             target_path = str(Path(__file__).parent.parent.parent / "data" / "games")
@@ -953,7 +951,7 @@ class SSHBackend(OrchestratorBackend):
 class SlurmBackend(OrchestratorBackend):
     """Execute jobs via Slurm on a stable HPC cluster."""
 
-    def __init__(self, config, working_dir: Optional[str] = None):
+    def __init__(self, config, working_dir: str | None = None):
         self.config = config
         self.executor = LocalExecutor(working_dir)
         self.repo_root = self._resolve_repo_root()
@@ -982,10 +980,10 @@ class SlurmBackend(OrchestratorBackend):
         self,
         job_name: str,
         work_type: str,
-        overrides: Optional[Dict[str, Any]] = None,
-    ) -> List[str]:
+        overrides: dict[str, Any] | None = None,
+    ) -> list[str]:
         overrides = overrides or {}
-        args: List[str] = []
+        args: list[str] = []
 
         args.extend(["--job-name", job_name])
         args.extend(["--output", str(self.log_dir / f"{job_name}.%j.out")])
@@ -1061,8 +1059,8 @@ class SlurmBackend(OrchestratorBackend):
         job_name: str,
         work_type: str,
         command: str,
-        overrides: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[Optional[str], Optional[str], Optional[Path]]:
+        overrides: dict[str, Any] | None = None,
+    ) -> tuple[str | None, str | None, Path | None]:
         from uuid import uuid4
 
         safe_name = self._normalize_job_name(job_name)
@@ -1083,7 +1081,7 @@ class SlurmBackend(OrchestratorBackend):
 
         return job_id, None, script_path
 
-    async def _get_job_status(self, job_id: str) -> Tuple[Optional[str], Optional[str]]:
+    async def _get_job_status(self, job_id: str) -> tuple[str | None, str | None]:
         squeue_cmd = f"squeue -j {shlex.quote(job_id)} -h -o %T"
         result = await self.executor.run(squeue_cmd, timeout=10)
         if result.success:
@@ -1112,7 +1110,7 @@ class SlurmBackend(OrchestratorBackend):
         self,
         job_id: str,
         timeout: float,
-    ) -> Tuple[str, Optional[str]]:
+    ) -> tuple[str, str | None]:
         import time
 
         start = time.time()
@@ -1132,7 +1130,7 @@ class SlurmBackend(OrchestratorBackend):
 
         return "TIMEOUT", None
 
-    async def get_available_workers(self) -> List[WorkerStatus]:
+    async def get_available_workers(self) -> list[WorkerStatus]:
         """Surface Slurm availability as a single logical worker."""
         result = await self.executor.run("sinfo -h -o %P", timeout=10)
         if not result.success:
@@ -1151,9 +1149,9 @@ class SlurmBackend(OrchestratorBackend):
         games: int,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         **kwargs,
-    ) -> List[JobResult]:
+    ) -> list[JobResult]:
         import time
 
         if model_path:
@@ -1212,14 +1210,14 @@ class SlurmBackend(OrchestratorBackend):
 
     async def run_tournament(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: str = "square8",
         num_players: int = 2,
         games_per_pairing: int = 20,
         **kwargs,
     ) -> JobResult:
-        import time
         import json
+        import time
 
         job_name = f"ringrift-tournament-{board_type}-{num_players}p"
         agents_json = json.dumps(agent_ids)
@@ -1352,17 +1350,17 @@ class SlurmBackend(OrchestratorBackend):
 
     async def sync_models(
         self,
-        model_paths: List[str],
-        target_workers: Optional[List[str]] = None,
-    ) -> Dict[str, bool]:
+        model_paths: list[str],
+        target_workers: list[str] | None = None,
+    ) -> dict[str, bool]:
         """No-op when shared filesystem is available."""
         return {"slurm": True}
 
     async def sync_data(
         self,
-        source_workers: Optional[List[str]] = None,
-        target_path: Optional[str] = None,
-    ) -> Dict[str, int]:
+        source_workers: list[str] | None = None,
+        target_path: str | None = None,
+    ) -> dict[str, int]:
         """No-op when shared filesystem is available."""
         return {"slurm": 0}
 
@@ -1381,7 +1379,7 @@ class P2PBackend(OrchestratorBackend):
 
     def __init__(
         self,
-        leader_url: Optional[str] = None,
+        leader_url: str | None = None,
         poll_interval: float = 5.0,
         timeout: float = 3600.0,
     ):
@@ -1421,7 +1419,7 @@ class P2PBackend(OrchestratorBackend):
         # Try common localhost port
         return "http://localhost:8770"
 
-    async def get_available_workers(self) -> List[WorkerStatus]:
+    async def get_available_workers(self) -> list[WorkerStatus]:
         """Get available workers from P2P cluster."""
         try:
             session = await self._get_session()
@@ -1446,9 +1444,9 @@ class P2PBackend(OrchestratorBackend):
         self,
         work_type: str,
         priority: int,
-        config: Dict[str, Any],
-        timeout_seconds: Optional[float] = None,
-    ) -> Optional[str]:
+        config: dict[str, Any],
+        timeout_seconds: float | None = None,
+    ) -> str | None:
         """Add a work item to the queue."""
         try:
             session = await self._get_session()
@@ -1475,7 +1473,7 @@ class P2PBackend(OrchestratorBackend):
         self,
         work_id: str,
         timeout: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Wait for a work item to complete."""
         import time
         start = time.time()
@@ -1525,9 +1523,9 @@ class P2PBackend(OrchestratorBackend):
         games: int,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         **kwargs,
-    ) -> List[JobResult]:
+    ) -> list[JobResult]:
         """Run selfplay via work queue."""
         import time
         from uuid import uuid4
@@ -1571,7 +1569,7 @@ class P2PBackend(OrchestratorBackend):
 
     async def run_tournament(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: str = "square8",
         num_players: int = 2,
         games_per_pairing: int = 20,
@@ -1672,17 +1670,17 @@ class P2PBackend(OrchestratorBackend):
 
     async def sync_models(
         self,
-        model_paths: List[str],
-        target_workers: Optional[List[str]] = None,
-    ) -> Dict[str, bool]:
+        model_paths: list[str],
+        target_workers: list[str] | None = None,
+    ) -> dict[str, bool]:
         """Sync models is handled by P2P orchestrator - not needed."""
         return {}
 
     async def sync_data(
         self,
-        source_workers: Optional[List[str]] = None,
-        target_path: Optional[str] = None,
-    ) -> Dict[str, int]:
+        source_workers: list[str] | None = None,
+        target_path: str | None = None,
+    ) -> dict[str, int]:
         """Sync data is handled by P2P orchestrator - not needed."""
         return {}
 
@@ -1697,11 +1695,11 @@ class P2PBackend(OrchestratorBackend):
 # Backend Factory
 # ============================================================================
 
-_backend_instance: Optional[OrchestratorBackend] = None
+_backend_instance: OrchestratorBackend | None = None
 
 
 def get_backend(
-    backend_type: Optional[BackendType] = None,
+    backend_type: BackendType | None = None,
     force_new: bool = False,
 ) -> OrchestratorBackend:
     """Get the configured orchestrator backend.

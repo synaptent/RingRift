@@ -18,22 +18,21 @@ search.
 
 from __future__ import annotations
 
-from typing import Optional, List, Tuple, TYPE_CHECKING
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 
-from .bounded_transposition_table import BoundedTranspositionTable
-from .heuristic_ai import HeuristicAI
-from .game_state_utils import infer_num_players
-from .zobrist import ZobristHash
-from ..models import GameState, Move, MoveType, AIConfig, GamePhase, BoardType
+from ..models import AIConfig, BoardType, GamePhase, GameState, Move, MoveType
 from ..rules.mutable_state import MutableGameState
+from .bounded_transposition_table import BoundedTranspositionTable
+from .game_state_utils import infer_num_players
+from .heuristic_ai import HeuristicAI
+from .zobrist import ZobristHash
 
 # Lazy imports for neural network components to avoid loading torch when not needed
 # These are only imported when use_neural_net=True (D4+ difficulty)
 if TYPE_CHECKING:
-    import torch
     from .nnue import NNUEEvaluator
     from .nnue_policy import RingRiftNNUEWithPolicy
 
@@ -118,7 +117,7 @@ class MinimaxAI(HeuristicAI):
             not disable_nn_env
         )
 
-        self.nnue_evaluator: Optional[NNUEEvaluator] = None
+        self.nnue_evaluator: NNUEEvaluator | None = None
         self.use_nnue: bool = False
 
         if should_use_nnue:
@@ -143,7 +142,7 @@ class MinimaxAI(HeuristicAI):
         # Policy model for move ordering (optional, D4+ when enabled)
         # The policy head predicts which moves are likely good, enabling
         # better move ordering for more effective alpha-beta pruning.
-        self.policy_model: Optional["RingRiftNNUEWithPolicy"] = None
+        self.policy_model: RingRiftNNUEWithPolicy | None = None
         self.use_policy_ordering: bool = False
         self._pending_policy_init: bool = False
 
@@ -170,6 +169,7 @@ class MinimaxAI(HeuristicAI):
 
         try:
             import torch
+
             from .nnue_policy import RingRiftNNUEWithPolicy
 
             # Try to load policy model checkpoint
@@ -299,7 +299,7 @@ class MinimaxAI(HeuristicAI):
         # Divided by 2 to keep values in similar range
         return (my_eval - max_opponent_eval) / 2.0
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using minimax search.
 
         This method runs iterative‑deepening minimax up to a difficulty‑
@@ -390,7 +390,7 @@ class MinimaxAI(HeuristicAI):
         return selected
 
     def _select_move_legacy(
-        self, game_state: GameState, valid_moves: List[Move]
+        self, game_state: GameState, valid_moves: list[Move]
     ) -> Move:
         """Legacy search using immutable state cloning via apply_move().
 
@@ -458,7 +458,7 @@ class MinimaxAI(HeuristicAI):
         return best_move
 
     def _select_move_incremental(
-        self, game_state: GameState, valid_moves: List[Move]
+        self, game_state: GameState, valid_moves: list[Move]
     ) -> Move:
         """Incremental search using make/unmake on MutableGameState.
 
@@ -539,8 +539,8 @@ class MinimaxAI(HeuristicAI):
             return 2
 
     def _score_and_sort_moves(
-        self, game_state: GameState, valid_moves: List[Move]
-    ) -> List[tuple]:
+        self, game_state: GameState, valid_moves: list[Move]
+    ) -> list[tuple]:
         """Score and sort moves for better alpha-beta pruning.
 
         Uses 1-ply lookahead and move-type priority bonuses.
@@ -588,24 +588,22 @@ class MinimaxAI(HeuristicAI):
         """
         self.nodes_visited += 1
         # Check timeout every 100 nodes for faster response to time limits
-        if self.nodes_visited % 100 == 0:
-            if time.time() - self.start_time > self.time_limit:
-                # Return heuristic to unwind safely, but result will be
-                # discarded by outer loop check
-                return self.evaluate_position(game_state)
+        if self.nodes_visited % 100 == 0 and time.time() - self.start_time > self.time_limit:
+            # Return heuristic to unwind safely, but result will be
+            # discarded by outer loop check
+            return self.evaluate_position(game_state)
 
         state_hash = self._get_state_hash(game_state)
         entry = self.transposition_table.get(state_hash)
-        if entry is not None:
-            if entry['depth'] >= depth:
-                if entry['flag'] == 'exact':
-                    return entry['score']
-                elif entry['flag'] == 'lowerbound':
-                    alpha = max(alpha, entry['score'])
-                elif entry['flag'] == 'upperbound':
-                    beta = min(beta, entry['score'])
-                if alpha >= beta:
-                    return entry['score']
+        if entry is not None and entry['depth'] >= depth:
+            if entry['flag'] == 'exact':
+                return entry['score']
+            elif entry['flag'] == 'lowerbound':
+                alpha = max(alpha, entry['score'])
+            elif entry['flag'] == 'upperbound':
+                beta = min(beta, entry['score'])
+            if alpha >= beta:
+                return entry['score']
 
         if depth == 0:
             # Use Quiescence Search at leaf nodes
@@ -820,22 +818,20 @@ class MinimaxAI(HeuristicAI):
         """
         self.nodes_visited += 1
         # Check timeout every 100 nodes for faster response to time limits
-        if self.nodes_visited % 100 == 0:
-            if time.time() - self.start_time > self.time_limit:
-                return self._evaluate_mutable(state)
+        if self.nodes_visited % 100 == 0 and time.time() - self.start_time > self.time_limit:
+            return self._evaluate_mutable(state)
 
         state_hash = state.zobrist_hash
         entry = self.transposition_table.get(state_hash)
-        if entry is not None:
-            if entry['depth'] >= depth:
-                if entry['flag'] == 'exact':
-                    return entry['score']
-                elif entry['flag'] == 'lowerbound':
-                    alpha = max(alpha, entry['score'])
-                elif entry['flag'] == 'upperbound':
-                    beta = min(beta, entry['score'])
-                if alpha >= beta:
-                    return entry['score']
+        if entry is not None and entry['depth'] >= depth:
+            if entry['flag'] == 'exact':
+                return entry['score']
+            elif entry['flag'] == 'lowerbound':
+                alpha = max(alpha, entry['score'])
+            elif entry['flag'] == 'upperbound':
+                beta = min(beta, entry['score'])
+            if alpha >= beta:
+                return entry['score']
 
         if depth == 0:
             score = self._quiescence_search_mutable(
@@ -1101,10 +1097,10 @@ class MinimaxAI(HeuristicAI):
 
     def _order_moves_with_killers(
         self,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
         depth: int,
-        state: Optional[MutableGameState] = None,
-    ) -> List[Move]:
+        state: MutableGameState | None = None,
+    ) -> list[Move]:
         """Order moves with killer heuristic and optional policy scoring.
 
         Move ordering priority:
@@ -1168,13 +1164,14 @@ class MinimaxAI(HeuristicAI):
 
     def _order_by_policy(
         self,
-        moves: List[Move],
+        moves: list[Move],
         state: MutableGameState,
-    ) -> List[Move]:
+    ) -> list[Move]:
         """Order moves by policy network scores (best first)."""
         # Lazy imports for neural network components
         import torch
-        from .nnue import get_board_size, extract_features_from_gamestate
+
+        from .nnue import extract_features_from_gamestate, get_board_size
         from .nnue_policy import pos_to_flat_index
 
         if not moves or self.policy_model is None:
@@ -1249,7 +1246,7 @@ class MinimaxAI(HeuristicAI):
                 killer_list.pop()
             self.killer_moves.put(depth, killer_list)
 
-    def _score_noisy_moves(self, noisy_moves: List[Move]) -> List[tuple]:
+    def _score_noisy_moves(self, noisy_moves: list[Move]) -> list[tuple]:
         """Score noisy moves by move type priority."""
         scored_moves = []
         for move in noisy_moves:

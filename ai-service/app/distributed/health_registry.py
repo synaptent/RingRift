@@ -29,10 +29,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -55,30 +56,30 @@ class HealthStatus:
     """Health status for a component."""
     level: HealthLevel
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
-    timestamp: Optional[datetime] = None
+    details: dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime | None = None
 
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
 
     @classmethod
-    def ok(cls, message: str = "Healthy", **details) -> "HealthStatus":
+    def ok(cls, message: str = "Healthy", **details) -> HealthStatus:
         """Create an OK status."""
         return cls(level=HealthLevel.OK, message=message, details=details)
 
     @classmethod
-    def warning(cls, message: str, **details) -> "HealthStatus":
+    def warning(cls, message: str, **details) -> HealthStatus:
         """Create a WARNING status."""
         return cls(level=HealthLevel.WARNING, message=message, details=details)
 
     @classmethod
-    def error(cls, message: str, **details) -> "HealthStatus":
+    def error(cls, message: str, **details) -> HealthStatus:
         """Create an ERROR status."""
         return cls(level=HealthLevel.ERROR, message=message, details=details)
 
     @classmethod
-    def unknown(cls, message: str = "Status unknown", **details) -> "HealthStatus":
+    def unknown(cls, message: str = "Status unknown", **details) -> HealthStatus:
         """Create an UNKNOWN status."""
         return cls(level=HealthLevel.UNKNOWN, message=message, details=details)
 
@@ -87,7 +88,7 @@ class HealthStatus:
         """Check if status is healthy (OK or WARNING)."""
         return self.level in (HealthLevel.OK, HealthLevel.WARNING)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "level": self.level.value,
@@ -103,11 +104,11 @@ class ComponentHealth:
     name: str
     status: HealthStatus
     check_duration_ms: float = 0.0
-    last_check: Optional[datetime] = None
+    last_check: datetime | None = None
     check_count: int = 0
     error_count: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -124,12 +125,12 @@ class HealthSummary:
     """Overall health summary."""
     healthy: bool
     timestamp: datetime
-    components: List[ComponentHealth]
-    issues: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    components: list[ComponentHealth]
+    issues: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     check_duration_ms: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "healthy": self.healthy,
@@ -157,10 +158,10 @@ class HealthRegistry:
     can be called to get the overall health status of the system.
     """
 
-    _instance: Optional["HealthRegistry"] = None
+    _instance: HealthRegistry | None = None
     _lock = threading.RLock()
 
-    def __new__(cls) -> "HealthRegistry":
+    def __new__(cls) -> HealthRegistry:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -173,8 +174,8 @@ class HealthRegistry:
             return
 
         self._initialized = True
-        self._checks: Dict[str, HealthCheckFunc] = {}
-        self._check_history: Dict[str, List[ComponentHealth]] = {}
+        self._checks: dict[str, HealthCheckFunc] = {}
+        self._check_history: dict[str, list[ComponentHealth]] = {}
         self._registry_lock = threading.RLock()
 
         # Register built-in checks
@@ -224,7 +225,7 @@ class HealthRegistry:
                 return True
             return False
 
-    def list_checks(self) -> List[str]:
+    def list_checks(self) -> list[str]:
         """List all registered check names."""
         with self._registry_lock:
             return list(self._checks.keys())
@@ -281,9 +282,9 @@ class HealthRegistry:
             HealthSummary with all results
         """
         start = time.monotonic()
-        components: List[ComponentHealth] = []
-        issues: List[str] = []
-        warnings: List[str] = []
+        components: list[ComponentHealth] = []
+        issues: list[str] = []
+        warnings: list[str] = []
 
         with self._registry_lock:
             check_names = list(self._checks.keys())
@@ -308,7 +309,7 @@ class HealthRegistry:
             check_duration_ms=duration_ms,
         )
 
-    def get_check_history(self, name: str, limit: int = 10) -> List[ComponentHealth]:
+    def get_check_history(self, name: str, limit: int = 10) -> list[ComponentHealth]:
         """Get recent history for a check.
 
         Args:
@@ -352,9 +353,8 @@ class HealthRegistry:
             if disk.percent > 70:  # 70% limit enforced 2025-12-15
                 issues.append(f"High disk usage: {disk.percent}%")
 
-            if issues:
-                if any("High" in i for i in issues):
-                    return HealthStatus.warning("; ".join(issues), **details)
+            if issues and any("High" in i for i in issues):
+                return HealthStatus.warning("; ".join(issues), **details)
 
             return HealthStatus.ok("Resources OK", **details)
 
@@ -366,8 +366,9 @@ class HealthRegistry:
     def _check_database(self) -> HealthStatus:
         """Check database connectivity."""
         try:
-            from app.distributed.db_utils import get_db_path
             import sqlite3
+
+            from app.distributed.db_utils import get_db_path
 
             # Check Elo database
             elo_path = get_db_path("elo", create_dirs=False)
@@ -387,7 +388,7 @@ class HealthRegistry:
 # Module-level functions
 # =============================================================================
 
-_registry: Optional[HealthRegistry] = None
+_registry: HealthRegistry | None = None
 
 
 def get_registry() -> HealthRegistry:
@@ -422,7 +423,7 @@ def get_component_health(name: str) -> ComponentHealth:
     return get_registry().run_check(name)
 
 
-def list_health_checks() -> List[str]:
+def list_health_checks() -> list[str]:
     """List all registered health checks."""
     return get_registry().list_checks()
 
@@ -432,7 +433,7 @@ def list_health_checks() -> List[str]:
 # =============================================================================
 
 
-def health_endpoint_handler() -> Dict[str, Any]:
+def health_endpoint_handler() -> dict[str, Any]:
     """Handler for HTTP health endpoints.
 
     Returns a dict suitable for JSON serialization.

@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Union
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class DistillationConfig:
     use_attention_transfer: bool = False  # Transfer attention maps
     attention_beta: float = 0.1  # Weight of attention loss
     use_hint_loss: bool = False  # Use intermediate layer hints
-    hint_layers: List[str] = None  # Layer names for hint loss
+    hint_layers: list[str] = None  # Layer names for hint loss
     hint_beta: float = 0.5  # Weight of hint loss
 
 
@@ -100,8 +100,8 @@ class DistillationTrainer:
         teacher_model: nn.Module,
         student_model: nn.Module,
         config: DistillationConfig,
-        optimizer: Optional["torch.optim.Optimizer"] = None,
-        device: Optional[torch.device] = None,
+        optimizer: torch.optim.Optimizer | None = None,
+        device: torch.device | None = None,
     ):
         """Initialize distillation trainer.
 
@@ -144,9 +144,9 @@ class DistillationTrainer:
     def train_step(
         self,
         inputs: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        value_targets: Optional[torch.Tensor] = None,
-    ) -> Dict[str, float]:
+        targets: torch.Tensor | None = None,
+        value_targets: torch.Tensor | None = None,
+    ) -> dict[str, float]:
         """Perform a single distillation training step.
 
         Args:
@@ -225,7 +225,7 @@ class DistillationTrainer:
 
         return losses
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get training statistics."""
         return {
             "steps": self.step_count,
@@ -238,9 +238,9 @@ class EnsembleTeacher:
 
     def __init__(
         self,
-        models: List[nn.Module],
-        weights: Optional[List[float]] = None,
-        device: Optional[torch.device] = None,
+        models: list[nn.Module],
+        weights: list[float] | None = None,
+        device: torch.device | None = None,
     ):
         """Initialize ensemble teacher.
 
@@ -268,7 +268,7 @@ class EnsembleTeacher:
             for param in model.parameters():
                 param.requires_grad = False
 
-    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Get weighted ensemble predictions."""
         inputs = inputs.to(self.device)
 
@@ -276,7 +276,7 @@ class EnsembleTeacher:
         policies = []
 
         with torch.no_grad():
-            for model, weight in zip(self.models, self.weights):
+            for model, weight in zip(self.models, self.weights, strict=False):
                 output = model(inputs)
                 if isinstance(output, tuple):
                     v, p = output[:2]
@@ -300,7 +300,7 @@ class EnsembleTeacher:
 
 
 def create_distillation_trainer(
-    teacher: Union[nn.Module, List[nn.Module]],
+    teacher: Union[nn.Module, list[nn.Module]],
     student: nn.Module,
     temperature: float = 3.0,
     alpha: float = 0.7,
@@ -341,9 +341,9 @@ def create_distillation_trainer(
 
 
 def distill_checkpoint_ensemble(
-    checkpoint_paths: List[Path],
+    checkpoint_paths: list[Path],
     student_model: nn.Module,
-    dataloader: "torch.utils.data.DataLoader",
+    dataloader: torch.utils.data.DataLoader,
     epochs: int = 10,
     temperature: float = 3.0,
     learning_rate: float = 1e-4,

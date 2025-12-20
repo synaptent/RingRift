@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class RegistryHealth:
     item_count: int = 0
     last_access: float = 0.0
     errors_count: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -64,7 +65,7 @@ class ClusterHealth:
     """Aggregate health status across all registries."""
 
     healthy: bool
-    registries: List[RegistryHealth] = field(default_factory=list)
+    registries: list[RegistryHealth] = field(default_factory=list)
     total_items: int = 0
     unhealthy_count: int = 0
     timestamp: float = field(default_factory=time.time)
@@ -102,7 +103,7 @@ class UnifiedRegistry:
         self._training_registry = None
 
         # Track initialization attempts
-        self._init_errors: Dict[str, str] = {}
+        self._init_errors: dict[str, str] = {}
 
     # =========================================================================
     # Model Registry Operations
@@ -121,11 +122,11 @@ class UnifiedRegistry:
 
     def get_models(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        stage: Optional[str] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        stage: str | None = None,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get models matching criteria.
 
         Args:
@@ -158,7 +159,7 @@ class UnifiedRegistry:
         board_type: str,
         num_players: int,
         stage: str = "production",
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get the best model for a configuration.
 
         Args:
@@ -189,10 +190,10 @@ class UnifiedRegistry:
         self,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
-        metrics: Optional[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
+        model_path: str | None = None,
+        metrics: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
         """Register a new model.
 
         Args:
@@ -236,7 +237,7 @@ class UnifiedRegistry:
                 logger.debug(f"[UnifiedRegistry] OrchestratorRegistry not available: {e}")
         return self._orchestrator_registry
 
-    def get_active_orchestrators(self) -> List[Dict[str, Any]]:
+    def get_active_orchestrators(self) -> list[dict[str, Any]]:
         """Get all active orchestrators.
 
         Returns:
@@ -252,7 +253,7 @@ class UnifiedRegistry:
             logger.warning(f"[UnifiedRegistry] Failed to get orchestrators: {e}")
             return []
 
-    def get_healthy_orchestrators(self) -> List[Dict[str, Any]]:
+    def get_healthy_orchestrators(self) -> list[dict[str, Any]]:
         """Get orchestrators that are healthy and responsive.
 
         Returns:
@@ -276,7 +277,7 @@ class UnifiedRegistry:
         node_id: str,
         node_name: str,
         orchestrator_type: str = "coordinator",
-        capabilities: Optional[Dict[str, Any]] = None,
+        capabilities: dict[str, Any] | None = None,
     ) -> bool:
         """Register an orchestrator.
 
@@ -320,7 +321,7 @@ class UnifiedRegistry:
                 logger.debug(f"[UnifiedRegistry] HealthRegistry not available: {e}")
         return self._health_registry
 
-    def get_node_health(self, node_id: str) -> Optional[Dict[str, Any]]:
+    def get_node_health(self, node_id: str) -> dict[str, Any] | None:
         """Get health status for a specific node.
 
         Args:
@@ -339,7 +340,7 @@ class UnifiedRegistry:
             logger.warning(f"[UnifiedRegistry] Failed to get node health: {e}")
             return None
 
-    def get_all_node_health(self) -> List[Dict[str, Any]]:
+    def get_all_node_health(self) -> list[dict[str, Any]]:
         """Get health status for all nodes.
 
         Returns:
@@ -359,7 +360,7 @@ class UnifiedRegistry:
         self,
         node_id: str,
         status: str = "healthy",
-        metrics: Optional[Dict[str, Any]] = None,
+        metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Update health status for a node.
 
@@ -397,7 +398,7 @@ class UnifiedRegistry:
                 logger.debug(f"[UnifiedRegistry] DynamicRegistry not available: {e}")
         return self._dynamic_registry
 
-    def get_available_hosts(self) -> List[Dict[str, Any]]:
+    def get_available_hosts(self) -> list[dict[str, Any]]:
         """Get all available hosts in the cluster.
 
         Returns:
@@ -417,7 +418,7 @@ class UnifiedRegistry:
         self,
         host: str,
         port: int,
-        capabilities: Optional[Dict[str, Any]] = None,
+        capabilities: dict[str, Any] | None = None,
     ) -> bool:
         """Register a host.
 
@@ -586,7 +587,7 @@ class UnifiedRegistry:
         health = self.get_cluster_health()
         return health.healthy
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get unified status across all registries.
 
         Returns:
@@ -638,7 +639,7 @@ class UnifiedRegistry:
 # Singleton Management
 # =============================================================================
 
-_unified_registry: Optional[UnifiedRegistry] = None
+_unified_registry: UnifiedRegistry | None = None
 
 
 def get_unified_registry() -> UnifiedRegistry:
@@ -660,10 +661,10 @@ def reset_unified_registry() -> None:
 
 
 __all__ = [
+    "ClusterHealth",
+    "RegistryHealth",
     # Main class
     "UnifiedRegistry",
-    "RegistryHealth",
-    "ClusterHealth",
     # Singleton access
     "get_unified_registry",
     "reset_unified_registry",

@@ -29,10 +29,11 @@ import shutil
 import sqlite3
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable
+from typing import Any
 
 from app.utils.checksum_utils import compute_string_checksum
 
@@ -54,6 +55,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Use canonical circuit breaker from distributed module
+import contextlib
+
 from app.distributed.circuit_breaker import (
     CircuitBreaker as CanonicalCircuitBreaker,
 )
@@ -70,9 +73,9 @@ class SyncState:
     last_sync_hash: str = ""
     local_match_count: int = 0
     synced_from: str = ""
-    sync_errors: List[str] = field(default_factory=list)
+    sync_errors: list[str] = field(default_factory=list)
     # Enhanced tracking
-    pending_matches: List[Dict] = field(default_factory=list)  # WAL for offline sync
+    pending_matches: list[dict] = field(default_factory=list)  # WAL for offline sync
     merge_conflicts: int = 0
     total_syncs: int = 0
     successful_syncs: int = 0
@@ -82,20 +85,20 @@ class SyncState:
 class NodeInfo:
     """Information about a cluster node for syncing."""
     name: str
-    tailscale_ip: Optional[str] = None
-    ssh_host: Optional[str] = None
+    tailscale_ip: str | None = None
+    ssh_host: str | None = None
     ssh_port: int = 22
-    http_url: Optional[str] = None
-    cloudflare_tunnel: Optional[str] = None  # Cloudflare Zero Trust tunnel URL
-    aria2_url: Optional[str] = None  # aria2 RPC endpoint
+    http_url: str | None = None
+    cloudflare_tunnel: str | None = None  # Cloudflare Zero Trust tunnel URL
+    aria2_url: str | None = None  # aria2 RPC endpoint
     is_coordinator: bool = False
     last_seen: float = 0
     match_count: int = 0
     db_hash: str = ""
     # Vast.ai specific
-    vast_instance_id: Optional[str] = None
-    vast_ssh_host: Optional[str] = None  # e.g., ssh7.vast.ai
-    vast_ssh_port: Optional[int] = None  # e.g., 14398
+    vast_instance_id: str | None = None
+    vast_ssh_host: str | None = None  # e.g., ssh7.vast.ai
+    vast_ssh_port: int | None = None  # e.g., 14398
 
 
 class EloSyncManager:
@@ -141,7 +144,7 @@ class EloSyncManager:
         db_path: Path = DEFAULT_DB_PATH,
         coordinator_host: str = "lambda-h100",
         sync_interval: int = 300,
-        p2p_url: Optional[str] = None,
+        p2p_url: str | None = None,
         enable_merge: bool = True,  # Use merge instead of replace
     ):
         self.db_path = Path(db_path)
@@ -151,7 +154,7 @@ class EloSyncManager:
         self.enable_merge = enable_merge
 
         self.state = SyncState()
-        self.nodes: Dict[str, NodeInfo] = {}
+        self.nodes: dict[str, NodeInfo] = {}
         # Use single canonical circuit breaker for all nodes (tracks targets internally)
         self._circuit_breaker = CanonicalCircuitBreaker(
             failure_threshold=3,
@@ -162,7 +165,7 @@ class EloSyncManager:
         )
         self._sync_lock = asyncio.Lock()
         self._running = False
-        self._sync_task: Optional[asyncio.Task] = None
+        self._sync_task: asyncio.Task | None = None
 
         # Transport methods in priority order (most reliable first)
         self.transport_methods = [
@@ -175,8 +178,8 @@ class EloSyncManager:
         ]
 
         # Event callbacks for integration
-        self._on_sync_complete: List[Callable] = []
-        self._on_sync_failed: List[Callable] = []
+        self._on_sync_complete: list[Callable] = []
+        self._on_sync_failed: list[Callable] = []
 
     async def initialize(self):
         """Initialize the sync manager."""
@@ -237,32 +240,31 @@ class EloSyncManager:
         if not HAS_AIOHTTP:
             return
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.p2p_url}/status",
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        peers = data.get('peers', {})
-                        # peers is a dict {node_id: info}, iterate over values
-                        peer_list = peers.values() if isinstance(peers, dict) else peers
-                        for peer in peer_list:
-                            if isinstance(peer, str):
-                                # Handle case where peer is just a node ID string
-                                name = peer
-                                peer = {}
-                            else:
-                                name = peer.get('name', peer.get('node_id', 'unknown'))
-                            self.nodes[name] = NodeInfo(
-                                name=name,
-                                tailscale_ip=peer.get('tailscale_ip'),
-                                ssh_host=peer.get('ssh_host'),
-                                http_url=peer.get('http_url'),
-                                is_coordinator=(name == self.coordinator_host),
-                                last_seen=time.time()
-                            )
-                        logger.info(f"Discovered {len(self.nodes)} nodes from P2P coordinator")
+            async with aiohttp.ClientSession() as session, session.get(
+                f"{self.p2p_url}/status",
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    peers = data.get('peers', {})
+                    # peers is a dict {node_id: info}, iterate over values
+                    peer_list = peers.values() if isinstance(peers, dict) else peers
+                    for peer in peer_list:
+                        if isinstance(peer, str):
+                            # Handle case where peer is just a node ID string
+                            name = peer
+                            peer = {}
+                        else:
+                            name = peer.get('name', peer.get('node_id', 'unknown'))
+                        self.nodes[name] = NodeInfo(
+                            name=name,
+                            tailscale_ip=peer.get('tailscale_ip'),
+                            ssh_host=peer.get('ssh_host'),
+                            http_url=peer.get('http_url'),
+                            is_coordinator=(name == self.coordinator_host),
+                            last_seen=time.time()
+                        )
+                    logger.info(f"Discovered {len(self.nodes)} nodes from P2P coordinator")
         except Exception as e:
             logger.warning(f"Failed to discover nodes from P2P: {e}")
             # Add default coordinator
@@ -286,10 +288,8 @@ class EloSyncManager:
         self._running = False
         if self._sync_task:
             self._sync_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._sync_task
-            except asyncio.CancelledError:
-                pass
         logger.info("Stopped background Elo sync")
 
     async def _sync_loop(self):
@@ -322,7 +322,7 @@ class EloSyncManager:
             except Exception as e:
                 logger.warning(f"Sync complete callback failed: {e}")
 
-    async def _notify_sync_failed(self, errors: List[str]):
+    async def _notify_sync_failed(self, errors: list[str]):
         """Notify listeners of failed sync."""
         for callback in self._on_sync_failed:
             try:
@@ -447,7 +447,7 @@ class EloSyncManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        _, stderr = await asyncio.wait_for(result.communicate(), timeout=180)
+        _, _stderr = await asyncio.wait_for(result.communicate(), timeout=180)
 
         if result.returncode == 0 and temp_path.exists():
             # Verify the downloaded database
@@ -715,7 +715,7 @@ class EloSyncManager:
             # Find new matches
             inserted = 0
             for match in remote_matches:
-                match_dict = dict(zip(columns, match))
+                match_dict = dict(zip(columns, match, strict=False))
                 match_id = match_dict.get('game_id') or \
                     f"{match_dict.get('participant_a')}|{match_dict.get('participant_b')}|{match_dict.get('timestamp')}"
 
@@ -802,7 +802,7 @@ class EloSyncManager:
         })
 
         # Replay all matches
-        for p_a, p_b, winner, board_type, num_players, ts in matches:
+        for p_a, p_b, winner, board_type, num_players, _ts in matches:
             key_a = (board_type, num_players, p_a)
             key_b = (board_type, num_players, p_b)
 
@@ -935,7 +935,7 @@ class EloSyncManager:
         """
         return await self.sync_with_cluster()
 
-    async def push_new_matches(self, matches: List[Dict]) -> int:
+    async def push_new_matches(self, matches: list[dict]) -> int:
         """
         Push new matches to the cluster.
         Call after playing games locally.
@@ -959,7 +959,7 @@ class EloSyncManager:
         self._save_state()
         return inserted
 
-    def _insert_matches_locally(self, matches: List[Dict]) -> int:
+    def _insert_matches_locally(self, matches: list[dict]) -> int:
         """Insert matches into local database."""
         if not self.db_path.exists():
             return 0
@@ -997,7 +997,7 @@ class EloSyncManager:
         conn.close()
         return inserted
 
-    async def _push_matches_to_node(self, node: NodeInfo, matches: List[Dict]):
+    async def _push_matches_to_node(self, node: NodeInfo, matches: list[dict]):
         """Push matches to a specific node."""
         host = node.tailscale_ip or node.ssh_host
         if not host:
@@ -1012,7 +1012,7 @@ class EloSyncManager:
             # Copy and merge on remote
             result = await asyncio.create_subprocess_exec(
                 'ssh', '-o', 'ConnectTimeout=10', host,
-                f"""python3 -c "
+                """python3 -c "
 import json
 import sqlite3
 import time
@@ -1021,7 +1021,7 @@ matches = json.load(open('/dev/stdin'))
 db = sqlite3.connect('/root/ringrift/ai-service/data/unified_elo.db')
 cur = db.cursor()
 cur.execute('SELECT game_id FROM match_history WHERE game_id IS NOT NULL')
-existing = {{r[0] for r in cur.fetchall()}}
+existing = {r[0] for r in cur.fetchall()}
 
 inserted = 0
 for m in matches:
@@ -1038,7 +1038,7 @@ for m in matches:
         existing.add(gid)
 
 db.commit()
-print(f'Inserted {{inserted}} matches')
+print(f'Inserted {inserted} matches')
 "
 """,
                 stdin=asyncio.subprocess.PIPE,
@@ -1056,7 +1056,7 @@ print(f'Inserted {{inserted}} matches')
         finally:
             os.unlink(temp_file)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current sync status."""
         return {
             'local_matches': self.state.local_match_count,
@@ -1070,11 +1070,11 @@ print(f'Inserted {{inserted}} matches')
 
 
 # Singleton instance for easy access
-_sync_manager: Optional[EloSyncManager] = None
+_sync_manager: EloSyncManager | None = None
 
 
 def get_elo_sync_manager(
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
     coordinator_host: str = "lambda-h100"
 ) -> EloSyncManager:
     """Get or create the singleton EloSyncManager instance."""
@@ -1087,7 +1087,7 @@ def get_elo_sync_manager(
     return _sync_manager
 
 
-async def sync_elo_after_games(matches: List[Dict]) -> int:
+async def sync_elo_after_games(matches: list[dict]) -> int:
     """
     Convenience function to sync after playing games.
     Call this after each batch of games.

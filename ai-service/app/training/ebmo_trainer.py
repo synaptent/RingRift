@@ -34,7 +34,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import torch
 import torch.optim as optim
@@ -78,7 +78,7 @@ class EBMOTrainingConfig:
     lr_scheduler: str = "cosine"  # "cosine", "step", "plateau", "none"
     lr_warmup_epochs: int = 5
     lr_decay_factor: float = 0.1
-    lr_decay_epochs: List[int] = field(default_factory=lambda: [60, 80])
+    lr_decay_epochs: list[int] = field(default_factory=lambda: [60, 80])
 
     # Data
     num_negatives: int = 15
@@ -100,11 +100,11 @@ class EBMOTrainingConfig:
     mixed_precision: bool = True
 
     # Network config (optional override)
-    network_config: Optional[EBMOConfig] = None
+    network_config: EBMOConfig | None = None
 
     # Logging
     log_every: int = 50
-    wandb_project: Optional[str] = None
+    wandb_project: str | None = None
     experiment_name: str = "ebmo_training"
 
 
@@ -127,7 +127,7 @@ class TrainingMetrics:
     samples_per_second: float = 0.0
     epoch_time: float = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         return {
             "epoch": self.epoch,
             "train/loss": self.train_loss,
@@ -158,7 +158,7 @@ class EBMOTrainer:
     - Early stopping
     """
 
-    def __init__(self, config: Optional[EBMOTrainingConfig] = None):
+    def __init__(self, config: EBMOTrainingConfig | None = None):
         """Initialize trainer.
 
         Args:
@@ -195,7 +195,7 @@ class EBMOTrainer:
         self.global_step = 0
         self.best_val_loss = float('inf')
         self.patience_counter = 0
-        self.history: List[TrainingMetrics] = []
+        self.history: list[TrainingMetrics] = []
 
     def _select_device(self) -> torch.device:
         """Select training device."""
@@ -207,7 +207,7 @@ class EBMOTrainer:
             return torch.device("cpu")
         return torch.device(self.config.device)
 
-    def _create_scheduler(self) -> Optional[Any]:
+    def _create_scheduler(self) -> Any | None:
         """Create learning rate scheduler."""
         if self.config.lr_scheduler == "cosine":
             return optim.lr_scheduler.CosineAnnealingLR(
@@ -239,12 +239,12 @@ class EBMOTrainer:
     def train(
         self,
         train_data_dir: str = "data/train",
-        val_data_dir: Optional[str] = None,
+        val_data_dir: str | None = None,
         output_dir: str = "models/ebmo",
-        train_data_paths: Optional[List[str]] = None,
-        val_data_paths: Optional[List[str]] = None,
-        resume_from: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        train_data_paths: list[str] | None = None,
+        val_data_paths: list[str] | None = None,
+        resume_from: str | None = None,
+    ) -> dict[str, Any]:
         """Run training loop.
 
         Args:
@@ -368,8 +368,8 @@ class EBMOTrainer:
 
     def _create_dataloader(
         self,
-        data_dir: Optional[str],
-        data_paths: Optional[List[str]],
+        data_dir: str | None,
+        data_paths: list[str] | None,
         shuffle: bool = True,
     ) -> DataLoader:
         """Create data loader."""
@@ -532,7 +532,7 @@ class EBMOTrainer:
             epoch_time=epoch_time,
         )
 
-    def _validate(self, val_loader: DataLoader) -> Dict[str, float]:
+    def _validate(self, val_loader: DataLoader) -> dict[str, float]:
         """Run validation.
 
         Args:
@@ -572,7 +572,7 @@ class EBMOTrainer:
                     for i in range(num_neg)
                 ], dim=1)
 
-                loss, loss_dict = combined_ebmo_loss(
+                _loss, loss_dict = combined_ebmo_loss(
                     pos_energy,
                     neg_energies,
                     outcomes,
@@ -692,7 +692,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "EBMOTrainer",
     "EBMOTrainingConfig",
     "TrainingMetrics",
-    "EBMOTrainer",
 ]

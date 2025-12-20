@@ -1,7 +1,7 @@
-from app.models import GameState, Move, GamePhase
-from app.rules.interfaces import Validator
 from app.board_manager import BoardManager
+from app.models import GamePhase, GameState, Move
 from app.rules.capture_chain import validate_capture_segment_on_board_py
+from app.rules.interfaces import Validator
 
 
 class CaptureValidator(Validator):

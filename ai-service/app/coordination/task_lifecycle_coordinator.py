@@ -41,9 +41,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,8 @@ class TrackedTask:
     completed_at: float = 0.0
     last_heartbeat: float = field(default_factory=time.time)
     heartbeat_count: int = 0
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
     duration: float = 0.0
 
     @property
@@ -103,9 +104,9 @@ class TaskLifecycleStats:
     orphaned_tasks: int = 0
     total_spawned: int = 0
     average_duration: float = 0.0
-    by_type: Dict[str, int] = field(default_factory=dict)
-    by_node: Dict[str, int] = field(default_factory=dict)
-    by_status: Dict[str, int] = field(default_factory=dict)
+    by_type: dict[str, int] = field(default_factory=dict)
+    by_node: dict[str, int] = field(default_factory=dict)
+    by_status: dict[str, int] = field(default_factory=dict)
     failure_rate: float = 0.0
 
 
@@ -134,13 +135,13 @@ class TaskLifecycleCoordinator:
         self.max_history = max_history
 
         # Active tasks by task_id
-        self._active_tasks: Dict[str, TrackedTask] = {}
+        self._active_tasks: dict[str, TrackedTask] = {}
 
         # Completed task history
-        self._completed_tasks: List[TrackedTask] = []
+        self._completed_tasks: list[TrackedTask] = []
 
         # Orphaned tasks (kept separate for visibility)
-        self._orphaned_tasks: Dict[str, TrackedTask] = {}
+        self._orphaned_tasks: dict[str, TrackedTask] = {}
 
         # Statistics
         self._total_spawned = 0
@@ -150,8 +151,8 @@ class TaskLifecycleCoordinator:
         self._total_duration = 0.0
 
         # Callbacks
-        self._orphan_callbacks: List[Callable[[TrackedTask], None]] = []
-        self._failure_callbacks: List[Callable[[TrackedTask], None]] = []
+        self._orphan_callbacks: list[Callable[[TrackedTask], None]] = []
+        self._failure_callbacks: list[Callable[[TrackedTask], None]] = []
 
         # Subscription state
         self._subscribed = False
@@ -160,9 +161,9 @@ class TaskLifecycleCoordinator:
         self._last_orphan_check = time.time()
 
         # Node tracking (December 2025)
-        self._online_nodes: Set[str] = set()
-        self._offline_nodes: Dict[str, float] = {}  # node_id -> offline_since
-        self._node_recovery_callbacks: List[Callable[[str], None]] = []
+        self._online_nodes: set[str] = set()
+        self._offline_nodes: dict[str, float] = {}  # node_id -> offline_since
+        self._node_recovery_callbacks: list[Callable[[str], None]] = []
 
     def subscribe_to_events(self) -> bool:
         """Subscribe to task lifecycle events.
@@ -445,11 +446,11 @@ class TaskLifecycleCoordinator:
         """Register a callback for node recovery."""
         self._node_recovery_callbacks.append(callback)
 
-    def get_online_nodes(self) -> Set[str]:
+    def get_online_nodes(self) -> set[str]:
         """Get set of known online nodes."""
         return set(self._online_nodes)
 
-    def get_offline_nodes(self) -> Dict[str, float]:
+    def get_offline_nodes(self) -> dict[str, float]:
         """Get offline nodes with their offline timestamp."""
         return dict(self._offline_nodes)
 
@@ -465,7 +466,7 @@ class TaskLifecycleCoordinator:
         if len(self._completed_tasks) > self.max_history:
             self._completed_tasks = self._completed_tasks[-self.max_history :]
 
-    def check_for_orphans(self) -> List[TrackedTask]:
+    def check_for_orphans(self) -> list[TrackedTask]:
         """Check for orphaned tasks and mark them.
 
         Returns:
@@ -517,8 +518,9 @@ class TaskLifecycleCoordinator:
         to orphaned tasks for cleanup and resource reallocation.
         """
         try:
-            from app.coordination.event_emitters import emit_task_orphaned
             import asyncio
+
+            from app.coordination.event_emitters import emit_task_orphaned
 
             try:
                 asyncio.get_running_loop()
@@ -593,39 +595,39 @@ class TaskLifecycleCoordinator:
         """Register a callback for failed tasks."""
         self._failure_callbacks.append(callback)
 
-    def get_active_tasks(self) -> List[TrackedTask]:
+    def get_active_tasks(self) -> list[TrackedTask]:
         """Get all active tasks."""
         return list(self._active_tasks.values())
 
-    def get_task(self, task_id: str) -> Optional[TrackedTask]:
+    def get_task(self, task_id: str) -> TrackedTask | None:
         """Get a specific task by ID."""
         return self._active_tasks.get(task_id) or self._orphaned_tasks.get(task_id)
 
-    def get_tasks_by_node(self, node_id: str) -> List[TrackedTask]:
+    def get_tasks_by_node(self, node_id: str) -> list[TrackedTask]:
         """Get all tasks on a specific node."""
         return [t for t in self._active_tasks.values() if t.node_id == node_id]
 
-    def get_tasks_by_type(self, task_type: str) -> List[TrackedTask]:
+    def get_tasks_by_type(self, task_type: str) -> list[TrackedTask]:
         """Get all tasks of a specific type."""
         return [t for t in self._active_tasks.values() if t.task_type == task_type]
 
-    def get_orphaned_tasks(self) -> List[TrackedTask]:
+    def get_orphaned_tasks(self) -> list[TrackedTask]:
         """Get all orphaned tasks."""
         return list(self._orphaned_tasks.values())
 
-    def get_history(self, limit: int = 50) -> List[TrackedTask]:
+    def get_history(self, limit: int = 50) -> list[TrackedTask]:
         """Get recent task completion history."""
         return self._completed_tasks[-limit:]
 
     def get_stats(self) -> TaskLifecycleStats:
         """Get aggregate task lifecycle statistics."""
         # Count by type
-        by_type: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
         for task in self._active_tasks.values():
             by_type[task.task_type] = by_type.get(task.task_type, 0) + 1
 
         # Count by node
-        by_node: Dict[str, int] = {}
+        by_node: dict[str, int] = {}
         for task in self._active_tasks.values():
             by_node[task.node_id] = by_node.get(task.node_id, 0) + 1
 
@@ -665,7 +667,7 @@ class TaskLifecycleCoordinator:
             failure_rate=failure_rate,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring."""
         stats = self.get_stats()
 
@@ -695,7 +697,7 @@ class TaskLifecycleCoordinator:
 # Singleton and convenience functions
 # =============================================================================
 
-_task_lifecycle_coordinator: Optional[TaskLifecycleCoordinator] = None
+_task_lifecycle_coordinator: TaskLifecycleCoordinator | None = None
 
 
 def get_task_lifecycle_coordinator() -> TaskLifecycleCoordinator:
@@ -737,11 +739,11 @@ def get_active_task_count() -> int:
 
 __all__ = [
     "TaskLifecycleCoordinator",
+    "TaskLifecycleStats",
     "TaskStatus",
     "TrackedTask",
-    "TaskLifecycleStats",
-    "get_task_lifecycle_coordinator",
-    "wire_task_events",
-    "get_task_stats",
     "get_active_task_count",
+    "get_task_lifecycle_coordinator",
+    "get_task_stats",
+    "wire_task_events",
 ]

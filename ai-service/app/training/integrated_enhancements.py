@@ -36,10 +36,9 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -47,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 # Use shared lazy torch import; extend with torch.nn
 from app.training.utils import get_torch
+
 _nn = None
 
 
@@ -106,7 +106,7 @@ class IntegratedEnhancementsConfig:
     eval_auto_checkpoint: bool = True
     eval_checkpoint_dir: str = "data/eval_checkpoints"
     eval_use_real_games: bool = False  # If True, play actual games against baselines
-    eval_board_type: Optional[Any] = None  # Board type for real games (required if eval_use_real_games=True)
+    eval_board_type: Any | None = None  # Board type for real games (required if eval_use_real_games=True)
 
     # =========================================================================
     # ELO Weighting
@@ -156,8 +156,8 @@ class IntegratedTrainingManager:
 
     def __init__(
         self,
-        config: Optional[IntegratedEnhancementsConfig] = None,
-        model: Optional[Any] = None,
+        config: IntegratedEnhancementsConfig | None = None,
+        model: Any | None = None,
         board_type: str = "square8",
     ):
         """Initialize integrated training manager.
@@ -183,12 +183,12 @@ class IntegratedTrainingManager:
         self._reanalysis_engine = None
 
         # Metrics tracking
-        self._metrics: Dict[str, Any] = {}
+        self._metrics: dict[str, Any] = {}
         self._lock = threading.Lock()
 
         logger.info("[IntegratedEnhancements] Manager initialized")
 
-    def initialize_all(self, model: Optional[Any] = None):
+    def initialize_all(self, model: Any | None = None):
         """Initialize all enabled enhancement modules.
 
         Args:
@@ -299,8 +299,8 @@ class IntegratedTrainingManager:
         """Initialize batch size scheduler."""
         try:
             from app.training.batch_scheduling import (
-                BatchSizeScheduler,
                 BatchScheduleConfig,
+                BatchSizeScheduler,
             )
 
             bs_config = BatchScheduleConfig(
@@ -354,7 +354,6 @@ class IntegratedTrainingManager:
         try:
             from app.training.elo_weighting import (
                 EloWeightConfig,
-                compute_elo_weights,
             )
 
             # Store config for use in compute_sample_weights
@@ -435,8 +434,8 @@ class IntegratedTrainingManager:
         """Initialize data augmentation."""
         try:
             from app.training.data_augmentation import (
-                DataAugmentor,
                 AugmentationConfig,
+                DataAugmentor,
             )
 
             aug_config = AugmentationConfig(
@@ -453,8 +452,8 @@ class IntegratedTrainingManager:
         """Initialize reanalysis engine."""
         try:
             from app.training.reanalysis import (
-                ReanalysisEngine,
                 ReanalysisConfig,
+                ReanalysisEngine,
             )
 
             if self.model is None:
@@ -480,7 +479,7 @@ class IntegratedTrainingManager:
             return self._batch_scheduler.get_batch_size(self._step)
         return self.config.batch_initial_size
 
-    def get_curriculum_parameters(self) -> Dict[str, Any]:
+    def get_curriculum_parameters(self) -> dict[str, Any]:
         """Get current curriculum stage parameters."""
         if self._curriculum_controller is not None:
             return self._curriculum_controller.get_stage_parameters()
@@ -512,9 +511,9 @@ class IntegratedTrainingManager:
     def augment_batch(
         self,
         features: np.ndarray,
-        policy_indices: List[np.ndarray],
-        policy_values: List[np.ndarray],
-    ) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
+        policy_indices: list[np.ndarray],
+        policy_values: list[np.ndarray],
+    ) -> tuple[np.ndarray, list[np.ndarray], list[np.ndarray]]:
         """Apply data augmentation to a batch.
 
         Args:
@@ -548,7 +547,7 @@ class IntegratedTrainingManager:
         self,
         features: Any,  # torch.Tensor (B, C, H, W)
         policy_targets: Any,  # torch.Tensor (B, policy_size)
-    ) -> Tuple[Any, Any]:
+    ) -> tuple[Any, Any]:
         """Apply data augmentation to a batch with dense policy targets.
 
         This is the torch tensor version for integration with train.py.
@@ -589,8 +588,8 @@ class IntegratedTrainingManager:
     def compute_auxiliary_loss(
         self,
         features: Any,  # torch.Tensor
-        targets: Dict[str, Any],
-    ) -> Tuple[Any, Dict[str, float]]:
+        targets: dict[str, Any],
+    ) -> tuple[Any, dict[str, float]]:
         """Compute auxiliary task losses.
 
         Args:
@@ -611,7 +610,7 @@ class IntegratedTrainingManager:
     def apply_gradient_surgery(
         self,
         model: Any,  # nn.Module
-        losses: Dict[str, Any],
+        losses: dict[str, Any],
     ) -> Any:
         """Apply gradient surgery for multi-task learning.
 
@@ -628,7 +627,7 @@ class IntegratedTrainingManager:
         # Simple sum without surgery
         return sum(losses.values())
 
-    def update_step(self, game_won: Optional[bool] = None):
+    def update_step(self, game_won: bool | None = None):
         """Update step counter and related components.
 
         Args:
@@ -653,7 +652,7 @@ class IntegratedTrainingManager:
             return self._background_evaluator.should_early_stop()
         return False
 
-    def get_current_elo(self) -> Optional[float]:
+    def get_current_elo(self) -> float | None:
         """Get current Elo estimate from background evaluator.
 
         Returns:
@@ -663,7 +662,7 @@ class IntegratedTrainingManager:
             return self._background_evaluator.get_current_elo()
         return None
 
-    def get_baseline_gating_status(self) -> Tuple[bool, List[str], int]:
+    def get_baseline_gating_status(self) -> tuple[bool, list[str], int]:
         """Get baseline gating status from background evaluator.
 
         Returns:
@@ -703,7 +702,7 @@ class IntegratedTrainingManager:
             self._background_evaluator.stop()
             logger.info("[IntegratedEnhancements] Background evaluator stopped")
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get metrics from all enhancement modules."""
         metrics = {
             "step": self._step,
@@ -743,8 +742,8 @@ class IntegratedTrainingManager:
 # =============================================================================
 
 def create_integrated_manager(
-    config_dict: Optional[Dict[str, Any]] = None,
-    model: Optional[Any] = None,
+    config_dict: dict[str, Any] | None = None,
+    model: Any | None = None,
     board_type: str = "square8",
 ) -> IntegratedTrainingManager:
     """Create an integrated training manager from config dictionary.
@@ -767,7 +766,7 @@ def create_integrated_manager(
     return IntegratedTrainingManager(config, model, board_type)
 
 
-def get_enhancement_defaults() -> Dict[str, Any]:
+def get_enhancement_defaults() -> dict[str, Any]:
     """Get default enhancement configuration as dictionary."""
     config = IntegratedEnhancementsConfig()
     return {

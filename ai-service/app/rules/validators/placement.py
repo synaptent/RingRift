@@ -1,11 +1,11 @@
-from app.models import GameState, Move, MoveType, GamePhase
+from app.models import GamePhase, GameState, Move, MoveType
+from app.rules.core import BOARD_CONFIGS
 from app.rules.interfaces import Validator
 from app.rules.placement import (
     PlacementContextPy,
     evaluate_skip_placement_eligibility_py,
     validate_placement_on_board_py,
 )
-from app.rules.core import BOARD_CONFIGS
 
 
 class PlacementValidator(Validator):

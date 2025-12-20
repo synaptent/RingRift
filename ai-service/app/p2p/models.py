@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class NodeRole(str, Enum):
@@ -81,7 +81,7 @@ class ResourceMetrics:
         """Check if node is overloaded (80% max utilization enforced 2025-12-16)."""
         return self.load_score > 80 or self.memory_percent > 80
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "cpu_percent": self.cpu_percent,
             "memory_percent": self.memory_percent,
@@ -141,7 +141,7 @@ class NodeSummary:
             and self.health != NodeHealth.DEGRADED
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "hostname": self.hostname,
@@ -170,12 +170,12 @@ class JobInfo:
     job_id: str
     job_type: JobType
     status: JobStatus = JobStatus.PENDING
-    node_id: Optional[str] = None
+    node_id: str | None = None
 
     # Configuration
     board_type: str = "square8"
     num_players: int = 2
-    model_path: Optional[str] = None
+    model_path: str | None = None
 
     # Progress
     games_completed: int = 0
@@ -188,7 +188,7 @@ class JobInfo:
     completed_at: float = 0.0
 
     # Error tracking
-    error_message: Optional[str] = None
+    error_message: str | None = None
     retry_count: int = 0
 
     @property
@@ -204,7 +204,7 @@ class JobInfo:
         end_time = self.completed_at if self.completed_at > 0 else datetime.now().timestamp()
         return end_time - self.started_at
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "job_id": self.job_id,
             "job_type": self.job_type.value,
@@ -228,7 +228,7 @@ class JobInfo:
 @dataclass
 class ClusterStatus:
     """Overall cluster status summary."""
-    leader_id: Optional[str] = None
+    leader_id: str | None = None
     total_nodes: int = 0
     online_nodes: int = 0
     healthy_nodes: int = 0
@@ -244,10 +244,10 @@ class ClusterStatus:
     cluster_health: NodeHealth = NodeHealth.HEALTHY
     last_update: float = 0.0
 
-    nodes: List[NodeSummary] = field(default_factory=list)
-    jobs: List[JobInfo] = field(default_factory=list)
+    nodes: list[NodeSummary] = field(default_factory=list)
+    jobs: list[JobInfo] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "leader_id": self.leader_id,
             "total_nodes": self.total_nodes,

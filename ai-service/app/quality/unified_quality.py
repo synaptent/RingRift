@@ -24,25 +24,26 @@ from __future__ import annotations
 import logging
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 __all__ = [
+    "GameQuality",
     # Core classes
     "QualityCategory",
-    "GameQuality",
     "QualityWeights",
     "UnifiedQualityScorer",
-    # Singleton access
-    "get_quality_scorer",
+    "compute_elo_weights_batch",
     # Convenience functions
     "compute_game_quality",
+    "compute_game_quality_from_params",
     "compute_sample_weight",
     "compute_sync_priority",
     "get_quality_category",
-    "compute_game_quality_from_params",
-    "compute_elo_weights_batch",
+    # Singleton access
+    "get_quality_scorer",
 ]
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 # Event emission for quality updates (optional integration)
 try:
     import asyncio
+
     from app.distributed.data_events import emit_quality_score_updated
     HAS_QUALITY_EVENTS = True
 except ImportError:
@@ -69,7 +71,7 @@ class QualityCategory(str, Enum):
     UNUSABLE = "unusable"    # <0.30
 
     @classmethod
-    def from_score(cls, score: float) -> "QualityCategory":
+    def from_score(cls, score: float) -> QualityCategory:
         """Get category from numeric score."""
         if score >= 0.85:
             return cls.EXCELLENT
@@ -127,7 +129,7 @@ class GameQuality:
     training_weight: float = 1.0  # Weight for training sampling
     sync_priority: float = 0.0  # Priority for sync ordering
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "game_id": self.game_id,
@@ -192,7 +194,7 @@ class QualityWeights:
     draw_credit: float = 0.3
 
     @classmethod
-    def from_config(cls, config: Optional[Any] = None) -> "QualityWeights":
+    def from_config(cls, config: Any | None = None) -> QualityWeights:
         """Create weights from QualityConfig."""
         if config is None and HAS_CONFIG:
             try:
@@ -239,12 +241,12 @@ class UnifiedQualityScorer:
     parameters and provides consistent scoring across all use cases.
     """
 
-    _instance: Optional["UnifiedQualityScorer"] = None
+    _instance: UnifiedQualityScorer | None = None
 
     def __init__(
         self,
-        weights: Optional[QualityWeights] = None,
-        elo_lookup: Optional[Callable[[str], float]] = None,
+        weights: QualityWeights | None = None,
+        elo_lookup: Callable[[str], float] | None = None,
     ):
         """Initialize the scorer.
 
@@ -258,8 +260,8 @@ class UnifiedQualityScorer:
     @classmethod
     def get_instance(
         cls,
-        weights: Optional[QualityWeights] = None,
-    ) -> "UnifiedQualityScorer":
+        weights: QualityWeights | None = None,
+    ) -> UnifiedQualityScorer:
         """Get singleton instance of the scorer."""
         if cls._instance is None:
             cls._instance = cls(weights=weights)
@@ -276,8 +278,8 @@ class UnifiedQualityScorer:
 
     def compute_game_quality(
         self,
-        game_data: Dict[str, Any],
-        elo_lookup: Optional[Callable[[str], float]] = None,
+        game_data: dict[str, Any],
+        elo_lookup: Callable[[str], float] | None = None,
     ) -> GameQuality:
         """Compute full quality assessment for a game.
 
@@ -390,7 +392,7 @@ class UnifiedQualityScorer:
         # Emit quality event for coordination (async, non-blocking)
         if HAS_QUALITY_EVENTS and emit_quality_score_updated is not None and game_id:
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.ensure_future(emit_quality_score_updated(
                     game_id=game_id,
                     quality_score=quality.quality_score,
@@ -408,7 +410,7 @@ class UnifiedQualityScorer:
     def compute_sample_weight(
         self,
         quality: GameQuality,
-        recency_hours: Optional[float] = None,
+        recency_hours: float | None = None,
         base_priority: float = 1.0,
     ) -> float:
         """Compute sample weight for training.
@@ -519,7 +521,6 @@ class UnifiedQualityScorer:
         Returns:
             Weight multiplier (typically 0.5 - 2.0)
         """
-        w = self.weights
 
         # Elo difference (positive = opponent is stronger)
         elo_diff = opponent_elo - player_elo
@@ -537,13 +538,13 @@ class UnifiedQualityScorer:
 
     def compute_elo_weights_batch(
         self,
-        opponent_elos: List[float],
+        opponent_elos: list[float],
         model_elo: float,
         elo_scale: float = 400.0,
         min_weight: float = 0.2,
         max_weight: float = 3.0,
         normalize: bool = True,
-    ) -> List[float]:
+    ) -> list[float]:
         """Compute Elo-based sample weights for a batch of samples.
 
         This is the canonical implementation used by EloWeightedSampler.
@@ -597,8 +598,8 @@ def get_quality_scorer() -> UnifiedQualityScorer:
 
 
 def compute_game_quality(
-    game_data: Dict[str, Any],
-    elo_lookup: Optional[Callable[[str], float]] = None,
+    game_data: dict[str, Any],
+    elo_lookup: Callable[[str], float] | None = None,
 ) -> GameQuality:
     """Compute quality for a game (convenience function)."""
     scorer = get_quality_scorer()
@@ -607,7 +608,7 @@ def compute_game_quality(
 
 def compute_sample_weight(
     quality: GameQuality,
-    recency_hours: Optional[float] = None,
+    recency_hours: float | None = None,
     base_priority: float = 1.0,
 ) -> float:
     """Compute sample weight (convenience function)."""
@@ -632,11 +633,11 @@ def get_quality_category(score: float) -> QualityCategory:
 def compute_game_quality_from_params(
     game_id: str,
     game_status: str,
-    winner: Optional[int],
-    termination_reason: Optional[str],
+    winner: int | None,
+    termination_reason: str | None,
     total_moves: int,
     board_type: str = "square8",
-    source: Optional[str] = None,
+    source: str | None = None,
 ) -> GameQuality:
     """Compute game quality from individual parameters.
 
@@ -668,13 +669,13 @@ def compute_game_quality_from_params(
 
 
 def compute_elo_weights_batch(
-    opponent_elos: List[float],
+    opponent_elos: list[float],
     model_elo: float,
     elo_scale: float = 400.0,
     min_weight: float = 0.2,
     max_weight: float = 3.0,
     normalize: bool = True,
-) -> List[float]:
+) -> list[float]:
     """Compute Elo-based sample weights for a batch (convenience function).
 
     This is the canonical Elo weight computation used across the codebase.

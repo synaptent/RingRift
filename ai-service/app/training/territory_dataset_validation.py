@@ -14,13 +14,14 @@ can stream over files and stop after a bounded number of errors.
 """
 
 import json
+from collections.abc import Iterable
 from math import isfinite
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any
 
 from app.models import GameState
 
 
-def validate_territory_example(example: Dict[str, Any]) -> List[str]:
+def validate_territory_example(example: dict[str, Any]) -> list[str]:
     """Validate a single territory/combined-margin example.
 
     The expected top-level shape matches the output of
@@ -42,7 +43,7 @@ def validate_territory_example(example: Dict[str, Any]) -> List[str]:
         }
     """
 
-    errors: List[str] = []
+    errors: list[str] = []
 
     # Required top-level fields
     required_fields = [
@@ -129,7 +130,7 @@ def validate_territory_example(example: Dict[str, Any]) -> List[str]:
 
 def iter_territory_dataset_errors(
     jsonl_lines: Iterable[str], *, max_errors: int = 50
-) -> List[Tuple[int, str]]:
+) -> list[tuple[int, str]]:
     """Validate a stream of JSONL lines and collect up to ``max_errors``.
 
     Returns a list of ``(line_number, message)`` pairs for any errors
@@ -138,7 +139,7 @@ def iter_territory_dataset_errors(
     first error encountered instead.
     """
 
-    collected: List[Tuple[int, str]] = []
+    collected: list[tuple[int, str]] = []
 
     for idx, line in enumerate(jsonl_lines, start=1):
         line = line.strip()
@@ -164,13 +165,13 @@ def iter_territory_dataset_errors(
     return collected
 
 
-def validate_territory_dataset_file(path: str, *, max_errors: int = 50) -> List[Tuple[int, str]]:
+def validate_territory_dataset_file(path: str, *, max_errors: int = 50) -> list[tuple[int, str]]:
     """Validate a territory dataset JSONL file on disk."""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return iter_territory_dataset_errors(f, max_errors=max_errors)
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint for validating a territory dataset JSONL file.
 
     Usage (from ``ai-service`` root):

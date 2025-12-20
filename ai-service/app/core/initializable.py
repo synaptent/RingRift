@@ -39,19 +39,20 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Type
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "InitializationStatus",
-    "Initializable",
-    "InitializationRegistry",
-    "InitializationError",
-    "DependencyError",
     "CircularDependencyError",
+    "DependencyError",
+    "Initializable",
+    "InitializationError",
+    "InitializationRegistry",
+    "InitializationStatus",
 ]
 
 
@@ -82,7 +83,7 @@ class DependencyError(InitializationError):
 class CircularDependencyError(InitializationError):
     """Raised when circular dependencies are detected."""
 
-    def __init__(self, cycle: List[str]):
+    def __init__(self, cycle: list[str]):
         self.cycle = cycle
         cycle_str = " -> ".join(cycle)
         super().__init__(f"Circular dependency detected: {cycle_str}")
@@ -94,7 +95,7 @@ class InitializationResult:
     component_name: str
     status: InitializationStatus
     duration_ms: float
-    error: Optional[Exception] = None
+    error: Exception | None = None
 
 
 class Initializable(ABC):
@@ -125,9 +126,9 @@ class Initializable(ABC):
 
     def __init__(self):
         self._status = InitializationStatus.UNINITIALIZED
-        self._error: Optional[Exception] = None
-        self._dependencies_resolved: Dict[str, Any] = {}
-        self._on_status_change: Optional[Callable[[InitializationStatus], None]] = None
+        self._error: Exception | None = None
+        self._dependencies_resolved: dict[str, Any] = {}
+        self._on_status_change: Callable[[InitializationStatus], None] | None = None
 
     @property
     @abstractmethod
@@ -136,7 +137,7 @@ class Initializable(ABC):
         pass
 
     @property
-    def dependencies(self) -> List[str]:
+    def dependencies(self) -> list[str]:
         """List of component names this depends on.
 
         Override to declare dependencies. Default is no dependencies.
@@ -154,7 +155,7 @@ class Initializable(ABC):
         return self._status == InitializationStatus.READY
 
     @property
-    def error(self) -> Optional[Exception]:
+    def error(self) -> Exception | None:
         """Error that caused initialization failure, if any."""
         return self._error
 
@@ -238,9 +239,9 @@ class InitializationRegistry:
     """
 
     def __init__(self):
-        self._components: Dict[str, Initializable] = {}
-        self._initialization_order: List[str] = []
-        self._results: List[InitializationResult] = []
+        self._components: dict[str, Initializable] = {}
+        self._initialization_order: list[str] = []
+        self._results: list[InitializationResult] = []
 
     def register(self, component: Initializable) -> None:
         """Register a component for initialization.
@@ -256,7 +257,7 @@ class InitializationRegistry:
         self._components[component.name] = component
         logger.debug(f"Registered component: {component.name}")
 
-    def get(self, name: str) -> Optional[Initializable]:
+    def get(self, name: str) -> Initializable | None:
         """Get a registered component by name."""
         return self._components.get(name)
 
@@ -268,16 +269,16 @@ class InitializationRegistry:
         return component
 
     @property
-    def components(self) -> Dict[str, Initializable]:
+    def components(self) -> dict[str, Initializable]:
         """All registered components."""
         return dict(self._components)
 
     @property
-    def results(self) -> List[InitializationResult]:
+    def results(self) -> list[InitializationResult]:
         """Results from last initialization."""
         return list(self._results)
 
-    def compute_order(self) -> List[str]:
+    def compute_order(self) -> list[str]:
         """Compute initialization order via topological sort.
 
         Returns:
@@ -294,8 +295,8 @@ class InitializationRegistry:
                     raise DependencyError(name, dep)
 
         # Topological sort using Kahn's algorithm
-        in_degree: Dict[str, int] = {name: 0 for name in self._components}
-        graph: Dict[str, List[str]] = {name: [] for name in self._components}
+        in_degree: dict[str, int] = dict.fromkeys(self._components, 0)
+        graph: dict[str, list[str]] = {name: [] for name in self._components}
 
         for name, component in self._components.items():
             for dep in component.dependencies:
@@ -304,7 +305,7 @@ class InitializationRegistry:
 
         # Start with components that have no dependencies
         queue = [name for name, degree in in_degree.items() if degree == 0]
-        order: List[str] = []
+        order: list[str] = []
 
         while queue:
             # Sort for deterministic order
@@ -327,15 +328,15 @@ class InitializationRegistry:
         self._initialization_order = order
         return order
 
-    def _find_cycle(self, nodes: Set[str]) -> List[str]:
+    def _find_cycle(self, nodes: set[str]) -> list[str]:
         """Find a cycle in the dependency graph."""
-        visited: Set[str] = set()
-        path: List[str] = []
+        visited: set[str] = set()
+        path: list[str] = []
 
-        def dfs(node: str) -> Optional[List[str]]:
+        def dfs(node: str) -> list[str] | None:
             if node in path:
                 cycle_start = path.index(node)
-                return path[cycle_start:] + [node]
+                return [*path[cycle_start:], node]
             if node in visited:
                 return None
 
@@ -363,7 +364,7 @@ class InitializationRegistry:
         self,
         parallel: bool = False,
         stop_on_failure: bool = True,
-    ) -> List[InitializationResult]:
+    ) -> list[InitializationResult]:
         """Initialize all registered components.
 
         Args:
@@ -402,7 +403,7 @@ class InitializationRegistry:
 
     async def _initialize_sequential(
         self,
-        order: List[str],
+        order: list[str],
         stop_on_failure: bool,
     ) -> None:
         """Initialize components sequentially."""
@@ -444,13 +445,13 @@ class InitializationRegistry:
 
     async def _initialize_parallel(
         self,
-        order: List[str],
+        order: list[str],
         stop_on_failure: bool,
     ) -> None:
         """Initialize independent components in parallel."""
         import time
 
-        initialized: Set[str] = set()
+        initialized: set[str] = set()
         pending = set(order)
 
         while pending:
@@ -541,8 +542,8 @@ class InitializationRegistry:
 # Convenience decorator for simple components
 def initializable(
     name: str,
-    dependencies: Optional[List[str]] = None,
-) -> Callable[[Type], Type]:
+    dependencies: list[str] | None = None,
+) -> Callable[[type], type]:
     """Decorator to make a class initializable.
 
     Usage:
@@ -551,7 +552,7 @@ def initializable(
             async def initialize(self) -> None:
                 ...
     """
-    def decorator(cls: Type) -> Type:
+    def decorator(cls: type) -> type:
         original_init = cls.__init__ if hasattr(cls, '__init__') else None
 
         def new_init(self, *args, **kwargs):

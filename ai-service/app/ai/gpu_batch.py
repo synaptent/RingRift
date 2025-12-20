@@ -30,13 +30,15 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
 
 import numpy as np
 import torch
@@ -82,14 +84,14 @@ def get_device(prefer_gpu: bool = True, device_id: int = 0) -> torch.device:
     return torch.device("cpu")
 
 
-def get_all_cuda_devices() -> List[torch.device]:
+def get_all_cuda_devices() -> list[torch.device]:
     """Get list of all available CUDA devices."""
     if not torch.cuda.is_available():
         return []
     return [torch.device(f"cuda:{i}") for i in range(torch.cuda.device_count())]
 
 
-def clear_gpu_memory(device: Optional[torch.device] = None) -> None:
+def clear_gpu_memory(device: torch.device | None = None) -> None:
     """Clear GPU memory caches.
 
     Args:
@@ -97,17 +99,13 @@ def clear_gpu_memory(device: Optional[torch.device] = None) -> None:
     """
     gc.collect()
 
-    if torch.cuda.is_available():
-        if device is None or device.type == "cuda":
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+    if torch.cuda.is_available() and (device is None or device.type == "cuda"):
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
 
-    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-        if device is None or device.type == "mps":
-            try:
-                torch.mps.empty_cache()
-            except Exception:
-                pass
+    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache") and (device is None or device.type == "mps"):
+        with contextlib.suppress(Exception):
+            torch.mps.empty_cache()
 
 
 # =============================================================================
@@ -117,7 +115,7 @@ def clear_gpu_memory(device: Optional[torch.device] = None) -> None:
 
 def compile_model(
     model: nn.Module,
-    device: Optional[torch.device] = None,
+    device: torch.device | None = None,
     mode: str = "reduce-overhead",
     fullgraph: bool = False,
 ) -> nn.Module:
@@ -253,10 +251,10 @@ class GPUBoardState:
     @classmethod
     def from_numpy_batch(
         cls,
-        board_states: List[Dict[str, np.ndarray]],
+        board_states: list[dict[str, np.ndarray]],
         device: torch.device,
         board_size: int = 8,
-    ) -> "GPUBoardState":
+    ) -> GPUBoardState:
         """Create GPU board state from list of numpy state dicts.
 
         Args:
@@ -320,9 +318,9 @@ class GPUBoardState:
     @classmethod
     def from_game_states(
         cls,
-        game_states: List[Any],  # List[GameState] - use Any to avoid circular import
-        device: "torch.device",
-    ) -> "GPUBoardState":
+        game_states: list[Any],  # List[GameState] - use Any to avoid circular import
+        device: torch.device,
+    ) -> GPUBoardState:
         """Create GPU board state from list of GameState objects.
 
         Converts the high-level GameState representation to GPU tensors.
@@ -440,8 +438,8 @@ class GPUBatchEvaluator:
 
     def __init__(
         self,
-        device: Optional[Union[str, torch.device]] = None,
-        model: Optional[nn.Module] = None,
+        device: Union[str, torch.device] | None = None,
+        model: nn.Module | None = None,
         use_mixed_precision: bool = True,
         max_batch_size: int = 256,
     ):
@@ -490,8 +488,8 @@ class GPUBatchEvaluator:
     def evaluate_batch(
         self,
         feature_batch: np.ndarray,
-        global_features: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        global_features: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Evaluate a batch of positions using the neural network.
 
         Args:
@@ -541,8 +539,8 @@ class GPUBatchEvaluator:
     def _forward(
         self,
         features: torch.Tensor,
-        globals_t: Optional[torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        globals_t: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass through the model.
 
         Args:
@@ -569,8 +567,8 @@ class GPUBatchEvaluator:
     def _evaluate_chunked(
         self,
         features: torch.Tensor,
-        globals_t: Optional[torch.Tensor],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        globals_t: torch.Tensor | None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Evaluate large batch in chunks to manage memory.
 
         Args:
@@ -600,7 +598,7 @@ class GPUBatchEvaluator:
 
         return np.concatenate(all_values), np.concatenate(all_policies)
 
-    def get_performance_stats(self) -> Dict[str, float]:
+    def get_performance_stats(self) -> dict[str, float]:
         """Get inference performance statistics.
 
         Returns:
@@ -639,7 +637,7 @@ class GPUHeuristicEvaluator:
 
     def __init__(
         self,
-        device: Optional[Union[str, torch.device]] = None,
+        device: Union[str, torch.device] | None = None,
         board_size: int = 8,
         num_players: int = 2,
     ):
@@ -684,7 +682,7 @@ class GPUHeuristicEvaluator:
 
         self.center_mask = torch.from_numpy(mask).to(self.device)
 
-    def _default_weights(self) -> Dict[str, float]:
+    def _default_weights(self) -> dict[str, float]:
         """Default heuristic weights."""
         return {
             "stack_count": 1.0,
@@ -695,7 +693,7 @@ class GPUHeuristicEvaluator:
             "no_stacks_penalty": -100.0,
         }
 
-    def set_weights(self, weights: Dict[str, float]) -> None:
+    def set_weights(self, weights: dict[str, float]) -> None:
         """Set heuristic weights.
 
         Args:
@@ -782,7 +780,7 @@ class GPUHeuristicEvaluator:
     def evaluate_moves_batch(
         self,
         base_state: GPUBoardState,
-        move_results: List[GPUBoardState],
+        move_results: list[GPUBoardState],
         player_number: int,
     ) -> np.ndarray:
         """Evaluate multiple candidate moves from same base state.
@@ -803,7 +801,7 @@ class GPUHeuristicEvaluator:
 
         return scores.cpu().numpy()
 
-    def _combine_states(self, states: List[GPUBoardState]) -> GPUBoardState:
+    def _combine_states(self, states: list[GPUBoardState]) -> GPUBoardState:
         """Combine multiple GPUBoardState objects into a single batch."""
         return GPUBoardState(
             stack_owner=torch.cat([s.stack_owner for s in states]),
@@ -830,7 +828,7 @@ class EvalRequest:
     """Request for async batch evaluation."""
 
     features: np.ndarray
-    global_features: Optional[np.ndarray]
+    global_features: np.ndarray | None
     callback: Callable[[np.ndarray, np.ndarray], None]
     timestamp: float = field(default_factory=time.perf_counter)
 
@@ -874,7 +872,7 @@ class AsyncGPUEvaluator:
 
         self._queue: queue.Queue[EvalRequest] = queue.Queue(maxsize=max_queue_size)
         self._running = False
-        self._worker_thread: Optional[threading.Thread] = None
+        self._worker_thread: threading.Thread | None = None
         self._last_batch_time = time.perf_counter()
 
         # Stats
@@ -902,7 +900,7 @@ class AsyncGPUEvaluator:
     def queue_position(
         self,
         features: np.ndarray,
-        global_features: Optional[np.ndarray],
+        global_features: np.ndarray | None,
         callback: Callable[[np.ndarray, np.ndarray], None],
     ) -> None:
         """Queue a position for async evaluation.
@@ -935,7 +933,7 @@ class AsyncGPUEvaluator:
         Args:
             force: Process even if batch is incomplete
         """
-        requests: List[EvalRequest] = []
+        requests: list[EvalRequest] = []
 
         # Collect pending requests
         while len(requests) < self.batch_size:
@@ -988,12 +986,10 @@ class AsyncGPUEvaluator:
             logger.error(f"Batch evaluation error: {e}")
             # Return error to callbacks
             for request in requests:
-                try:
+                with contextlib.suppress(Exception):
                     request.callback(np.array([0.0]), np.zeros(1))
-                except Exception:
-                    pass
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get async evaluator statistics."""
         return {
             "batches_processed": self._batches_processed,
@@ -1014,10 +1010,10 @@ class AsyncGPUEvaluator:
 
 def benchmark_gpu_batch(
     evaluator: GPUBatchEvaluator,
-    batch_sizes: List[int] = [1, 8, 32, 64, 128, 256],
-    feature_shape: Tuple[int, ...] = (16, 8, 8),
+    batch_sizes: list[int] | None = None,
+    feature_shape: tuple[int, ...] = (16, 8, 8),
     num_iterations: int = 100,
-) -> Dict[str, List[float]]:
+) -> dict[str, list[float]]:
     """Benchmark GPU batch evaluation at different batch sizes.
 
     Args:
@@ -1029,6 +1025,8 @@ def benchmark_gpu_batch(
     Returns:
         Dictionary with throughput results for each batch size
     """
+    if batch_sizes is None:
+        batch_sizes = [1, 8, 32, 64, 128, 256]
     results = {"batch_size": [], "throughput": [], "latency_ms": []}
 
     for batch_size in batch_sizes:

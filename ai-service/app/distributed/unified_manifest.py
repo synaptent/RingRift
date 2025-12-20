@@ -33,7 +33,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class HostSyncState:
     storage_type: str = "persistent"
     poll_interval: int = 60
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -87,7 +87,7 @@ class HostSyncState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "HostSyncState":
+    def from_dict(cls, data: dict[str, Any]) -> HostSyncState:
         """Create from dictionary."""
         return cls(
             name=data.get("name", ""),
@@ -127,7 +127,7 @@ class DeadLetterEntry:
     error_type: str
     added_at: float
     retry_count: int = 0
-    last_retry_at: Optional[float] = None
+    last_retry_at: float | None = None
     resolved: bool = False
 
 
@@ -135,8 +135,8 @@ class DeadLetterEntry:
 class ManifestStats:
     """Statistics for the manifest."""
     total_games: int = 0
-    games_by_host: Dict[str, int] = field(default_factory=dict)
-    games_by_board_type: Dict[str, int] = field(default_factory=dict)
+    games_by_host: dict[str, int] = field(default_factory=dict)
+    games_by_board_type: dict[str, int] = field(default_factory=dict)
     recent_sync_count: int = 0  # Last 24 hours
     dead_letter_count: int = 0
 
@@ -228,12 +228,12 @@ class PriorityQueueEntry:
     source_host: str
     source_db: str
     priority_score: float
-    avg_player_elo: Optional[float] = None
-    game_length: Optional[int] = None
+    avg_player_elo: float | None = None
+    game_length: int | None = None
     is_decisive: bool = False
     queued_at: float = 0.0
     synced: bool = False
-    synced_at: Optional[float] = None
+    synced_at: float | None = None
 
 
 # =============================================================================
@@ -493,7 +493,7 @@ class DataManifest:
         conn.close()
         return result
 
-    def get_unsynced_game_ids(self, game_ids: List[str]) -> List[str]:
+    def get_unsynced_game_ids(self, game_ids: list[str]) -> list[str]:
         """Filter list to only unsynced game IDs.
 
         Args:
@@ -518,12 +518,12 @@ class DataManifest:
 
     def mark_games_synced(
         self,
-        game_ids: List[str],
+        game_ids: list[str],
         source_host: str,
         source_db: str,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        content_hashes: Optional[List[str]] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        content_hashes: list[str] | None = None,
     ) -> int:
         """Mark games as synced.
 
@@ -565,11 +565,11 @@ class DataManifest:
 
     def mark_games_synced_with_quality(
         self,
-        games: List[GameQualityMetadata],
+        games: list[GameQualityMetadata],
         source_host: str,
         source_db: str,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> int:
         """Mark games as synced with quality metadata.
 
@@ -710,11 +710,11 @@ class DataManifest:
         self,
         min_quality_score: float = 0.5,
         limit: int = 1000,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         prefer_recent: bool = True,
         prefer_high_elo: bool = True,
-    ) -> List[GameQualityMetadata]:
+    ) -> list[GameQualityMetadata]:
         """Get high-quality games for training.
 
         Args:
@@ -738,7 +738,7 @@ class DataManifest:
             FROM synced_games
             WHERE quality_score >= ?
         """
-        params: List[Any] = [min_quality_score]
+        params: list[Any] = [min_quality_score]
 
         if board_type:
             query += " AND board_type = ?"
@@ -777,9 +777,9 @@ class DataManifest:
 
     def get_quality_distribution(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> dict[str, Any]:
         """Get distribution statistics for quality scores.
 
         Args:
@@ -793,7 +793,7 @@ class DataManifest:
         cursor = conn.cursor()
 
         where_clause = "WHERE quality_score IS NOT NULL"
-        params: List[Any] = []
+        params: list[Any] = []
 
         if board_type:
             where_clause += " AND board_type = ?"
@@ -831,8 +831,8 @@ class DataManifest:
     def _emit_quality_events(
         self,
         config: str,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         high_quality_threshold: float = 0.7,
         low_quality_threshold: float = 0.3,
     ) -> None:
@@ -861,7 +861,7 @@ class DataManifest:
             cursor = conn.cursor()
 
             where_clause = "WHERE quality_score IS NOT NULL"
-            params: List[Any] = []
+            params: list[Any] = []
             if board_type:
                 where_clause += " AND board_type = ?"
                 params.append(board_type)
@@ -874,7 +874,7 @@ class DataManifest:
                     SUM(CASE WHEN quality_score >= ? THEN 1 ELSE 0 END) as high_count,
                     SUM(CASE WHEN quality_score < ? THEN 1 ELSE 0 END) as low_count
                 FROM synced_games {where_clause}
-            """, [high_quality_threshold, low_quality_threshold] + params)
+            """, [high_quality_threshold, low_quality_threshold, *params])
 
             row = cursor.fetchone()
             conn.close()
@@ -934,8 +934,8 @@ class DataManifest:
         source_host: str,
         source_db: str,
         priority_score: float,
-        avg_player_elo: Optional[float] = None,
-        game_length: Optional[int] = None,
+        avg_player_elo: float | None = None,
+        game_length: int | None = None,
         is_decisive: bool = False,
     ) -> int:
         """Add a game to the priority sync queue.
@@ -973,9 +973,9 @@ class DataManifest:
     def get_priority_queue_batch(
         self,
         limit: int = 100,
-        source_host: Optional[str] = None,
-        min_priority: Optional[float] = None,
-    ) -> List[PriorityQueueEntry]:
+        source_host: str | None = None,
+        min_priority: float | None = None,
+    ) -> list[PriorityQueueEntry]:
         """Get a batch of high-priority games to sync.
 
         Args:
@@ -995,7 +995,7 @@ class DataManifest:
             FROM sync_priority_queue
             WHERE synced = 0
         """
-        params: List[Any] = []
+        params: list[Any] = []
 
         if source_host:
             query += " AND source_host = ?"
@@ -1027,7 +1027,7 @@ class DataManifest:
         conn.close()
         return entries
 
-    def mark_queue_entries_synced(self, entry_ids: List[int]) -> int:
+    def mark_queue_entries_synced(self, entry_ids: list[int]) -> int:
         """Mark priority queue entries as synced.
 
         Args:
@@ -1048,14 +1048,14 @@ class DataManifest:
             UPDATE sync_priority_queue
             SET synced = 1, synced_at = ?
             WHERE id IN ({placeholders})
-        """, [now] + entry_ids)
+        """, [now, *entry_ids])
 
         marked = cursor.rowcount
         conn.commit()
         conn.close()
         return marked
 
-    def get_priority_queue_stats(self) -> Dict[str, Any]:
+    def get_priority_queue_stats(self) -> dict[str, Any]:
         """Get priority queue statistics.
 
         Returns:
@@ -1126,7 +1126,7 @@ class DataManifest:
         conn.close()
         return count
 
-    def get_synced_count_by_host(self) -> Dict[str, int]:
+    def get_synced_count_by_host(self) -> dict[str, int]:
         """Get synced game counts by host."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1138,7 +1138,7 @@ class DataManifest:
         conn.close()
         return result
 
-    def get_synced_count_by_config(self) -> Dict[str, int]:
+    def get_synced_count_by_config(self) -> dict[str, int]:
         """Get synced game counts by board config."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1181,7 +1181,7 @@ class DataManifest:
         conn.commit()
         conn.close()
 
-    def load_host_state(self, host_name: str) -> Optional[HostSyncState]:
+    def load_host_state(self, host_name: str) -> HostSyncState | None:
         """Load host sync state.
 
         Args:
@@ -1216,7 +1216,7 @@ class DataManifest:
             )
         return None
 
-    def load_all_host_states(self) -> List[HostSyncState]:
+    def load_all_host_states(self) -> list[HostSyncState]:
         """Load all host sync states."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1243,7 +1243,7 @@ class DataManifest:
         conn.close()
         return states
 
-    def get_ephemeral_hosts(self) -> List[str]:
+    def get_ephemeral_hosts(self) -> list[str]:
         """Get list of ephemeral host names."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1310,7 +1310,7 @@ class DataManifest:
             error_message=error_message,
         )
 
-    def get_recent_syncs(self, hours: int = 24, host_name: Optional[str] = None) -> List[SyncHistoryEntry]:
+    def get_recent_syncs(self, hours: int = 24, host_name: str | None = None) -> list[SyncHistoryEntry]:
         """Get recent sync history.
 
         Args:
@@ -1390,7 +1390,7 @@ class DataManifest:
         conn.close()
         return entry_id
 
-    def get_dead_letter_entries(self, limit: int = 100, include_resolved: bool = False) -> List[DeadLetterEntry]:
+    def get_dead_letter_entries(self, limit: int = 100, include_resolved: bool = False) -> list[DeadLetterEntry]:
         """Get dead letter queue entries.
 
         Args:
@@ -1438,7 +1438,7 @@ class DataManifest:
         conn.close()
         return entries
 
-    def mark_dead_letter_resolved(self, entry_ids: List[int]) -> int:
+    def mark_dead_letter_resolved(self, entry_ids: list[int]) -> int:
         """Mark dead letter entries as resolved.
 
         Args:
@@ -1579,11 +1579,11 @@ def create_manifest(data_dir: Path) -> DataManifest:
 # Backward compatibility exports
 __all__ = [
     "DataManifest",
-    "HostSyncState",
-    "SyncHistoryEntry",
     "DeadLetterEntry",
-    "ManifestStats",
     "GameQualityMetadata",
+    "HostSyncState",
+    "ManifestStats",
     "PriorityQueueEntry",
+    "SyncHistoryEntry",
     "create_manifest",
 ]

@@ -32,15 +32,15 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Import circuit breaker for fault tolerance
 try:
     from app.distributed.circuit_breaker import (
-        get_operation_breaker,
         get_adaptive_timeout,
+        get_operation_breaker,
     )
     HAS_CIRCUIT_BREAKER = True
 except ImportError:
@@ -77,8 +77,8 @@ class FileInfo:
     size_bytes: int
     mtime: float
     category: str  # 'games', 'models', 'training', 'elo'
-    checksum: Optional[str] = None
-    sources: List[str] = field(default_factory=list)
+    checksum: str | None = None
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -86,7 +86,7 @@ class NodeInventory:
     """Inventory from a remote node."""
     url: str
     hostname: str = ""
-    files: Dict[str, FileInfo] = field(default_factory=dict)
+    files: dict[str, FileInfo] = field(default_factory=dict)
     reachable: bool = False
     total_size_mb: float = 0
 
@@ -99,7 +99,7 @@ class SyncResult:
     files_failed: int = 0
     bytes_transferred: int = 0
     duration_seconds: float = 0.0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     method: str = "aria2"
 
 
@@ -111,10 +111,10 @@ def check_aria2_available() -> bool:
 class Aria2Transport:
     """High-performance aria2-based data transport."""
 
-    def __init__(self, config: Optional[Aria2Config] = None):
+    def __init__(self, config: Aria2Config | None = None):
         self.config = config or Aria2Config()
-        self._aria2_available: Optional[bool] = None
-        self._session: Optional[Any] = None
+        self._aria2_available: bool | None = None
+        self._session: Any | None = None
 
     def is_available(self) -> bool:
         """Check if aria2 transport is available."""
@@ -147,7 +147,7 @@ class Aria2Transport:
         self,
         source_url: str,
         timeout: int = 10,
-    ) -> Optional[NodeInventory]:
+    ) -> NodeInventory | None:
         """Fetch inventory from a data server node.
 
         Args:
@@ -202,13 +202,13 @@ class Aria2Transport:
 
         return None
 
-    def _parse_inventory(self, source_url: str, data: Dict) -> NodeInventory:
+    def _parse_inventory(self, source_url: str, data: dict) -> NodeInventory:
         """Parse inventory JSON into NodeInventory object."""
         files = {}
         total_size = 0
         base_url = source_url.rstrip("/")
 
-        def add_file(path: str, file_data: Dict[str, Any], category_hint: Optional[str] = None) -> None:
+        def add_file(path: str, file_data: dict[str, Any], category_hint: str | None = None) -> None:
             nonlocal total_size
             if not path:
                 return
@@ -247,9 +247,9 @@ class Aria2Transport:
 
     async def discover_sources(
         self,
-        source_urls: List[str],
+        source_urls: list[str],
         parallel: int = 10,
-    ) -> Tuple[List[NodeInventory], Dict[str, List[str]]]:
+    ) -> tuple[list[NodeInventory], dict[str, list[str]]]:
         """Discover all available sources and aggregate file information.
 
         Returns:
@@ -260,7 +260,7 @@ class Aria2Transport:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         inventories = []
-        file_sources: Dict[str, List[str]] = {}
+        file_sources: dict[str, list[str]] = {}
 
         for result in results:
             if isinstance(result, NodeInventory) and result.reachable:
@@ -278,9 +278,9 @@ class Aria2Transport:
     def _build_aria2_command(
         self,
         output_dir: Path,
-        url_file: Optional[Path] = None,
-        urls: Optional[List[str]] = None,
-    ) -> List[str]:
+        url_file: Path | None = None,
+        urls: list[str] | None = None,
+    ) -> list[str]:
         """Build aria2c command with optimal settings."""
         cmd = [
             "aria2c",
@@ -327,10 +327,10 @@ class Aria2Transport:
 
     async def download_file(
         self,
-        sources: List[str],
+        sources: list[str],
         output_dir: Path,
-        filename: Optional[str] = None,
-    ) -> Tuple[bool, int, str]:
+        filename: str | None = None,
+    ) -> tuple[bool, int, str]:
         """Download a single file from multiple sources using aria2.
 
         Args:
@@ -359,7 +359,7 @@ class Aria2Transport:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=self.config.timeout,
             )
@@ -385,9 +385,9 @@ class Aria2Transport:
 
     async def download_batch(
         self,
-        file_sources: Dict[str, List[str]],
+        file_sources: dict[str, list[str]],
         output_dir: Path,
-        category: Optional[str] = "games",
+        category: str | None = "games",
     ) -> SyncResult:
         """Download multiple files using aria2 with a URL list file.
 
@@ -441,7 +441,7 @@ class Aria2Transport:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=total_timeout,
             )
@@ -494,7 +494,7 @@ class Aria2Transport:
 
     async def sync_games(
         self,
-        source_urls: List[str],
+        source_urls: list[str],
         local_dir: Path,
         max_age_hours: float = 168,  # 1 week
         dry_run: bool = False,
@@ -513,7 +513,7 @@ class Aria2Transport:
         start_time = time.time()
 
         # Discover all sources
-        inventories, file_sources = await self.discover_sources(source_urls)
+        inventories, _file_sources = await self.discover_sources(source_urls)
 
         if not inventories:
             return SyncResult(
@@ -524,7 +524,7 @@ class Aria2Transport:
 
         # Filter to games category and by age
         cutoff_time = time.time() - (max_age_hours * 3600)
-        games_to_sync: Dict[str, List[str]] = {}
+        games_to_sync: dict[str, list[str]] = {}
 
         category_dir = self._resolve_category_dir(local_dir, "games")
 
@@ -566,15 +566,15 @@ class Aria2Transport:
 
     async def sync_models(
         self,
-        source_urls: List[str],
+        source_urls: list[str],
         local_dir: Path,
-        patterns: Optional[List[str]] = None,
+        patterns: list[str] | None = None,
         dry_run: bool = False,
     ) -> SyncResult:
         """Sync model checkpoints from multiple sources."""
         start_time = time.time()
 
-        inventories, file_sources = await self.discover_sources(source_urls)
+        inventories, _file_sources = await self.discover_sources(source_urls)
 
         if not inventories:
             return SyncResult(
@@ -583,7 +583,7 @@ class Aria2Transport:
                 duration_seconds=time.time() - start_time,
             )
 
-        models_to_sync: Dict[str, List[str]] = {}
+        models_to_sync: dict[str, list[str]] = {}
 
         category_dir = self._resolve_category_dir(local_dir, "models")
 
@@ -624,7 +624,7 @@ class Aria2Transport:
 
     async def sync_training_data(
         self,
-        source_urls: List[str],
+        source_urls: list[str],
         local_dir: Path,
         max_age_hours: float = 24,
         dry_run: bool = False,
@@ -632,7 +632,7 @@ class Aria2Transport:
         """Sync training data batches from multiple sources."""
         start_time = time.time()
 
-        inventories, file_sources = await self.discover_sources(source_urls)
+        inventories, _file_sources = await self.discover_sources(source_urls)
 
         if not inventories:
             return SyncResult(
@@ -642,7 +642,7 @@ class Aria2Transport:
             )
 
         cutoff_time = time.time() - (max_age_hours * 3600)
-        training_to_sync: Dict[str, List[str]] = {}
+        training_to_sync: dict[str, list[str]] = {}
 
         category_dir = self._resolve_category_dir(local_dir, "training")
 
@@ -680,11 +680,11 @@ class Aria2Transport:
 
     async def full_cluster_sync(
         self,
-        source_urls: List[str],
+        source_urls: list[str],
         local_dir: Path,
-        categories: Optional[List[str]] = None,
+        categories: list[str] | None = None,
         dry_run: bool = False,
-    ) -> Dict[str, SyncResult]:
+    ) -> dict[str, SyncResult]:
         """Sync all data categories from cluster.
 
         Args:
@@ -720,7 +720,7 @@ class Aria2Transport:
 
 
 # Factory function for integration with unified_data_sync
-def create_aria2_transport(config: Optional[Dict[str, Any]] = None) -> Aria2Transport:
+def create_aria2_transport(config: dict[str, Any] | None = None) -> Aria2Transport:
     """Create an Aria2Transport instance from config dict."""
     if config:
         aria2_config = Aria2Config(

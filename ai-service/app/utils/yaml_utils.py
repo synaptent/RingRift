@@ -24,24 +24,24 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, TypeVar, Union
+from typing import Any, TypeVar, Union
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "load_yaml",
-    "load_yaml_with_defaults",
-    "safe_load_yaml",
+    "ConfigDict",
+    "YAMLLoadError",
     "dump_yaml",
     "dumps_yaml",
     "load_config_yaml",
+    "load_yaml",
+    "load_yaml_with_defaults",
+    "safe_load_yaml",
     "validate_yaml_schema",
-    "YAMLLoadError",
-    "ConfigDict",
 ]
 
 # Type for configuration dictionaries
-ConfigDict = Dict[str, Any]
+ConfigDict = dict[str, Any]
 T = TypeVar("T")
 
 # Check for yaml availability
@@ -72,7 +72,7 @@ def load_yaml(
     *,
     encoding: str = "utf-8",
     required: bool = True,
-) -> Optional[ConfigDict]:
+) -> ConfigDict | None:
     """Load a YAML file and return its contents as a dictionary.
 
     Args:
@@ -105,7 +105,7 @@ def load_yaml(
         return None
 
     try:
-        with open(path, "r", encoding=encoding) as f:
+        with open(path, encoding=encoding) as f:
             data = yaml.safe_load(f)
             # Handle empty files
             return data if data is not None else {}
@@ -157,10 +157,10 @@ def load_yaml_with_defaults(
 def safe_load_yaml(
     path: Union[str, Path],
     *,
-    default: Optional[ConfigDict] = None,
+    default: ConfigDict | None = None,
     encoding: str = "utf-8",
     log_errors: bool = True,
-) -> Optional[ConfigDict]:
+) -> ConfigDict | None:
     """Safely load a YAML file, returning default on any error.
 
     This is the most forgiving YAML loader - it never raises exceptions.
@@ -286,8 +286,8 @@ def _deep_merge(base: ConfigDict, override: ConfigDict) -> ConfigDict:
 
 def validate_yaml_schema(
     data: ConfigDict,
-    required_keys: Optional[list[str]] = None,
-    optional_keys: Optional[list[str]] = None,
+    required_keys: list[str] | None = None,
+    optional_keys: list[str] | None = None,
     strict: bool = False,
 ) -> tuple[bool, list[str]]:
     """Validate YAML data against a simple schema.
@@ -324,7 +324,7 @@ def validate_yaml_schema(
     # Check for unknown keys in strict mode
     if strict:
         allowed_keys = set(required_keys) | set(optional_keys)
-        for key in data.keys():
+        for key in data:
             if key not in allowed_keys:
                 errors.append(f"Unknown key: {key}")
 
@@ -334,8 +334,8 @@ def validate_yaml_schema(
 # Convenience function for loading config with environment variable override
 def load_config_yaml(
     default_path: Union[str, Path],
-    env_var: Optional[str] = None,
-    defaults: Optional[ConfigDict] = None,
+    env_var: str | None = None,
+    defaults: ConfigDict | None = None,
 ) -> ConfigDict:
     """Load configuration YAML with environment variable path override.
 

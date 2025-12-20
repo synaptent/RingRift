@@ -29,20 +29,20 @@ Usage:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from typing import Union
 
 __all__ = [
-    "utc_now",
-    "utc_timestamp",
+    "date_str",
+    "format_age",
+    "format_duration",
     "iso_now",
     "iso_now_ms",
-    "to_iso",
     "parse_iso",
     "time_ago",
-    "format_duration",
-    "format_age",
-    "date_str",
     "timestamp_str",
+    "to_iso",
+    "utc_now",
+    "utc_timestamp",
 ]
 
 
@@ -264,7 +264,7 @@ def format_age(dt: datetime) -> str:
     return format_duration(delta.total_seconds())
 
 
-def date_str(dt: Optional[datetime] = None, format: str = "%Y%m%d") -> str:
+def date_str(dt: datetime | None = None, format: str = "%Y%m%d") -> str:
     """Get a date string suitable for filenames.
 
     Args:
@@ -283,7 +283,7 @@ def date_str(dt: Optional[datetime] = None, format: str = "%Y%m%d") -> str:
     return dt.strftime(format)
 
 
-def timestamp_str(dt: Optional[datetime] = None) -> str:
+def timestamp_str(dt: datetime | None = None) -> str:
     """Get a timestamp string suitable for filenames.
 
     Args:

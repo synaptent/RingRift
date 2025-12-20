@@ -40,45 +40,46 @@ import logging
 import math
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Sampler
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # Configuration
-    "TrainingConfig",
-    # Core utilities
-    "CheckpointAverager",
-    "GradientAccumulator",
-    "DataQualityScorer",
-    "HardExampleMiner",
-    # Per-sample loss tracking (2025-12)
-    "compute_per_sample_loss",
-    "PerSampleLossTracker",
-    # Learning rate schedulers
-    "AdaptiveLRScheduler",
-    "WarmRestartsScheduler",
     # Gradient management
     "AdaptiveGradientClipper",
+    # Learning rate schedulers
+    "AdaptiveLRScheduler",
+    # Core utilities
+    "CheckpointAverager",
+    "DataQualityScorer",
     # Regularization
     "EWCRegularizer",
-    # Ensemble
-    "ModelEnsemble",
+    "EarlyStopping",  # Backwards compatible alias
     # Training control
     "EnhancedEarlyStopping",
-    "EarlyStopping",  # Backwards compatible alias
-    "TrainingAnomalyDetector",
-    "ValidationIntervalManager",
+    "GradientAccumulator",
+    "HardExampleMiner",
+    # Ensemble
+    "ModelEnsemble",
+    "PerSampleLossTracker",
     # Reproducibility
     "SeedManager",
+    "TrainingAnomalyDetector",
+    # Configuration
+    "TrainingConfig",
+    "ValidationIntervalManager",
+    "WarmRestartsScheduler",
+    # Per-sample loss tracking (2025-12)
+    "compute_per_sample_loss",
     # Factory function
     "create_training_enhancements",
 ]
@@ -122,7 +123,7 @@ class TrainingConfig:
     batch_size: int = 256
     epochs: int = 100
     weight_decay: float = 0.0001
-    seed: Optional[int] = None
+    seed: int | None = None
 
     # === Mixed Precision ===
     use_mixed_precision: bool = True
@@ -170,8 +171,8 @@ class TrainingConfig:
     max_consecutive_anomalies: int = 5
 
     # === Validation ===
-    validation_interval_steps: Optional[int] = 1000
-    validation_interval_epochs: Optional[float] = None
+    validation_interval_steps: int | None = 1000
+    validation_interval_epochs: float | None = None
     validation_subset_size: float = 1.0
     adaptive_validation_interval: bool = False
 
@@ -189,7 +190,7 @@ class TrainingConfig:
     calibration_threshold: float = 0.05
     calibration_check_interval: int = 5
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary for backward compatibility."""
         return {
             # Core
@@ -264,7 +265,7 @@ class TrainingConfig:
         }
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any]) -> 'TrainingConfig':
+    def from_dict(cls, config: dict[str, Any]) -> TrainingConfig:
         """Create config from dictionary."""
         # Map dictionary keys to dataclass fields
         mapping = {
@@ -291,7 +292,7 @@ class TrainingConfig:
 
         return cls(**kwargs)
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration and return list of warnings."""
         warnings = []
 
@@ -357,7 +358,7 @@ class CheckpointAverager:
     def __init__(
         self,
         num_checkpoints: int = 5,
-        checkpoint_dir: Optional[Path] = None,
+        checkpoint_dir: Path | None = None,
         keep_on_disk: bool = False,
     ):
         """
@@ -377,8 +378,8 @@ class CheckpointAverager:
 
     def add_checkpoint(
         self,
-        state_dict: Dict[str, torch.Tensor],
-        epoch: Optional[int] = None,
+        state_dict: dict[str, torch.Tensor],
+        epoch: int | None = None,
     ) -> None:
         """Add a checkpoint to the averaging queue."""
         if self.keep_on_disk and self.checkpoint_dir:
@@ -397,7 +398,7 @@ class CheckpointAverager:
             # Keep in memory (deep copy to avoid reference issues)
             self._checkpoints.append(copy.deepcopy(state_dict))
 
-    def get_averaged_state_dict(self) -> Dict[str, torch.Tensor]:
+    def get_averaged_state_dict(self) -> dict[str, torch.Tensor]:
         """
         Compute the average of all stored checkpoints.
 
@@ -406,7 +407,7 @@ class CheckpointAverager:
         """
         if self.keep_on_disk:
             checkpoints = [
-                torch.load(p, weights_only=True)
+                torch.load(p, weights_only=False)  # Our own checkpoints, safe to load
                 for p in self._checkpoint_paths
                 if p.exists()
             ]
@@ -454,9 +455,9 @@ class CheckpointAverager:
 
 
 def average_checkpoints(
-    checkpoint_paths: List[Union[str, Path]],
-    device: Optional[torch.device] = None,
-) -> Dict[str, torch.Tensor]:
+    checkpoint_paths: list[Union[str, Path]],
+    device: torch.device | None = None,
+) -> dict[str, torch.Tensor]:
     """
     Average model weights from multiple checkpoint files.
 
@@ -516,7 +517,7 @@ class GradientAccumulator:
     def __init__(
         self,
         accumulation_steps: int = 1,
-        max_grad_norm: Optional[float] = 1.0,
+        max_grad_norm: float | None = 1.0,
     ):
         """
         Args:
@@ -547,7 +548,7 @@ class GradientAccumulator:
         self,
         optimizer: optim.Optimizer,
         model: nn.Module,
-        scaler: Optional[torch.cuda.amp.GradScaler] = None,
+        scaler: torch.cuda.amp.GradScaler | None = None,
     ) -> float:
         """
         Perform optimizer step with optional gradient clipping and AMP.
@@ -611,7 +612,7 @@ class AdaptiveGradientClipper:
         min_clip: float = 0.1,
         max_clip: float = 10.0,
         # Backwards compatibility alias
-        initial_clip: Optional[float] = None,
+        initial_clip: float | None = None,
     ):
         """
         Args:
@@ -630,7 +631,7 @@ class AdaptiveGradientClipper:
         self.history_size = history_size
         self.min_clip = min_clip
         self.max_clip = max_clip
-        self.grad_norms: List[float] = []
+        self.grad_norms: list[float] = []
 
     def update_and_clip(self, parameters) -> float:
         """
@@ -662,7 +663,7 @@ class AdaptiveGradientClipper:
         torch.nn.utils.clip_grad_norm_(parameters, self.current_max_norm)
         return total_norm
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get current clipping statistics."""
         return {
             'current_clip_norm': self.current_max_norm,
@@ -692,7 +693,7 @@ class GameQualityScore:
     decisive_score: float
     freshness_score: float = 1.0  # Phase 7: Time-based freshness (1.0 = newest)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             'game_id': self.game_id,
             'total_score': self.total_score,
@@ -751,8 +752,8 @@ class DataQualityScorer:
 
     def compute_freshness_score(
         self,
-        game_timestamp: Optional[float] = None,
-        current_time: Optional[float] = None,
+        game_timestamp: float | None = None,
+        current_time: float | None = None,
     ) -> float:
         """
         Compute freshness score using exponential decay.
@@ -784,12 +785,12 @@ class DataQualityScorer:
         self,
         game_id: str,
         game_length: int,
-        winner: Optional[int] = None,
-        elo_p1: Optional[float] = None,
-        elo_p2: Optional[float] = None,
-        move_entropy: Optional[float] = None,
-        game_timestamp: Optional[float] = None,
-        pre_computed_quality: Optional[float] = None,
+        winner: int | None = None,
+        elo_p1: float | None = None,
+        elo_p2: float | None = None,
+        move_entropy: float | None = None,
+        game_timestamp: float | None = None,
+        pre_computed_quality: float | None = None,
     ) -> GameQualityScore:
         """
         Score a game's quality for training.
@@ -883,7 +884,7 @@ class DataQualityScorer:
 
     def compute_sample_weights(
         self,
-        scores: List[GameQualityScore],
+        scores: list[GameQualityScore],
         temperature: float = 1.0,
     ) -> np.ndarray:
         """
@@ -922,8 +923,8 @@ class QualityWeightedSampler(Sampler):
 
     def __init__(
         self,
-        scores: List[GameQualityScore],
-        num_samples: Optional[int] = None,
+        scores: list[GameQualityScore],
+        num_samples: int | None = None,
         replacement: bool = True,
         temperature: float = 1.0,
     ):
@@ -1066,7 +1067,7 @@ class PerSampleLossTracker:
         self.percentile_hard = percentile_hard
 
         # Current epoch tracking: sample_idx -> loss
-        self._current_losses: Dict[int, float] = {}
+        self._current_losses: dict[int, float] = {}
 
         # History: list of (epoch, sample_idx, loss) tuples
         self._history: deque = deque(maxlen=max_samples * history_epochs)
@@ -1079,7 +1080,7 @@ class PerSampleLossTracker:
 
     def record_batch(
         self,
-        batch_indices: Union[List[int], torch.Tensor],
+        batch_indices: Union[list[int], torch.Tensor],
         losses: torch.Tensor,
         epoch: int,
         batch_idx: int = 0,
@@ -1090,7 +1091,7 @@ class PerSampleLossTracker:
 
         losses_np = losses.detach().cpu().numpy()
 
-        for idx, loss in zip(batch_indices, losses_np):
+        for idx, loss in zip(batch_indices, losses_np, strict=False):
             loss_val = float(loss)
 
             # Update current epoch tracking
@@ -1113,7 +1114,7 @@ class PerSampleLossTracker:
             for key in oldest_keys:
                 del self._current_losses[key]
 
-    def get_statistics(self) -> Dict[str, float]:
+    def get_statistics(self) -> dict[str, float]:
         """Get aggregate statistics over tracked samples."""
         if self._total_samples == 0:
             return {
@@ -1141,7 +1142,7 @@ class PerSampleLossTracker:
             "percentile_threshold": np.percentile(losses, self.percentile_hard) if losses else 0.0,
         }
 
-    def get_hardest_samples(self, n: int = 100) -> List[Tuple[int, float]]:
+    def get_hardest_samples(self, n: int = 100) -> list[tuple[int, float]]:
         """Get the n samples with highest loss in current epoch."""
         sorted_samples = sorted(
             self._current_losses.items(),
@@ -1150,7 +1151,7 @@ class PerSampleLossTracker:
         )
         return sorted_samples[:n]
 
-    def get_sample_history(self, sample_idx: int) -> List[Tuple[int, float]]:
+    def get_sample_history(self, sample_idx: int) -> list[tuple[int, float]]:
         """Get loss history for a specific sample (epoch, loss)."""
         return [
             (epoch, loss)
@@ -1238,16 +1239,16 @@ class HardExampleMiner:
         self.max_times_sampled = max_times_sampled
 
         # Track examples: index -> HardExample
-        self._examples: Dict[int, HardExample] = {}
+        self._examples: dict[int, HardExample] = {}
         self._total_samples_seen = 0
         self._current_step = 0
         self._loss_history: deque = deque(maxlen=10000)
 
     def record_batch(
         self,
-        indices: Union[List[int], np.ndarray, torch.Tensor],
-        losses: Union[List[float], np.ndarray, torch.Tensor],
-        uncertainties: Optional[Union[List[float], np.ndarray, torch.Tensor]] = None,
+        indices: Union[list[int], np.ndarray, torch.Tensor],
+        losses: Union[list[float], np.ndarray, torch.Tensor],
+        uncertainties: Union[list[float], np.ndarray, torch.Tensor] | None = None,
     ) -> None:
         """
         Record losses and uncertainties for a batch of examples.
@@ -1274,7 +1275,7 @@ class HardExampleMiner:
 
         self._current_step += 1
 
-        for idx, loss, unc in zip(indices, losses, uncertainties):
+        for idx, loss, unc in zip(indices, losses, uncertainties, strict=False):
             idx = int(idx)
             self._loss_history.append(loss)
 
@@ -1338,7 +1339,7 @@ class HardExampleMiner:
         self,
         num_samples: int,
         return_scores: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    ) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
         """
         Get indices of hard examples for focused training.
 
@@ -1397,7 +1398,7 @@ class HardExampleMiner:
 
     def get_sample_weights(
         self,
-        indices: Union[List[int], np.ndarray],
+        indices: Union[list[int], np.ndarray],
         base_weight: float = 1.0,
         hard_weight: float = 2.0,
     ) -> np.ndarray:
@@ -1429,9 +1430,8 @@ class HardExampleMiner:
 
         # Upweight hard examples
         for i, idx in enumerate(indices):
-            if idx in self._examples:
-                if self._examples[idx].loss >= threshold:
-                    weights[i] = hard_weight
+            if idx in self._examples and self._examples[idx].loss >= threshold:
+                weights[i] = hard_weight
 
         return weights
 
@@ -1471,7 +1471,7 @@ class HardExampleMiner:
 
         return batch_indices
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get mining statistics."""
         if not self._examples:
             return {
@@ -1507,8 +1507,8 @@ class HardExampleMiner:
 
     def update_errors(
         self,
-        indices: Union[List[int], np.ndarray],
-        errors: Union[List[float], np.ndarray],
+        indices: Union[list[int], np.ndarray],
+        errors: Union[list[float], np.ndarray],
     ) -> None:
         """
         Update error history for given samples (backwards compatible).
@@ -1566,7 +1566,7 @@ class HardExampleMiner:
 
         return weights
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get mining statistics (backwards compatible alias for get_statistics).
         """
@@ -1658,8 +1658,8 @@ class AdaptiveLRScheduler:
     def step(
         self,
         train_loss: float,
-        current_elo: Optional[float] = None,
-        val_loss: Optional[float] = None,
+        current_elo: float | None = None,
+        val_loss: float | None = None,
     ) -> float:
         """
         Update learning rate based on progress.
@@ -1794,7 +1794,7 @@ class WarmRestartsScheduler:
         T_0: int = 10,
         T_mult: int = 2,
         eta_min: float = 1e-6,
-        eta_max: Optional[float] = None,
+        eta_max: float | None = None,
         last_epoch: int = -1,
         warmup_steps: int = 0,
     ):
@@ -1825,9 +1825,9 @@ class WarmRestartsScheduler:
         self._current_lr = self.eta_max
 
         # Store restart history
-        self._restart_epochs: List[int] = [0]
+        self._restart_epochs: list[int] = [0]
 
-    def step(self, epoch: Optional[int] = None) -> float:
+    def step(self, epoch: int | None = None) -> float:
         """
         Update learning rate (call once per step/batch).
 
@@ -1896,11 +1896,11 @@ class WarmRestartsScheduler:
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self._current_lr
 
-    def get_last_lr(self) -> List[float]:
+    def get_last_lr(self) -> list[float]:
         """Get last computed learning rate for each param group."""
         return [self._current_lr] * len(self.optimizer.param_groups)
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Return scheduler state."""
         return {
             'step_count': self._step_count,
@@ -1912,7 +1912,7 @@ class WarmRestartsScheduler:
             'restart_epochs': self._restart_epochs,
         }
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load scheduler state."""
         self._step_count = state_dict['step_count']
         self._epoch = state_dict['epoch']
@@ -1932,7 +1932,7 @@ class WarmRestartsScheduler:
         """Get number of restarts performed."""
         return self._restart_count
 
-    def get_schedule_info(self) -> Dict[str, Any]:
+    def get_schedule_info(self) -> dict[str, Any]:
         """Get information about current schedule state."""
         return {
             'current_lr': self._current_lr,
@@ -2027,7 +2027,7 @@ class TrainingAnomalyDetector:
         self.max_consecutive_anomalies = max_consecutive_anomalies
 
         self._loss_history: deque = deque(maxlen=loss_window_size)
-        self._events: List[AnomalyEvent] = []
+        self._events: list[AnomalyEvent] = []
         self._consecutive_anomalies = 0
         self._total_anomalies = 0
         self._halted = False
@@ -2168,11 +2168,11 @@ class TrainingAnomalyDetector:
         """Get total number of anomalies detected."""
         return self._total_anomalies
 
-    def get_events(self) -> List[AnomalyEvent]:
+    def get_events(self) -> list[AnomalyEvent]:
         """Get all recorded anomaly events."""
         return self._events.copy()
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get summary of detected anomalies."""
         type_counts = {}
         for event in self._events:
@@ -2206,7 +2206,7 @@ class ValidationResult:
     step: int
     epoch: int
     val_loss: float
-    val_metrics: Dict[str, float]
+    val_metrics: dict[str, float]
     samples_validated: int
     duration_seconds: float
     is_improvement: bool = False
@@ -2241,9 +2241,9 @@ class ValidationIntervalManager:
 
     def __init__(
         self,
-        validation_fn: Optional[Callable[[nn.Module], Tuple[float, Dict[str, float]]]] = None,
+        validation_fn: Callable[[nn.Module], tuple[float, dict[str, float]]] | None = None,
         interval_steps: int = 1000,
-        interval_epochs: Optional[float] = None,
+        interval_epochs: float | None = None,
         subset_size: float = 1.0,
         adaptive_interval: bool = False,
         min_interval_steps: int = 100,
@@ -2276,7 +2276,7 @@ class ValidationIntervalManager:
         self._last_val_step = -interval_steps  # Allow immediate first validation
         self._last_val_epoch = -1.0
         self._current_interval = interval_steps
-        self._results: List[ValidationResult] = []
+        self._results: list[ValidationResult] = []
         self._best_loss = float('inf')
         self._best_step = 0
         self._loss_history: deque = deque(maxlen=10)
@@ -2300,9 +2300,7 @@ class ValidationIntervalManager:
         # Epoch-based interval
         if self.interval_epochs is not None:
             current_epoch_float = epoch + epoch_fraction
-            if current_epoch_float - self._last_val_epoch >= self.interval_epochs:
-                return True
-            return False
+            return current_epoch_float - self._last_val_epoch >= self.interval_epochs
 
         # Step-based interval
         return (step - self._last_val_step) >= self._current_interval
@@ -2312,8 +2310,8 @@ class ValidationIntervalManager:
         model: nn.Module,
         step: int,
         epoch: int = 0,
-        val_loader: Optional[torch.utils.data.DataLoader] = None,
-        device: Optional[torch.device] = None,
+        val_loader: torch.utils.data.DataLoader | None = None,
+        device: torch.device | None = None,
     ) -> ValidationResult:
         """
         Perform validation and record results.
@@ -2383,8 +2381,8 @@ class ValidationIntervalManager:
         self,
         model: nn.Module,
         val_loader: torch.utils.data.DataLoader,
-        device: Optional[torch.device] = None,
-    ) -> Tuple[float, Dict[str, float], int]:
+        device: torch.device | None = None,
+    ) -> tuple[float, dict[str, float], int]:
         """Default validation loop."""
         if device is None:
             device = next(model.parameters()).device
@@ -2457,15 +2455,15 @@ class ValidationIntervalManager:
                 int(self._current_interval * 1.2)
             )
 
-    def get_best(self) -> Tuple[float, int]:
+    def get_best(self) -> tuple[float, int]:
         """Get best validation loss and step."""
         return self._best_loss, self._best_step
 
-    def get_results(self) -> List[ValidationResult]:
+    def get_results(self) -> list[ValidationResult]:
         """Get all validation results."""
         return self._results.copy()
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get validation summary statistics."""
         if not self._results:
             return {'num_validations': 0}
@@ -2525,7 +2523,7 @@ class EnhancedEarlyStopping:
         self,
         patience: int = 10,
         min_delta: float = 1e-4,
-        elo_patience: Optional[int] = None,
+        elo_patience: int | None = None,
         elo_min_improvement: float = 5.0,
         mode: str = 'min',
         restore_best: bool = True,
@@ -2553,16 +2551,16 @@ class EnhancedEarlyStopping:
         self.best_elo = float('-inf')
         self.loss_counter = 0
         self.elo_counter = 0
-        self.best_state: Optional[Dict[str, torch.Tensor]] = None
+        self.best_state: dict[str, torch.Tensor] | None = None
         self.best_epoch = 0
         self._stopped = False
         self._call_epoch = 0  # Epoch counter for __call__ legacy interface
 
     def should_stop(
         self,
-        val_loss: Optional[float] = None,
-        current_elo: Optional[float] = None,
-        model: Optional[nn.Module] = None,
+        val_loss: float | None = None,
+        current_elo: float | None = None,
+        model: nn.Module | None = None,
         epoch: int = 0,
     ) -> bool:
         """
@@ -2738,16 +2736,16 @@ class EWCRegularizer:
         self.lambda_ewc = lambda_ewc
         self.normalize_fisher = normalize_fisher
 
-        self._fisher: Dict[str, torch.Tensor] = {}
-        self._optimal_params: Dict[str, torch.Tensor] = {}
+        self._fisher: dict[str, torch.Tensor] = {}
+        self._optimal_params: dict[str, torch.Tensor] = {}
         self._computed = False
 
     def compute_fisher(
         self,
         dataloader: torch.utils.data.DataLoader,
-        criterion: Optional[nn.Module] = None,
+        criterion: nn.Module | None = None,
         num_samples: int = 1000,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
     ) -> None:
         """
         Compute Fisher information matrix from dataloader.
@@ -2886,8 +2884,8 @@ class ModelEnsemble:
     def __init__(
         self,
         model_class: type,
-        model_kwargs: Optional[Dict[str, Any]] = None,
-        device: Optional[torch.device] = None,
+        model_kwargs: dict[str, Any] | None = None,
+        device: torch.device | None = None,
     ):
         """
         Args:
@@ -2899,15 +2897,15 @@ class ModelEnsemble:
         self.model_kwargs = model_kwargs or {}
         self.device = device or torch.device('cpu')
 
-        self._models: List[nn.Module] = []
-        self._weights: List[float] = []
-        self._names: List[str] = []
+        self._models: list[nn.Module] = []
+        self._weights: list[float] = []
+        self._names: list[str] = []
 
     def add_model(
         self,
         model_or_path: Union[nn.Module, str, Path],
         weight: float = 1.0,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> None:
         """
         Add a model to the ensemble.
@@ -2936,7 +2934,7 @@ class ModelEnsemble:
 
         logger.info(f"Added model '{model_name}' to ensemble with weight {weight}")
 
-    def sample_model(self) -> Tuple[nn.Module, str]:
+    def sample_model(self) -> tuple[nn.Module, str]:
         """
         Sample a model from the ensemble based on weights.
 
@@ -2953,7 +2951,7 @@ class ModelEnsemble:
         idx = np.random.choice(len(self._models), p=probs)
         return self._models[idx], self._names[idx]
 
-    def get_model(self, name: str) -> Optional[nn.Module]:
+    def get_model(self, name: str) -> nn.Module | None:
         """Get a specific model by name."""
         for i, n in enumerate(self._names):
             if n == name:
@@ -2973,7 +2971,7 @@ class ModelEnsemble:
         return len(self._models)
 
     @property
-    def model_names(self) -> List[str]:
+    def model_names(self) -> list[str]:
         """Names of all models in ensemble."""
         return list(self._names)
 
@@ -3027,12 +3025,12 @@ class CalibrationAutomation:
         self._outcomes: deque = deque(maxlen=window_size)
         self._epoch = 0
         self._last_calibration_epoch = 0
-        self._calibration_history: List[Dict[str, Any]] = []
+        self._calibration_history: list[dict[str, Any]] = []
 
     def add_samples(
         self,
-        predictions: Union[List[float], np.ndarray, torch.Tensor],
-        outcomes: Union[List[float], np.ndarray, torch.Tensor],
+        predictions: Union[list[float], np.ndarray, torch.Tensor],
+        outcomes: Union[list[float], np.ndarray, torch.Tensor],
     ) -> None:
         """Add prediction-outcome pairs for monitoring."""
         if isinstance(predictions, torch.Tensor):
@@ -3043,11 +3041,11 @@ class CalibrationAutomation:
         predictions = np.asarray(predictions).flatten()
         outcomes = np.asarray(outcomes).flatten()
 
-        for p, o in zip(predictions, outcomes):
+        for p, o in zip(predictions, outcomes, strict=False):
             self._predictions.append(p)
             self._outcomes.append(o)
 
-    def should_recalibrate(self, epoch: Optional[int] = None) -> bool:
+    def should_recalibrate(self, epoch: int | None = None) -> bool:
         """
         Check if recalibration is needed.
 
@@ -3123,7 +3121,7 @@ class CalibrationAutomation:
         self,
         model: nn.Module,
         dataloader: torch.utils.data.DataLoader,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         lr: float = 0.01,
         max_iter: int = 50,
     ) -> float:
@@ -3184,7 +3182,7 @@ class CalibrationAutomation:
         logger.info(f"Computed optimal temperature: {optimal_temp:.4f}")
         return optimal_temp
 
-    def get_calibration_history(self) -> List[Dict[str, Any]]:
+    def get_calibration_history(self) -> list[dict[str, Any]]:
         """Get calibration check history."""
         return self._calibration_history
 
@@ -3221,7 +3219,7 @@ class SeedManager:
 
     def __init__(
         self,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         deterministic: bool = False,
         benchmark: bool = True,
     ):
@@ -3236,7 +3234,7 @@ class SeedManager:
         self.benchmark = benchmark
 
         self._initial_seed = self.seed
-        self._seed_history: List[Dict[str, Any]] = []
+        self._seed_history: list[dict[str, Any]] = []
 
     def _generate_seed(self) -> int:
         """Generate a random seed."""
@@ -3312,7 +3310,7 @@ class SeedManager:
         generator.manual_seed(self.seed + offset)
         return generator
 
-    def fork(self, offset: int = 1) -> 'SeedManager':
+    def fork(self, offset: int = 1) -> SeedManager:
         """
         Create a new SeedManager with an offset seed.
 
@@ -3347,7 +3345,7 @@ class SeedManager:
             'action': f'advance({steps})',
         })
 
-    def get_seed_info(self) -> Dict[str, Any]:
+    def get_seed_info(self) -> dict[str, Any]:
         """Get seed information for experiment tracking."""
         return {
             'initial_seed': self._initial_seed,
@@ -3361,7 +3359,7 @@ class SeedManager:
             'numpy_version': np.__version__,
         }
 
-    def save_state(self) -> Dict[str, Any]:
+    def save_state(self) -> dict[str, Any]:
         """Save RNG states for checkpointing."""
         import random
 
@@ -3379,7 +3377,7 @@ class SeedManager:
 
         return state
 
-    def load_state(self, state: Dict[str, Any]) -> None:
+    def load_state(self, state: dict[str, Any]) -> None:
         """Load RNG states from checkpoint."""
         import random
 
@@ -3428,9 +3426,9 @@ def set_reproducible_seed(seed: int, deterministic: bool = True) -> SeedManager:
 def create_training_enhancements(
     model: nn.Module,
     optimizer: optim.Optimizer,
-    config: Optional[Dict[str, Any]] = None,
-    validation_fn: Optional[Callable[[nn.Module], Tuple[float, Dict[str, float]]]] = None,
-) -> Dict[str, Any]:
+    config: dict[str, Any] | None = None,
+    validation_fn: Callable[[nn.Module], tuple[float, dict[str, float]]] | None = None,
+) -> dict[str, Any]:
     """
     Create a suite of training enhancements with default configuration.
 

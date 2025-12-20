@@ -38,8 +38,8 @@ These helpers are intended for offline training / analysis tools under
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 
@@ -47,9 +47,8 @@ from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
 from app.models import AIConfig, GameState
 
-
 # Stable, canonical ordering of trainable heuristic weight keys.
-HEURISTIC_WEIGHT_KEYS: Tuple[str, ...] = tuple(
+HEURISTIC_WEIGHT_KEYS: tuple[str, ...] = tuple(
     sorted(BASE_V1_BALANCED_WEIGHTS.keys())
 )
 
@@ -77,7 +76,7 @@ class HeuristicFeatures:
 
 def _build_ai_with_weights(
     player_number: int,
-    weight_overrides: Dict[str, float],
+    weight_overrides: dict[str, float],
 ) -> HeuristicAI:
     """Construct a HeuristicAI instance with explicit weight overrides.
 
@@ -132,15 +131,15 @@ def extract_linear_features(
     """
 
     # 1. Baseline with all heuristic weights set to zero.
-    zero_weights = {name: 0.0 for name in HEURISTIC_WEIGHT_KEYS}
+    zero_weights = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 0.0)
     ai_zero = _build_ai_with_weights(player_number, zero_weights)
     bias = float(ai_zero.evaluate_position(game_state))
 
     # 2. Per-weight features via one-hot weight vectors.
-    feats: List[float] = []
+    feats: list[float] = []
 
     for key in HEURISTIC_WEIGHT_KEYS:
-        w = {name: 0.0 for name in HEURISTIC_WEIGHT_KEYS}
+        w = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 0.0)
         w[key] = 1.0
         ai_k = _build_ai_with_weights(player_number, w)
         score_k = float(ai_k.evaluate_position(game_state))
@@ -155,7 +154,7 @@ def extract_linear_features(
 def batch_extract_linear_features(
     game_states: Sequence[GameState],
     player_numbers: Sequence[int],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Vectorised helper for extracting features over many examples.
 
     Parameters
@@ -186,10 +185,10 @@ def batch_extract_linear_features(
             np.zeros((0,), dtype=np.float32),
         )
 
-    all_feats: List[np.ndarray] = []
-    all_biases: List[float] = []
+    all_feats: list[np.ndarray] = []
+    all_biases: list[float] = []
 
-    for state, player in zip(game_states, player_numbers):
+    for state, player in zip(game_states, player_numbers, strict=False):
         hf = extract_linear_features(state, player)
         all_feats.append(hf.features)
         all_biases.append(hf.bias)

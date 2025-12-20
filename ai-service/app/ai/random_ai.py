@@ -7,16 +7,14 @@ very low difficulties, rather than competitive play.
 
 from __future__ import annotations
 
-from typing import Optional, Dict
-
-from .base import BaseAI
 from ..models import GameState, Move
+from .base import BaseAI
 
 
 class RandomAI(BaseAI):
     """AI that selects random valid moves."""
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select a random valid move for ``game_state``.
 
         Args:
@@ -58,7 +56,7 @@ class RandomAI(BaseAI):
     def get_evaluation_breakdown(
         self,
         game_state: GameState,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Return a simple breakdown for :meth:`evaluate_position`.
 
         Args:

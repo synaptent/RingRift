@@ -53,68 +53,67 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
 
 from app.utils.optional_imports import (
     PROMETHEUS_AVAILABLE as HAS_PROMETHEUS,
-    Gauge,
     Counter,
+    Gauge,
 )
 from app.utils.time_constants import SECONDS_PER_DAY
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # Limits and configuration
-    "ResourceLimits",
+    "DISK_PRESSURE_THRESHOLDS",
     "LIMITS",
-    # Core check functions
-    "check_disk_space",
-    "check_disk_for_write",
-    "check_memory",
-    "check_cpu",
-    "check_gpu_memory",
-    "can_proceed",
-    "wait_for_resources",
-    # Usage info functions
-    "get_disk_usage",
-    "get_memory_usage",
-    "get_cpu_usage",
-    "get_gpu_memory_usage",
-    "get_resource_status",
-    # Memory pressure management
-    "MemoryPressureLevel",
     "PRESSURE_THRESHOLDS",
-    "get_memory_pressure_level",
-    "get_psi_memory_pressure",
-    "trigger_memory_cleanup",
-    "check_memory_and_cleanup",
-    # Memory monitoring
-    "MemoryPressureMonitor",
-    "start_memory_monitor",
-    "stop_memory_monitor",
-    "register_oom_signal_handler",
-    "adjust_oom_score",
-    "get_oom_score",
     # Disk pressure management
     "DiskPressureLevel",
-    "DISK_PRESSURE_THRESHOLDS",
-    "get_disk_pressure_level",
-    "trigger_disk_cleanup",
-    "check_disk_and_cleanup",
     # Disk monitoring
     "DiskPressureMonitor",
-    "start_disk_monitor",
-    "stop_disk_monitor",
+    # Memory pressure management
+    "MemoryPressureLevel",
+    # Memory monitoring
+    "MemoryPressureMonitor",
+    # Limits and configuration
+    "ResourceLimits",
+    "adjust_oom_score",
+    "can_proceed",
+    "check_cpu",
+    "check_disk_and_cleanup",
+    "check_disk_for_write",
+    # Core check functions
+    "check_disk_space",
+    "check_gpu_memory",
+    "check_memory",
+    "check_memory_and_cleanup",
+    "cleanup_old_checkpoints",
+    "cleanup_old_games",
     # Cleanup functions
     "cleanup_old_logs",
-    "cleanup_old_checkpoints",
     "cleanup_temp_files",
-    "cleanup_old_games",
     # GPU utilities
     "clear_gpu_memory",
     # Utility
     "get_ai_service_root",
+    "get_cpu_usage",
+    "get_disk_pressure_level",
+    # Usage info functions
+    "get_disk_usage",
+    "get_gpu_memory_usage",
+    "get_memory_pressure_level",
+    "get_memory_usage",
+    "get_oom_score",
+    "get_psi_memory_pressure",
+    "get_resource_status",
+    "register_oom_signal_handler",
+    "start_disk_monitor",
+    "start_memory_monitor",
+    "stop_disk_monitor",
+    "stop_memory_monitor",
+    "trigger_disk_cleanup",
+    "trigger_memory_cleanup",
+    "wait_for_resources",
 ]
 
 # Initialize Prometheus metrics if available
@@ -232,7 +231,7 @@ LIMITS = ResourceLimits()
 # Disk Space Checks
 # ============================================
 
-def get_disk_usage(path: Optional[str] = None) -> Tuple[float, float, float]:
+def get_disk_usage(path: str | None = None) -> tuple[float, float, float]:
     """Get disk usage for a path.
 
     Args:
@@ -257,7 +256,7 @@ def get_disk_usage(path: Optional[str] = None) -> Tuple[float, float, float]:
 
 def check_disk_space(
     required_gb: float = 2.0,
-    path: Optional[str] = None,
+    path: str | None = None,
     log_warning: bool = True,
 ) -> bool:
     """Check if sufficient disk space is available.
@@ -292,7 +291,7 @@ def check_disk_space(
 
 def check_disk_for_write(
     estimated_size_mb: float,
-    path: Optional[str] = None,
+    path: str | None = None,
 ) -> bool:
     """Check if disk has space for an estimated write operation.
 
@@ -311,7 +310,7 @@ def check_disk_for_write(
 # Memory Checks
 # ============================================
 
-def get_memory_usage() -> Tuple[float, float, float]:
+def get_memory_usage() -> tuple[float, float, float]:
     """Get system memory usage.
 
     Returns:
@@ -368,7 +367,7 @@ def check_memory(
 # CPU Checks
 # ============================================
 
-def get_cpu_usage() -> Tuple[float, float, int]:
+def get_cpu_usage() -> tuple[float, float, int]:
     """Get CPU usage and load average.
 
     Returns:
@@ -417,7 +416,7 @@ def check_cpu(log_warning: bool = True) -> bool:
 # GPU Memory Checks
 # ============================================
 
-def get_gpu_memory_usage(device_id: int = 0) -> Tuple[float, float, float]:
+def get_gpu_memory_usage(device_id: int = 0) -> tuple[float, float, float]:
     """Get GPU memory usage.
 
     Args:
@@ -544,7 +543,7 @@ def get_memory_pressure_level() -> int:
     return level
 
 
-def get_psi_memory_pressure() -> Optional[dict]:
+def get_psi_memory_pressure() -> dict | None:
     """Get Linux PSI (Pressure Stall Information) metrics.
 
     PSI provides system-wide resource pressure information.
@@ -612,7 +611,7 @@ def adjust_oom_score(score_adj: int = 500) -> bool:
         return False
 
 
-def get_oom_score() -> Optional[int]:
+def get_oom_score() -> int | None:
     """Get current OOM score for this process.
 
     Returns:
@@ -701,7 +700,7 @@ def trigger_memory_cleanup(level: int) -> int:
 def check_memory_and_cleanup(
     required_gb: float = 1.0,
     auto_cleanup: bool = True,
-) -> Tuple[bool, int]:
+) -> tuple[bool, int]:
     """Check memory and optionally trigger cleanup if needed.
 
     Args:
@@ -764,7 +763,7 @@ class MemoryPressureMonitor:
         self,
         check_interval: float = 5.0,
         auto_cleanup: bool = True,
-        on_critical: Optional[callable] = None,
+        on_critical: callable | None = None,
     ):
         """
         Args:
@@ -828,13 +827,13 @@ class MemoryPressureMonitor:
 
 
 # Global monitor instance (optional)
-_memory_monitor: Optional[MemoryPressureMonitor] = None
+_memory_monitor: MemoryPressureMonitor | None = None
 
 
 def start_memory_monitor(
     check_interval: float = 5.0,
     auto_cleanup: bool = True,
-    on_critical: Optional[callable] = None,
+    on_critical: callable | None = None,
 ) -> MemoryPressureMonitor:
     """Start the global memory pressure monitor.
 
@@ -877,7 +876,7 @@ class DiskPressureLevel:
 DISK_PRESSURE_THRESHOLDS = (70.0, 75.0, 80.0, 85.0)
 
 
-def get_disk_pressure_level(path: Optional[str] = None) -> int:
+def get_disk_pressure_level(path: str | None = None) -> int:
     """Get current disk pressure level.
 
     Returns:
@@ -938,7 +937,7 @@ def cleanup_old_logs(max_age_days: int = 7) -> int:
     return deleted
 
 
-def cleanup_old_checkpoints(keep_per_config: int = 5, dry_run: bool = False) -> Tuple[int, int]:
+def cleanup_old_checkpoints(keep_per_config: int = 5, dry_run: bool = False) -> tuple[int, int]:
     """Clean up old model checkpoints, keeping the most recent per config.
 
     Args:
@@ -1040,7 +1039,7 @@ def cleanup_temp_files() -> int:
     return deleted
 
 
-def cleanup_old_games(keep_days: int = 30) -> Tuple[int, int]:
+def cleanup_old_games(keep_days: int = 30) -> tuple[int, int]:
     """Clean up old game databases beyond retention period.
 
     Args:
@@ -1116,7 +1115,7 @@ def trigger_disk_cleanup(level: int, dry_run: bool = False) -> int:
         freed_mb += bytes_freed / (1024 * 1024)
 
         # Clean old games
-        files, bytes_freed = cleanup_old_games(keep_days=14)
+        _files, bytes_freed = cleanup_old_games(keep_days=14)
         freed_mb += bytes_freed / (1024 * 1024)
 
     # Emit Prometheus metrics
@@ -1132,8 +1131,8 @@ def trigger_disk_cleanup(level: int, dry_run: bool = False) -> int:
 def check_disk_and_cleanup(
     required_gb: float = 2.0,
     auto_cleanup: bool = True,
-    path: Optional[str] = None,
-) -> Tuple[bool, int]:
+    path: str | None = None,
+) -> tuple[bool, int]:
     """Check disk space and optionally trigger cleanup if needed.
 
     Args:
@@ -1171,8 +1170,8 @@ class DiskPressureMonitor:
         self,
         check_interval: float = 60.0,  # Check every minute
         auto_cleanup: bool = True,
-        on_critical: Optional[callable] = None,
-        path: Optional[str] = None,
+        on_critical: callable | None = None,
+        path: str | None = None,
     ):
         """
         Args:
@@ -1238,13 +1237,13 @@ class DiskPressureMonitor:
 
 
 # Global disk monitor instance
-_disk_monitor: Optional[DiskPressureMonitor] = None
+_disk_monitor: DiskPressureMonitor | None = None
 
 
 def start_disk_monitor(
     check_interval: float = 60.0,
     auto_cleanup: bool = True,
-    on_critical: Optional[callable] = None,
+    on_critical: callable | None = None,
 ) -> DiskPressureMonitor:
     """Start the global disk pressure monitor.
 
@@ -1306,10 +1305,7 @@ def can_proceed(
     if check_cpu_load and not check_cpu(log_warning=False):
         return False
 
-    if check_gpu and not check_gpu_memory(gpu_required_gb, log_warning=False):
-        return False
-
-    return True
+    return not (check_gpu and not check_gpu_memory(gpu_required_gb, log_warning=False))
 
 
 def wait_for_resources(
@@ -1620,14 +1616,12 @@ class AsyncResourceLimiter:
             cpu_pct, _, _ = get_cpu_usage()
             issues.append(f"CPU: {cpu_pct:.1f}%")
 
-        if self.gpu_required_gb > 0:
-            if not check_gpu_memory(self.gpu_required_gb, log_warning=False):
-                gpu_pct, _, _ = get_gpu_memory_usage()
-                issues.append(f"GPU: {gpu_pct:.1f}%")
+        if self.gpu_required_gb > 0 and not check_gpu_memory(self.gpu_required_gb, log_warning=False):
+            gpu_pct, _, _ = get_gpu_memory_usage()
+            issues.append(f"GPU: {gpu_pct:.1f}%")
 
-        if self.max_concurrent_tasks > 0:
-            if len(self._active_tasks) >= self.max_concurrent_tasks:
-                issues.append(f"Tasks: {len(self._active_tasks)}/{self.max_concurrent_tasks}")
+        if self.max_concurrent_tasks > 0 and len(self._active_tasks) >= self.max_concurrent_tasks:
+            issues.append(f"Tasks: {len(self._active_tasks)}/{self.max_concurrent_tasks}")
 
         return len(issues) == 0, issues
 
@@ -1745,7 +1739,7 @@ class _AsyncResourceContext:
 # ============================================
 
 def respect_resource_limits(
-    task_name: Optional[str] = None,
+    task_name: str | None = None,
     disk_gb: float = 2.0,
     mem_gb: float = 1.0,
     gpu_gb: float = 0.0,
@@ -1762,8 +1756,8 @@ def respect_resource_limits(
         def save_data():
             ...
     """
-    import functools
     import asyncio
+    import functools
 
     def decorator(func):
         limiter = AsyncResourceLimiter(

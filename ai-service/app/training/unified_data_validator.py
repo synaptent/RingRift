@@ -44,7 +44,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +73,11 @@ class UnifiedValidationIssue:
     issue_type: str
     message: str
     severity: ValidationSeverity = ValidationSeverity.ERROR
-    sample_index: Optional[int] = None
-    file_path: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
+    sample_index: int | None = None
+    file_path: str | None = None
+    details: dict[str, Any] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "issue_type": self.issue_type,
             "message": self.message,
@@ -96,9 +96,9 @@ class UnifiedValidationResult:
     source_path: str
     total_items: int = 0
     items_with_issues: int = 0
-    issues: List[UnifiedValidationIssue] = field(default_factory=list)
+    issues: list[UnifiedValidationIssue] = field(default_factory=list)
     duration_seconds: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_issue(
         self,
@@ -136,7 +136,7 @@ class UnifiedValidationResult:
             f"in {self.items_with_issues}/{self.total_items} items"
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "is_valid": self.is_valid,
             "validation_type": self.validation_type.value,
@@ -156,7 +156,7 @@ class UnifiedDataValidator:
     based on data type, with consistent result handling.
     """
 
-    _instance: Optional["UnifiedDataValidator"] = None
+    _instance: UnifiedDataValidator | None = None
 
     def __init__(self):
         """Initialize the unified validator."""
@@ -171,7 +171,7 @@ class UnifiedDataValidator:
         self._validations_failed = 0
 
     @classmethod
-    def get_instance(cls) -> "UnifiedDataValidator":
+    def get_instance(cls) -> UnifiedDataValidator:
         """Get the singleton instance."""
         if cls._instance is None:
             cls._instance = cls()
@@ -333,7 +333,7 @@ class UnifiedDataValidator:
 
     def validate_nnue_dataset(
         self,
-        samples: List[Any],
+        samples: list[Any],
         feature_dim: int,
         **kwargs,
     ) -> UnifiedValidationResult:
@@ -465,7 +465,7 @@ class UnifiedDataValidator:
         self,
         db_path: Union[str, Path],
         game_id: str,
-        mode: Optional[str] = None,
+        mode: str | None = None,
         **kwargs,
     ) -> UnifiedValidationResult:
         """Validate game recording against TS canonical engine.
@@ -542,7 +542,7 @@ class UnifiedDataValidator:
     def validate(
         self,
         path: Union[str, Path],
-        validation_type: Optional[ValidationType] = None,
+        validation_type: ValidationType | None = None,
         **kwargs,
     ) -> UnifiedValidationResult:
         """Validate any supported data type (auto-detects type from extension).
@@ -637,7 +637,7 @@ class UnifiedDataValidator:
         except Exception as e:
             logger.debug(f"Failed to emit validation event: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get validation statistics."""
         return {
             "validations_run": self._validations_run,
@@ -651,7 +651,7 @@ class UnifiedDataValidator:
 
 
 # Singleton access
-_validator: Optional[UnifiedDataValidator] = None
+_validator: UnifiedDataValidator | None = None
 
 
 def get_validator() -> UnifiedDataValidator:
@@ -689,9 +689,9 @@ try:
         ValidationIssue,
         ValidationIssueType,
         ValidationResult,
-        validate_npz_file,
-        record_validation_metrics,
         record_deduplication_metrics,
+        record_validation_metrics,
+        validate_npz_file,
     )
     _legacy_exports_available = True
 except ImportError:
@@ -700,9 +700,9 @@ except ImportError:
 # Re-exports from territory_dataset_validation (December 2025)
 try:
     from app.training.territory_dataset_validation import (
-        validate_territory_example,
-        validate_territory_dataset_file,
         iter_territory_dataset_errors,
+        validate_territory_dataset_file,
+        validate_territory_example,
     )
     _territory_exports_available = True
 except ImportError:
@@ -711,12 +711,12 @@ except ImportError:
 # Re-exports from parity_validator (December 2025)
 try:
     from app.db.parity_validator import (
-        validate_game_parity as validate_parity,
-        validate_after_recording,
-        ParityValidationError,
         ParityDivergence,
         ParityMode,
+        ParityValidationError,
         is_parity_validation_enabled,
+        validate_after_recording,
+        validate_game_parity as validate_parity,
     )
     _parity_exports_available = True
 except ImportError:
@@ -724,35 +724,35 @@ except ImportError:
 
 
 __all__ = [
-    # Unified API (preferred)
-    "UnifiedDataValidator",
-    "UnifiedValidationResult",
-    "UnifiedValidationIssue",
-    "ValidationType",
-    "ValidationSeverity",
-    "get_validator",
-    "validate_training_data",
-    "validate_database",
-    "validate_any",
     # Legacy re-exports from data_validation
     "DataValidator",
     "DataValidatorConfig",
     "GameDeduplicator",
+    "ParityDivergence",
+    "ParityMode",
+    "ParityValidationError",
+    # Unified API (preferred)
+    "UnifiedDataValidator",
+    "UnifiedValidationIssue",
+    "UnifiedValidationResult",
     "ValidationIssue",
     "ValidationIssueType",
     "ValidationResult",
-    "validate_npz_file",
-    "record_validation_metrics",
-    "record_deduplication_metrics",
-    # Territory validation re-exports
-    "validate_territory_example",
-    "validate_territory_dataset_file",
+    "ValidationSeverity",
+    "ValidationType",
+    "get_validator",
+    "is_parity_validation_enabled",
     "iter_territory_dataset_errors",
+    "record_deduplication_metrics",
+    "record_validation_metrics",
+    "validate_after_recording",
+    "validate_any",
+    "validate_database",
+    "validate_npz_file",
     # Parity validation re-exports
     "validate_parity",
-    "validate_after_recording",
-    "ParityValidationError",
-    "ParityDivergence",
-    "ParityMode",
-    "is_parity_validation_enabled",
+    "validate_territory_dataset_file",
+    # Territory validation re-exports
+    "validate_territory_example",
+    "validate_training_data",
 ]

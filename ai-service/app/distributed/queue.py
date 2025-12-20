@@ -38,7 +38,7 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class EvalTask:
 
     task_id: str
     candidate_id: int
-    weights: Dict[str, float]
+    weights: dict[str, float]
     board_type: str = "square8"
     num_players: int = 2
     games_per_eval: int = 24
@@ -62,26 +62,26 @@ class EvalTask:
     state_pool_id: str = "v1"
     max_moves: int = 10000
     eval_randomness: float = 0.0
-    seed: Optional[int] = None
+    seed: int | None = None
 
     # Metadata for tracking
     generation: int = 0
     run_id: str = ""
 
     # Optional baseline weights for evaluation
-    baseline_weights: Optional[Dict[str, float]] = None
+    baseline_weights: dict[str, float] | None = None
 
     # Game recording options
     record_games: bool = False  # If True, worker returns serialized game data
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> EvalTask:
+    def from_dict(cls, data: dict[str, Any]) -> EvalTask:
         return cls(**data)
 
     @classmethod
@@ -94,16 +94,16 @@ class GameReplayData:
     """Serialized game replay data for transfer from worker to coordinator."""
 
     game_id: str
-    initial_state: Dict[str, Any]  # Serialized GameState
-    final_state: Dict[str, Any]  # Serialized GameState
-    moves: List[Dict[str, Any]]  # Serialized moves
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    initial_state: dict[str, Any]  # Serialized GameState
+    final_state: dict[str, Any]  # Serialized GameState
+    moves: list[dict[str, Any]]  # Serialized moves
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "GameReplayData":
+    def from_dict(cls, data: dict[str, Any]) -> GameReplayData:
         return cls(**data)
 
 
@@ -120,19 +120,19 @@ class EvalResult:
     evaluation_time_sec: float = 0.0
     worker_id: str = ""
     status: str = "success"  # success, error, timeout
-    error: Optional[str] = None
+    error: str | None = None
 
     # Optional game replay data (only populated if task.record_games=True)
-    game_replays: Optional[List[Dict[str, Any]]] = None
+    game_replays: list[dict[str, Any]] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> EvalResult:
+    def from_dict(cls, data: dict[str, Any]) -> EvalResult:
         return cls(**data)
 
     @classmethod
@@ -154,7 +154,7 @@ class TaskQueue(ABC):
         pass
 
     @abstractmethod
-    def consume_task(self, timeout: float = 30.0) -> Optional[EvalTask]:
+    def consume_task(self, timeout: float = 30.0) -> EvalTask | None:
         """Consume a task from the queue.
 
         Args:
@@ -176,7 +176,7 @@ class TaskQueue(ABC):
         pass
 
     @abstractmethod
-    def consume_result(self, timeout: float = 5.0) -> Optional[EvalResult]:
+    def consume_result(self, timeout: float = 5.0) -> EvalResult | None:
         """Consume a result from the queue."""
         pass
 
@@ -184,8 +184,8 @@ class TaskQueue(ABC):
         self,
         count: int,
         timeout: float = 60.0,
-        progress_callback: Optional[callable] = None,
-    ) -> List[EvalResult]:
+        progress_callback: callable | None = None,
+    ) -> list[EvalResult]:
         """Consume multiple results with overall timeout.
 
         Args:
@@ -266,7 +266,7 @@ class RedisQueue(TaskQueue):
         self._redis.lpush(self._task_queue, task.to_json())
         logger.debug(f"Published task {task.task_id}")
 
-    def consume_task(self, timeout: float = 30.0) -> Optional[EvalTask]:
+    def consume_task(self, timeout: float = 30.0) -> EvalTask | None:
         """Pop task from the right (FIFO order)."""
         # Use BRPOP for blocking wait
         result = self._redis.brpop(self._task_queue, timeout=int(timeout))
@@ -295,7 +295,7 @@ class RedisQueue(TaskQueue):
         self._redis.lpush(self._result_queue, result.to_json())
         logger.debug(f"Published result for task {result.task_id}")
 
-    def consume_result(self, timeout: float = 5.0) -> Optional[EvalResult]:
+    def consume_result(self, timeout: float = 5.0) -> EvalResult | None:
         """Pop result from the result queue."""
         result = self._redis.brpop(self._result_queue, timeout=int(timeout))
         if result:
@@ -303,7 +303,7 @@ class RedisQueue(TaskQueue):
             return EvalResult.from_json(json_str)
         return None
 
-    def get_queue_lengths(self) -> Dict[str, int]:
+    def get_queue_lengths(self) -> dict[str, int]:
         """Get current queue lengths for monitoring."""
         return {
             "tasks": self._redis.llen(self._task_queue),
@@ -389,7 +389,7 @@ class SQSQueue(TaskQueue):
         self._visibility_timeout = visibility_timeout
 
         # Map task_id to receipt handle for acknowledgement
-        self._receipt_handles: Dict[str, str] = {}
+        self._receipt_handles: dict[str, str] = {}
 
         logger.info(f"Connected to SQS queues in {region}")
 
@@ -412,7 +412,7 @@ class SQSQueue(TaskQueue):
         )
         logger.debug(f"Published task {task.task_id} to SQS")
 
-    def consume_task(self, timeout: float = 30.0) -> Optional[EvalTask]:
+    def consume_task(self, timeout: float = 30.0) -> EvalTask | None:
         """Receive task message from SQS."""
         # SQS WaitTimeSeconds maxes at 20
         wait_time = min(int(timeout), 20)
@@ -467,7 +467,7 @@ class SQSQueue(TaskQueue):
         )
         logger.debug(f"Published result for task {result.task_id}")
 
-    def consume_result(self, timeout: float = 5.0) -> Optional[EvalResult]:
+    def consume_result(self, timeout: float = 5.0) -> EvalResult | None:
         """Receive result message from SQS."""
         wait_time = min(int(timeout), 20)
 
@@ -493,7 +493,7 @@ class SQSQueue(TaskQueue):
 
         return result
 
-    def get_queue_attributes(self) -> Dict[str, Dict[str, str]]:
+    def get_queue_attributes(self) -> dict[str, dict[str, str]]:
         """Get queue attributes for monitoring."""
         task_attrs = self._sqs.get_queue_attributes(
             QueueUrl=self._task_queue_url,
@@ -519,7 +519,7 @@ class SQSQueue(TaskQueue):
 
 
 def get_task_queue(
-    backend: Optional[str] = None,
+    backend: str | None = None,
     **kwargs,
 ) -> TaskQueue:
     """Get a task queue based on configuration.

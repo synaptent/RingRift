@@ -29,15 +29,13 @@ from __future__ import annotations
 
 import glob
 import logging
-import os
 import random
+from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader, IterableDataset
+from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +50,7 @@ class EBMODatasetConfig:
     """Configuration for EBMO dataset."""
 
     # Data sources
-    data_paths: List[str] = None  # Glob patterns or file paths
+    data_paths: list[str] = None  # Glob patterns or file paths
     data_dir: str = "data/games"
 
     # Sampling
@@ -232,7 +230,7 @@ class GameDataParser:
         self.num_channels = num_channels
         self.num_globals = num_globals
 
-    def load_npz(self, path: str) -> Optional[Dict[str, np.ndarray]]:
+    def load_npz(self, path: str) -> dict[str, np.ndarray] | None:
         """Load and validate NPZ file.
 
         Args:
@@ -259,12 +257,12 @@ class GameDataParser:
 
     def extract_samples(
         self,
-        data: Dict[str, np.ndarray],
+        data: dict[str, np.ndarray],
         action_generator: ActionFeatureGenerator,
         num_negatives: int = 15,
         hard_negative_ratio: float = 0.3,
         max_samples: int = 100,
-    ) -> List[EBMOSample]:
+    ) -> list[EBMOSample]:
         """Extract EBMO samples from game data.
 
         Args:
@@ -284,8 +282,8 @@ class GameDataParser:
         globals_array = data.get("globals", np.zeros((len(features), self.num_globals)))
 
         # Policy data for positive actions (if available)
-        policy_indices = data.get("policy_indices", None)
-        policy_values = data.get("policy_values", None)
+        policy_indices = data.get("policy_indices")
+        data.get("policy_values")
 
         num_positions = min(len(features), max_samples)
         indices = np.random.choice(len(features), num_positions, replace=False)
@@ -384,7 +382,7 @@ class EBMODataset(Dataset):
 
     def __init__(
         self,
-        data_paths: Optional[List[str]] = None,
+        data_paths: list[str] | None = None,
         data_dir: str = "data/games",
         num_negatives: int = 15,
         hard_negative_ratio: float = 0.3,
@@ -423,7 +421,7 @@ class EBMODataset(Dataset):
         self.parser = GameDataParser(board_size)
 
         # Preload samples if requested
-        self.preloaded_samples: Optional[List[EBMOSample]] = None
+        self.preloaded_samples: list[EBMOSample] | None = None
         if preload and self.file_paths:
             self._preload_all()
 
@@ -452,7 +450,7 @@ class EBMODataset(Dataset):
         # Estimate based on file count and max samples
         return len(self.file_paths) * self.max_samples_per_game
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, ...]:
         """Get a training sample.
 
         Returns:
@@ -492,7 +490,7 @@ class EBMODataset(Dataset):
             torch.tensor(sample.outcome, dtype=torch.float32),
         )
 
-    def _dummy_sample(self) -> Tuple[torch.Tensor, ...]:
+    def _dummy_sample(self) -> tuple[torch.Tensor, ...]:
         """Create a dummy sample for error cases."""
         board_size = self.action_generator.board_size
         return (
@@ -517,7 +515,7 @@ class EBMOStreamingDataset(IterableDataset):
 
     def __init__(
         self,
-        data_paths: Optional[List[str]] = None,
+        data_paths: list[str] | None = None,
         data_dir: str = "data/games",
         num_negatives: int = 15,
         hard_negative_ratio: float = 0.3,
@@ -540,7 +538,7 @@ class EBMOStreamingDataset(IterableDataset):
         self.action_generator = ActionFeatureGenerator(board_size)
         self.parser = GameDataParser(board_size)
 
-    def __iter__(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """Iterate over samples from all files."""
         file_list = self.file_paths.copy()
         if self.shuffle:
@@ -578,7 +576,7 @@ class EBMOStreamingDataset(IterableDataset):
 
 
 def create_ebmo_dataloader(
-    data_paths: Optional[List[str]] = None,
+    data_paths: list[str] | None = None,
     data_dir: str = "data/games",
     batch_size: int = 64,
     num_workers: int = 4,
@@ -644,7 +642,7 @@ def generate_synthetic_ebmo_data(
     num_samples: int = 1000,
     board_size: int = 8,
     num_negatives: int = 15,
-) -> List[EBMOSample]:
+) -> list[EBMOSample]:
     """Generate synthetic data for testing EBMO.
 
     Creates random state-action pairs with outcomes based on
@@ -700,12 +698,12 @@ def generate_synthetic_ebmo_data(
 
 
 __all__ = [
+    "ActionFeatureGenerator",
+    "EBMODataset",
     "EBMODatasetConfig",
     "EBMOSample",
-    "ActionFeatureGenerator",
-    "GameDataParser",
-    "EBMODataset",
     "EBMOStreamingDataset",
+    "GameDataParser",
     "create_ebmo_dataloader",
     "generate_synthetic_ebmo_data",
 ]

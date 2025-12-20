@@ -15,11 +15,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from app.models import BoardType
 
@@ -76,9 +74,9 @@ class SelfplayConfig:
 
     # Output settings
     output_format: OutputFormat = OutputFormat.DB
-    output_dir: Optional[str] = None
-    output_file: Optional[str] = None
-    record_db: Optional[str] = None
+    output_dir: str | None = None
+    output_file: str | None = None
+    record_db: str | None = None
 
     # Recording options
     store_history_entries: bool = True
@@ -98,26 +96,26 @@ class SelfplayConfig:
 
     # Ramdrive settings
     use_ramdrive: bool = False
-    ramdrive_path: Optional[str] = None
+    ramdrive_path: str | None = None
     sync_interval: int = 300  # seconds
 
     # Reproducibility
-    seed: Optional[int] = None
+    seed: int | None = None
     checkpoint_interval: int = 100
 
     # Metadata
     source: str = "selfplay"
-    profile_id: Optional[str] = None
+    profile_id: str | None = None
 
     # Heuristic weights (for heuristic-based engines)
-    weights_file: Optional[str] = None
-    weights_profile: Optional[str] = None
+    weights_file: str | None = None
+    weights_profile: str | None = None
 
     # Worker coordination (for distributed selfplay)
-    worker_id: Optional[str] = None
+    worker_id: str | None = None
 
     # Telemetry settings
-    telemetry_path: Optional[str] = None
+    telemetry_path: str | None = None
     telemetry_interval: int = 50  # seconds
 
     # NN batching (for distributed/GPU selfplay)
@@ -136,12 +134,12 @@ class SelfplayConfig:
     random_opening_moves: int = 0
 
     # Distributed selfplay settings
-    hosts: Optional[str] = None
+    hosts: str | None = None
     max_parallel_per_host: int = 2
     difficulty_band: str = "light"  # "light", "canonical", etc.
 
     # Additional engine-specific options
-    extra_options: Dict[str, Any] = field(default_factory=dict)
+    extra_options: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validate and normalize configuration."""
@@ -201,7 +199,7 @@ class SelfplayConfig:
         }
         return mapping.get(self.board_type, BoardType.SQUARE8)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary for serialization."""
         return {
             "board_type": self.board_type,
@@ -218,7 +216,7 @@ class SelfplayConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SelfplayConfig":
+    def from_dict(cls, data: dict[str, Any]) -> SelfplayConfig:
         """Create config from dictionary."""
         return cls(**{k: v for k, v in data.items() if k != "config_key"})
 
@@ -516,7 +514,7 @@ def create_argument_parser(
 
 
 def parse_selfplay_args(
-    args: Optional[List[str]] = None,
+    args: list[str] | None = None,
     description: str = "Run selfplay game generation",
 ) -> SelfplayConfig:
     """Parse command-line arguments and return SelfplayConfig.

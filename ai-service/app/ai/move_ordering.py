@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..models import Move
@@ -92,12 +92,12 @@ class MovePriorityScorer:
         Bonus multipliers for scored ordering.
     """
 
-    custom_priorities: Dict[str, int] = field(default_factory=dict)
-    bonus_multipliers: Dict[str, float] = field(
+    custom_priorities: dict[str, int] = field(default_factory=dict)
+    bonus_multipliers: dict[str, float] = field(
         default_factory=lambda: dict(PRIORITY_BONUS_MULTIPLIER)
     )
 
-    def get_priority(self, move: "Move") -> int:
+    def get_priority(self, move: Move) -> int:
         """Get integer priority for a move.
 
         Parameters
@@ -132,7 +132,7 @@ class MovePriorityScorer:
 
         return type_map.get(move_type, MoveTypePriority.DEFAULT)
 
-    def get_bonus(self, move: "Move") -> float:
+    def get_bonus(self, move: Move) -> float:
         """Get float bonus for scored move ordering.
 
         This bonus is suitable for adding to evaluation scores to bias
@@ -151,7 +151,7 @@ class MovePriorityScorer:
         move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
         return self.bonus_multipliers.get(move_type, 0.0)
 
-    def is_noisy_move(self, move: "Move") -> bool:
+    def is_noisy_move(self, move: Move) -> bool:
         """Check if a move is "noisy" (tactical/forcing).
 
         Noisy moves are captures, line formations, and territory claims
@@ -199,9 +199,9 @@ class KillerMoveTable:
     def __init__(self, max_killers: int = 2, max_depth: int = 100) -> None:
         self.max_killers = max_killers
         self.max_depth = max_depth
-        self._table: Dict[int, List["Move"]] = {}
+        self._table: dict[int, list[Move]] = {}
 
-    def get(self, depth: int) -> List["Move"]:
+    def get(self, depth: int) -> list[Move]:
         """Get killer moves at a depth.
 
         Parameters
@@ -216,7 +216,7 @@ class KillerMoveTable:
         """
         return self._table.get(depth, [])
 
-    def store(self, move: "Move", depth: int) -> None:
+    def store(self, move: Move, depth: int) -> None:
         """Store a killer move at a depth.
 
         The move is added to the front of the list. If the list
@@ -249,7 +249,7 @@ class KillerMoveTable:
         """Clear all killer moves."""
         self._table.clear()
 
-    def is_killer(self, move: "Move", depth: int) -> bool:
+    def is_killer(self, move: Move, depth: int) -> bool:
         """Check if a move is a killer at the given depth.
 
         Parameters
@@ -264,13 +264,10 @@ class KillerMoveTable:
         bool
             True if move is a killer at this depth.
         """
-        for k in self.get(depth):
-            if moves_equal(move, k):
-                return True
-        return False
+        return any(moves_equal(move, k) for k in self.get(depth))
 
 
-def moves_equal(move1: "Move", move2: "Move") -> bool:
+def moves_equal(move1: Move, move2: Move) -> bool:
     """Check if two moves are equal for killer move matching.
 
     This is a structural equality check, not identity.
@@ -307,11 +304,11 @@ def moves_equal(move1: "Move", move2: "Move") -> bool:
 
 
 def order_moves(
-    moves: List["Move"],
+    moves: list[Move],
     depth: int = 0,
-    killer_table: Optional[KillerMoveTable] = None,
-    scorer: Optional[MovePriorityScorer] = None,
-) -> List["Move"]:
+    killer_table: KillerMoveTable | None = None,
+    scorer: MovePriorityScorer | None = None,
+) -> list[Move]:
     """Order moves for alpha-beta search.
 
     Moves are ordered as:
@@ -357,10 +354,10 @@ def order_moves(
 
 
 def order_moves_with_scores(
-    moves: List["Move"],
-    scores: List[float],
-    scorer: Optional[MovePriorityScorer] = None,
-) -> List[Tuple["Move", float]]:
+    moves: list[Move],
+    scores: list[float],
+    scorer: MovePriorityScorer | None = None,
+) -> list[tuple[Move, float]]:
     """Order moves by evaluation score plus priority bonus.
 
     This is used for root-level move ordering where we have
@@ -387,7 +384,7 @@ def order_moves_with_scores(
         scorer = MovePriorityScorer()
 
     scored = []
-    for move, score in zip(moves, scores):
+    for move, score in zip(moves, scores, strict=False):
         bonus = scorer.get_bonus(move)
         scored.append((move, score + bonus))
 
@@ -396,9 +393,9 @@ def order_moves_with_scores(
 
 
 def filter_noisy_moves(
-    moves: List["Move"],
-    scorer: Optional[MovePriorityScorer] = None,
-) -> List["Move"]:
+    moves: list[Move],
+    scorer: MovePriorityScorer | None = None,
+) -> list[Move]:
     """Filter moves to only noisy (tactical) moves.
 
     Used by quiescence search to extend only on tactical moves.
@@ -422,9 +419,9 @@ def filter_noisy_moves(
 
 
 def score_noisy_moves(
-    noisy_moves: List["Move"],
-    scorer: Optional[MovePriorityScorer] = None,
-) -> List[Tuple[int, "Move"]]:
+    noisy_moves: list[Move],
+    scorer: MovePriorityScorer | None = None,
+) -> list[tuple[int, Move]]:
     """Score noisy moves by priority.
 
     Parameters

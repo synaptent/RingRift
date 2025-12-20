@@ -38,20 +38,21 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Import unified WAL implementation
 try:
     from app.distributed.unified_wal import (
-        UnifiedWAL,
-        WALEntry as UnifiedWALEntry,
-        WALEntryType,
-        WALEntryStatus,
-        WALCheckpoint as UnifiedWALCheckpoint,
         IngestionWAL as UnifiedIngestionWAL,
+        UnifiedWAL,
+        WALCheckpoint as UnifiedWALCheckpoint,
+        WALEntry as UnifiedWALEntry,
+        WALEntryStatus,
+        WALEntryType,
         get_unified_wal,
     )
     HAS_UNIFIED_WAL = True
@@ -63,15 +64,12 @@ except ImportError:
 
 # For backward compatibility, also import legacy dependencies
 import json
-import os
 import sqlite3
-import struct
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.utils.checksum_utils import compute_string_checksum
-
 
 # =============================================================================
 # Legacy Implementation (kept for fallback if unified_wal not available)
@@ -83,12 +81,12 @@ class _LegacyWALEntry:
     """A single entry in the write-ahead log (legacy format)."""
     entry_id: int
     game_id: str
-    data: Dict[str, Any]
+    data: dict[str, Any]
     source_host: str
     checksum: str
     timestamp: float
     processed: bool = False
-    processed_at: Optional[float] = None
+    processed_at: float | None = None
 
 
 @dataclass
@@ -175,16 +173,16 @@ class _LegacyIngestionWAL:
         conn.commit()
         conn.close()
 
-    def _compute_checksum(self, game_id: str, data: Dict[str, Any]) -> str:
+    def _compute_checksum(self, game_id: str, data: dict[str, Any]) -> str:
         """Compute checksum for entry validation."""
         content = f"{game_id}:{json.dumps(data, sort_keys=True)}"
         return compute_string_checksum(content, truncate=32)
 
     def append(
         self,
-        game_data: Dict[str, Any],
+        game_data: dict[str, Any],
         source_host: str = "",
-        game_id: Optional[str] = None,
+        game_id: str | None = None,
     ) -> int:
         """Append a game to the WAL.
 
@@ -253,9 +251,9 @@ class _LegacyIngestionWAL:
 
     def append_batch(
         self,
-        games: List[Tuple[str, Dict[str, Any]]],
+        games: list[tuple[str, dict[str, Any]]],
         source_host: str = "",
-    ) -> List[int]:
+    ) -> list[int]:
         """Append multiple games to the WAL efficiently.
 
         Args:
@@ -323,7 +321,7 @@ class _LegacyIngestionWAL:
         conn.close()
         return updated
 
-    def mark_batch_processed(self, entry_ids: List[int]) -> int:
+    def mark_batch_processed(self, entry_ids: list[int]) -> int:
         """Mark multiple entries as processed.
 
         Returns number of entries marked.
@@ -338,7 +336,7 @@ class _LegacyIngestionWAL:
             UPDATE wal_entries
             SET processed = 1, processed_at = ?
             WHERE entry_id IN ({placeholders}) AND processed = 0
-        """, [time.time()] + entry_ids)
+        """, [time.time(), *entry_ids])
         updated = cursor.rowcount
         conn.commit()
         conn.close()
@@ -348,7 +346,7 @@ class _LegacyIngestionWAL:
         self,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[WALEntry]:
+    ) -> list[WALEntry]:
         """Get unprocessed entries for replay.
 
         Args:
@@ -393,8 +391,7 @@ class _LegacyIngestionWAL:
             entries = self.get_unprocessed(limit=batch_size, offset=offset)
             if not entries:
                 break
-            for entry in entries:
-                yield entry
+            yield from entries
             offset += batch_size
 
     def _get_unprocessed_count(self) -> int:
@@ -406,7 +403,7 @@ class _LegacyIngestionWAL:
         conn.close()
         return count
 
-    def _create_checkpoint(self) -> Optional[WALCheckpoint]:
+    def _create_checkpoint(self) -> WALCheckpoint | None:
         """Create a checkpoint and optionally compact."""
         with self._lock:
             conn = sqlite3.connect(self._db_path)
@@ -489,7 +486,7 @@ class _LegacyIngestionWAL:
         self,
         processor: Callable[[WALEntry], bool],
         batch_size: int = 100,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """Recover by replaying unprocessed entries.
 
         Args:
@@ -539,7 +536,7 @@ class _LegacyIngestionWAL:
         logger.info(f"WAL recovery complete: {processed} processed, {failed} failed")
         return processed, failed
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get WAL statistics."""
         conn = sqlite3.connect(self._db_path)
         cursor = conn.cursor()
@@ -617,7 +614,7 @@ else:
 def create_ingestion_wal(
     data_dir: Path,
     max_unprocessed: int = 10000,
-) -> "IngestionWAL":
+) -> IngestionWAL:
     """Factory function to create an ingestion WAL.
 
     Args:
@@ -637,7 +634,7 @@ def create_ingestion_wal(
 # Re-export for backward compatibility
 __all__ = [
     "IngestionWAL",
-    "WALEntry",
     "WALCheckpoint",
+    "WALEntry",
     "create_ingestion_wal",
 ]

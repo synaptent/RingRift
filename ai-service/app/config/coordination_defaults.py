@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 
 def _env_int(key: str, default: int) -> int:
@@ -875,34 +874,34 @@ def get_all_defaults() -> dict:
 
 
 __all__ = [
-    # Config classes
-    "LockDefaults",
-    "TransportDefaults",
-    "SyncDefaults",
-    "HeartbeatDefaults",
-    "TrainingDefaults",
-    "SchedulerDefaults",
-    "EphemeralDefaults",
+    "BandwidthDefaults",
+    "CacheDefaults",
     "CircuitBreakerDefaults",
-    "OperationTimeouts",
-    "RetryDefaults",
+    "DurationDefaults",
+    "EphemeralDefaults",
     # December 2025 additions
     "HealthDefaults",
-    "UtilizationDefaults",
-    "BandwidthDefaults",
-    "ResourceLimitsDefaults",
-    "PIDDefaults",
-    # December 2025 coordinator defaults
-    "ResourceMonitoringDefaults",
-    "OptimizationDefaults",
-    "TaskLifecycleDefaults",
+    "HeartbeatDefaults",
+    # Config classes
+    "LockDefaults",
     "MetricsAnalysisDefaults",
-    "CacheDefaults",
-    "SyncCoordinatorDefaults",
+    "OperationTimeouts",
+    "OptimizationDefaults",
+    "PIDDefaults",
     # December 2025 new defaults
     "QueueDefaults",
+    "ResourceLimitsDefaults",
+    # December 2025 coordinator defaults
+    "ResourceMonitoringDefaults",
+    "RetryDefaults",
     "ScalingDefaults",
-    "DurationDefaults",
+    "SchedulerDefaults",
+    "SyncCoordinatorDefaults",
+    "SyncDefaults",
+    "TaskLifecycleDefaults",
+    "TrainingDefaults",
+    "TransportDefaults",
+    "UtilizationDefaults",
     # Utilities
     "get_all_defaults",
     "get_circuit_breaker_configs",

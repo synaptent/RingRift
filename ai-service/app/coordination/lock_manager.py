@@ -43,10 +43,10 @@ import logging
 import threading
 import time
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class LockInfo:
     acquired_at: float
     timeout_seconds: float
     status: LockStatus = LockStatus.WAITING
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def held_duration(self) -> float:
@@ -93,7 +93,7 @@ class LockInfo:
 
 class DeadlockError(Exception):
     """Raised when a deadlock is detected."""
-    def __init__(self, cycle: List[str], message: str = "Deadlock detected"):
+    def __init__(self, cycle: list[str], message: str = "Deadlock detected"):
         self.cycle = cycle
         super().__init__(f"{message}: {' -> '.join(cycle)}")
 
@@ -107,17 +107,17 @@ class LockManager:
 
     def __init__(self):
         # Lock storage
-        self._locks: Dict[str, LockInfo] = {}
+        self._locks: dict[str, LockInfo] = {}
         self._lock = threading.RLock()
 
         # Wait-for graph: holder_id -> set of resource_ids they're waiting for
-        self._waiting_for: Dict[str, Set[str]] = defaultdict(set)
+        self._waiting_for: dict[str, set[str]] = defaultdict(set)
 
         # Resource -> holder mapping
-        self._resource_holders: Dict[str, str] = {}
+        self._resource_holders: dict[str, str] = {}
 
         # Async locks per resource
-        self._async_locks: Dict[str, asyncio.Lock] = {}
+        self._async_locks: dict[str, asyncio.Lock] = {}
 
         # Statistics
         self._stats = {
@@ -130,9 +130,9 @@ class LockManager:
         # Event emission
         try:
             from app.distributed.data_events import (
+                emit_deadlock_detected,
                 emit_lock_acquired,
                 emit_lock_released,
-                emit_deadlock_detected,
             )
             self._emit_acquired = emit_lock_acquired
             self._emit_released = emit_lock_released
@@ -149,7 +149,7 @@ class LockManager:
                 self._async_locks[resource_id] = asyncio.Lock()
             return self._async_locks[resource_id]
 
-    def _detect_deadlock(self, holder_id: str, waiting_for_resource: str) -> Optional[List[str]]:
+    def _detect_deadlock(self, holder_id: str, waiting_for_resource: str) -> list[str] | None:
         """Detect if acquiring this lock would cause a deadlock.
 
         Uses DFS to find cycles in the wait-for graph.
@@ -171,13 +171,13 @@ class LockManager:
         visited = set()
         path = [holder_id]
 
-        def dfs(current: str) -> Optional[List[str]]:
+        def dfs(current: str) -> list[str] | None:
             if current in visited:
                 return None
 
             if current == holder_id and len(path) > 1:
                 # Found cycle back to original holder
-                return path + [holder_id]
+                return [*path, holder_id]
 
             visited.add(current)
             path.append(current)
@@ -231,14 +231,12 @@ class LockManager:
 
                     # Emit deadlock event
                     if self._emit_deadlock:
-                        try:
+                        with suppress(RuntimeError):
                             asyncio.create_task(self._emit_deadlock(
                                 resources=[resource_id],
                                 holders=cycle,
                                 source="lock_manager",
                             ))
-                        except RuntimeError:
-                            pass
 
                     raise DeadlockError(cycle)
 
@@ -280,7 +278,7 @@ class LockManager:
 
             # Emit event
             if self._emit_acquired:
-                try:
+                with suppress(RuntimeError):
                     asyncio.create_task(self._emit_acquired(
                         resource_id=resource_id,
                         holder=holder_id,
@@ -288,8 +286,6 @@ class LockManager:
                         timeout_seconds=timeout_seconds,
                         source="lock_manager",
                     ))
-                except RuntimeError:
-                    pass
 
             logger.debug(f"[LockManager] Acquired lock: {resource_id} by {holder_id}")
             return lock_info
@@ -326,15 +322,13 @@ class LockManager:
 
         # Emit event
         if self._emit_released:
-            try:
+            with suppress(RuntimeError):
                 asyncio.create_task(self._emit_released(
                     resource_id=resource_id,
                     holder=holder_id,
                     held_duration_seconds=held_duration,
                     source="lock_manager",
                 ))
-            except RuntimeError:
-                pass
 
         logger.debug(f"[LockManager] Released lock: {resource_id} (held {held_duration:.2f}s)")
 
@@ -359,12 +353,12 @@ class LockManager:
         finally:
             await self.release_lock(resource_id)
 
-    def get_held_locks(self) -> List[LockInfo]:
+    def get_held_locks(self) -> list[LockInfo]:
         """Get all currently held locks."""
         with self._lock:
             return list(self._locks.values())
 
-    def get_lock_stats(self) -> Dict[str, Any]:
+    def get_lock_stats(self) -> dict[str, Any]:
         """Get lock statistics."""
         with self._lock:
             return {
@@ -378,7 +372,7 @@ class LockManager:
         with self._lock:
             return resource_id in self._locks
 
-    def get_expired_locks(self) -> List[LockInfo]:
+    def get_expired_locks(self) -> list[LockInfo]:
         """Get locks that have exceeded their timeout."""
         with self._lock:
             return [lock for lock in self._locks.values() if lock.is_expired]
@@ -393,7 +387,7 @@ class LockManager:
             if resource_id not in self._locks:
                 return False
 
-            lock_info = self._locks.pop(resource_id)
+            self._locks.pop(resource_id)
             self._resource_holders.pop(resource_id, None)
 
         # Release async lock
@@ -406,7 +400,7 @@ class LockManager:
 
 
 # Singleton instance
-_lock_manager: Optional[LockManager] = None
+_lock_manager: LockManager | None = None
 _init_lock = threading.Lock()
 
 
@@ -428,11 +422,11 @@ def reset_lock_manager() -> None:
 
 
 __all__ = [
-    "LockManager",
-    "LockInfo",
-    "LockType",
-    "LockStatus",
     "DeadlockError",
+    "LockInfo",
+    "LockManager",
+    "LockStatus",
+    "LockType",
     "get_lock_manager",
     "reset_lock_manager",
 ]

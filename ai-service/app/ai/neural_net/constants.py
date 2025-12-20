@@ -5,7 +5,7 @@ implementation, including policy sizes for different board types,
 hex geometry constants, and encoding layout spans.
 """
 
-from typing import Dict
+
 from app.models import BoardType
 
 # Invalid move marker
@@ -135,7 +135,7 @@ POLICY_SIZE_HEX8 = 4500
 # =============================================================================
 
 # Board type to policy size mapping
-BOARD_POLICY_SIZES: Dict[BoardType, int] = {
+BOARD_POLICY_SIZES: dict[BoardType, int] = {
     BoardType.SQUARE8: POLICY_SIZE_8x8,
     BoardType.SQUARE19: POLICY_SIZE_19x19,
     BoardType.HEX8: POLICY_SIZE_HEX8,
@@ -143,7 +143,7 @@ BOARD_POLICY_SIZES: Dict[BoardType, int] = {
 }
 
 # Board type to spatial size mapping
-BOARD_SPATIAL_SIZES: Dict[BoardType, int] = {
+BOARD_SPATIAL_SIZES: dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
     BoardType.SQUARE19: 19,
     BoardType.HEX8: HEX8_BOARD_SIZE,

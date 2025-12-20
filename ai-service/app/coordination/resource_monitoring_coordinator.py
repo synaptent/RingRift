@@ -40,9 +40,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class NodeResourceState:
     task_slots_available: int = 0
     task_slots_total: int = 0
     last_update_time: float = field(default_factory=time.time)
-    constraints: List[str] = field(default_factory=list)
+    constraints: list[str] = field(default_factory=list)
     backpressure_active: bool = False
     backpressure_level: BackpressureLevel = BackpressureLevel.NONE
 
@@ -168,19 +169,19 @@ class ResourceMonitoringCoordinator:
         self.max_backpressure_history = max_backpressure_history
 
         # Node resource states
-        self._nodes: Dict[str, NodeResourceState] = {}
+        self._nodes: dict[str, NodeResourceState] = {}
 
         # Backpressure tracking
-        self._backpressure_history: List[BackpressureEvent] = []
-        self._active_backpressure: Dict[str, BackpressureEvent] = {}  # node_id -> event
+        self._backpressure_history: list[BackpressureEvent] = []
+        self._active_backpressure: dict[str, BackpressureEvent] = {}  # node_id -> event
         self._cluster_backpressure = BackpressureLevel.NONE
 
         # Constraint tracking
-        self._constraint_counts: Dict[str, int] = {}  # constraint type -> count
+        self._constraint_counts: dict[str, int] = {}  # constraint type -> count
 
         # Callbacks
-        self._backpressure_callbacks: List[Callable[[str, bool, BackpressureLevel], None]] = []
-        self._constraint_callbacks: List[Callable[[str, str], None]] = []
+        self._backpressure_callbacks: list[Callable[[str, bool, BackpressureLevel], None]] = []
+        self._constraint_callbacks: list[Callable[[str, str], None]] = []
 
         # Subscription state
         self._subscribed = False
@@ -357,9 +358,8 @@ class ResourceMonitoringCoordinator:
         self._constraint_counts[constraint_type] = self._constraint_counts.get(constraint_type, 0) + 1
 
         # Update node constraints
-        if node_id in self._nodes:
-            if constraint_type not in self._nodes[node_id].constraints:
-                self._nodes[node_id].constraints.append(constraint_type)
+        if node_id in self._nodes and constraint_type not in self._nodes[node_id].constraints:
+            self._nodes[node_id].constraints.append(constraint_type)
 
         # Notify callbacks
         for callback in self._constraint_callbacks:
@@ -551,12 +551,12 @@ class ResourceMonitoringCoordinator:
     def update_node_resources(
         self,
         node_id: str,
-        gpu_utilization: Optional[float] = None,
-        cpu_utilization: Optional[float] = None,
-        memory_used_percent: Optional[float] = None,
-        disk_used_percent: Optional[float] = None,
-        task_slots_available: Optional[int] = None,
-        task_slots_total: Optional[int] = None,
+        gpu_utilization: float | None = None,
+        cpu_utilization: float | None = None,
+        memory_used_percent: float | None = None,
+        disk_used_percent: float | None = None,
+        task_slots_available: int | None = None,
+        task_slots_total: int | None = None,
     ) -> NodeResourceState:
         """Manually update node resource state.
 
@@ -604,7 +604,7 @@ class ResourceMonitoringCoordinator:
         """
         self._constraint_callbacks.append(callback)
 
-    def is_backpressure_active(self, node_id: Optional[str] = None) -> bool:
+    def is_backpressure_active(self, node_id: str | None = None) -> bool:
         """Check if backpressure is active.
 
         Args:
@@ -617,7 +617,7 @@ class ResourceMonitoringCoordinator:
             return node_id in self._active_backpressure
         return len(self._active_backpressure) > 0
 
-    def get_backpressure_level(self, node_id: Optional[str] = None) -> BackpressureLevel:
+    def get_backpressure_level(self, node_id: str | None = None) -> BackpressureLevel:
         """Get current backpressure level.
 
         Args:
@@ -632,19 +632,19 @@ class ResourceMonitoringCoordinator:
             return BackpressureLevel.NONE
         return self._cluster_backpressure
 
-    def get_node_state(self, node_id: str) -> Optional[NodeResourceState]:
+    def get_node_state(self, node_id: str) -> NodeResourceState | None:
         """Get resource state for a specific node."""
         return self._nodes.get(node_id)
 
-    def get_all_nodes(self) -> List[NodeResourceState]:
+    def get_all_nodes(self) -> list[NodeResourceState]:
         """Get resource states for all nodes."""
         return list(self._nodes.values())
 
-    def get_constrained_nodes(self) -> List[NodeResourceState]:
+    def get_constrained_nodes(self) -> list[NodeResourceState]:
         """Get nodes that have active constraints."""
         return [n for n in self._nodes.values() if n.constraints or n.backpressure_active]
 
-    def get_backpressure_history(self, limit: int = 50) -> List[BackpressureEvent]:
+    def get_backpressure_history(self, limit: int = 50) -> list[BackpressureEvent]:
         """Get recent backpressure events."""
         return self._backpressure_history[-limit:]
 
@@ -674,7 +674,7 @@ class ResourceMonitoringCoordinator:
             cluster_backpressure_level=self._cluster_backpressure,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring."""
         stats = self.get_stats()
 
@@ -699,7 +699,7 @@ class ResourceMonitoringCoordinator:
 # Singleton and convenience functions
 # =============================================================================
 
-_resource_coordinator: Optional[ResourceMonitoringCoordinator] = None
+_resource_coordinator: ResourceMonitoringCoordinator | None = None
 
 
 def get_resource_coordinator() -> ResourceMonitoringCoordinator:
@@ -726,7 +726,7 @@ def is_cluster_under_backpressure() -> bool:
     return get_resource_coordinator().is_backpressure_active()
 
 
-def get_cluster_capacity() -> Dict[str, int]:
+def get_cluster_capacity() -> dict[str, int]:
     """Convenience function to get cluster task slot capacity."""
     stats = get_resource_coordinator().get_stats()
     return {
@@ -736,12 +736,12 @@ def get_cluster_capacity() -> Dict[str, int]:
 
 def update_node_resources(
     node_id: str,
-    gpu_utilization: Optional[float] = None,
-    cpu_utilization: Optional[float] = None,
-    memory_used_percent: Optional[float] = None,
-    disk_used_percent: Optional[float] = None,
-    task_slots_available: Optional[int] = None,
-    task_slots_total: Optional[int] = None,
+    gpu_utilization: float | None = None,
+    cpu_utilization: float | None = None,
+    memory_used_percent: float | None = None,
+    disk_used_percent: float | None = None,
+    task_slots_available: int | None = None,
+    task_slots_total: int | None = None,
 ) -> NodeResourceState:
     """Convenience function to update node resources."""
     return get_resource_coordinator().update_node_resources(
@@ -760,17 +760,17 @@ def check_resource_thresholds(node_state: NodeResourceState) -> None:
 
 
 __all__ = [
-    "ResourceMonitoringCoordinator",
-    "ResourceType",
+    "BackpressureEvent",
     "BackpressureLevel",
     "NodeResourceState",
-    "BackpressureEvent",
     "ResourceAlert",
+    "ResourceMonitoringCoordinator",
     "ResourceStats",
-    "get_resource_coordinator",
-    "wire_resource_events",
-    "is_cluster_under_backpressure",
-    "get_cluster_capacity",
-    "update_node_resources",
+    "ResourceType",
     "check_resource_thresholds",
+    "get_cluster_capacity",
+    "get_resource_coordinator",
+    "is_cluster_under_backpressure",
+    "update_node_resources",
+    "wire_resource_events",
 ]

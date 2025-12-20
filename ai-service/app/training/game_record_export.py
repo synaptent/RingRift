@@ -13,7 +13,6 @@ They are intended for:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from app.models import (
     GameState,
@@ -35,7 +34,7 @@ from app.training.tournament import infer_victory_reason
 def _compute_final_score(final_state: GameState) -> FinalScore:
     """Derive FinalScore from a terminal GameState."""
     # Rings eliminated keyed by player number.
-    rings_eliminated: Dict[int, int] = {}
+    rings_eliminated: dict[int, int] = {}
     for pid_str, count in final_state.board.eliminated_rings.items():
         try:
             pid = int(pid_str)
@@ -44,12 +43,12 @@ def _compute_final_score(final_state: GameState) -> FinalScore:
         rings_eliminated[pid] = count
 
     # Territory spaces from the Player models.
-    territory_spaces: Dict[int, int] = {}
+    territory_spaces: dict[int, int] = {}
     for player in final_state.players:
         territory_spaces[player.player_number] = player.territory_spaces
 
     # Rings remaining = in-hand + on-board per player.
-    rings_remaining: Dict[int, int] = {
+    rings_remaining: dict[int, int] = {
         player.player_number: player.rings_in_hand for player in final_state.players
     }
     for stack in final_state.board.stacks.values():
@@ -105,13 +104,13 @@ def build_training_game_record(
     game_id: str,
     initial_state: GameState,
     final_state: GameState,
-    moves: List[Move],
+    moves: list[Move],
     source: RecordSource,
-    rng_seed: Optional[int],
+    rng_seed: int | None,
     terminated_by_budget_only: bool = False,
-    created_at: Optional[datetime] = None,
-    tags: Optional[List[str]] = None,
-    fsm_validated: Optional[bool] = None,
+    created_at: datetime | None = None,
+    tags: list[str] | None = None,
+    fsm_validated: bool | None = None,
 ) -> GameRecord:
     """Construct a canonical GameRecord for a completed training episode.
 
@@ -139,7 +138,7 @@ def build_training_game_record(
         total_duration_ms = 0
 
     # Players.
-    players: List[PlayerRecordInfo] = []
+    players: list[PlayerRecordInfo] = []
     for p in initial_state.players:
         players.append(
             PlayerRecordInfo(

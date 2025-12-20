@@ -29,21 +29,22 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
 
-from app.core.state_machine import State, Transition, StateMachine, InvalidTransitionError
+from app.core.state_machine import InvalidTransitionError, State, Transition
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "ModelState",
     "ModelLifecycleStateMachine",
+    "ModelState",
     "ModelStateRecord",
     "get_model_lifecycle",
     "reset_model_lifecycle",
@@ -192,8 +193,8 @@ class ModelStateRecord:
     current_state: ModelState
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
-    history: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    history: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_transition(
         self,
@@ -213,7 +214,7 @@ class ModelStateRecord:
         self.current_state = to_state
         self.updated_at = time.time()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "model_id": self.model_id,
@@ -254,12 +255,12 @@ class ModelLifecycleStateMachine:
     """
 
     def __init__(self):
-        self._models: Dict[str, ModelStateRecord] = {}
+        self._models: dict[str, ModelStateRecord] = {}
         self._lock = threading.RLock()
-        self._transition_listeners: List[Callable] = []
+        self._transition_listeners: list[Callable] = []
 
         # Build transition map
-        self._transitions: Dict[str, List[Tuple[str, str]]] = {}
+        self._transitions: dict[str, list[tuple[str, str]]] = {}
         for t in MODEL_TRANSITIONS:
             from_state = t.from_state.name
             to_state = t.to_state.name
@@ -271,7 +272,7 @@ class ModelLifecycleStateMachine:
         self,
         model_id: str,
         initial_state: ModelState = ModelState.TRAINING,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ModelStateRecord:
         """Register a new model for lifecycle tracking.
 
@@ -310,18 +311,18 @@ class ModelLifecycleStateMachine:
                 return self._models[model_id]
             return self.register_model(model_id, initial_state)
 
-    def get_state(self, model_id: str) -> Optional[ModelState]:
+    def get_state(self, model_id: str) -> ModelState | None:
         """Get current state of a model."""
         with self._lock:
             record = self._models.get(model_id)
             return record.current_state if record else None
 
-    def get_record(self, model_id: str) -> Optional[ModelStateRecord]:
+    def get_record(self, model_id: str) -> ModelStateRecord | None:
         """Get full record for a model."""
         with self._lock:
             return self._models.get(model_id)
 
-    def get_valid_transitions(self, model_id: str) -> List[ModelState]:
+    def get_valid_transitions(self, model_id: str) -> list[ModelState]:
         """Get valid next states for a model.
 
         Args:
@@ -336,10 +337,8 @@ class ModelLifecycleStateMachine:
 
         valid_states = []
         for to_state, _ in self._transitions.get(current.value, []):
-            try:
+            with contextlib.suppress(ValueError):
                 valid_states.append(ModelState(to_state))
-            except ValueError:
-                pass
 
         return valid_states
 
@@ -347,7 +346,7 @@ class ModelLifecycleStateMachine:
         self,
         model_id: str,
         target_state: ModelState,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Check if transition to target state is valid.
 
         Args:
@@ -499,7 +498,7 @@ class ModelLifecycleStateMachine:
             except Exception as e:
                 logger.warning(f"Transition listener error: {e}")
 
-    def get_models_in_state(self, state: ModelState) -> List[str]:
+    def get_models_in_state(self, state: ModelState) -> list[str]:
         """Get all models in a particular state."""
         with self._lock:
             return [
@@ -508,16 +507,16 @@ class ModelLifecycleStateMachine:
                 if record.current_state == state
             ]
 
-    def get_production_model(self) -> Optional[str]:
+    def get_production_model(self) -> str | None:
         """Get the current production model."""
         models = self.get_models_in_state(ModelState.PRODUCTION)
         return models[0] if models else None
 
-    def get_staging_models(self) -> List[str]:
+    def get_staging_models(self) -> list[str]:
         """Get all models in staging."""
         return self.get_models_in_state(ModelState.STAGING)
 
-    def get_all_models(self) -> Dict[str, ModelStateRecord]:
+    def get_all_models(self) -> dict[str, ModelStateRecord]:
         """Get all tracked models."""
         with self._lock:
             return dict(self._models)
@@ -526,7 +525,7 @@ class ModelLifecycleStateMachine:
         self,
         model_id: str,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get transition history for a model."""
         with self._lock:
             record = self._models.get(model_id)
@@ -534,7 +533,7 @@ class ModelLifecycleStateMachine:
                 return []
             return record.history[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get lifecycle statistics."""
         with self._lock:
             state_counts = {}
@@ -569,7 +568,7 @@ class PromotionControllerIntegration:
         integration.wire_promotion_controller(promotion_controller)
     """
 
-    def __init__(self, lifecycle: Optional[ModelLifecycleStateMachine] = None):
+    def __init__(self, lifecycle: ModelLifecycleStateMachine | None = None):
         self._lifecycle = lifecycle or get_model_lifecycle()
 
     def wire_promotion_controller(self, controller: Any) -> None:
@@ -625,7 +624,7 @@ class PromotionControllerIntegration:
 # Global Instance
 # =============================================================================
 
-_model_lifecycle: Optional[ModelLifecycleStateMachine] = None
+_model_lifecycle: ModelLifecycleStateMachine | None = None
 _lifecycle_lock = threading.Lock()
 
 

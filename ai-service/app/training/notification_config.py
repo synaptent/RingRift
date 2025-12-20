@@ -21,12 +21,9 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from app.utils.yaml_utils import load_config_yaml as _load_yaml_config
+from typing import Any
 
 from app.training.promotion_controller import (
     LoggingNotificationHook,
@@ -34,6 +31,7 @@ from app.training.promotion_controller import (
     RollbackCriteria,
     WebhookNotificationHook,
 )
+from app.utils.yaml_utils import load_config_yaml as _load_yaml_config
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +41,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "notifica
 @dataclass
 class RollbackConfig:
     """Complete rollback configuration from YAML."""
-    hooks: List[NotificationHook]
+    hooks: list[NotificationHook]
     criteria: RollbackCriteria
     enabled: bool = True
 
@@ -56,7 +54,7 @@ class FilteredWebhookHook(WebhookNotificationHook):
         webhook_url: str,
         webhook_type: str = "generic",
         timeout: int = 10,
-        events: Optional[Dict[str, bool]] = None,
+        events: dict[str, bool] | None = None,
     ):
         super().__init__(webhook_url, webhook_type, timeout)
         self.events = events or {
@@ -65,7 +63,7 @@ class FilteredWebhookHook(WebhookNotificationHook):
             "rollback_completed": True,
         }
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         if self.events.get("at_risk", True):
             super().on_at_risk(model_id, status)
 
@@ -86,7 +84,7 @@ class PagerDutyNotificationHook(NotificationHook):
     def __init__(
         self,
         routing_key: str,
-        severity_mapping: Optional[Dict[str, str]] = None,
+        severity_mapping: dict[str, str] | None = None,
         timeout: int = 10,
     ):
         self.routing_key = routing_key
@@ -103,13 +101,13 @@ class PagerDutyNotificationHook(NotificationHook):
         severity: str,
         dedup_key: str,
         action: str = "trigger",
-        custom_details: Optional[Dict] = None,
+        custom_details: dict | None = None,
     ) -> bool:
         """Send an event to PagerDuty."""
         try:
             import json
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             payload = {
                 "routing_key": self.routing_key,
@@ -136,7 +134,7 @@ class PagerDutyNotificationHook(NotificationHook):
             logger.warning(f"[PagerDuty] Failed to send event: {e}")
             return False
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         self._send_event(
             summary=f"Model {model_id} at risk of rollback - {status.get('consecutive_regressions', 0)} consecutive regressions",
             severity=self.severity_mapping.get("at_risk", "warning"),
@@ -171,7 +169,7 @@ class OpsGenieNotificationHook(NotificationHook):
         self,
         api_key: str,
         region: str = "us",
-        priority_mapping: Optional[Dict[str, str]] = None,
+        priority_mapping: dict[str, str] | None = None,
         timeout: int = 10,
     ):
         self.api_key = api_key
@@ -192,14 +190,14 @@ class OpsGenieNotificationHook(NotificationHook):
         message: str,
         priority: str,
         alias: str,
-        description: Optional[str] = None,
-        details: Optional[Dict] = None,
+        description: str | None = None,
+        details: dict | None = None,
     ) -> bool:
         """Send an alert to OpsGenie."""
         try:
             import json
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             payload = {
                 "message": message,
@@ -232,8 +230,8 @@ class OpsGenieNotificationHook(NotificationHook):
         """Close an alert in OpsGenie."""
         try:
             import json
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             url = f"{self.base_url}/{alias}/close?identifierType=alias"
             data = json.dumps({"source": "ringrift-rollback-monitor"}).encode("utf-8")
@@ -253,7 +251,7 @@ class OpsGenieNotificationHook(NotificationHook):
             logger.warning(f"[OpsGenie] Failed to close alert: {e}")
             return False
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         self._send_alert(
             message=f"Model {model_id} at risk of rollback",
             priority=self.priority_mapping.get("at_risk", "P3"),
@@ -287,7 +285,7 @@ class OpsGenieNotificationHook(NotificationHook):
             )
 
 
-def load_config_yaml(config_path: Optional[Path] = None) -> Dict[str, Any]:
+def load_config_yaml(config_path: Path | None = None) -> dict[str, Any]:
     """Load the notification hooks configuration YAML.
 
     Args:
@@ -304,7 +302,7 @@ def load_config_yaml(config_path: Optional[Path] = None) -> Dict[str, Any]:
     )
 
 
-def load_notification_hooks(config_path: Optional[Path] = None) -> List[NotificationHook]:
+def load_notification_hooks(config_path: Path | None = None) -> list[NotificationHook]:
     """Load notification hooks from configuration.
 
     Args:
@@ -314,7 +312,7 @@ def load_notification_hooks(config_path: Optional[Path] = None) -> List[Notifica
         List of configured NotificationHook instances
     """
     config = load_config_yaml(config_path)
-    hooks: List[NotificationHook] = []
+    hooks: list[NotificationHook] = []
 
     if not config.get("enabled", True):
         logger.info("Notification hooks disabled in config")
@@ -379,7 +377,7 @@ def load_notification_hooks(config_path: Optional[Path] = None) -> List[Notifica
     return hooks
 
 
-def load_rollback_criteria(config_path: Optional[Path] = None) -> RollbackCriteria:
+def load_rollback_criteria(config_path: Path | None = None) -> RollbackCriteria:
     """Load rollback criteria from configuration.
 
     Args:
@@ -405,7 +403,7 @@ def load_rollback_criteria(config_path: Optional[Path] = None) -> RollbackCriter
     )
 
 
-def load_rollback_config(config_path: Optional[Path] = None) -> RollbackConfig:
+def load_rollback_config(config_path: Path | None = None) -> RollbackConfig:
     """Load complete rollback configuration including hooks and criteria.
 
     Args:

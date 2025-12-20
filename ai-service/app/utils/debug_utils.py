@@ -29,9 +29,10 @@ import logging
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, TypeVar
+from typing import Any, TypeVar
 
 from app.utils.env_config import get_bool
 
@@ -195,7 +196,7 @@ class Timer:
         print(timer.summary())
     """
     _start: float = field(default_factory=time.perf_counter)
-    _checkpoints: List[tuple] = field(default_factory=list)
+    _checkpoints: list[tuple] = field(default_factory=list)
 
     @property
     def elapsed(self) -> float:
@@ -238,7 +239,7 @@ class Timer:
         return "\n".join(lines)
 
 
-def get_call_stack(skip: int = 1, limit: int = 10) -> List[str]:
+def get_call_stack(skip: int = 1, limit: int = 10) -> list[str]:
     """Get a simplified call stack for debugging.
 
     Args:
@@ -333,15 +334,15 @@ def dump_state(obj: Any, name: str = "state", max_depth: int = 3) -> str:
 
 
 __all__ = [
-    "timed",
-    "timed_async",
-    "log_call",
-    "debug_context",
-    "Timer",
-    "get_call_stack",
-    "format_exception_chain",
-    "memory_usage_mb",
-    "dump_state",
     "DEBUG_ENABLED",
     "PROFILE_ENABLED",
+    "Timer",
+    "debug_context",
+    "dump_state",
+    "format_exception_chain",
+    "get_call_stack",
+    "log_call",
+    "memory_usage_mb",
+    "timed",
+    "timed_async",
 ]

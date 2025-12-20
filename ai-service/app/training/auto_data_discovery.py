@@ -34,7 +34,7 @@ import os
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import dependencies
 try:
-    from app.distributed.data_catalog import DataCatalog, get_data_catalog, CatalogStats
+    from app.distributed.data_catalog import CatalogStats, DataCatalog, get_data_catalog
     HAS_DATA_CATALOG = True
 except ImportError:
     HAS_DATA_CATALOG = False
@@ -61,8 +61,8 @@ except ImportError:
 # Import centralized quality thresholds
 try:
     from app.quality.thresholds import (
-        MIN_QUALITY_FOR_TRAINING,
         MIN_QUALITY_FOR_PRIORITY_SYNC,
+        MIN_QUALITY_FOR_TRAINING,
     )
 except ImportError:
     MIN_QUALITY_FOR_TRAINING = 0.3
@@ -74,18 +74,19 @@ try:
 except ImportError:
     HAS_STORAGE_PROVIDER = False
     get_storage_provider = None
-    is_nfs_available = lambda: False
+    def is_nfs_available():
+        return False
 
 
 @dataclass
 class DiscoveryResult:
     """Result of automatic data discovery."""
     success: bool
-    data_paths: List[Path] = field(default_factory=list)
+    data_paths: list[Path] = field(default_factory=list)
     total_games: int = 0
     avg_quality_score: float = 0.0
-    sources_by_host: Dict[str, int] = field(default_factory=dict)
-    sources_by_type: Dict[str, int] = field(default_factory=dict)
+    sources_by_host: dict[str, int] = field(default_factory=dict)
+    sources_by_type: dict[str, int] = field(default_factory=dict)
     discovery_time_ms: float = 0.0
     error_message: str = ""
 
@@ -126,21 +127,18 @@ def should_auto_discover() -> bool:
     # Check for training role in hostname
     hostname = socket.gethostname().lower()
     training_indicators = ["train", "gpu", "lambda", "vast"]
-    if any(ind in hostname for ind in training_indicators):
-        return True
-
-    return False
+    return bool(any(ind in hostname for ind in training_indicators))
 
 
 def get_best_data_paths(
     target_games: int = 50000,
     min_quality: float = 0.0,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     include_local: bool = True,
     include_synced: bool = True,
     include_nfs: bool = True,
-) -> List[Path]:
+) -> list[Path]:
     """Get the best data paths for training.
 
     This is a convenience function that returns just the paths,
@@ -175,8 +173,8 @@ def get_best_data_paths(
 
 
 def discover_training_data(
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     target_games: int = 100000,
     min_quality: float = 0.0,
     prefer_recent: bool = True,  # Reserved for future path-level sorting
@@ -258,11 +256,11 @@ def discover_training_data(
 def get_high_quality_game_ids(
     min_quality: float = MIN_QUALITY_FOR_PRIORITY_SYNC,
     limit: int = 10000,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     prefer_recent: bool = True,
     prefer_high_elo: bool = True,
-) -> List[str]:
+) -> list[str]:
     """Get game IDs of high-quality games for training.
 
     Args:
@@ -295,7 +293,7 @@ def get_high_quality_game_ids(
         return []
 
 
-def get_discovery_status() -> Dict[str, Any]:
+def get_discovery_status() -> dict[str, Any]:
     """Get the current status of data discovery.
 
     Returns:
@@ -330,7 +328,7 @@ def get_discovery_status() -> Dict[str, Any]:
 
 def setup_auto_discovery_for_training(
     config: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Set up automatic data discovery for a training configuration.
 
     This function prepares the environment for automatic data discovery

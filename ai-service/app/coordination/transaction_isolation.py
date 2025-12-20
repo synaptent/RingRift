@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from app.utils.checksum_utils import compute_file_checksum
 
@@ -44,13 +44,13 @@ class MergeOperation:
     operation_id: int
     transaction_id: int
     operation_type: str  # 'add', 'update', 'delete', 'append'
-    source_path: Optional[str]
+    source_path: str | None
     dest_path: str
-    backup_path: Optional[str]  # Path to backup of original file
-    checksum_before: Optional[str]
-    checksum_after: Optional[str]
+    backup_path: str | None  # Path to backup of original file
+    checksum_before: str | None
+    checksum_after: str | None
     created_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 @dataclass
@@ -63,9 +63,9 @@ class MergeTransaction:
     state: TransactionState
     created_at: datetime
     updated_at: datetime
-    committed_at: Optional[datetime] = None
-    operations: List[MergeOperation] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    committed_at: datetime | None = None
+    operations: list[MergeOperation] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class TransactionIsolation:
@@ -84,9 +84,9 @@ class TransactionIsolation:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
-        wal_dir: Optional[Path] = None,
-        backup_dir: Optional[Path] = None,
+        db_path: Path | None = None,
+        wal_dir: Path | None = None,
+        backup_dir: Path | None = None,
         max_transaction_age_seconds: int = 3600,
     ):
         """Initialize transaction isolation manager.
@@ -114,7 +114,7 @@ class TransactionIsolation:
         self._transaction_lock = threading.RLock()
 
         # Active transactions by ID
-        self._active_transactions: Dict[int, MergeTransaction] = {}
+        self._active_transactions: dict[int, MergeTransaction] = {}
 
         # Initialize database
         self._init_db()
@@ -125,7 +125,7 @@ class TransactionIsolation:
     @classmethod
     def get_instance(
         cls,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         **kwargs
     ) -> "TransactionIsolation":
         """Get singleton instance."""
@@ -233,7 +233,7 @@ class TransactionIsolation:
         source_host: str,
         dest_host: str,
         merge_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         """Begin a new merge transaction.
 
@@ -308,7 +308,7 @@ class TransactionIsolation:
         transaction_id: int,
         operation_type: str,
         dest_path: str,
-        source_path: Optional[str] = None,
+        source_path: str | None = None,
     ) -> int:
         """Add an operation to a transaction.
 
@@ -388,7 +388,7 @@ class TransactionIsolation:
         self,
         transaction_id: int,
         operation_id: int,
-        checksum_after: Optional[str] = None,
+        checksum_after: str | None = None,
     ) -> None:
         """Mark an operation as complete.
 
@@ -633,7 +633,7 @@ class TransactionIsolation:
         source_host: str,
         dest_host: str,
         merge_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Context manager for merge transactions.
 
@@ -652,13 +652,13 @@ class TransactionIsolation:
             def __init__(ctx_self, isolation: TransactionIsolation, txn_id: int):
                 ctx_self.isolation = isolation
                 ctx_self.transaction_id = txn_id
-                ctx_self.operations: List[int] = []
+                ctx_self.operations: list[int] = []
 
             def add_operation(
                 ctx_self,
                 operation_type: str,
                 dest_path: str,
-                source_path: Optional[str] = None,
+                source_path: str | None = None,
             ) -> int:
                 op_id = ctx_self.isolation.add_operation(
                     ctx_self.transaction_id,
@@ -672,7 +672,7 @@ class TransactionIsolation:
             def complete_operation(
                 ctx_self,
                 operation_id: int,
-                checksum_after: Optional[str] = None,
+                checksum_after: str | None = None,
             ) -> None:
                 ctx_self.isolation.complete_operation(
                     ctx_self.transaction_id,
@@ -700,12 +700,12 @@ class TransactionIsolation:
         """Compute SHA256 checksum of a file."""
         return compute_file_checksum(path, return_empty_for_missing=False)
 
-    def _append_to_wal(self, transaction_id: int, operation: Dict[str, Any]) -> None:
+    def _append_to_wal(self, transaction_id: int, operation: dict[str, Any]) -> None:
         """Append operation to write-ahead log."""
         wal_path = self.wal_dir / f"txn_{transaction_id}.wal"
 
         if wal_path.exists():
-            with open(wal_path, "r") as f:
+            with open(wal_path) as f:
                 wal_data = json.load(f)
             wal_data["operations"].append(operation)
             with open(wal_path, "w") as f:
@@ -763,7 +763,7 @@ class TransactionIsolation:
 
         return count
 
-    def get_transaction_stats(self) -> Dict[str, Any]:
+    def get_transaction_stats(self) -> dict[str, Any]:
         """Get transaction statistics."""
         conn = self._get_conn()
 
@@ -807,11 +807,11 @@ class TransactionIsolation:
 
 
 # Module-level singleton access
-_instance: Optional[TransactionIsolation] = None
+_instance: TransactionIsolation | None = None
 
 
 def get_transaction_isolation(
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
     **kwargs
 ) -> TransactionIsolation:
     """Get the singleton TransactionIsolation instance."""
@@ -832,7 +832,7 @@ def begin_merge_transaction(
     source_host: str,
     dest_host: str,
     merge_type: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> int:
     """Begin a new merge transaction."""
     return get_transaction_isolation().begin_transaction(
@@ -844,7 +844,7 @@ def add_merge_operation(
     transaction_id: int,
     operation_type: str,
     dest_path: str,
-    source_path: Optional[str] = None,
+    source_path: str | None = None,
 ) -> int:
     """Add an operation to a merge transaction."""
     return get_transaction_isolation().add_operation(
@@ -855,7 +855,7 @@ def add_merge_operation(
 def complete_merge_operation(
     transaction_id: int,
     operation_id: int,
-    checksum_after: Optional[str] = None,
+    checksum_after: str | None = None,
 ) -> None:
     """Mark a merge operation as complete."""
     get_transaction_isolation().complete_operation(
@@ -881,7 +881,7 @@ def merge_transaction(
     source_host: str,
     dest_host: str,
     merge_type: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ):
     """Context manager for merge transactions."""
     with get_transaction_isolation().transaction(
@@ -890,7 +890,7 @@ def merge_transaction(
         yield ctx
 
 
-def get_transaction_stats() -> Dict[str, Any]:
+def get_transaction_stats() -> dict[str, Any]:
     """Get transaction statistics."""
     return get_transaction_isolation().get_transaction_stats()
 
@@ -900,21 +900,21 @@ def get_transaction_stats() -> Dict[str, Any]:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "TransactionState",
     # Data classes
     "MergeOperation",
     "MergeTransaction",
     # Main class
     "TransactionIsolation",
+    # Enums
+    "TransactionState",
+    "add_merge_operation",
+    "begin_merge_transaction",
+    "commit_merge_transaction",
+    "complete_merge_operation",
     # Functions
     "get_transaction_isolation",
-    "reset_transaction_isolation",
-    "begin_merge_transaction",
-    "add_merge_operation",
-    "complete_merge_operation",
-    "commit_merge_transaction",
-    "rollback_merge_transaction",
-    "merge_transaction",
     "get_transaction_stats",
+    "merge_transaction",
+    "reset_transaction_isolation",
+    "rollback_merge_transaction",
 ]

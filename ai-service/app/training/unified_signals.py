@@ -34,7 +34,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,10 @@ logger = logging.getLogger(__name__)
 try:
     from app.config.thresholds import (
         INITIAL_ELO_RATING,
-        TRAINING_TRIGGER_GAMES,
-        TRAINING_STALENESS_HOURS,
         MIN_WIN_RATE_PROMOTE,
         TRAINING_MIN_INTERVAL_SECONDS,
+        TRAINING_STALENESS_HOURS,
+        TRAINING_TRIGGER_GAMES,
     )
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
@@ -66,8 +66,8 @@ except ImportError:
 # Import centralized quality thresholds
 try:
     from app.quality.thresholds import (
-        MIN_QUALITY_FOR_TRAINING,
         HIGH_QUALITY_THRESHOLD,
+        MIN_QUALITY_FOR_TRAINING,
     )
 except ImportError:
     MIN_QUALITY_FOR_TRAINING = 0.3
@@ -75,8 +75,9 @@ except ImportError:
 
 # Import data manifest for quality scores
 try:
-    from app.distributed.unified_manifest import DataManifest
     from pathlib import Path
+
+    from app.distributed.unified_manifest import DataManifest
     HAS_DATA_MANIFEST = True
 except ImportError:
     HAS_DATA_MANIFEST = False
@@ -165,7 +166,7 @@ class TrainingSignals:
                 f"priority={self.priority:.2f}, "
                 f"reason={self.reason}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "games_since_last_training": self.games_since_last_training,
@@ -195,13 +196,13 @@ class TrainingSignals:
 class ConfigTrainingState:
     """Per-config training state tracking."""
     config_key: str
-    last_training_time: Optional[datetime] = None
+    last_training_time: datetime | None = None
     last_training_games: int = 0
     model_count: int = 0
     current_elo: float = INITIAL_ELO_RATING
     win_rate: float = 0.5
-    elo_history: List[Tuple[datetime, float]] = field(default_factory=list)
-    win_rate_history: List[Tuple[datetime, float]] = field(default_factory=list)
+    elo_history: list[tuple[datetime, float]] = field(default_factory=list)
+    win_rate_history: list[tuple[datetime, float]] = field(default_factory=list)
 
 
 class UnifiedSignalComputer:
@@ -224,28 +225,28 @@ class UnifiedSignalComputer:
         """
         self._config = config
         self._lock = threading.RLock()
-        self._last_computation: Optional[TrainingSignals] = None
+        self._last_computation: TrainingSignals | None = None
         self._computation_cache_ttl = timedelta(seconds=5)
-        self._last_computation_time: Optional[datetime] = None
+        self._last_computation_time: datetime | None = None
 
         # Per-config state tracking
-        self._config_states: Dict[str, ConfigTrainingState] = {}
+        self._config_states: dict[str, ConfigTrainingState] = {}
 
         # Global state (for backward compatibility with single-config usage)
-        self._last_training_time: Optional[datetime] = None
+        self._last_training_time: datetime | None = None
         self._last_training_games: int = 0
-        self._elo_history: List[Tuple[datetime, float]] = []
-        self._win_rate_history: List[Tuple[datetime, float]] = []
+        self._elo_history: list[tuple[datetime, float]] = []
+        self._win_rate_history: list[tuple[datetime, float]] = []
 
         # Configuration thresholds (loaded lazily)
-        self._games_threshold: Optional[int] = None
-        self._min_interval_seconds: Optional[int] = None
-        self._staleness_hours: Optional[float] = None
-        self._min_win_rate: Optional[float] = None
+        self._games_threshold: int | None = None
+        self._min_interval_seconds: int | None = None
+        self._staleness_hours: float | None = None
+        self._min_win_rate: float | None = None
 
         # Quality-aware training (December 2025)
-        self._manifest: Optional[DataManifest] = None
-        self._quality_config: Optional[QualityConfig] = None
+        self._manifest: DataManifest | None = None
+        self._quality_config: QualityConfig | None = None
 
     def _get_manifest(self):
         """Lazily load data manifest for quality scores."""
@@ -279,8 +280,8 @@ class UnifiedSignalComputer:
     def get_data_quality_score(
         self,
         config_key: str = "",
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> float:
         """Get average quality score, preferring event-driven cache.
 
@@ -401,8 +402,8 @@ class UnifiedSignalComputer:
         current_games: int,
         current_elo: float,
         config_key: str = "",
-        win_rate: Optional[float] = None,
-        model_count: Optional[int] = None,
+        win_rate: float | None = None,
+        model_count: int | None = None,
         force_recompute: bool = False,
     ) -> TrainingSignals:
         """
@@ -531,7 +532,7 @@ class UnifiedSignalComputer:
             logger.debug(f"Computed signals: {signals.summary}")
             return signals
 
-    def _compute_elo_trend(self, elo_history: List[Tuple[datetime, float]]) -> float:
+    def _compute_elo_trend(self, elo_history: list[tuple[datetime, float]]) -> float:
         """Compute Elo trend via linear regression.
 
         Returns Elo change per hour (positive = improving).
@@ -547,7 +548,7 @@ class UnifiedSignalComputer:
         n = len(times)
         sum_t = sum(times)
         sum_e = sum(elos)
-        sum_te = sum(t * e for t, e in zip(times, elos))
+        sum_te = sum(t * e for t, e in zip(times, elos, strict=False))
         sum_t2 = sum(t * t for t in times)
 
         denom = n * sum_t2 - sum_t * sum_t
@@ -558,7 +559,7 @@ class UnifiedSignalComputer:
         # Convert to Elo per hour
         return slope * 3600
 
-    def _compute_urgency(self, signals: TrainingSignals) -> Tuple[TrainingUrgency, str]:
+    def _compute_urgency(self, signals: TrainingSignals) -> tuple[TrainingUrgency, str]:
         """Determine training urgency and reason.
 
         Priority order:
@@ -575,7 +576,6 @@ class UnifiedSignalComputer:
         """
         # Get quality thresholds from centralized module
         min_quality = MIN_QUALITY_FOR_TRAINING
-        high_quality = HIGH_QUALITY_THRESHOLD
 
         # Check if data quality is too low - defer training
         if signals.data_quality_score < min_quality and not signals.elo_regression_detected:
@@ -723,9 +723,9 @@ class UnifiedSignalComputer:
 
     def record_training_completed(
         self,
-        new_elo: Optional[float] = None,
+        new_elo: float | None = None,
         config_key: str = "",
-        model_count: Optional[int] = None,
+        model_count: int | None = None,
     ) -> None:
         """Record that training has completed.
 
@@ -756,9 +756,9 @@ class UnifiedSignalComputer:
     def update_config_state(
         self,
         config_key: str,
-        model_count: Optional[int] = None,
-        current_elo: Optional[float] = None,
-        win_rate: Optional[float] = None,
+        model_count: int | None = None,
+        current_elo: float | None = None,
+        win_rate: float | None = None,
     ) -> None:
         """Update state for a specific config.
 
@@ -795,14 +795,14 @@ class UnifiedSignalComputer:
         with self._lock:
             # Store in per-config quality cache
             if not hasattr(self, '_quality_cache'):
-                self._quality_cache: Dict[str, Tuple[float, datetime]] = {}
+                self._quality_cache: dict[str, tuple[float, datetime]] = {}
 
             self._quality_cache[config_key] = (quality_score, datetime.now())
             logger.debug(
                 f"Updated quality score for {config_key}: {quality_score:.3f}"
             )
 
-    def get_cached_quality(self, config_key: str, max_age_seconds: float = 300.0) -> Optional[float]:
+    def get_cached_quality(self, config_key: str, max_age_seconds: float = 300.0) -> float | None:
         """Get cached quality score if available and fresh.
 
         Args:
@@ -828,9 +828,9 @@ class UnifiedSignalComputer:
 
     def get_all_config_signals(
         self,
-        games_by_config: Dict[str, int],
-        elo_by_config: Dict[str, float],
-    ) -> List[TrainingSignals]:
+        games_by_config: dict[str, int],
+        elo_by_config: dict[str, float],
+    ) -> list[TrainingSignals]:
         """Compute signals for all configs.
 
         Args:
@@ -855,9 +855,9 @@ class UnifiedSignalComputer:
 
     def get_training_queue(
         self,
-        games_by_config: Dict[str, int],
-        elo_by_config: Dict[str, float],
-    ) -> List[TrainingSignals]:
+        games_by_config: dict[str, int],
+        elo_by_config: dict[str, float],
+    ) -> list[TrainingSignals]:
         """Get configs that should train, sorted by priority.
 
         Args:
@@ -872,7 +872,7 @@ class UnifiedSignalComputer:
 
 
 # Singleton instance
-_signal_computer: Optional[UnifiedSignalComputer] = None
+_signal_computer: UnifiedSignalComputer | None = None
 _signal_computer_lock = threading.Lock()
 
 
@@ -996,7 +996,7 @@ def get_training_intensity(
 # ==============================================================================
 
 try:
-    from prometheus_client import Gauge, Counter, Histogram
+    from prometheus_client import Counter, Gauge, Histogram
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
@@ -1186,7 +1186,7 @@ class SignalMetricsExporter:
 
 
 # Singleton exporter instance
-_metrics_exporter: Optional[SignalMetricsExporter] = None
+_metrics_exporter: SignalMetricsExporter | None = None
 _metrics_exporter_lock = threading.Lock()
 
 

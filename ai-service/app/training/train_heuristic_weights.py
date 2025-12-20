@@ -100,9 +100,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
@@ -111,12 +111,12 @@ from app.ai.heuristic_weights import (
     HEURISTIC_WEIGHT_PROFILES,
 )
 from app.models import GameState
-from app.training.territory_dataset_validation import (
-    validate_territory_dataset_file,
-)
 from app.training.heuristic_features import (
     HEURISTIC_WEIGHT_KEYS,
     batch_extract_linear_features,
+)
+from app.training.territory_dataset_validation import (
+    validate_territory_dataset_file,
 )
 
 
@@ -135,16 +135,16 @@ class TrainingExample:
     time_weight: float = 1.0
 
 
-def _load_jsonl_dataset(path: str) -> List[TrainingExample]:
+def _load_jsonl_dataset(path: str) -> list[TrainingExample]:
     """Load a JSONL dataset from *path*.
 
     Each line must contain ``game_state``, ``player_number``, and
     ``target`` fields as described in the module docstring.
     """
 
-    examples: List[TrainingExample] = []
+    examples: list[TrainingExample] = []
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
@@ -186,7 +186,7 @@ def _load_jsonl_dataset(path: str) -> List[TrainingExample]:
 
 def _prepare_design_matrix(
     examples: Iterable[TrainingExample],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Compute (X, b, y) from an iterable of examples.
 
     Returns
@@ -199,10 +199,10 @@ def _prepare_design_matrix(
         Target vector of shape ``[N]``.
     """
 
-    game_states: List[GameState] = []
-    players: List[int] = []
-    targets: List[float] = []
-    weights: List[float] = []
+    game_states: list[GameState] = []
+    players: list[int] = []
+    targets: list[float] = []
+    weights: list[float] = []
 
     for ex in examples:
         game_states.append(ex.game_state)
@@ -221,10 +221,10 @@ def _solve_ridge_regression(
     X: np.ndarray,
     b: np.ndarray,
     y: np.ndarray,
-    base_weights: Dict[str, float],
+    base_weights: dict[str, float],
     lambda_reg: float,
-    sample_weights: Optional[np.ndarray] = None,
-) -> Dict[str, float]:
+    sample_weights: np.ndarray | None = None,
+) -> dict[str, float]:
     """Solve the ridge-regression normal equations for new weights.
 
     Parameters
@@ -297,13 +297,13 @@ def _solve_ridge_regression(
     # and then back to float32 when constructing the final mapping.
     w = np.linalg.solve(XtX.astype(np.float64), Xt_y.astype(np.float64))
 
-    return {k: float(v) for k, v in zip(HEURISTIC_WEIGHT_KEYS, w.tolist())}
+    return {k: float(v) for k, v in zip(HEURISTIC_WEIGHT_KEYS, w.tolist(), strict=False)}
 
 
 def _build_output_profiles(
     base_profile_id: str,
-    new_weights: Dict[str, float],
-) -> Dict[str, Dict[str, float]]:
+    new_weights: dict[str, float],
+) -> dict[str, dict[str, float]]:
     """Return an updated profile mapping based on *new_weights*.
 
     For now we only *replace* the specified ``base_profile_id`` and leave
@@ -312,7 +312,7 @@ def _build_output_profiles(
     profile.
     """
 
-    profiles: Dict[str, Dict[str, float]] = {}
+    profiles: dict[str, dict[str, float]] = {}
 
     for pid, weights in HEURISTIC_WEIGHT_PROFILES.items():
         if pid == base_profile_id:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -71,8 +71,8 @@ def _empty_batch_moves(batch_size: int, device: torch.device) -> BatchMoves:
 
 
 def generate_placement_moves_batch(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Generate all valid placement moves for active games.
 
@@ -99,7 +99,6 @@ def generate_placement_moves_batch(
 
     device = state.device
     batch_size = state.batch_size
-    board_size = state.board_size
 
     # Find all valid placement positions per game:
     # - Must not be collapsed
@@ -163,7 +162,7 @@ def _get_directions(device: torch.device) -> torch.Tensor:
 
 
 def _validate_paths_vectorized_fast(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_indices: torch.Tensor,  # (N,)
     from_y: torch.Tensor,        # (N,)
     from_x: torch.Tensor,        # (N,)
@@ -237,8 +236,8 @@ def _validate_paths_vectorized_fast(
 
 
 def generate_movement_moves_batch_vectorized(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Fully vectorized movement move generation.
 
@@ -432,7 +431,7 @@ def generate_movement_moves_batch_vectorized(
 
 
 def _validate_paths_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_indices: torch.Tensor,
     from_positions: torch.Tensor,
     to_positions: torch.Tensor,
@@ -492,8 +491,8 @@ def _validate_paths_vectorized(
 
 
 def generate_movement_moves_batch(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Generate all valid non-capture movement moves for active games.
 
@@ -519,8 +518,8 @@ def generate_movement_moves_batch(
 
 
 def _generate_movement_moves_batch_legacy(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Legacy Python-loop based movement generation.
 
@@ -592,7 +591,7 @@ def _generate_movement_moves_batch_legacy(
     game_idx_t = torch.tensor(candidate_game_idx, dtype=torch.int64, device=device)
     from_t = torch.tensor(candidate_from, dtype=torch.int64, device=device)
     to_t = torch.tensor(candidate_to, dtype=torch.int64, device=device)
-    player_t = torch.tensor(candidate_player, dtype=torch.int64, device=device)
+    torch.tensor(candidate_player, dtype=torch.int64, device=device)
 
     # Use fully vectorized fast path validation (avoids .item() calls)
     valid_mask = _validate_paths_vectorized_fast(
@@ -643,8 +642,8 @@ def _generate_movement_moves_batch_legacy(
 
 
 def generate_capture_moves_batch(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Generate all valid capture moves for active games.
 
@@ -671,8 +670,8 @@ def generate_capture_moves_batch(
 
 
 def generate_capture_moves_batch_vectorized(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Fully vectorized capture move generation.
 
@@ -816,7 +815,7 @@ def generate_capture_moves_batch_vectorized(
     sd_game_idx_exp = sd_game_idx.unsqueeze(1).expand(-1, max_dist)
     sd_from_y_exp = sd_from_y.unsqueeze(1).expand(-1, max_dist)
     sd_from_x_exp = sd_from_x.unsqueeze(1).expand(-1, max_dist)
-    sd_target_dist_exp = sd_target_dist.unsqueeze(1).expand(-1, max_dist)
+    sd_target_dist.unsqueeze(1).expand(-1, max_dist)
     sd_min_landing_exp = sd_min_landing.unsqueeze(1).expand(-1, max_dist)
     sd_dir_dy_exp = sd_dir_dy.unsqueeze(1).expand(-1, max_dist)
     sd_dir_dx_exp = sd_dir_dx.unsqueeze(1).expand(-1, max_dist)
@@ -954,8 +953,8 @@ def generate_capture_moves_batch_vectorized(
 
 
 def _generate_capture_moves_batch_legacy(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Legacy Python-loop based capture generation.
 
@@ -1002,7 +1001,7 @@ def _generate_capture_moves_batch_legacy(
                 continue
 
             for dy, dx in directions:
-                target_y, target_x = None, None
+                target_y, _target_x = None, None
                 target_dist = 0
 
                 for step in range(1, board_size):
@@ -1019,7 +1018,7 @@ def _generate_capture_moves_batch_legacy(
                     if cell_owner != 0:
                         target_cap = state.cap_height[g, check_y, check_x].item()
                         if my_cap_height >= target_cap:
-                            target_y, target_x = check_y, check_x
+                            target_y, _target_x = check_y, check_x
                             target_dist = step
                         break
 
@@ -1097,11 +1096,11 @@ def _generate_capture_moves_batch_legacy(
 
 
 def generate_chain_capture_moves_from_position(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
     from_y: int,
     from_x: int,
-) -> List[Tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """Generate all valid chain capture moves from a specific position.
 
     Used for chain capture continuation per RR-CANON-R103:
@@ -1145,7 +1144,7 @@ def generate_chain_capture_moves_from_position(
         (1, 0), (1, -1), (0, -1), (-1, -1)
     ]
 
-    captures: List[Tuple[int, int]] = []
+    captures: list[tuple[int, int]] = []
 
     for dy, dx in directions:
         # Step 1: Find the first stack along this ray (implicit target).
@@ -1214,13 +1213,13 @@ def generate_chain_capture_moves_from_position(
 
 
 def apply_single_chain_capture(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
     from_y: int,
     from_x: int,
     to_y: int,
     to_x: int,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Apply a single capture move for chain capture continuation.
 
     Per RR-CANON-R101/R102/R103 (overtaking capture):
@@ -1369,8 +1368,8 @@ def apply_single_chain_capture(
 
 
 def generate_recovery_moves_batch(
-    state: "BatchGameState",
-    active_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    active_mask: torch.Tensor | None = None,
 ) -> BatchMoves:
     """Generate all valid recovery slide moves for eligible players.
 
@@ -1633,19 +1632,19 @@ def generate_recovery_moves_batch(
 
 
 __all__ = [
+    'DIRECTIONS',
     'BatchMoves',
     '_empty_batch_moves',
-    'generate_placement_moves_batch',
-    'DIRECTIONS',
-    '_validate_paths_vectorized_fast',
-    'generate_movement_moves_batch_vectorized',
-    '_validate_paths_vectorized',
-    'generate_movement_moves_batch',
+    '_generate_capture_moves_batch_legacy',
     '_generate_movement_moves_batch_legacy',
+    '_validate_paths_vectorized',
+    '_validate_paths_vectorized_fast',
+    'apply_single_chain_capture',
     'generate_capture_moves_batch',
     'generate_capture_moves_batch_vectorized',
-    '_generate_capture_moves_batch_legacy',
     'generate_chain_capture_moves_from_position',
-    'apply_single_chain_capture',
+    'generate_movement_moves_batch',
+    'generate_movement_moves_batch_vectorized',
+    'generate_placement_moves_batch',
     'generate_recovery_moves_batch',
 ]

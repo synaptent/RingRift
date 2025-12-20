@@ -35,40 +35,40 @@ import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Callable, List, Tuple
 
 from app.utils.paths import AI_SERVICE_ROOT
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # Configuration
-    "RamdriveConfig",
-    "RamdriveStatus",
-    "SystemResources",
     # Constants
     "RAMDRIVE_PATHS",
     "RINGRIFT_SUBDIR",
+    # Configuration
+    "RamdriveConfig",
+    "RamdriveStatus",
+    # Syncer class
+    "RamdriveSyncer",
+    "SystemResources",
+    # Argument parsing helpers
+    "add_ramdrive_args",
     # Core functions
     "detect_ramdrive",
+    "get_auto_storage_path",
+    "get_checkpoints_directory",
+    "get_config_from_args",
     "get_data_directory",
     "get_games_directory",
     "get_logs_directory",
     "get_models_directory",
-    "get_checkpoints_directory",
-    "is_ramdrive_available",
     "get_ramdrive_path",
-    "should_use_ramdrive",
-    "get_auto_storage_path",
     "get_system_resources",
+    "is_ramdrive_available",
     "log_storage_recommendation",
-    # Syncer class
-    "RamdriveSyncer",
-    # Argument parsing helpers
-    "add_ramdrive_args",
-    "get_config_from_args",
+    "should_use_ramdrive",
 ]
 
 # Standard ramdrive locations
@@ -108,14 +108,14 @@ class RamdriveConfig:
     fallback_path: str = ""
 
     # Callback when sync completes
-    on_sync_complete: Optional[Callable[[Path, Path, bool], None]] = None
+    on_sync_complete: Callable[[Path, Path, bool], None] | None = None
 
 
 @dataclass
 class RamdriveStatus:
     """Status information about ramdrive."""
     available: bool = False
-    path: Optional[Path] = None
+    path: Path | None = None
     total_gb: float = 0.0
     free_gb: float = 0.0
     used_gb: float = 0.0
@@ -137,7 +137,7 @@ def detect_ramdrive() -> RamdriveStatus:
             # Check if it's actually a tmpfs/ramfs
             is_tmpfs = False
             if os.path.exists("/proc/mounts"):
-                with open("/proc/mounts", "r") as f:
+                with open("/proc/mounts") as f:
                     for line in f:
                         parts = line.split()
                         if len(parts) >= 3 and parts[1] == path_str:
@@ -169,7 +169,7 @@ def detect_ramdrive() -> RamdriveStatus:
 
 def get_data_directory(
     prefer_ramdrive: bool = False,
-    config: Optional[RamdriveConfig] = None,
+    config: RamdriveConfig | None = None,
     base_name: str = "data",
 ) -> Path:
     """Get the appropriate data directory based on configuration.
@@ -220,22 +220,22 @@ def get_data_directory(
     return fallback
 
 
-def get_games_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+def get_games_directory(prefer_ramdrive: bool = False, config: RamdriveConfig | None = None) -> Path:
     """Get the games data directory."""
     return get_data_directory(prefer_ramdrive, config, base_name="games")
 
 
-def get_logs_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+def get_logs_directory(prefer_ramdrive: bool = False, config: RamdriveConfig | None = None) -> Path:
     """Get the logs directory."""
     return get_data_directory(prefer_ramdrive, config, base_name="logs")
 
 
-def get_models_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+def get_models_directory(prefer_ramdrive: bool = False, config: RamdriveConfig | None = None) -> Path:
     """Get the models directory."""
     return get_data_directory(prefer_ramdrive, config, base_name="models")
 
 
-def get_checkpoints_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+def get_checkpoints_directory(prefer_ramdrive: bool = False, config: RamdriveConfig | None = None) -> Path:
     """Get the checkpoints directory."""
     return get_data_directory(prefer_ramdrive, config, base_name="checkpoints")
 
@@ -248,8 +248,8 @@ class RamdriveSyncer:
         source_dir: Path,
         target_dir: Path,
         interval: int = 300,
-        patterns: Optional[List[str]] = None,
-        on_complete: Optional[Callable[[Path, Path, bool], None]] = None,
+        patterns: list[str] | None = None,
+        on_complete: Callable[[Path, Path, bool], None] | None = None,
     ):
         """Initialize the syncer.
 
@@ -267,7 +267,7 @@ class RamdriveSyncer:
         self.on_complete = on_complete
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._last_sync_time = 0.0
         self._sync_count = 0
         self._error_count = 0
@@ -428,7 +428,7 @@ def add_ramdrive_args(parser, include_auto: bool = True) -> None:
     )
 
 
-def get_config_from_args(args, data_path: Optional[Path] = None) -> RamdriveConfig:
+def get_config_from_args(args, data_path: Path | None = None) -> RamdriveConfig:
     """Create RamdriveConfig from parsed arguments.
 
     Args:
@@ -459,7 +459,7 @@ def get_config_from_args(args, data_path: Optional[Path] = None) -> RamdriveConf
 
 
 # Module-level convenience for checking ramdrive status
-_cached_status: Optional[RamdriveStatus] = None
+_cached_status: RamdriveStatus | None = None
 
 
 def is_ramdrive_available(min_free_gb: float = 1.0) -> bool:
@@ -470,7 +470,7 @@ def is_ramdrive_available(min_free_gb: float = 1.0) -> bool:
     return _cached_status.available and _cached_status.free_gb >= min_free_gb
 
 
-def get_ramdrive_path() -> Optional[Path]:
+def get_ramdrive_path() -> Path | None:
     """Get the ramdrive path if available."""
     global _cached_status
     if _cached_status is None:
@@ -492,7 +492,7 @@ class SystemResources:
     recommend_ramdrive: bool = False
 
 
-def get_system_resources(data_path: Optional[Path] = None) -> SystemResources:
+def get_system_resources(data_path: Path | None = None) -> SystemResources:
     """Detect system resources to determine if ramdrive should be preferred.
 
     Args:
@@ -505,7 +505,7 @@ def get_system_resources(data_path: Optional[Path] = None) -> SystemResources:
 
     # Get RAM info
     try:
-        with open("/proc/meminfo", "r") as f:
+        with open("/proc/meminfo") as f:
             meminfo = f.read()
         for line in meminfo.split("\n"):
             if line.startswith("MemTotal:"):
@@ -571,9 +571,9 @@ def get_system_resources(data_path: Optional[Path] = None) -> SystemResources:
 
 
 def should_use_ramdrive(
-    data_path: Optional[Path] = None,
+    data_path: Path | None = None,
     min_ramdrive_gb: float = 4.0,
-    force: Optional[bool] = None,
+    force: bool | None = None,
 ) -> bool:
     """Determine if ramdrive should be used based on system resources.
 
@@ -599,10 +599,10 @@ def should_use_ramdrive(
 def get_auto_storage_path(
     base_name: str = "data",
     subdirectory: str = "",
-    fallback_path: Optional[Path] = None,
+    fallback_path: Path | None = None,
     min_ramdrive_gb: float = 4.0,
-    force_ramdrive: Optional[bool] = None,
-) -> Tuple[Path, bool]:
+    force_ramdrive: bool | None = None,
+) -> tuple[Path, bool]:
     """Automatically select storage path based on system resources.
 
     This is the main entry point for scripts that want automatic
@@ -652,7 +652,7 @@ def get_auto_storage_path(
     return path, False
 
 
-def log_storage_recommendation(data_path: Optional[Path] = None) -> None:
+def log_storage_recommendation(data_path: Path | None = None) -> None:
     """Log storage recommendation based on system resources.
 
     Useful for debugging and understanding why ramdrive was/wasn't selected.

@@ -14,8 +14,9 @@ Key optimizations:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .lightweight_state import LightweightState
@@ -34,21 +35,21 @@ class BoardArrays:
     """
 
     __slots__ = [
-        "board_type",
         "board_size",
-        "num_positions",
-        "stack_owner",
-        "stack_height",
-        "marker_owner",
+        "board_type",
+        "center_mask",
+        "idx_to_position",
         "is_collapsed",
-        "territory_owner",
-        "player_rings_in_hand",
+        "marker_owner",
+        "neighbor_indices",
+        "num_positions",
         "player_eliminated",
+        "player_rings_in_hand",
         "player_territory",
         "position_to_idx",
-        "idx_to_position",
-        "center_mask",
-        "neighbor_indices",
+        "stack_height",
+        "stack_owner",
+        "territory_owner",
         "victory_rings",
         "victory_territory",
     ]
@@ -67,8 +68,8 @@ class BoardArrays:
             self.num_positions = board_size * board_size
 
         # Position mapping
-        self.position_to_idx: Dict[str, int] = {}
-        self.idx_to_position: List[str] = []
+        self.position_to_idx: dict[str, int] = {}
+        self.idx_to_position: list[str] = []
 
         # Board state arrays (initialized to 0 = empty/neutral)
         self.stack_owner = np.zeros(self.num_positions, dtype=np.int8)
@@ -201,7 +202,7 @@ class BoardArrays:
                     self.neighbor_indices[idx, d_idx] = self.position_to_idx[neighbor_key]
 
     @classmethod
-    def from_lightweight_state(cls, state: "LightweightState") -> "BoardArrays":
+    def from_lightweight_state(cls, state: LightweightState) -> BoardArrays:
         """Create BoardArrays from a LightweightState."""
         # Determine board type
         board_type_str = state.board_type.value
@@ -254,7 +255,7 @@ class BoardArrays:
 
         return arrays
 
-    def copy(self) -> "BoardArrays":
+    def copy(self) -> BoardArrays:
         """Create a shallow copy with copied arrays."""
         new = BoardArrays.__new__(BoardArrays)
         new.board_type = self.board_type
@@ -279,7 +280,7 @@ class BoardArrays:
 
         return new
 
-    def update_from_lightweight_state(self, state: "LightweightState") -> None:
+    def update_from_lightweight_state(self, state: LightweightState) -> None:
         """
         Update arrays in-place from a LightweightState.
 
@@ -348,9 +349,9 @@ class BoardArrays:
 
 def batch_evaluate_positions(
     base_arrays: BoardArrays,
-    moves: List[Tuple[str, str, int, int]],  # (from_key, to_key, player, move_type)
+    moves: list[tuple[str, str, int, int]],  # (from_key, to_key, player, move_type)
     player_number: int,
-    weights: Dict[str, float],
+    weights: dict[str, float],
 ) -> np.ndarray:
     """
     Evaluate multiple moves in batch using vectorized operations.
@@ -443,9 +444,8 @@ def batch_evaluate_positions(
         elif move_type == 1:  # move_stack
             if from_idx >= 0:
                 # Leave marker at from position
-                if base_arrays.marker_owner[from_idx] == 0:
-                    if is_my_move:
-                        delta_my_markers[i] += 1
+                if base_arrays.marker_owner[from_idx] == 0 and is_my_move:
+                    delta_my_markers[i] += 1
 
                 # Stack moves from -> to
                 if base_arrays.stack_owner[to_idx] == 0:
@@ -460,18 +460,16 @@ def batch_evaluate_positions(
         elif move_type == 2:  # capture
             if from_idx >= 0:
                 # Leave marker at from position
-                if base_arrays.marker_owner[from_idx] == 0:
-                    if is_my_move:
-                        delta_my_markers[i] += 1
+                if base_arrays.marker_owner[from_idx] == 0 and is_my_move:
+                    delta_my_markers[i] += 1
 
                 # Capture: our stack takes over target stack
                 target_owner = base_arrays.stack_owner[to_idx]
-                if target_owner > 0 and target_owner != move_player:
-                    if is_my_move:
-                        # We capture opponent's stack
-                        delta_opp_stacks[i] -= 1
-                        if base_arrays.center_mask[to_idx]:
-                            delta_opp_center[i] -= 1
+                if target_owner > 0 and target_owner != move_player and is_my_move:
+                    # We capture opponent's stack
+                    delta_opp_stacks[i] -= 1
+                    if base_arrays.center_mask[to_idx]:
+                        delta_opp_center[i] -= 1
 
     # Compute final features
     final_my_stacks = base_my_stacks + delta_my_stacks
@@ -524,9 +522,9 @@ def batch_evaluate_positions(
 
 
 def prepare_moves_for_batch(
-    moves: List,  # List of Move objects
-    position_to_idx: Dict[str, int],
-) -> List[Tuple[str, str, int, int]]:
+    moves: list,  # List of Move objects
+    position_to_idx: dict[str, int],
+) -> list[tuple[str, str, int, int]]:
     """
     Convert Move objects to tuples for batch processing.
 
@@ -573,7 +571,7 @@ class BoardArraysPool:
     by board geometry (type + size) for fast lookup.
     """
 
-    _instances: Dict[str, "BoardArraysPool"] = {}
+    _instances: dict[str, BoardArraysPool] = {}
 
     def __init__(self, board_size: int, board_type: int, pool_size: int = 4):
         self.board_size = board_size
@@ -581,8 +579,8 @@ class BoardArraysPool:
         self.pool_size = pool_size
 
         # Pre-allocate pool of BoardArrays
-        self._available: List[BoardArrays] = []
-        self._in_use: List[BoardArrays] = []
+        self._available: list[BoardArrays] = []
+        self._in_use: list[BoardArrays] = []
 
         # Create initial pool
         for _ in range(pool_size):
@@ -590,7 +588,7 @@ class BoardArraysPool:
             self._available.append(arrays)
 
     @classmethod
-    def get_pool(cls, board_size: int, board_type: int) -> "BoardArraysPool":
+    def get_pool(cls, board_size: int, board_type: int) -> BoardArraysPool:
         """Get or create a pool for the given board geometry."""
         key = f"{board_type}_{board_size}"
         if key not in cls._instances:
@@ -630,7 +628,7 @@ class BoardArraysPool:
             self._available.append(arrays)
         # Otherwise let it be garbage collected
 
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> dict[str, int]:
         """Get pool statistics."""
         return {
             "available": len(self._available),
@@ -640,8 +638,8 @@ class BoardArraysPool:
 
 
 def get_or_update_board_arrays(
-    state: "LightweightState",
-    cached_arrays: Optional[BoardArrays] = None,
+    state: LightweightState,
+    cached_arrays: BoardArrays | None = None,
 ) -> BoardArrays:
     """
     Get BoardArrays for a state, reusing cached arrays if compatible.

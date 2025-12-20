@@ -45,10 +45,10 @@ Typical usage:
 import hashlib
 import logging
 import os
-from dataclasses import dataclass, field, asdict, fields
-from pathlib import Path
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -75,7 +75,7 @@ class VersionMismatchError(ModelVersioningError):
         checkpoint_version: str,
         current_version: str,
         checkpoint_path: str,
-        details: Optional[str] = None,
+        details: str | None = None,
     ):
         self.checkpoint_version = checkpoint_version
         self.current_version = current_version
@@ -136,7 +136,7 @@ class ConfigMismatchError(ModelVersioningError):
 
     def __init__(
         self,
-        mismatched_keys: Dict[str, Tuple[Any, Any]],
+        mismatched_keys: dict[str, tuple[Any, Any]],
         checkpoint_path: str,
     ):
         self.mismatched_keys = mismatched_keys
@@ -175,23 +175,23 @@ class ModelMetadata:
     """
     architecture_version: str
     model_class: str
-    config: Dict[str, Any]
-    training_info: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any]
+    training_info: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     checksum: str = ""
-    parent_checkpoint: Optional[str] = None
+    parent_checkpoint: str | None = None
 
     # Use a method to get default timestamp to avoid mutable default
     def __post_init__(self) -> None:
         if not self.created_at:
             self.created_at = datetime.now(timezone.utc).isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ModelMetadata":
+    def from_dict(cls, data: dict[str, Any]) -> "ModelMetadata":
         """Create from dictionary, ignoring unknown fields for forward compatibility."""
         # Filter to only known fields to handle future metadata additions gracefully
         known_fields = {f.name for f in fields(cls)}
@@ -224,7 +224,7 @@ class ModelMetadata:
             return self.architecture_version == other.architecture_version
 
     @staticmethod
-    def _parse_version(version: str) -> Tuple[int, int, int]:
+    def _parse_version(version: str) -> tuple[int, int, int]:
         """Parse version string like 'v2.1.0' or '2.1.0' into tuple."""
         v = version.lstrip('v')
         parts = v.split('.')
@@ -249,7 +249,7 @@ HEX_NEURAL_NET_V2_VERSION = "v2.0.0"
 HEX_NEURAL_NET_V3_VERSION = "v3.0.0"
 
 # Model class name to version mapping
-MODEL_VERSIONS: Dict[str, str] = {
+MODEL_VERSIONS: dict[str, str] = {
     # Square board models
     "RingRiftCNN_v2": RINGRIFT_CNN_V2_VERSION,
     "RingRiftCNN_v2_Lite": "v2.0.0-lite",
@@ -270,7 +270,7 @@ def get_model_version(model: nn.Module) -> str:
 
     # Check if model has explicit version attribute
     if hasattr(model, 'ARCHITECTURE_VERSION'):
-        version = getattr(model, 'ARCHITECTURE_VERSION')
+        version = model.ARCHITECTURE_VERSION
         if isinstance(version, str):
             return version
 
@@ -278,26 +278,26 @@ def get_model_version(model: nn.Module) -> str:
     return MODEL_VERSIONS.get(class_name, "v0.0.0")
 
 
-def get_model_config(model: nn.Module) -> Dict[str, Any]:
+def get_model_config(model: nn.Module) -> dict[str, Any]:
     """
     Extract configuration from a model instance.
 
     This extracts the key architectural parameters that define the model.
     """
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
     class_name = model.__class__.__name__
 
     if class_name in ("RingRiftCNN_v2", "RingRiftCNN_v2_Lite", "RingRiftCNN_v3", "RingRiftCNN_v3_Lite"):
         # V2 models use SE residual blocks
         num_filters = 128
         if hasattr(model, "conv1"):
-            conv1 = getattr(model, "conv1")
+            conv1 = model.conv1
             if hasattr(conv1, "out_channels"):
                 num_filters = conv1.out_channels
 
         num_res_blocks = 10
         if hasattr(model, "res_blocks"):
-            res_blocks = getattr(model, "res_blocks")
+            res_blocks = model.res_blocks
             if hasattr(res_blocks, "__len__"):
                 num_res_blocks = len(res_blocks)
 
@@ -360,7 +360,7 @@ def get_model_config(model: nn.Module) -> Dict[str, Any]:
 # =============================================================================
 
 
-def compute_state_dict_checksum(state_dict: Dict[str, torch.Tensor]) -> str:
+def compute_state_dict_checksum(state_dict: dict[str, torch.Tensor]) -> str:
     """
     Compute SHA256 checksum of a model's state_dict.
 
@@ -436,7 +436,7 @@ class ModelVersionManager:
     EPOCH_KEY = "epoch"
     LOSS_KEY = "loss"
 
-    def __init__(self, default_device: Optional[torch.device] = None):
+    def __init__(self, default_device: torch.device | None = None):
         """
         Initialize the version manager.
 
@@ -449,8 +449,8 @@ class ModelVersionManager:
     def create_metadata(
         self,
         model: nn.Module,
-        training_info: Optional[Dict[str, Any]] = None,
-        parent_checkpoint: Optional[str] = None,
+        training_info: dict[str, Any] | None = None,
+        parent_checkpoint: str | None = None,
     ) -> ModelMetadata:
         """
         Create metadata for a model instance.
@@ -480,10 +480,10 @@ class ModelVersionManager:
         model: nn.Module,
         metadata: ModelMetadata,
         path: str,
-        optimizer: Optional[torch.optim.Optimizer] = None,
-        scheduler: Optional[Any] = None,
-        epoch: Optional[int] = None,
-        loss: Optional[float] = None,
+        optimizer: torch.optim.Optimizer | None = None,
+        scheduler: Any | None = None,
+        epoch: int | None = None,
+        loss: float | None = None,
     ) -> None:
         """
         Save a versioned checkpoint with metadata.
@@ -503,7 +503,7 @@ class ModelVersionManager:
             os.makedirs(dir_path, exist_ok=True)
 
         # Prepare checkpoint dict - use Any for mixed value types
-        checkpoint: Dict[str, Any] = {
+        checkpoint: dict[str, Any] = {
             self.STATE_DICT_KEY: model.state_dict(),
             self.METADATA_KEY: metadata.to_dict(),
         }
@@ -567,11 +567,11 @@ class ModelVersionManager:
         self,
         path: str,
         strict: bool = True,
-        expected_version: Optional[str] = None,
-        expected_class: Optional[str] = None,
+        expected_version: str | None = None,
+        expected_class: str | None = None,
         verify_checksum: bool = True,
-        device: Optional[torch.device] = None,
-    ) -> Tuple[Dict[str, torch.Tensor], ModelMetadata]:
+        device: torch.device | None = None,
+    ) -> tuple[dict[str, torch.Tensor], ModelMetadata]:
         """
         Load a versioned checkpoint with validation.
 
@@ -618,38 +618,36 @@ class ModelVersionManager:
                 )
 
         # Version validation
-        if expected_version is not None:
-            if metadata.architecture_version != expected_version:
-                if strict:
-                    raise VersionMismatchError(
-                        checkpoint_version=metadata.architecture_version,
-                        current_version=expected_version,
-                        checkpoint_path=path,
-                    )
-                else:
-                    logger.warning(
-                        f"Version mismatch: checkpoint="
-                        f"{metadata.architecture_version}, "
-                        f"expected={expected_version}. "
-                        f"Loading anyway (strict=False)."
-                    )
+        if expected_version is not None and metadata.architecture_version != expected_version:
+            if strict:
+                raise VersionMismatchError(
+                    checkpoint_version=metadata.architecture_version,
+                    current_version=expected_version,
+                    checkpoint_path=path,
+                )
+            else:
+                logger.warning(
+                    f"Version mismatch: checkpoint="
+                    f"{metadata.architecture_version}, "
+                    f"expected={expected_version}. "
+                    f"Loading anyway (strict=False)."
+                )
 
         # Class validation
-        if expected_class is not None:
-            if metadata.model_class != expected_class:
-                if strict:
-                    raise VersionMismatchError(
-                        checkpoint_version=f"{metadata.model_class}",
-                        current_version=f"{expected_class}",
-                        checkpoint_path=path,
-                        details="Model class mismatch",
-                    )
-                else:
-                    logger.warning(
-                        f"Class mismatch: checkpoint={metadata.model_class}, "
-                        f"expected={expected_class}. "
-                        f"Loading anyway (strict=False)."
-                    )
+        if expected_class is not None and metadata.model_class != expected_class:
+            if strict:
+                raise VersionMismatchError(
+                    checkpoint_version=f"{metadata.model_class}",
+                    current_version=f"{expected_class}",
+                    checkpoint_path=path,
+                    details="Model class mismatch",
+                )
+            else:
+                logger.warning(
+                    f"Class mismatch: checkpoint={metadata.model_class}, "
+                    f"expected={expected_class}. "
+                    f"Loading anyway (strict=False)."
+                )
 
         logger.info(
             f"Loaded versioned checkpoint from {path}\n"
@@ -662,10 +660,10 @@ class ModelVersionManager:
 
     def _handle_legacy_checkpoint(
         self,
-        checkpoint: Dict[str, Any],
+        checkpoint: dict[str, Any],
         path: str,
         strict: bool,
-    ) -> Tuple[Dict[str, torch.Tensor], ModelMetadata]:
+    ) -> tuple[dict[str, torch.Tensor], ModelMetadata]:
         """Handle loading of legacy (non-versioned) checkpoints."""
         if strict:
             raise LegacyCheckpointError(path)
@@ -706,7 +704,7 @@ class ModelVersionManager:
 
     def validate_compatibility(
         self,
-        current_config: Dict[str, Any],
+        current_config: dict[str, Any],
         checkpoint_path: str,
         strict_config: bool = False,
     ) -> bool:
@@ -748,12 +746,11 @@ class ModelVersionManager:
 
         mismatches = {}
         for key in keys_to_check:
-            if key in checkpoint_config:
-                if current_config[key] != checkpoint_config[key]:
-                    mismatches[key] = (
-                        checkpoint_config[key],
-                        current_config[key],
-                    )
+            if key in checkpoint_config and current_config[key] != checkpoint_config[key]:
+                mismatches[key] = (
+                    checkpoint_config[key],
+                    current_config[key],
+                )
 
         if mismatches:
             logger.warning(
@@ -802,9 +799,9 @@ class ModelVersionManager:
         legacy_path: str,
         output_path: str,
         model_class: str,
-        config: Dict[str, Any],
-        architecture_version: Optional[str] = None,
-        training_info: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any],
+        architecture_version: str | None = None,
+        training_info: dict[str, Any] | None = None,
     ) -> ModelMetadata:
         """
         Migrate a legacy checkpoint to versioned format.
@@ -924,8 +921,8 @@ def load_model_with_validation(
     model: nn.Module,
     checkpoint_path: str,
     strict: bool = True,
-    device: Optional[torch.device] = None,
-) -> Tuple[nn.Module, ModelMetadata]:
+    device: torch.device | None = None,
+) -> tuple[nn.Module, ModelMetadata]:
     """
     Load checkpoint into model with version validation.
 
@@ -963,12 +960,11 @@ def load_model_with_validation(
             metadata = manager.get_metadata(checkpoint_path)
             mismatches = {}
             for key in current_config:
-                if key in metadata.config:
-                    if current_config[key] != metadata.config[key]:
-                        mismatches[key] = (
-                            metadata.config[key],
-                            current_config[key],
-                        )
+                if key in metadata.config and current_config[key] != metadata.config[key]:
+                    mismatches[key] = (
+                        metadata.config[key],
+                        current_config[key],
+                    )
             if mismatches:
                 raise ConfigMismatchError(mismatches, checkpoint_path)
         except LegacyCheckpointError:
@@ -993,12 +989,12 @@ def load_model_with_validation(
 def save_model_checkpoint(
     model: nn.Module,
     path: str,
-    training_info: Optional[Dict[str, Any]] = None,
-    optimizer: Optional[torch.optim.Optimizer] = None,
-    scheduler: Optional[Any] = None,
-    epoch: Optional[int] = None,
-    loss: Optional[float] = None,
-    parent_checkpoint: Optional[str] = None,
+    training_info: dict[str, Any] | None = None,
+    optimizer: torch.optim.Optimizer | None = None,
+    scheduler: Any | None = None,
+    epoch: int | None = None,
+    loss: float | None = None,
+    parent_checkpoint: str | None = None,
 ) -> ModelMetadata:
     """
     Save model checkpoint with automatic metadata creation.

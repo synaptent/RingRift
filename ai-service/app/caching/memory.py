@@ -12,13 +12,13 @@ import logging
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Dict, Generic, Iterator, Optional, TypeVar
+from typing import TypeVar
 
-from app.caching.base import Cache, CacheConfig, CacheEntry, CacheStats
+from app.caching.base import Cache, CacheConfig, CacheEntry
 
 __all__ = [
-    "MemoryCache",
     "LRUCache",
+    "MemoryCache",
     "TTLCache",
 ]
 
@@ -47,9 +47,9 @@ class MemoryCache(Cache[K, V]):
 
     def __init__(
         self,
-        max_size: Optional[int] = None,
-        ttl_seconds: Optional[float] = None,
-        config: Optional[CacheConfig] = None,
+        max_size: int | None = None,
+        ttl_seconds: float | None = None,
+        config: CacheConfig | None = None,
     ):
         """Initialize the memory cache.
 
@@ -65,7 +65,7 @@ class MemoryCache(Cache[K, V]):
         self._data: OrderedDict[K, CacheEntry[V]] = OrderedDict()
         self._lock = threading.RLock()
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: K, default: V | None = None) -> V | None:
         """Get a value from the cache."""
         with self._lock:
             entry = self._data.get(key)
@@ -91,7 +91,7 @@ class MemoryCache(Cache[K, V]):
         self,
         key: K,
         value: V,
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ) -> None:
         """Set a value in the cache."""
         ttl = ttl_seconds if ttl_seconds is not None else self.config.ttl_seconds
@@ -191,7 +191,7 @@ class LRUCache(MemoryCache[K, V]):
     def __init__(
         self,
         max_size: int,
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ):
         """Initialize the LRU cache.
 
@@ -216,7 +216,7 @@ class TTLCache(MemoryCache[K, V]):
     def __init__(
         self,
         ttl_seconds: float,
-        max_size: Optional[int] = None,
+        max_size: int | None = None,
         cleanup_interval_seconds: float = 60.0,
     ):
         """Initialize the TTL cache.
@@ -234,7 +234,7 @@ class TTLCache(MemoryCache[K, V]):
         super().__init__(config=config)
         self._last_cleanup = time.time()
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: K, default: V | None = None) -> V | None:
         """Get a value, running cleanup if needed."""
         self._maybe_cleanup()
         return super().get(key, default)
@@ -243,7 +243,7 @@ class TTLCache(MemoryCache[K, V]):
         self,
         key: K,
         value: V,
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ) -> None:
         """Set a value, running cleanup if needed."""
         self._maybe_cleanup()

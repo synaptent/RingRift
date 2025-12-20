@@ -3,8 +3,9 @@ Shared core utilities for RingRift rules.
 Mirrors src/shared/engine/core.ts
 """
 
-from typing import List, Optional, Protocol, Any, Dict, NamedTuple
-from app.models import Position, BoardType, GameState, GameStatus, BoardState
+from typing import Any, NamedTuple, Protocol
+
+from app.models import BoardState, BoardType, GameState, GameStatus, Position
 
 
 class BoardConfig(NamedTuple):
@@ -16,7 +17,7 @@ class BoardConfig(NamedTuple):
 
 
 # Mirrors src/shared/types/game.ts BOARD_CONFIGS
-BOARD_CONFIGS: Dict[BoardType, BoardConfig] = {
+BOARD_CONFIGS: dict[BoardType, BoardConfig] = {
     BoardType.SQUARE8: BoardConfig(
         size=8,
         total_spaces=64,
@@ -79,7 +80,7 @@ def get_effective_line_length(board_type: BoardType, num_players: int) -> int:
 def get_victory_threshold(
     board_type: BoardType,
     num_players: int,
-    rings_per_player_override: Optional[int] = None,
+    rings_per_player_override: int | None = None,
 ) -> int:
     """
     Calculate the ring elimination victory threshold for the given board and player count.
@@ -138,7 +139,7 @@ def get_territory_victory_threshold(board_type: BoardType) -> int:
 
 def get_rings_per_player(
     board_type: BoardType,
-    override: Optional[int] = None,
+    override: int | None = None,
 ) -> int:
     """
     Return the starting ring supply per player for the given board type.
@@ -189,11 +190,11 @@ class BoardView(Protocol):
     def is_valid_position(self, pos: Position) -> bool: ...
     def is_collapsed_space(self, pos: Position) -> bool: ...
     # Returns RingStack-like
-    def get_stack_at(self, pos: Position) -> Optional[Any]: ...
-    def get_marker_owner(self, pos: Position) -> Optional[int]: ...
+    def get_stack_at(self, pos: Position) -> Any | None: ...
+    def get_marker_owner(self, pos: Position) -> int | None: ...
 
 
-def calculate_cap_height(rings: List[int]) -> int:
+def calculate_cap_height(rings: list[int]) -> int:
     """
     Calculate the cap height of a stack.
     Mirrors core.ts:calculateCapHeight
@@ -229,7 +230,7 @@ def calculate_distance(
     return max(dx, dy)
 
 
-def get_path_positions(from_pos: Position, to_pos: Position) -> List[Position]:
+def get_path_positions(from_pos: Position, to_pos: Position) -> list[Position]:
     """
     Get all positions along a straight-line path, inclusive.
     Mirrors core.ts:getPathPositions
@@ -251,18 +252,18 @@ def get_path_positions(from_pos: Position, to_pos: Position) -> List[Position]:
     step_z = dz / steps
 
     for i in range(1, steps + 1):
-        x = int(round(from_pos.x + step_x * i))
-        y = int(round(from_pos.y + step_y * i))
+        x = round(from_pos.x + step_x * i)
+        y = round(from_pos.y + step_y * i)
         pos_kwargs = {"x": x, "y": y}
         if from_pos.z is not None or to_pos.z is not None:
-            z = int(round(dz_from + step_z * i))
+            z = round(dz_from + step_z * i)
             pos_kwargs["z"] = z
         path.append(Position(**pos_kwargs))
 
     return path
 
 
-def summarize_board(board: BoardState) -> Dict[str, List[str]]:
+def summarize_board(board: BoardState) -> dict[str, list[str]]:
     """
     Build a lightweight, order-independent summary of a BoardState.
     Mirrors core.ts:summarizeBoard
@@ -292,7 +293,7 @@ def summarize_board(board: BoardState) -> Dict[str, List[str]]:
     }
 
 
-def compute_progress_snapshot(state: GameState) -> Dict[str, int]:
+def compute_progress_snapshot(state: GameState) -> dict[str, int]:
     """
     Compute the canonical S-invariant snapshot for a given GameState.
 
@@ -415,10 +416,7 @@ def player_controls_any_stack(board: BoardState, player_number: int) -> bool:
 
     A player controls a stack when their ring is on top (the controlling player).
     """
-    for stack in board.stacks.values():
-        if stack.controlling_player == player_number:
-            return True
-    return False
+    return any(stack.controlling_player == player_number for stack in board.stacks.values())
 
 
 def player_has_markers(board: BoardState, player_number: int) -> bool:
@@ -427,10 +425,7 @@ def player_has_markers(board: BoardState, player_number: int) -> bool:
 
     Mirrors TS playerStateHelpers.ts:playerHasMarkers
     """
-    for marker in board.markers.values():
-        if marker.player == player_number:
-            return True
-    return False
+    return any(marker.player == player_number for marker in board.markers.values())
 
 
 def count_buried_rings(board: BoardState, player_number: int) -> int:
@@ -490,7 +485,4 @@ def is_eligible_for_recovery(state: GameState, player_number: int) -> bool:
         return False
 
     # Must have at least one buried ring
-    if count_buried_rings(state.board, player_number) < 1:
-        return False
-
-    return True
+    return not count_buried_rings(state.board, player_number) < 1

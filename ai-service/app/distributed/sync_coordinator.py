@@ -45,18 +45,17 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from .storage_provider import (
     StorageProvider,
     TransportConfig,
-    get_storage_provider,
-    get_optimal_transport_config,
     get_aria2_sources,
+    get_optimal_transport_config,
+    get_storage_provider,
 )
 from .unified_manifest import (
     DataManifest,
-    GameQualityMetadata,
     PriorityQueueEntry,
 )
 
@@ -67,20 +66,21 @@ DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 # Import transports with graceful fallbacks
 try:
-    from .aria2_transport import Aria2Transport, check_aria2_available, Aria2Config
+    from .aria2_transport import Aria2Config, Aria2Transport, check_aria2_available
     HAS_ARIA2 = True
 except ImportError:
     HAS_ARIA2 = False
-    check_aria2_available = lambda: False
+    def check_aria2_available():
+        return False
 
 try:
-    from .p2p_sync_client import P2PSyncClient, P2PFallbackSync
+    from .p2p_sync_client import P2PFallbackSync, P2PSyncClient
     HAS_P2P = True
 except ImportError:
     HAS_P2P = False
 
 try:
-    from .gossip_sync import GossipSyncDaemon, GossipPeer
+    from .gossip_sync import GossipPeer, GossipSyncDaemon
     HAS_GOSSIP = True
 except ImportError:
     HAS_GOSSIP = False
@@ -100,8 +100,8 @@ except ImportError:
 
 try:
     from app.metrics.orchestrator import (
-        record_sync_coordinator_op,
         record_nfs_skip,
+        record_sync_coordinator_op,
         update_data_server_status,
         update_sync_sources_count,
     )
@@ -141,7 +141,7 @@ class SyncStats:
     duration_seconds: float = 0.0
     transport_used: str = ""
     sources_tried: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     # Quality-aware sync stats
     high_quality_games_synced: int = 0
     avg_quality_score: float = 0.0
@@ -159,14 +159,14 @@ class ClusterSyncStats:
     total_files_synced: int = 0
     total_bytes_transferred: int = 0
     duration_seconds: float = 0.0
-    categories: Dict[str, SyncStats] = field(default_factory=dict)
-    transport_distribution: Dict[str, int] = field(default_factory=dict)
+    categories: dict[str, SyncStats] = field(default_factory=dict)
+    transport_distribution: dict[str, int] = field(default_factory=dict)
     nodes_synced: int = 0
     nodes_failed: int = 0
     # Quality-aware stats
     total_high_quality_games: int = 0
     avg_quality_score: float = 0.0
-    quality_distribution: Dict[str, Any] = field(default_factory=dict)
+    quality_distribution: dict[str, Any] = field(default_factory=dict)
 
 
 class SyncCoordinator:
@@ -177,37 +177,37 @@ class SyncCoordinator:
     and optimizing for the current storage provider.
     """
 
-    _instance: Optional["SyncCoordinator"] = None
+    _instance: SyncCoordinator | None = None
 
     def __init__(
         self,
-        provider: Optional[StorageProvider] = None,
-        config: Optional[TransportConfig] = None,
-        manifest_path: Optional[Path] = None,
+        provider: StorageProvider | None = None,
+        config: TransportConfig | None = None,
+        manifest_path: Path | None = None,
     ):
         self._provider = provider or get_storage_provider()
         self._config = config or get_optimal_transport_config(self._provider)
 
         # Transport instances (lazily initialized)
-        self._aria2: Optional[Aria2Transport] = None
-        self._p2p: Optional[P2PSyncClient] = None
-        self._gossip: Optional[GossipSyncDaemon] = None
-        self._ssh: Optional[SSHTransport] = None
+        self._aria2: Aria2Transport | None = None
+        self._p2p: P2PSyncClient | None = None
+        self._gossip: GossipSyncDaemon | None = None
+        self._ssh: SSHTransport | None = None
 
         # State tracking
         self._running = False
-        self._last_sync_times: Dict[str, float] = {}
-        self._sync_stats: Dict[str, SyncStats] = {}
+        self._last_sync_times: dict[str, float] = {}
+        self._sync_stats: dict[str, SyncStats] = {}
 
         # Source discovery cache
-        self._aria2_sources: List[str] = []
+        self._aria2_sources: list[str] = []
         self._source_discovery_time: float = 0
 
         # Quality-aware sync: manifest integration
-        self._manifest: Optional[DataManifest] = None
+        self._manifest: DataManifest | None = None
         self._manifest_path = manifest_path
-        self._quality_lookup: Dict[str, float] = {}
-        self._elo_lookup: Dict[str, float] = {}
+        self._quality_lookup: dict[str, float] = {}
+        self._elo_lookup: dict[str, float] = {}
         self._quality_lookup_time: float = 0
         self._init_manifest()
 
@@ -221,9 +221,9 @@ class SyncCoordinator:
     @classmethod
     def get_instance(
         cls,
-        provider: Optional[StorageProvider] = None,
-        config: Optional[TransportConfig] = None,
-    ) -> "SyncCoordinator":
+        provider: StorageProvider | None = None,
+        config: TransportConfig | None = None,
+    ) -> SyncCoordinator:
         """Get or create the singleton instance."""
         if cls._instance is None:
             cls._instance = cls(provider, config)
@@ -240,7 +240,7 @@ class SyncCoordinator:
     # Transport Initialization
     # =========================================================================
 
-    def _init_aria2(self) -> Optional[Aria2Transport]:
+    def _init_aria2(self) -> Aria2Transport | None:
         """Initialize aria2 transport if available."""
         if not HAS_ARIA2 or not self._config.enable_aria2:
             return None
@@ -257,7 +257,7 @@ class SyncCoordinator:
             logger.debug("aria2 transport initialized")
         return self._aria2
 
-    def _init_p2p(self) -> Optional[P2PSyncClient]:
+    def _init_p2p(self) -> P2PSyncClient | None:
         """Initialize P2P transport if available."""
         if not HAS_P2P or not self._config.enable_p2p:
             return None
@@ -266,7 +266,7 @@ class SyncCoordinator:
             logger.debug("P2P transport initialized")
         return self._p2p
 
-    async def _init_gossip(self, peers: Optional[List[Dict[str, Any]]] = None) -> Optional[GossipSyncDaemon]:
+    async def _init_gossip(self, peers: list[dict[str, Any]] | None = None) -> GossipSyncDaemon | None:
         """Initialize gossip sync daemon if available."""
         if not HAS_GOSSIP or not self._config.enable_gossip:
             return None
@@ -298,8 +298,8 @@ class SyncCoordinator:
         return base
 
     @staticmethod
-    def _snapshot_files(base_dir: Path, patterns: List[str]) -> Dict[str, int]:
-        snapshot: Dict[str, int] = {}
+    def _snapshot_files(base_dir: Path, patterns: list[str]) -> dict[str, int]:
+        snapshot: dict[str, int] = {}
         if not base_dir.exists():
             return snapshot
         for pattern in patterns:
@@ -314,7 +314,7 @@ class SyncCoordinator:
         return snapshot
 
     @staticmethod
-    def _diff_snapshot(before: Dict[str, int], after: Dict[str, int]) -> Tuple[int, int]:
+    def _diff_snapshot(before: dict[str, int], after: dict[str, int]) -> tuple[int, int]:
         new_files = {k: v for k, v in after.items() if k not in before}
         return len(new_files), sum(new_files.values())
 
@@ -322,8 +322,8 @@ class SyncCoordinator:
         self,
         local_dir: Path,
         remote_subdir: str,
-        include_patterns: List[str],
-    ) -> Tuple[int, int, List[str]]:
+        include_patterns: list[str],
+    ) -> tuple[int, int, list[str]]:
         if not HAS_RSYNC or rsync_directory is None:
             return 0, 0, ["rsync not available"]
 
@@ -336,7 +336,7 @@ class SyncCoordinator:
         hostname = socket.gethostname().lower()
         files_synced = 0
         bytes_transferred = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         pre_snapshot = self._snapshot_files(local_dir, include_patterns)
         loop = asyncio.get_event_loop()
@@ -379,7 +379,7 @@ class SyncCoordinator:
         self,
         local_dir: Path,
         pattern: str,
-    ) -> Tuple[int, int, List[str]]:
+    ) -> tuple[int, int, list[str]]:
         p2p = self._init_p2p()
         if not p2p:
             return 0, 0, ["p2p not available"]
@@ -399,7 +399,7 @@ class SyncCoordinator:
         hostname = socket.gethostname().lower()
         files_synced = 0
         bytes_transferred = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         for host in hosts[:3]:
             if host.name.lower() == hostname:
@@ -505,7 +505,7 @@ class SyncCoordinator:
             logger.warning(f"Failed to refresh quality lookup: {e}")
             return 0
 
-    def get_quality_lookup(self, force_refresh: bool = False) -> Dict[str, float]:
+    def get_quality_lookup(self, force_refresh: bool = False) -> dict[str, float]:
         """Get quality lookup dictionary for training integration.
 
         Args:
@@ -519,7 +519,7 @@ class SyncCoordinator:
             self._refresh_quality_lookup()
         return self._quality_lookup.copy()
 
-    def get_elo_lookup(self, force_refresh: bool = False) -> Dict[str, float]:
+    def get_elo_lookup(self, force_refresh: bool = False) -> dict[str, float]:
         """Get Elo lookup dictionary for training integration.
 
         Args:
@@ -533,7 +533,7 @@ class SyncCoordinator:
             self._refresh_quality_lookup()
         return self._elo_lookup.copy()
 
-    def get_manifest(self) -> Optional[DataManifest]:
+    def get_manifest(self) -> DataManifest | None:
         """Get the data manifest instance.
 
         Returns:
@@ -544,9 +544,9 @@ class SyncCoordinator:
     def get_high_quality_game_ids(
         self,
         min_quality: float = 0.7,
-        min_elo: Optional[float] = None,
+        min_elo: float | None = None,
         limit: int = 10000,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get list of high-quality game IDs for training.
 
         Args:
@@ -580,7 +580,7 @@ class SyncCoordinator:
     # Data Server (for aria2 clients to download from this node)
     # =========================================================================
 
-    _data_server_process: Optional[asyncio.subprocess.Process] = None
+    _data_server_process: asyncio.subprocess.Process | None = None
     _data_server_port: int = 8766
 
     async def start_data_server(self, port: int = 8766) -> bool:
@@ -659,7 +659,7 @@ class SyncCoordinator:
     # Source Discovery
     # =========================================================================
 
-    async def discover_sources(self, force_refresh: bool = False) -> List[str]:
+    async def discover_sources(self, force_refresh: bool = False) -> list[str]:
         """Discover available aria2 data sources in the cluster.
 
         Args:
@@ -703,7 +703,7 @@ class SyncCoordinator:
 
     async def sync_training_data(
         self,
-        sources: Optional[List[str]] = None,
+        sources: list[str] | None = None,
         max_age_hours: float = 168,  # 1 week
     ) -> SyncStats:
         """Sync training data from cluster sources.
@@ -834,8 +834,8 @@ class SyncCoordinator:
 
     async def sync_models(
         self,
-        model_ids: Optional[List[str]] = None,
-        sources: Optional[List[str]] = None,
+        model_ids: list[str] | None = None,
+        sources: list[str] | None = None,
     ) -> SyncStats:
         """Sync model checkpoints from cluster sources.
 
@@ -948,7 +948,7 @@ class SyncCoordinator:
                     ]
                 total_files = 0
                 total_bytes = 0
-                total_errors: List[str] = []
+                total_errors: list[str] = []
                 for pattern in patterns:
                     files, bytes_sent, errors = await self._sync_with_p2p(
                         self._provider.models_dir,
@@ -979,8 +979,8 @@ class SyncCoordinator:
 
     async def sync_games(
         self,
-        sources: Optional[List[str]] = None,
-        board_types: Optional[List[str]] = None,
+        sources: list[str] | None = None,
+        board_types: list[str] | None = None,
     ) -> SyncStats:
         """Sync selfplay game databases from cluster sources.
 
@@ -1105,9 +1105,9 @@ class SyncCoordinator:
     async def sync_high_quality_games(
         self,
         min_quality_score: float = 0.7,
-        min_elo: Optional[float] = None,
+        min_elo: float | None = None,
         limit: int = 1000,
-        sources: Optional[List[str]] = None,
+        sources: list[str] | None = None,
     ) -> SyncStats:
         """Sync high-quality games with priority from the cluster.
 
@@ -1172,7 +1172,7 @@ class SyncCoordinator:
             return stats
 
         # Group entries by source host for efficient sync
-        entries_by_host: Dict[str, List[PriorityQueueEntry]] = {}
+        entries_by_host: dict[str, list[PriorityQueueEntry]] = {}
         for entry in priority_entries:
             if entry.source_host not in entries_by_host:
                 entries_by_host[entry.source_host] = []
@@ -1194,7 +1194,7 @@ class SyncCoordinator:
         stats.avg_elo = sum(elo_scores) / len(elo_scores) if elo_scores else 0.0
 
         # Sync high-quality games from each host
-        synced_entry_ids: List[int] = []
+        synced_entry_ids: list[int] = []
         aria2 = self._init_aria2()
 
         for host, entries in entries_by_host.items():
@@ -1249,7 +1249,7 @@ class SyncCoordinator:
 
     async def full_cluster_sync(
         self,
-        categories: Optional[List[SyncCategory]] = None,
+        categories: list[SyncCategory] | None = None,
         sync_high_quality_first: bool = True,
     ) -> ClusterSyncStats:
         """Perform a full sync of all data categories from the cluster.
@@ -1341,8 +1341,8 @@ class SyncCoordinator:
 
     async def start_background_sync(
         self,
-        interval_seconds: Optional[int] = None,
-        categories: Optional[List[SyncCategory]] = None,
+        interval_seconds: int | None = None,
+        categories: list[SyncCategory] | None = None,
     ) -> None:
         """Start background sync daemon.
 
@@ -1401,7 +1401,7 @@ class SyncCoordinator:
     # Status and Monitoring
     # =========================================================================
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current sync status and statistics."""
         status = {
             "provider": self._provider.provider_type.value,
@@ -1473,12 +1473,12 @@ async def full_cluster_sync(**kwargs) -> ClusterSyncStats:
     return await SyncCoordinator.get_instance().full_cluster_sync(**kwargs)
 
 
-def get_quality_lookup() -> Dict[str, float]:
+def get_quality_lookup() -> dict[str, float]:
     """Get quality lookup dictionary for training integration."""
     return SyncCoordinator.get_instance().get_quality_lookup()
 
 
-def get_elo_lookup() -> Dict[str, float]:
+def get_elo_lookup() -> dict[str, float]:
     """Get Elo lookup dictionary for training integration."""
     return SyncCoordinator.get_instance().get_elo_lookup()
 
@@ -1518,7 +1518,7 @@ class HighQualityDataSyncWatcher:
         self.max_games_per_sync = max_games_per_sync
 
         self._last_sync_time: float = 0.0
-        self._pending_hosts: Set[str] = set()
+        self._pending_hosts: set[str] = set()
         self._subscribed = False
         self._sync_in_progress = False
 
@@ -1643,7 +1643,7 @@ class HighQualityDataSyncWatcher:
 
         # Track deprioritized hosts (could be used for future sync decisions)
         if not hasattr(self, '_deprioritized_hosts'):
-            self._deprioritized_hosts: Dict[str, float] = {}
+            self._deprioritized_hosts: dict[str, float] = {}
 
         if source_host and low_ratio > 0.3:
             self._deprioritized_hosts[source_host] = time.time()
@@ -1802,7 +1802,7 @@ class HighQualityDataSyncWatcher:
 
         return True
 
-    async def _execute_priority_sync(self, source_hosts: List[str]) -> None:
+    async def _execute_priority_sync(self, source_hosts: list[str]) -> None:
         """Execute priority sync of high-quality games.
 
         Args:
@@ -1835,7 +1835,7 @@ class HighQualityDataSyncWatcher:
         finally:
             self._sync_in_progress = False
 
-    def _emit_sync_completed(self, stats: SyncStats, source_hosts: List[str]) -> None:
+    def _emit_sync_completed(self, stats: SyncStats, source_hosts: list[str]) -> None:
         """Emit sync completed event."""
         try:
             from app.distributed.data_events import (
@@ -1875,7 +1875,7 @@ class HighQualityDataSyncWatcher:
 
 
 # Singleton high-quality sync watcher
-_hq_sync_watcher: Optional[HighQualityDataSyncWatcher] = None
+_hq_sync_watcher: HighQualityDataSyncWatcher | None = None
 
 
 def wire_high_quality_to_sync(
@@ -1951,6 +1951,6 @@ def wire_all_quality_events_to_sync(
     return _hq_sync_watcher
 
 
-def get_high_quality_sync_watcher() -> Optional[HighQualityDataSyncWatcher]:
+def get_high_quality_sync_watcher() -> HighQualityDataSyncWatcher | None:
     """Get the global high-quality sync watcher if configured."""
     return _hq_sync_watcher

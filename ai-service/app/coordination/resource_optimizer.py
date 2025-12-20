@@ -45,7 +45,7 @@ import time
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,7 @@ except ImportError:
 
 # Database path
 from app.utils.paths import DATA_DIR
+
 COORDINATION_DB_PATH = DATA_DIR / "coordination" / "resource_state.db"
 
 
@@ -158,18 +159,18 @@ class NodeResources:
         memory_based = max(1, int(self.memory_gb / 2)) if self.memory_gb > 0 else 32
         return min(cpu_based, memory_based, 48)  # Hard cap at 48
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "NodeResources":
+    def from_dict(cls, d: dict[str, Any]) -> NodeResources:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
 class ClusterState:
     """Aggregated cluster resource state."""
-    nodes: List[NodeResources]
+    nodes: list[NodeResources]
     total_cpu_util: float = 0.0
     total_gpu_util: float = 0.0
     total_memory_util: float = 0.0
@@ -209,10 +210,7 @@ class ClusterState:
         Returns:
             True if GPU memory is above warning threshold on any GPU node
         """
-        for node in self.nodes:
-            if node.has_gpu and node.gpu_memory_percent > self.GPU_MEMORY_WARNING:
-                return True
-        return False
+        return any(node.has_gpu and node.gpu_memory_percent > self.GPU_MEMORY_WARNING for node in self.nodes)
 
     def is_gpu_memory_critical(self) -> bool:
         """Check if GPU memory is critically high.
@@ -220,10 +218,7 @@ class ClusterState:
         Returns:
             True if GPU memory is above critical threshold on any GPU node
         """
-        for node in self.nodes:
-            if node.has_gpu and node.gpu_memory_percent > self.GPU_MEMORY_CRITICAL:
-                return True
-        return False
+        return any(node.has_gpu and node.gpu_memory_percent > self.GPU_MEMORY_CRITICAL for node in self.nodes)
 
     def get_gpu_memory_status(self) -> str:
         """Get GPU memory status string.
@@ -246,11 +241,11 @@ class OptimizationResult:
     current_util: float
     target_util: float
     adjustment: int  # Suggested job count change
-    nodes_affected: List[str]
+    nodes_affected: list[str]
     reason: str
     confidence: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "action": self.action.value,
             "resource_type": self.resource_type.value,
@@ -325,7 +320,7 @@ class PIDController:
         self._last_update = 0.0
 
     @classmethod
-    def from_config(cls, config: dict, setpoint: float = TARGET_UTIL_OPTIMAL) -> "PIDController":
+    def from_config(cls, config: dict, setpoint: float = TARGET_UTIL_OPTIMAL) -> PIDController:
         """Create a PIDController from config dictionary.
 
         Args:
@@ -373,7 +368,7 @@ class PIDController:
         self.ki = self.ki_base * multiplier
         self.kd = self.kd_base * multiplier
 
-    def update(self, current_value: float, dt: Optional[float] = None) -> float:
+    def update(self, current_value: float, dt: float | None = None) -> float:
         """Calculate PID output for current utilization.
 
         Args:
@@ -483,20 +478,20 @@ class UtilizationPredictor:
         self.min_samples_for_prediction = min_samples_for_prediction
 
         # Historical data: list of (timestamp, cpu_util, gpu_util, gpu_mem_util)
-        self._history: List[Tuple[float, float, float, float]] = []
+        self._history: list[tuple[float, float, float, float]] = []
         self._lock = threading.RLock()
 
         # EMA values
-        self._ema_cpu: Optional[float] = None
-        self._ema_gpu: Optional[float] = None
-        self._ema_gpu_mem: Optional[float] = None
+        self._ema_cpu: float | None = None
+        self._ema_gpu: float | None = None
+        self._ema_gpu_mem: float | None = None
 
     def record_sample(
         self,
         cpu_util: float,
         gpu_util: float,
         gpu_mem_util: float = 0.0,
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
     ) -> None:
         """Record a utilization sample.
 
@@ -526,7 +521,7 @@ class UtilizationPredictor:
             cutoff = ts - self.history_window_seconds
             self._history = [(t, c, g, m) for t, c, g, m in self._history if t > cutoff]
 
-    def _calculate_trend(self, data: List[Tuple[float, float]]) -> Tuple[float, float]:
+    def _calculate_trend(self, data: list[tuple[float, float]]) -> tuple[float, float]:
         """Calculate linear trend using least squares regression.
 
         Args:
@@ -554,7 +549,7 @@ class UtilizationPredictor:
 
         return slope, intercept
 
-    def predict(self) -> Optional[Dict[str, Any]]:
+    def predict(self) -> dict[str, Any] | None:
         """Predict future utilization based on historical trends.
 
         Returns:
@@ -617,7 +612,7 @@ class UtilizationPredictor:
                 "ema_gpu_mem": self._ema_gpu_mem,
             }
 
-    def get_proactive_adjustment(self) -> Optional[Dict[str, Any]]:
+    def get_proactive_adjustment(self) -> dict[str, Any] | None:
         """Get proactive scaling recommendation based on predictions.
 
         Returns:
@@ -699,10 +694,10 @@ class ResourceOptimizer:
     4. Metrics for Prometheus integration
     """
 
-    _instance: Optional["ResourceOptimizer"] = None
+    _instance: ResourceOptimizer | None = None
     _lock = threading.RLock()
 
-    def __new__(cls) -> "ResourceOptimizer":
+    def __new__(cls) -> ResourceOptimizer:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -739,7 +734,7 @@ class ResourceOptimizer:
         self._orchestrator_id = os.environ.get("RINGRIFT_ORCHESTRATOR", "unknown")
 
         # Cached state
-        self._cached_cluster_state: Optional[ClusterState] = None
+        self._cached_cluster_state: ClusterState | None = None
         self._cache_updated_at = 0.0
 
         # Predictive scaling
@@ -754,7 +749,7 @@ class ResourceOptimizer:
             f"target={TARGET_UTIL_MIN}-{TARGET_UTIL_MAX}%"
         )
 
-    def _load_pid_config(self) -> Optional[dict]:
+    def _load_pid_config(self) -> dict | None:
         """Load PID controller config from unified_loop.yaml.
 
         Returns:
@@ -905,9 +900,8 @@ class ResourceOptimizer:
         resources.updated_at = time.time()
         resources.orchestrator = self._orchestrator_id
 
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT OR REPLACE INTO node_resources (
                         node_id, cpu_percent, gpu_percent, memory_percent,
                         disk_percent, gpu_memory_percent, cpu_count, gpu_count, memory_gb,
@@ -915,26 +909,26 @@ class ResourceOptimizer:
                         training_jobs, orchestrator, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    resources.node_id, resources.cpu_percent, resources.gpu_percent,
-                    resources.memory_percent, resources.disk_percent,
-                    resources.gpu_memory_percent, resources.cpu_count, resources.gpu_count,
-                    resources.memory_gb, int(resources.has_gpu), resources.gpu_name,
-                    resources.active_jobs, resources.selfplay_jobs,
-                    resources.training_jobs, resources.orchestrator,
-                    resources.updated_at,
-                ))
+                resources.node_id, resources.cpu_percent, resources.gpu_percent,
+                resources.memory_percent, resources.disk_percent,
+                resources.gpu_memory_percent, resources.cpu_count, resources.gpu_count,
+                resources.memory_gb, int(resources.has_gpu), resources.gpu_name,
+                resources.active_jobs, resources.selfplay_jobs,
+                resources.training_jobs, resources.orchestrator,
+                resources.updated_at,
+            ))
 
-                # Also record in metrics history
-                conn.execute("""
+            # Also record in metrics history
+            conn.execute("""
                     INSERT INTO utilization_metrics
                         (timestamp, node_id, cpu_percent, gpu_percent, memory_percent)
                     VALUES (?, ?, ?, ?, ?)
                 """, (
-                    resources.updated_at, resources.node_id, resources.cpu_percent,
-                    resources.gpu_percent if resources.has_gpu else None,
-                    resources.memory_percent,
-                ))
-                conn.commit()
+                resources.updated_at, resources.node_id, resources.cpu_percent,
+                resources.gpu_percent if resources.has_gpu else None,
+                resources.memory_percent,
+            ))
+            conn.commit()
 
         # Invalidate cache
         self._cache_updated_at = 0.0
@@ -943,8 +937,8 @@ class ResourceOptimizer:
         self,
         node_id: str,
         cpu_percent: float,
-        gpu_percent: Optional[float] = None,
-        memory_percent: Optional[float] = None,
+        gpu_percent: float | None = None,
+        memory_percent: float | None = None,
     ) -> None:
         """Record a utilization sample for metrics tracking.
 
@@ -955,14 +949,13 @@ class ResourceOptimizer:
             memory_percent: Memory utilization percentage
         """
         now = time.time()
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT INTO utilization_metrics
                         (timestamp, node_id, cpu_percent, gpu_percent, memory_percent)
                     VALUES (?, ?, ?, ?, ?)
                 """, (now, node_id, cpu_percent, gpu_percent, memory_percent))
-                conn.commit()
+            conn.commit()
 
     # =========================================================================
     # Cluster State Queries
@@ -988,32 +981,31 @@ class ResourceOptimizer:
         cutoff = now - 300
         nodes = []
 
-        with self._db_lock:
-            with self._get_connection() as conn:
-                rows = conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            rows = conn.execute("""
                     SELECT * FROM node_resources WHERE updated_at > ?
                 """, (cutoff,)).fetchall()
 
-                for row in rows:
-                    node = NodeResources(
-                        node_id=row["node_id"],
-                        cpu_percent=row["cpu_percent"],
-                        gpu_percent=row["gpu_percent"],
-                        memory_percent=row["memory_percent"],
-                        disk_percent=row["disk_percent"],
-                        gpu_memory_percent=row["gpu_memory_percent"],
-                        cpu_count=row["cpu_count"],
-                        gpu_count=row["gpu_count"],
-                        memory_gb=row["memory_gb"],
-                        has_gpu=bool(row["has_gpu"]),
-                        gpu_name=row["gpu_name"],
-                        active_jobs=row["active_jobs"],
-                        selfplay_jobs=row["selfplay_jobs"],
-                        training_jobs=row["training_jobs"],
-                        orchestrator=row["orchestrator"],
-                        updated_at=row["updated_at"],
-                    )
-                    nodes.append(node)
+            for row in rows:
+                node = NodeResources(
+                    node_id=row["node_id"],
+                    cpu_percent=row["cpu_percent"],
+                    gpu_percent=row["gpu_percent"],
+                    memory_percent=row["memory_percent"],
+                    disk_percent=row["disk_percent"],
+                    gpu_memory_percent=row["gpu_memory_percent"],
+                    cpu_count=row["cpu_count"],
+                    gpu_count=row["gpu_count"],
+                    memory_gb=row["memory_gb"],
+                    has_gpu=bool(row["has_gpu"]),
+                    gpu_name=row["gpu_name"],
+                    active_jobs=row["active_jobs"],
+                    selfplay_jobs=row["selfplay_jobs"],
+                    training_jobs=row["training_jobs"],
+                    orchestrator=row["orchestrator"],
+                    updated_at=row["updated_at"],
+                )
+                nodes.append(node)
 
         state = ClusterState(nodes=nodes)
         state.compute_aggregates()
@@ -1032,7 +1024,7 @@ class ResourceOptimizer:
 
         return state
 
-    def get_node_resources(self, node_id: str) -> Optional[NodeResources]:
+    def get_node_resources(self, node_id: str) -> NodeResources | None:
         """Get resources for a specific node.
 
         Args:
@@ -1041,31 +1033,30 @@ class ResourceOptimizer:
         Returns:
             NodeResources or None if not found
         """
-        with self._db_lock:
-            with self._get_connection() as conn:
-                row = conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            row = conn.execute("""
                     SELECT * FROM node_resources WHERE node_id = ?
                 """, (node_id,)).fetchone()
 
-                if row:
-                    return NodeResources(
-                        node_id=row["node_id"],
-                        cpu_percent=row["cpu_percent"],
-                        gpu_percent=row["gpu_percent"],
-                        memory_percent=row["memory_percent"],
-                        disk_percent=row["disk_percent"],
-                        gpu_memory_percent=row["gpu_memory_percent"],
-                        cpu_count=row["cpu_count"],
-                        gpu_count=row["gpu_count"],
-                        memory_gb=row["memory_gb"],
-                        has_gpu=bool(row["has_gpu"]),
-                        gpu_name=row["gpu_name"],
-                        active_jobs=row["active_jobs"],
-                        selfplay_jobs=row["selfplay_jobs"],
-                        training_jobs=row["training_jobs"],
-                        orchestrator=row["orchestrator"],
-                        updated_at=row["updated_at"],
-                    )
+            if row:
+                return NodeResources(
+                    node_id=row["node_id"],
+                    cpu_percent=row["cpu_percent"],
+                    gpu_percent=row["gpu_percent"],
+                    memory_percent=row["memory_percent"],
+                    disk_percent=row["disk_percent"],
+                    gpu_memory_percent=row["gpu_memory_percent"],
+                    cpu_count=row["cpu_count"],
+                    gpu_count=row["gpu_count"],
+                    memory_gb=row["memory_gb"],
+                    has_gpu=bool(row["has_gpu"]),
+                    gpu_name=row["gpu_name"],
+                    active_jobs=row["active_jobs"],
+                    selfplay_jobs=row["selfplay_jobs"],
+                    training_jobs=row["training_jobs"],
+                    orchestrator=row["orchestrator"],
+                    updated_at=row["updated_at"],
+                )
         return None
 
     # =========================================================================
@@ -1142,7 +1133,7 @@ class ResourceOptimizer:
         node_id: str,
         resource_type: str = "cpu",
         current_jobs: int = 0,
-        current_util: Optional[float] = None,
+        current_util: float | None = None,
     ) -> int:
         """Calculate optimal job count for a node.
 
@@ -1286,10 +1277,10 @@ class ResourceOptimizer:
 
     def get_utilization_history(
         self,
-        node_id: Optional[str] = None,
+        node_id: str | None = None,
         hours: float = 1.0,
         resolution_seconds: int = 60,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get utilization history for metrics/graphing.
 
         Args:
@@ -1302,10 +1293,9 @@ class ResourceOptimizer:
         """
         cutoff = time.time() - (hours * 3600)
 
-        with self._db_lock:
-            with self._get_connection() as conn:
-                if node_id:
-                    rows = conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            if node_id:
+                rows = conn.execute("""
                         SELECT
                             CAST(timestamp / ? AS INTEGER) * ? as bucket,
                             AVG(cpu_percent) as cpu,
@@ -1316,8 +1306,8 @@ class ResourceOptimizer:
                         GROUP BY bucket
                         ORDER BY bucket
                     """, (resolution_seconds, resolution_seconds, node_id, cutoff)).fetchall()
-                else:
-                    rows = conn.execute("""
+            else:
+                rows = conn.execute("""
                         SELECT
                             CAST(timestamp / ? AS INTEGER) * ? as bucket,
                             AVG(cpu_percent) as cpu,
@@ -1339,7 +1329,7 @@ class ResourceOptimizer:
             for row in rows
         ]
 
-    def get_metrics_dict(self) -> Dict[str, Any]:
+    def get_metrics_dict(self) -> dict[str, Any]:
         """Get metrics suitable for Prometheus exposition.
 
         Returns:
@@ -1435,20 +1425,19 @@ class ResourceOptimizer:
             response = f"reduced_from_{requested_rate}_overutilized_{current_util:.0f}pct"
 
         # Persist to DB
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT INTO rate_negotiations
                     (timestamp, requestor, requested_rate, reason, approved_rate, current_utilization, response)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (now, requestor, requested_rate, reason, approved_rate, current_util, response))
 
-                conn.execute("""
+            conn.execute("""
                     UPDATE selfplay_rate SET current_rate = ?, updated_at = ?, updated_by = ?
                     WHERE id = 1
                 """, (approved_rate, now, requestor))
 
-                conn.commit()
+            conn.commit()
 
         logger.info(
             f"[RateNegotiation] {requestor} requested {requested_rate}, "
@@ -1462,7 +1451,7 @@ class ResourceOptimizer:
         requested_rate: int,
         current_utilization: float,
         reason: str,
-        cluster_state: Optional[ClusterState] = None,
+        cluster_state: ClusterState | None = None,
     ) -> int:
         """Calculate approved rate based on current utilization and GPU memory.
 
@@ -1542,7 +1531,7 @@ class ResourceOptimizer:
             pass
         return 1000  # Default
 
-    def get_rate_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_rate_history(self, limit: int = 20) -> list[dict[str, Any]]:
         """Get recent rate negotiation history."""
         try:
             with self._get_connection() as conn:
@@ -1560,9 +1549,9 @@ class ResourceOptimizer:
 
     def update_config_weights(
         self,
-        game_counts: Dict[str, int],
-        throughput: Optional[Dict[str, float]] = None,
-    ) -> Dict[str, float]:
+        game_counts: dict[str, int],
+        throughput: dict[str, float] | None = None,
+    ) -> dict[str, float]:
         """Update config weights based on game data distribution.
 
         Underserved configs get higher weights, overserved get lower weights.
@@ -1615,19 +1604,18 @@ class ResourceOptimizer:
             weights[config] = weight
 
             # Persist to DB
-            with self._db_lock:
-                with self._get_connection() as conn:
-                    conn.execute("""
+            with self._db_lock, self._get_connection() as conn:
+                conn.execute("""
                         INSERT OR REPLACE INTO config_weights
                         (config_key, weight, game_count, games_per_hour, reason, updated_at)
                         VALUES (?, ?, ?, ?, ?, ?)
                     """, (config, weight, count, gph, reason, now))
-                    conn.commit()
+                conn.commit()
 
         logger.info(f"[ConfigWeights] Updated weights for {len(weights)} configs")
         return weights
 
-    def get_config_weights(self) -> Dict[str, float]:
+    def get_config_weights(self) -> dict[str, float]:
         """Get current config weights for selfplay distribution."""
         try:
             with self._get_connection() as conn:
@@ -1636,7 +1624,7 @@ class ResourceOptimizer:
         except Exception:
             return {}
 
-    def get_config_weight_details(self) -> List[Dict[str, Any]]:
+    def get_config_weight_details(self) -> list[dict[str, Any]]:
         """Get detailed config weight information."""
         try:
             with self._get_connection() as conn:
@@ -1689,7 +1677,7 @@ class ResourceOptimizer:
         # Negotiate the new rate
         return self.negotiate_selfplay_rate(new_rate, reason, requestor)
 
-    def get_utilization_status(self) -> Dict[str, Any]:
+    def get_utilization_status(self) -> dict[str, Any]:
         """Get current utilization status for monitoring.
 
         Returns a summary of cluster utilization relative to targets.
@@ -1760,7 +1748,7 @@ class ResourceOptimizer:
             "recommendation": self._get_recommendation(cluster_state),
         }
 
-    def _get_recommendation(self, cluster_state: "ClusterState") -> str:
+    def _get_recommendation(self, cluster_state: ClusterState) -> str:
         """Generate a recommendation based on current state."""
         if cluster_state.cpu_node_count == 0:
             return "No active nodes - check cluster connectivity"
@@ -1784,7 +1772,7 @@ class ResourceOptimizer:
     # Predictive Scaling
     # =========================================================================
 
-    def get_prediction(self) -> Optional[Dict[str, Any]]:
+    def get_prediction(self) -> dict[str, Any] | None:
         """Get utilization prediction.
 
         Returns:
@@ -1792,7 +1780,7 @@ class ResourceOptimizer:
         """
         return self._predictor.predict()
 
-    def get_proactive_adjustment(self) -> Optional[Dict[str, Any]]:
+    def get_proactive_adjustment(self) -> dict[str, Any] | None:
         """Get proactive scaling recommendation based on predictions.
 
         Returns:
@@ -1802,7 +1790,7 @@ class ResourceOptimizer:
             return None
         return self._predictor.get_proactive_adjustment()
 
-    def apply_proactive_adjustment(self, requestor: str = "predictive") -> Optional[int]:
+    def apply_proactive_adjustment(self, requestor: str = "predictive") -> int | None:
         """Apply proactive rate adjustment based on utilization predictions.
 
         This should be called periodically to enable proactive scaling.
@@ -1848,7 +1836,7 @@ class ResourceOptimizer:
             self._predictor.clear()
         logger.info(f"Predictive scaling {'enabled' if enabled else 'disabled'}")
 
-    def get_predictor_state(self) -> Dict[str, Any]:
+    def get_predictor_state(self) -> dict[str, Any]:
         """Get predictor state for monitoring.
 
         Returns:
@@ -1873,19 +1861,18 @@ class ResourceOptimizer:
         Args:
             result: Optimization result that was applied
         """
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT INTO optimization_history
                         (timestamp, action, resource_type, current_util,
                          target_util, adjustment, nodes_affected, reason)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    time.time(), result.action.value, result.resource_type.value,
-                    result.current_util, result.target_util, result.adjustment,
-                    json.dumps(result.nodes_affected), result.reason,
-                ))
-                conn.commit()
+                time.time(), result.action.value, result.resource_type.value,
+                result.current_util, result.target_util, result.adjustment,
+                json.dumps(result.nodes_affected), result.reason,
+            ))
+            conn.commit()
 
     def cleanup_old_data(self, days: int = 7) -> int:
         """Clean up old utilization data.
@@ -1899,19 +1886,18 @@ class ResourceOptimizer:
         cutoff = time.time() - (days * 86400)
         deleted = 0
 
-        with self._db_lock:
-            with self._get_connection() as conn:
-                cursor = conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            cursor = conn.execute("""
                     DELETE FROM utilization_metrics WHERE timestamp < ?
                 """, (cutoff,))
-                deleted += cursor.rowcount
+            deleted += cursor.rowcount
 
-                cursor = conn.execute("""
+            cursor = conn.execute("""
                     DELETE FROM optimization_history WHERE timestamp < ?
                 """, (cutoff,))
-                deleted += cursor.rowcount
+            deleted += cursor.rowcount
 
-                conn.commit()
+            conn.commit()
 
         return deleted
 
@@ -1920,7 +1906,7 @@ class ResourceOptimizer:
 # Module-level convenience functions
 # =============================================================================
 
-_optimizer: Optional[ResourceOptimizer] = None
+_optimizer: ResourceOptimizer | None = None
 
 
 def get_resource_optimizer() -> ResourceOptimizer:
@@ -1945,7 +1931,7 @@ def get_optimal_concurrency(
     node_id: str,
     resource_type: str = "cpu",
     current_jobs: int = 0,
-    current_util: Optional[float] = None,
+    current_util: float | None = None,
 ) -> int:
     """Get optimal job concurrency for a node."""
     return get_resource_optimizer().get_optimal_concurrency(
@@ -1956,8 +1942,8 @@ def get_optimal_concurrency(
 def record_utilization(
     node_id: str,
     cpu_percent: float,
-    gpu_percent: Optional[float] = None,
-    memory_percent: Optional[float] = None,
+    gpu_percent: float | None = None,
+    memory_percent: float | None = None,
 ) -> None:
     """Record a utilization sample."""
     get_resource_optimizer().record_utilization(
@@ -1965,7 +1951,7 @@ def record_utilization(
     )
 
 
-def get_cluster_utilization() -> Tuple[float, float, float]:
+def get_cluster_utilization() -> tuple[float, float, float]:
     """Get current cluster utilization (cpu%, gpu%, memory%).
 
     Returns:
@@ -2012,7 +1998,7 @@ def apply_feedback_adjustment(requestor: str = "feedback_loop") -> int:
     return get_resource_optimizer().apply_feedback_adjustment(requestor)
 
 
-def get_utilization_status() -> Dict[str, Any]:
+def get_utilization_status() -> dict[str, Any]:
     """Get current utilization status for monitoring."""
     return get_resource_optimizer().get_utilization_status()
 
@@ -2275,7 +2261,7 @@ def get_hybrid_selfplay_limits(
     memory_gb: float = 0,
     has_gpu: bool = False,
     gpu_vram_gb: float = 0,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Get both GPU and CPU-only selfplay limits for hybrid mode.
 
     Returns separate limits for GPU-accelerated and CPU-only jobs,
@@ -2319,7 +2305,7 @@ def get_hybrid_selfplay_limits(
     }
 
 
-def get_node_hardware_info(node_id: str) -> Optional[Dict[str, Any]]:
+def get_node_hardware_info(node_id: str) -> dict[str, Any] | None:
     """Get hardware info for a node from the coordination DB.
 
     Returns:
@@ -2370,19 +2356,19 @@ def get_max_selfplay_for_node_by_id(node_id: str) -> int:
 # =============================================================================
 
 def update_config_weights(
-    game_counts: Dict[str, int],
-    throughput: Optional[Dict[str, float]] = None,
-) -> Dict[str, float]:
+    game_counts: dict[str, int],
+    throughput: dict[str, float] | None = None,
+) -> dict[str, float]:
     """Update config weights based on game data distribution."""
     return get_resource_optimizer().update_config_weights(game_counts, throughput)
 
 
-def get_config_weights() -> Dict[str, float]:
+def get_config_weights() -> dict[str, float]:
     """Get current config weights for selfplay distribution."""
     return get_resource_optimizer().get_config_weights()
 
 
-def get_config_weight_details() -> List[Dict[str, Any]]:
+def get_config_weight_details() -> list[dict[str, Any]]:
     """Get detailed config weight information."""
     return get_resource_optimizer().get_config_weight_details()
 
@@ -2391,17 +2377,17 @@ def get_config_weight_details() -> List[Dict[str, Any]]:
 # Predictive Scaling Functions
 # =============================================================================
 
-def get_prediction() -> Optional[Dict[str, Any]]:
+def get_prediction() -> dict[str, Any] | None:
     """Get utilization prediction based on historical data."""
     return get_resource_optimizer().get_prediction()
 
 
-def get_proactive_adjustment() -> Optional[Dict[str, Any]]:
+def get_proactive_adjustment() -> dict[str, Any] | None:
     """Get proactive scaling recommendation based on predictions."""
     return get_resource_optimizer().get_proactive_adjustment()
 
 
-def apply_proactive_adjustment(requestor: str = "predictive") -> Optional[int]:
+def apply_proactive_adjustment(requestor: str = "predictive") -> int | None:
     """Apply proactive rate adjustment based on utilization predictions.
 
     Call this periodically (e.g., every 2-5 minutes) to enable proactive scaling.
@@ -2409,7 +2395,7 @@ def apply_proactive_adjustment(requestor: str = "predictive") -> Optional[int]:
     return get_resource_optimizer().apply_proactive_adjustment(requestor)
 
 
-def get_predictor_state() -> Dict[str, Any]:
+def get_predictor_state() -> dict[str, Any]:
     """Get predictor state for monitoring."""
     return get_resource_optimizer().get_predictor_state()
 
@@ -2419,31 +2405,31 @@ def get_predictor_state() -> Dict[str, Any]:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "ResourceType",
-    "ScaleAction",
+    "ClusterState",
     # Data classes
     "NodeResources",
-    "ClusterState",
     "OptimizationResult",
     # Classes
     "PIDController",
-    "UtilizationPredictor",
     "ResourceOptimizer",
-    # Functions
-    "get_resource_optimizer",
-    "should_scale_up",
-    "should_scale_down",
-    "get_optimal_concurrency",
-    "record_utilization",
-    "get_cluster_utilization",
-    "negotiate_selfplay_rate",
-    "get_current_selfplay_rate",
+    # Enums
+    "ResourceType",
+    "ScaleAction",
+    "UtilizationPredictor",
     "apply_feedback_adjustment",
-    "get_utilization_status",
-    "get_max_selfplay_for_node",
+    "apply_proactive_adjustment",
+    "get_cluster_utilization",
+    "get_current_selfplay_rate",
     "get_max_cpu_only_selfplay",
+    "get_max_selfplay_for_node",
+    "get_optimal_concurrency",
     "get_predictor_state",
     "get_proactive_adjustment",
-    "apply_proactive_adjustment",
+    # Functions
+    "get_resource_optimizer",
+    "get_utilization_status",
+    "negotiate_selfplay_rate",
+    "record_utilization",
+    "should_scale_down",
+    "should_scale_up",
 ]

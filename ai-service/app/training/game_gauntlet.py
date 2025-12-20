@@ -25,21 +25,22 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Union
 
 logger = logging.getLogger(__name__)
 
 # Type hints for lazy-loaded modules
 if TYPE_CHECKING:
-    from app.models import BoardType, AIType, AIConfig, GameStatus
     from app.ai.heuristic_ai import HeuristicAI
-    from app.ai.random_ai import RandomAI
     from app.ai.policy_only_ai import PolicyOnlyAI
-    from app.training.generate_data import create_initial_state
+    from app.ai.random_ai import RandomAI
+    from app.models import AIConfig, AIType, BoardType, GameStatus
     from app.rules.default_engine import DefaultRulesEngine
+    from app.training.generate_data import create_initial_state
 
 # Lazy imports to avoid circular dependencies and heavy imports at module load
 _torch_loaded = False
@@ -67,12 +68,12 @@ def _ensure_game_modules():
     global HeuristicAI, RandomAI, PolicyOnlyAI
     global create_initial_state, DefaultRulesEngine
 
-    from app.models import BoardType, AIType, AIConfig, GameStatus
     from app.ai.heuristic_ai import HeuristicAI
-    from app.ai.random_ai import RandomAI
     from app.ai.policy_only_ai import PolicyOnlyAI
-    from app.training.generate_data import create_initial_state
+    from app.ai.random_ai import RandomAI
+    from app.models import AIConfig, AIType, BoardType, GameStatus
     from app.rules.default_engine import DefaultRulesEngine
+    from app.training.generate_data import create_initial_state
 
     _game_modules_loaded = True
 
@@ -86,10 +87,10 @@ class BaselineOpponent(Enum):
 # Import baseline Elo estimates from centralized config
 try:
     from app.config.thresholds import (
-        BASELINE_ELO_RANDOM,
         BASELINE_ELO_HEURISTIC,
-        MIN_WIN_RATE_VS_RANDOM,
+        BASELINE_ELO_RANDOM,
         MIN_WIN_RATE_VS_HEURISTIC,
+        MIN_WIN_RATE_VS_RANDOM,
     )
 except ImportError:
     BASELINE_ELO_RANDOM = 400
@@ -111,7 +112,7 @@ MIN_WIN_RATES = {
 @dataclass
 class GameResult:
     """Result of a single game."""
-    winner: Optional[int]  # Player number who won, or None for draw
+    winner: int | None  # Player number who won, or None for draw
     move_count: int
     victory_reason: str
     candidate_player: int  # Which player was the candidate
@@ -128,11 +129,11 @@ class GauntletResult:
     win_rate: float = 0.0
 
     # Per-opponent results
-    opponent_results: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    opponent_results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # Baseline gating
     passes_baseline_gating: bool = True
-    failed_baselines: List[str] = field(default_factory=list)
+    failed_baselines: list[str] = field(default_factory=list)
 
     # Elo estimate
     estimated_elo: float = 1500.0
@@ -142,7 +143,7 @@ def create_baseline_ai(
     baseline: BaselineOpponent,
     player: int,
     board_type: Any,  # BoardType
-    difficulty: Optional[int] = None,
+    difficulty: int | None = None,
 ) -> Any:
     """Create an AI instance for a baseline opponent.
 
@@ -180,8 +181,8 @@ def create_baseline_ai(
 def create_neural_ai(
     player: int,
     board_type: Any,  # BoardType
-    model_path: Optional[Union[str, Path]] = None,
-    model_getter: Optional[Callable[[], Any]] = None,
+    model_path: Union[str, Path] | None = None,
+    model_getter: Callable[[], Any] | None = None,
     temperature: float = 0.5,
 ) -> Any:
     """Create a neural network AI instance.
@@ -250,7 +251,7 @@ def play_single_game(
     num_players: int = 2,
     candidate_player: int = 1,
     max_moves: int = 500,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> GameResult:
     """Play a single game between candidate and opponent.
 
@@ -302,14 +303,14 @@ def play_single_game(
 
 
 def run_baseline_gauntlet(
-    model_path: Optional[Union[str, Path]] = None,
+    model_path: Union[str, Path] | None = None,
     board_type: Any = None,  # BoardType
-    opponents: Optional[List[BaselineOpponent]] = None,
+    opponents: list[BaselineOpponent] | None = None,
     games_per_opponent: int = 20,
     num_players: int = 2,
     check_baseline_gating: bool = True,
     verbose: bool = False,
-    model_getter: Optional[Callable[[], Any]] = None,
+    model_getter: Callable[[], Any] | None = None,
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
@@ -412,7 +413,7 @@ def run_baseline_gauntlet(
 
 
 def _estimate_elo_from_results(
-    opponent_results: Dict[str, Dict[str, Any]]
+    opponent_results: dict[str, dict[str, Any]]
 ) -> float:
     """Estimate Elo rating from gauntlet results.
 
@@ -453,7 +454,7 @@ def _estimate_elo_from_results(
 def quick_evaluate(
     model_path: Union[str, Path],
     games: int = 10,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Quick evaluation against baselines.
 
     Args:

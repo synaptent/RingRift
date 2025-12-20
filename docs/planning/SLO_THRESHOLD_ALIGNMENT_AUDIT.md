@@ -1,7 +1,7 @@
 # SLO Threshold Alignment Audit
 
 > **Created:** 2025-12-20
-> **Status:** Complete
+> **Status:** Updated (2025-12-20)
 > **Purpose:** Audit SLO thresholds across all configuration sources for v1.0 launch readiness
 
 ## Overview
@@ -92,30 +92,31 @@ This audit examines SLO threshold definitions across all project configuration s
 | Max concurrent games     | Scale        | 100    | thresholds.json:121     |
 | Max active players       | Scale        | 300    | thresholds.json:122     |
 | Max AI-controlled seats  | Scale        | 210    | thresholds.json:125     |
-| Core gameplay uptime     | Availability | 99.5%  | thresholds.json:129     |
-| Monthly error budget     | Availability | 0.5%   | thresholds.json:130     |
+| Core gameplay uptime     | Availability | 99.9%  | thresholds.json:129     |
+| Monthly error budget     | Availability | 0.1%   | thresholds.json:130     |
 
 ### 1.4 SLO_VERIFICATION.md Thresholds
 
-| Metric                    | Priority | Target  | Measurement                       | Source                 |
-| ------------------------- | -------- | ------- | --------------------------------- | ---------------------- |
-| Service Availability      | Critical | ≥99.9%  | successful_requests/total         | SLO_VERIFICATION.md:51 |
-| Error Rate (staging)      | Critical | ≤1%     | http_req_failed rate              | SLO_VERIFICATION.md:54 |
-| Error Rate (prod)         | Critical | ≤0.5%   | http_req_failed rate              | SLO_VERIFICATION.md:54 |
-| Contract Failures         | Critical | 0       | contract_failures_total           | SLO_VERIFICATION.md:55 |
-| Lifecycle Mismatches      | Critical | 0       | id_lifecycle_mismatches_total     | SLO_VERIFICATION.md:56 |
-| API Latency p95           | High     | <500ms  | http_req_duration p95             | SLO_VERIFICATION.md:60 |
-| Move Latency p95          | High     | <500ms  | move_latency p95                  | SLO_VERIFICATION.md:61 |
-| WebSocket Connect p95     | High     | <1000ms | ws_connecting p95                 | SLO_VERIFICATION.md:62 |
-| AI Response p95           | High     | <1000ms | ai_response_time p95              | SLO_VERIFICATION.md:63 |
-| Concurrent Games (prod)   | High     | ≥100    | concurrent_games                  | SLO_VERIFICATION.md:64 |
-| Concurrent Players (prod) | High     | ≥300    | concurrent_vus                    | SLO_VERIFICATION.md:65 |
-| WebSocket Success Rate    | High     | ≥99%    | websocket_connection_success_rate | SLO_VERIFICATION.md:66 |
-| Move Stall Rate           | High     | ≤0.5%   | stalled_moves/total_moves         | SLO_VERIFICATION.md:67 |
-| API Latency p99           | Medium   | <2000ms | http_req_duration p99             | SLO_VERIFICATION.md:72 |
-| Game Creation p95         | Medium   | <2000ms | game_creation_time p95            | SLO_VERIFICATION.md:73 |
-| AI Response p99           | Medium   | <2000ms | ai_response_time p99              | SLO_VERIFICATION.md:74 |
-| AI Fallback Rate          | Medium   | ≤1%     | ai_fallback_total/ai_requests     | SLO_VERIFICATION.md:75 |
+| Metric                    | Priority | Target          | Measurement                        | Source                 |
+| ------------------------- | -------- | --------------- | ---------------------------------- | ---------------------- |
+| Service Availability      | Critical | ≥99.9%          | successful_requests/total          | SLO_VERIFICATION.md:51 |
+| Error Rate (staging)      | Critical | ≤1%             | http_req_failed rate               | SLO_VERIFICATION.md:54 |
+| Error Rate (prod)         | Critical | ≤0.5%           | http_req_failed rate               | SLO_VERIFICATION.md:54 |
+| True Error Rate           | Critical | ≤0.5% / ≤0.2%   | true_errors_total / total_requests | SLO_VERIFICATION.md:55 |
+| Contract Failures         | Critical | 0               | contract_failures_total            | SLO_VERIFICATION.md:55 |
+| Lifecycle Mismatches      | Critical | 0               | id_lifecycle_mismatches_total      | SLO_VERIFICATION.md:56 |
+| API Latency p95           | High     | <500ms          | http_req_duration p95              | SLO_VERIFICATION.md:60 |
+| Move Latency p95          | High     | ≤300ms / ≤200ms | move_latency p95                   | SLO_VERIFICATION.md:61 |
+| WebSocket Connect p95     | High     | <1000ms         | ws_connecting p95                  | SLO_VERIFICATION.md:62 |
+| AI Response p95           | High     | <1000ms         | ai_response_time p95               | SLO_VERIFICATION.md:63 |
+| Concurrent Games (prod)   | High     | ≥100            | concurrent_games                   | SLO_VERIFICATION.md:64 |
+| Concurrent Players (prod) | High     | ≥300            | concurrent_vus                     | SLO_VERIFICATION.md:65 |
+| WebSocket Success Rate    | High     | ≥99%            | websocket_connection_success_rate  | SLO_VERIFICATION.md:66 |
+| Move Stall Rate           | High     | ≤0.5%           | stalled_moves/total_moves          | SLO_VERIFICATION.md:67 |
+| API Latency p99           | Medium   | <2000ms         | http_req_duration p99              | SLO_VERIFICATION.md:72 |
+| Game Creation p95         | Medium   | <2000ms         | game_creation_time p95             | SLO_VERIFICATION.md:73 |
+| AI Response p99           | Medium   | <2000ms         | ai_response_time p99               | SLO_VERIFICATION.md:74 |
+| AI Fallback Rate          | Medium   | ≤1%             | ai_fallback_total/ai_requests      | SLO_VERIFICATION.md:75 |
 
 ### 1.5 ALERTING_THRESHOLDS.md Values
 
@@ -164,34 +165,34 @@ This audit examines SLO threshold definitions across all project configuration s
 
 ### 2.1 PROJECT_GOALS.md vs k6 Thresholds
 
-| PROJECT_GOALS.md SLO         | thresholds.json (Production)                          | Aligned?        | Notes                                   |
-| ---------------------------- | ----------------------------------------------------- | --------------- | --------------------------------------- |
-| System uptime >99.9%         | core_gameplay_uptime: 99.5%                           | ⚠️ **MISMATCH** | thresholds.json is 0.4% more permissive |
-| AI move <1s (p95)            | ai_service.cpu_baseline.move_p95: 1000ms              | ✅ Aligned      | Exact match                             |
-| UI frame rate <16ms          | N/A                                                   | ⚠️ **GAP**      | Not represented in k6 thresholds        |
-| Move validation <200ms (p95) | move_submission.e2e_p95: 200ms                        | ✅ Aligned      | Exact match                             |
-| HTTP API <500ms (p95)        | game_creation.p95: 400ms, game_state_fetch.p95: 200ms | ✅ Aligned      | k6 is stricter per-endpoint             |
+| PROJECT_GOALS.md SLO         | thresholds.json (Production)                          | Aligned?   | Notes                                 |
+| ---------------------------- | ----------------------------------------------------- | ---------- | ------------------------------------- |
+| System uptime >99.9%         | core_gameplay_uptime: 99.9%                           | ✅ Aligned | thresholds.json updated to match SSoT |
+| AI move <1s (p95)            | ai_service.cpu_baseline.move_p95: 1000ms              | ✅ Aligned | Exact match                           |
+| UI frame rate <16ms          | N/A                                                   | ⚠️ **GAP** | Not represented in k6 thresholds      |
+| Move validation <200ms (p95) | move_submission.e2e_p95: 200ms                        | ✅ Aligned | Exact match                           |
+| HTTP API <500ms (p95)        | game_creation.p95: 400ms, game_state_fetch.p95: 200ms | ✅ Aligned | k6 is stricter per-endpoint           |
 
 ### 2.2 PROJECT_GOALS.md vs SLO_VERIFICATION.md
 
-| PROJECT_GOALS.md SLO         | SLO_VERIFICATION.md         | Aligned?        | Notes                                 |
-| ---------------------------- | --------------------------- | --------------- | ------------------------------------- |
-| System uptime >99.9%         | Service Availability ≥99.9% | ✅ Aligned      |                                       |
-| AI move <1s (p95)            | AI Response p95 <1000ms     | ✅ Aligned      |                                       |
-| UI frame rate <16ms          | N/A                         | ⚠️ **GAP**      | Client-side metric, not in load tests |
-| Move validation <200ms (p95) | Move Latency p95 <500ms     | ⚠️ **MISMATCH** | SLO_VERIFICATION is more permissive   |
-| HTTP API <500ms (p95)        | API Latency p95 <500ms      | ✅ Aligned      |                                       |
+| PROJECT_GOALS.md SLO         | SLO_VERIFICATION.md         | Aligned?   | Notes                                 |
+| ---------------------------- | --------------------------- | ---------- | ------------------------------------- |
+| System uptime >99.9%         | Service Availability ≥99.9% | ✅ Aligned |                                       |
+| AI move <1s (p95)            | AI Response p95 <1000ms     | ✅ Aligned |                                       |
+| UI frame rate <16ms          | N/A                         | ⚠️ **GAP** | Client-side metric, not in load tests |
+| Move validation <200ms (p95) | Move Latency p95 ≤300/≤200  | ✅ Aligned | SLO_VERIFICATION updated to match     |
+| HTTP API <500ms (p95)        | API Latency p95 <500ms      | ✅ Aligned |                                       |
 
 ### 2.3 k6 Thresholds vs Alerting Thresholds
 
-| k6 Threshold (Production)   | Alerting Threshold              | Aligned?              | Notes                                                                          |
-| --------------------------- | ------------------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| error_rate 0.5%             | HighErrorRate >5% (critical)    | ⚠️ **LAG**            | Alert triggers at 10x SLO breachAligning expected - alerts for major incidents |
-| error_rate 0.5%             | ElevatedErrorRate >1% (warning) | ✅ Acceptable         | Warning at 2x SLO                                                              |
-| game_state_fetch.p95: 200ms | HighP95Latency >1s              | ⚠️ **LAG**            | Alert at 5x SLO - very permissive                                              |
-| move_submission.p95: 200ms  | HighGameMoveLatency p99 >1s     | ⚠️ Mixed              | Different percentiles (p95 vs p99)                                             |
-| AI fallback 0.5%            | AIFallbackRateHigh >30%         | ❌ **MAJOR MISMATCH** | Alert at 60x SLO                                                               |
-| WebSocket connections 1000  | HighWebSocketConnections >1000  | ✅ Aligned            |                                                                                |
+| k6 Threshold (Production)   | Alerting Threshold              | Aligned?              | Notes                                                          |
+| --------------------------- | ------------------------------- | --------------------- | -------------------------------------------------------------- |
+| error_rate 0.5%             | HighErrorRate >5% (critical)    | ⚠️ **LAG**            | Alert triggers at 10x SLO breach; expected for major incidents |
+| error_rate 0.5%             | ElevatedErrorRate >1% (warning) | ✅ Acceptable         | Warning at 2x SLO                                              |
+| game_state_fetch.p95: 200ms | HighP95Latency >1s              | ⚠️ **LAG**            | Alert at 5x SLO - very permissive                              |
+| move_submission.p95: 200ms  | HighGameMoveLatency p99 >1s     | ⚠️ Mixed              | Different percentiles (p95 vs p99)                             |
+| AI fallback 0.5%            | AIFallbackRateHigh >30%         | ❌ **MAJOR MISMATCH** | Alert at 60x SLO                                               |
+| WebSocket connections 1000  | HighWebSocketConnections >1000  | ✅ Aligned            |                                                                |
 
 ### 2.4 AI SLO Alignment
 
@@ -228,22 +229,20 @@ This gap is intentional - alerts are for operational incidents, not SLO violatio
 
 ## 3. Issues and Gaps Identified
 
-### 3.1 Critical Issues
+### 3.1 Critical Issues (Resolved)
 
-#### ISSUE-1: System Uptime Threshold Mismatch
+#### ISSUE-1: System Uptime Threshold Mismatch (Resolved)
 
 - **PROJECT_GOALS.md**: >99.9%
-- **thresholds.json**: 99.5%
-- **Impact**: SLO definition allows 0.4% more downtime than the goal
-- **Recommendation**: Update [`thresholds.json:129`](../../tests/load/config/thresholds.json:129) to 99.9%
+- **thresholds.json**: 99.9%
+- **Resolution**: Updated `core_gameplay_uptime_percent` and `monthly_error_budget_percent` to align with SSoT.
 
-#### ISSUE-2: Move Validation Threshold Inconsistency
+#### ISSUE-2: Move Validation Threshold Inconsistency (Resolved)
 
 - **PROJECT_GOALS.md**: <200ms (p95)
-- **SLO_VERIFICATION.md**: <500ms (p95)
+- **SLO_VERIFICATION.md**: ≤300ms (staging) / ≤200ms (prod)
 - **thresholds.json (prod)**: 200ms
-- **Impact**: SLO_VERIFICATION.md too permissive
-- **Recommendation**: Update [`SLO_VERIFICATION.md:61`](../operations/SLO_VERIFICATION.md:61) to <200ms
+- **Resolution**: Updated SLO verification target to 200ms and aligned SLO definitions.
 
 ### 3.2 High-Priority Issues
 
@@ -262,12 +261,11 @@ This gap is intentional - alerts are for operational incidents, not SLO violatio
 - **Impact**: Cannot validate via load tests (expected - client-side metric)
 - **Recommendation**: Document that this is validated via client-side profiling and E2E tests, not load tests
 
-#### ISSUE-5: true_error_rate Not in SLO_VERIFICATION.md
+#### ISSUE-5: true_error_rate Not in SLO_VERIFICATION.md (Resolved)
 
 - **thresholds.json**: true_errors.rate defined (0.005 staging, 0.002 prod)
-- **SLO_VERIFICATION.md**: Not listed in SLO tables
-- **Impact**: Important metric for distinguishing real errors from expected 401/429
-- **Recommendation**: Add to SLO_VERIFICATION.md High-priority SLOs
+- **SLO_VERIFICATION.md**: Added to Critical SLOs
+- **Resolution**: true_error_rate now appears in SLO verification and reporting.
 
 ### 3.3 Medium-Priority Issues
 
@@ -299,14 +297,14 @@ This gap is intentional - alerts are for operational incidents, not SLO violatio
 
 ### 4.1 Required Changes for SLO Alignment
 
-| Priority | Source                            | Change                                    | Issue   |
-| -------- | --------------------------------- | ----------------------------------------- | ------- |
-| P0       | thresholds.json:129               | Update core_gameplay_uptime to 99.9%      | ISSUE-1 |
-| P0       | SLO_VERIFICATION.md:61            | Update Move Latency p95 to <200ms         | ISSUE-2 |
-| P1       | SLO_VERIFICATION.md               | Add true_error_rate SLO                   | ISSUE-5 |
-| P1       | ALERTING_THRESHOLDS.md            | Add AIFallbackRateElevated alert at 5%    | ISSUE-3 |
-| P2       | ALERTING_THRESHOLDS.md            | Document alert vs SLO threshold rationale | ISSUE-7 |
-| P2       | PRODUCTION_READINESS_CHECKLIST.md | Note UI frame rate is client-validated    | ISSUE-4 |
+| Priority | Source                            | Change                                      | Issue   |
+| -------- | --------------------------------- | ------------------------------------------- | ------- |
+| P0       | thresholds.json:129               | Update core_gameplay_uptime to 99.9% (done) | ISSUE-1 |
+| P0       | SLO_VERIFICATION.md:61            | Update Move Latency p95 to <200ms (done)    | ISSUE-2 |
+| P1       | SLO_VERIFICATION.md               | Add true_error_rate SLO (done)              | ISSUE-5 |
+| P1       | ALERTING_THRESHOLDS.md            | Add AIFallbackRateElevated alert at 5%      | ISSUE-3 |
+| P2       | ALERTING_THRESHOLDS.md            | Document alert vs SLO threshold rationale   | ISSUE-7 |
+| P2       | PRODUCTION_READINESS_CHECKLIST.md | Note UI frame rate is client-validated      | ISSUE-4 |
 
 ### 4.2 Documentation Improvements
 
@@ -315,8 +313,8 @@ This gap is intentional - alerts are for operational incidents, not SLO violatio
    - SLO violations at lower thresholds are caught by k6 load test gates
 
 2. **Update SLO_VERIFICATION.md**
-   - Add true_error_rate metric
-   - Tighten Move Latency p95 to match PROJECT_GOALS.md
+   - Add true_error_rate metric (done)
+   - Tighten Move Latency p95 to match PROJECT_GOALS.md (done)
 
 3. **Consider adding WebSocket SLOs to PROJECT_GOALS.md**
    - WebSocket connect latency
@@ -401,40 +399,37 @@ A production validation run **FAILS** when:
 
 ### 6.1 Overall Assessment
 
-The SLO threshold definitions across the project are **largely aligned** with two notable exceptions that require correction:
-
-1. **System uptime threshold** in thresholds.json (99.5%) is more permissive than PROJECT_GOALS.md (99.9%)
-2. **Move latency p95** in SLO_VERIFICATION.md (500ms) is more permissive than PROJECT_GOALS.md (200ms)
+The SLO threshold definitions across the project are **largely aligned**. The previously noted uptime and move-latency mismatches have been resolved; remaining gaps are primarily around client-only metrics (UI frame rate) and explicit reconnection SLOs in goals.
 
 ### 6.2 Alignment Statistics
 
 | Category          | Aligned | Misaligned | Gaps  |
 | ----------------- | ------- | ---------- | ----- |
 | HTTP API SLOs     | 4       | 0          | 0     |
-| WebSocket SLOs    | 3       | 1          | 1     |
+| WebSocket SLOs    | 4       | 0          | 1     |
 | AI SLOs           | 4       | 0          | 0     |
-| Availability SLOs | 1       | 1          | 0     |
+| Availability SLOs | 2       | 0          | 0     |
 | Capacity SLOs     | 4       | 0          | 0     |
-| **Total**         | **16**  | **2**      | **1** |
+| **Total**         | **18**  | **0**      | **1** |
 
 ### 6.3 Completeness Check
 
 | Question                                                           | Answer                                                 |
 | ------------------------------------------------------------------ | ------------------------------------------------------ |
-| Do k6 thresholds match PROJECT_GOALS.md SLOs?                      | ⚠️ Mostly - uptime needs alignment                     |
+| Do k6 thresholds match PROJECT_GOALS.md SLOs?                      | ✅ Yes (UI frame rate remains client-side)             |
 | Do alerting thresholds match k6 thresholds?                        | ✅ Yes - alerts are intentionally at higher thresholds |
 | Are staging vs production thresholds appropriately differentiated? | ✅ Yes - production is 1.5-2x stricter                 |
 | Are all SLOs from PROJECT_GOALS.md §4.1 represented in k6?         | ✅ Yes except UI frame rate (client-side)              |
-| Is true_error_rate properly configured?                            | ⚠️ In k6 but needs addition to SLO_VERIFICATION.md     |
+| Is true_error_rate properly configured?                            | ✅ Yes - k6 + SLO verification aligned                 |
 | Are AI response budgets aligned?                                   | ✅ Yes                                                 |
 
 ### 6.4 Action Items
 
 | Priority | Action                                     | Owner | Status  |
 | -------- | ------------------------------------------ | ----- | ------- |
-| P0       | Fix uptime threshold in thresholds.json    | -     | ⬜ Todo |
-| P0       | Fix move latency in SLO_VERIFICATION.md    | -     | ⬜ Todo |
-| P1       | Add true_error_rate to SLO_VERIFICATION.md | -     | ⬜ Todo |
+| P0       | Fix uptime threshold in thresholds.json    | -     | ✅ Done |
+| P0       | Fix move latency in SLO_VERIFICATION.md    | -     | ✅ Done |
+| P1       | Add true_error_rate to SLO_VERIFICATION.md | -     | ✅ Done |
 | P1       | Add lower-threshold AI fallback alert      | -     | ⬜ Todo |
 | P2       | Document alert vs SLO gap rationale        | -     | ⬜ Todo |
 
@@ -450,6 +445,6 @@ The SLO threshold definitions across the project are **largely aligned** with tw
 
 ---
 
-**Audit Status:** Complete  
+**Audit Status:** Updated  
 **Created:** 2025-12-20  
 **Author:** Architect Mode (PV-06)

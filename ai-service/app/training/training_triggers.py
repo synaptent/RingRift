@@ -26,12 +26,13 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from .unified_signals import (
-    get_signal_computer,
     TrainingUrgency,
+    get_signal_computer,
 )
 
 # Import event system for quality-aware triggering
@@ -51,11 +52,11 @@ logger = logging.getLogger(__name__)
 try:
     from app.config.thresholds import (
         INITIAL_ELO_RATING,
-        TRAINING_TRIGGER_GAMES,
-        TRAINING_STALENESS_HOURS,
         MIN_WIN_RATE_PROMOTE,
-        TRAINING_MIN_INTERVAL_SECONDS,
         TRAINING_BOOTSTRAP_GAMES,
+        TRAINING_MIN_INTERVAL_SECONDS,
+        TRAINING_STALENESS_HOURS,
+        TRAINING_TRIGGER_GAMES,
     )
     DEFAULT_FRESHNESS_THRESHOLD = TRAINING_TRIGGER_GAMES
     DEFAULT_STALENESS_HOURS = TRAINING_STALENESS_HOURS
@@ -102,11 +103,11 @@ class TriggerDecision:
     """Result of training trigger evaluation."""
     should_train: bool
     reason: str
-    signal_scores: Dict[str, float] = field(default_factory=dict)
+    signal_scores: dict[str, float] = field(default_factory=dict)
     config_key: str = ""
     priority: float = 0.0  # Higher = more urgent
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "should_train": self.should_train,
             "reason": self.reason,
@@ -160,16 +161,16 @@ class TrainingTriggers:
     - Tracks quality distribution changes
     """
 
-    def __init__(self, config: Optional[TriggerConfig] = None):
+    def __init__(self, config: TriggerConfig | None = None):
         self.config = config or TriggerConfig()
-        self._config_states: Dict[str, ConfigState] = {}
-        self._last_training_times: Dict[str, float] = {}
+        self._config_states: dict[str, ConfigState] = {}
+        self._last_training_times: dict[str, float] = {}
         # Delegate to unified signal computer
         self._signal_computer = get_signal_computer()
         # Quality state tracking (December 2025)
-        self._quality_states: Dict[str, QualityState] = {}
+        self._quality_states: dict[str, QualityState] = {}
         self._event_subscribed = False
-        self._quality_callbacks: List[Callable[[str, QualityState], None]] = []
+        self._quality_callbacks: list[Callable[[str, QualityState], None]] = []
 
     def get_config_state(self, config_key: str) -> ConfigState:
         """Get or create state for a config."""
@@ -180,10 +181,10 @@ class TrainingTriggers:
     def update_config_state(
         self,
         config_key: str,
-        games_count: Optional[int] = None,
-        elo: Optional[float] = None,
-        win_rate: Optional[float] = None,
-        model_count: Optional[int] = None,
+        games_count: int | None = None,
+        elo: float | None = None,
+        win_rate: float | None = None,
+        model_count: int | None = None,
     ) -> None:
         """Update state for a config.
 
@@ -218,7 +219,7 @@ class TrainingTriggers:
         self,
         config_key: str,
         games_at_training: int,
-        new_elo: Optional[float] = None,
+        new_elo: float | None = None,
     ) -> None:
         """Record that training completed for a config.
 
@@ -234,7 +235,7 @@ class TrainingTriggers:
         self._signal_computer.record_training_started(games_at_training, config_key)
         self._signal_computer.record_training_completed(new_elo, config_key)
 
-    def should_train(self, config_key: str, state: Optional[ConfigState] = None) -> TriggerDecision:
+    def should_train(self, config_key: str, state: ConfigState | None = None) -> TriggerDecision:
         """Evaluate whether training should run for a config.
 
         Uses UnifiedSignalComputer for consistent signal computation.
@@ -265,7 +266,7 @@ class TrainingTriggers:
         )
 
         # Build signal scores for backward compatibility
-        signal_scores: Dict[str, float] = {
+        signal_scores: dict[str, float] = {
             "freshness": signals.games_threshold_ratio,
             "staleness": signals.staleness_ratio,
             "regression": 1.0 if signals.win_rate_regression or signals.elo_regression_detected else 0.0,
@@ -292,7 +293,7 @@ class TrainingTriggers:
             priority=adjusted_priority,
         )
 
-    def get_training_queue(self) -> List[TriggerDecision]:
+    def get_training_queue(self) -> list[TriggerDecision]:
         """Get all configs that should train, sorted by priority."""
         decisions = []
 
@@ -305,7 +306,7 @@ class TrainingTriggers:
         decisions.sort(key=lambda d: d.priority, reverse=True)
         return decisions
 
-    def get_next_training_config(self) -> Optional[TriggerDecision]:
+    def get_next_training_config(self) -> TriggerDecision | None:
         """Get the highest priority config that should train."""
         queue = self.get_training_queue()
         return queue[0] if queue else None
@@ -328,7 +329,7 @@ class TrainingTriggers:
         )
         return signals.urgency
 
-    def get_detailed_status(self, config_key: str) -> Dict[str, Any]:
+    def get_detailed_status(self, config_key: str) -> dict[str, Any]:
         """Get detailed status for logging/debugging.
 
         Returns a dictionary with all signal details.
@@ -422,7 +423,7 @@ class TrainingTriggers:
         bus.unsubscribe(DataEventType.QUALITY_DISTRIBUTION_CHANGED, self._handle_quality_distribution_event)
         self._event_subscribed = False
 
-    def _handle_high_quality_event(self, event: "DataEvent") -> None:
+    def _handle_high_quality_event(self, event: DataEvent) -> None:
         """Handle HIGH_QUALITY_DATA_AVAILABLE event.
 
         Boosts training priority when high-quality data becomes available.
@@ -459,7 +460,7 @@ class TrainingTriggers:
             except Exception as e:
                 logger.warning(f"Quality callback error: {e}")
 
-    def _handle_low_quality_event(self, event: "DataEvent") -> None:
+    def _handle_low_quality_event(self, event: DataEvent) -> None:
         """Handle LOW_QUALITY_DATA_WARNING event.
 
         Reduces training priority when data quality is poor.
@@ -482,7 +483,7 @@ class TrainingTriggers:
 
         self._signal_computer.update_data_quality(config_key, quality_state.avg_quality_score)
 
-    def _handle_quality_distribution_event(self, event: "DataEvent") -> None:
+    def _handle_quality_distribution_event(self, event: DataEvent) -> None:
         """Handle QUALITY_DISTRIBUTION_CHANGED event.
 
         Updates quality state when distribution shifts significantly.
@@ -513,7 +514,7 @@ class TrainingTriggers:
 
         self._signal_computer.update_data_quality(config_key, quality_state.avg_quality_score)
 
-    def add_quality_callback(self, callback: Callable[[str, "QualityState"], None]) -> None:
+    def add_quality_callback(self, callback: Callable[[str, QualityState], None]) -> None:
         """Add a callback to be notified when quality state changes.
 
         Args:
@@ -521,7 +522,7 @@ class TrainingTriggers:
         """
         self._quality_callbacks.append(callback)
 
-    def remove_quality_callback(self, callback: Callable[[str, "QualityState"], None]) -> bool:
+    def remove_quality_callback(self, callback: Callable[[str, QualityState], None]) -> bool:
         """Remove a quality callback.
 
         Returns True if callback was found and removed.
@@ -546,11 +547,11 @@ class TrainingTriggers:
 
 
 # Convenience singleton
-_default_triggers: Optional[TrainingTriggers] = None
+_default_triggers: TrainingTriggers | None = None
 
 
 def get_training_triggers(
-    config: Optional[TriggerConfig] = None,
+    config: TriggerConfig | None = None,
     subscribe_quality_events: bool = True,
 ) -> TrainingTriggers:
     """Get the default training triggers instance.

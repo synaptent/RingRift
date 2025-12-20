@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -28,7 +28,7 @@ DEFAULT_DB_PATH = os.getenv(
 )
 
 # Singleton DB instance (lazy-loaded)
-_db_instance: Optional[GameReplayDB] = None
+_db_instance: GameReplayDB | None = None
 
 
 def get_replay_db() -> GameReplayDB:
@@ -57,11 +57,11 @@ class PlayerMetadata(BaseModel):
 
     playerNumber: int
     playerType: str
-    aiType: Optional[str] = None
-    aiDifficulty: Optional[int] = None
-    finalEliminatedRings: Optional[int] = None
-    finalTerritorySpaces: Optional[int] = None
-    finalRingsInHand: Optional[int] = None
+    aiType: str | None = None
+    aiDifficulty: int | None = None
+    finalEliminatedRings: int | None = None
+    finalTerritorySpaces: int | None = None
+    finalRingsInHand: int | None = None
 
 
 class GameMetadata(BaseModel):
@@ -70,28 +70,28 @@ class GameMetadata(BaseModel):
     gameId: str
     boardType: str
     numPlayers: int
-    winner: Optional[int] = None
-    terminationReason: Optional[str] = None
+    winner: int | None = None
+    terminationReason: str | None = None
     totalMoves: int
     totalTurns: int
     createdAt: str
-    completedAt: Optional[str] = None
-    durationMs: Optional[int] = None
-    source: Optional[str] = None
+    completedAt: str | None = None
+    durationMs: int | None = None
+    source: str | None = None
     # v2 fields
-    timeControlType: Optional[str] = None
-    initialTimeMs: Optional[int] = None
-    timeIncrementMs: Optional[int] = None
+    timeControlType: str | None = None
+    initialTimeMs: int | None = None
+    timeIncrementMs: int | None = None
     # v5+: full recording metadata decoded from games.metadata_json
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
     # Player details (included when fetching single game)
-    players: Optional[List[PlayerMetadata]] = None
+    players: list[PlayerMetadata] | None = None
 
 
 class GameListResponse(BaseModel):
     """Response for game list queries."""
 
-    games: List[GameMetadata]
+    games: list[GameMetadata]
     total: int
     hasMore: bool
 
@@ -104,34 +104,34 @@ class MoveRecord(BaseModel):
     player: int
     phase: str
     moveType: str
-    move: Dict[str, Any]
-    timestamp: Optional[str] = None
-    thinkTimeMs: Optional[int] = None
+    move: dict[str, Any]
+    timestamp: str | None = None
+    thinkTimeMs: int | None = None
     # v2 fields
-    timeRemainingMs: Optional[int] = None
-    engineEval: Optional[float] = None
-    engineEvalType: Optional[str] = None
-    engineDepth: Optional[int] = None
-    engineNodes: Optional[int] = None
-    enginePV: Optional[List[str]] = None
-    engineTimeMs: Optional[int] = None
+    timeRemainingMs: int | None = None
+    engineEval: float | None = None
+    engineEvalType: str | None = None
+    engineDepth: int | None = None
+    engineNodes: int | None = None
+    enginePV: list[str] | None = None
+    engineTimeMs: int | None = None
 
 
 class MovesResponse(BaseModel):
     """Response for move list queries."""
 
-    moves: List[MoveRecord]
+    moves: list[MoveRecord]
     hasMore: bool
 
 
 class ReplayStateResponse(BaseModel):
     """Response for state-at-move queries."""
 
-    gameState: Dict[str, Any]
+    gameState: dict[str, Any]
     moveNumber: int
     totalMoves: int
-    engineEval: Optional[float] = None
-    enginePV: Optional[List[str]] = None
+    engineEval: float | None = None
+    enginePV: list[str] | None = None
 
 
 class ChoiceRecord(BaseModel):
@@ -139,24 +139,24 @@ class ChoiceRecord(BaseModel):
 
     choiceType: str
     player: int
-    options: List[Dict[str, Any]]
-    selected: Dict[str, Any]
-    reasoning: Optional[str] = None
+    options: list[dict[str, Any]]
+    selected: dict[str, Any]
+    reasoning: str | None = None
 
 
 class ChoicesResponse(BaseModel):
     """Response for choices queries."""
 
-    choices: List[ChoiceRecord]
+    choices: list[ChoiceRecord]
 
 
 class StatsResponse(BaseModel):
     """Database statistics response."""
 
     totalGames: int
-    gamesByBoardType: Dict[str, int]
-    gamesByStatus: Dict[str, int]
-    gamesByTermination: Dict[str, int]
+    gamesByBoardType: dict[str, int]
+    gamesByStatus: dict[str, int]
+    gamesByTermination: dict[str, int]
     totalMoves: int
     schemaVersion: int
 
@@ -170,13 +170,13 @@ router = APIRouter(prefix="/api/replay", tags=["replay"])
 
 @router.get("/games", response_model=GameListResponse)
 async def list_games(
-    board_type: Optional[str] = Query(None, max_length=50, description="Filter by board type"),
-    num_players: Optional[int] = Query(None, ge=2, le=4, description="Filter by player count"),
-    winner: Optional[int] = Query(None, ge=1, le=4, description="Filter by winning player"),
-    termination_reason: Optional[str] = Query(None, max_length=50, description="Filter by termination reason"),
-    source: Optional[str] = Query(None, max_length=100, description="Filter by game source"),
-    min_moves: Optional[int] = Query(None, ge=0, le=100000, description="Minimum move count"),
-    max_moves: Optional[int] = Query(None, ge=0, le=100000, description="Maximum move count"),
+    board_type: str | None = Query(None, max_length=50, description="Filter by board type"),
+    num_players: int | None = Query(None, ge=2, le=4, description="Filter by player count"),
+    winner: int | None = Query(None, ge=1, le=4, description="Filter by winning player"),
+    termination_reason: str | None = Query(None, max_length=50, description="Filter by termination reason"),
+    source: str | None = Query(None, max_length=100, description="Filter by game source"),
+    min_moves: int | None = Query(None, ge=0, le=100000, description="Minimum move count"),
+    max_moves: int | None = Query(None, ge=0, le=100000, description="Maximum move count"),
     limit: int = Query(20, ge=1, le=100, description="Max results to return"),
     offset: int = Query(0, ge=0, le=1000000, description="Offset for pagination"),
 ):
@@ -189,7 +189,7 @@ async def list_games(
         db = get_replay_db()
 
         # Build filter kwargs
-        filters: Dict[str, Any] = {}
+        filters: dict[str, Any] = {}
         if board_type:
             filters["board_type"] = board_type
         if num_players:
@@ -217,7 +217,7 @@ async def list_games(
         game_list = []
         for g in games:
             raw_metadata_json = g.get("metadata_json")
-            decoded_metadata: Optional[Dict[str, Any]]
+            decoded_metadata: dict[str, Any] | None
             if raw_metadata_json:
                 try:
                     decoded_val = json.loads(raw_metadata_json)
@@ -280,7 +280,7 @@ async def get_game(game_id: str):
             )
 
         raw_metadata_json = game.get("metadata_json")
-        decoded_metadata: Optional[Dict[str, Any]]
+        decoded_metadata: dict[str, Any] | None
         if raw_metadata_json:
             try:
                 decoded_val = json.loads(raw_metadata_json)
@@ -382,7 +382,7 @@ async def get_state_at_move(
 async def get_moves(
     game_id: str,
     start: int = Query(0, ge=0, description="Start move number (inclusive)"),
-    end: Optional[int] = Query(None, ge=0, description="End move number (exclusive)"),
+    end: int | None = Query(None, ge=0, description="End move number (exclusive)"),
     limit: int = Query(100, ge=1, le=1000, description="Max moves to return"),
 ):
     """Get moves for a game in a range.
@@ -483,12 +483,12 @@ async def get_stats():
 class StoreGameRequest(BaseModel):
     """Request to store a game from sandbox."""
 
-    gameId: Optional[str] = Field(None, max_length=100, description="Optional game ID (generated if not provided)")
-    initialState: Dict[str, Any] = Field(..., description="Initial game state")
-    finalState: Dict[str, Any] = Field(..., description="Final game state")
-    moves: List[Dict[str, Any]] = Field(..., max_length=10000, description="List of moves (max 10000)")
-    choices: Optional[List[Dict[str, Any]]] = Field(None, max_length=1000, description="List of choices (max 1000)")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
+    gameId: str | None = Field(None, max_length=100, description="Optional game ID (generated if not provided)")
+    initialState: dict[str, Any] = Field(..., description="Initial game state")
+    finalState: dict[str, Any] = Field(..., description="Final game state")
+    moves: list[dict[str, Any]] = Field(..., max_length=10000, description="List of moves (max 10000)")
+    choices: list[dict[str, Any]] | None = Field(None, max_length=1000, description="List of choices (max 1000)")
+    metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 
 
 class StoreGameResponse(BaseModel):

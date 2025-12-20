@@ -9,8 +9,7 @@ write‑side paths (GameReplayDB._store_move_conn).
 """
 
 from dataclasses import dataclass
-from typing import Dict, Literal, Tuple
-
+from typing import Literal
 
 CanonicalPhase = Literal[
     "ring_placement",
@@ -23,7 +22,7 @@ CanonicalPhase = Literal[
 ]
 
 
-def phase_move_contract() -> Dict[CanonicalPhase, Tuple[str, ...]]:
+def phase_move_contract() -> dict[CanonicalPhase, tuple[str, ...]]:
     """
     Canonical mapping from phase -> allowed move types for recordings.
 
@@ -79,7 +78,7 @@ def phase_move_contract() -> Dict[CanonicalPhase, Tuple[str, ...]]:
     }
 
 
-def _move_type_to_phase_map() -> Dict[str, str]:
+def _move_type_to_phase_map() -> dict[str, str]:
     """
     Inverted mapping from move_type -> canonical phase.
 
@@ -89,7 +88,7 @@ def _move_type_to_phase_map() -> Dict[str, str]:
     movement and capture), we return the most common/primary phase.
     """
     contract = phase_move_contract()
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     # Process in reverse priority order so earlier phases win for ambiguous types.
     for phase in reversed(list(contract.keys())):
         for move_type in contract[phase]:  # type: ignore[literal-required]

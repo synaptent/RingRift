@@ -18,19 +18,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from .gpu_batch import get_device
 from .gpu_game_types import (
+    GamePhase,
     GameStatus,
     MoveType,
-    GamePhase,
 )
 
 if TYPE_CHECKING:
-    from app.models import BoardType, GameState
+    from app.models import GameState
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +162,12 @@ class BatchGameState:
         batch_size: int,
         board_size: int = 8,
         num_players: int = 2,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         max_history_moves: int = 500,
         lps_rounds_required: int = 3,
-        rings_per_player: Optional[int] = None,
-        board_type: Optional[str] = None,
-    ) -> "BatchGameState":
+        rings_per_player: int | None = None,
+        board_type: str | None = None,
+    ) -> BatchGameState:
         """Create a batch of initialized game states.
 
         Args:
@@ -277,11 +277,11 @@ class BatchGameState:
     @classmethod
     def from_single_game(
         cls,
-        game_state: "GameState",
-        device: Optional[torch.device] = None,
+        game_state: GameState,
+        device: torch.device | None = None,
         max_history_moves: int = 500,
         lps_rounds_required: int = 3,
-    ) -> "BatchGameState":
+    ) -> BatchGameState:
         """Create a BatchGameState from a single CPU GameState.
 
         Args:
@@ -301,11 +301,11 @@ class BatchGameState:
     @classmethod
     def from_game_states(
         cls,
-        game_states: List["GameState"],
-        device: Optional[torch.device] = None,
+        game_states: list[GameState],
+        device: torch.device | None = None,
         max_history_moves: int = 500,
         lps_rounds_required: int = 3,
-    ) -> "BatchGameState":
+    ) -> BatchGameState:
         """Create a BatchGameState from multiple CPU GameStates.
 
         Args:
@@ -356,7 +356,7 @@ class BatchGameState:
             board_type=board_type_str,
         )
 
-        def parse_position_key(key: str) -> Tuple[int, int]:
+        def parse_position_key(key: str) -> tuple[int, int]:
             """Parse 'row,col' position key to (row, col) tuple."""
             parts = key.split(',')
             return int(parts[0]), int(parts[1])
@@ -475,7 +475,7 @@ class BatchGameState:
 
         return batch
 
-    def to_game_state(self, game_idx: int) -> "GameState":
+    def to_game_state(self, game_idx: int) -> GameState:
         """Convert a single game from the batch back to a CPU GameState.
 
         Args:
@@ -485,8 +485,15 @@ class BatchGameState:
             CPU GameState matching the batch state
         """
         from app.models import (
-            GameState, Board, Cell, CellContent, Stack, PlayerState,
-            GameRules, BoardType, GamePhase as CPUGamePhase
+            Board,
+            BoardType,
+            Cell,
+            CellContent,
+            GamePhase as CPUGamePhase,
+            GameRules,
+            GameState,
+            PlayerState,
+            Stack,
         )
         from app.rules.core import get_ring_count
 
@@ -681,7 +688,7 @@ class BatchGameState:
 
         return features
 
-    def extract_move_history(self, game_idx: int) -> List[Dict[str, Any]]:
+    def extract_move_history(self, game_idx: int) -> list[dict[str, Any]]:
         """Extract move history for a single game as a list of dictionaries.
 
         Args:
@@ -712,7 +719,7 @@ class BatchGameState:
 
         return moves
 
-    def derive_victory_type(self, game_idx: int, max_moves: int) -> Tuple[str, Optional[str]]:
+    def derive_victory_type(self, game_idx: int, max_moves: int) -> tuple[str, str | None]:
         """Derive the victory type and tiebreaker for a finished game.
 
         This analyzes the final game state to determine how the winner won,

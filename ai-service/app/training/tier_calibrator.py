@@ -11,7 +11,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +60,8 @@ class CalibrationProposal:
     significance_level: float
     status: CalibrationStatus = CalibrationStatus.PENDING
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    started_at: float | None = None
+    completed_at: float | None = None
     reason: str = ""
 
 
@@ -113,16 +113,16 @@ class TierCalibrator:
     testing to auto-apply successful calibrations.
     """
 
-    def __init__(self, config: Optional[CalibrationConfig] = None):
+    def __init__(self, config: CalibrationConfig | None = None):
         self.config = config or CalibrationConfig()
 
         # State
-        self._proposals: Dict[str, CalibrationProposal] = {}
-        self._thresholds: Dict[str, TierThreshold] = {}
-        self._results: List[CalibrationResult] = []
+        self._proposals: dict[str, CalibrationProposal] = {}
+        self._thresholds: dict[str, TierThreshold] = {}
+        self._results: list[CalibrationResult] = []
 
         # Tier performance tracking
-        self._tier_stats: Dict[str, Dict[str, Any]] = {}
+        self._tier_stats: dict[str, dict[str, Any]] = {}
 
         # Initialize default tiers
         self._init_default_tiers()
@@ -167,7 +167,7 @@ class TierCalibrator:
         tier: str,
         proposed_threshold: float,
         reason: str = "auto_proposed",
-    ) -> Optional[CalibrationProposal]:
+    ) -> CalibrationProposal | None:
         """
         Create a calibration proposal for testing.
 
@@ -236,21 +236,21 @@ class TierCalibrator:
 
         return proposal
 
-    def get_pending_calibrations(self) -> List[CalibrationProposal]:
+    def get_pending_calibrations(self) -> list[CalibrationProposal]:
         """Get list of pending calibration proposals."""
         return [
             p for p in self._proposals.values()
             if p.status == CalibrationStatus.PENDING
         ]
 
-    def get_running_calibrations(self) -> List[CalibrationProposal]:
+    def get_running_calibrations(self) -> list[CalibrationProposal]:
         """Get list of running calibration proposals."""
         return [
             p for p in self._proposals.values()
             if p.status == CalibrationStatus.RUNNING
         ]
 
-    def start_calibration(self, proposal_id: str) -> Optional[ABTestConfig]:
+    def start_calibration(self, proposal_id: str) -> ABTestConfig | None:
         """
         Start a calibration test.
 
@@ -439,7 +439,7 @@ class TierCalibrator:
             "updated_at": time.time(),
         }
 
-    def check_auto_calibration_triggers(self) -> List[CalibrationProposal]:
+    def check_auto_calibration_triggers(self) -> list[CalibrationProposal]:
         """
         Check if any tiers need auto-calibration.
 
@@ -491,7 +491,7 @@ class TierCalibrator:
 
         return proposals
 
-    def get_calibration_stats(self) -> Dict[str, Any]:
+    def get_calibration_stats(self) -> dict[str, Any]:
         """Get calibration statistics for monitoring."""
         recent_results = [
             r for r in self._results
@@ -520,7 +520,7 @@ class TierCalibrator:
         }
 
 
-def load_calibration_config_from_yaml(yaml_config: Dict[str, Any]) -> CalibrationConfig:
+def load_calibration_config_from_yaml(yaml_config: dict[str, Any]) -> CalibrationConfig:
     """Load CalibrationConfig from YAML configuration dict."""
     tier_cal = yaml_config.get("tier_calibration", {})
 

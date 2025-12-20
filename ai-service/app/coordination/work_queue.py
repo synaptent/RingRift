@@ -28,10 +28,10 @@ import sqlite3
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "work_queue.db"
 class SlackWorkQueueNotifier:
     """Simple Slack notifier for work queue events."""
 
-    def __init__(self, webhook_url: Optional[str] = None):
+    def __init__(self, webhook_url: str | None = None):
         self.webhook_url = webhook_url or os.environ.get("SLACK_WEBHOOK_URL")
         self.enabled = bool(self.webhook_url)
         if self.enabled:
@@ -75,7 +75,7 @@ class SlackWorkQueueNotifier:
             logger.warning(f"Failed to send Slack notification: {e}")
             return False
 
-    def on_work_added(self, item: "WorkItem") -> None:
+    def on_work_added(self, item: WorkItem) -> None:
         """Notify on high-priority work added."""
         if item.priority >= 90:
             self._send(
@@ -85,7 +85,7 @@ class SlackWorkQueueNotifier:
                 color="#f2c744"
             )
 
-    def on_work_completed(self, item: "WorkItem") -> None:
+    def on_work_completed(self, item: WorkItem) -> None:
         """Notify on work completion (high-priority only to reduce noise)."""
         if item.priority < 80:
             return  # Skip low-priority completions
@@ -97,7 +97,7 @@ class SlackWorkQueueNotifier:
             color="#36a64f"
         )
 
-    def on_work_failed(self, item: "WorkItem", permanent: bool = False) -> None:
+    def on_work_failed(self, item: WorkItem, permanent: bool = False) -> None:
         """Notify on work failure."""
         status = "permanently failed" if permanent else f"failed (attempt {item.attempts}/{item.max_attempts})"
         self._send(
@@ -107,7 +107,7 @@ class SlackWorkQueueNotifier:
             color="#e01e5a" if permanent else "#f2c744"
         )
 
-    def on_work_timeout(self, item: "WorkItem", permanent: bool = False) -> None:
+    def on_work_timeout(self, item: WorkItem, permanent: bool = False) -> None:
         """Notify on work timeout."""
         status = "permanently timed out" if permanent else f"timed out (attempt {item.attempts}/{item.max_attempts})"
         self._send(
@@ -149,7 +149,7 @@ class WorkItem:
     work_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     work_type: WorkType = WorkType.SELFPLAY
     priority: int = 50  # Higher = more urgent (0-100)
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
 
     # Scheduling
     created_at: float = field(default_factory=time.time)
@@ -165,20 +165,20 @@ class WorkItem:
     timeout_seconds: float = 3600.0  # 1 hour default
 
     # Results
-    result: Dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] = field(default_factory=dict)
     error: str = ""
 
     # Dependencies - list of work_ids that must complete before this can run
-    depends_on: List[str] = field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["work_type"] = self.work_type.value
         d["status"] = self.status.value
         return d
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "WorkItem":
+    def from_dict(cls, d: dict[str, Any]) -> WorkItem:
         d = d.copy()
         d["work_type"] = WorkType(d.get("work_type", "selfplay"))
         d["status"] = WorkStatus(d.get("status", "pending"))
@@ -195,9 +195,7 @@ class WorkItem:
         """Check if this work can be claimed (doesn't check dependencies)."""
         if self.status != WorkStatus.PENDING:
             return False
-        if self.attempts >= self.max_attempts:
-            return False
-        return True
+        return not self.attempts >= self.max_attempts
 
     def has_pending_dependencies(self, completed_ids: set) -> bool:
         """Check if any dependencies are not yet completed.
@@ -233,8 +231,8 @@ class WorkQueue:
     - SQLite persistence for durability across leader changes
     """
 
-    def __init__(self, policy_manager=None, db_path: Optional[Path] = None, slack_webhook: Optional[str] = None):
-        self.items: Dict[str, WorkItem] = {}  # work_id -> WorkItem
+    def __init__(self, policy_manager=None, db_path: Path | None = None, slack_webhook: str | None = None):
+        self.items: dict[str, WorkItem] = {}  # work_id -> WorkItem
         self.lock = threading.RLock()
         self.db_path = db_path or DEFAULT_DB_PATH
 
@@ -474,7 +472,7 @@ class WorkQueue:
         )
         return self.add_work(item)
 
-    def claim_work(self, node_id: str, capabilities: Optional[List[str]] = None) -> Optional[WorkItem]:
+    def claim_work(self, node_id: str, capabilities: list[str] | None = None) -> WorkItem | None:
         """Claim work for a node based on capabilities, policies, and dependencies.
 
         Uses atomic database operations to prevent TOCTOU race conditions where
@@ -516,10 +514,9 @@ class WorkQueue:
                     continue
 
                 # Check policy
-                if self.policy_manager:
-                    if not self.policy_manager.is_work_allowed(node_id, work_type):
-                        logger.debug(f"Policy denies {work_type} on {node_id}")
-                        continue
+                if self.policy_manager and not self.policy_manager.is_work_allowed(node_id, work_type):
+                    logger.debug(f"Policy denies {work_type} on {node_id}")
+                    continue
 
                 # Attempt atomic claim via database (December 2025 - TOCTOU fix)
                 claimed_at = time.time()
@@ -614,7 +611,7 @@ class WorkQueue:
             self._save_item(item)
             return True
 
-    def complete_work(self, work_id: str, result: Optional[Dict[str, Any]] = None) -> bool:
+    def complete_work(self, work_id: str, result: dict[str, Any] | None = None) -> bool:
         """Mark work as completed successfully."""
         with self.lock:
             item = self.items.get(work_id)
@@ -678,7 +675,7 @@ class WorkQueue:
             logger.info(f"Work {work_id} cancelled")
             return True
 
-    def check_timeouts(self) -> List[str]:
+    def check_timeouts(self) -> list[str]:
         """Check for timed out work and reset for retry. Returns list of timed out work_ids."""
         timed_out = []
         to_notify = []  # (item, permanent)
@@ -709,7 +706,7 @@ class WorkQueue:
 
         return timed_out
 
-    def get_queue_status(self) -> Dict[str, Any]:
+    def get_queue_status(self) -> dict[str, Any]:
         """Get current queue status."""
         with self.lock:
             by_status = {}
@@ -740,7 +737,7 @@ class WorkQueue:
                 "stats": self.stats.copy(),
             }
 
-    def get_work_for_node(self, node_id: str) -> List[Dict[str, Any]]:
+    def get_work_for_node(self, node_id: str) -> list[dict[str, Any]]:
         """Get all work assigned to a node."""
         with self.lock:
             return [
@@ -768,7 +765,7 @@ class WorkQueue:
             logger.info(f"Cleaned up {removed} old work items")
         return removed
 
-    def get_history(self, limit: int = 50, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_history(self, limit: int = 50, status_filter: str | None = None) -> list[dict[str, Any]]:
         """Get work history from the database.
 
         Args:
@@ -900,7 +897,7 @@ class WorkQueue:
 
         return generated
 
-    def _load_curriculum_weights(self) -> Dict[str, float]:
+    def _load_curriculum_weights(self) -> dict[str, float]:
         """Load curriculum weights for selfplay prioritization.
 
         Returns:
@@ -924,7 +921,7 @@ class WorkQueue:
 
 
 # Singleton instance (created on demand by leader)
-_work_queue: Optional[WorkQueue] = None
+_work_queue: WorkQueue | None = None
 
 
 def get_work_queue() -> WorkQueue:
@@ -940,14 +937,14 @@ def get_work_queue() -> WorkQueue:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "WorkType",
-    "WorkStatus",
-    # Data classes
-    "WorkItem",
     # Classes
     "SlackWorkQueueNotifier",
+    # Data classes
+    "WorkItem",
     "WorkQueue",
+    "WorkStatus",
+    # Enums
+    "WorkType",
     # Functions
     "get_work_queue",
 ]

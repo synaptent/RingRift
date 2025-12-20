@@ -26,10 +26,11 @@ import subprocess
 import threading
 import time
 import tracemalloc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,8 @@ class MemorySample:
     timestamp: float  # time.time()
     rss_mb: int  # Resident Set Size in MB
     peak_rss_mb: int  # Peak RSS so far
-    tracemalloc_current_mb: Optional[float] = None  # Python allocations
-    tracemalloc_peak_mb: Optional[float] = None  # Peak Python allocations
+    tracemalloc_current_mb: float | None = None  # Python allocations
+    tracemalloc_peak_mb: float | None = None  # Peak Python allocations
 
 
 @dataclass
@@ -49,12 +50,12 @@ class MemoryProfile:
     """Complete memory profile for an operation."""
     operation_name: str
     start_time: datetime
-    end_time: Optional[datetime] = None
-    samples: List[MemorySample] = field(default_factory=list)
+    end_time: datetime | None = None
+    samples: list[MemorySample] = field(default_factory=list)
     peak_rss_mb: int = 0
     peak_tracemalloc_mb: float = 0.0
     baseline_rss_mb: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def duration_seconds(self) -> float:
@@ -68,7 +69,7 @@ class MemoryProfile:
         """Get memory increase from baseline."""
         return self.peak_rss_mb - self.baseline_rss_mb
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
         return {
             "operation_name": self.operation_name,
@@ -105,12 +106,12 @@ def get_current_rss_mb() -> int:
 
     try:
         # Fallback: read /proc/self/status on Linux
-        with open("/proc/self/status", "r") as f:
+        with open("/proc/self/status") as f:
             for line in f:
                 if line.startswith("VmRSS:"):
                     kb = int(line.split()[1])
                     return kb // 1024
-    except (FileNotFoundError, PermissionError, IOError, ValueError, IndexError):
+    except (OSError, FileNotFoundError, PermissionError, ValueError, IndexError):
         # FileNotFoundError/PermissionError: file access issues
         # IOError: read errors, ValueError/IndexError: parsing errors
         pass
@@ -151,7 +152,7 @@ def get_peak_rss_mb() -> int:
         return get_current_rss_mb()
 
 
-def get_process_rss_mb(pid: int) -> Optional[int]:
+def get_process_rss_mb(pid: int) -> int | None:
     """Get RSS for a specific process by PID.
 
     Args:
@@ -193,7 +194,7 @@ class MemoryTracker:
         operation_name: str,
         sample_interval: float = 1.0,
         use_tracemalloc: bool = False,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize memory tracker.
 
@@ -208,11 +209,11 @@ class MemoryTracker:
         self.use_tracemalloc = use_tracemalloc
         self.metadata = metadata or {}
 
-        self._samples: List[MemorySample] = []
+        self._samples: list[MemorySample] = []
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._start_time: Optional[datetime] = None
-        self._end_time: Optional[datetime] = None
+        self._thread: threading.Thread | None = None
+        self._start_time: datetime | None = None
+        self._end_time: datetime | None = None
         self._baseline_rss: int = 0
         self._peak_rss: int = 0
 
@@ -314,7 +315,7 @@ class MemoryTracker:
         """Get peak RSS memory in MB since tracking started."""
         return self._peak_rss
 
-    def __enter__(self) -> "MemoryTracker":
+    def __enter__(self) -> MemoryTracker:
         self.start()
         return self
 
@@ -324,10 +325,10 @@ class MemoryTracker:
 
 def profile_function(
     func: Callable,
-    operation_name: Optional[str] = None,
+    operation_name: str | None = None,
     sample_interval: float = 0.5,
     use_tracemalloc: bool = False,
-) -> Tuple[Any, MemoryProfile]:
+) -> tuple[Any, MemoryProfile]:
     """Profile memory usage of a function call.
 
     Args:
@@ -395,9 +396,9 @@ class RemoteMemoryMonitor:
         self.process_pattern = process_pattern
         self.sample_interval = sample_interval
 
-        self._samples: List[Tuple[float, int]] = []  # (timestamp, rss_mb)
+        self._samples: list[tuple[float, int]] = []  # (timestamp, rss_mb)
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._peak_rss: int = 0
 
     def start(self) -> None:
@@ -434,7 +435,7 @@ class RemoteMemoryMonitor:
 
             time.sleep(self.sample_interval)
 
-    def get_samples(self) -> List[Tuple[float, int]]:
+    def get_samples(self) -> list[tuple[float, int]]:
         """Get all memory samples as (timestamp, rss_mb) tuples."""
         return self._samples.copy()
 
@@ -442,7 +443,7 @@ class RemoteMemoryMonitor:
         """Get peak RSS observed."""
         return self._peak_rss
 
-    def __enter__(self) -> "RemoteMemoryMonitor":
+    def __enter__(self) -> RemoteMemoryMonitor:
         self.start()
         return self
 
@@ -474,7 +475,7 @@ def format_memory_profile(profile: MemoryProfile) -> str:
 
 
 def write_memory_report(
-    profiles: List[MemoryProfile],
+    profiles: list[MemoryProfile],
     output_path: str,
     format: str = "json",
 ) -> None:

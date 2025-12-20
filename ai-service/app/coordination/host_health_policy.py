@@ -33,13 +33,14 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import subprocess
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Use centralized defaults (December 2025)
 try:
@@ -63,10 +64,10 @@ class HealthStatus:
     host: str
     healthy: bool
     checked_at: float
-    latency_ms: Optional[float] = None
-    error: Optional[str] = None
-    load_1m: Optional[float] = None
-    cpu_count: Optional[int] = None
+    latency_ms: float | None = None
+    error: str | None = None
+    load_1m: float | None = None
+    cpu_count: int | None = None
 
     @property
     def age_seconds(self) -> float:
@@ -77,7 +78,7 @@ class HealthStatus:
         ttl = HEALTH_CACHE_TTL if self.healthy else UNHEALTHY_CACHE_TTL
         return self.age_seconds > ttl
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "host": self.host,
             "healthy": self.healthy,
@@ -91,11 +92,11 @@ class HealthStatus:
 
 
 # Global health cache
-_health_cache: Dict[str, HealthStatus] = {}
+_health_cache: dict[str, HealthStatus] = {}
 _cache_lock = threading.RLock()
 
 
-def _get_ssh_target(host: str) -> Tuple[str, Optional[str], int]:
+def _get_ssh_target(host: str) -> tuple[str, str | None, int]:
     """Get SSH target, key path, and port for a host.
 
     Returns:
@@ -180,10 +181,8 @@ def _quick_ssh_check(
                 except (IndexError, ValueError):
                     pass
             if len(lines) >= 3:
-                try:
+                with contextlib.suppress(ValueError):
                     cpu_count = int(lines[2])
-                except ValueError:
-                    pass
 
             return HealthStatus(
                 host=host,
@@ -273,10 +272,10 @@ def is_host_healthy(host: str, force_refresh: bool = False) -> bool:
 
 
 def get_healthy_hosts(
-    hosts: List[str],
+    hosts: list[str],
     parallel: bool = True,
     force_refresh: bool = False,
-) -> List[str]:
+) -> list[str]:
     """Get list of healthy hosts from a candidate list.
 
     Args:
@@ -295,8 +294,8 @@ def get_healthy_hosts(
         return [h for h in hosts if is_host_healthy(h, force_refresh)]
 
     # Parallel check with threading
-    results: Dict[str, bool] = {}
-    threads: List[threading.Thread] = []
+    results: dict[str, bool] = {}
+    threads: list[threading.Thread] = []
     results_lock = threading.RLock()
 
     def check_one(host: str):
@@ -320,7 +319,7 @@ def get_healthy_hosts(
     return [h for h in hosts if results.get(h, False)]
 
 
-def get_health_summary(hosts: List[str]) -> Dict[str, Any]:
+def get_health_summary(hosts: list[str]) -> dict[str, Any]:
     """Get health summary for a list of hosts.
 
     Args:
@@ -348,7 +347,7 @@ def get_health_summary(hosts: List[str]) -> Dict[str, Any]:
     }
 
 
-def clear_health_cache(host: Optional[str] = None) -> int:
+def clear_health_cache(host: str | None = None) -> int:
     """Clear health cache.
 
     Args:
@@ -384,7 +383,7 @@ def mark_host_unhealthy(host: str, error: str = "Manually marked unhealthy") -> 
         )
 
 
-def get_cache_status() -> Dict[str, Any]:
+def get_cache_status() -> dict[str, Any]:
     """Get current cache status."""
     with _cache_lock:
         entries = []
@@ -412,7 +411,7 @@ def pre_spawn_check(
     task_type: str = "selfplay",
     check_load: bool = True,
     max_load_per_cpu: float = 0.8,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Combined pre-spawn check including health and load.
 
     This should be called before spawning any task on a remote host.
@@ -454,16 +453,16 @@ except NameError:
     CLUSTER_HEALTH_CACHE_TTL = 120
 
 # Cache for cluster health status
-_cluster_health_cache: Dict[str, Any] = {}
+_cluster_health_cache: dict[str, Any] = {}
 _cluster_health_lock = threading.RLock()
 
 
 def check_cluster_health(
-    hosts: Optional[List[str]] = None,
+    hosts: list[str] | None = None,
     min_healthy: int = DEFAULT_MIN_HEALTHY_HOSTS,
     min_healthy_ratio: float = 0.5,
     force_refresh: bool = False,
-) -> Tuple[bool, Dict[str, Any]]:
+) -> tuple[bool, dict[str, Any]]:
     """Check if cluster has enough healthy hosts for expensive operations.
 
     Use this before starting training, large evaluations, or critical syncs
@@ -563,7 +562,7 @@ def gate_on_cluster_health(
     operation_name: str,
     min_healthy: int = DEFAULT_MIN_HEALTHY_HOSTS,
     min_healthy_ratio: float = 0.5,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Health gate for expensive operations.
 
     Use this at the start of expensive operations to fail fast if the
@@ -667,16 +666,16 @@ if __name__ == "__main__":
 __all__ = [
     # Data classes
     "HealthStatus",
+    "check_cluster_health",
     # Functions
     "check_host_health",
-    "is_host_healthy",
-    "get_healthy_hosts",
-    "get_health_summary",
     "clear_health_cache",
-    "mark_host_unhealthy",
-    "get_cache_status",
-    "pre_spawn_check",
-    "check_cluster_health",
-    "is_cluster_healthy",
     "gate_on_cluster_health",
+    "get_cache_status",
+    "get_health_summary",
+    "get_healthy_hosts",
+    "is_cluster_healthy",
+    "is_host_healthy",
+    "mark_host_unhealthy",
+    "pre_spawn_check",
 ]

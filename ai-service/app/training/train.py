@@ -24,35 +24,30 @@ Recommended Usage (December 2025):
             pass
 """
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
-import numpy as np
-import random
-import os
 import argparse
-import glob
-import math
-import time
 import contextlib
+import glob
 import json
+import logging
+import math
+import os
+import random
 import sys
-from pathlib import Path
+import time
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import (
     Any,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
     Union,
     cast,
 )
 
-import logging
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 
 # Optional Prometheus metrics
 try:
@@ -97,53 +92,53 @@ except ImportError:
     HAS_METRICS_COLLECTOR = False
     MetricsCollector = None  # type: ignore
 
+from app.ai.neural_losses import (
+    build_rank_targets,
+    masked_policy_kl,
+)
 from app.ai.neural_net import (
-    RingRiftCNN_v2,
-    RingRiftCNN_v3,
+    HEX8_BOARD_SIZE,
+    HEX_BOARD_SIZE,
+    MAX_PLAYERS,
     HexNeuralNet_v2,
     HexNeuralNet_v3,
-    HEX_BOARD_SIZE,
-    HEX8_BOARD_SIZE,
-    MAX_PLAYERS,
-    multi_player_value_loss,
+    RingRiftCNN_v2,
+    RingRiftCNN_v3,
     get_policy_size_for_board,
+    multi_player_value_loss,
 )
-from app.ai.neural_losses import (
-    masked_policy_kl,
-    build_rank_targets,
-)
-from app.training.config import TrainConfig, get_model_version_for_board
 from app.models import BoardType
-from app.training.datasets import RingRiftDataset, WeightedRingRiftDataset
-from app.training.distributed import (  # noqa: E402
-    setup_distributed,
-    cleanup_distributed,
-    is_main_process,
-    get_rank,
-    get_world_size,
-    get_distributed_sampler,
-    wrap_model_ddp,
-    seed_everything,
-    scale_learning_rate,
-    DistributedMetrics,
-)
-from app.training.data_loader import (  # noqa: E402
+from app.training.config import TrainConfig, get_model_version_for_board
+from app.training.data_loader import (
     StreamingDataLoader,
     WeightedStreamingDataLoader,
     get_sample_count,
     prefetch_loader,
 )
-from app.training.model_versioning import (  # noqa: E402
+from app.training.datasets import RingRiftDataset, WeightedRingRiftDataset
+from app.training.distributed import (
+    DistributedMetrics,
+    cleanup_distributed,
+    get_distributed_sampler,
+    get_rank,
+    get_world_size,
+    is_main_process,
+    scale_learning_rate,
+    seed_everything,
+    setup_distributed,
+    wrap_model_ddp,
+)
+from app.training.fault_tolerance import HeartbeatMonitor
+from app.training.model_versioning import (
     save_model_checkpoint,
 )
 from app.training.seed_utils import seed_all
-from app.training.fault_tolerance import HeartbeatMonitor  # noqa: E402
-from app.training.value_calibration import CalibrationTracker  # noqa: E402
-from app.training.train_setup import (  # noqa: E402
+from app.training.train_setup import (
     FaultToleranceConfig,
-    setup_fault_tolerance,
     TrainingState,
+    setup_fault_tolerance,
 )
+from app.training.value_calibration import CalibrationTracker
 
 # Data validation (2025-12) - use unified module
 try:
@@ -170,8 +165,8 @@ except ImportError:
 # Quality bridge for quality-aware data selection (2025-12)
 try:
     from app.training.quality_bridge import (
-        get_quality_bridge,
         QualityBridge,
+        get_quality_bridge,
     )
     HAS_QUALITY_BRIDGE = True
 except ImportError:
@@ -182,8 +177,8 @@ except ImportError:
 # Integrated enhancements (2024-12)
 try:
     from app.training.integrated_enhancements import (
-        IntegratedTrainingManager,
         IntegratedEnhancementsConfig,
+        IntegratedTrainingManager,
     )
     HAS_INTEGRATED_ENHANCEMENTS = True
 except ImportError:
@@ -193,8 +188,8 @@ except ImportError:
 
 # Circuit breaker for training fault tolerance (2025-12)
 try:
-    from app.distributed.circuit_breaker import get_training_breaker, CircuitState
-    from app.distributed.data_events import get_event_bus, DataEvent, DataEventType
+    from app.distributed.circuit_breaker import CircuitState, get_training_breaker
+    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
     HAS_CIRCUIT_BREAKER = True
     HAS_EVENT_BUS = True
 except ImportError:
@@ -209,8 +204,8 @@ except ImportError:
 # Regression detection for training quality monitoring (2025-12)
 try:
     from app.training.regression_detector import (
-        get_regression_detector,
         RegressionSeverity,
+        get_regression_detector,
     )
     HAS_REGRESSION_DETECTOR = True
 except ImportError:
@@ -221,9 +216,9 @@ except ImportError:
 # Training anomaly detection and enhancements (2025-12)
 try:
     from app.training.training_enhancements import (
-        TrainingAnomalyDetector,
-        CheckpointAverager,
         AdaptiveGradientClipper,
+        CheckpointAverager,
+        TrainingAnomalyDetector,
     )
     HAS_TRAINING_ENHANCEMENTS = True
 except ImportError:
@@ -251,11 +246,11 @@ from app.ai.heuristic_weights import (  # noqa: E402
     HEURISTIC_WEIGHT_KEYS,
     HEURISTIC_WEIGHT_PROFILES,
 )
+from app.training.eval_pools import run_heuristic_tier_eval  # noqa: E402
 from app.training.tier_eval_config import (  # noqa: E402
     HEURISTIC_TIER_SPECS,
     HeuristicTierSpec,
 )
-from app.training.eval_pools import run_heuristic_tier_eval  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -274,7 +269,7 @@ def seed_all_legacy(seed: int = 42) -> None:
 
 def _flatten_heuristic_weights(
     profile: Mapping[str, float],
-) -> Tuple[List[str], List[float]]:
+) -> tuple[list[str], list[float]]:
     """
     Deterministically flatten a heuristic weight profile into (keys, values).
 
@@ -282,8 +277,8 @@ def _flatten_heuristic_weights(
     and reconstruction remain stable across runs and consistent with other
     heuristic-training tooling.
     """
-    keys: List[str] = list(HEURISTIC_WEIGHT_KEYS)
-    values: List[float] = []
+    keys: list[str] = list(HEURISTIC_WEIGHT_KEYS)
+    values: list[float] = []
     for k in keys:
         try:
             values.append(float(profile[k]))
@@ -299,14 +294,14 @@ def _flatten_heuristic_weights(
 def _reconstruct_heuristic_profile(
     keys: Sequence[str],
     values: Sequence[float],
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Reconstruct a heuristic weight mapping from (keys, values)."""
     if len(keys) != len(values):
         raise ValueError(
             "Length mismatch reconstructing heuristic profile: "
             f"{len(keys)} keys vs {len(values)} values."
         )
-    return {k: float(v) for k, v in zip(keys, values)}
+    return {k: float(v) for k, v in zip(keys, values, strict=False)}
 
 
 @contextlib.contextmanager
@@ -352,8 +347,8 @@ def evaluate_heuristic_candidate(
     keys: Sequence[str],
     candidate_vector: Sequence[float],
     rng_seed: int,
-    games_per_candidate: Optional[int] = None,
-) -> Tuple[float, Dict[str, Any]]:
+    games_per_candidate: int | None = None,
+) -> tuple[float, dict[str, Any]]:
     """
     Evaluate a heuristic weight candidate via run_heuristic_tier_eval.
 
@@ -413,8 +408,8 @@ def run_cmaes_heuristic_optimization(
     generations: int = 5,
     population_size: int = 8,
     rng_seed: int = 1,
-    games_per_candidate: Optional[int] = None,
-) -> Dict[str, Any]:
+    games_per_candidate: int | None = None,
+) -> dict[str, Any]:
     """
     Run a small CMA-ES-style optimisation loop over heuristic weights.
 
@@ -450,12 +445,12 @@ def run_cmaes_heuristic_optimization(
     # magnitude so early generations explore but do not explode.
     sigma = 0.5
 
-    history: List[Dict[str, Any]] = []
-    best_overall: Optional[Dict[str, Any]] = None
+    history: list[dict[str, Any]] = []
+    best_overall: dict[str, Any] | None = None
     best_overall_fitness = -float("inf")
 
     for gen in range(generations):
-        candidates: List[Dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
 
         for _ in range(population_size):
             # Sample from an isotropic Gaussian around the current mean.
@@ -463,7 +458,7 @@ def run_cmaes_heuristic_optimization(
             arr = mean + sigma * perturbation
             # Force a plain Python list[float] for downstream type-checkers.
             tmp = cast(Sequence[float], arr.tolist())
-            vector: List[float] = [float(x) for x in tmp]
+            vector: list[float] = [float(x) for x in tmp]
 
             eval_seed = py_rng.randint(1, 2**31 - 1)
             fitness, raw = evaluate_heuristic_candidate(
@@ -503,7 +498,7 @@ def run_cmaes_heuristic_optimization(
         weights_arr /= weights_arr.sum()
 
         new_mean = np.zeros(dim, dtype=float)
-        for w, cand in zip(weights_arr, top):
+        for w, cand in zip(weights_arr, top, strict=False):
             new_mean += w * np.asarray(cand["vector"], dtype=float)
         mean = new_mean
 
@@ -522,7 +517,7 @@ def run_cmaes_heuristic_optimization(
         # still leaving some exploration in later generations.
         sigma *= 0.9
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "run_type": "heuristic_cmaes_square8",
         "tier_id": tier_id,
         "base_profile_id": base_profile_id,
@@ -540,7 +535,7 @@ def run_cmaes_heuristic_optimization(
 
 # EarlyStopping is now imported from training_enhancements for consolidation
 # The EnhancedEarlyStopping class provides backwards compatibility via __call__ method
-from app.training.training_enhancements import EarlyStopping, EnhancedEarlyStopping
+from app.training.training_enhancements import EarlyStopping
 
 # Checkpointing utilities - use unified module (2025-12)
 try:
@@ -554,14 +549,14 @@ except ImportError:
 # Legacy checkpointing functions (still available for backward compatibility)
 # Migrated to import from checkpoint_unified (December 2025)
 from app.training.checkpoint_unified import (
-    save_checkpoint,
-    load_checkpoint,
     AsyncCheckpointer,
     GracefulShutdownHandler,
+    load_checkpoint,
+    save_checkpoint,
 )
 
 # LR scheduler utilities extracted to dedicated module (2025-12)
-from app.training.schedulers import get_warmup_scheduler, create_lr_scheduler
+from app.training.schedulers import create_lr_scheduler
 
 # Dataset classes extracted to dedicated module (2025-12)
 # RingRiftDataset and WeightedRingRiftDataset are imported from app.training.datasets
@@ -571,20 +566,20 @@ from app.training.schedulers import get_warmup_scheduler, create_lr_scheduler
 
 def train_model(
     config: TrainConfig,
-    data_path: Union[str, List[str]],
+    data_path: Union[str, list[str]],
     save_path: str,
-    early_stopping_patience: Optional[int] = None,
-    elo_early_stopping_patience: Optional[int] = None,
-    elo_min_improvement: Optional[float] = None,
+    early_stopping_patience: int | None = None,
+    elo_early_stopping_patience: int | None = None,
+    elo_min_improvement: float | None = None,
     checkpoint_dir: str = 'checkpoints',
     checkpoint_interval: int = 5,
     _save_all_epochs: bool = True,  # Save every epoch for Elo-based selection
-    warmup_epochs: Optional[int] = None,
-    lr_scheduler: Optional[str] = None,
-    lr_min: Optional[float] = None,
+    warmup_epochs: int | None = None,
+    lr_scheduler: str | None = None,
+    lr_min: float | None = None,
     lr_t0: int = 10,
     lr_t_mult: int = 2,
-    resume_path: Optional[str] = None,
+    resume_path: str | None = None,
     augment_hex_symmetry: bool = False,
     distributed: bool = False,
     local_rank: int = -1,
@@ -592,14 +587,14 @@ def train_model(
     lr_scale_mode: str = 'linear',
     find_unused_parameters: bool = False,
     use_streaming: bool = False,
-    data_dir: Optional[str] = None,
+    data_dir: str | None = None,
     sampling_weights: str = 'uniform',
     multi_player: bool = False,
     num_players: int = 2,
     model_version: str = 'v2',
-    num_res_blocks: Optional[int] = None,
-    num_filters: Optional[int] = None,
-    heartbeat_file: Optional[str] = None,
+    num_res_blocks: int | None = None,
+    num_filters: int | None = None,
+    heartbeat_file: str | None = None,
     heartbeat_interval: float = 30.0,
     # 2024-12 Training Improvements (accept but log for now)
     spectral_norm: bool = False,
@@ -622,7 +617,7 @@ def train_model(
     use_hot_data_buffer: bool = False,
     hot_buffer_size: int = 10000,
     hot_buffer_mix_ratio: float = 0.3,
-    external_hot_buffer: Optional[Any] = None,  # Pre-populated HotDataBuffer from caller
+    external_hot_buffer: Any | None = None,  # Pre-populated HotDataBuffer from caller
     use_integrated_enhancements: bool = False,
     enable_curriculum: bool = False,
     enable_augmentation: bool = False,
@@ -957,12 +952,12 @@ def train_model(
         else:
             data_path_str = data_path
 
-        inferred_size: Optional[int] = None
-        policy_encoding: Optional[str] = None
-        dataset_history_length: Optional[int] = None
-        dataset_feature_version: Optional[int] = None
-        dataset_in_channels: Optional[int] = None
-        dataset_globals_dim: Optional[int] = None
+        inferred_size: int | None = None
+        policy_encoding: str | None = None
+        dataset_history_length: int | None = None
+        dataset_feature_version: int | None = None
+        dataset_in_channels: int | None = None
+        dataset_globals_dim: int | None = None
         if data_path_str:
             try:
                 if os.path.exists(data_path_str):
@@ -1158,11 +1153,11 @@ def train_model(
                 )
     else:
         # Hex or streaming: try to infer from data, fall back to board defaults.
-        inferred_hex_size: Optional[int] = None
-        dataset_history_length: Optional[int] = None
-        policy_encoding: Optional[str] = None
-        dataset_feature_version: Optional[int] = None
-        dataset_globals_dim: Optional[int] = None
+        inferred_hex_size: int | None = None
+        dataset_history_length: int | None = None
+        policy_encoding: str | None = None
+        dataset_feature_version: int | None = None
+        dataset_globals_dim: int | None = None
         if use_hex_model and not use_streaming:
             # Try to infer policy_size from hex data
             if isinstance(data_path, list):
@@ -1518,10 +1513,8 @@ def train_model(
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
         )
-    try:
-        setattr(model, "feature_version", config_feature_version)
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        model.feature_version = config_feature_version
     model.to(device)
 
     # Initialize enhancements manager with model reference
@@ -1555,9 +1548,13 @@ def train_model(
     # Load existing weights if available to continue training
     if os.path.exists(save_path):
         try:
-            model.load_state_dict(
-                torch.load(save_path, map_location=device, weights_only=True)
-            )
+            # Use weights_only=False for our own checkpoints which may contain metadata
+            checkpoint = torch.load(save_path, map_location=device, weights_only=False)
+            # Handle both raw state_dict and checkpoint dict formats
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                model.load_state_dict(checkpoint)
             if not distributed or is_main_process():
                 logger.info(f"Loaded existing model weights from {save_path}")
         except Exception as e:
@@ -1579,7 +1576,7 @@ def train_model(
     # For multi-player mode, we use multi_player_value_loss instead of MSELoss
     # which properly masks inactive player slots
     value_criterion = nn.MSELoss()  # Used for scalar mode; multi-player uses function
-    policy_criterion = nn.KLDivLoss(reduction='batchmean')
+    nn.KLDivLoss(reduction='batchmean')
     # HexNeuralNet_v2 supports multi-player outputs, so enable multi-player loss for all boards
     use_multi_player_loss = multi_player
     # Note: masked_policy_kl and build_rank_targets are imported from app.ai.neural_losses
@@ -1608,7 +1605,7 @@ def train_model(
     ) if epoch_scheduler is None else None
 
     # Early stopping (supports both loss-based and Elo-based criteria)
-    early_stopper: Optional[EarlyStopping] = None
+    early_stopper: EarlyStopping | None = None
     if early_stopping_patience > 0 or elo_early_stopping_patience > 0:
         early_stopper = EarlyStopping(
             patience=early_stopping_patience if early_stopping_patience > 0 else 999999,
@@ -1644,14 +1641,14 @@ def train_model(
 
     # Initialize async checkpointer for non-blocking checkpoint I/O (5-10% speedup)
     use_async_checkpoint = getattr(config, 'use_async_checkpoint', True)
-    async_checkpointer: Optional[AsyncCheckpointer] = None
+    async_checkpointer: AsyncCheckpointer | None = None
     if use_async_checkpoint:
         async_checkpointer = AsyncCheckpointer(max_pending=2)
         if not distributed or is_main_process():
             logger.info("Async checkpointing enabled (non-blocking I/O)")
 
     # Value calibration tracker for monitoring value head quality
-    calibration_tracker: Optional[CalibrationTracker] = None
+    calibration_tracker: CalibrationTracker | None = None
     if track_calibration:
         calibration_tracker = CalibrationTracker(window_size=5000)
         if not distributed or is_main_process():
@@ -1659,10 +1656,10 @@ def train_model(
 
     # Mixed precision scaler configured above (GradScaler only for float16)
 
-    train_streaming_loader: Optional[StreamingDataLoader] = None
-    val_streaming_loader: Optional[StreamingDataLoader] = None
-    train_loader: Optional[DataLoader] = None
-    val_loader: Optional[DataLoader] = None
+    train_streaming_loader: StreamingDataLoader | None = None
+    val_streaming_loader: StreamingDataLoader | None = None
+    train_loader: DataLoader | None = None
+    val_loader: DataLoader | None = None
     train_sampler = None
     val_sampler = None
     allow_empty_policies = bool(getattr(config, "allow_empty_policies", False))
@@ -1672,7 +1669,7 @@ def train_model(
     if not use_streaming:
         # Calculate total data size
         total_data_size = 0
-        paths_to_check: List[str] = []
+        paths_to_check: list[str] = []
 
         if data_dir is not None:
             npz_pattern = os.path.join(data_dir, "*.npz")
@@ -1699,7 +1696,7 @@ def train_model(
             use_streaming = True
 
     # Collect data paths for streaming mode
-    data_paths: List[str] = []
+    data_paths: list[str] = []
 
     # Quality-aware data discovery from synced sources
     if discover_synced_data and HAS_DATA_CATALOG:
@@ -1760,11 +1757,11 @@ def train_model(
         # Best-effort metadata check on the first file to validate history_length
         # and policy_encoding expectations.
         first_path = data_paths[0]
-        dataset_history_length: Optional[int] = None
-        policy_encoding: Optional[str] = None
-        dataset_feature_version: Optional[int] = None
-        dataset_in_channels: Optional[int] = None
-        dataset_globals_dim: Optional[int] = None
+        dataset_history_length: int | None = None
+        policy_encoding: str | None = None
+        dataset_feature_version: int | None = None
+        dataset_in_channels: int | None = None
+        dataset_globals_dim: int | None = None
         is_npz = bool(first_path and first_path.endswith(".npz"))
         try:
             if first_path and os.path.exists(first_path):
@@ -2201,7 +2198,7 @@ def train_model(
     dist_metrics = DistributedMetrics() if distributed else None
 
     # Initialize heartbeat monitor for fault tolerance
-    heartbeat_monitor: Optional[HeartbeatMonitor] = None
+    heartbeat_monitor: HeartbeatMonitor | None = None
     if heartbeat_file and is_main_process():
         heartbeat_path = Path(heartbeat_file)
         heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2217,7 +2214,7 @@ def train_model(
     avg_train_loss = float('inf')  # Track for return value
 
     # Track per-epoch losses for downstream analysis
-    epoch_losses: List[Dict[str, float]] = []
+    epoch_losses: list[dict[str, float]] = []
     epochs_completed = 0
 
     # Report batch size metric at start of training
@@ -2262,7 +2259,7 @@ def train_model(
     )
 
     # Setup graceful shutdown handler for emergency checkpoints (2025-12)
-    shutdown_handler: Optional[GracefulShutdownHandler] = None
+    shutdown_handler: GracefulShutdownHandler | None = None
     if enable_graceful_shutdown and (not distributed or is_main_process()):
         def _emergency_checkpoint_callback():
             """Save emergency checkpoint on signal."""
@@ -2354,7 +2351,7 @@ def train_model(
             # This prevents training from overwhelming the system when resources are constrained
             if epoch % 5 == 0:  # Check every 5 epochs to minimize overhead
                 try:
-                    from app.utils.resource_guard import can_proceed, wait_for_resources, get_resource_status
+                    from app.utils.resource_guard import can_proceed, get_resource_status, wait_for_resources
                     if not can_proceed(check_disk=True, check_mem=True, check_cpu_load=True):
                         status = get_resource_status()
                         logger.warning(
@@ -2385,7 +2382,6 @@ def train_model(
                 val_streaming_loader.set_epoch(epoch)
 
             # Track epoch failure state for circuit breaker (2025-12)
-            epoch_failed = False
 
             # Training
             model.train()
@@ -3123,10 +3119,6 @@ def train_model(
                                 f"({regression_event.reason})"
                             )
                             # Record in epoch record
-                            epoch_record_extra = {
-                                'regression_severity': regression_event.severity.value,
-                                'regression_consecutive': regression_event.consecutive_count,
-                            }
                     except Exception as e:
                         logger.debug(f"Regression detection error: {e}")
 
@@ -3294,35 +3286,34 @@ def train_model(
             if (
                 checkpoint_interval > 0
                 and (epoch + 1) % checkpoint_interval == 0
-            ):
-                if not distributed or is_main_process():
-                    checkpoint_path = os.path.join(
-                        checkpoint_dir,
-                        f"checkpoint_epoch_{epoch+1}.pth",
+            ) and (not distributed or is_main_process()):
+                checkpoint_path = os.path.join(
+                    checkpoint_dir,
+                    f"checkpoint_epoch_{epoch+1}.pth",
+                )
+                if async_checkpointer is not None:
+                    async_checkpointer.save_async(
+                        model_to_save,
+                        optimizer,
+                        epoch,
+                        avg_val_loss,
+                        checkpoint_path,
+                        scheduler=epoch_scheduler,
+                        early_stopping=early_stopper,
                     )
-                    if async_checkpointer is not None:
-                        async_checkpointer.save_async(
-                            model_to_save,
-                            optimizer,
-                            epoch,
-                            avg_val_loss,
-                            checkpoint_path,
-                            scheduler=epoch_scheduler,
-                            early_stopping=early_stopper,
-                        )
-                    else:
-                        save_checkpoint(
-                            model_to_save,
-                            optimizer,
-                            epoch,
-                            avg_val_loss,
-                            checkpoint_path,
-                            scheduler=epoch_scheduler,
-                            early_stopping=early_stopper,
-                        )
-                    # Track for circuit breaker rollback (2025-12)
-                    _last_good_checkpoint_path = checkpoint_path
-                    _last_good_epoch = epoch
+                else:
+                    save_checkpoint(
+                        model_to_save,
+                        optimizer,
+                        epoch,
+                        avg_val_loss,
+                        checkpoint_path,
+                        scheduler=epoch_scheduler,
+                        early_stopping=early_stopper,
+                    )
+                # Track for circuit breaker rollback (2025-12)
+                _last_good_checkpoint_path = checkpoint_path
+                _last_good_epoch = epoch
 
             # Save best model (only on main process)
             if avg_val_loss < best_val_loss:
@@ -3465,9 +3456,9 @@ def train_model(
 def train_from_file(
     data_path: str,
     output_path: str,
-    config: Optional[TrainConfig] = None,
-    initial_model_path: Optional[str] = None,
-) -> Dict[str, float]:
+    config: TrainConfig | None = None,
+    initial_model_path: str | None = None,
+) -> dict[str, float]:
     """
     Simplified training function for curriculum training.
 
@@ -3535,7 +3526,7 @@ def train_from_file(
         }
 
 
-def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments.
 
     Args:

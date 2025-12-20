@@ -7,7 +7,7 @@ defined in RULES_CANONICAL_SPEC.md §5.4. If this code disagrees with
 the canonical rules or the TS implementation, this code must be updated.
 """
 
-from app.models import GameState, Move, GamePhase, MoveType
+from app.models import GamePhase, GameState, Move, MoveType
 from app.rules.interfaces import Validator
 from app.rules.recovery import validate_recovery_slide
 

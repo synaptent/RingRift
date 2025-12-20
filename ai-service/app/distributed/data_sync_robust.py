@@ -46,7 +46,7 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Emit deprecation warning on module import
 warnings.warn(
@@ -65,8 +65,8 @@ try:
     from app.distributed.unified_wal import (
         UnifiedWAL,
         WALEntry,
-        WALEntryType,
         WALEntryStatus,
+        WALEntryType,
         WALStats,
         WriteAheadLog as UnifiedWriteAheadLog,  # Compatibility alias
         get_unified_wal,
@@ -92,16 +92,16 @@ except ImportError:
 
 try:
     from app.distributed.host_classification import (
-        StorageType,
-        HostTier,
         HostSyncProfile,
+        HostTier,
+        StorageType,
         classify_host_storage,
         classify_host_tier,
+        create_sync_profile,
+        create_sync_profiles,
         get_ephemeral_hosts,
         get_hosts_by_storage_type,
         get_hosts_by_tier,
-        create_sync_profile,
-        create_sync_profiles,
     )
     HAS_HOST_CLASSIFICATION = True
 except ImportError:
@@ -130,15 +130,15 @@ except ImportError:
         games_at_risk: int = 0
 
         @classmethod
-        def for_ephemeral_host(cls, host_name: str) -> "HostSyncProfile":
+        def for_ephemeral_host(cls, host_name: str) -> HostSyncProfile:
             return cls(host_name=host_name, storage_type=StorageType.EPHEMERAL,
                       poll_interval_seconds=15, priority=10, is_ephemeral=True, aggressive_sync=True)
 
         @classmethod
-        def for_persistent_host(cls, host_name: str) -> "HostSyncProfile":
+        def for_persistent_host(cls, host_name: str) -> HostSyncProfile:
             return cls(host_name=host_name, storage_type=StorageType.PERSISTENT)
 
-    def classify_host_storage(host_config: Dict[str, Any]) -> StorageType:
+    def classify_host_storage(host_config: dict[str, Any]) -> StorageType:
         storage_type = host_config.get("storage_type", "").lower()
         if storage_type in ("ram", "ephemeral"):
             return StorageType.EPHEMERAL
@@ -147,7 +147,7 @@ except ImportError:
             return StorageType.EPHEMERAL
         return StorageType.PERSISTENT
 
-    def get_ephemeral_hosts(hosts_config: Dict[str, Any]) -> List[str]:
+    def get_ephemeral_hosts(hosts_config: dict[str, Any]) -> list[str]:
         ephemeral = []
         for section in ("vast_hosts", "standard_hosts"):
             for name, config in hosts_config.get(section, {}).items():
@@ -188,7 +188,7 @@ else:
         source_db: str
         game_data_hash: str
         created_at: float
-        synced_at: Optional[float] = None
+        synced_at: float | None = None
         sync_confirmed: bool = False
 
     class WriteAheadLog:
@@ -232,7 +232,7 @@ else:
             conn.close()
             return entry_id
 
-        def get_stats(self) -> Dict[str, Any]:
+        def get_stats(self) -> dict[str, Any]:
             return {"total": 0, "pending": 0, "unconfirmed": 0, "confirmed": 0}
 
         def cleanup_confirmed(self, older_than_seconds: int = 3600) -> int:
@@ -254,7 +254,7 @@ class EloReplicator:
     def __init__(
         self,
         local_elo_path: Path,
-        replica_hosts: List[Dict[str, Any]],
+        replica_hosts: list[dict[str, Any]],
         min_replicas: int = 2,
         replication_interval_seconds: int = 60,  # More aggressive than manifest (was 300)
         ssh_timeout: int = 30,
@@ -290,12 +290,9 @@ class EloReplicator:
 
         # Check if content changed
         current_checksum = self._compute_checksum(self.local_path)
-        if current_checksum == self._last_checksum:
-            return False
+        return current_checksum != self._last_checksum
 
-        return True
-
-    async def _replicate_to_host(self, host: Dict[str, Any]) -> bool:
+    async def _replicate_to_host(self, host: dict[str, Any]) -> bool:
         """Replicate Elo DB to a single host. Returns True on success."""
         ssh_host = host.get("ssh_host", "")
         ssh_user = host.get("ssh_user", "ubuntu")
@@ -463,7 +460,7 @@ class RobustDataSync:
 
     def __init__(
         self,
-        hosts: List[Dict[str, Any]],
+        hosts: list[dict[str, Any]],
         config: SyncConfig,
         data_dir: Path,
     ):
@@ -472,9 +469,9 @@ class RobustDataSync:
         self.data_dir = data_dir
 
         # Classify hosts by storage type
-        self.ephemeral_hosts: List[str] = []
-        self.persistent_hosts: List[str] = []
-        self.host_profiles: Dict[str, HostSyncProfile] = {}
+        self.ephemeral_hosts: list[str] = []
+        self.persistent_hosts: list[str] = []
+        self.host_profiles: dict[str, HostSyncProfile] = {}
 
         for host in hosts:
             name = host.get("name", "")
@@ -488,12 +485,12 @@ class RobustDataSync:
                 self.host_profiles[name] = HostSyncProfile.for_persistent_host(name)
 
         # Initialize WAL
-        self.wal: Optional[WriteAheadLog] = None
+        self.wal: WriteAheadLog | None = None
         if config.wal_enabled:
             self.wal = WriteAheadLog(data_dir / "sync_wal.db")
 
         # Initialize Elo replicator
-        self.elo_replicator: Optional[EloReplicator] = None
+        self.elo_replicator: EloReplicator | None = None
         if config.elo_replication_enabled:
             # Use persistent hosts as Elo replicas
             replica_hosts = [h for h in hosts if h.get("name") in self.persistent_hosts]
@@ -510,7 +507,7 @@ class RobustDataSync:
         self._last_ephemeral_sync = 0.0
         self._last_persistent_sync = 0.0
 
-    def get_hosts_due_for_sync(self) -> Tuple[List[str], List[str]]:
+    def get_hosts_due_for_sync(self) -> tuple[list[str], list[str]]:
         """Get lists of (ephemeral_hosts, persistent_hosts) due for sync."""
         now = time.time()
         ephemeral_due = []
@@ -528,7 +525,7 @@ class RobustDataSync:
 
         return ephemeral_due, persistent_due
 
-    async def sync_host(self, host_name: str, host_config: Dict[str, Any]) -> int:
+    async def sync_host(self, host_name: str, host_config: dict[str, Any]) -> int:
         """Sync data from a single host. Returns games synced."""
         async with self._sync_semaphore:
             profile = self.host_profiles.get(host_name)
@@ -540,7 +537,7 @@ class RobustDataSync:
             profile.last_sync_time = time.time()
             return 0
 
-    async def run_sync_cycle(self) -> Dict[str, int]:
+    async def run_sync_cycle(self) -> dict[str, int]:
         """Run one sync cycle. Returns {host: games_synced}."""
         results = {}
         ephemeral_due, persistent_due = self.get_hosts_due_for_sync()
@@ -554,7 +551,7 @@ class RobustDataSync:
                 tasks.append(self.sync_host(name, host_config))
 
             sync_results = await asyncio.gather(*tasks, return_exceptions=True)
-            for name, result in zip(ephemeral_due, sync_results):
+            for name, result in zip(ephemeral_due, sync_results, strict=False):
                 if isinstance(result, int):
                     results[name] = result
 
@@ -566,7 +563,7 @@ class RobustDataSync:
                 tasks.append(self.sync_host(name, host_config))
 
             sync_results = await asyncio.gather(*tasks, return_exceptions=True)
-            for name, result in zip(persistent_due, sync_results):
+            for name, result in zip(persistent_due, sync_results, strict=False):
                 if isinstance(result, int):
                     results[name] = result
 
@@ -583,7 +580,7 @@ class RobustDataSync:
 
         return results
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get sync status summary."""
         wal_stats = self.wal.get_stats() if self.wal else {}
 
@@ -617,9 +614,9 @@ def create_wal(data_dir: Path) -> WriteAheadLog:
 
 def create_elo_replicator(
     data_dir: Path,
-    hosts_config: Dict[str, Any],
+    hosts_config: dict[str, Any],
     min_replicas: int = 2,
-) -> Optional[EloReplicator]:
+) -> EloReplicator | None:
     """Create Elo replicator from hosts config."""
     # Select persistent hosts for replication
     replica_hosts = []

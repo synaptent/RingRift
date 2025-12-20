@@ -38,12 +38,14 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import contextlib
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 from weakref import WeakSet
 
 logger = logging.getLogger(__name__)
@@ -89,7 +91,7 @@ class RegisteredBridge:
     name: str
     bridge: Any
     registered_at: float
-    shutdown_callback: Optional[Callable[[], None]] = None
+    shutdown_callback: Callable[[], None] | None = None
 
 
 class AsyncBridgeManager:
@@ -116,15 +118,15 @@ class AsyncBridgeManager:
         await manager.shutdown()
     """
 
-    def __init__(self, config: Optional[BridgeConfig] = None):
+    def __init__(self, config: BridgeConfig | None = None):
         """Initialize AsyncBridgeManager.
 
         Args:
             config: Configuration (default: BridgeConfig())
         """
         self.config = config or BridgeConfig()
-        self._executor: Optional[ThreadPoolExecutor] = None
-        self._bridges: Dict[str, RegisteredBridge] = {}
+        self._executor: ThreadPoolExecutor | None = None
+        self._bridges: dict[str, RegisteredBridge] = {}
         self._stats = BridgeStats()
         self._initialized = False
         self._shutting_down = False
@@ -162,10 +164,8 @@ class AsyncBridgeManager:
     def _atexit_cleanup(self) -> None:
         """Cleanup on interpreter exit."""
         if self._executor and not self._shutting_down:
-            try:
+            with contextlib.suppress(Exception):
                 self._executor.shutdown(wait=False)
-            except Exception:
-                pass
 
     def get_executor(self) -> ThreadPoolExecutor:
         """Get the shared executor pool.
@@ -252,7 +252,7 @@ class AsyncBridgeManager:
         self,
         name: str,
         bridge: Any,
-        shutdown_callback: Optional[Callable[[], None]] = None,
+        shutdown_callback: Callable[[], None] | None = None,
     ) -> None:
         """Register a bridge for lifecycle management.
 
@@ -283,7 +283,7 @@ class AsyncBridgeManager:
                 del self._bridges[name]
                 self._stats.bridges_registered = len(self._bridges)
 
-    def get_bridge(self, name: str) -> Optional[Any]:
+    def get_bridge(self, name: str) -> Any | None:
         """Get a registered bridge by name.
 
         Args:
@@ -347,7 +347,7 @@ class AsyncBridgeManager:
         while self._stats.active_tasks > 0:
             await asyncio.sleep(0.1)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get bridge manager statistics.
 
         Returns:
@@ -369,7 +369,7 @@ class AsyncBridgeManager:
                 "bridge_names": list(self._bridges.keys()),
             }
 
-    def get_health(self) -> Dict[str, Any]:
+    def get_health(self) -> dict[str, Any]:
         """Get health status.
 
         Returns:
@@ -409,11 +409,11 @@ class AsyncBridgeManager:
 # Singleton Management
 # =============================================================================
 
-_manager: Optional[AsyncBridgeManager] = None
+_manager: AsyncBridgeManager | None = None
 _manager_lock = threading.Lock()
 
 
-def get_bridge_manager(config: Optional[BridgeConfig] = None) -> AsyncBridgeManager:
+def get_bridge_manager(config: BridgeConfig | None = None) -> AsyncBridgeManager:
     """Get the global AsyncBridgeManager singleton.
 
     Args:

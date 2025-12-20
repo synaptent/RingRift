@@ -27,8 +27,8 @@ The 8 D4 transformations are indexed as:
 - 7: Anti-diagonal flip
 """
 
+
 import numpy as np
-from typing import List, Optional, Tuple
 
 # Square board movement directions (8 directions - Moore neighborhood)
 SQUARE_DIRS = [
@@ -86,13 +86,13 @@ class SquareSymmetryTransform:
         self.policy_size = self.special_base + 100  # Room for special actions
 
     @staticmethod
-    def get_all_transforms() -> List[int]:
+    def get_all_transforms() -> list[int]:
         """Returns list of all 8 transformation IDs [0, 1, ..., 7]."""
         return list(range(8))
 
     def _transform_coords(
         self, x: int, y: int, transform_id: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Apply transformation to grid coordinates.
 
@@ -131,7 +131,7 @@ class SquareSymmetryTransform:
 
     def _inverse_transform_coords(
         self, x: int, y: int, transform_id: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Apply inverse transformation to grid coordinates.
 
@@ -209,7 +209,7 @@ class SquareSymmetryTransform:
 
     def _transform_direction(
         self, dx: int, dy: int, transform_id: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """Transform a direction vector under D4 transformation."""
         # Direction transforms same as position but without translation
         if transform_id == 0:
@@ -375,7 +375,7 @@ class SquareSymmetryTransform:
         policy_indices: np.ndarray,
         policy_values: np.ndarray,
         transform_id: int,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Transform a sparse policy representation.
 
@@ -416,9 +416,9 @@ def augment_square_sample(
     globals_vec: np.ndarray,
     policy_indices: np.ndarray,
     policy_values: np.ndarray,
-    transform: Optional[SquareSymmetryTransform] = None,
+    transform: SquareSymmetryTransform | None = None,
     board_size: int = 8,
-) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """
     Apply all 8 D4 transformations to a single training sample.
 

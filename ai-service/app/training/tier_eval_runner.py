@@ -12,17 +12,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from app.models import AIConfig, AIType, BoardType, GameStatus
-from app.training.env import TrainingEnvConfig, make_env
-from app.training.tier_eval_config import (
-    TierEvaluationConfig,
-    TierOpponentConfig,
-)
-from app.training.significance import wilson_score_interval
 from app.config.ladder_config import (
     LadderTierConfig,
     get_ladder_tier_config,
@@ -33,6 +26,13 @@ from app.main import (
     _create_ai_instance,
     _get_difficulty_profile,
 )
+from app.models import AIConfig, AIType, BoardType, GameStatus
+from app.training.env import TrainingEnvConfig, make_env
+from app.training.significance import wilson_score_interval
+from app.training.tier_eval_config import (
+    TierEvaluationConfig,
+    TierOpponentConfig,
+)
 
 
 @dataclass
@@ -41,13 +41,13 @@ class MatchupStats:
 
     opponent_id: str
     opponent_difficulty: int
-    opponent_ai_type: Optional[str]
+    opponent_ai_type: str | None
     games: int = 0
     wins: int = 0
     losses: int = 0
     draws: int = 0
     total_moves: int = 0
-    victory_reasons: Dict[str, int] = field(default_factory=dict)
+    victory_reasons: dict[str, int] = field(default_factory=dict)
 
     @property
     def win_rate(self) -> float:
@@ -61,7 +61,7 @@ class MatchupStats:
             return 0.0
         return self.total_moves / float(self.games)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "opponent_id": self.opponent_id,
             "opponent_difficulty": self.opponent_difficulty,
@@ -86,13 +86,13 @@ class TierEvaluationResult:
     candidate_id: str
     candidate_difficulty: int
     total_games: int
-    matchups: List[MatchupStats] = field(default_factory=list)
-    metrics: Dict[str, Optional[float]] = field(default_factory=dict)
-    criteria: Dict[str, Optional[bool]] = field(default_factory=dict)
+    matchups: list[MatchupStats] = field(default_factory=list)
+    metrics: dict[str, float | None] = field(default_factory=dict)
+    criteria: dict[str, bool | None] = field(default_factory=dict)
     overall_pass: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
-        overall_victory_reasons: Dict[str, int] = {}
+    def to_dict(self) -> dict[str, Any]:
+        overall_victory_reasons: dict[str, int] = {}
         total_moves = 0
         for matchup in self.matchups:
             for reason, count in matchup.victory_reasons.items():
@@ -136,10 +136,10 @@ def _create_ladder_ai_instance(
     tier_config: TierEvaluationConfig,
     difficulty: int,
     player_number: int,
-    time_budget_ms: Optional[int],
-    ai_type_override: Optional[AIType] = None,
-    candidate_override_id: Optional[str] = None,
-    rng_seed: Optional[int] = None,
+    time_budget_ms: int | None,
+    ai_type_override: AIType | None = None,
+    candidate_override_id: str | None = None,
+    rng_seed: int | None = None,
 ):
     """Create an AI instance using the canonical difficulty ladder.
 
@@ -152,7 +152,7 @@ def _create_ladder_ai_instance(
     """
     profile: DifficultyProfile = _get_difficulty_profile(difficulty)
 
-    ladder_config: Optional[LadderTierConfig] = None
+    ladder_config: LadderTierConfig | None = None
     try:
         ladder_config = get_ladder_tier_config(
             difficulty,
@@ -188,13 +188,13 @@ def _create_ladder_ai_instance(
         else bool(profile.get("use_neural_net", False))
     )
 
-    heuristic_profile_id: Optional[str] = None
+    heuristic_profile_id: str | None = None
     if ladder_config is not None and ladder_config.heuristic_profile_id:
         heuristic_profile_id = ladder_config.heuristic_profile_id
     elif ai_type == AIType.HEURISTIC:
         heuristic_profile_id = profile.get("profile_id")
 
-    nn_model_id: Optional[str] = None
+    nn_model_id: str | None = None
     if use_neural_net and ladder_config is not None and ladder_config.model_id:
         nn_model_id = ladder_config.model_id
 
@@ -221,11 +221,11 @@ def _create_ladder_ai_instance(
 def _play_matchup(
     tier_config: TierEvaluationConfig,
     opponent: TierOpponentConfig,
-    base_seed: Optional[int],
-    candidate_override_id: Optional[str] = None,
-    num_games_override: Optional[int] = None,
-    time_budget_ms_override: Optional[int] = None,
-    max_moves_override: Optional[int] = None,
+    base_seed: int | None,
+    candidate_override_id: str | None = None,
+    num_games_override: int | None = None,
+    time_budget_ms_override: int | None = None,
+    max_moves_override: int | None = None,
 ) -> MatchupStats:
     """Run games between the candidate tier and a single opponent.
 
@@ -276,11 +276,11 @@ def _play_matchup(
             )
         candidate_seat = (game_index % num_players) + 1
 
-        game_seed: Optional[int] = None
+        game_seed: int | None = None
         if base_seed is not None:
             game_seed = (base_seed * 1_000_003 + game_index) & 0x7FFFFFFF
 
-        def _derive_player_seed(base: Optional[int], player: int) -> Optional[int]:
+        def _derive_player_seed(base: int | None, player: int) -> int | None:
             if base is None:
                 return None
             return (base * 1_000_003 + player * 97) & 0x7FFFFFFF
@@ -299,7 +299,7 @@ def _play_matchup(
             rng_seed=_derive_player_seed(game_seed, candidate_seat),
         )
 
-        ai_by_player: Dict[int, Any] = {candidate_seat: candidate_ai}
+        ai_by_player: dict[int, Any] = {candidate_seat: candidate_ai}
         for player_number in range(1, num_players + 1):
             if player_number == candidate_seat:
                 continue
@@ -319,7 +319,7 @@ def _play_matchup(
 
         game_state = env.reset(seed=game_seed)
         done = False
-        last_info: Dict[str, Any] = {}
+        last_info: dict[str, Any] = {}
         moves_played = 0
 
         while not done:
@@ -357,7 +357,7 @@ def _play_matchup(
                     stats.total_moves += moves_played
                     break
 
-            game_state, reward, done, info = env.step(move)
+            game_state, _reward, done, info = env.step(move)
             last_info = info
             moves_played = info.get("move_count", moves_played + 1)
 
@@ -421,11 +421,11 @@ def run_tier_evaluation(
     tier_config: TierEvaluationConfig,
     candidate_id: str,
     *,
-    candidate_override_id: Optional[str] = None,
-    seed: Optional[int] = None,
-    num_games_override: Optional[int] = None,
-    time_budget_ms_override: Optional[int] = None,
-    max_moves_override: Optional[int] = None,
+    candidate_override_id: str | None = None,
+    seed: int | None = None,
+    num_games_override: int | None = None,
+    time_budget_ms_override: int | None = None,
+    max_moves_override: int | None = None,
 ) -> TierEvaluationResult:
     """Evaluate a candidate configuration for a given difficulty tier.
 
@@ -439,7 +439,7 @@ def run_tier_evaluation(
         num_games_override: When provided, overrides tier_config.num_games
             for all opponents.
     """
-    matchups: List[MatchupStats] = []
+    matchups: list[MatchupStats] = []
     total_games = 0
 
     baseline_wins = 0
@@ -486,10 +486,10 @@ def run_tier_evaluation(
             prev_wins += stats.wins
             prev_games += stats.games
 
-    metrics: Dict[str, Optional[float]] = {}
-    criteria: Dict[str, Optional[bool]] = {}
+    metrics: dict[str, float | None] = {}
+    criteria: dict[str, bool | None] = {}
 
-    win_rate_vs_baseline: Optional[float] = None
+    win_rate_vs_baseline: float | None = None
     if baseline_games > 0:
         win_rate_vs_baseline = baseline_wins / float(baseline_games)
     metrics["win_rate_vs_baseline"] = win_rate_vs_baseline
@@ -497,8 +497,8 @@ def run_tier_evaluation(
     # Wilson confidence interval (decisive games only).
     confidence = getattr(tier_config, "promotion_confidence", 0.95)
     decisive_baseline_games = baseline_wins + baseline_losses
-    ci_low: Optional[float] = None
-    ci_high: Optional[float] = None
+    ci_low: float | None = None
+    ci_high: float | None = None
     if confidence is not None and confidence > 0 and decisive_baseline_games > 0:
         ci_low, ci_high = wilson_score_interval(
             baseline_wins,
@@ -523,7 +523,7 @@ def run_tier_evaluation(
     else:
         criteria["min_win_rate_vs_baseline"] = None
 
-    win_rate_vs_prev: Optional[float] = None
+    win_rate_vs_prev: float | None = None
     if prev_games > 0:
         win_rate_vs_prev = prev_wins / float(prev_games)
     metrics["win_rate_vs_previous_tier"] = win_rate_vs_prev

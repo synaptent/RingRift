@@ -29,13 +29,11 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-
-from app.utils.yaml_utils import safe_load_yaml
-
-from app.utils.paths import AI_SERVICE_ROOT
+from typing import Any
 
 from app.utils.env_config import env
+from app.utils.paths import AI_SERVICE_ROOT
+from app.utils.yaml_utils import safe_load_yaml
 
 logger = logging.getLogger(__name__)
 DISTRIBUTED_HOSTS_PATH = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
@@ -106,7 +104,7 @@ class DiscoveredNode:
     p2p_healthy: bool = False
     retired: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "host": self.host,
@@ -125,11 +123,11 @@ class UnifiedInventory:
     """Discovers and tracks nodes from all sources."""
 
     def __init__(self):
-        self._nodes: Dict[str, DiscoveredNode] = {}
+        self._nodes: dict[str, DiscoveredNode] = {}
         self._lock = asyncio.Lock()
         self._last_discovery: float = 0.0
-        self._distributed_hosts: Dict[str, Any] = {}
-        self._cluster_nodes: Dict[str, str] = {}
+        self._distributed_hosts: dict[str, Any] = {}
+        self._cluster_nodes: dict[str, str] = {}
         self._load_configs()
 
     def _load_configs(self) -> None:
@@ -153,7 +151,7 @@ class UnifiedInventory:
             except Exception as e:
                 logger.warning(f"Failed to load cluster_nodes.env: {e}")
 
-    async def discover_all(self) -> Dict[str, DiscoveredNode]:
+    async def discover_all(self) -> dict[str, DiscoveredNode]:
         """Run all discovery methods in parallel and merge results."""
         self._last_discovery = time.time()
 
@@ -167,7 +165,7 @@ class UnifiedInventory:
         )
 
         # Collect all discovered nodes
-        all_nodes: List[DiscoveredNode] = []
+        all_nodes: list[DiscoveredNode] = []
         source_names = ["vast", "tailscale", "lambda", "hetzner"]
 
         for i, result in enumerate(results):
@@ -185,9 +183,9 @@ class UnifiedInventory:
         logger.info(f"Unified inventory: {len(self._nodes)} total nodes")
         return self._nodes.copy()
 
-    def _merge_nodes(self, nodes: List[DiscoveredNode]) -> Dict[str, DiscoveredNode]:
+    def _merge_nodes(self, nodes: list[DiscoveredNode]) -> dict[str, DiscoveredNode]:
         """Merge nodes from multiple sources, preferring most detailed info."""
-        merged: Dict[str, DiscoveredNode] = {}
+        merged: dict[str, DiscoveredNode] = {}
 
         for node in nodes:
             key = node.node_id.lower()
@@ -240,9 +238,9 @@ class UnifiedInventory:
     # Discovery Methods
     # =========================================================================
 
-    async def _discover_vast(self) -> List[DiscoveredNode]:
+    async def _discover_vast(self) -> list[DiscoveredNode]:
         """Discover nodes from Vast.ai CLI."""
-        nodes: List[DiscoveredNode] = []
+        nodes: list[DiscoveredNode] = []
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -292,9 +290,9 @@ class UnifiedInventory:
 
         return nodes
 
-    async def _discover_tailscale(self) -> List[DiscoveredNode]:
+    async def _discover_tailscale(self) -> list[DiscoveredNode]:
         """Discover nodes from Tailscale CLI."""
-        nodes: List[DiscoveredNode] = []
+        nodes: list[DiscoveredNode] = []
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -311,7 +309,7 @@ class UnifiedInventory:
             status = json.loads(stdout.decode())
             peers = status.get("Peer", {})
 
-            for peer_id, peer_info in peers.items():
+            for _peer_id, peer_info in peers.items():
                 # Get Tailscale IP (prefer the 100.x.x.x address)
                 tailscale_ips = peer_info.get("TailscaleIPs", [])
                 ts_ip = ""
@@ -368,9 +366,9 @@ class UnifiedInventory:
 
         return nodes
 
-    async def _discover_lambda(self) -> List[DiscoveredNode]:
+    async def _discover_lambda(self) -> list[DiscoveredNode]:
         """Discover Lambda nodes by probing known IPs from config."""
-        nodes: List[DiscoveredNode] = []
+        nodes: list[DiscoveredNode] = []
 
         # Get Lambda nodes from distributed_hosts.yaml
         lambda_hosts = {
@@ -393,7 +391,7 @@ class UnifiedInventory:
 
         return nodes
 
-    async def _probe_p2p_health(self, node_id: str, host: str, info: Dict[str, Any]) -> Optional[DiscoveredNode]:
+    async def _probe_p2p_health(self, node_id: str, host: str, info: dict[str, Any]) -> DiscoveredNode | None:
         """Probe a node's P2P health endpoint."""
         try:
             import urllib.request
@@ -427,9 +425,9 @@ class UnifiedInventory:
             logger.debug(f"Failed to probe {node_id} at {host}: {e}")
             return None
 
-    async def _discover_hetzner(self) -> List[DiscoveredNode]:
+    async def _discover_hetzner(self) -> list[DiscoveredNode]:
         """Discover nodes from Hetzner Cloud CLI."""
-        nodes: List[DiscoveredNode] = []
+        nodes: list[DiscoveredNode] = []
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -483,9 +481,9 @@ class UnifiedInventory:
     # Helper Methods
     # =========================================================================
 
-    def _find_host_by_tailscale_ip(self, ts_ip: str) -> Optional[Dict[str, Any]]:
+    def _find_host_by_tailscale_ip(self, ts_ip: str) -> dict[str, Any] | None:
         """Find host info from distributed_hosts.yaml by Tailscale IP."""
-        for name, info in self._distributed_hosts.items():
+        for _name, info in self._distributed_hosts.items():
             if info.get("tailscale_ip") == ts_ip:
                 return info
             if info.get("ssh_host") == ts_ip:
@@ -521,15 +519,15 @@ class UnifiedInventory:
     # Query Methods
     # =========================================================================
 
-    def get_all_nodes(self) -> Dict[str, DiscoveredNode]:
+    def get_all_nodes(self) -> dict[str, DiscoveredNode]:
         """Get all discovered nodes."""
         return self._nodes.copy()
 
-    def get_node(self, node_id: str) -> Optional[DiscoveredNode]:
+    def get_node(self, node_id: str) -> DiscoveredNode | None:
         """Get a specific node by ID."""
         return self._nodes.get(node_id.lower())
 
-    def get_idle_nodes(self, gpu_threshold: float = IDLE_GPU_THRESHOLD) -> List[DiscoveredNode]:
+    def get_idle_nodes(self, gpu_threshold: float = IDLE_GPU_THRESHOLD) -> list[DiscoveredNode]:
         """Get nodes with low GPU utilization and no running jobs."""
         idle = []
         for node in self._nodes.values():
@@ -542,15 +540,15 @@ class UnifiedInventory:
                     idle.append(node)
         return idle
 
-    def get_nodes_by_source(self, source: str) -> List[DiscoveredNode]:
+    def get_nodes_by_source(self, source: str) -> list[DiscoveredNode]:
         """Get nodes discovered from a specific source."""
         return [n for n in self._nodes.values() if n.source == source]
 
-    def get_healthy_nodes(self) -> List[DiscoveredNode]:
+    def get_healthy_nodes(self) -> list[DiscoveredNode]:
         """Get nodes that are healthy and can accept work."""
         return [n for n in self._nodes.values() if n.p2p_healthy and not n.retired]
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get summary of inventory status."""
         by_source = {}
         idle_count = 0
@@ -574,7 +572,7 @@ class UnifiedInventory:
 
 
 # Singleton instance
-_inventory: Optional[UnifiedInventory] = None
+_inventory: UnifiedInventory | None = None
 
 
 def get_inventory() -> UnifiedInventory:

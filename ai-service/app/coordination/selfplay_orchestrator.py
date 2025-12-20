@@ -46,9 +46,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +115,8 @@ class SelfplayStats:
     total_duration_seconds: float = 0.0
     average_games_per_task: float = 0.0
     average_games_per_second: float = 0.0
-    by_node: Dict[str, int] = field(default_factory=dict)
-    by_type: Dict[str, int] = field(default_factory=dict)
+    by_node: dict[str, int] = field(default_factory=dict)
+    by_type: dict[str, int] = field(default_factory=dict)
     last_activity_time: float = 0.0
 
 
@@ -141,10 +142,10 @@ class SelfplayOrchestrator:
         self.stats_window_seconds = stats_window_seconds
 
         # Active tasks by task_id
-        self._active_tasks: Dict[str, SelfplayTaskInfo] = {}
+        self._active_tasks: dict[str, SelfplayTaskInfo] = {}
 
         # Completed task history
-        self._completed_history: List[SelfplayTaskInfo] = []
+        self._completed_history: list[SelfplayTaskInfo] = []
 
         # Statistics
         self._total_games_generated: int = 0
@@ -154,12 +155,12 @@ class SelfplayOrchestrator:
         self._subscribed: bool = False
 
         # Callbacks for completion events
-        self._completion_callbacks: List[Callable[[SelfplayTaskInfo], None]] = []
+        self._completion_callbacks: list[Callable[[SelfplayTaskInfo], None]] = []
 
         # Backpressure tracking (December 2025)
-        self._backpressure_nodes: Dict[str, str] = {}  # node_id -> backpressure level
+        self._backpressure_nodes: dict[str, str] = {}  # node_id -> backpressure level
         self._paused_for_regression: bool = False
-        self._resource_constrained_nodes: Dict[str, float] = {}  # node_id -> timestamp
+        self._resource_constrained_nodes: dict[str, float] = {}  # node_id -> timestamp
 
     def subscribe_to_events(self) -> bool:
         """Subscribe to selfplay-related events from the event bus.
@@ -398,7 +399,7 @@ class SelfplayOrchestrator:
                 f"reason: {payload.get('reason', 'unknown')}"
             )
 
-    def _record_completion(self, task: SelfplayTaskInfo, payload: Dict) -> None:
+    def _record_completion(self, task: SelfplayTaskInfo, payload: dict) -> None:
         """Record task completion in history and stats."""
         # Update statistics
         if task.success:
@@ -459,12 +460,13 @@ class SelfplayOrchestrator:
 
         # Legacy fallback
         try:
+            from datetime import datetime
+
             from app.coordination.stage_events import (
                 StageCompletionResult,
                 StageEvent,
                 get_event_bus,
             )
-            from datetime import datetime
 
             if task.selfplay_type == SelfplayType.GPU_ACCELERATED:
                 event_type = StageEvent.GPU_SELFPLAY_COMPLETE
@@ -607,7 +609,7 @@ class SelfplayOrchestrator:
         """
         return node_id in self._backpressure_nodes
 
-    def get_node_backpressure_level(self, node_id: str) -> Optional[str]:
+    def get_node_backpressure_level(self, node_id: str) -> str | None:
         """Get backpressure level for a node.
 
         Args:
@@ -628,7 +630,7 @@ class SelfplayOrchestrator:
             self._paused_for_regression = False
             logger.info("[SelfplayOrchestrator] Regression pause cleared")
 
-    def get_constrained_nodes(self) -> List[str]:
+    def get_constrained_nodes(self) -> list[str]:
         """Get list of nodes with recent resource constraints."""
         # Return nodes with constraints in the last 5 minutes
         cutoff = time.time() - 300.0
@@ -675,7 +677,7 @@ class SelfplayOrchestrator:
         success: bool = True,
         games_generated: int = 0,
         error: str = "",
-    ) -> Optional[SelfplayTaskInfo]:
+    ) -> SelfplayTaskInfo | None:
         """Manually mark a selfplay task as complete.
 
         Use this when selfplay completes outside the task coordinator.
@@ -708,27 +710,27 @@ class SelfplayOrchestrator:
         """
         self._completion_callbacks.append(callback)
 
-    def get_active_tasks(self) -> List[SelfplayTaskInfo]:
+    def get_active_tasks(self) -> list[SelfplayTaskInfo]:
         """Get all active selfplay tasks."""
         return list(self._active_tasks.values())
 
-    def get_task(self, task_id: str) -> Optional[SelfplayTaskInfo]:
+    def get_task(self, task_id: str) -> SelfplayTaskInfo | None:
         """Get a specific task by ID."""
         return self._active_tasks.get(task_id)
 
-    def get_history(self, limit: int = 50) -> List[SelfplayTaskInfo]:
+    def get_history(self, limit: int = 50) -> list[SelfplayTaskInfo]:
         """Get recent task completion history."""
         return self._completed_history[-limit:]
 
     def get_stats(self) -> SelfplayStats:
         """Get aggregate selfplay statistics."""
         # Count by node
-        by_node: Dict[str, int] = {}
+        by_node: dict[str, int] = {}
         for task in self._active_tasks.values():
             by_node[task.node_id] = by_node.get(task.node_id, 0) + 1
 
         # Count by type
-        by_type: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
         for task in self._active_tasks.values():
             type_key = task.selfplay_type.value
             by_type[type_key] = by_type.get(type_key, 0) + 1
@@ -761,7 +763,7 @@ class SelfplayOrchestrator:
             last_activity_time=time.time(),
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring."""
         stats = self.get_stats()
 
@@ -794,7 +796,7 @@ class SelfplayOrchestrator:
 # Singleton and convenience functions
 # =============================================================================
 
-_selfplay_orchestrator: Optional[SelfplayOrchestrator] = None
+_selfplay_orchestrator: SelfplayOrchestrator | None = None
 
 
 def get_selfplay_orchestrator() -> SelfplayOrchestrator:
@@ -890,11 +892,11 @@ def get_selfplay_stats() -> SelfplayStats:
 
 __all__ = [
     "SelfplayOrchestrator",
-    "SelfplayType",
-    "SelfplayTaskInfo",
     "SelfplayStats",
-    "get_selfplay_orchestrator",
-    "wire_selfplay_events",
+    "SelfplayTaskInfo",
+    "SelfplayType",
     "emit_selfplay_completion",
+    "get_selfplay_orchestrator",
     "get_selfplay_stats",
+    "wire_selfplay_events",
 ]

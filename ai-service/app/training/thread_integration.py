@@ -30,29 +30,29 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from app.core.thread_spawner import (
-    ThreadSpawner,
+    RestartPolicy,
     SpawnedThread,
     ThreadGroup,
-    RestartPolicy,
+    ThreadSpawner,
     ThreadState,
-    get_thread_spawner,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "get_training_thread_spawner",
-    "spawn_eval_thread",
-    "spawn_prefetch_thread",
-    "spawn_checkpoint_thread",
-    "spawn_heartbeat_thread",
-    "spawn_selfplay_monitor_thread",
-    "TrainingThreadGroup",
     "RestartPolicy",
     "ThreadState",
+    "TrainingThreadGroup",
+    "get_training_thread_spawner",
+    "spawn_checkpoint_thread",
+    "spawn_eval_thread",
+    "spawn_heartbeat_thread",
+    "spawn_prefetch_thread",
+    "spawn_selfplay_monitor_thread",
 ]
 
 
@@ -60,7 +60,7 @@ __all__ = [
 # Training Thread Spawner Singleton
 # =============================================================================
 
-_training_spawner: Optional[ThreadSpawner] = None
+_training_spawner: ThreadSpawner | None = None
 
 
 def get_training_thread_spawner() -> ThreadSpawner:
@@ -95,11 +95,11 @@ def reset_training_thread_spawner() -> None:
 def spawn_eval_thread(
     target: Callable[..., Any],
     name: str = "background_eval",
-    args: Tuple[Any, ...] = (),
-    kwargs: Optional[Dict[str, Any]] = None,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
     restart_policy: RestartPolicy = RestartPolicy.ON_FAILURE,
     max_restarts: int = 5,
-    on_error: Optional[Callable[[SpawnedThread, Exception], None]] = None,
+    on_error: Callable[[SpawnedThread, Exception], None] | None = None,
 ) -> SpawnedThread:
     """Spawn a supervised background evaluation thread.
 
@@ -143,8 +143,8 @@ def spawn_eval_thread(
 def spawn_prefetch_thread(
     target: Callable[..., Any],
     name: str = "data_prefetch",
-    args: Tuple[Any, ...] = (),
-    kwargs: Optional[Dict[str, Any]] = None,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
     restart_policy: RestartPolicy = RestartPolicy.ON_FAILURE,
     max_restarts: int = 3,
 ) -> SpawnedThread:
@@ -179,8 +179,8 @@ def spawn_prefetch_thread(
 def spawn_checkpoint_thread(
     target: Callable[..., Any],
     name: str = "checkpoint_save",
-    args: Tuple[Any, ...] = (),
-    kwargs: Optional[Dict[str, Any]] = None,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
     restart_policy: RestartPolicy = RestartPolicy.NEVER,
 ) -> SpawnedThread:
     """Spawn a supervised checkpoint save thread.
@@ -213,8 +213,8 @@ def spawn_checkpoint_thread(
 def spawn_heartbeat_thread(
     target: Callable[..., Any],
     name: str = "heartbeat_monitor",
-    args: Tuple[Any, ...] = (),
-    kwargs: Optional[Dict[str, Any]] = None,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
     restart_policy: RestartPolicy = RestartPolicy.ALWAYS,
     max_restarts: int = 10,
 ) -> SpawnedThread:
@@ -248,8 +248,8 @@ def spawn_heartbeat_thread(
 def spawn_selfplay_monitor_thread(
     target: Callable[..., Any],
     name: str = "selfplay_monitor",
-    args: Tuple[Any, ...] = (),
-    kwargs: Optional[Dict[str, Any]] = None,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
     restart_policy: RestartPolicy = RestartPolicy.ON_FAILURE,
     max_restarts: int = 3,
 ) -> SpawnedThread:
@@ -323,7 +323,7 @@ def _default_eval_error_handler(thread: SpawnedThread, error: Exception) -> None
 
     # Optionally publish event
     try:
-        from app.core.event_bus import get_event_bus, ErrorEvent
+        from app.core.event_bus import ErrorEvent, get_event_bus
         bus = get_event_bus()
         bus.publish_sync(ErrorEvent(
             topic="training.eval.error",
@@ -359,7 +359,7 @@ def _checkpoint_error_handler(thread: SpawnedThread, error: Exception) -> None:
 
     # Checkpoint failures are critical - publish event
     try:
-        from app.core.event_bus import get_event_bus, ErrorEvent
+        from app.core.event_bus import ErrorEvent, get_event_bus
         bus = get_event_bus()
         bus.publish_sync(ErrorEvent(
             topic="training.checkpoint.error",
@@ -429,7 +429,7 @@ def migrate_to_supervised(
 
         # Store reference for compatibility
         setattr(instance, thread_attr, thread._thread)
-        setattr(instance, "_supervised_thread", thread)
+        instance._supervised_thread = thread
 
         logger.info(f"[{thread_name}] Started supervised thread")
         return thread
@@ -441,7 +441,7 @@ def migrate_to_supervised(
 # Health Integration
 # =============================================================================
 
-def get_training_threads_health() -> Dict[str, Any]:
+def get_training_threads_health() -> dict[str, Any]:
     """Get health status of all training threads.
 
     Returns:

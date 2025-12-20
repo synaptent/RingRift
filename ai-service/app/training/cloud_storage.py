@@ -30,7 +30,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -61,11 +61,11 @@ class TrainingSample:
     game_id: str
     move_number: int
     ply_to_end: int
-    move_json: Optional[str] = None
-    move_probs: Optional[Dict[str, float]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    move_json: str | None = None
+    move_probs: dict[str, float] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         d = {
             "state": json.loads(self.state_json),
@@ -112,7 +112,7 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics about written data."""
         pass
 
@@ -142,7 +142,7 @@ class LocalFileStorage(StorageBackend):
         self._compress = compress
         self._buffer_size = buffer_size
         self._auto_flush_interval = auto_flush_interval
-        self._buffer: List[str] = []
+        self._buffer: list[str] = []
         self._samples_written = 0
         self._bytes_written = 0
         self._samples_since_flush = 0
@@ -201,7 +201,7 @@ class LocalFileStorage(StorageBackend):
         self._file.close()
         logger.info(f"LocalFileStorage: Closed {self._path} with {self._samples_written} samples ({self._bytes_written} bytes)")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get write statistics."""
         return {
             "backend": "local",
@@ -249,12 +249,12 @@ class S3Storage(StorageBackend):
         self._partition_size = partition_size
 
         self._s3 = boto3.client("s3")
-        self._buffer: List[str] = []
+        self._buffer: list[str] = []
         self._current_partition = 0
         self._samples_in_partition = 0
         self._total_samples = 0
         self._total_bytes = 0
-        self._uploaded_files: List[str] = []
+        self._uploaded_files: list[str] = []
 
         # Worker ID for uniqueness across distributed workers
         self._worker_id = os.environ.get("WORKER_ID", str(uuid.uuid4())[:8])
@@ -326,7 +326,7 @@ class S3Storage(StorageBackend):
         """Close storage and upload any remaining data."""
         self.flush()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get upload statistics."""
         return {
             "backend": "s3",
@@ -380,12 +380,12 @@ class GCSStorage(StorageBackend):
 
         self._client = gcs.Client()
         self._bucket = self._client.bucket(bucket)
-        self._buffer: List[str] = []
+        self._buffer: list[str] = []
         self._current_partition = 0
         self._samples_in_partition = 0
         self._total_samples = 0
         self._total_bytes = 0
-        self._uploaded_files: List[str] = []
+        self._uploaded_files: list[str] = []
 
         self._worker_id = os.environ.get("WORKER_ID", str(uuid.uuid4())[:8])
 
@@ -451,7 +451,7 @@ class GCSStorage(StorageBackend):
         """Close storage and upload any remaining data."""
         self.flush()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get upload statistics."""
         return {
             "backend": "gcs",

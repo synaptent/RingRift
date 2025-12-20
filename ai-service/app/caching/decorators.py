@@ -19,17 +19,17 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import hashlib
 import logging
-from typing import Any, Callable, Dict, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from app.caching.memory import MemoryCache
 
 __all__ = [
-    "cached",
     "async_cached",
+    "cached",
     "invalidate_cache",
 ]
 
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 # Global registry of caches for cache invalidation
-_cache_registry: Dict[str, MemoryCache] = {}
+_cache_registry: dict[str, MemoryCache] = {}
 
 
 def _make_key(args: tuple, kwargs: dict) -> str:
@@ -46,7 +46,7 @@ def _make_key(args: tuple, kwargs: dict) -> str:
     try:
         # Try to create a hashable key
         key_parts = [repr(a) for a in args]
-        key_parts.extend(f"{k}={repr(v)}" for k, v in sorted(kwargs.items()))
+        key_parts.extend(f"{k}={v!r}" for k, v in sorted(kwargs.items()))
         key_str = "|".join(key_parts)
 
         # Hash long keys for efficiency
@@ -59,10 +59,10 @@ def _make_key(args: tuple, kwargs: dict) -> str:
 
 
 def cached(
-    ttl_seconds: Optional[float] = None,
-    max_size: Optional[int] = 1000,
-    key_func: Optional[Callable[..., str]] = None,
-    cache_name: Optional[str] = None,
+    ttl_seconds: float | None = None,
+    max_size: int | None = 1000,
+    key_func: Callable[..., str] | None = None,
+    cache_name: str | None = None,
 ) -> Callable[[F], F]:
     """Decorator for caching function results.
 
@@ -120,10 +120,10 @@ def cached(
 
 
 def async_cached(
-    ttl_seconds: Optional[float] = None,
-    max_size: Optional[int] = 1000,
-    key_func: Optional[Callable[..., str]] = None,
-    cache_name: Optional[str] = None,
+    ttl_seconds: float | None = None,
+    max_size: int | None = 1000,
+    key_func: Callable[..., str] | None = None,
+    cache_name: str | None = None,
 ) -> Callable[[F], F]:
     """Decorator for caching async function results.
 
@@ -177,8 +177,8 @@ def async_cached(
 
 
 def invalidate_cache(
-    cache_name: Optional[str] = None,
-    func: Optional[Callable] = None,
+    cache_name: str | None = None,
+    func: Callable | None = None,
 ) -> int:
     """Invalidate cached results.
 
@@ -224,7 +224,7 @@ def invalidate_cache(
     return cleared
 
 
-def get_cache_stats() -> Dict[str, Dict[str, Any]]:
+def get_cache_stats() -> dict[str, dict[str, Any]]:
     """Get statistics for all registered caches.
 
     Returns:

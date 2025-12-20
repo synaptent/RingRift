@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 
-from .interfaces import RulesEngine
 from .default_engine import DefaultRulesEngine
+from .interfaces import RulesEngine
 
 _ENGINE_SINGLETON: RulesEngine | None = None
 

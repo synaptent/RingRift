@@ -34,24 +34,24 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Literal
 from datetime import datetime
+from typing import Literal
 
+from app.board_manager import BoardManager
 from app.models import (
-    GameState,
-    Move,
-    Position,
-    MoveType,
-    GamePhase,
     BoardState,
     BoardType,
+    GamePhase,
+    GameState,
     MarkerInfo,
+    Move,
+    MoveType,
+    Position,
 )
-from app.board_manager import BoardManager
 from app.rules.core import (
     count_buried_rings,
-    is_eligible_for_recovery,
     get_effective_line_length,
+    is_eligible_for_recovery,
 )
 
 # Recovery option type alias (for line recovery Option 1/2)
@@ -84,7 +84,7 @@ class RecoverySlideTarget:
     option1_cost: int  # always 1 for Option 1 (collapse all)
     option2_available: bool  # True only for overlength lines
     option2_cost: int  # always 0 for Option 2 (collapse lineLength, free)
-    line_positions: List[Position]  # all marker positions in the line
+    line_positions: list[Position]  # all marker positions in the line
     # Deprecated: use option1_cost/option2_cost instead
     cost: int = 1  # kept for backwards compatibility
 
@@ -94,12 +94,12 @@ class RecoveryValidationResult:
     """Result of validating a recovery slide move."""
 
     valid: bool
-    reason: Optional[str] = None
+    reason: str | None = None
     markers_in_line: int = 0
     is_overlength: bool = False
-    option_used: Optional[RecoveryOption] = None
+    option_used: RecoveryOption | None = None
     cost: int = 0  # Effective cost based on option used
-    line_positions: List[Position] = field(default_factory=list)  # Positions in the formed line
+    line_positions: list[Position] = field(default_factory=list)  # Positions in the formed line
 
 
 @dataclass
@@ -107,11 +107,11 @@ class RecoveryApplicationOutcome:
     """Outcome of applying a recovery slide."""
 
     success: bool
-    error: Optional[str] = None
-    option_used: Optional[RecoveryOption] = None
+    error: str | None = None
+    option_used: RecoveryOption | None = None
     rings_extracted: int = 0  # 1 for Option 1, 0 for Option 2
-    line_positions: List[Position] = field(default_factory=list)  # All markers in the formed line
-    collapsed_positions: List[Position] = field(default_factory=list)  # Markers that were collapsed
+    line_positions: list[Position] = field(default_factory=list)  # All markers in the formed line
+    collapsed_positions: list[Position] = field(default_factory=list)  # Markers that were collapsed
 
 
 @dataclass
@@ -141,7 +141,7 @@ class ExpandedRecoveryTarget:
     # Line recovery fields (mode == "line")
     markers_in_line: int = 0
     is_overlength: bool = False
-    line_positions: List[Position] = field(default_factory=list)
+    line_positions: list[Position] = field(default_factory=list)
 
     # Cost information
     # - Line: Option 1 = 1, Option 2 (overlength only) = 0
@@ -154,7 +154,7 @@ class ExpandedRecoveryTarget:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _get_moore_directions(board_type: BoardType) -> List[Tuple[int, int, Optional[int]]]:
+def _get_moore_directions(board_type: BoardType) -> list[tuple[int, int, int | None]]:
     """
     Get Moore neighborhood directions (8 directions for square boards,
     6 axial directions for hex).
@@ -172,7 +172,7 @@ def _get_moore_directions(board_type: BoardType) -> List[Tuple[int, int, Optiona
         return directions
 
 
-def _add_direction(pos: Position, direction: Tuple[int, int, Optional[int]], scale: int = 1) -> Position:
+def _add_direction(pos: Position, direction: tuple[int, int, int | None], scale: int = 1) -> Position:
     """Add a direction vector to a position."""
     new_x = pos.x + direction[0] * scale
     new_y = pos.y + direction[1] * scale
@@ -229,18 +229,15 @@ def _can_marker_slide_to(
 
     # Must not have a marker
     to_key = to_pos.to_key()
-    if to_key in board.markers:
-        return False
-
-    return True
+    return to_key not in board.markers
 
 
 def _count_markers_in_line_through(
     board: BoardState,
     marker_pos: Position,
     player: int,
-    direction: Tuple[int, int, Optional[int]],
-) -> Tuple[int, List[Position]]:
+    direction: tuple[int, int, int | None],
+) -> tuple[int, list[Position]]:
     """
     Count consecutive markers of the player's colour in a line through marker_pos
     in the given direction, returning the count and positions.
@@ -300,7 +297,7 @@ def _would_complete_line_at(
     player: int,
     to_pos: Position,
     line_length: int,
-) -> Tuple[bool, int, List[Position]]:
+) -> tuple[bool, int, list[Position]]:
     """
     Check if placing a marker at to_pos would complete a line of at least line_length.
 
@@ -395,7 +392,7 @@ def calculate_recovery_cost(option: RecoveryOption) -> int:
 def enumerate_eligible_extraction_stacks(
     board: BoardState,
     player: int,
-) -> List[EligibleExtractionStack]:
+) -> list[EligibleExtractionStack]:
     """
     Enumerate all stacks from which a player can extract a buried ring.
 
@@ -414,7 +411,7 @@ def enumerate_eligible_extraction_stacks(
     Returns:
         List of eligible extraction stacks with metadata
     """
-    eligible_stacks: List[EligibleExtractionStack] = []
+    eligible_stacks: list[EligibleExtractionStack] = []
 
     for pos_key, stack in board.stacks.items():
         # Find the bottommost ring of this player
@@ -457,7 +454,7 @@ def enumerate_eligible_extraction_stacks(
 def enumerate_recovery_slide_targets(
     state: GameState,
     player: int,
-) -> List[RecoverySlideTarget]:
+) -> list[RecoverySlideTarget]:
     """
     Enumerate all valid recovery slide targets for a player.
 
@@ -481,14 +478,14 @@ def enumerate_recovery_slide_targets(
     Returns:
         List of valid recovery slide targets
     """
-    targets: List[RecoverySlideTarget] = []
+    targets: list[RecoverySlideTarget] = []
     board = state.board
     line_length = get_effective_line_length(board.type, len(state.players))
     buried_ring_count = count_buried_rings(board, player)
 
     # Find all markers owned by the player
-    player_marker_positions: List[Position] = []
-    for pos_key, marker in board.markers.items():
+    player_marker_positions: list[Position] = []
+    for _pos_key, marker in board.markers.items():
         if marker.player == player:
             player_marker_positions.append(marker.position)
 
@@ -550,7 +547,7 @@ def enumerate_recovery_slide_targets(
 def enumerate_expanded_recovery_targets(
     state: GameState,
     player: int,
-) -> List[ExpandedRecoveryTarget]:
+) -> list[ExpandedRecoveryTarget]:
     """
     Enumerate all valid recovery targets using the expanded criteria (RR-CANON-R112).
 
@@ -569,7 +566,7 @@ def enumerate_expanded_recovery_targets(
     Returns:
         List of expanded recovery targets
     """
-    targets: List[ExpandedRecoveryTarget] = []
+    targets: list[ExpandedRecoveryTarget] = []
     board = state.board
     line_length = get_effective_line_length(board.type, len(state.players))
     buried_ring_count = count_buried_rings(board, player)
@@ -582,12 +579,12 @@ def enumerate_expanded_recovery_targets(
     }
 
     # Track all valid slide destinations for fallback
-    all_valid_slides: List[Tuple[Position, Position]] = []
-    all_valid_stack_strikes: List[Tuple[Position, Position]] = []
+    all_valid_slides: list[tuple[Position, Position]] = []
+    all_valid_stack_strikes: list[tuple[Position, Position]] = []
 
     # Find all markers owned by the player
-    player_marker_positions: List[Position] = []
-    for pos_key, marker in board.markers.items():
+    player_marker_positions: list[Position] = []
+    for _pos_key, marker in board.markers.items():
         if marker.player == player:
             player_marker_positions.append(marker.position)
 
@@ -724,7 +721,7 @@ def has_any_recovery_move(state: GameState, player: int) -> bool:
 
     # Check for line recovery or valid fallback
     # Use list() to create a snapshot - we modify markers dict during iteration
-    for pos_key, marker in list(board.markers.items()):
+    for _pos_key, marker in list(board.markers.items()):
         if marker.player != player:
             continue
 
@@ -1025,8 +1022,8 @@ def validate_recovery_slide(
 def apply_recovery_slide(
     state: GameState,
     move: Move,
-    option: Optional[RecoveryOption] = None,
-    collapse_positions: Optional[List[Position]] = None,
+    option: RecoveryOption | None = None,
+    collapse_positions: list[Position] | None = None,
 ) -> RecoveryApplicationOutcome:
     """
     Apply a recovery slide move to the game state (mutates in place).
@@ -1135,7 +1132,7 @@ def apply_recovery_slide(
             if option is not None:
                 effective_option = option
             elif getattr(move, "recovery_option", None) is not None:
-                effective_option = getattr(move, "recovery_option")
+                effective_option = move.recovery_option
             elif is_overlength:
                 effective_option = 2
             else:
@@ -1243,7 +1240,7 @@ def apply_recovery_slide(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def get_recovery_moves(state: GameState, player: int) -> List[Move]:
+def get_recovery_moves(state: GameState, player: int) -> list[Move]:
     """
     Get all valid recovery slide moves for a player.
 
@@ -1262,20 +1259,20 @@ def get_recovery_moves(state: GameState, player: int) -> List[Move]:
         return []
 
     targets = enumerate_recovery_slide_targets(state, player)
-    moves: List[Move] = []
+    moves: list[Move] = []
 
     for target in targets:
         move_number = len(state.move_history) + 1
-        base_kwargs = dict(
-            id=f"recovery-{target.from_pos.to_key()}-{target.to_pos.to_key()}-{move_number}",
-            type=MoveType.RECOVERY_SLIDE,
-            player=player,
-            from_pos=target.from_pos,
-            to=target.to_pos,
-            timestamp=datetime.now(),
-            thinkTime=0,
-            moveNumber=move_number,
-        )
+        base_kwargs = {
+            "id": f"recovery-{target.from_pos.to_key()}-{target.to_pos.to_key()}-{move_number}",
+            "type": MoveType.RECOVERY_SLIDE,
+            "player": player,
+            "from_pos": target.from_pos,
+            "to": target.to_pos,
+            "timestamp": datetime.now(),
+            "thinkTime": 0,
+            "moveNumber": move_number,
+        }
 
         # Overlength: generate both options
         if target.is_overlength:
@@ -1308,7 +1305,7 @@ def get_recovery_moves(state: GameState, player: int) -> List[Move]:
     return moves
 
 
-def get_expanded_recovery_moves(state: GameState, player: int) -> List[Move]:
+def get_expanded_recovery_moves(state: GameState, player: int) -> list[Move]:
     """
     Get all valid recovery moves using the expanded criteria (RR-CANON-R112).
 
@@ -1333,20 +1330,20 @@ def get_expanded_recovery_moves(state: GameState, player: int) -> List[Move]:
         return []
 
     targets = enumerate_expanded_recovery_targets(state, player)
-    moves: List[Move] = []
+    moves: list[Move] = []
     move_number = len(state.move_history) + 1
 
     for target in targets:
-        base_kwargs = dict(
-            id=f"recovery-{target.recovery_mode}-{target.from_pos.to_key()}-{target.to_pos.to_key()}-{move_number}",
-            type=MoveType.RECOVERY_SLIDE,
-            player=player,
-            from_pos=target.from_pos,
-            to=target.to_pos,
-            timestamp=datetime.now(),
-            thinkTime=0,
-            moveNumber=move_number,
-        )
+        base_kwargs = {
+            "id": f"recovery-{target.recovery_mode}-{target.from_pos.to_key()}-{target.to_pos.to_key()}-{move_number}",
+            "type": MoveType.RECOVERY_SLIDE,
+            "player": player,
+            "from_pos": target.from_pos,
+            "to": target.to_pos,
+            "timestamp": datetime.now(),
+            "thinkTime": 0,
+            "moveNumber": move_number,
+        }
 
         if target.recovery_mode == "line":
             # Line recovery: generate Option 1 and/or Option 2

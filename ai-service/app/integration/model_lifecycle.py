@@ -13,14 +13,16 @@ Components:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 try:
     from aiohttp import ClientSession, ClientTimeout
@@ -41,19 +43,21 @@ try:
     HAS_UNIFIED_CONFIG = True
 except ImportError:
     HAS_UNIFIED_CONFIG = False
-    get_min_elo_improvement = lambda: 25.0  # Fallback default
-    get_training_threshold = lambda: 500  # Fallback default
+    def get_min_elo_improvement():
+        return 25.0  # Fallback default
+    def get_training_threshold():
+        return 500  # Fallback default
 
 # Import centralized thresholds (single source of truth)
 try:
     from app.config.thresholds import (
+        ELO_DROP_ROLLBACK,
         ELO_IMPROVEMENT_PROMOTE,
         MIN_GAMES_PROMOTE,
-        MIN_WIN_RATE_PROMOTE,
-        TRAINING_TRIGGER_GAMES,
-        TRAINING_STALENESS_HOURS,
-        ELO_DROP_ROLLBACK,
         MIN_GAMES_REGRESSION,
+        MIN_WIN_RATE_PROMOTE,
+        TRAINING_STALENESS_HOURS,
+        TRAINING_TRIGGER_GAMES,
     )
     HAS_THRESHOLDS = True
 except ImportError:
@@ -78,8 +82,8 @@ except ImportError:
 # Import unified signals for cross-system consistency
 try:
     from app.training.unified_signals import (
-        get_signal_computer,
         TrainingUrgency,
+        get_signal_computer,
     )
     HAS_UNIFIED_SIGNALS = True
 except ImportError:
@@ -129,8 +133,8 @@ class LifecycleConfig:
     calibration_games_required: int = field(default_factory=lambda: MIN_GAMES_PROMOTE)
 
     # Lifecycle hooks
-    on_promotion_webhook: Optional[str] = None
-    on_training_webhook: Optional[str] = None
+    on_promotion_webhook: str | None = None
+    on_training_webhook: str | None = None
 
 
 class LifecycleStage(Enum):
@@ -162,23 +166,23 @@ class EvaluationResult:
     """Results from model evaluation."""
     model_id: str
     version: int
-    elo: Optional[float] = None
-    elo_uncertainty: Optional[float] = None
+    elo: float | None = None
+    elo_uncertainty: float | None = None
     games_played: int = 0
-    win_rate: Optional[float] = None
-    draw_rate: Optional[float] = None
-    value_mse: Optional[float] = None
-    policy_accuracy: Optional[float] = None
+    win_rate: float | None = None
+    draw_rate: float | None = None
+    value_mse: float | None = None
+    policy_accuracy: float | None = None
 
     # Comparison vs production
-    elo_vs_production: Optional[float] = None
-    win_rate_vs_production: Optional[float] = None
+    elo_vs_production: float | None = None
+    win_rate_vs_production: float | None = None
     games_vs_production: int = 0
 
     # Additional metrics
-    avg_game_length: Optional[float] = None
-    calibration_error: Optional[float] = None
-    inference_time_ms: Optional[float] = None
+    avg_game_length: float | None = None
+    calibration_error: float | None = None
+    inference_time_ms: float | None = None
 
 
 class PromotionGate:
@@ -196,7 +200,7 @@ class PromotionGate:
         criteria: Optional["UnifiedCriteria"] = None
     ):
         self.config = config
-        self._evaluation_history: Dict[str, List[EvaluationResult]] = {}
+        self._evaluation_history: dict[str, list[EvaluationResult]] = {}
 
         # Use provided criteria or load from PromotionCriteria for unified thresholds
         if criteria is not None:
@@ -231,7 +235,7 @@ class PromotionGate:
             return self._criteria.min_win_rate
         return self.config.min_win_rate_vs_production
 
-    def evaluate_for_staging(self, result: EvaluationResult) -> Tuple[PromotionDecision, str]:
+    def evaluate_for_staging(self, result: EvaluationResult) -> tuple[PromotionDecision, str]:
         """
         Evaluate if model should be promoted to staging.
 
@@ -274,8 +278,8 @@ class PromotionGate:
     def evaluate_for_production(
         self,
         result: EvaluationResult,
-        production_result: Optional[EvaluationResult] = None
-    ) -> Tuple[PromotionDecision, str]:
+        production_result: EvaluationResult | None = None
+    ) -> tuple[PromotionDecision, str]:
         """
         Evaluate if model should be promoted to production.
 
@@ -302,26 +306,24 @@ class PromotionGate:
 
         # Check Elo improvement (use unified property)
         min_elo = self.min_elo_improvement
-        if result.elo_vs_production is not None:
-            if result.elo_vs_production < min_elo:
-                if result.elo_vs_production < self.config.regression_threshold_elo:
-                    return (
-                        PromotionDecision.REJECT,
-                        f"Significant regression: {result.elo_vs_production:+.0f} Elo"
-                    )
+        if result.elo_vs_production is not None and result.elo_vs_production < min_elo:
+            if result.elo_vs_production < self.config.regression_threshold_elo:
                 return (
-                    PromotionDecision.HOLD,
-                    f"Insufficient Elo improvement: {result.elo_vs_production:+.0f} < {min_elo}"
+                    PromotionDecision.REJECT,
+                    f"Significant regression: {result.elo_vs_production:+.0f} Elo"
                 )
+            return (
+                PromotionDecision.HOLD,
+                f"Insufficient Elo improvement: {result.elo_vs_production:+.0f} < {min_elo}"
+            )
 
         # Check win rate (use unified property)
         min_wr = self.min_win_rate
-        if result.win_rate_vs_production is not None:
-            if result.win_rate_vs_production < min_wr:
-                return (
-                    PromotionDecision.HOLD,
-                    f"Win rate too low: {result.win_rate_vs_production:.1%} < {min_wr:.1%}"
-                )
+        if result.win_rate_vs_production is not None and result.win_rate_vs_production < min_wr:
+            return (
+                PromotionDecision.HOLD,
+                f"Win rate too low: {result.win_rate_vs_production:.1%} < {min_wr:.1%}"
+            )
 
         # Check for value MSE regression
         if (result.value_mse is not None and
@@ -344,7 +346,7 @@ class PromotionGate:
         self,
         current: EvaluationResult,
         previous: EvaluationResult
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Check if we should rollback to previous model.
 
@@ -395,7 +397,7 @@ class TrainingTrigger:
 
     def __init__(self, config: LifecycleConfig):
         self.config = config
-        self._last_training_time: Optional[datetime] = None
+        self._last_training_time: datetime | None = None
         self._last_games_count: int = 0
         # Use unified signal computer if available
         self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
@@ -405,7 +407,7 @@ class TrainingTrigger:
         conditions: TrainingConditions,
         config_key: str = "",
         current_elo: float = 1500.0,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Determine if training should be triggered.
 
@@ -475,9 +477,9 @@ class TrainingTrigger:
 
     def record_training_completed(
         self,
-        new_elo: Optional[float] = None,
+        new_elo: float | None = None,
         config_key: str = "",
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         auto_trigger_evaluation: bool = True,
     ) -> None:
         """Record that training has completed and optionally trigger evaluation.
@@ -510,7 +512,7 @@ class TrainingTrigger:
         """
         try:
             # Try work queue approach first
-            from app.coordination.work_queue import get_work_queue, WorkItem, WorkType
+            from app.coordination.work_queue import WorkItem, WorkType, get_work_queue
             queue = get_work_queue()
 
             # Parse board type from model_id or config_key
@@ -565,7 +567,7 @@ class TrainingTrigger:
             bus = get_event_bus()
             import asyncio
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(bus.publish(event))
             except RuntimeError:
                 if hasattr(bus, 'publish_sync'):
@@ -646,8 +648,8 @@ class ModelSyncCoordinator:
 
     def __init__(self, config: LifecycleConfig):
         self.config = config
-        self._sync_state: Dict[str, Any] = {}
-        self._last_sync: Dict[str, float] = {}
+        self._sync_state: dict[str, Any] = {}
+        self._last_sync: dict[str, float] = {}
         self._distributed_coordinator = None
 
     def _get_distributed_coordinator(self):
@@ -660,20 +662,19 @@ class ModelSyncCoordinator:
                 pass
         return self._distributed_coordinator
 
-    async def get_cluster_status(self) -> Dict[str, Any]:
+    async def get_cluster_status(self) -> dict[str, Any]:
         """Get current cluster status from P2P orchestrator."""
         if not HAS_AIOHTTP:
             return {"error": "aiohttp not available"}
 
         try:
             timeout = ClientTimeout(total=self.config.sync_timeout_seconds)
-            async with ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    f"{self.config.p2p_api_base}/api/cluster/status"
-                ) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    return {"error": f"HTTP {resp.status}"}
+            async with ClientSession(timeout=timeout) as session, session.get(
+                f"{self.config.p2p_api_base}/api/cluster/status"
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"HTTP {resp.status}"}
         except Exception as e:
             logger.error(f"Failed to get cluster status: {e}")
             return {"error": str(e)}
@@ -683,8 +684,8 @@ class ModelSyncCoordinator:
         model_path: Path,
         model_id: str,
         version: int,
-        target_nodes: Optional[List[str]] = None
-    ) -> Dict[str, bool]:
+        target_nodes: list[str] | None = None
+    ) -> dict[str, bool]:
         """
         Push model to cluster nodes.
 
@@ -778,7 +779,7 @@ class ModelSyncCoordinator:
     async def pull_production_model(
         self,
         dest_path: Path
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Pull the current production model from cluster.
 
@@ -798,26 +799,25 @@ class ModelSyncCoordinator:
 
             # Get production model info from leader
             timeout = ClientTimeout(total=self.config.sync_timeout_seconds)
-            async with ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    f"{self.config.p2p_api_base}/api/model/production"
-                ) as resp:
-                    if resp.status != 200:
-                        return None
-
-                    metadata = await resp.json()
-                    model_url = metadata.get("file_url")
-
-                    if model_url:
-                        # Download model file
-                        async with session.get(model_url) as file_resp:
-                            if file_resp.status == 200:
-                                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                                with open(dest_path, 'wb') as f:
-                                    f.write(await file_resp.read())
-                                return metadata
-
+            async with ClientSession(timeout=timeout) as session, session.get(
+                f"{self.config.p2p_api_base}/api/model/production"
+            ) as resp:
+                if resp.status != 200:
                     return None
+
+                metadata = await resp.json()
+                model_url = metadata.get("file_url")
+
+                if model_url:
+                    # Download model file
+                    async with session.get(model_url) as file_resp:
+                        if file_resp.status == 200:
+                            dest_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(dest_path, 'wb') as f:
+                                f.write(await file_resp.read())
+                            return metadata
+
+                return None
 
         except Exception as e:
             logger.error(f"Failed to pull production model: {e}")
@@ -850,7 +850,7 @@ class ModelSyncCoordinator:
         except Exception as e:
             logger.error(f"Failed to broadcast promotion: {e}")
 
-    async def _get_node_endpoint(self, node_id: str) -> Optional[str]:
+    async def _get_node_endpoint(self, node_id: str) -> str | None:
         """Get endpoint URL for a node."""
         status = await self.get_cluster_status()
         for node in status.get("nodes", []):
@@ -878,7 +878,7 @@ class ModelLifecycleManager:
     - Rollback handling
     """
 
-    def __init__(self, config: Optional[LifecycleConfig] = None):
+    def __init__(self, config: LifecycleConfig | None = None):
         self.config = config or LifecycleConfig()
 
         # Initialize components
@@ -887,17 +887,17 @@ class ModelLifecycleManager:
         self.sync_coordinator = ModelSyncCoordinator(self.config)
 
         # State
-        self._lifecycle_state: Dict[str, LifecycleStage] = {}
-        self._evaluation_queue: List[Tuple[str, int]] = []
-        self._pending_promotions: List[Dict[str, Any]] = []
-        self._callbacks: Dict[str, List[Callable]] = {}
+        self._lifecycle_state: dict[str, LifecycleStage] = {}
+        self._evaluation_queue: list[tuple[str, int]] = []
+        self._pending_promotions: list[dict[str, Any]] = []
+        self._callbacks: dict[str, list[Callable]] = {}
 
         # Registry reference (lazy loaded)
         self._registry = None
         self._calibrator = None
 
         # Background task handles
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: list[asyncio.Task] = []
         self._running = False
 
     @property
@@ -942,10 +942,8 @@ class ModelLifecycleManager:
 
         for task in self._tasks:
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
         self._tasks.clear()
         logger.info("Model lifecycle manager stopped")
@@ -975,9 +973,9 @@ class ModelLifecycleManager:
         self,
         name: str,
         model_path: Path,
-        training_config: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None
-    ) -> Tuple[str, int]:
+        training_config: dict[str, Any] | None = None,
+        tags: list[str] | None = None
+    ) -> tuple[str, int]:
         """
         Register a new model for lifecycle management.
 
@@ -986,9 +984,7 @@ class ModelLifecycleManager:
         if not self.registry:
             raise RuntimeError("Model registry not available")
 
-        from app.training.model_registry import (
-            TrainingConfig, ModelType, ModelStage
-        )
+        from app.training.model_registry import ModelStage, ModelType, TrainingConfig
 
         # Register with registry
         model_id, version = self.registry.register_model(
@@ -1132,7 +1128,7 @@ class ModelLifecycleManager:
         else:  # HOLD
             logger.debug(f"Holding {model_id}:v{version}: {reason}")
 
-    async def _get_production_result(self) -> Optional[EvaluationResult]:
+    async def _get_production_result(self) -> EvaluationResult | None:
         """Get evaluation result for current production model."""
         if not self.registry:
             return None
@@ -1271,7 +1267,7 @@ class ModelLifecycleManager:
         self,
         model_id: str,
         version: int
-    ) -> Optional[EvaluationResult]:
+    ) -> EvaluationResult | None:
         """Get evaluation result for a model."""
         if not self.registry:
             return None
@@ -1297,7 +1293,7 @@ class ModelLifecycleManager:
         self,
         current_games: int,
         data_quality: float = 1.0
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Check if training should be triggered.
 
@@ -1343,7 +1339,7 @@ class ModelLifecycleManager:
             try:
                 # Process pending promotions
                 while self._pending_promotions:
-                    promo = self._pending_promotions.pop(0)
+                    self._pending_promotions.pop(0)
                     # Process promotion
 
                 await asyncio.sleep(10)
@@ -1392,7 +1388,7 @@ class ModelLifecycleManager:
     # Status & Reporting
     # ==========================================
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current lifecycle manager status."""
         return {
             "running": self._running,
@@ -1404,7 +1400,7 @@ class ModelLifecycleManager:
             "config": asdict(self.config)
         }
 
-    def get_model_lifecycle(self, model_id: str, version: int) -> Dict[str, Any]:
+    def get_model_lifecycle(self, model_id: str, version: int) -> dict[str, Any]:
         """Get lifecycle information for a specific model."""
         key = f"{model_id}:{version}"
 
@@ -1430,7 +1426,7 @@ class ModelLifecycleManager:
 # ============================================
 
 async def create_lifecycle_manager(
-    config: Optional[LifecycleConfig] = None,
+    config: LifecycleConfig | None = None,
     start: bool = True
 ) -> ModelLifecycleManager:
     """Create and optionally start a lifecycle manager."""

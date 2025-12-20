@@ -35,14 +35,14 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import socket
+import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 # Default database location
 DEFAULT_EVENT_DB = Path("/tmp/ringrift_coordination/events.db")
@@ -60,12 +60,12 @@ class CrossProcessEvent:
 
     event_id: int
     event_type: str
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
     source: str
     created_at: float
     hostname: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "event_id": self.event_id,
             "event_type": self.event_type,
@@ -76,7 +76,7 @@ class CrossProcessEvent:
         }
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "CrossProcessEvent":
+    def from_row(cls, row: sqlite3.Row) -> CrossProcessEvent:
         return cls(
             event_id=row["event_id"],
             event_type=row["event_type"],
@@ -98,7 +98,7 @@ class CrossProcessEventQueue:
     - Thread-safe with connection pooling
     """
 
-    def __init__(self, db_path: Optional[Path] = None, retention_hours: int = DEFAULT_RETENTION_HOURS):
+    def __init__(self, db_path: Path | None = None, retention_hours: int = DEFAULT_RETENTION_HOURS):
         self.db_path = db_path or DEFAULT_EVENT_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.retention_hours = retention_hours
@@ -169,7 +169,7 @@ class CrossProcessEventQueue:
     def publish(
         self,
         event_type: str,
-        payload: Dict[str, Any] = None,
+        payload: dict[str, Any] | None = None,
         source: str = "",
         max_retries: int = 5,
     ) -> int:
@@ -215,7 +215,7 @@ class CrossProcessEventQueue:
     def subscribe(
         self,
         process_name: str,
-        event_types: Optional[List[str]] = None,
+        event_types: list[str] | None = None,
     ) -> str:
         """Register a subscriber for polling events.
 
@@ -249,10 +249,10 @@ class CrossProcessEventQueue:
     def poll(
         self,
         subscriber_id: str,
-        event_types: Optional[List[str]] = None,
+        event_types: list[str] | None = None,
         limit: int = 100,
-        since_event_id: Optional[int] = None,
-    ) -> List[CrossProcessEvent]:
+        since_event_id: int | None = None,
+    ) -> list[CrossProcessEvent]:
         """Poll for new events.
 
         Returns events that:
@@ -287,7 +287,7 @@ class CrossProcessEventQueue:
             WHERE a.event_id IS NULL
               AND e.created_at > ?
         '''
-        params: List[Any] = [subscriber_id, cutoff_time]
+        params: list[Any] = [subscriber_id, cutoff_time]
 
         if since_event_id is not None:
             query += ' AND e.event_id > ?'
@@ -329,7 +329,7 @@ class CrossProcessEventQueue:
             print(f"[CrossProcessEvents] Error acking event {event_id}: {e}")
             return False
 
-    def ack_batch(self, subscriber_id: str, event_ids: List[int]) -> int:
+    def ack_batch(self, subscriber_id: str, event_ids: list[int]) -> int:
         """Acknowledge multiple events at once.
 
         Returns:
@@ -347,7 +347,7 @@ class CrossProcessEventQueue:
         conn.commit()
         return len(event_ids)
 
-    def get_pending_count(self, subscriber_id: str, event_types: Optional[List[str]] = None) -> int:
+    def get_pending_count(self, subscriber_id: str, event_types: list[str] | None = None) -> int:
         """Get count of pending (unacknowledged) events for a subscriber."""
         conn = self._get_connection()
         cutoff_time = time.time() - (self.retention_hours * 3600)
@@ -357,7 +357,7 @@ class CrossProcessEventQueue:
             LEFT JOIN acks a ON e.event_id = a.event_id AND a.subscriber_id = ?
             WHERE a.event_id IS NULL AND e.created_at > ?
         '''
-        params: List[Any] = [subscriber_id, cutoff_time]
+        params: list[Any] = [subscriber_id, cutoff_time]
 
         if event_types:
             placeholders = ','.join(['?' for _ in event_types])
@@ -367,7 +367,7 @@ class CrossProcessEventQueue:
         cursor = conn.execute(query, params)
         return cursor.fetchone()[0]
 
-    def cleanup(self) -> Tuple[int, int, int]:
+    def cleanup(self) -> tuple[int, int, int]:
         """Clean up old events and dead subscribers.
 
         Returns:
@@ -394,7 +394,7 @@ class CrossProcessEventQueue:
         conn.commit()
         return events_deleted, subscribers_deleted, acks_deleted
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get queue statistics."""
         conn = self._get_connection()
 
@@ -437,11 +437,11 @@ class CrossProcessEventQueue:
 
 
 # Global singleton instance
-_event_queue: Optional[CrossProcessEventQueue] = None
+_event_queue: CrossProcessEventQueue | None = None
 _queue_lock = threading.RLock()
 
 
-def get_event_queue(db_path: Optional[Path] = None) -> CrossProcessEventQueue:
+def get_event_queue(db_path: Path | None = None) -> CrossProcessEventQueue:
     """Get the global cross-process event queue singleton."""
     global _event_queue
     with _queue_lock:
@@ -464,9 +464,9 @@ def reset_event_queue() -> None:
 
 def publish_event(
     event_type: str,
-    payload: Dict[str, Any] = None,
+    payload: dict[str, Any] | None = None,
     source: str = "",
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
 ) -> int:
     """Publish an event to the cross-process queue.
 
@@ -478,8 +478,8 @@ def publish_event(
 
 def subscribe_process(
     process_name: str,
-    event_types: Optional[List[str]] = None,
-    db_path: Optional[Path] = None,
+    event_types: list[str] | None = None,
+    db_path: Path | None = None,
 ) -> str:
     """Register this process as a subscriber."""
     return get_event_queue(db_path).subscribe(process_name, event_types)
@@ -487,20 +487,20 @@ def subscribe_process(
 
 def poll_events(
     subscriber_id: str,
-    event_types: Optional[List[str]] = None,
+    event_types: list[str] | None = None,
     limit: int = 100,
-    db_path: Optional[Path] = None,
-) -> List[CrossProcessEvent]:
+    db_path: Path | None = None,
+) -> list[CrossProcessEvent]:
     """Poll for new events as a subscriber."""
     return get_event_queue(db_path).poll(subscriber_id, event_types, limit)
 
 
-def ack_event(subscriber_id: str, event_id: int, db_path: Optional[Path] = None) -> bool:
+def ack_event(subscriber_id: str, event_id: int, db_path: Path | None = None) -> bool:
     """Acknowledge that an event has been processed."""
     return get_event_queue(db_path).ack(subscriber_id, event_id)
 
 
-def ack_events(subscriber_id: str, event_ids: List[int], db_path: Optional[Path] = None) -> int:
+def ack_events(subscriber_id: str, event_ids: list[int], db_path: Path | None = None) -> int:
     """Acknowledge multiple events."""
     return get_event_queue(db_path).ack_batch(subscriber_id, event_ids)
 
@@ -508,7 +508,7 @@ def ack_events(subscriber_id: str, event_ids: List[int], db_path: Optional[Path]
 # Bridge functions to integrate with existing DataEventType
 
 
-def bridge_to_cross_process(event_type_value: str, payload: Dict[str, Any], source: str = "") -> int:
+def bridge_to_cross_process(event_type_value: str, payload: dict[str, Any], source: str = "") -> int:
     """Bridge an in-memory DataEvent to the cross-process queue.
 
     Call this after publishing to the in-memory EventBus to also
@@ -539,23 +539,23 @@ class CrossProcessEventPoller:
     def __init__(
         self,
         process_name: str,
-        event_types: Optional[List[str]] = None,
+        event_types: list[str] | None = None,
         poll_interval: float = 1.0,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
     ):
         self.process_name = process_name
         self.event_types = event_types
         self.poll_interval = poll_interval
         self.db_path = db_path
-        self._handlers: Dict[str, List[Callable[[CrossProcessEvent], None]]] = {}
-        self._global_handlers: List[Callable[[CrossProcessEvent], None]] = []
+        self._handlers: dict[str, list[Callable[[CrossProcessEvent], None]]] = {}
+        self._global_handlers: list[Callable[[CrossProcessEvent], None]] = []
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._subscriber_id: Optional[str] = None
+        self._thread: threading.Thread | None = None
+        self._subscriber_id: str | None = None
 
     def register_handler(
         self,
-        event_type: Optional[str],
+        event_type: str | None,
         handler: Callable[[CrossProcessEvent], None],
     ) -> None:
         """Register a handler for events.
@@ -683,16 +683,16 @@ if __name__ == "__main__":
 __all__ = [
     # Data classes
     "CrossProcessEvent",
+    "CrossProcessEventPoller",
     # Classes
     "CrossProcessEventQueue",
-    "CrossProcessEventPoller",
-    # Functions
-    "get_event_queue",
-    "reset_event_queue",
-    "publish_event",
-    "subscribe_process",
-    "poll_events",
     "ack_event",
     "ack_events",
     "bridge_to_cross_process",
+    # Functions
+    "get_event_queue",
+    "poll_events",
+    "publish_event",
+    "reset_event_queue",
+    "subscribe_process",
 ]

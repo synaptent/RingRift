@@ -44,13 +44,12 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import socket
 import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +89,8 @@ class DataSource:
     last_modified: float = 0.0
     avg_quality_score: float = 0.0
     is_available: bool = True
-    board_types: Set[str] = field(default_factory=set)
-    player_counts: Set[int] = field(default_factory=set)
+    board_types: set[str] = field(default_factory=set)
+    player_counts: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -100,11 +99,11 @@ class CatalogStats:
     total_sources: int = 0
     total_games: int = 0
     total_size_bytes: int = 0
-    sources_by_type: Dict[str, int] = field(default_factory=dict)
-    sources_by_host: Dict[str, int] = field(default_factory=dict)
+    sources_by_type: dict[str, int] = field(default_factory=dict)
+    sources_by_host: dict[str, int] = field(default_factory=dict)
     avg_quality_score: float = 0.0
     high_quality_games: int = 0  # Quality >= 0.5
-    board_type_distribution: Dict[str, int] = field(default_factory=dict)
+    board_type_distribution: dict[str, int] = field(default_factory=dict)
 
 
 class DataCatalog:
@@ -119,10 +118,10 @@ class DataCatalog:
 
     def __init__(
         self,
-        sync_dir: Optional[Path] = None,
-        manifest_path: Optional[Path] = None,
-        local_game_dirs: Optional[List[Path]] = None,
-        node_id: Optional[str] = None,
+        sync_dir: Path | None = None,
+        manifest_path: Path | None = None,
+        local_game_dirs: list[Path] | None = None,
+        node_id: str | None = None,
     ):
         """Initialize the data catalog.
 
@@ -146,7 +145,7 @@ class DataCatalog:
         self.manifest_path = manifest_path or DEFAULT_MANIFEST_PATH
 
         if local_game_dirs is None:
-            dirs: List[Path] = []
+            dirs: list[Path] = []
             if self._provider:
                 dirs.append(self._provider.selfplay_dir)
             dirs.append(GAMES_DIR)
@@ -159,7 +158,7 @@ class DataCatalog:
         self.node_id = node_id or socket.gethostname()
 
         # Initialize manifest if available
-        self._manifest: Optional[DataManifest] = None
+        self._manifest: DataManifest | None = None
         if HAS_UNIFIED_MANIFEST and self.manifest_path.exists():
             try:
                 self._manifest = DataManifest(self.manifest_path)
@@ -168,11 +167,11 @@ class DataCatalog:
                 logger.warning(f"Could not initialize manifest: {e}")
 
         # Cache for discovered sources
-        self._sources: Dict[str, DataSource] = {}
+        self._sources: dict[str, DataSource] = {}
         self._last_discovery: float = 0.0
         self._discovery_interval: float = 300.0  # 5 minutes
 
-    def discover_data_sources(self, force: bool = False) -> List[DataSource]:
+    def discover_data_sources(self, force: bool = False) -> list[DataSource]:
         """Discover all available data sources.
 
         Args:
@@ -236,7 +235,7 @@ class DataCatalog:
         db_path: Path,
         source_type: str,
         host_origin: str,
-    ) -> Optional[DataSource]:
+    ) -> DataSource | None:
         """Analyze a game database and return source info.
 
         Args:
@@ -260,8 +259,8 @@ class DataCatalog:
                 return None
 
             # Get board type and player count distribution
-            board_types: Set[str] = set()
-            player_counts: Set[int] = set()
+            board_types: set[str] = set()
+            player_counts: set[int] = set()
             try:
                 cursor.execute("SELECT DISTINCT board_type FROM games WHERE board_type IS NOT NULL")
                 board_types = {row[0] for row in cursor.fetchall()}
@@ -299,11 +298,11 @@ class DataCatalog:
         self,
         min_quality: float = 0.0,
         max_games: int = 100000,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         prefer_recent: bool = True,
         prefer_high_elo: bool = True,
-    ) -> List[GameQualityMetadata]:
+    ) -> list[GameQualityMetadata]:
         """Get high-quality games for training.
 
         Args:
@@ -332,10 +331,10 @@ class DataCatalog:
 
     def get_synced_db_paths(
         self,
-        host_filter: Optional[str] = None,
+        host_filter: str | None = None,
         min_games: int = 0,
-        board_type: Optional[str] = None,
-    ) -> List[Path]:
+        board_type: str | None = None,
+    ) -> list[Path]:
         """Get paths to synced game databases.
 
         Args:
@@ -377,7 +376,7 @@ class DataCatalog:
         include_local: bool = True,
         include_synced: bool = True,
         include_nfs: bool = True,
-    ) -> List[Path]:
+    ) -> list[Path]:
         """Get all available paths for training data.
 
         Args:
@@ -453,7 +452,7 @@ class DataCatalog:
         self,
         min_quality: float = 0.5,
         limit: int = 10,
-    ) -> List[DataSource]:
+    ) -> list[DataSource]:
         """Get data sources sorted by average quality score.
 
         Args:
@@ -478,9 +477,9 @@ class DataCatalog:
     def get_recommended_training_sources(
         self,
         target_games: int = 50000,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-    ) -> List[Path]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> list[Path]:
         """Get recommended data sources for training.
 
         This method selects the best sources based on:
@@ -518,8 +517,8 @@ class DataCatalog:
         )
 
         # Select sources to reach target game count, preferring diversity
-        selected: List[DataSource] = []
-        selected_hosts: Set[str] = set()
+        selected: list[DataSource] = []
+        selected_hosts: set[str] = set()
         total_games = 0
 
         # First pass: one source per host
@@ -543,12 +542,12 @@ class DataCatalog:
 
 
 # Singleton instance
-_catalog_instance: Optional[DataCatalog] = None
+_catalog_instance: DataCatalog | None = None
 
 
 def get_data_catalog(
-    sync_dir: Optional[Path] = None,
-    manifest_path: Optional[Path] = None,
+    sync_dir: Path | None = None,
+    manifest_path: Path | None = None,
 ) -> DataCatalog:
     """Get the singleton DataCatalog instance.
 
@@ -607,8 +606,8 @@ class UnifiedDataRegistry:
 
     def __init__(
         self,
-        catalog: Optional[DataCatalog] = None,
-        manifest: Optional["DataManifest"] = None,
+        catalog: DataCatalog | None = None,
+        manifest: DataManifest | None = None,
     ):
         """Initialize the unified registry.
 
@@ -625,7 +624,7 @@ class UnifiedDataRegistry:
         return self._catalog
 
     @property
-    def manifest(self) -> Optional["DataManifest"]:
+    def manifest(self) -> DataManifest | None:
         """Get the DataManifest instance."""
         return self._manifest
 
@@ -638,10 +637,10 @@ class UnifiedDataRegistry:
 
     def mark_games_synced(
         self,
-        game_ids: List[str],
+        game_ids: list[str],
         source_host: str,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> int:
         """Mark games as synced."""
         if not self._manifest:
@@ -660,16 +659,16 @@ class UnifiedDataRegistry:
         return self._manifest.get_synced_count()
 
     # Catalog operations
-    def discover_sources(self, force: bool = False) -> List[DataSource]:
+    def discover_sources(self, force: bool = False) -> list[DataSource]:
         """Discover available data sources."""
         return self._catalog.discover_data_sources(force=force)
 
     def get_synced_db_paths(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        host_filter: Optional[str] = None,
-    ) -> List[Path]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+        host_filter: str | None = None,
+    ) -> list[Path]:
         """Get paths to synced databases."""
         return self._catalog.get_synced_db_paths(
             board_type=board_type,
@@ -681,7 +680,7 @@ class UnifiedDataRegistry:
         self,
         min_quality: float = 0.5,
         limit: int = 10,
-    ) -> List[DataSource]:
+    ) -> list[DataSource]:
         """Get data sources sorted by quality."""
         return self._catalog.get_sources_by_quality(
             min_quality=min_quality,
@@ -691,9 +690,9 @@ class UnifiedDataRegistry:
     def get_recommended_sources(
         self,
         target_games: int = 50000,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-    ) -> List[Path]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> list[Path]:
         """Get recommended data sources for training."""
         return self._catalog.get_recommended_training_sources(
             target_games=target_games,
@@ -702,7 +701,7 @@ class UnifiedDataRegistry:
         )
 
     # Combined operations
-    def get_combined_stats(self) -> Dict[str, Any]:
+    def get_combined_stats(self) -> dict[str, Any]:
         """Get combined statistics from catalog and manifest.
 
         Returns:
@@ -740,7 +739,7 @@ class UnifiedDataRegistry:
 
 
 # Singleton registry instance
-_registry_instance: Optional[UnifiedDataRegistry] = None
+_registry_instance: UnifiedDataRegistry | None = None
 
 
 def get_data_registry() -> UnifiedDataRegistry:
@@ -764,13 +763,13 @@ def reset_data_registry() -> None:
 
 
 __all__ = [
+    "CatalogStats",
     "DataCatalog",
     "DataSource",
-    "CatalogStats",
-    "get_data_catalog",
-    "reset_data_catalog",
     # Unified registry (December 2025)
     "UnifiedDataRegistry",
+    "get_data_catalog",
     "get_data_registry",
+    "reset_data_catalog",
     "reset_data_registry",
 ]

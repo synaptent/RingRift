@@ -177,7 +177,7 @@ All three scenarios below are required for v1.0. A release is **not production-r
   - All **Critical** and **High** priority SLOs from [`docs/operations/SLO_VERIFICATION.md`](../operations/SLO_VERIFICATION.md:49) must pass with `--env production` against the target-scale raw k6 JSON and any WebSocket companion results.
   - This includes, at minimum:
     - Service availability ≥99.9%, error rate ≤0.5%, 0 contract failures, 0 lifecycle mismatches.
-    - HTTP API p95 latency <500ms, move latency p95 <500ms, AI response p95 <1000ms.
+    - HTTP API p95 latency <500ms, move latency p95 <200ms, AI response p95 <1000ms.
     - WebSocket connection p95 <1000ms and connection success ≥99% (if WS companion run is enabled).
     - Capacity SLOs `concurrent_games ≥ 100` and `concurrent_players ≥ 300`.
 - **Primary commands:**

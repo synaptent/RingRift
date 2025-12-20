@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import torch
@@ -194,7 +194,7 @@ class ActionFeatureExtractor:
 
         return features
 
-    def extract_batch(self, moves: List[Move]) -> np.ndarray:
+    def extract_batch(self, moves: list[Move]) -> np.ndarray:
         """Extract features from a batch of moves.
 
         Args:
@@ -207,8 +207,8 @@ class ActionFeatureExtractor:
 
     def extract_tensor(
         self,
-        moves: List[Move],
-        device: Optional[torch.device] = None,
+        moves: list[Move],
+        device: torch.device | None = None,
     ) -> torch.Tensor:
         """Extract features as a PyTorch tensor.
 
@@ -235,7 +235,7 @@ def extract_state_features(
     game_state: GameState,
     player_number: int,
     board_size: int = 8,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Extract board and global features from game state.
 
     This is a simplified version that extracts the most important
@@ -599,7 +599,7 @@ class EBMONetwork(nn.Module):
     - Project to nearest legal move
     """
 
-    def __init__(self, config: Optional[EBMOConfig] = None):
+    def __init__(self, config: EBMOConfig | None = None):
         super().__init__()
         self.config = config or EBMOConfig()
 
@@ -703,8 +703,8 @@ class EBMONetwork(nn.Module):
 
     def encode_moves(
         self,
-        moves: List[Move],
-        device: Optional[torch.device] = None,
+        moves: list[Move],
+        device: torch.device | None = None,
     ) -> torch.Tensor:
         """Encode a list of moves to embeddings.
 
@@ -722,7 +722,7 @@ class EBMONetwork(nn.Module):
         self,
         game_state: GameState,
         player_number: int,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
     ) -> torch.Tensor:
         """Encode game state to embedding.
 
@@ -779,7 +779,7 @@ class EBMONetwork(nn.Module):
         self,
         game_state: GameState,
         player_number: int,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
     ) -> float:
         """Predict value for a game state.
 
@@ -874,7 +874,7 @@ def margin_ranking_loss(
     Returns:
         Scalar loss value
     """
-    batch_size, num_neg = energies_negative.shape
+    _batch_size, num_neg = energies_negative.shape
 
     # Expand positive energies to match negative shape
     pos_expanded = energies_positive.unsqueeze(1).expand(-1, num_neg)
@@ -934,7 +934,7 @@ def combined_ebmo_loss(
     outcomes: torch.Tensor,
     contrastive_temperature: float = 0.1,
     outcome_weight: float = 0.5,
-) -> Tuple[torch.Tensor, Dict[str, float]]:
+) -> tuple[torch.Tensor, dict[str, float]]:
     """Combined EBMO training loss.
 
     Args:
@@ -965,7 +965,7 @@ def combined_ebmo_loss(
 
 
 def manifold_boundary_loss(
-    network: "EBMONetwork",
+    network: EBMONetwork,
     state_embeds: torch.Tensor,
     legal_action_embeds: torch.Tensor,
     num_random_samples: int = 10,
@@ -1104,7 +1104,7 @@ def value_loss(
 def save_ebmo_model(
     model: EBMONetwork,
     path: str,
-    optimizer: Optional[torch.optim.Optimizer] = None,
+    optimizer: torch.optim.Optimizer | None = None,
     epoch: int = 0,
     **metadata,
 ) -> None:
@@ -1133,9 +1133,9 @@ def save_ebmo_model(
 
 def load_ebmo_model(
     path: str,
-    device: Optional[torch.device] = None,
-    config: Optional[EBMOConfig] = None,
-) -> Tuple[EBMONetwork, Dict[str, Any]]:
+    device: torch.device | None = None,
+    config: EBMOConfig | None = None,
+) -> tuple[EBMONetwork, dict[str, Any]]:
     """Load EBMO model from checkpoint.
 
     Args:
@@ -1169,18 +1169,18 @@ def load_ebmo_model(
 
 
 __all__ = [
+    "ActionEncoder",
+    "ActionFeatureExtractor",
     "EBMOConfig",
     "EBMONetwork",
-    "ActionFeatureExtractor",
-    "StateEncoder",
-    "ActionEncoder",
     "EnergyHead",
-    "extract_state_features",
-    "contrastive_energy_loss",
-    "outcome_weighted_energy_loss",
-    "margin_ranking_loss",
-    "hard_negative_contrastive_loss",
+    "StateEncoder",
     "combined_ebmo_loss",
-    "save_ebmo_model",
+    "contrastive_energy_loss",
+    "extract_state_features",
+    "hard_negative_contrastive_loss",
     "load_ebmo_model",
+    "margin_ranking_loss",
+    "outcome_weighted_energy_loss",
+    "save_ebmo_model",
 ]

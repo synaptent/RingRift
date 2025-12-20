@@ -26,7 +26,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash, _serialize_state
 from app.models import GameState, Move
@@ -42,15 +41,15 @@ class ValidationResult:
     valid: bool
     total_moves: int
     validated_moves: int
-    divergence_move: Optional[int] = None
-    expected_hash: Optional[str] = None
-    computed_hash: Optional[str] = None
-    expected_state: Optional[GameState] = None
-    computed_state: Optional[GameState] = None
-    move_at_divergence: Optional[Move] = None
-    initial_state: Optional[GameState] = None
-    moves_up_to_divergence: List[Move] = field(default_factory=list)
-    error: Optional[str] = None
+    divergence_move: int | None = None
+    expected_hash: str | None = None
+    computed_hash: str | None = None
+    expected_state: GameState | None = None
+    computed_state: GameState | None = None
+    move_at_divergence: Move | None = None
+    initial_state: GameState | None = None
+    moves_up_to_divergence: list[Move] = field(default_factory=list)
+    error: str | None = None
 
 
 def validate_game(
@@ -101,7 +100,7 @@ def validate_game(
     # Replay moves and validate
     current_state = initial_state
     validated_count = 0
-    moves_applied: List[Move] = []
+    moves_applied: list[Move] = []
 
     for i, move in enumerate(moves):
         try:
@@ -144,7 +143,7 @@ def validate_game(
                 move_at_divergence=move,
                 initial_state=initial_state,
                 moves_up_to_divergence=moves_applied.copy(),
-                error=f"Error applying move {i}: {str(e)}",
+                error=f"Error applying move {i}: {e!s}",
             )
 
     return ValidationResult(
@@ -160,8 +159,8 @@ def validate_game(
 def validate_all_games(
     db_path: str,
     stop_on_first_divergence: bool = True,
-    max_games: Optional[int] = None,
-) -> List[ValidationResult]:
+    max_games: int | None = None,
+) -> list[ValidationResult]:
     """Validate all games in a database.
 
     Args:
@@ -193,7 +192,7 @@ def export_fixture(
     result: ValidationResult,
     output_dir: str = "fixtures/auto",
     include_expected: bool = True,
-) -> Optional[str]:
+) -> str | None:
     """Export a divergent game as a test fixture.
 
     Creates a JSON file containing:

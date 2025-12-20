@@ -23,7 +23,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
@@ -32,7 +31,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -47,7 +46,7 @@ except ImportError:
     ExportCache = None
 
 try:
-    from .dynamic_export import get_export_settings, ExportSettings
+    from .dynamic_export import ExportSettings, get_export_settings
     HAS_DYNAMIC_EXPORT = True
 except ImportError:
     HAS_DYNAMIC_EXPORT = False
@@ -55,7 +54,7 @@ except ImportError:
     ExportSettings = None
 
 try:
-    from .curriculum_feedback import get_curriculum_feedback, CurriculumFeedback
+    from .curriculum_feedback import CurriculumFeedback, get_curriculum_feedback
     HAS_CURRICULUM_FEEDBACK = True
 except ImportError:
     HAS_CURRICULUM_FEEDBACK = False
@@ -71,7 +70,7 @@ except ImportError:
     TriggerConfig = None
 
 try:
-    from .training_health import get_training_health_monitor, TrainingHealthMonitor
+    from .training_health import TrainingHealthMonitor, get_training_health_monitor
     HAS_HEALTH_MONITOR = True
 except ImportError:
     HAS_HEALTH_MONITOR = False
@@ -86,8 +85,8 @@ except ImportError:
     register_trained_model = None
 
 try:
-    from app.coordination.distributed_lock import DistributedLock
     from app.config.coordination_defaults import LockDefaults
+    from app.coordination.distributed_lock import DistributedLock
     HAS_DISTRIBUTED_LOCK = True
 except ImportError:
     HAS_DISTRIBUTED_LOCK = False
@@ -97,14 +96,14 @@ except ImportError:
 # Training enhancements
 try:
     from .training_enhancements import (
-        CheckpointAverager,
-        GradientAccumulator,
-        DataQualityScorer,
         AdaptiveLRScheduler,
+        CalibrationAutomation,
+        CheckpointAverager,
+        DataQualityScorer,
         EnhancedEarlyStopping,
         EWCRegularizer,
+        GradientAccumulator,
         ModelEnsemble,
-        CalibrationAutomation,
         create_training_enhancements,
     )
     HAS_TRAINING_ENHANCEMENTS = True
@@ -137,8 +136,8 @@ except ImportError:
 
 try:
     from .distributed_unified import (
-        DistributedTrainer,
         DistributedConfig,
+        DistributedTrainer,
         GradientCompressor,
     )
     HAS_DISTRIBUTED_TRAINING = True
@@ -150,12 +149,12 @@ except ImportError:
 
 try:
     from .advanced_training import (
+        CMAESAutoTuner,
+        GradientCheckpointing,
         LRFinder,
         LRFinderResult,
-        GradientCheckpointing,
-        PFSPOpponentPool,
         OpponentStats,
-        CMAESAutoTuner,
+        PFSPOpponentPool,
         PlateauConfig,
         create_advanced_training_suite,
     )
@@ -174,9 +173,9 @@ except ImportError:
 # Unified signals for cross-system training decisions
 try:
     from .unified_signals import (
-        get_signal_computer,
-        TrainingUrgency,
         TrainingSignals,
+        TrainingUrgency,
+        get_signal_computer,
     )
     HAS_UNIFIED_SIGNALS = True
 except ImportError:
@@ -194,9 +193,9 @@ class PipelineResult:
     message: str
     export_time: float = 0
     training_time: float = 0
-    model_path: Optional[str] = None
-    model_id: Optional[str] = None
-    metrics: Dict[str, Any] = None
+    model_path: str | None = None
+    model_id: str | None = None
+    metrics: dict[str, Any] = None
 
     def __post_init__(self):
         if self.metrics is None:
@@ -206,11 +205,11 @@ class PipelineResult:
 @dataclass
 class PipelineStatus:
     """Status of the pipeline."""
-    available_features: Dict[str, bool]
-    active_training: List[str]
+    available_features: dict[str, bool]
+    active_training: list[str]
     health_status: str
-    curriculum_weights: Dict[str, float]
-    recent_results: List[PipelineResult]
+    curriculum_weights: dict[str, float]
+    recent_results: list[PipelineResult]
 
 
 class OptimizedTrainingPipeline:
@@ -227,8 +226,8 @@ class OptimizedTrainingPipeline:
         self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
 
         # Track active training and recent results
-        self._active_locks: Dict[str, Any] = {}
-        self._recent_results: List[PipelineResult] = []
+        self._active_locks: dict[str, Any] = {}
+        self._recent_results: list[PipelineResult] = []
         self._max_recent = 50
 
         # Training enhancements
@@ -254,7 +253,7 @@ class OptimizedTrainingPipeline:
         config_key: str,
         games_since_training: int = 0,
         current_elo: float = 1500.0,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Check if training should run for a config.
 
         Uses unified signals when available for consistent decisions.
@@ -286,7 +285,7 @@ class OptimizedTrainingPipeline:
         config_key: str,
         current_games: int,
         current_elo: float,
-    ) -> Optional["TrainingSignals"]:
+    ) -> TrainingSignals | None:
         """Get unified training signals for a config.
 
         Returns None if unified signals not available.
@@ -304,7 +303,7 @@ class OptimizedTrainingPipeline:
         config_key: str,
         current_games: int,
         current_elo: float,
-    ) -> Optional["TrainingUrgency"]:
+    ) -> TrainingUrgency | None:
         """Get unified training urgency for a config.
 
         Returns None if unified signals not available.
@@ -315,8 +314,8 @@ class OptimizedTrainingPipeline:
     def get_export_settings(
         self,
         config_key: str,
-        db_paths: List[str],
-    ) -> Dict[str, Any]:
+        db_paths: list[str],
+    ) -> dict[str, Any]:
         """Get optimal export settings for a config.
 
         Returns:
@@ -353,7 +352,7 @@ class OptimizedTrainingPipeline:
     def needs_export(
         self,
         config_key: str,
-        db_paths: List[str],
+        db_paths: list[str],
         output_path: str,
     ) -> bool:
         """Check if export is needed (or can use cached data)."""
@@ -410,11 +409,11 @@ class OptimizedTrainingPipeline:
     def run_export(
         self,
         config_key: str,
-        db_paths: List[str],
+        db_paths: list[str],
         output_path: str,
         parallel: bool = True,
         workers: int = 4,
-    ) -> Tuple[bool, float]:
+    ) -> tuple[bool, float]:
         """Run data export with all optimizations.
 
         Returns:
@@ -483,8 +482,8 @@ class OptimizedTrainingPipeline:
     def run_training(
         self,
         config_key: str,
-        db_paths: Optional[List[str]] = None,
-        npz_path: Optional[str] = None,
+        db_paths: list[str] | None = None,
+        npz_path: str | None = None,
         skip_export: bool = False,
     ) -> PipelineResult:
         """Run full optimized training pipeline.
@@ -650,8 +649,8 @@ class OptimizedTrainingPipeline:
         self,
         model: Any,
         optimizer: Any,
-        config: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Dict[str, Any]]:
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         """Get training enhancement objects for a training run.
 
         Args:
@@ -667,7 +666,7 @@ class OptimizedTrainingPipeline:
 
         return create_training_enhancements(model, optimizer, config)
 
-    def get_checkpoint_averager(self, num_checkpoints: int = 5) -> Optional[Any]:
+    def get_checkpoint_averager(self, num_checkpoints: int = 5) -> Any | None:
         """Get a checkpoint averager for model weight averaging.
 
         Args:
@@ -684,7 +683,7 @@ class OptimizedTrainingPipeline:
         self,
         accumulation_steps: int = 4,
         max_grad_norm: float = 1.0,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Get a gradient accumulator for larger effective batch sizes.
 
         Args:
@@ -704,8 +703,8 @@ class OptimizedTrainingPipeline:
     def get_model_ensemble(
         self,
         model_class: type,
-        model_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Any]:
+        model_kwargs: dict[str, Any] | None = None,
+    ) -> Any | None:
         """Get a model ensemble for diverse self-play opponents.
 
         Args:
@@ -755,7 +754,7 @@ class OptimizedTrainingPipeline:
         model: Any,
         optimizer: Any,
         criterion: Any,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Get a learning rate finder for optimal LR detection.
 
         Args:
@@ -771,7 +770,7 @@ class OptimizedTrainingPipeline:
 
         return LRFinder(model, optimizer, criterion)
 
-    def get_gradient_checkpointing(self, model: Any) -> Optional[Any]:
+    def get_gradient_checkpointing(self, model: Any) -> Any | None:
         """Get gradient checkpointing for memory-efficient training.
 
         Args:
@@ -786,7 +785,7 @@ class OptimizedTrainingPipeline:
         self._gradient_checkpointing = GradientCheckpointing(model)
         return self._gradient_checkpointing
 
-    def get_pfsp_pool(self) -> Optional[Any]:
+    def get_pfsp_pool(self) -> Any | None:
         """Get the PFSP opponent pool for self-play.
 
         Returns:
@@ -799,7 +798,7 @@ class OptimizedTrainingPipeline:
         board_type: str = "square8",
         num_players: int = 2,
         plateau_patience: int = 10,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Get CMA-ES auto-tuner for hyperparameter optimization on plateau.
 
         Args:
@@ -830,7 +829,7 @@ class OptimizedTrainingPipeline:
         criterion: Any,
         board_type: str = "square8",
         num_players: int = 2,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get a complete suite of advanced training utilities.
 
         Args:
@@ -856,7 +855,7 @@ class OptimizedTrainingPipeline:
 
 
 # Singleton instance
-_pipeline_instance: Optional[OptimizedTrainingPipeline] = None
+_pipeline_instance: OptimizedTrainingPipeline | None = None
 
 
 def get_optimized_pipeline() -> OptimizedTrainingPipeline:

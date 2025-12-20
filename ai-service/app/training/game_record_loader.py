@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional
 
 from app.models import BoardType
 from app.models.game_record import (
@@ -90,10 +90,10 @@ def iter_game_records_from_jsonl(
 
 def load_game_records(
     path: Path | str,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     *,
     skip_invalid: bool = False,
-) -> List[GameRecord]:
+) -> list[GameRecord]:
     """
     Eagerly load :class:`GameRecord` objects from a JSONL file.
 
@@ -117,7 +117,7 @@ def load_game_records(
         List of parsed records, in file order (possibly truncated by
         ``limit``).
     """
-    records: List[GameRecord] = []
+    records: list[GameRecord] = []
     if limit is not None and limit <= 0:
         return records
 
@@ -165,10 +165,10 @@ class RecordedEpisode:
     record: GameRecord
     board_type: BoardType
     num_players: int
-    winner: Optional[int]
+    winner: int | None
     outcome: GameOutcome
     final_score: FinalScore
-    moves: List[MoveRecord]
+    moves: list[MoveRecord]
     num_moves: int
 
 
@@ -195,7 +195,7 @@ def game_record_to_recorded_episode(record: GameRecord) -> RecordedEpisode:
 def iter_recorded_episodes_from_jsonl(
     path: Path | str,
     *,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     skip_invalid: bool = False,
 ) -> Iterator[RecordedEpisode]:
     """
@@ -220,7 +220,7 @@ def iter_recorded_episodes_from_jsonl(
             break
 
 
-def _summarize_records(records: Iterable[GameRecord]) -> Dict[str, Counter]:
+def _summarize_records(records: Iterable[GameRecord]) -> dict[str, Counter]:
     """
     Compute basic distribution summaries over a collection of GameRecords.
 
@@ -246,7 +246,7 @@ def _summarize_records(records: Iterable[GameRecord]) -> Dict[str, Counter]:
     }
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """
     Minimal CLI for manual inspection of GameRecord JSONL files.
 

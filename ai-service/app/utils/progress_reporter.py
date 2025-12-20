@@ -27,12 +27,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 __all__ = [
+    "OptimizationProgressReporter",
     "ProgressReporter",
     "SoakProgressReporter",
-    "OptimizationProgressReporter",
 ]
 
 
@@ -55,13 +55,13 @@ class ProgressReporter:
     total_units: int
     unit_name: str = "units"
     report_interval_sec: float = 10.0
-    context_label: Optional[str] = None
+    context_label: str | None = None
 
     # Internal tracking
     _start_time: float = field(default_factory=time.time, init=False)
     _last_report_time: float = field(default=0.0, init=False)
     _completed: int = field(default=0, init=False)
-    _metrics_history: List[Dict[str, Any]] = field(default_factory=list, init=False)
+    _metrics_history: list[dict[str, Any]] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         self._start_time = time.time()
@@ -69,8 +69,8 @@ class ProgressReporter:
 
     def reset(
         self,
-        total_units: Optional[int] = None,
-        context_label: Optional[str] = None,
+        total_units: int | None = None,
+        context_label: str | None = None,
     ) -> None:
         """Reset the reporter for a new phase/generation."""
         if total_units is not None:
@@ -85,7 +85,7 @@ class ProgressReporter:
     def update(
         self,
         completed: int,
-        extra_metrics: Optional[Dict[str, Any]] = None,
+        extra_metrics: dict[str, Any] | None = None,
         force_report: bool = False,
     ) -> None:
         """Update progress and potentially emit a report.
@@ -107,7 +107,7 @@ class ProgressReporter:
             self._emit_report(extra_metrics)
             self._last_report_time = now
 
-    def _emit_report(self, extra_metrics: Optional[Dict[str, Any]] = None) -> None:
+    def _emit_report(self, extra_metrics: dict[str, Any] | None = None) -> None:
         """Emit a progress report to stdout."""
         now = time.time()
         elapsed = now - self._start_time
@@ -123,7 +123,7 @@ class ProgressReporter:
         pct = (completed / total * 100) if total > 0 else 0.0
 
         # Build the report line
-        parts: List[str] = []
+        parts: list[str] = []
 
         # Context label if present
         if self.context_label:
@@ -146,14 +146,14 @@ class ProgressReporter:
         line = " ".join(parts)
         print(line, flush=True)
 
-    def finish(self, extra_metrics: Optional[Dict[str, Any]] = None) -> None:
+    def finish(self, extra_metrics: dict[str, Any] | None = None) -> None:
         """Emit a final summary report."""
         now = time.time()
         elapsed = now - self._start_time
         completed = self._completed
         rate = completed / elapsed if elapsed > 0 else 0.0
 
-        parts: List[str] = []
+        parts: list[str] = []
 
         if self.context_label:
             parts.append(f"[{self.context_label}]")
@@ -183,7 +183,7 @@ class SoakProgressReporter:
 
     total_games: int
     report_interval_sec: float = 10.0
-    context_label: Optional[str] = None
+    context_label: str | None = None
 
     # Internal tracking
     _start_time: float = field(default_factory=time.time, init=False)
@@ -191,8 +191,8 @@ class SoakProgressReporter:
     _games_completed: int = field(default=0, init=False)
     _total_moves: int = field(default=0, init=False)
     _total_decisions: int = field(default=0, init=False)
-    _game_durations: List[float] = field(default_factory=list, init=False)
-    _game_lengths: List[int] = field(default_factory=list, init=False)
+    _game_durations: list[float] = field(default_factory=list, init=False)
+    _game_lengths: list[int] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         self._start_time = time.time()
@@ -258,7 +258,7 @@ class SoakProgressReporter:
         # Percentage
         pct = (games / total * 100) if total > 0 else 0.0
 
-        parts: List[str] = []
+        parts: list[str] = []
 
         if self.context_label:
             parts.append(f"[{self.context_label}]")
@@ -291,7 +291,7 @@ class SoakProgressReporter:
         avg_moves_per_game = self._total_moves / games if games > 0 else 0.0
         avg_sec_per_game = sum(self._game_durations) / games if games > 0 else 0.0
 
-        parts: List[str] = []
+        parts: list[str] = []
 
         if self.context_label:
             parts.append(f"[{self.context_label}]")
@@ -331,7 +331,7 @@ class OptimizationProgressReporter:
     _candidates_evaluated: int = field(default=0, init=False)
     _total_states_processed: int = field(default=0, init=False)
     _total_games_played: int = field(default=0, init=False)
-    _best_fitness: Optional[float] = field(default=None, init=False)
+    _best_fitness: float | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._start_time = time.time()
@@ -371,7 +371,7 @@ class OptimizationProgressReporter:
     def record_candidate(
         self,
         candidate_idx: int,
-        fitness: Optional[float] = None,
+        fitness: float | None = None,
         states_processed: int = 0,
         games_played: int = 0,
         force_report: bool = False,
@@ -395,9 +395,8 @@ class OptimizationProgressReporter:
         self._total_states_processed += states_processed
         self._total_games_played += games_played
 
-        if fitness is not None:
-            if self._best_fitness is None or fitness > self._best_fitness:
-                self._best_fitness = fitness
+        if fitness is not None and (self._best_fitness is None or fitness > self._best_fitness):
+            self._best_fitness = fitness
 
         now = time.time()
         elapsed_since_report = now - self._last_report_time
@@ -444,7 +443,7 @@ class OptimizationProgressReporter:
             else 0.0
         )
 
-        parts: List[str] = []
+        parts: list[str] = []
 
         parts.append(f"[Gen {self._current_generation}]")
         parts.append("PROGRESS:")
@@ -494,7 +493,7 @@ class OptimizationProgressReporter:
         )
         games_per_sec = self._total_games_played / elapsed if elapsed > 0 else 0.0
 
-        parts: List[str] = []
+        parts: list[str] = []
 
         parts.append("OPTIMIZATION COMPLETED:")
         parts.append(f"{self._current_generation} generations")

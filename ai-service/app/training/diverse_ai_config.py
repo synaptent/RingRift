@@ -35,8 +35,6 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Dict, List, Optional, Tuple
 
 # All 11 AI types
 ALL_AI_TYPES = [
@@ -91,7 +89,7 @@ WEAK_AI_TYPES = [
 
 # GPU-optimized weight distribution
 # Prioritizes NN-guided types for high-quality training data (75% NN-guided)
-GPU_OPTIMIZED_WEIGHTS: Dict[str, float] = {
+GPU_OPTIMIZED_WEIGHTS: dict[str, float] = {
     "gumbel_mcts": 0.30,    # 30% - Top priority, best quality search
     "policy_only": 0.30,    # 30% - Fast GPU policy (volume)
     "gpu_minimax": 0.08,    # 8% - GPU batched search
@@ -106,7 +104,7 @@ GPU_OPTIMIZED_WEIGHTS: Dict[str, float] = {
 }
 
 # CPU-optimized weight distribution (for CPU-only nodes)
-CPU_OPTIMIZED_WEIGHTS: Dict[str, float] = {
+CPU_OPTIMIZED_WEIGHTS: dict[str, float] = {
     "minimax": 0.20,
     "maxn": 0.18,
     "mcts": 0.15,
@@ -121,7 +119,7 @@ CPU_OPTIMIZED_WEIGHTS: Dict[str, float] = {
 }
 
 # Balanced distribution for tournaments
-TOURNAMENT_WEIGHTS: Dict[str, float] = {
+TOURNAMENT_WEIGHTS: dict[str, float] = {
     "gumbel_mcts": 0.15,
     "policy_only": 0.12,
     "mcts": 0.12,
@@ -138,7 +136,7 @@ TOURNAMENT_WEIGHTS: Dict[str, float] = {
 # Robust training weights - emphasizes asymmetric matchups with random/heuristic
 # This helps models learn correct value semantics by training against weak opponents
 # where the value signal is clearer (NN should always beat random/heuristic)
-ROBUST_TRAINING_WEIGHTS: Dict[str, float] = {
+ROBUST_TRAINING_WEIGHTS: dict[str, float] = {
     "gumbel_mcts": 0.18,    # 18% - High quality NN search
     "mcts": 0.12,           # 12% - MCTS exploration
     "descent": 0.12,        # 12% - Gradient search
@@ -166,13 +164,13 @@ class MatchupConfig:
     """Configuration for a specific AI matchup."""
     player1_type: str
     player2_type: str
-    player3_type: Optional[str] = None
-    player4_type: Optional[str] = None
+    player3_type: str | None = None
+    player4_type: str | None = None
     weight: float = 1.0
     description: str = ""
 
     @property
-    def ai_types(self) -> List[str]:
+    def ai_types(self) -> list[str]:
         """Get list of AI types for all players."""
         types = [self.player1_type, self.player2_type]
         if self.player3_type:
@@ -188,11 +186,11 @@ class DiverseAIConfig:
     board_type: str = "square8"
     num_players: int = 2
     use_gpu: bool = True
-    weights: Dict[str, float] = field(default_factory=lambda: GPU_OPTIMIZED_WEIGHTS.copy())
+    weights: dict[str, float] = field(default_factory=lambda: GPU_OPTIMIZED_WEIGHTS.copy())
     include_asymmetric: bool = True  # Include strong vs weak matchups
     include_selfplay: bool = True    # Include same-AI matchups
 
-    def get_weights(self) -> Dict[str, float]:
+    def get_weights(self) -> dict[str, float]:
         """Get appropriate weights based on GPU availability."""
         if self.use_gpu:
             return GPU_OPTIMIZED_WEIGHTS
@@ -200,8 +198,8 @@ class DiverseAIConfig:
 
 
 def get_weighted_ai_type(
-    weights: Optional[Dict[str, float]] = None,
-    exclude: Optional[List[str]] = None,
+    weights: dict[str, float] | None = None,
+    exclude: list[str] | None = None,
 ) -> str:
     """Select a random AI type based on weights.
 
@@ -239,8 +237,8 @@ def get_weighted_ai_type(
 def get_diverse_matchups(
     num_players: int = 2,
     num_matchups: int = 20,
-    config: Optional[DiverseAIConfig] = None,
-) -> List[MatchupConfig]:
+    config: DiverseAIConfig | None = None,
+) -> list[MatchupConfig]:
     """Generate diverse AI matchup configurations.
 
     Args:
@@ -255,7 +253,7 @@ def get_diverse_matchups(
         config = DiverseAIConfig(num_players=num_players)
 
     weights = config.get_weights()
-    matchups: List[MatchupConfig] = []
+    matchups: list[MatchupConfig] = []
     seen: set = set()
 
     # Strong vs Strong matchups (high quality games)
@@ -393,7 +391,7 @@ def get_ai_type_for_difficulty(difficulty: int, use_gpu: bool = True) -> str:
 def get_training_ai_distribution(
     games_total: int,
     use_gpu: bool = True,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Get distribution of games per AI type for training.
 
     Args:

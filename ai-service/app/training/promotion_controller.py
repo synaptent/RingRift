@@ -33,13 +33,13 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Import unified signals for regression detection
 try:
     from app.training.unified_signals import (
-        get_signal_computer,
         TrainingSignals,
+        get_signal_computer,
     )
     HAS_UNIFIED_SIGNALS = True
 except ImportError:
@@ -95,7 +95,7 @@ class PromotionCriteria:
     confidence_threshold: float = 0.95
 
     # Tier-specific
-    tier_elo_threshold: Optional[float] = None
+    tier_elo_threshold: float | None = None
     tier_games_required: int = 100
 
 
@@ -108,21 +108,21 @@ class PromotionDecision:
     reason: str
 
     # Evaluation metrics
-    current_elo: Optional[float] = None
-    elo_improvement: Optional[float] = None
+    current_elo: float | None = None
+    elo_improvement: float | None = None
     games_played: int = 0
-    win_rate: Optional[float] = None
-    confidence: Optional[float] = None
+    win_rate: float | None = None
+    confidence: float | None = None
 
     # For tier promotions
-    current_tier: Optional[str] = None
-    target_tier: Optional[str] = None
+    current_tier: str | None = None
+    target_tier: str | None = None
 
     # Metadata
     evaluated_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    criteria_used: Optional[PromotionCriteria] = None
+    criteria_used: PromotionCriteria | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model_id": self.model_id,
             "promotion_type": self.promotion_type.value,
@@ -148,9 +148,9 @@ class PromotionController:
 
     def __init__(
         self,
-        criteria: Optional[PromotionCriteria] = None,
-        elo_service: Optional[Any] = None,
-        model_registry: Optional[Any] = None,
+        criteria: PromotionCriteria | None = None,
+        elo_service: Any | None = None,
+        model_registry: Any | None = None,
     ):
         """Initialize the promotion controller.
 
@@ -168,7 +168,7 @@ class PromotionController:
         self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
         # Event subscription state (December 2025)
         self._event_subscribed = False
-        self._pending_promotion_checks: Dict[str, float] = {}  # model_id -> elo_delta
+        self._pending_promotion_checks: dict[str, float] = {}  # model_id -> elo_delta
 
     @property
     def elo_service(self):
@@ -198,8 +198,8 @@ class PromotionController:
         if self._lifecycle_manager is None:
             try:
                 from app.integration.model_lifecycle import (
-                    ModelLifecycleManager,
                     LifecycleConfig,
+                    ModelLifecycleManager,
                 )
                 self._lifecycle_manager = ModelLifecycleManager(LifecycleConfig())
             except ImportError:
@@ -250,7 +250,7 @@ class PromotionController:
             logger.warning(f"[PromotionController] Failed to subscribe to events: {e}")
             return False
 
-    def get_pending_promotion_checks(self) -> Dict[str, float]:
+    def get_pending_promotion_checks(self) -> dict[str, float]:
         """Get models with pending promotion checks from Elo events.
 
         Returns:
@@ -268,7 +268,7 @@ class PromotionController:
         board_type: str = "square8",
         num_players: int = 2,
         promotion_type: PromotionType = PromotionType.PRODUCTION,
-        baseline_model_id: Optional[str] = None,
+        baseline_model_id: str | None = None,
         **kwargs,
     ) -> PromotionDecision:
         """Evaluate whether a model should be promoted.
@@ -307,7 +307,7 @@ class PromotionController:
         board_type: str,
         num_players: int,
         promotion_type: PromotionType,
-        baseline_model_id: Optional[str],
+        baseline_model_id: str | None,
     ) -> PromotionDecision:
         """Evaluate standard staging/production promotion."""
         # Get current Elo and stats
@@ -388,18 +388,18 @@ class PromotionController:
         model_id: str,
         board_type: str,
         num_players: int,
-        current_tier: Optional[str] = None,
-        target_tier: Optional[str] = None,
+        current_tier: str | None = None,
+        target_tier: str | None = None,
         **kwargs,
     ) -> PromotionDecision:
         """Evaluate tier-based promotion for difficulty ladder."""
         # Load tier registry
         try:
-            from app.training.tier_promotion_registry import (
-                load_square8_two_player_registry,
-                get_current_ladder_model_for_tier,
-            )
             from app.config.ladder_config import get_tier_threshold
+            from app.training.tier_promotion_registry import (
+                get_current_ladder_model_for_tier,
+                load_square8_two_player_registry,
+            )
 
             # Get current model stats
             current_elo = None
@@ -452,8 +452,8 @@ class PromotionController:
         model_id: str,
         board_type: str,
         num_players: int,
-        baseline_model_id: Optional[str],
-        tournament_results: Optional[Dict] = None,
+        baseline_model_id: str | None,
+        tournament_results: dict | None = None,
         **kwargs,
     ) -> PromotionDecision:
         """Evaluate champion promotion after tournament win."""
@@ -493,8 +493,8 @@ class PromotionController:
         model_id: str,
         board_type: str,
         num_players: int,
-        regression_threshold: Optional[float] = None,
-        current_games: Optional[int] = None,
+        regression_threshold: float | None = None,
+        current_games: int | None = None,
         **kwargs,
     ) -> PromotionDecision:
         """Evaluate whether to rollback to a previous model.
@@ -568,7 +568,7 @@ class PromotionController:
         config_key: str,
         current_games: int,
         current_elo: float,
-    ) -> Optional[TrainingSignals]:
+    ) -> TrainingSignals | None:
         """Get unified training signals for a config.
 
         Useful for callers that want to see the full signal state.
@@ -701,7 +701,7 @@ class PromotionController:
 
         logger.info(f"Multi-system notifications sent for {decision.model_id} promotion")
 
-    def _notify_event_bus(self, payload: Dict[str, Any]) -> None:
+    def _notify_event_bus(self, payload: dict[str, Any]) -> None:
         """Publish promotion event to the data event bus."""
         try:
             from app.distributed.data_events import (
@@ -732,19 +732,20 @@ class PromotionController:
         # Also emit PROMOTION_COMPLETE StageEvent (December 2025)
         self._emit_stage_event(payload)
 
-    def _emit_stage_event(self, payload: Dict[str, Any]) -> None:
+    def _emit_stage_event(self, payload: dict[str, Any]) -> None:
         """Emit PROMOTION_COMPLETE StageEvent for coordination integration.
 
         This connects promotion events to the stage event bus, enabling
         downstream consumers like TrainingDataCoordinator to react.
         """
         try:
+            from datetime import datetime
+
             from app.coordination.stage_events import (
-                StageEvent,
                 StageCompletionResult,
+                StageEvent,
                 get_event_bus as get_stage_bus,
             )
-            from datetime import datetime
 
             result = StageCompletionResult(
                 event=StageEvent.PROMOTION_COMPLETE,
@@ -772,12 +773,12 @@ class PromotionController:
         except Exception as e:
             logger.debug(f"Stage event emission failed: {e}")
 
-    def _notify_p2p_orchestrator(self, payload: Dict[str, Any]) -> None:
+    def _notify_p2p_orchestrator(self, payload: dict[str, Any]) -> None:
         """Notify P2P orchestrator about the promotion."""
         try:
-            import urllib.request
             import json
             import os
+            import urllib.request
 
             p2p_url = os.environ.get("P2P_ORCHESTRATOR_URL", "http://localhost:8770")
             url = f"{p2p_url}/api/model/promoted"
@@ -792,7 +793,7 @@ class PromotionController:
 
             try:
                 urllib.request.urlopen(req, timeout=URLOPEN_SHORT_TIMEOUT)
-                logger.debug(f"Notified P2P orchestrator about promotion")
+                logger.debug("Notified P2P orchestrator about promotion")
             except urllib.error.URLError:
                 pass  # P2P might not be running
         except Exception as e:
@@ -801,8 +802,8 @@ class PromotionController:
     def _notify_slack(self, decision: PromotionDecision) -> None:
         """Send Slack notification for the promotion."""
         try:
-            import os
             import json
+            import os
             import urllib.request
 
             webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
@@ -843,7 +844,7 @@ class PromotionController:
                 headers={"Content-Type": "application/json"},
             )
             urllib.request.urlopen(req, timeout=URLOPEN_TIMEOUT)
-            logger.debug(f"Sent Slack notification for promotion")
+            logger.debug("Sent Slack notification for promotion")
         except Exception as e:
             logger.debug(f"Slack notification failed: {e}")
 
@@ -854,7 +855,7 @@ class PromotionController:
             if decision.promotion_type not in (PromotionType.PRODUCTION, PromotionType.CHAMPION):
                 return
 
-            from app.coordination.work_queue import get_work_queue, WorkItem, WorkType
+            from app.coordination.work_queue import WorkItem, WorkType, get_work_queue
 
             queue = get_work_queue()
 
@@ -1023,19 +1024,19 @@ class NotificationHook:
                 })
     """
 
-    def on_regression_detected(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_regression_detected(self, model_id: str, status: dict[str, Any]) -> None:
         """Called when regression is detected but rollback not yet triggered."""
         pass
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         """Called when model enters at-risk state."""
         pass
 
-    def on_rollback_triggered(self, event: "RollbackEvent") -> None:
+    def on_rollback_triggered(self, event: RollbackEvent) -> None:
         """Called when rollback is triggered (before execution)."""
         pass
 
-    def on_rollback_completed(self, event: "RollbackEvent", success: bool) -> None:
+    def on_rollback_completed(self, event: RollbackEvent, success: bool) -> None:
         """Called after rollback execution."""
         pass
 
@@ -1047,26 +1048,26 @@ class LoggingNotificationHook(NotificationHook):
         import logging
         self.logger = logging.getLogger(logger_name)
 
-    def on_regression_detected(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_regression_detected(self, model_id: str, status: dict[str, Any]) -> None:
         self.logger.warning(
             f"Regression detected for {model_id}: "
             f"consecutive={status.get('consecutive_regressions', 0)}, "
             f"avg={status.get('avg_regression', 0):.1f}"
         )
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         self.logger.warning(
             f"MODEL AT RISK: {model_id} - "
             f"consecutive regressions: {status.get('consecutive_regressions', 0)}"
         )
 
-    def on_rollback_triggered(self, event: "RollbackEvent") -> None:
+    def on_rollback_triggered(self, event: RollbackEvent) -> None:
         self.logger.critical(
             f"ROLLBACK TRIGGERED: {event.current_model_id} -> {event.rollback_model_id} "
             f"(reason: {event.reason})"
         )
 
-    def on_rollback_completed(self, event: "RollbackEvent", success: bool) -> None:
+    def on_rollback_completed(self, event: RollbackEvent, success: bool) -> None:
         if success:
             self.logger.info(
                 f"Rollback completed: {event.current_model_id} -> {event.rollback_model_id}"
@@ -1097,8 +1098,8 @@ class WebhookNotificationHook(NotificationHook):
         """Send a webhook notification."""
         try:
             import json
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             if self.webhook_type == "slack":
                 # Slack format
@@ -1141,21 +1142,21 @@ class WebhookNotificationHook(NotificationHook):
             print(f"[WebhookHook] Failed to send webhook: {e}")
             return False
 
-    def on_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         self._send_webhook(
             f"⚠️ Model at risk: `{model_id}` - "
             f"{status.get('consecutive_regressions', 0)} consecutive regressions",
             level="warning",
         )
 
-    def on_rollback_triggered(self, event: "RollbackEvent") -> None:
+    def on_rollback_triggered(self, event: RollbackEvent) -> None:
         self._send_webhook(
             f"🔄 Rollback triggered: `{event.current_model_id}` → `{event.rollback_model_id}`\n"
             f"Reason: {event.reason}",
             level="critical",
         )
 
-    def on_rollback_completed(self, event: "RollbackEvent", success: bool) -> None:
+    def on_rollback_completed(self, event: RollbackEvent, success: bool) -> None:
         if success:
             self._send_webhook(
                 f"✅ Rollback completed: `{event.current_model_id}` → `{event.rollback_model_id}`",
@@ -1175,14 +1176,14 @@ class RollbackEvent:
     current_model_id: str
     rollback_model_id: str
     reason: str
-    elo_regression: Optional[float] = None
+    elo_regression: float | None = None
     games_played: int = 0
-    win_rate: Optional[float] = None
+    win_rate: float | None = None
     auto_triggered: bool = True
     board_type: str = "square8"
     num_players: int = 2
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "triggered_at": self.triggered_at,
             "current_model_id": self.current_model_id,
@@ -1241,34 +1242,34 @@ class RollbackMonitor:
 
     def __init__(
         self,
-        criteria: Optional[RollbackCriteria] = None,
-        promotion_controller: Optional[PromotionController] = None,
-        notification_hooks: Optional[List[NotificationHook]] = None,
+        criteria: RollbackCriteria | None = None,
+        promotion_controller: PromotionController | None = None,
+        notification_hooks: list[NotificationHook] | None = None,
     ):
         self.criteria = criteria or RollbackCriteria()
         self._controller = promotion_controller
         # Track regression history per model: model_id -> list of (timestamp, elo_diff)
-        self._regression_history: Dict[str, List[Tuple[str, float]]] = {}
+        self._regression_history: dict[str, list[tuple[str, float]]] = {}
         # Track rollback events
-        self._rollback_events: List[RollbackEvent] = []
+        self._rollback_events: list[RollbackEvent] = []
         # Notification hooks
-        self._hooks: List[NotificationHook] = notification_hooks or []
+        self._hooks: list[NotificationHook] = notification_hooks or []
         # Track which models we've already notified about being at-risk (avoid spam)
         self._at_risk_notified: set = set()
         # Track last rollback time per config key (board_type, num_players)
-        self._last_rollback_time: Dict[str, datetime] = {}
+        self._last_rollback_time: dict[str, datetime] = {}
         # Track cooldown bypass state (for manual overrides)
         self._cooldown_bypass: bool = False
         # Track whether training is paused due to rollback escalation
         self._training_paused: bool = False
         # Track investigation tasks triggered
-        self._pending_investigations: List[str] = []
+        self._pending_investigations: list[str] = []
 
     # =========================================================================
     # GRADUATED RESPONSE METHODS
     # =========================================================================
 
-    def get_response_action(self, rollback_count: Optional[int] = None) -> GraduatedResponseAction:
+    def get_response_action(self, rollback_count: int | None = None) -> GraduatedResponseAction:
         """Get the appropriate response action based on rollback count.
 
         Args:
@@ -1310,7 +1311,7 @@ class RollbackMonitor:
 
         return base_cooldown
 
-    def should_block_rollback(self) -> Tuple[bool, str]:
+    def should_block_rollback(self) -> tuple[bool, str]:
         """Check if rollback should be blocked due to escalation.
 
         Returns:
@@ -1359,7 +1360,7 @@ class RollbackMonitor:
             except Exception as e:
                 logger.warning(f"Notification hook error on resume: {e}")
 
-    def trigger_investigation(self, model_id: str, event: "RollbackEvent") -> str:
+    def trigger_investigation(self, model_id: str, event: RollbackEvent) -> str:
         """Trigger a root cause investigation for repeated rollbacks.
 
         Args:
@@ -1396,7 +1397,7 @@ class RollbackMonitor:
 
         return investigation_id
 
-    def apply_graduated_response(self, event: "RollbackEvent") -> GraduatedResponseAction:
+    def apply_graduated_response(self, event: RollbackEvent) -> GraduatedResponseAction:
         """Apply the graduated response for the current rollback situation.
 
         Args:
@@ -1437,7 +1438,7 @@ class RollbackMonitor:
 
         return action
 
-    def get_graduated_response_status(self) -> Dict[str, Any]:
+    def get_graduated_response_status(self) -> dict[str, Any]:
         """Get current graduated response status for monitoring.
 
         Returns:
@@ -1463,7 +1464,7 @@ class RollbackMonitor:
         """Add a notification hook."""
         self._hooks.append(hook)
 
-    def _notify_regression_detected(self, model_id: str, status: Dict[str, Any]) -> None:
+    def _notify_regression_detected(self, model_id: str, status: dict[str, Any]) -> None:
         """Notify hooks about detected regression."""
         for hook in self._hooks:
             try:
@@ -1471,7 +1472,7 @@ class RollbackMonitor:
             except Exception as e:
                 logger.warning(f"Notification hook error: {e}")
 
-    def _notify_at_risk(self, model_id: str, status: Dict[str, Any]) -> None:
+    def _notify_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         """Notify hooks about model entering at-risk state."""
         if model_id in self._at_risk_notified:
             return  # Already notified
@@ -1505,7 +1506,7 @@ class RollbackMonitor:
         """Generate a config key for tracking cooldowns."""
         return f"{board_type}_{num_players}p"
 
-    def is_cooldown_active(self, board_type: str, num_players: int) -> Tuple[bool, Optional[int]]:
+    def is_cooldown_active(self, board_type: str, num_players: int) -> tuple[bool, int | None]:
         """Check if rollback cooldown is active for this config.
 
         Uses effective cooldown which may be multiplied based on graduated response.
@@ -1547,7 +1548,7 @@ class RollbackMonitor:
                 pass
         return count
 
-    def is_max_daily_rollbacks_reached(self) -> Tuple[bool, int]:
+    def is_max_daily_rollbacks_reached(self) -> tuple[bool, int]:
         """Check if max daily rollbacks limit has been reached.
 
         Returns:
@@ -1583,9 +1584,9 @@ class RollbackMonitor:
         model_id: str,
         board_type: str = "square8",
         num_players: int = 2,
-        previous_model_id: Optional[str] = None,
-        baseline_elo: Optional[float] = None,
-    ) -> Tuple[bool, Optional[RollbackEvent]]:
+        previous_model_id: str | None = None,
+        baseline_elo: float | None = None,
+    ) -> tuple[bool, RollbackEvent | None]:
         """Check if a model has regressed and should be rolled back.
 
         Args:
@@ -1726,9 +1727,9 @@ class RollbackMonitor:
         model_id: str,
         board_type: str = "square8",
         num_players: int = 2,
-        baseline_model_ids: Optional[List[str]] = None,
+        baseline_model_ids: list[str] | None = None,
         num_baselines: int = 3,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Compare model against multiple baseline models.
 
         Args:
@@ -1822,7 +1823,7 @@ class RollbackMonitor:
         self,
         exclude_model_id: str,
         count: int = 3,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get list of recent production models to use as baselines."""
         registry = self.controller.model_registry
         if not registry:
@@ -1876,7 +1877,7 @@ class RollbackMonitor:
             return 0.0
         return sum(val for _, val in history) / len(history)
 
-    def _get_previous_production_model(self, current_model_id: str) -> Optional[str]:
+    def _get_previous_production_model(self, current_model_id: str) -> str | None:
         """Get the previous production model to rollback to."""
         registry = self.controller.model_registry
         if not registry:
@@ -1901,7 +1902,7 @@ class RollbackMonitor:
         self,
         model_id: str,
         triggered: bool,
-        elo_regression: Optional[float],
+        elo_regression: float | None,
     ) -> None:
         """Emit metrics for regression check."""
         try:
@@ -2007,11 +2008,11 @@ class RollbackMonitor:
         except ImportError:
             pass
 
-    def get_rollback_history(self) -> List[RollbackEvent]:
+    def get_rollback_history(self) -> list[RollbackEvent]:
         """Get history of rollback events."""
         return self._rollback_events.copy()
 
-    def get_regression_status(self, model_id: str) -> Dict[str, Any]:
+    def get_regression_status(self, model_id: str) -> dict[str, Any]:
         """Get current regression status for a model."""
         history = self._regression_history.get(model_id, [])
         if not history:
@@ -2044,7 +2045,7 @@ class RollbackMonitor:
 # Singleton with State Machine Integration
 # =============================================================================
 
-_promotion_controller_singleton: Optional[PromotionController] = None
+_promotion_controller_singleton: PromotionController | None = None
 _promotion_controller_lock = None  # Lazy init to avoid import issues
 
 
@@ -2058,7 +2059,7 @@ def _get_controller_lock():
 
 
 def get_promotion_controller(
-    criteria: Optional[PromotionCriteria] = None,
+    criteria: PromotionCriteria | None = None,
     use_singleton: bool = True,
 ) -> PromotionController:
     """Get a configured promotion controller instance.
@@ -2109,7 +2110,7 @@ def reset_promotion_controller() -> None:
 
 
 def get_rollback_monitor(
-    criteria: Optional[RollbackCriteria] = None,
+    criteria: RollbackCriteria | None = None,
 ) -> RollbackMonitor:
     """Get a configured rollback monitor instance."""
     return RollbackMonitor(criteria=criteria)
@@ -2146,7 +2147,7 @@ class ABTestConfig:
     auto_promote: bool = False
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "test_id": self.test_id,
             "control_model_id": self.control_model_id,
@@ -2173,12 +2174,12 @@ class ABTestResult:
     control_win_rate: float
     treatment_win_rate: float
     is_significant: bool
-    winner: Optional[str]  # "control", "treatment", or None if inconclusive
+    winner: str | None  # "control", "treatment", or None if inconclusive
     confidence: float  # Statistical confidence (0.0-1.0)
     recommendation: str
     analyzed_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "test_id": self.test_id,
             "control_elo": self.control_elo,
@@ -2227,15 +2228,15 @@ class ABTestManager:
 
     def __init__(
         self,
-        elo_service: Optional[Any] = None,
-        promotion_controller: Optional[PromotionController] = None,
+        elo_service: Any | None = None,
+        promotion_controller: PromotionController | None = None,
     ):
         self._elo_service = elo_service
         self._controller = promotion_controller
         # Active tests: test_id -> ABTestConfig
-        self._active_tests: Dict[str, ABTestConfig] = {}
+        self._active_tests: dict[str, ABTestConfig] = {}
         # Completed tests: test_id -> ABTestResult
-        self._completed_tests: Dict[str, ABTestResult] = {}
+        self._completed_tests: dict[str, ABTestResult] = {}
         # Random state for traffic routing (for reproducibility if needed)
         import random
         self._rng = random.Random()
@@ -2285,7 +2286,7 @@ class ABTestManager:
         )
         return True
 
-    def stop_test(self, test_id: str, analyze: bool = True) -> Optional[ABTestResult]:
+    def stop_test(self, test_id: str, analyze: bool = True) -> ABTestResult | None:
         """Stop an active A/B test.
 
         Args:
@@ -2309,7 +2310,7 @@ class ABTestManager:
         logger.info(f"Stopped A/B test {test_id}")
         return result
 
-    def get_model_for_game(self, test_id: str) -> Optional[str]:
+    def get_model_for_game(self, test_id: str) -> str | None:
         """Get the model to use for a game based on traffic routing.
 
         Args:
@@ -2326,7 +2327,7 @@ class ABTestManager:
             return config.treatment_model_id
         return config.control_model_id
 
-    def get_all_test_models(self, test_id: str) -> Tuple[Optional[str], Optional[str]]:
+    def get_all_test_models(self, test_id: str) -> tuple[str | None, str | None]:
         """Get both models in a test.
 
         Args:
@@ -2340,7 +2341,7 @@ class ABTestManager:
         config = self._active_tests[test_id]
         return config.control_model_id, config.treatment_model_id
 
-    def analyze_test(self, test_id: str) -> Optional[ABTestResult]:
+    def analyze_test(self, test_id: str) -> ABTestResult | None:
         """Analyze the current results of an A/B test.
 
         Args:
@@ -2550,15 +2551,15 @@ class ABTestManager:
             )
             return False
 
-    def list_active_tests(self) -> List[ABTestConfig]:
+    def list_active_tests(self) -> list[ABTestConfig]:
         """Get all active tests."""
         return list(self._active_tests.values())
 
-    def list_completed_tests(self) -> List[ABTestResult]:
+    def list_completed_tests(self) -> list[ABTestResult]:
         """Get all completed test results."""
         return list(self._completed_tests.values())
 
-    def get_test_status(self, test_id: str) -> Optional[Dict[str, Any]]:
+    def get_test_status(self, test_id: str) -> dict[str, Any] | None:
         """Get detailed status of a test.
 
         Args:
@@ -2587,7 +2588,7 @@ class ABTestManager:
 
 
 def get_ab_test_manager(
-    elo_service: Optional[Any] = None,
+    elo_service: Any | None = None,
 ) -> ABTestManager:
     """Get a configured A/B test manager instance."""
     return ABTestManager(elo_service=elo_service)

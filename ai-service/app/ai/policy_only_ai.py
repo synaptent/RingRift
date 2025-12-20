@@ -22,13 +22,12 @@ The policy temperature controls exploration vs exploitation:
 from __future__ import annotations
 
 import logging
-from typing import Optional, List, Dict, Any, cast
 
 import numpy as np
 
+from ..models import AIConfig, BoardType, GameState, Move
 from .base import BaseAI
-from .neural_net import NeuralNetAI, INVALID_MOVE_INDEX
-from ..models import GameState, Move, AIConfig, BoardType
+from .neural_net import INVALID_MOVE_INDEX, NeuralNetAI
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +85,7 @@ class PolicyOnlyAI(BaseAI):
         self.temperature = config.policy_temperature or 1.0
 
         # Load neural network
-        self.neural_net: Optional[NeuralNetAI] = None
+        self.neural_net: NeuralNetAI | None = None
         try:
             self.neural_net = NeuralNetAI(player_number, config)
             logger.info(
@@ -104,7 +103,7 @@ class PolicyOnlyAI(BaseAI):
             )
             self.neural_net = None
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select a move based on neural network policy output.
 
         Performs a single forward pass through the neural network and
@@ -143,7 +142,7 @@ class PolicyOnlyAI(BaseAI):
     def _get_policy_scores(
         self,
         game_state: GameState,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
     ) -> np.ndarray:
         """Get policy scores for each valid move.
 
@@ -202,7 +201,7 @@ class PolicyOnlyAI(BaseAI):
 
     def _sample_from_policy(
         self,
-        valid_moves: List[Move],
+        valid_moves: list[Move],
         scores: np.ndarray,
     ) -> Move:
         """Sample a move from the policy distribution.
@@ -256,7 +255,7 @@ class PolicyOnlyAI(BaseAI):
     def get_policy_distribution(
         self,
         game_state: GameState,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Get the full policy distribution over valid moves.
 
         Useful for debugging and training data extraction.
@@ -282,9 +281,9 @@ class PolicyOnlyAI(BaseAI):
             log_scores = np.log(np.maximum(scores, 1e-10))
             probs = softmax(log_scores, self.temperature)
 
-        return {str(move): float(prob) for move, prob in zip(valid_moves, probs)}
+        return {str(move): float(prob) for move, prob in zip(valid_moves, probs, strict=False)}
 
-    def reset_for_new_game(self, *, rng_seed: Optional[int] = None) -> None:
+    def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset state for a new game.
 
         Args:

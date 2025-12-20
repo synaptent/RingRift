@@ -53,11 +53,11 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-
-from app.utils.checksum_utils import compute_string_checksum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import numpy as np
+
+from app.utils.checksum_utils import compute_string_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ class ValidationIssue:
     """A single validation issue found in the data."""
     issue_type: ValidationIssueType
     message: str
-    sample_index: Optional[int] = None
-    details: Optional[Dict[str, Any]] = None
+    sample_index: int | None = None
+    details: dict[str, Any] | None = None
 
     def __str__(self) -> str:
         if self.sample_index is not None:
@@ -94,12 +94,12 @@ class ValidationResult:
     """Result of validating training data."""
     valid: bool
     total_samples: int
-    issues: List[ValidationIssue] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=list)
 
     # Statistics
     samples_with_issues: int = 0
-    policy_sum_stats: Optional[Dict[str, float]] = None
-    value_stats: Optional[Dict[str, float]] = None
+    policy_sum_stats: dict[str, float] | None = None
+    value_stats: dict[str, float] | None = None
 
     def add_issue(self, issue: ValidationIssue) -> None:
         self.issues.append(issue)
@@ -151,7 +151,7 @@ class DataValidator:
     - Correct array dimensions
     """
 
-    def __init__(self, config: Optional[DataValidatorConfig] = None):
+    def __init__(self, config: DataValidatorConfig | None = None):
         self.config = config or DataValidatorConfig()
 
     def validate_npz(self, path: Path) -> ValidationResult:
@@ -177,7 +177,7 @@ class DataValidator:
 
         return self.validate_arrays(dict(data))
 
-    def validate_arrays(self, data: Dict[str, np.ndarray]) -> ValidationResult:
+    def validate_arrays(self, data: dict[str, np.ndarray]) -> ValidationResult:
         """Validate training data arrays.
 
         Args:
@@ -202,7 +202,7 @@ class DataValidator:
         result = ValidationResult(valid=True, total_samples=total_samples)
 
         # Track samples with issues
-        samples_with_issues: Set[int] = set()
+        samples_with_issues: set[int] = set()
 
         # Validate values
         value_issues = self._validate_values(values)
@@ -247,7 +247,7 @@ class DataValidator:
 
         return result
 
-    def _validate_values(self, values: np.ndarray) -> List[ValidationIssue]:
+    def _validate_values(self, values: np.ndarray) -> list[ValidationIssue]:
         """Validate value targets."""
         issues = []
 
@@ -278,8 +278,8 @@ class DataValidator:
     def _validate_policies(
         self,
         policy_values: np.ndarray,
-        policy_indices: Optional[np.ndarray] = None,
-    ) -> List[ValidationIssue]:
+        policy_indices: np.ndarray | None = None,
+    ) -> list[ValidationIssue]:
         """Validate policy targets."""
         issues = []
 
@@ -338,7 +338,7 @@ class DataValidator:
 
         return issues
 
-    def _validate_features(self, features: np.ndarray) -> List[ValidationIssue]:
+    def _validate_features(self, features: np.ndarray) -> list[ValidationIssue]:
         """Validate feature arrays."""
         issues = []
 
@@ -398,12 +398,12 @@ class GameDeduplicator:
         Args:
             hash_prefix_length: Length of hash prefix to store (memory vs collision tradeoff)
         """
-        self.seen_hashes: Set[str] = set()
+        self.seen_hashes: set[str] = set()
         self.hash_prefix_length = hash_prefix_length
         self.total_checked = 0
         self.duplicates_found = 0
 
-    def is_duplicate(self, moves: List[Any]) -> bool:
+    def is_duplicate(self, moves: list[Any]) -> bool:
         """Check if a game (by move sequence) is a duplicate.
 
         Args:
@@ -441,7 +441,7 @@ class GameDeduplicator:
         self.seen_hashes.add(truncated)
         return False
 
-    def _compute_game_hash(self, moves: List[Any]) -> str:
+    def _compute_game_hash(self, moves: list[Any]) -> str:
         """Compute hash of move sequence."""
         moves_str = "|".join(str(m) for m in moves)
         return compute_string_checksum(moves_str, truncate=self.hash_prefix_length)
@@ -452,7 +452,7 @@ class GameDeduplicator:
         self.total_checked = 0
         self.duplicates_found = 0
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get deduplication statistics."""
         return {
             "total_checked": self.total_checked,
@@ -469,7 +469,7 @@ class GameDeduplicator:
 
 def validate_npz_file(
     path: str,
-    config: Optional[DataValidatorConfig] = None,
+    config: DataValidatorConfig | None = None,
 ) -> ValidationResult:
     """Validate an NPZ training data file.
 
@@ -485,8 +485,8 @@ def validate_npz_file(
 
 
 def validate_training_data(
-    data: Dict[str, np.ndarray],
-    config: Optional[DataValidatorConfig] = None,
+    data: dict[str, np.ndarray],
+    config: DataValidatorConfig | None = None,
 ) -> ValidationResult:
     """Validate training data arrays.
 

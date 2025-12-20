@@ -22,23 +22,20 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import shutil
-import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
 from app.monitoring.base import (
+    Alert,
+    CompositeMonitor,
     HealthMonitor,
     HealthStatus,
-    Alert,
     MonitoringResult,
-    CompositeMonitor,
 )
 from app.monitoring.thresholds import (
     AlertLevel,
-    THRESHOLDS,
     get_threshold,
     should_alert,
 )
@@ -46,6 +43,7 @@ from app.monitoring.thresholds import (
 # Event emission for cluster health changes
 try:
     import asyncio
+
     from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
     HAS_CLUSTER_EVENTS = True
 except ImportError:
@@ -62,27 +60,27 @@ class NodeInfo:
     """Information about a cluster node."""
     node_id: str
     address: str
-    last_heartbeat: Optional[datetime] = None
+    last_heartbeat: datetime | None = None
     is_leader: bool = False
     gpu_utilization: float = 0.0
     disk_usage_pct: float = 0.0
     memory_usage_pct: float = 0.0
     selfplay_games_per_hour: float = 0.0
     status: str = "unknown"
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class DiskHealthMonitor(HealthMonitor):
     """Monitor disk space on local or remote paths."""
 
-    def __init__(self, path: str = "/", name: Optional[str] = None):
+    def __init__(self, path: str = "/", name: str | None = None):
         super().__init__(name or f"DiskMonitor({path})")
         self.path = path
 
     def check_health(self) -> MonitoringResult:
         """Check disk space against thresholds."""
-        alerts: List[Alert] = []
-        metrics: Dict[str, Any] = {}
+        alerts: list[Alert] = []
+        metrics: dict[str, Any] = {}
 
         try:
             usage = shutil.disk_usage(self.path)
@@ -155,8 +153,8 @@ class MemoryHealthMonitor(HealthMonitor):
 
     def check_health(self) -> MonitoringResult:
         """Check memory usage against thresholds."""
-        alerts: List[Alert] = []
-        metrics: Dict[str, Any] = {}
+        alerts: list[Alert] = []
+        metrics: dict[str, Any] = {}
 
         try:
             # Try to use psutil if available
@@ -237,14 +235,14 @@ class MemoryHealthMonitor(HealthMonitor):
 class GPUHealthMonitor(HealthMonitor):
     """Monitor GPU utilization and memory."""
 
-    def __init__(self, device_id: int = 0, name: Optional[str] = None):
+    def __init__(self, device_id: int = 0, name: str | None = None):
         super().__init__(name or f"GPUMonitor({device_id})")
         self.device_id = device_id
 
     def check_health(self) -> MonitoringResult:
         """Check GPU health using nvidia-smi or pynvml."""
-        alerts: List[Alert] = []
-        metrics: Dict[str, Any] = {}
+        alerts: list[Alert] = []
+        metrics: dict[str, Any] = {}
         status = HealthStatus.HEALTHY
 
         try:
@@ -357,7 +355,7 @@ class NodeHealthMonitor(HealthMonitor):
         self.check_memory = check_memory
 
         # Sub-monitors
-        self._monitors: List[HealthMonitor] = []
+        self._monitors: list[HealthMonitor] = []
         if check_disk:
             self._monitors.append(DiskHealthMonitor("/"))
         if check_memory:
@@ -367,8 +365,8 @@ class NodeHealthMonitor(HealthMonitor):
 
     def check_health(self) -> MonitoringResult:
         """Check health of this node."""
-        all_metrics: Dict[str, Any] = {"node_id": self.node_id}
-        all_alerts: List[Alert] = []
+        all_metrics: dict[str, Any] = {"node_id": self.node_id}
+        all_alerts: list[Alert] = []
         worst_status = HealthStatus.HEALTHY
 
         for monitor in self._monitors:
@@ -411,11 +409,11 @@ class ClusterHealthMonitor(CompositeMonitor):
     when health status changes.
     """
 
-    def __init__(self, min_nodes: Optional[int] = None):
+    def __init__(self, min_nodes: int | None = None):
         super().__init__("ClusterHealthMonitor")
         self.min_nodes = min_nodes or get_threshold("cluster", "min_nodes_online", 5)
         self.node_timeout_seconds = get_threshold("cluster", "node_timeout_seconds", 30)
-        self._previous_status: Optional[HealthStatus] = None
+        self._previous_status: HealthStatus | None = None
 
     def add_node(
         self,
@@ -497,7 +495,7 @@ class ClusterHealthMonitor(CompositeMonitor):
 
             # Schedule event emission
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 event_bus = get_event_bus()
                 asyncio.ensure_future(event_bus.publish(DataEvent(
                     event_type=event_type,
@@ -514,8 +512,8 @@ class ClusterHealthMonitor(CompositeMonitor):
 
 
 def create_cluster_monitor(
-    nodes: Optional[List[Dict[str, Any]]] = None,
-    min_nodes: Optional[int] = None,
+    nodes: list[dict[str, Any]] | None = None,
+    min_nodes: int | None = None,
 ) -> ClusterHealthMonitor:
     """Create a ClusterHealthMonitor with the specified nodes.
 
@@ -553,12 +551,12 @@ def check_local_health() -> MonitoringResult:
 
 
 __all__ = [
-    "DiskHealthMonitor",
-    "MemoryHealthMonitor",
-    "GPUHealthMonitor",
-    "NodeHealthMonitor",
     "ClusterHealthMonitor",
+    "DiskHealthMonitor",
+    "GPUHealthMonitor",
+    "MemoryHealthMonitor",
+    "NodeHealthMonitor",
     "NodeInfo",
-    "create_cluster_monitor",
     "check_local_health",
+    "create_cluster_monitor",
 ]

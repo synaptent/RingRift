@@ -44,10 +44,11 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +98,8 @@ class SyncOrchestratorState:
     last_registry_sync: float = 0.0
     total_syncs: int = 0
     sync_errors: int = 0
-    components_loaded: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    components_loaded: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -109,8 +110,8 @@ class SyncResult:
     success: bool
     items_synced: int = 0
     duration_seconds: float = 0.0
-    error: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -120,8 +121,8 @@ class FullSyncResult:
     success: bool = True
     total_items_synced: int = 0
     duration_seconds: float = 0.0
-    component_results: List[SyncResult] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    component_results: list[SyncResult] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 class SyncOrchestrator:
@@ -131,7 +132,7 @@ class SyncOrchestrator:
     Elo sync, and registry sync across the distributed system.
     """
 
-    def __init__(self, config: Optional[SyncOrchestratorConfig] = None):
+    def __init__(self, config: SyncOrchestratorConfig | None = None):
         """Initialize sync orchestrator.
 
         Args:
@@ -220,8 +221,8 @@ class SyncOrchestrator:
         # Wire DataQualityOrchestrator for holistic quality state (December 2025)
         try:
             from app.quality.data_quality_orchestrator import (
-                wire_quality_events,
                 get_quality_orchestrator,
+                wire_quality_events,
             )
 
             # Wire and get orchestrator
@@ -256,15 +257,13 @@ class SyncOrchestrator:
 
         # Unsubscribe quality watcher
         if self._quality_sync_watcher:
-            try:
+            with contextlib.suppress(Exception):
                 self._quality_sync_watcher.unsubscribe()
-            except Exception:
-                pass
 
         self.state.initialized = False
         logger.info("[SyncOrchestrator] Shutdown complete")
 
-    async def sync_data(self, categories: Optional[List[str]] = None) -> SyncResult:
+    async def sync_data(self, categories: list[str] | None = None) -> SyncResult:
         """Sync training data.
 
         Args:
@@ -339,8 +338,8 @@ class SyncOrchestrator:
 
     async def sync_models(
         self,
-        model_ids: Optional[List[str]] = None,
-        sources: Optional[List[str]] = None,
+        model_ids: list[str] | None = None,
+        sources: list[str] | None = None,
     ) -> SyncResult:
         """Sync model checkpoints.
 
@@ -575,12 +574,13 @@ class SyncOrchestrator:
 
         # Legacy fallback
         try:
+            from datetime import datetime
+
             from app.coordination.stage_events import (
-                StageEvent,
                 StageCompletionResult,
+                StageEvent,
                 get_event_bus,
             )
-            from datetime import datetime
 
             event_result = StageCompletionResult(
                 event=StageEvent.SYNC_COMPLETE,
@@ -845,7 +845,7 @@ class SyncOrchestrator:
                 error=str(e),
             )
 
-    def get_quality_driven_sync_priority(self) -> List[str]:
+    def get_quality_driven_sync_priority(self) -> list[str]:
         """Get configs ordered by quality-driven sync priority.
 
         Uses DataQualityOrchestrator state to determine which configs
@@ -918,7 +918,7 @@ class SyncOrchestrator:
 
         return False
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get sync orchestrator status.
 
         Returns:
@@ -963,11 +963,11 @@ class SyncOrchestrator:
 
 
 # Singleton instance
-_sync_orchestrator: Optional[SyncOrchestrator] = None
+_sync_orchestrator: SyncOrchestrator | None = None
 
 
 def get_sync_orchestrator(
-    config: Optional[SyncOrchestratorConfig] = None,
+    config: SyncOrchestratorConfig | None = None,
 ) -> SyncOrchestrator:
     """Get the global sync orchestrator singleton.
 
@@ -990,11 +990,11 @@ def reset_sync_orchestrator() -> None:
 
 
 __all__ = [
+    "FullSyncResult",
     "SyncOrchestrator",
     "SyncOrchestratorConfig",
     "SyncOrchestratorState",
     "SyncResult",
-    "FullSyncResult",
     "get_sync_orchestrator",
     "reset_sync_orchestrator",
 ]

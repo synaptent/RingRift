@@ -16,19 +16,21 @@ Training:
 """
 
 import math
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.swa_utils import AveragedModel, SWALR
+from torch.optim.swa_utils import SWALR, AveragedModel
 
 from ..models import BoardType, Position
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
+
     from ..models import GameState, Move
 from .nnue import (
     ClippedReLU,
@@ -87,7 +89,7 @@ class RingRiftNNUEWithPolicy(nn.Module):
     def __init__(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        hidden_dim: Optional[int] = None,
+        hidden_dim: int | None = None,
         num_hidden_layers: int = 2,
         policy_dropout: float = 0.1,
     ):
@@ -107,7 +109,7 @@ class RingRiftNNUEWithPolicy(nn.Module):
         self.accumulator = nn.Linear(input_dim, hidden_dim, bias=True)
 
         # Hidden layers with ClippedReLU (same as RingRiftNNUE)
-        layers: List[nn.Module] = []
+        layers: list[nn.Module] = []
         current_dim = hidden_dim * 2
         for _ in range(num_hidden_layers):
             layers.append(nn.Linear(current_dim, 32))
@@ -172,7 +174,7 @@ class RingRiftNNUEWithPolicy(nn.Module):
         features: torch.Tensor,
         from_indices: torch.Tensor,
         to_indices: torch.Tensor,
-        move_mask: Optional[torch.Tensor] = None,
+        move_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Score a batch of moves given game state features.
 
@@ -198,7 +200,7 @@ class RingRiftNNUEWithPolicy(nn.Module):
         features: torch.Tensor,
         from_indices: torch.Tensor,
         to_indices: torch.Tensor,
-        move_mask: Optional[torch.Tensor] = None,
+        move_mask: torch.Tensor | None = None,
         temperature: float = 1.0,
     ) -> torch.Tensor:
         """Get move probabilities via softmax over legal moves.
@@ -282,8 +284,8 @@ def encode_moves_for_policy(
     board_size: int,
     board_type: BoardType,
     max_moves: int = 256,
-    device: Optional[torch.device] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    device: torch.device | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Encode a list of moves for policy head input.
 
     Args:
@@ -362,8 +364,8 @@ class NNUEPolicyTrainer:
         ddp_rank: int = 0,
         use_swa: bool = False,
         swa_start_epoch: int = 0,
-        swa_lr: Optional[float] = None,
-        progressive_batch_callback: Optional[Callable[[int, int], int]] = None,
+        swa_lr: float | None = None,
+        progressive_batch_callback: Callable[[int, int], int] | None = None,
         gradient_accumulation_steps: int = 1,
     ):
         self.model = model.to(device)
@@ -413,7 +415,7 @@ class NNUEPolicyTrainer:
         self.progressive_batch_callback = progressive_batch_callback
 
         # Learning history for plotting
-        self.history: Dict[str, List[float]] = {
+        self.history: dict[str, list[float]] = {
             "train_loss": [], "val_loss": [],
             "train_value_loss": [], "val_value_loss": [],
             "train_policy_loss": [], "val_policy_loss": [],
@@ -485,7 +487,7 @@ class NNUEPolicyTrainer:
         # Update BN statistics for SWA model
         torch.optim.swa_utils.update_bn(train_loader, self.swa_model, device=self.device)
 
-    def get_swa_model(self) -> Optional[AveragedModel]:
+    def get_swa_model(self) -> AveragedModel | None:
         """Get the SWA averaged model for inference."""
         return self.swa_model
 
@@ -508,10 +510,10 @@ class NNUEPolicyTrainer:
         if not self.use_ema or self.ema_model is None:
             return
         with torch.no_grad():
-            for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters()):
+            for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters(), strict=False):
                 ema_p.data.mul_(self.ema_decay).add_(model_p.data, alpha=1 - self.ema_decay)
 
-    def get_ema_model(self) -> Optional[RingRiftNNUEWithPolicy]:
+    def get_ema_model(self) -> RingRiftNNUEWithPolicy | None:
         """Get the EMA model for inference."""
         return self.ema_model
 
@@ -591,9 +593,9 @@ class NNUEPolicyTrainer:
         to_indices: torch.Tensor,
         move_mask: torch.Tensor,
         target_move_idx: torch.Tensor,
-        mcts_probs: Optional[torch.Tensor] = None,
-        sample_weights: Optional[torch.Tensor] = None,
-    ) -> Tuple[float, float, float]:
+        mcts_probs: torch.Tensor | None = None,
+        sample_weights: torch.Tensor | None = None,
+    ) -> tuple[float, float, float]:
         """Single training step with both value and policy loss.
 
         Args:
@@ -723,8 +725,8 @@ class NNUEPolicyTrainer:
         to_indices: torch.Tensor,
         move_mask: torch.Tensor,
         target_move_idx: torch.Tensor,
-        mcts_probs: Optional[torch.Tensor] = None,
-    ) -> Tuple[float, float, float, float]:
+        mcts_probs: torch.Tensor | None = None,
+    ) -> tuple[float, float, float, float]:
         """Validate on held-out data.
 
         Args:
@@ -774,7 +776,7 @@ class NNUEPolicyTrainer:
 
         return total_loss.item(), value_loss.item(), policy_loss.item(), policy_accuracy.item()
 
-    def update_scheduler(self, val_loss: float, epoch: Optional[int] = None) -> None:
+    def update_scheduler(self, val_loss: float, epoch: int | None = None) -> None:
         """Update learning rate scheduler.
 
         Args:
@@ -824,7 +826,7 @@ class NNUEPolicyTrainer:
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
 
-            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+            _fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
             # Loss curves
             ax = axes[0, 0]
@@ -939,9 +941,9 @@ class LearningRateFinder:
         self.model = model
         self.optimizer = optimizer
         self.trainer = trainer
-        self.lrs: List[float] = []
-        self.losses: List[float] = []
-        self._initial_state: Optional[dict] = None
+        self.lrs: list[float] = []
+        self.losses: list[float] = []
+        self._initial_state: dict | None = None
 
     def _save_state(self) -> None:
         """Save model and optimizer state."""
@@ -1006,7 +1008,7 @@ class LearningRateFinder:
                 batch = next(data_iter)
 
             # Unpack batch
-            features, values, from_idx, to_idx, mask, target, sample_weights, mcts_probs = batch
+            features, values, from_idx, to_idx, mask, target, sample_weights, _mcts_probs = batch
             features = features.to(device)
             values = values.to(device)
             from_idx = from_idx.to(device)
@@ -1085,7 +1087,7 @@ class LearningRateFinder:
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(figsize=(10, 6))
+            _fig, ax = plt.subplots(figsize=(10, 6))
             ax.plot(self.lrs, self.losses)
             ax.set_xscale('log')
             ax.set_xlabel('Learning Rate')
@@ -1140,7 +1142,7 @@ class HexBoardAugmenter:
             return row * self.board_size + col
         return -1  # Out of bounds
 
-    def _flat_to_axial(self, idx: int) -> Tuple[int, int]:
+    def _flat_to_axial(self, idx: int) -> tuple[int, int]:
         """Convert flat index to axial coordinates."""
         row = idx // self.board_size
         col = idx % self.board_size
@@ -1148,11 +1150,11 @@ class HexBoardAugmenter:
         q = col - self.board_size // 2 - r // 2
         return q, r
 
-    def _rotate_axial_60(self, q: int, r: int) -> Tuple[int, int]:
+    def _rotate_axial_60(self, q: int, r: int) -> tuple[int, int]:
         """Rotate axial coordinates by 60° clockwise."""
         return -r, q + r
 
-    def _reflect_axial(self, q: int, r: int) -> Tuple[int, int]:
+    def _reflect_axial(self, q: int, r: int) -> tuple[int, int]:
         """Reflect axial coordinates across q-axis."""
         return q, -r - q
 
@@ -1228,7 +1230,7 @@ class HexBoardAugmenter:
         to_indices: "np.ndarray",
         target_move_idx: int,
         include_original: bool = True,
-    ) -> List[Tuple["np.ndarray", "np.ndarray", "np.ndarray", int]]:
+    ) -> list[tuple["np.ndarray", "np.ndarray", "np.ndarray", int]]:
         """Augment a single sample with D6 symmetry transformations.
 
         Args:
@@ -1280,8 +1282,9 @@ import sqlite3
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from multiprocessing import cpu_count
+from typing import Any
+
 from torch.utils.data import Dataset
-from typing import Dict, Any
 
 from .nnue import extract_features_from_gamestate
 
@@ -1290,23 +1293,22 @@ logger = logging.getLogger(__name__)
 
 def _process_game_batch(
     db_path: str,
-    game_ids: List[str],
-    config_dict: Dict[str, Any],
+    game_ids: list[str],
+    config_dict: dict[str, Any],
     board_size: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Worker function to process a batch of games in a separate process.
 
     Returns serialized sample dicts (not NNUEPolicySample objects) to avoid
     pickling issues with numpy arrays.
     """
-    import numpy as np
-    from ..models import GameState, Move, BoardType
+    from ..models import BoardType, GameState, Move
     from ..rules.default_engine import DefaultRulesEngine
 
     # Reconstruct config from dict
     board_type = BoardType(config_dict['board_type'])
     sample_every_n = config_dict['sample_every_n_moves']
-    min_game_length = config_dict['min_game_length']
+    _min_game_length = config_dict['min_game_length']
     max_moves = config_dict['max_moves_per_position']
     include_draws = config_dict['include_draws']
     distill_from_winners = config_dict['distill_from_winners']
@@ -1403,9 +1405,7 @@ def _process_game_batch(
 
                     # Filtering
                     should_include = True
-                    if distill_from_winners and not is_winner:
-                        should_include = False
-                    elif value == 0.0 and not include_draws:
+                    if (distill_from_winners and not is_winner) or (value == 0.0 and not include_draws):
                         should_include = False
                     elif move_number < min_move_number or move_number > max_move_number:
                         should_include = False  # Curriculum: filter by move range
@@ -1587,11 +1587,11 @@ class NNUEPolicyDataset(Dataset):
 
     def __init__(
         self,
-        db_paths: List[str],
-        config: Optional[NNUEPolicyDatasetConfig] = None,
-        max_samples: Optional[int] = None,
+        db_paths: list[str],
+        config: NNUEPolicyDatasetConfig | None = None,
+        max_samples: int | None = None,
         num_workers: int = 0,
-        jsonl_paths: Optional[List[str]] = None,
+        jsonl_paths: list[str] | None = None,
     ):
         self.db_paths = db_paths
         self.jsonl_paths = jsonl_paths or []
@@ -1600,7 +1600,7 @@ class NNUEPolicyDataset(Dataset):
         self.num_workers = num_workers if num_workers > 0 else max(1, cpu_count() - 2)
         self.board_size = get_board_size(self.config.board_type)
         self.feature_dim = get_feature_dim(self.config.board_type)
-        self.samples: List[NNUEPolicySample] = []
+        self.samples: list[NNUEPolicySample] = []
 
         self._extract_samples()
 
@@ -1610,7 +1610,7 @@ class NNUEPolicyDataset(Dataset):
         Uses parallel processing when num_workers > 1 for significantly faster
         extraction from large databases.
         """
-        total_sources = len(self.db_paths) + len(self.jsonl_paths)
+        len(self.db_paths) + len(self.jsonl_paths)
         logger.info(f"Extracting policy samples from {len(self.db_paths)} databases + {len(self.jsonl_paths)} JSONL files (workers={self.num_workers})")
 
         # Process JSONL files first (they often have MCTS policy data)
@@ -1653,7 +1653,7 @@ class NNUEPolicyDataset(Dataset):
 
         logger.info(f"Total policy samples: {len(self.samples)}")
 
-    def _extract_from_jsonl(self, jsonl_path: str) -> List[NNUEPolicySample]:
+    def _extract_from_jsonl(self, jsonl_path: str) -> list[NNUEPolicySample]:
         """Extract samples from a JSONL file containing game records with moves.
 
         JSONL files should contain one JSON game object per line with:
@@ -1681,14 +1681,15 @@ class NNUEPolicyDataset(Dataset):
         incomplete due to the fundamental format differences.
         """
         import numpy as np
-        from ..models import GameState, Move, MoveType, Position
+
+        from ..game_engine import GameEngine
+        from ..models import GameState, Move, MoveType
         from ..models.core import GamePhase
         from ..rules.default_engine import DefaultRulesEngine
         from ..training.generate_data import create_initial_state
-        from ..game_engine import GameEngine
 
-        samples: List[NNUEPolicySample] = []
-        engine = DefaultRulesEngine()
+        samples: list[NNUEPolicySample] = []
+        DefaultRulesEngine()
         board_type_str = self.config.board_type.value.lower() if hasattr(self.config.board_type, 'value') else str(self.config.board_type).lower()
 
         import time as _time
@@ -1770,7 +1771,7 @@ class NNUEPolicyDataset(Dataset):
         is_hex_board = self.config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
         gpu_warned = False
 
-        with open(jsonl_path, 'r') as f:
+        with open(jsonl_path) as f:
             for line_num, line in enumerate(f):
                 if not line.strip():
                     continue
@@ -1878,11 +1879,7 @@ class NNUEPolicyDataset(Dataset):
 
                         # Apply filters
                         skip_sample = False
-                        if self.config.distill_from_winners and not is_winner:
-                            skip_sample = True
-                        elif value == 0.0 and not self.config.include_draws:
-                            skip_sample = True
-                        elif move_number < self.config.min_move_number or move_number > self.config.max_move_number:
+                        if (self.config.distill_from_winners and not is_winner) or (value == 0.0 and not self.config.include_draws) or move_number < self.config.min_move_number or move_number > self.config.max_move_number:
                             skip_sample = True
 
                         if not skip_sample:
@@ -1991,8 +1988,9 @@ class NNUEPolicyDataset(Dataset):
         (0,0) is top-left and coordinates are positive. Cube coordinates use (0,0,0)
         as center with the constraint x+y+z=0.
         """
-        from ..models import Move, MoveType, Position
         from datetime import datetime
+
+        from ..models import Move, MoveType, Position
 
         move_type_str = str(move_dict.get("type") or "").strip()
         if not move_type_str or move_type_str.startswith("unknown_"):
@@ -2062,10 +2060,6 @@ class NNUEPolicyDataset(Dataset):
         # NOT the capture target. The actual target is between from and to.
         # We can't compute this here without game state, so we leave capture_target as None
         # and let the caller (extraction code) compute it from the current state if needed.
-        is_capture = move_type in (
-            MoveType.OVERTAKING_CAPTURE,
-            MoveType.CHAIN_CAPTURE,
-        )
         # NOTE: Do NOT default capture_target to to_pos for GPU moves!
         # That's incorrect - to_pos is landing, not target.
         # The extraction code must compute target from game state.
@@ -2108,7 +2102,6 @@ class NNUEPolicyDataset(Dataset):
         from ..models import Position
 
         board = state.board
-        board_type = board.type
 
         # Calculate direction from from_pos to to_pos
         dx = to_pos.x - from_pos.x
@@ -2151,7 +2144,7 @@ class NNUEPolicyDataset(Dataset):
 
         return None
 
-    def _extract_from_db_parallel(self, db_path: str) -> List[NNUEPolicySample]:
+    def _extract_from_db_parallel(self, db_path: str) -> list[NNUEPolicySample]:
         """Extract samples using parallel processing across multiple workers."""
         import numpy as np
 
@@ -2267,12 +2260,12 @@ class NNUEPolicyDataset(Dataset):
 
         return samples
 
-    def _extract_from_db(self, db_path: str) -> List[NNUEPolicySample]:
+    def _extract_from_db(self, db_path: str) -> list[NNUEPolicySample]:
         """Extract samples from a single database via game replay."""
         from ..models import GameState, Move
         from ..rules.default_engine import DefaultRulesEngine
 
-        samples: List[NNUEPolicySample] = []
+        samples: list[NNUEPolicySample] = []
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -2505,7 +2498,7 @@ class NNUEPolicyDataset(Dataset):
     def _encode_legal_moves(
         self,
         legal_moves: list,
-    ) -> Tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
+    ) -> tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
         """Encode legal moves as numpy arrays."""
         import numpy as np
 
@@ -2541,7 +2534,7 @@ class NNUEPolicyDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, ...]:
         """Get a single sample as tensors.
 
         Returns:
@@ -2565,7 +2558,7 @@ class NNUEPolicyDataset(Dataset):
             mcts_probs,
         )
 
-    def get_mcts_policy_stats(self) -> Dict[str, Any]:
+    def get_mcts_policy_stats(self) -> dict[str, Any]:
         """Get statistics about MCTS policy availability in the dataset.
 
         Returns:
@@ -2623,7 +2616,7 @@ class NNUEPolicyAgent:
         model_path: str,
         board_type: str = "hex8",
         num_players: int = 2,
-        device: Optional[str] = None,
+        device: str | None = None,
         temperature: float = 0.0,
     ):
         """Initialize the NNUE policy agent.
@@ -2690,7 +2683,7 @@ class NNUEPolicyAgent:
         )
 
         # Load weights (handle DataParallel prefix if present)
-        if any(k.startswith("module.") for k in state_dict.keys()):
+        if any(k.startswith("module.") for k in state_dict):
             state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
         model.load_state_dict(state_dict)
@@ -2754,7 +2747,7 @@ class NNUEPolicyAgent:
 
         return legal_moves[move_idx]
 
-    def get_move_scores(self, state, legal_moves) -> List[Tuple]:
+    def get_move_scores(self, state, legal_moves) -> list[tuple]:
         """Get all moves with their policy scores.
 
         Args:

@@ -24,11 +24,11 @@ import json
 import logging
 import sqlite3
 import time
-
-from app.utils.checksum_utils import compute_string_checksum
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
+
+from app.utils.checksum_utils import compute_string_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ class ContentDeduplicator:
         self._init_db()
 
         # In-memory cache for recent hashes (faster lookup)
-        self._content_hash_cache: Set[str] = set()
-        self._move_hash_cache: Set[str] = set()
+        self._content_hash_cache: set[str] = set()
+        self._move_hash_cache: set[str] = set()
         self._cache_loaded = False
 
     def _init_db(self) -> None:
@@ -145,7 +145,7 @@ class ContentDeduplicator:
         self._cache_loaded = True
         logger.debug(f"Loaded {len(self._content_hash_cache)} content hashes into cache")
 
-    def _normalize_game_data(self, game_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_game_data(self, game_data: dict[str, Any]) -> dict[str, Any]:
         """Normalize game data for consistent hashing.
 
         Removes variable fields (timestamps, IDs) and sorts lists.
@@ -187,13 +187,13 @@ class ContentDeduplicator:
 
         return normalized
 
-    def _compute_content_hash(self, game_data: Dict[str, Any]) -> str:
+    def _compute_content_hash(self, game_data: dict[str, Any]) -> str:
         """Compute SHA256 hash of normalized game content."""
         normalized = self._normalize_game_data(game_data)
         content_str = json.dumps(normalized, sort_keys=True, separators=(',', ':'))
         return compute_string_checksum(content_str)
 
-    def _compute_move_sequence_hash(self, game_data: Dict[str, Any]) -> str:
+    def _compute_move_sequence_hash(self, game_data: dict[str, Any]) -> str:
         """Compute hash of move sequence only.
 
         This catches games with identical moves but different metadata.
@@ -212,7 +212,7 @@ class ContentDeduplicator:
         sequence = "|".join(move_strs)
         return compute_string_checksum(sequence)
 
-    def _compute_outcome_hash(self, game_data: Dict[str, Any]) -> str:
+    def _compute_outcome_hash(self, game_data: dict[str, Any]) -> str:
         """Compute hash of game outcome."""
         outcome = game_data.get("outcome", {})
         if isinstance(outcome, dict):
@@ -224,7 +224,7 @@ class ContentDeduplicator:
     def compute_fingerprint(
         self,
         game_id: str,
-        game_data: Dict[str, Any],
+        game_data: dict[str, Any],
         source_host: str = "",
     ) -> GameFingerprint:
         """Compute full fingerprint for a game."""
@@ -241,7 +241,7 @@ class ContentDeduplicator:
 
     def check_duplicate(
         self,
-        game_data: Dict[str, Any],
+        game_data: dict[str, Any],
         game_id: str = "",
     ) -> DeduplicationResult:
         """Check if game content is a duplicate.
@@ -331,7 +331,7 @@ class ContentDeduplicator:
     def register_game(
         self,
         game_id: str,
-        game_data: Dict[str, Any],
+        game_data: dict[str, Any],
         source_host: str = "",
     ) -> bool:
         """Register a game's fingerprint in the database.
@@ -403,7 +403,7 @@ class ContentDeduplicator:
 
         logger.debug(f"Duplicate detected: {duplicate_id} -> {result.original_game_id} ({result.duplicate_type})")
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get deduplication statistics."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -438,9 +438,9 @@ class ContentDeduplicator:
 
     def batch_register(
         self,
-        games: List[Tuple[str, Dict[str, Any]]],
+        games: list[tuple[str, dict[str, Any]]],
         source_host: str = "",
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """Register multiple games efficiently.
 
         Args:

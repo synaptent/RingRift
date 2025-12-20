@@ -33,8 +33,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -72,21 +73,21 @@ class SubscriptionRegistry:
     helping debug event flow issues and monitor system integration.
     """
 
-    _instance: Optional["SubscriptionRegistry"] = None
+    _instance: SubscriptionRegistry | None = None
 
     def __init__(self):
         """Initialize the subscription registry."""
         # Subscriptions indexed by event type
-        self._by_event: Dict[str, List[SubscriptionInfo]] = {}
+        self._by_event: dict[str, list[SubscriptionInfo]] = {}
 
         # Subscriptions indexed by subscriber name
-        self._by_subscriber: Dict[str, List[SubscriptionInfo]] = {}
+        self._by_subscriber: dict[str, list[SubscriptionInfo]] = {}
 
         # All subscriptions for lookup
-        self._subscriptions: List[SubscriptionInfo] = []
+        self._subscriptions: list[SubscriptionInfo] = []
 
         # Set of unique subscribers
-        self._unique_subscribers: Set[str] = set()
+        self._unique_subscribers: set[str] = set()
 
         # Total call counts
         self._total_calls: int = 0
@@ -99,7 +100,7 @@ class SubscriptionRegistry:
         self._hooked: bool = False
 
     @classmethod
-    def get_instance(cls) -> "SubscriptionRegistry":
+    def get_instance(cls) -> SubscriptionRegistry:
         """Get the singleton instance."""
         if cls._instance is None:
             cls._instance = cls()
@@ -109,7 +110,7 @@ class SubscriptionRegistry:
         self,
         event_type: str,
         subscriber_name: str,
-        handler: Optional[Callable] = None,
+        handler: Callable | None = None,
         handler_name: str = "",
         module_name: str = "",
     ) -> SubscriptionInfo:
@@ -162,7 +163,7 @@ class SubscriptionRegistry:
         self,
         event_type: str,
         subscriber_name: str,
-        handler_name: Optional[str] = None,
+        handler_name: str | None = None,
     ) -> bool:
         """Remove a subscription from tracking.
 
@@ -226,19 +227,19 @@ class SubscriptionRegistry:
                 self._total_calls += 1
                 return
 
-    def get_subscribers(self, event_type: str) -> List[SubscriptionInfo]:
+    def get_subscribers(self, event_type: str) -> list[SubscriptionInfo]:
         """Get all subscribers for an event type."""
         return list(self._by_event.get(event_type, []))
 
-    def get_subscriptions_by_component(self, subscriber_name: str) -> List[SubscriptionInfo]:
+    def get_subscriptions_by_component(self, subscriber_name: str) -> list[SubscriptionInfo]:
         """Get all subscriptions for a component."""
         return list(self._by_subscriber.get(subscriber_name, []))
 
-    def get_all_event_types(self) -> List[str]:
+    def get_all_event_types(self) -> list[str]:
         """Get all event types that have subscribers."""
         return list(self._by_event.keys())
 
-    def get_all_subscribers(self) -> List[str]:
+    def get_all_subscribers(self) -> list[str]:
         """Get all subscriber names."""
         return list(self._unique_subscribers)
 
@@ -253,7 +254,7 @@ class SubscriptionRegistry:
             active_since=self._started_at,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get registry status for monitoring."""
         stats = self.get_stats()
 
@@ -281,7 +282,7 @@ class SubscriptionRegistry:
             "subscriber_counts": subscriber_counts,
         }
 
-    def get_subscription_matrix(self) -> Dict[str, Dict[str, bool]]:
+    def get_subscription_matrix(self) -> dict[str, dict[str, bool]]:
         """Get a matrix of which subscribers listen to which events.
 
         Returns:
@@ -369,7 +370,7 @@ class SubscriptionRegistry:
 
 
 # Singleton access
-_registry: Optional[SubscriptionRegistry] = None
+_registry: SubscriptionRegistry | None = None
 
 
 def get_subscription_registry() -> SubscriptionRegistry:
@@ -383,7 +384,7 @@ def get_subscription_registry() -> SubscriptionRegistry:
 def track_subscription(
     event_type: str,
     subscriber_name: str,
-    handler: Optional[Callable] = None,
+    handler: Callable | None = None,
     **kwargs,
 ) -> SubscriptionInfo:
     """Convenience function to track a subscription."""
@@ -401,10 +402,10 @@ def get_subscription_stats() -> SubscriptionStats:
 
 
 __all__ = [
-    "SubscriptionRegistry",
     "SubscriptionInfo",
+    "SubscriptionRegistry",
     "SubscriptionStats",
     "get_subscription_registry",
-    "track_subscription",
     "get_subscription_stats",
+    "track_subscription",
 ]

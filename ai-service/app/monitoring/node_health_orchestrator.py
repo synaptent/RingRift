@@ -42,7 +42,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class NodeHealth:
     disk_used_percent: float = 0.0
 
     # Constraints (current active constraints)
-    active_constraints: List[str] = field(default_factory=list)
+    active_constraints: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -120,8 +120,8 @@ class NodeHealthOrchestrator:
         self.recovery_cooldown_seconds = recovery_cooldown_seconds
 
         # Node tracking
-        self._nodes: Dict[str, NodeHealth] = {}
-        self._node_history: Dict[str, List[Dict[str, Any]]] = {}
+        self._nodes: dict[str, NodeHealth] = {}
+        self._node_history: dict[str, list[dict[str, Any]]] = {}
 
         # Statistics
         self._total_health_checks: int = 0
@@ -391,7 +391,7 @@ class NodeHealthOrchestrator:
             "timestamp": time.time(),
         })
 
-    def _add_to_history(self, node_name: str, event_type: str, data: Dict[str, Any]) -> None:
+    def _add_to_history(self, node_name: str, event_type: str, data: dict[str, Any]) -> None:
         """Add entry to node history."""
         if node_name not in self._node_history:
             self._node_history[node_name] = []
@@ -406,23 +406,23 @@ class NodeHealthOrchestrator:
         if len(history) > self.max_history_per_node:
             self._node_history[node_name] = history[-self.max_history_per_node:]
 
-    def get_node_health(self, node_name: str) -> Optional[NodeHealth]:
+    def get_node_health(self, node_name: str) -> NodeHealth | None:
         """Get health state of a specific node."""
         return self._nodes.get(node_name)
 
-    def get_healthy_nodes(self) -> List[NodeHealth]:
+    def get_healthy_nodes(self) -> list[NodeHealth]:
         """Get all healthy nodes."""
         return [n for n in self._nodes.values() if n.state == NodeHealthState.HEALTHY]
 
-    def get_unhealthy_nodes(self) -> List[NodeHealth]:
+    def get_unhealthy_nodes(self) -> list[NodeHealth]:
         """Get all unhealthy nodes."""
         return [n for n in self._nodes.values() if n.state == NodeHealthState.UNHEALTHY]
 
-    def get_recovering_nodes(self) -> List[NodeHealth]:
+    def get_recovering_nodes(self) -> list[NodeHealth]:
         """Get all nodes currently in recovery."""
         return [n for n in self._nodes.values() if n.state == NodeHealthState.RECOVERING]
 
-    def get_node_history(self, node_name: Optional[str] = None) -> Dict[str, List[Dict]]:
+    def get_node_history(self, node_name: str | None = None) -> dict[str, list[dict]]:
         """Get node history."""
         if node_name:
             return {node_name: self._node_history.get(node_name, [])}
@@ -456,7 +456,7 @@ class NodeHealthOrchestrator:
             last_activity_time=last_activity,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring."""
         stats = self.get_stats()
 
@@ -491,14 +491,11 @@ class NodeHealthOrchestrator:
 
         # Respect recovery cooldown
         time_since_last_recovery = time.time() - node.last_recovery_time
-        if time_since_last_recovery < self.recovery_cooldown_seconds:
-            return False
-
-        return True
+        return not time_since_last_recovery < self.recovery_cooldown_seconds
 
 
 # Singleton instance
-_health_orchestrator: Optional[NodeHealthOrchestrator] = None
+_health_orchestrator: NodeHealthOrchestrator | None = None
 
 
 def wire_health_events(
@@ -531,7 +528,7 @@ def wire_health_events(
     return _health_orchestrator
 
 
-def get_health_orchestrator() -> Optional[NodeHealthOrchestrator]:
+def get_health_orchestrator() -> NodeHealthOrchestrator | None:
     """Get the global health orchestrator if configured."""
     return _health_orchestrator
 
@@ -545,11 +542,11 @@ def reset_health_orchestrator() -> None:
 
 
 __all__ = [
-    "NodeHealthOrchestrator",
-    "NodeHealth",
-    "NodeHealthState",
     "ClusterHealthStats",
-    "wire_health_events",
+    "NodeHealth",
+    "NodeHealthOrchestrator",
+    "NodeHealthState",
     "get_health_orchestrator",
     "reset_health_orchestrator",
+    "wire_health_events",
 ]

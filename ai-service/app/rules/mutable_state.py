@@ -19,29 +19,28 @@ Usage:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Set, Optional, List, Any
 from datetime import datetime
+from typing import Any
 
+from app.ai.zobrist import ZobristHash
 from app.models import (
-    GameState,
     BoardState,
     BoardType,
+    ChainCaptureState,
     GamePhase,
+    GameState,
     GameStatus,
+    LineInfo,
+    MarkerInfo,
     Move,
     MoveType,
+    Player,
     Position,
     RingStack,
-    MarkerInfo,
-    Player,
-    LineInfo,
     Territory,
     TimeControl,
-    ChainCaptureState,
 )
 from app.rules.core import get_effective_line_length
-from app.ai.zobrist import ZobristHash
-
 
 # =============================================================================
 # Helper Classes
@@ -56,7 +55,7 @@ class MutableStack:
     of all fields without validation overhead.
     """
     position: Position
-    rings: List[int]  # Player numbers from bottom to top
+    rings: list[int]  # Player numbers from bottom to top
     stack_height: int
     cap_height: int
     controlling_player: int
@@ -156,7 +155,7 @@ class MutablePlayerState:
     player_type: str = "ai"
     is_ready: bool = True
     time_remaining: int = 0
-    ai_difficulty: Optional[int] = None
+    ai_difficulty: int | None = None
 
     @classmethod
     def from_player(cls, player: Player) -> "MutablePlayerState":
@@ -231,59 +230,59 @@ class MoveUndo:
 
     # === Stack Changes ===
     # Stacks that were removed (key -> original stack copy)
-    removed_stacks: Dict[str, MutableStack] = field(default_factory=dict)
+    removed_stacks: dict[str, MutableStack] = field(default_factory=dict)
     # Keys of stacks that were added (will be deleted on undo)
-    added_stacks: Set[str] = field(default_factory=set)
+    added_stacks: set[str] = field(default_factory=set)
     # Stacks modified (key -> original stack copy before modification)
-    modified_stacks: Dict[str, MutableStack] = field(default_factory=dict)
+    modified_stacks: dict[str, MutableStack] = field(default_factory=dict)
 
     # === Marker Changes ===
     # Markers that were removed (key -> original marker copy)
-    removed_markers: Dict[str, MutableMarker] = field(default_factory=dict)
+    removed_markers: dict[str, MutableMarker] = field(default_factory=dict)
     # Keys of markers that were added (will be deleted on undo)
-    added_markers: Set[str] = field(default_factory=set)
+    added_markers: set[str] = field(default_factory=set)
     # Markers that were modified (key -> original marker copy)
-    modified_markers: Dict[str, MutableMarker] = field(default_factory=dict)
+    modified_markers: dict[str, MutableMarker] = field(default_factory=dict)
 
     # === Collapsed Space Changes ===
     # Collapsed spaces that were removed (key -> original owner)
-    removed_collapsed: Dict[str, int] = field(default_factory=dict)
+    removed_collapsed: dict[str, int] = field(default_factory=dict)
     # Keys of collapsed spaces that were added
-    added_collapsed: Set[str] = field(default_factory=set)
+    added_collapsed: set[str] = field(default_factory=set)
 
     # === Player State Changes ===
     # Previous rings_in_hand for modified players (player_number -> count)
-    prev_rings_in_hand: Dict[int, int] = field(default_factory=dict)
+    prev_rings_in_hand: dict[int, int] = field(default_factory=dict)
     # Previous eliminated_rings for modified players (player_number -> count)
-    prev_eliminated_rings: Dict[int, int] = field(default_factory=dict)
+    prev_eliminated_rings: dict[int, int] = field(default_factory=dict)
     # Previous territory_spaces for modified players (player_number -> count)
-    prev_territory_spaces: Dict[int, int] = field(default_factory=dict)
+    prev_territory_spaces: dict[int, int] = field(default_factory=dict)
 
     # === Board Aggregate Changes ===
     # Previous board.eliminated_rings dict entries (player_id_str -> count)
-    prev_board_eliminated_rings: Dict[str, int] = field(default_factory=dict)
+    prev_board_eliminated_rings: dict[str, int] = field(default_factory=dict)
     # Previous total_rings_eliminated
     prev_total_rings_eliminated: int = 0
 
     # === Turn/Phase State ===
     prev_zobrist_hash: int = 0
-    prev_phase: Optional[GamePhase] = None
+    prev_phase: GamePhase | None = None
     prev_player: int = 0
-    prev_chain_capture_state: Optional[ChainCaptureState] = None
-    prev_must_move_from_stack_key: Optional[str] = None
-    prev_game_status: Optional[GameStatus] = None
-    prev_winner: Optional[int] = None
+    prev_chain_capture_state: ChainCaptureState | None = None
+    prev_must_move_from_stack_key: str | None = None
+    prev_game_status: GameStatus | None = None
+    prev_winner: int | None = None
 
     # === LPS Tracking (for victory detection) ===
     prev_lps_round_index: int = 0
-    prev_lps_actor_mask: Dict[int, bool] = field(default_factory=dict)
-    prev_lps_current_round_first_player: Optional[int] = None
-    prev_lps_exclusive_player: Optional[int] = None
+    prev_lps_actor_mask: dict[int, bool] = field(default_factory=dict)
+    prev_lps_current_round_first_player: int | None = None
+    prev_lps_exclusive_player: int | None = None
     prev_lps_consecutive_exclusive_rounds: int = 0
-    prev_lps_consecutive_exclusive_player: Optional[int] = None
+    prev_lps_consecutive_exclusive_player: int | None = None
 
     # === Optional for chain captures ===
-    chain_capture_stack: Optional[List["MoveUndo"]] = None
+    chain_capture_stack: list["MoveUndo"] | None = None
 
 
 # =============================================================================
@@ -311,20 +310,20 @@ class MutableGameState:
     def __init__(self) -> None:
         """Initialize empty mutable state. Use from_immutable() to create."""
         # Internal mutable state
-        self._stacks: Dict[str, MutableStack] = {}
-        self._markers: Dict[str, MutableMarker] = {}
-        self._collapsed: Dict[str, int] = {}  # pos_key -> owner
+        self._stacks: dict[str, MutableStack] = {}
+        self._markers: dict[str, MutableMarker] = {}
+        self._collapsed: dict[str, int] = {}  # pos_key -> owner
         # Board eliminated rings: player_id_str -> count
-        self._board_eliminated_rings: Dict[str, int] = {}
+        self._board_eliminated_rings: dict[str, int] = {}
 
         # Player state (mutable): player_number -> state
-        self._players: Dict[int, MutablePlayerState] = {}
+        self._players: dict[int, MutablePlayerState] = {}
 
         # Turn/phase state
         self._phase: GamePhase = GamePhase.RING_PLACEMENT
         self._active_player: int = 1
-        self._chain_capture_state: Optional[ChainCaptureState] = None
-        self._must_move_from_stack_key: Optional[str] = None
+        self._chain_capture_state: ChainCaptureState | None = None
+        self._must_move_from_stack_key: str | None = None
 
         # Aggregate tracking
         self._total_rings_eliminated: int = 0
@@ -332,34 +331,34 @@ class MutableGameState:
 
         # LPS tracking for victory detection
         self._lps_round_index: int = 0
-        self._lps_current_round_actor_mask: Dict[int, bool] = {}
-        self._lps_current_round_first_player: Optional[int] = None
-        self._lps_exclusive_player_for_completed_round: Optional[int] = None
+        self._lps_current_round_actor_mask: dict[int, bool] = {}
+        self._lps_current_round_first_player: int | None = None
+        self._lps_exclusive_player_for_completed_round: int | None = None
         self._lps_consecutive_exclusive_rounds: int = 0
-        self._lps_consecutive_exclusive_player: Optional[int] = None
+        self._lps_consecutive_exclusive_player: int | None = None
         self._lps_rounds_required: int = 3  # Configurable LPS threshold
 
         # Immutable reference fields (for context and conversion back)
         self._id: str = ""
         self._board_type: BoardType = BoardType.SQUARE8
         self._board_size: int = 8
-        self._rng_seed: Optional[int] = None
+        self._rng_seed: int | None = None
         self._game_status: GameStatus = GameStatus.ACTIVE
-        self._winner: Optional[int] = None
+        self._winner: int | None = None
         self._victory_threshold: int = 6
         self._territory_victory_threshold: int = 20
         self._total_rings_in_play: int = 36
-        self._time_control: Optional[TimeControl] = None
-        self._spectators: List[str] = []
+        self._time_control: TimeControl | None = None
+        self._spectators: list[str] = []
         self._created_at: datetime = datetime.now()
         self._last_move_at: datetime = datetime.now()
         self._is_rated: bool = False
         self._max_players: int = 2
-        self._move_history: List[Move] = []
+        self._move_history: list[Move] = []
 
         # Lines and territories (usually not mutated during search)
-        self._formed_lines: List[LineInfo] = []
-        self._territories: Dict[str, Territory] = {}
+        self._formed_lines: list[LineInfo] = []
+        self._territories: dict[str, Territory] = {}
 
         # Zobrist hash helper (singleton)
         self._zobrist: ZobristHash = ZobristHash()
@@ -580,22 +579,22 @@ class MutableGameState:
         return self._board_size
 
     @property
-    def stacks(self) -> Dict[str, MutableStack]:
+    def stacks(self) -> dict[str, MutableStack]:
         """Read access to stacks dictionary."""
         return self._stacks
 
     @property
-    def markers(self) -> Dict[str, MutableMarker]:
+    def markers(self) -> dict[str, MutableMarker]:
         """Read access to markers dictionary."""
         return self._markers
 
     @property
-    def collapsed_spaces(self) -> Dict[str, int]:
+    def collapsed_spaces(self) -> dict[str, int]:
         """Read access to collapsed spaces dictionary."""
         return self._collapsed
 
     @property
-    def players(self) -> Dict[int, MutablePlayerState]:
+    def players(self) -> dict[int, MutablePlayerState]:
         """Read access to players dictionary."""
         return self._players
 
@@ -605,7 +604,7 @@ class MutableGameState:
         return self._game_status
 
     @property
-    def winner(self) -> Optional[int]:
+    def winner(self) -> int | None:
         """Winner player number if game is over."""
         return self._winner
 
@@ -615,12 +614,12 @@ class MutableGameState:
         return self._total_rings_eliminated
 
     @property
-    def chain_capture_state(self) -> Optional[ChainCaptureState]:
+    def chain_capture_state(self) -> ChainCaptureState | None:
         """Current chain capture state."""
         return self._chain_capture_state
 
     @property
-    def must_move_from_stack_key(self) -> Optional[str]:
+    def must_move_from_stack_key(self) -> str | None:
         """Stack key that must be moved from (after placement)."""
         return self._must_move_from_stack_key
 
@@ -635,12 +634,12 @@ class MutableGameState:
         self._lps_consecutive_exclusive_rounds = value
 
     @property
-    def lps_consecutive_exclusive_player(self) -> Optional[int]:
+    def lps_consecutive_exclusive_player(self) -> int | None:
         """Player who has been exclusive for consecutive rounds."""
         return self._lps_consecutive_exclusive_player
 
     @lps_consecutive_exclusive_player.setter
-    def lps_consecutive_exclusive_player(self, value: Optional[int]) -> None:
+    def lps_consecutive_exclusive_player(self, value: int | None) -> None:
         self._lps_consecutive_exclusive_player = value
 
     @property
@@ -658,33 +657,33 @@ class MutableGameState:
         self._lps_round_index = value
 
     @property
-    def lps_current_round_actor_mask(self) -> Dict[int, bool]:
+    def lps_current_round_actor_mask(self) -> dict[int, bool]:
         """Actor mask for current LPS round."""
         return self._lps_current_round_actor_mask
 
     @property
-    def lps_current_round_first_player(self) -> Optional[int]:
+    def lps_current_round_first_player(self) -> int | None:
         """First player of current LPS round."""
         return self._lps_current_round_first_player
 
     @lps_current_round_first_player.setter
-    def lps_current_round_first_player(self, value: Optional[int]) -> None:
+    def lps_current_round_first_player(self, value: int | None) -> None:
         self._lps_current_round_first_player = value
 
     @property
-    def lps_exclusive_player_for_completed_round(self) -> Optional[int]:
+    def lps_exclusive_player_for_completed_round(self) -> int | None:
         """Exclusive player for last completed round."""
         return self._lps_exclusive_player_for_completed_round
 
     @lps_exclusive_player_for_completed_round.setter
-    def lps_exclusive_player_for_completed_round(self, value: Optional[int]) -> None:
+    def lps_exclusive_player_for_completed_round(self, value: int | None) -> None:
         self._lps_exclusive_player_for_completed_round = value
 
     # =========================================================================
     # Helper Methods
     # =========================================================================
 
-    def _calculate_cap_height(self, rings: List[int]) -> int:
+    def _calculate_cap_height(self, rings: list[int]) -> int:
         """Calculate the cap height of a stack from its rings list."""
         if not rings:
             return 0
@@ -697,11 +696,11 @@ class MutableGameState:
                 break
         return height
 
-    def get_stack_at(self, pos: Position) -> Optional[MutableStack]:
+    def get_stack_at(self, pos: Position) -> MutableStack | None:
         """Get stack at position, or None."""
         return self._stacks.get(pos.to_key())
 
-    def get_marker_at(self, pos: Position) -> Optional[MutableMarker]:
+    def get_marker_at(self, pos: Position) -> MutableMarker | None:
         """Get marker at position, or None."""
         return self._markers.get(pos.to_key())
 
@@ -709,7 +708,7 @@ class MutableGameState:
         """Check if position is a collapsed space."""
         return pos.to_key() in self._collapsed
 
-    def get_player(self, player_number: int) -> Optional[MutablePlayerState]:
+    def get_player(self, player_number: int) -> MutablePlayerState | None:
         """Get player state by player number."""
         return self._players.get(player_number)
 
@@ -806,9 +805,7 @@ class MutableGameState:
             pass
 
         # Update must_move_from_stack_key
-        if move.type == MoveType.PLACE_RING and move.to:
-            self._must_move_from_stack_key = move.to.to_key()
-        elif (
+        if (move.type == MoveType.PLACE_RING and move.to) or ((
             self._must_move_from_stack_key is not None
             and move.from_pos is not None
             and move.to is not None
@@ -818,9 +815,8 @@ class MutableGameState:
                 MoveType.CONTINUE_CAPTURE_SEGMENT,
                 MoveType.CHAIN_CAPTURE,
             )
-        ):
-            if move.from_pos.to_key() == self._must_move_from_stack_key:
-                self._must_move_from_stack_key = move.to.to_key()
+        ) and move.from_pos.to_key() == self._must_move_from_stack_key):
+            self._must_move_from_stack_key = move.to.to_key()
 
         # Update phase (simplified for search)
         self._update_phase_for_search(move)
@@ -1135,11 +1131,10 @@ class MutableGameState:
             )
 
         # Record player eliminated rings change
-        if credited_player not in undo.prev_eliminated_rings:
-            if credited_player in self._players:
-                undo.prev_eliminated_rings[credited_player] = (
-                    self._players[credited_player].eliminated_rings
-                )
+        if credited_player not in undo.prev_eliminated_rings and credited_player in self._players:
+            undo.prev_eliminated_rings[credited_player] = (
+                self._players[credited_player].eliminated_rings
+            )
 
         # Pop top ring
         stack.rings.pop()
@@ -1169,7 +1164,7 @@ class MutableGameState:
 
     def _get_path_positions(
         self, from_pos: Position, to_pos: Position
-    ) -> List[Position]:
+    ) -> list[Position]:
         """Get all positions along a straight-line path, inclusive."""
         path = [from_pos]
 
@@ -1188,11 +1183,11 @@ class MutableGameState:
         step_z = dz / steps
 
         for i in range(1, steps + 1):
-            x = int(round(from_pos.x + step_x * i))
-            y = int(round(from_pos.y + step_y * i))
-            pos_kwargs: Dict[str, Any] = {"x": x, "y": y}
+            x = round(from_pos.x + step_x * i)
+            y = round(from_pos.y + step_y * i)
+            pos_kwargs: dict[str, Any] = {"x": x, "y": y}
             if from_pos.z is not None or to_pos.z is not None:
-                z = int(round(dz_from + step_z * i))
+                z = round(dz_from + step_z * i)
                 pos_kwargs["z"] = z
             path.append(Position(**pos_kwargs))
 
@@ -1336,7 +1331,7 @@ class MutableGameState:
         """
         return self._count_rings_for_player(player_number) == 0
 
-    def _get_active_player_numbers(self) -> List[int]:
+    def _get_active_player_numbers(self) -> list[int]:
         """Get list of non-eliminated player numbers in order.
 
         Returns:
@@ -1347,14 +1342,14 @@ class MutableGameState:
             if not self._is_player_eliminated(pn)
         ]
 
-    def get_eliminated_players(self) -> Set[int]:
+    def get_eliminated_players(self) -> set[int]:
         """Return set of eliminated player IDs.
 
         Returns:
             Set of player numbers who have been eliminated.
         """
         return {
-            pn for pn in self._players.keys()
+            pn for pn in self._players
             if self._is_player_eliminated(pn)
         }
 
@@ -1374,7 +1369,7 @@ class MutableGameState:
         active_players = self._get_active_player_numbers()
         return len(active_players) <= 1
 
-    def get_winner(self) -> Optional[int]:
+    def get_winner(self) -> int | None:
         """Return winning player ID or None if not over/draw.
 
         Returns:
@@ -1751,7 +1746,7 @@ class MutableGameState:
         """
         # Find the line to process
         # Look for line info on the move
-        line_positions: List[Position] = []
+        line_positions: list[Position] = []
 
         if hasattr(move, 'formed_lines') and move.formed_lines:
             lines = list(move.formed_lines)
@@ -1770,7 +1765,7 @@ class MutableGameState:
         # Use canonical effective line length (board + player count aware).
         required_len = get_effective_line_length(self._board_type, self._max_players)
 
-        positions_to_collapse: List[Position]
+        positions_to_collapse: list[Position]
         if move.type in (MoveType.PROCESS_LINE, MoveType.LINE_FORMATION):
             # Full line collapse
             positions_to_collapse = list(line_positions)
@@ -1841,7 +1836,7 @@ class MutableGameState:
         2. Updates territory_spaces for the player
         """
         # Get region from move if available
-        region_spaces: List[Position] = []
+        region_spaces: list[Position] = []
 
         if hasattr(move, 'disconnected_regions') and move.disconnected_regions:
             regions = list(move.disconnected_regions)
@@ -1856,11 +1851,10 @@ class MutableGameState:
         player = move.player
 
         # Track territory spaces change
-        if player not in undo.prev_territory_spaces:
-            if player in self._players:
-                undo.prev_territory_spaces[player] = (
-                    self._players[player].territory_spaces
-                )
+        if player not in undo.prev_territory_spaces and player in self._players:
+            undo.prev_territory_spaces[player] = (
+                self._players[player].territory_spaces
+            )
 
         spaces_gained = 0
 
@@ -1940,7 +1934,7 @@ class MutableGameState:
                 )
         elif player_stacks:
             # Use any stack
-            chosen_key, chosen_stack = player_stacks[0]
+            _chosen_key, chosen_stack = player_stacks[0]
             cap_height = chosen_stack.cap_height
             for _ in range(cap_height):
                 self._make_eliminate_top_ring(
@@ -1971,14 +1965,14 @@ class MutableGameState:
                     )
 
     def _get_border_marker_positions(
-        self, region_spaces: List[Position]
-    ) -> List[Position]:
+        self, region_spaces: list[Position]
+    ) -> list[Position]:
         """Get border marker positions for a disconnected region.
 
         Returns markers that are adjacent to the region but not inside it.
         """
         region_keys = {p.to_key() for p in region_spaces}
-        border_markers: List[Position] = []
+        border_markers: list[Position] = []
 
         for space in region_spaces:
             neighbors = self._get_territory_neighbors(space)
@@ -1987,13 +1981,12 @@ class MutableGameState:
                 if n_key in region_keys:
                     continue
                 marker = self._markers.get(n_key)
-                if marker is not None:
-                    if not any(p.to_key() == n_key for p in border_markers):
-                        border_markers.append(neighbor)
+                if marker is not None and not any(p.to_key() == n_key for p in border_markers):
+                    border_markers.append(neighbor)
 
         return border_markers
 
-    def _get_territory_neighbors(self, pos: Position) -> List[Position]:
+    def _get_territory_neighbors(self, pos: Position) -> list[Position]:
         """Get territory-adjacent neighbors (Von Neumann for square, hex for hex)."""
         if self._board_type == BoardType.HEXAGONAL:
             return [

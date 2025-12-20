@@ -32,7 +32,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple, Optional, Dict, Any
 
 import numpy as np
 
@@ -97,7 +96,7 @@ class BoardArrays:
         self.winner = 0
 
     @classmethod
-    def from_game_state(cls, game_state, board_size: int = 8) -> 'BoardArrays':
+    def from_game_state(cls, game_state, board_size: int = 8) -> BoardArrays:
         """Create BoardArrays from a GameState object."""
         num_players = len(game_state.players)
         arrays = cls(board_size=board_size, num_players=num_players)
@@ -127,7 +126,7 @@ class BoardArrays:
             arrays.marker_owner[idx] = marker.player
 
         # Fill collapsed spaces
-        for pos_key in game_state.board.collapsed_spaces.keys():
+        for pos_key in game_state.board.collapsed_spaces:
             parts = pos_key.split(',')
             x, y = int(parts[0]), int(parts[1])
             idx = pos_to_idx(x, y)
@@ -199,7 +198,7 @@ def _pos_to_idx(x: int, y: int, board_size: int) -> int:
 
 
 @njit(cache=True)
-def _idx_to_pos(idx: int, board_size: int) -> Tuple[int, int]:
+def _idx_to_pos(idx: int, board_size: int) -> tuple[int, int]:
     """Convert linear index to x,y."""
     return idx % board_size, idx // board_size
 
@@ -215,7 +214,7 @@ def detect_line_at_position(
     board_size: int,
     min_length: int,
     directions: np.ndarray,
-) -> Tuple[int, np.ndarray]:
+) -> tuple[int, np.ndarray]:
     """Detect a line starting from position in given directions.
 
     Returns:
@@ -284,7 +283,7 @@ def detect_all_lines(
     stack_owner: np.ndarray,
     board_size: int,
     min_length: int = 3,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Detect all lines on the board.
 
     Returns:
@@ -408,7 +407,7 @@ def find_disconnected_regions(
     stack_owner: np.ndarray,
     board_size: int,
     num_players: int,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Find disconnected regions that could be territory.
 
     A region is disconnected if:
@@ -430,7 +429,7 @@ def find_disconnected_regions(
             active_players[stack_owner[idx]] = True
 
     num_regions = 0
-    global_visited = np.zeros(board_size * board_size, dtype=np.bool_)
+    np.zeros(board_size * board_size, dtype=np.bool_)
 
     # Try each marker color as potential border
     for border_player in range(1, num_players + 1):
@@ -797,7 +796,7 @@ def evaluate_position_numba(
 # =============================================================================
 
 
-def prepare_weight_array(weights: Dict[str, float]) -> np.ndarray:
+def prepare_weight_array(weights: dict[str, float]) -> np.ndarray:
     """Convert weight dict to numpy array for Numba functions."""
     weight_order = [
         "WEIGHT_STACK_CONTROL",
@@ -821,7 +820,7 @@ def prepare_weight_array(weights: Dict[str, float]) -> np.ndarray:
 def evaluate_game_state_numba(
     game_state,
     player: int,
-    weights: Dict[str, float],
+    weights: dict[str, float],
     board_size: int = 8,
 ) -> float:
     """Evaluate GameState using Numba-compiled functions.
@@ -850,7 +849,7 @@ def detect_lines_from_game_state(
     game_state,
     board_size: int = 8,
     min_length: int = 3,
-) -> List[Tuple[int, int, List[int]]]:
+) -> list[tuple[int, int, list[int]]]:
     """Detect lines using Numba-compiled function.
 
     Returns:
@@ -903,7 +902,7 @@ def benchmark_numba_functions(
     game_state,
     num_iterations: int = 1000,
     board_size: int = 8,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Benchmark Numba-compiled functions.
 
     Returns timing information for each function.

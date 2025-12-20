@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional, Set, Tuple
+from typing import Literal
 
 from app.models import GamePhase, GameState, Move, MoveType
 from app.rules.history_contract import phase_move_contract
@@ -84,7 +84,7 @@ class FSMValidationResult:
 
 
 # Map from GamePhase enum to canonical phase string
-_PHASE_TO_CANONICAL: Dict[GamePhase, str] = {
+_PHASE_TO_CANONICAL: dict[GamePhase, str] = {
     GamePhase.RING_PLACEMENT: "ring_placement",
     GamePhase.MOVEMENT: "movement",
     GamePhase.CAPTURE: "capture",
@@ -95,7 +95,7 @@ _PHASE_TO_CANONICAL: Dict[GamePhase, str] = {
 }
 
 
-def _get_allowed_move_types_for_phase(phase: GamePhase) -> Set[str]:
+def _get_allowed_move_types_for_phase(phase: GamePhase) -> set[str]:
     """Get the set of allowed move types for a given phase."""
     canonical_phase = _PHASE_TO_CANONICAL.get(phase)
     if canonical_phase is None:
@@ -120,7 +120,7 @@ def _is_bookkeeping_move(move_type: MoveType) -> bool:
 def validate_move_for_phase(
     phase: GamePhase,
     move: Move,
-    game_state: Optional[GameState] = None,
+    game_state: GameState | None = None,
 ) -> FSMValidationResult:
     """
     Validate that a move is allowed in the given phase.
@@ -246,7 +246,7 @@ class TurnFSM:
     In off mode, validation is skipped entirely.
     """
 
-    def __init__(self, mode: Optional[FSMValidationMode] = None):
+    def __init__(self, mode: FSMValidationMode | None = None):
         """
         Initialize the FSM.
 
@@ -254,14 +254,14 @@ class TurnFSM:
             mode: Validation mode. If None, reads from RINGRIFT_FSM_VALIDATION_MODE.
         """
         self.mode = mode or get_fsm_mode()
-        self.history: List[Tuple[GamePhase, Move]] = []
+        self.history: list[tuple[GamePhase, Move]] = []
         self.violation_count = 0
 
     def validate_and_send(
         self,
         phase: GamePhase,
         move: Move,
-        game_state: Optional[GameState] = None,
+        game_state: GameState | None = None,
     ) -> FSMValidationResult:
         """
         Validate a move and record it if valid.
@@ -301,7 +301,7 @@ class TurnFSM:
         self,
         phase: GamePhase,
         game_state: GameState,
-    ) -> Optional[MoveType]:
+    ) -> MoveType | None:
         """
         Determine if a bookkeeping move is required for the current phase.
 
@@ -373,7 +373,7 @@ class TurnFSM:
 class DetectedLine:
     """A detected line requiring processing."""
 
-    positions: List[Tuple[int, int]]
+    positions: list[tuple[int, int]]
     player: int
     requires_choice: bool
 
@@ -382,7 +382,7 @@ class DetectedLine:
 class DisconnectedRegion:
     """A disconnected territory region requiring processing."""
 
-    positions: List[Tuple[int, int]]
+    positions: list[tuple[int, int]]
     controlling_player: int
     eliminations_required: int
 
@@ -391,7 +391,7 @@ class DisconnectedRegion:
 class ChainContinuation:
     """A chain capture continuation target."""
 
-    target: Tuple[int, int]
+    target: tuple[int, int]
 
 
 @dataclass
@@ -405,20 +405,20 @@ class FSMDecisionSurface:
     and valid move options.
     """
 
-    pending_lines: List[DetectedLine]
+    pending_lines: list[DetectedLine]
     """Detected lines for the current player (line_processing phase)."""
 
-    pending_regions: List[DisconnectedRegion]
+    pending_regions: list[DisconnectedRegion]
     """Territory regions for the current player (territory_processing phase)."""
 
-    chain_continuations: List[ChainContinuation]
+    chain_continuations: list[ChainContinuation]
     """Available capture targets (chain_capture phase)."""
 
     forced_elimination_count: int
     """Number of rings that must be eliminated (forced_elimination phase)."""
 
     @classmethod
-    def empty(cls) -> "FSMDecisionSurface":
+    def empty(cls) -> FSMDecisionSurface:
         """Create an empty decision surface."""
         return cls(
             pending_lines=[],
@@ -456,16 +456,16 @@ class FSMOrchestrationResult:
     next_player: int
     """The next player according to FSM."""
 
-    pending_decision_type: Optional[PendingDecisionType] = None
+    pending_decision_type: PendingDecisionType | None = None
     """Type of pending decision if any."""
 
-    decision_surface: Optional[FSMDecisionSurface] = None
+    decision_surface: FSMDecisionSurface | None = None
     """Decision surface data for the pending decision."""
 
-    error_code: Optional[str] = None
+    error_code: str | None = None
     """Error code if transition failed."""
 
-    error_message: Optional[str] = None
+    error_message: str | None = None
     """Error message if transition failed."""
 
 
@@ -542,8 +542,8 @@ def compute_fsm_orchestration(
     # Default result
     next_phase = current_phase
     next_player = current_player
-    pending_decision_type: Optional[PendingDecisionType] = None
-    decision_surface: Optional[FSMDecisionSurface] = None
+    pending_decision_type: PendingDecisionType | None = None
+    decision_surface: FSMDecisionSurface | None = None
 
     # Phase transitions based on move type (mirrors TurnStateMachine handlers)
     if current_phase == GamePhase.RING_PLACEMENT:
@@ -567,9 +567,7 @@ def compute_fsm_orchestration(
                 next_phase = GamePhase.CAPTURE
             else:
                 next_phase = GamePhase.LINE_PROCESSING
-        elif move_type == MoveType.NO_MOVEMENT_ACTION:
-            next_phase = GamePhase.LINE_PROCESSING
-        elif move_type == MoveType.RECOVERY_SLIDE:
+        elif move_type == MoveType.NO_MOVEMENT_ACTION or move_type == MoveType.RECOVERY_SLIDE:
             next_phase = GamePhase.LINE_PROCESSING
         elif move_type == MoveType.OVERTAKING_CAPTURE:
             # Initial capture may lead to chain capture
@@ -662,11 +660,10 @@ def compute_fsm_orchestration(
                         next_phase = GamePhase.RING_PLACEMENT
                         next_player = _next_active_player(game_state)
 
-    elif current_phase == GamePhase.FORCED_ELIMINATION:
-        if move_type == MoveType.FORCED_ELIMINATION:
-            # After forced elimination, turn ends
-            next_phase = GamePhase.RING_PLACEMENT
-            next_player = _next_active_player(game_state)
+    elif current_phase == GamePhase.FORCED_ELIMINATION and move_type == MoveType.FORCED_ELIMINATION:
+        # After forced elimination, turn ends
+        next_phase = GamePhase.RING_PLACEMENT
+        next_player = _next_active_player(game_state)
 
     # Build decision surface for the next phase
     if next_phase == GamePhase.CHAIN_CAPTURE:
@@ -854,7 +851,7 @@ def compare_fsm_with_legacy(
     fsm_result: FSMOrchestrationResult,
     legacy_phase: GamePhase,
     legacy_player: int,
-) -> Dict[str, object]:
+) -> dict[str, object]:
     """
     Compare FSM orchestration result with legacy orchestration result.
 

@@ -37,8 +37,9 @@ Usage:
 from __future__ import annotations
 
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Final, Generator, Optional
+from typing import Final
 
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -47,7 +48,6 @@ from prometheus_client import Counter, Gauge, Histogram
 # =============================================================================
 # Use the centralized registry to avoid duplicate metric registration.
 from app.metrics.registry import safe_metric as _safe_metric
-
 
 # =============================================================================
 # Selfplay Metrics
@@ -397,7 +397,7 @@ def record_training_run(
     num_players: int,
     duration_seconds: float,
     final_loss: float,
-    final_accuracy: Optional[float] = None,
+    final_accuracy: float | None = None,
     samples: int = 0,
     epochs: int = 0,
     model_type: str = "nnue",
@@ -435,7 +435,7 @@ def record_evaluation(
     num_players: int,
     games: int,
     elo_delta: float,
-    win_rate: Optional[float] = None,
+    win_rate: float | None = None,
     duration_seconds: float = 0,
     candidate_model: str = "candidate",
     opponent: str = "baseline",
@@ -509,7 +509,7 @@ def record_pipeline_stage(
     stage: str,
     duration_seconds: float,
     success: bool = True,
-    error_type: Optional[str] = None,
+    error_type: str | None = None,
 ) -> None:
     """Record metrics for a pipeline stage.
 
@@ -531,7 +531,7 @@ def record_data_sync(
     games: int,
     duration_seconds: float,
     success: bool = True,
-    error_type: Optional[str] = None,
+    error_type: str | None = None,
 ) -> None:
     """Record metrics for a data sync operation.
 
@@ -573,7 +573,7 @@ def record_sync_coordinator_op(
     bytes_transferred: int,
     duration_seconds: float,
     success: bool = True,
-    error_type: Optional[str] = None,
+    error_type: str | None = None,
 ) -> None:
     """Record metrics for a SyncCoordinator operation.
 
@@ -681,7 +681,7 @@ def record_training_data_quality(
     min_elo: float = 1200.0,
     max_elo: float = 2400.0,
     decisive_ratio: float = 0.5,
-    quality_scores: Optional[list] = None,
+    quality_scores: list | None = None,
 ) -> None:
     """Record comprehensive training data quality metrics.
 
@@ -798,8 +798,9 @@ def collect_quality_metrics_from_manifest(
         True if metrics were collected successfully
     """
     try:
-        from app.distributed.unified_manifest import DataManifest
         from pathlib import Path
+
+        from app.distributed.unified_manifest import DataManifest
 
         # Try to load manifest
         manifest_paths = [

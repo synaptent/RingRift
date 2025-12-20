@@ -28,7 +28,7 @@ See Also:
 
 from dataclasses import dataclass
 
-from app.models import GameState, GamePhase, Move, MoveType
+from app.models import GamePhase, GameState, Move, MoveType
 
 
 @dataclass
@@ -109,9 +109,8 @@ def _did_process_territory_region(game_state: GameState, move: Move) -> bool:
     """
     board = game_state.board
 
-    if move.to is not None:
-        if move.to.to_key() in board.collapsed_spaces:
-            return True
+    if move.to is not None and move.to.to_key() in board.collapsed_spaces:
+        return True
 
     if move.disconnected_regions:
         for region in move.disconnected_regions:

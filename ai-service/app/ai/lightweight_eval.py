@@ -7,7 +7,7 @@ GameState objects, avoiding Pydantic validation overhead.
 
 from __future__ import annotations
 
-from typing import Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .lightweight_state import LightweightState
@@ -35,7 +35,7 @@ _CENTER_POSITIONS_HEX = frozenset([
 
 
 def evaluate_stack_control_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_stack_control: float,
     weight_no_stacks_penalty: float,
@@ -82,7 +82,7 @@ def evaluate_stack_control_light(
 
 
 def evaluate_territory_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_territory: float,
 ) -> float:
@@ -100,7 +100,7 @@ def evaluate_territory_light(
 
 
 def evaluate_rings_in_hand_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_rings_in_hand: float,
 ) -> float:
@@ -122,7 +122,7 @@ def evaluate_rings_in_hand_light(
 
 
 def evaluate_center_control_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_center_control: float,
 ) -> float:
@@ -149,7 +149,7 @@ def evaluate_center_control_light(
 
 
 def evaluate_eliminated_rings_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_eliminated_rings: float,
 ) -> float:
@@ -161,7 +161,7 @@ def evaluate_eliminated_rings_light(
 
 
 def evaluate_victory_proximity_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_victory_proximity: float,
     weight_victory_threshold_bonus: float,
@@ -191,7 +191,7 @@ def evaluate_victory_proximity_light(
 
 
 def evaluate_marker_count_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_marker_count: float,
 ) -> float:
@@ -209,7 +209,7 @@ def evaluate_marker_count_light(
 
 
 def evaluate_mobility_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
     weight_mobility: float,
     board_size: int,
@@ -247,9 +247,9 @@ def evaluate_mobility_light(
 
 
 def evaluate_position_light(
-    state: 'LightweightState',
+    state: LightweightState,
     player_number: int,
-    weights: Dict[str, float],
+    weights: dict[str, float],
     eval_mode: str = "light",
 ) -> float:
     """
@@ -321,7 +321,7 @@ def evaluate_position_light(
     return score
 
 
-def extract_weights_from_ai(ai) -> Dict[str, float]:
+def extract_weights_from_ai(ai) -> dict[str, float]:
     """Extract weight constants from a HeuristicAI instance."""
     weights = {}
     for attr in dir(ai):

@@ -42,14 +42,14 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from app.utils.paths import DATA_DIR
 from app.utils.checksum_utils import (
-    compute_file_checksum as _compute_file_checksum,
-    compute_bytes_checksum as _compute_bytes_checksum,
     LARGE_CHUNK_SIZE,
+    compute_bytes_checksum as _compute_bytes_checksum,
+    compute_file_checksum as _compute_file_checksum,
 )
+from app.utils.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class TransferRecord:
     verification_time: float
     error_message: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "transfer_id": self.transfer_id,
             "source_path": self.source_path,
@@ -100,7 +100,7 @@ class QuarantineRecord:
     quarantined_at: float
     file_size: int
     checksum: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -118,10 +118,10 @@ class BatchChecksum:
 class TransferVerifier:
     """Verifies integrity of data transfers with checksum validation."""
 
-    _instance: Optional["TransferVerifier"] = None
+    _instance: TransferVerifier | None = None
     _lock = threading.RLock()
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or DEFAULT_VERIFIER_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.quarantine_dir = QUARANTINE_DIR
@@ -130,7 +130,7 @@ class TransferVerifier:
         self._init_db()
 
     @classmethod
-    def get_instance(cls, db_path: Optional[Path] = None) -> "TransferVerifier":
+    def get_instance(cls, db_path: Path | None = None) -> TransferVerifier:
         """Get or create singleton instance."""
         with cls._lock:
             if cls._instance is None:
@@ -232,7 +232,7 @@ class TransferVerifier:
 
     def compute_batch_checksum(
         self,
-        records: List[str],
+        records: list[str],
         batch_id: str,
     ) -> BatchChecksum:
         """Compute checksum for a batch of JSONL records.
@@ -292,7 +292,7 @@ class TransferVerifier:
 
         return batch
 
-    def verify_batch(self, batch_id: str, records: List[str]) -> bool:
+    def verify_batch(self, batch_id: str, records: list[str]) -> bool:
         """Verify a batch of records against stored checksum.
 
         Returns True if checksum matches.
@@ -399,7 +399,7 @@ class TransferVerifier:
         self,
         file_path: Path,
         reason: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Move a file to quarantine.
 
@@ -442,7 +442,7 @@ class TransferVerifier:
 
         return str(quarantine_path)
 
-    def get_quarantined_files(self, limit: int = 100) -> List[QuarantineRecord]:
+    def get_quarantined_files(self, limit: int = 100) -> list[QuarantineRecord]:
         """Get list of quarantined files."""
         conn = self._get_connection()
         cursor = conn.execute("""
@@ -498,7 +498,7 @@ class TransferVerifier:
     # Statistics
     # =========================================================================
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get transfer verification statistics."""
         conn = self._get_connection()
 
@@ -555,18 +555,18 @@ def verify_transfer(
 def quarantine_file(
     file_path: Path,
     reason: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Move a file to quarantine."""
     return get_transfer_verifier().quarantine(file_path, reason, metadata)
 
 
-def verify_batch(batch_id: str, records: List[str]) -> bool:
+def verify_batch(batch_id: str, records: list[str]) -> bool:
     """Verify a batch of JSONL records."""
     return get_transfer_verifier().verify_batch(batch_id, records)
 
 
-def compute_batch_checksum(records: List[str], batch_id: str) -> BatchChecksum:
+def compute_batch_checksum(records: list[str], batch_id: str) -> BatchChecksum:
     """Compute checksum for a batch of records."""
     return get_transfer_verifier().compute_batch_checksum(records, batch_id)
 
@@ -592,7 +592,7 @@ def wire_transfer_verifier_events() -> TransferVerifier:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -629,19 +629,19 @@ __all__ = [
     # Constants
     "CHUNK_SIZE",
     "MAX_QUARANTINE_AGE_DAYS",
+    "BatchChecksum",
+    "QuarantineRecord",
     # Data classes
     "TransferRecord",
-    "QuarantineRecord",
-    "BatchChecksum",
     # Main class
     "TransferVerifier",
+    "compute_batch_checksum",
+    "compute_file_checksum",
     # Functions
     "get_transfer_verifier",
-    "compute_file_checksum",
-    "verify_transfer",
     "quarantine_file",
-    "verify_batch",
-    "compute_batch_checksum",
     "reset_transfer_verifier",
+    "verify_batch",
+    "verify_transfer",
     "wire_transfer_verifier_events",
 ]

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class BatchScheduleConfig:
 class BatchSizeScheduler:
     """Schedules batch size throughout training."""
 
-    def __init__(self, config: Optional[BatchScheduleConfig] = None):
+    def __init__(self, config: BatchScheduleConfig | None = None):
         """Initialize batch size scheduler.
 
         Args:
@@ -40,7 +40,7 @@ class BatchSizeScheduler:
         self.config = config or BatchScheduleConfig()
         self._step = 0
 
-    def get_batch_size(self, step: Optional[int] = None) -> int:
+    def get_batch_size(self, step: int | None = None) -> int:
         """Get batch size for given step.
 
         Args:
@@ -106,7 +106,7 @@ class BatchSizeScheduler:
     def current_step(self) -> int:
         return self._step
 
-    def get_schedule_info(self) -> Dict[str, Any]:
+    def get_schedule_info(self) -> dict[str, Any]:
         """Get current schedule information."""
         return {
             "current_step": self._step,

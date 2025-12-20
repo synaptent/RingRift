@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 from collections import OrderedDict
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from app.utils.checksum_utils import compute_string_checksum
 
@@ -34,7 +34,7 @@ def _move_type_str(move: object) -> str:
         return ""
     if hasattr(raw, "value"):
         try:
-            return str(getattr(raw, "value"))
+            return str(raw.value)
         except Exception:
             pass
     return str(raw)
@@ -93,11 +93,11 @@ class MoveCache:
 
     def __init__(self, max_size: int = MOVE_CACHE_SIZE):
         self.max_size = max_size
-        self._cache: OrderedDict[str, List] = OrderedDict()
+        self._cache: OrderedDict[str, list] = OrderedDict()
         self._hits = 0
         self._misses = 0
 
-    def get(self, state: 'GameState', player: int) -> Optional[List['Move']]:
+    def get(self, state: GameState, player: int) -> list[Move] | None:
         """
         Get cached moves for a game state.
 
@@ -132,7 +132,7 @@ class MoveCache:
         self._misses += 1
         return None
 
-    def put(self, state: 'GameState', player: int, moves: List['Move']):
+    def put(self, state: GameState, player: int, moves: list[Move]):
         """Cache moves for a game state."""
         if not USE_MOVE_CACHE:
             return
@@ -159,7 +159,7 @@ class MoveCache:
         self._hits = 0
         self._misses = 0
 
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> dict[str, int]:
         """Get cache statistics."""
         total = self._hits + self._misses
         hit_rate = self._hits / total if total > 0 else 0
@@ -170,7 +170,7 @@ class MoveCache:
             'hit_rate': hit_rate,
         }
 
-    def _compute_key(self, state: 'GameState', player: int) -> str:
+    def _compute_key(self, state: GameState, player: int) -> str:
         """Compute a hash key for the game state.
 
         CRITICAL: Legal move generation depends on small pieces of metadata
@@ -345,7 +345,7 @@ class MoveCache:
 
 
 # Global move cache instance
-_global_cache: Optional[MoveCache] = None
+_global_cache: MoveCache | None = None
 
 
 def get_move_cache() -> MoveCache:
@@ -363,11 +363,11 @@ def clear_move_cache():
         _global_cache.clear()
 
 
-def get_cached_moves(state: 'GameState', player: int) -> Optional[List['Move']]:
+def get_cached_moves(state: GameState, player: int) -> list[Move] | None:
     """Get cached moves from global cache."""
     return get_move_cache().get(state, player)
 
 
-def cache_moves(state: 'GameState', player: int, moves: List['Move']):
+def cache_moves(state: GameState, player: int, moves: list[Move]):
     """Store moves in global cache."""
     get_move_cache().put(state, player, moves)

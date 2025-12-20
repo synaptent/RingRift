@@ -35,14 +35,16 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sqlite3
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +90,7 @@ class UnifiedRegistryBase(ABC, Generic[T]):
     - _get_item_count(): Return current item count
     """
 
-    _instances: Dict[str, "UnifiedRegistryBase"] = {}
+    _instances: dict[str, UnifiedRegistryBase] = {}
     _instance_lock = threading.Lock()
 
     def __init__(self, config: RegistryConfig):
@@ -102,21 +104,21 @@ class UnifiedRegistryBase(ABC, Generic[T]):
         self.name = config.name
 
         self._lock = threading.RLock()
-        self._connection: Optional[sqlite3.Connection] = None
+        self._connection: sqlite3.Connection | None = None
         self._last_modified: float = 0.0
         self._last_access: float = 0.0
         self._errors_count: int = 0
         self._initialized: bool = False
 
         # Event callbacks
-        self._on_change_callbacks: List[Callable[[str, Any], None]] = []
+        self._on_change_callbacks: list[Callable[[str, Any], None]] = []
 
         # Initialize database
         if config.auto_create:
             self._ensure_db()
 
     @classmethod
-    def get_instance(cls, config: Optional[RegistryConfig] = None) -> "UnifiedRegistryBase":
+    def get_instance(cls, config: RegistryConfig | None = None) -> UnifiedRegistryBase:
         """Get singleton instance of this registry.
 
         Args:
@@ -225,7 +227,7 @@ class UnifiedRegistryBase(ABC, Generic[T]):
                 logger.error(f"[{self.name}] Query failed: {query[:100]}... - {e}")
                 raise
 
-    def execute_many(self, query: str, params_list: List[tuple]) -> int:
+    def execute_many(self, query: str, params_list: list[tuple]) -> int:
         """Execute a query with multiple parameter sets.
 
         Args:
@@ -372,14 +374,12 @@ class UnifiedRegistryBase(ABC, Generic[T]):
         """Close database connection."""
         with self._lock:
             if self._connection:
-                try:
+                with contextlib.suppress(Exception):
                     self._connection.close()
-                except Exception:
-                    pass
                 self._connection = None
                 self._initialized = False
 
-    def __enter__(self) -> "UnifiedRegistryBase":
+    def __enter__(self) -> UnifiedRegistryBase:
         """Context manager entry."""
         return self
 
@@ -434,9 +434,9 @@ class TTLRegistryMixin:
 
 
 __all__ = [
-    "UnifiedRegistryBase",
     "RegistryConfig",
     "RegistryStats",
-    "TimestampedRegistryMixin",
     "TTLRegistryMixin",
+    "TimestampedRegistryMixin",
+    "UnifiedRegistryBase",
 ]

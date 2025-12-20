@@ -16,13 +16,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from app.models import AIType, BoardType
 
-
-LadderKey = Tuple[int, BoardType, int]
+LadderKey = tuple[int, BoardType, int]
 
 
 @dataclass(frozen=True)
@@ -39,15 +36,15 @@ class LadderTierConfig:
     board_type: BoardType
     num_players: int
     ai_type: AIType
-    model_id: Optional[str]
-    heuristic_profile_id: Optional[str]
+    model_id: str | None
+    heuristic_profile_id: str | None
     randomness: float
     think_time_ms: int
     use_neural_net: bool = False
     notes: str = ""
 
 
-def _build_default_square8_two_player_configs() -> Dict[
+def _build_default_square8_two_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return the built-in ladder assignments for square8 2-player tiers.
@@ -233,7 +230,7 @@ def _build_default_square8_two_player_configs() -> Dict[
     }
 
 
-def _build_default_square19_two_player_configs() -> Dict[
+def _build_default_square19_two_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for square19 2-player tiers.
@@ -378,7 +375,7 @@ def _build_default_square19_two_player_configs() -> Dict[
     }
 
 
-def _build_default_hex_two_player_configs() -> Dict[
+def _build_default_hex_two_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for hexagonal 2-player tiers.
@@ -527,8 +524,8 @@ def _build_default_generic_board_configs(
     board_type: BoardType,
     num_players: int,
     heuristic_profile_id: str,
-    think_time_by_difficulty: Dict[int, int],
-) -> Dict[LadderKey, LadderTierConfig]:
+    think_time_by_difficulty: dict[int, int],
+) -> dict[LadderKey, LadderTierConfig]:
     """Return ladder assignments for (board_type, num_players) using shared defaults.
 
     These are intentionally conservative defaults for boards/player counts that
@@ -689,7 +686,7 @@ def _build_default_generic_board_configs(
     }
 
 
-def _build_default_square19_three_player_configs() -> Dict[
+def _build_default_square19_three_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for square19 3-player tiers (default heuristics)."""
@@ -712,7 +709,7 @@ def _build_default_square19_three_player_configs() -> Dict[
     )
 
 
-def _build_default_square19_four_player_configs() -> Dict[
+def _build_default_square19_four_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for square19 4-player tiers (default heuristics)."""
@@ -735,7 +732,7 @@ def _build_default_square19_four_player_configs() -> Dict[
     )
 
 
-def _build_default_hex_three_player_configs() -> Dict[
+def _build_default_hex_three_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for hexagonal 3-player tiers (default heuristics)."""
@@ -758,7 +755,7 @@ def _build_default_hex_three_player_configs() -> Dict[
     )
 
 
-def _build_default_hex_four_player_configs() -> Dict[
+def _build_default_hex_four_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for hexagonal 4-player tiers (default heuristics)."""
@@ -781,7 +778,7 @@ def _build_default_hex_four_player_configs() -> Dict[
     )
 
 
-def _build_default_square8_three_player_configs() -> Dict[
+def _build_default_square8_three_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for square8 3-player tiers.
@@ -923,7 +920,7 @@ def _build_default_square8_three_player_configs() -> Dict[
     }
 
 
-def _build_default_square8_four_player_configs() -> Dict[
+def _build_default_square8_four_player_configs() -> dict[
     LadderKey, LadderTierConfig
 ]:
     """Return ladder assignments for square8 4-player tiers.
@@ -1065,7 +1062,7 @@ def _build_default_square8_four_player_configs() -> Dict[
     }
 
 
-_LADDER_TIER_CONFIGS: Dict[LadderKey, LadderTierConfig] = {
+_LADDER_TIER_CONFIGS: dict[LadderKey, LadderTierConfig] = {
     **_build_default_square8_two_player_configs(),
     **_build_default_square19_two_player_configs(),
     **_build_default_hex_two_player_configs(),
@@ -1096,7 +1093,7 @@ def get_ladder_tier_config(
         available = ", ".join(
             sorted(
                 f"(difficulty={d}, board_type={bt.value}, num_players={n})"
-                for (d, bt, n) in _LADDER_TIER_CONFIGS.keys()
+                for (d, bt, n) in _LADDER_TIER_CONFIGS
             )
         )
         raise KeyError(
@@ -1107,9 +1104,9 @@ def get_ladder_tier_config(
 
 
 def list_ladder_tiers(
-    board_type: Optional[BoardType] = None,
-    num_players: Optional[int] = None,
-) -> List[LadderTierConfig]:
+    board_type: BoardType | None = None,
+    num_players: int | None = None,
+) -> list[LadderTierConfig]:
     """Return all configured LadderTierConfig entries, optionally filtered."""
     configs = list(_LADDER_TIER_CONFIGS.values())
     if board_type is not None:
@@ -1132,7 +1129,7 @@ def list_ladder_tiers(
 from app.utils.paths import AI_SERVICE_ROOT
 
 # Runtime overrides loaded from JSON file
-_RUNTIME_OVERRIDES: Dict[LadderKey, Dict[str, str]] = {}
+_RUNTIME_OVERRIDES: dict[LadderKey, dict[str, str]] = {}
 _RUNTIME_OVERRIDES_PATH = AI_SERVICE_ROOT / "data" / "ladder_runtime_overrides.json"
 
 
@@ -1194,7 +1191,7 @@ def update_tier_model(
     board_type: BoardType,
     num_players: int,
     model_id: str,
-    heuristic_profile_id: Optional[str] = None,
+    heuristic_profile_id: str | None = None,
 ) -> bool:
     """Update the model used for a specific difficulty tier at runtime.
 
@@ -1218,7 +1215,7 @@ def update_tier_model(
         return False
 
     # Create or update override
-    override: Dict[str, str] = {"model_id": model_id}
+    override: dict[str, str] = {"model_id": model_id}
     if heuristic_profile_id:
         override["heuristic_profile_id"] = heuristic_profile_id
 
@@ -1266,7 +1263,7 @@ def get_effective_ladder_config(
     return base_config
 
 
-def get_all_runtime_overrides() -> Dict[str, Dict[str, str]]:
+def get_all_runtime_overrides() -> dict[str, dict[str, str]]:
     """Get all current runtime overrides for debugging/display."""
     result = {}
     for (difficulty, board_type, num_players), overrides in _RUNTIME_OVERRIDES.items():
@@ -1311,7 +1308,7 @@ def update_tier_heuristic_profile(
     return True
 
 
-def get_heuristic_tiers(board_type: BoardType, num_players: int) -> List[int]:
+def get_heuristic_tiers(board_type: BoardType, num_players: int) -> list[int]:
     """Get difficulty tiers that use heuristic evaluation for a board/player config.
 
     These are tiers D2-D5 which rely on heuristic weights (with or without NN).

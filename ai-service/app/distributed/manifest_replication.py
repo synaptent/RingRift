@@ -24,19 +24,17 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
-import os
 import shutil
 import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
+from app.utils.checksum_utils import LARGE_CHUNK_SIZE, compute_file_checksum
 from app.utils.yaml_utils import safe_load_yaml
-from app.utils.checksum_utils import compute_file_checksum, LARGE_CHUNK_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +58,7 @@ class ReplicationStatus:
     local_checksum: str
     local_mtime: float
     local_size: int
-    replicas: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    replicas: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_replication_time: float = 0.0
     replication_count: int = 0
 
@@ -71,12 +69,12 @@ class ManifestReplicator:
     def __init__(
         self,
         local_manifest_path: Path,
-        replica_hosts: List[ReplicaHost],
+        replica_hosts: list[ReplicaHost],
         min_replicas: int = 3,  # Increased from 2 for better resilience
         replication_interval_seconds: int = 300,
         ssh_timeout: int = 30,
         scp_timeout: int = 120,
-        external_backup_path: Optional[Path] = None,  # External drive backup
+        external_backup_path: Path | None = None,  # External drive backup
     ):
         """Initialize the manifest replicator.
 
@@ -109,7 +107,7 @@ class ManifestReplicator:
         """Compute SHA256 checksum of a file."""
         return compute_file_checksum(path, chunk_size=LARGE_CHUNK_SIZE)
 
-    def _get_local_manifest_info(self) -> Tuple[str, float, int]:
+    def _get_local_manifest_info(self) -> tuple[str, float, int]:
         """Get local manifest checksum, mtime, and size."""
         if not self.local_path.exists():
             return "", 0.0, 0
@@ -380,7 +378,7 @@ class ManifestReplicator:
                 shutil.copy2(backup_path, self.local_path)
             return False
 
-    async def _get_remote_manifest_info(self, host: ReplicaHost) -> Optional[Tuple[str, float, int]]:
+    async def _get_remote_manifest_info(self, host: ReplicaHost) -> tuple[str, float, int] | None:
         """Get remote manifest checksum, mtime, and size.
 
         Returns None if remote manifest doesn't exist or is inaccessible.
@@ -404,7 +402,7 @@ class ManifestReplicator:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            stdout, _stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=self.ssh_timeout,
             )
@@ -460,7 +458,7 @@ class ManifestReplicator:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=self.scp_timeout,
             )
@@ -512,7 +510,7 @@ class ManifestReplicator:
                 local_game_count = 0
 
         # Get info from all replicas
-        replica_infos: List[Tuple[ReplicaHost, str, float, int]] = []
+        replica_infos: list[tuple[ReplicaHost, str, float, int]] = []
 
         tasks = [
             self._get_remote_manifest_info(host)
@@ -524,7 +522,7 @@ class ManifestReplicator:
 
         for host, result in zip(
             [h for h in self.replica_hosts.values() if h.enabled],
-            results,
+            results, strict=False,
         ):
             if isinstance(result, tuple) and len(result) == 3:
                 checksum, mtime, size = result
@@ -573,7 +571,7 @@ class ManifestReplicator:
 
         return success
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get replication status."""
         local_checksum, local_mtime, local_size = self._get_local_manifest_info()
 
@@ -602,7 +600,7 @@ def create_replicator_from_config(
     manifest_path: Path,
     hosts_config_path: Path,
     min_replicas: int = 3,  # Increased from 2 for better resilience
-    external_backup_path: Optional[Path] = None,
+    external_backup_path: Path | None = None,
 ) -> ManifestReplicator:
     """Create a ManifestReplicator from configuration files.
 

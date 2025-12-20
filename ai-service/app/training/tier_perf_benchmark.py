@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
-from typing import List
 
+from app.config.perf_budgets import (
+    TierPerfBudget,
+    get_tier_perf_budget,
+)
 from app.game_engine import GameEngine
 from app.models import BoardType, GameStatus
 from app.training.env import TrainingEnvConfig, make_env
@@ -20,10 +23,6 @@ from app.training.tier_eval_config import (
 )
 from app.training.tier_eval_runner import (
     _create_ladder_ai_instance,
-)
-from app.config.perf_budgets import (
-    TierPerfBudget,
-    get_tier_perf_budget,
 )
 
 
@@ -35,7 +34,7 @@ class TierPerfSample:
     difficulty: int
     board_type: BoardType
     num_players: int
-    move_latencies_ms: List[float]
+    move_latencies_ms: list[float]
 
 
 @dataclass
@@ -68,7 +67,7 @@ def _resolve_eval_config(
         return get_tier_config(base)
 
 
-def _compute_p95(latencies_ms: List[float]) -> float:
+def _compute_p95(latencies_ms: list[float]) -> float:
     """Return a simple 95th percentile estimate for a small sample."""
     if not latencies_ms:
         return 0.0
@@ -122,7 +121,7 @@ def run_tier_perf_benchmark(
     )
     env = make_env(env_config)
 
-    latencies: List[float] = []
+    latencies: list[float] = []
 
     for game_index in range(num_games):
         game_seed = (seed * 1_000_003 + game_index) & 0x7FFFFFFF

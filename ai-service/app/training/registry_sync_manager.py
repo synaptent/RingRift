@@ -20,20 +20,17 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
-import shutil
 import sqlite3
-import subprocess
 import tempfile
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 # Import CircuitBreaker from unified cluster transport layer
 from app.coordination.cluster_transport import CircuitBreaker
@@ -50,8 +47,8 @@ class SyncState:
     last_sync_timestamp: float = 0.0
     local_model_count: int = 0
     local_version_count: int = 0
-    synced_nodes: Dict[str, float] = field(default_factory=dict)
-    pending_syncs: List[str] = field(default_factory=list)
+    synced_nodes: dict[str, float] = field(default_factory=dict)
+    pending_syncs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -63,7 +60,7 @@ class NodeInfo:
     model_count: int = 0
     version_count: int = 0
     reachable: bool = True
-    tailscale_ip: Optional[str] = None
+    tailscale_ip: str | None = None
     ssh_port: int = 22
 
 
@@ -83,7 +80,7 @@ class RegistrySyncManager:
         registry_path: Path = DEFAULT_REGISTRY_PATH,
         coordinator_host: str = "lambda-h100",
         sync_interval: int = 600,  # 10 minutes
-        p2p_url: Optional[str] = None,
+        p2p_url: str | None = None,
     ):
         self.registry_path = Path(registry_path)
         self.coordinator_host = coordinator_host
@@ -91,8 +88,8 @@ class RegistrySyncManager:
         self.p2p_url = p2p_url or os.environ.get("P2P_URL", "https://p2p.ringrift.ai")
 
         self.state = SyncState()
-        self.nodes: Dict[str, NodeInfo] = {}
-        self.circuit_breakers: Dict[str, CircuitBreaker] = defaultdict(CircuitBreaker)
+        self.nodes: dict[str, NodeInfo] = {}
+        self.circuit_breakers: dict[str, CircuitBreaker] = defaultdict(CircuitBreaker)
         self._sync_lock = asyncio.Lock()
         self._running = False
 
@@ -104,8 +101,8 @@ class RegistrySyncManager:
         ]
 
         # Event callbacks
-        self._on_sync_complete: List[Callable] = []
-        self._on_sync_failed: List[Callable] = []
+        self._on_sync_complete: list[Callable] = []
+        self._on_sync_failed: list[Callable] = []
 
     async def initialize(self):
         """Initialize the sync manager."""
@@ -181,7 +178,7 @@ class RegistrySyncManager:
         except Exception as e:
             logger.warning(f"Failed to discover nodes: {e}")
 
-    async def sync_with_cluster(self) -> Dict[str, Any]:
+    async def sync_with_cluster(self) -> dict[str, Any]:
         """Synchronize registry with all cluster nodes.
 
         Returns:
@@ -222,7 +219,7 @@ class RegistrySyncManager:
             results['success'] = results['nodes_synced'] > 0
             return results
 
-    async def _sync_with_node(self, hostname: str, node: NodeInfo) -> Dict[str, Any]:
+    async def _sync_with_node(self, hostname: str, node: NodeInfo) -> dict[str, Any]:
         """Sync registry with a single node using transport failover."""
         for transport_name, transport_fn in self.transport_methods:
             try:
@@ -236,7 +233,7 @@ class RegistrySyncManager:
 
         return {'success': False, 'error': 'All transports failed'}
 
-    async def _sync_via_tailscale(self, hostname: str, node: NodeInfo) -> Dict[str, Any]:
+    async def _sync_via_tailscale(self, hostname: str, node: NodeInfo) -> dict[str, Any]:
         """Sync via Tailscale direct connection."""
         if not node.tailscale_ip:
             return {'success': False, 'error': 'No Tailscale IP'}
@@ -244,24 +241,23 @@ class RegistrySyncManager:
         remote_path = f"{node.tailscale_ip}:{node.registry_path}"
         return await self._rsync_and_merge(remote_path, hostname)
 
-    async def _sync_via_ssh(self, hostname: str, node: NodeInfo) -> Dict[str, Any]:
+    async def _sync_via_ssh(self, hostname: str, node: NodeInfo) -> dict[str, Any]:
         """Sync via SSH."""
         remote_path = f"{hostname}:{node.registry_path}"
         return await self._rsync_and_merge(remote_path, hostname, ssh_port=node.ssh_port)
 
-    async def _sync_via_http(self, hostname: str, node: NodeInfo) -> Dict[str, Any]:
+    async def _sync_via_http(self, hostname: str, node: NodeInfo) -> dict[str, Any]:
         """Sync via HTTP from P2P endpoint."""
         try:
             import aiohttp
             url = f"{self.p2p_url}/api/registry/export?host={hostname}"
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=30) as resp:
-                    if resp.status != 200:
-                        return {'success': False, 'error': f'HTTP {resp.status}'}
+            async with aiohttp.ClientSession() as session, session.get(url, timeout=30) as resp:
+                if resp.status != 200:
+                    return {'success': False, 'error': f'HTTP {resp.status}'}
 
-                    data = await resp.json()
-                    return await self._merge_registry_data(data, hostname)
+                data = await resp.json()
+                return await self._merge_registry_data(data, hostname)
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
@@ -270,7 +266,7 @@ class RegistrySyncManager:
         remote_path: str,
         hostname: str,
         ssh_port: int = 22
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Rsync remote registry and merge with local."""
         with tempfile.TemporaryDirectory() as tmpdir:
             remote_db = Path(tmpdir) / "remote_registry.db"
@@ -299,7 +295,7 @@ class RegistrySyncManager:
             # Merge databases
             return await self._merge_databases(remote_db, hostname)
 
-    async def _merge_databases(self, remote_db: Path, source_hostname: str) -> Dict[str, Any]:
+    async def _merge_databases(self, remote_db: Path, source_hostname: str) -> dict[str, Any]:
         """Merge remote registry database into local."""
         models_merged = 0
         versions_merged = 0
@@ -363,7 +359,7 @@ class RegistrySyncManager:
             logger.error(f"Database merge failed: {e}")
             return {'success': False, 'error': str(e)}
 
-    async def _merge_registry_data(self, data: Dict[str, Any], source: str) -> Dict[str, Any]:
+    async def _merge_registry_data(self, data: dict[str, Any], source: str) -> dict[str, Any]:
         """Merge registry data received via HTTP."""
         # Similar to database merge but from JSON data
         models_merged = 0
@@ -428,7 +424,7 @@ class RegistrySyncManager:
         """Register callback for sync failure."""
         self._on_sync_failed.append(callback)
 
-    def get_sync_status(self) -> Dict[str, Any]:
+    def get_sync_status(self) -> dict[str, Any]:
         """Get current sync status."""
         return {
             'last_sync': self.state.last_sync_timestamp,

@@ -16,11 +16,10 @@ model file updates.
 
 import json
 import logging
-import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from app.utils.checksum_utils import compute_bytes_checksum
 
@@ -120,7 +119,7 @@ class EvalCache:
         self.cache_path = Path(cache_path)
         self.ttl_seconds = ttl_seconds
         self.max_entries = max_entries
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
         self._load()
 
     def _load(self) -> None:
@@ -130,7 +129,7 @@ class EvalCache:
             return
 
         try:
-            with open(self.cache_path, 'r') as f:
+            with open(self.cache_path) as f:
                 data = json.load(f)
 
             # Filter expired entries
@@ -182,7 +181,7 @@ class EvalCache:
         board: str,
         num_players: int,
         games: int,
-    ) -> Optional[EvalCacheEntry]:
+    ) -> EvalCacheEntry | None:
         """Get cached evaluation result.
 
         Args:
@@ -288,7 +287,7 @@ class EvalCache:
         self._save()
         logger.info("Eval cache cleared")
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         now = time.time()
         ages = [now - e.get('timestamp', 0) for e in self._cache.values()]
@@ -304,10 +303,10 @@ class EvalCache:
 
 
 # Global cache instance for convenience
-_global_cache: Optional[EvalCache] = None
+_global_cache: EvalCache | None = None
 
 
-def get_eval_cache(cache_dir: Optional[str] = None) -> EvalCache:
+def get_eval_cache(cache_dir: str | None = None) -> EvalCache:
     """Get or create the global evaluation cache.
 
     Args:

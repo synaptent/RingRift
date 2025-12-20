@@ -23,7 +23,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.models import GameState, Move
 
@@ -49,9 +49,9 @@ class CollectedGame:
     game_id: str
     initial_state: GameState
     final_state: GameState
-    moves: List[Move]
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    history_entries: List[HistoryEntry] = field(default_factory=list)
+    moves: list[Move]
+    metadata: dict[str, Any] = field(default_factory=dict)
+    history_entries: list[HistoryEntry] = field(default_factory=list)
 
 
 class InMemoryGameCollector:
@@ -63,15 +63,15 @@ class InMemoryGameCollector:
     """
 
     def __init__(self):
-        self._games: List[CollectedGame] = []
+        self._games: list[CollectedGame] = []
 
     def store_game(
         self,
         game_id: str,
         initial_state: GameState,
         final_state: GameState,
-        moves: List[Move],
-        metadata: Optional[Dict[str, Any]] = None,
+        moves: list[Move],
+        metadata: dict[str, Any] | None = None,
         store_history_entries: bool = True,
         compress_states: bool = False,  # Not used in memory, but kept for API compat
     ) -> str:
@@ -93,7 +93,7 @@ class InMemoryGameCollector:
         # Import here to avoid circular imports
         from app.game_engine import GameEngine
 
-        history_entries: List[HistoryEntry] = []
+        history_entries: list[HistoryEntry] = []
 
         if store_history_entries and moves:
             prev_state = initial_state
@@ -123,7 +123,7 @@ class InMemoryGameCollector:
         self._games.append(game)
         return game_id
 
-    def get_games(self) -> List[CollectedGame]:
+    def get_games(self) -> list[CollectedGame]:
         """Get all collected games."""
         return self._games
 
@@ -134,7 +134,7 @@ class InMemoryGameCollector:
     def get_serialized_games(
         self,
         include_history_entries: bool = True,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get all games as JSON-serializable dictionaries.
 
         Returns a list of game dictionaries suitable for network transfer.
@@ -154,7 +154,7 @@ class InMemoryGameCollector:
         """
         serialized = []
         for game in self._games:
-            game_dict: Dict[str, Any] = {
+            game_dict: dict[str, Any] = {
                 "game_id": game.game_id,
                 "initial_state": game.initial_state.model_dump(),
                 "final_state": game.final_state.model_dump(),
@@ -182,7 +182,7 @@ class InMemoryGameCollector:
 
 
 def deserialize_game_data(
-    game_data: Dict[str, Any],
+    game_data: dict[str, Any],
 ) -> CollectedGame:
     """Deserialize a game dictionary back to a CollectedGame.
 
@@ -192,7 +192,7 @@ def deserialize_game_data(
     Returns:
         CollectedGame with reconstructed GameState and Move objects
     """
-    history_entries: List[HistoryEntry] = []
+    history_entries: list[HistoryEntry] = []
     if "history_entries" in game_data:
         for e in game_data["history_entries"]:
             history_entries.append(HistoryEntry(
@@ -218,8 +218,8 @@ def deserialize_game_data(
 
 def write_games_to_db(
     db,  # GameReplayDB
-    game_data_list: List[Dict[str, Any]],
-    extra_metadata: Optional[Dict[str, Any]] = None,
+    game_data_list: list[dict[str, Any]],
+    extra_metadata: dict[str, Any] | None = None,
 ) -> int:
     """Write serialized game data to a GameReplayDB.
 

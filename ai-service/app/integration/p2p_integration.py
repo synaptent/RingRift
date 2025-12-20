@@ -13,14 +13,16 @@ components and the P2P orchestrator's REST API.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import time
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable, Tuple
+from typing import Any
 
 try:
     from aiohttp import ClientSession, ClientTimeout
@@ -41,7 +43,7 @@ class P2PIntegrationConfig:
     """Configuration for P2P orchestrator integration."""
     # Connection settings
     p2p_base_url: str = "http://localhost:8770"
-    auth_token: Optional[str] = None
+    auth_token: str | None = None
     connect_timeout: float = 10.0
     request_timeout: float = 60.0
 
@@ -94,7 +96,7 @@ class P2PNode:
     cpu_percent: float = 0.0
     selfplay_jobs: int = 0
     training_jobs: int = 0
-    capabilities: List[P2PNodeCapability] = field(default_factory=list)
+    capabilities: list[P2PNodeCapability] = field(default_factory=list)
     last_heartbeat: float = 0.0
 
 
@@ -111,7 +113,7 @@ class P2PAPIClient:
 
     def __init__(self, config: P2PIntegrationConfig):
         self.config = config
-        self._session: Optional[ClientSession] = None
+        self._session: ClientSession | None = None
         self._headers = {}
 
         if config.auth_token:
@@ -140,9 +142,9 @@ class P2PAPIClient:
         self,
         method: str,
         endpoint: str,
-        json_data: Optional[Dict] = None,
+        json_data: dict | None = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Make an API request."""
         session = await self._get_session()
         url = f"{self.config.p2p_base_url}{endpoint}"
@@ -161,11 +163,11 @@ class P2PAPIClient:
     # Cluster Status
     # ==========================================
 
-    async def get_cluster_status(self) -> Dict[str, Any]:
+    async def get_cluster_status(self) -> dict[str, Any]:
         """Get overall cluster status."""
         return await self._request("GET", "/api/cluster/status")
 
-    async def get_nodes(self) -> List[P2PNode]:
+    async def get_nodes(self) -> list[P2PNode]:
         """Get list of cluster nodes."""
         result = await self.get_cluster_status()
 
@@ -198,7 +200,7 @@ class P2PAPIClient:
 
         return nodes
 
-    async def get_leader(self) -> Optional[str]:
+    async def get_leader(self) -> str | None:
         """Get current cluster leader node ID."""
         result = await self.get_cluster_status()
         return result.get("leader")
@@ -213,7 +215,7 @@ class P2PAPIClient:
         board_type: str = "square8",
         num_players: int = 2,
         count: int = 1
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start selfplay jobs on a node."""
         return await self._request(
             "POST",
@@ -227,7 +229,7 @@ class P2PAPIClient:
             }
         )
 
-    async def stop_selfplay(self, node_id: str, job_id: str) -> Dict[str, Any]:
+    async def stop_selfplay(self, node_id: str, job_id: str) -> dict[str, Any]:
         """Stop a selfplay job."""
         return await self._request(
             "POST",
@@ -238,8 +240,8 @@ class P2PAPIClient:
     async def start_training(
         self,
         node_id: str,
-        config: Optional[Dict] = None
-    ) -> Dict[str, Any]:
+        config: dict | None = None
+    ) -> dict[str, Any]:
         """Start training on a node."""
         return await self._request(
             "POST",
@@ -250,7 +252,7 @@ class P2PAPIClient:
             }
         )
 
-    async def get_training_status(self) -> Dict[str, Any]:
+    async def get_training_status(self) -> dict[str, Any]:
         """Get current training status."""
         return await self._request("GET", "/api/training/status")
 
@@ -259,7 +261,7 @@ class P2PAPIClient:
         board_type: str = "square8",
         generations: int = 100,
         population_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start distributed CMA-ES optimization."""
         return await self._request(
             "POST",
@@ -271,7 +273,7 @@ class P2PAPIClient:
             }
         )
 
-    async def get_cmaes_status(self) -> Dict[str, Any]:
+    async def get_cmaes_status(self) -> dict[str, Any]:
         """Get CMA-ES status."""
         return await self._request("GET", "/cmaes/status")
 
@@ -281,9 +283,9 @@ class P2PAPIClient:
 
     async def start_tournament(
         self,
-        model_ids: List[str],
+        model_ids: list[str],
         games_per_pair: int = 50
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start model evaluation tournament."""
         return await self._request(
             "POST",
@@ -294,11 +296,11 @@ class P2PAPIClient:
             }
         )
 
-    async def get_tournament_status(self) -> Dict[str, Any]:
+    async def get_tournament_status(self) -> dict[str, Any]:
         """Get tournament status."""
         return await self._request("GET", "/tournament/status")
 
-    async def get_elo_leaderboard(self) -> Dict[str, Any]:
+    async def get_elo_leaderboard(self) -> dict[str, Any]:
         """Get ELO leaderboard."""
         return await self._request("GET", "/api/elo_leaderboard")
 
@@ -306,11 +308,11 @@ class P2PAPIClient:
     # Data & Sync
     # ==========================================
 
-    async def get_data_manifest(self) -> Dict[str, Any]:
+    async def get_data_manifest(self) -> dict[str, Any]:
         """Get cluster-wide data manifest."""
         return await self._request("GET", "/cluster_data_manifest")
 
-    async def trigger_sync(self, source_node: str, target_node: str) -> Dict[str, Any]:
+    async def trigger_sync(self, source_node: str, target_node: str) -> dict[str, Any]:
         """Trigger data sync between nodes."""
         return await self._request(
             "POST",
@@ -321,7 +323,7 @@ class P2PAPIClient:
             }
         )
 
-    async def get_sync_status(self) -> Dict[str, Any]:
+    async def get_sync_status(self) -> dict[str, Any]:
         """Get data sync status."""
         return await self._request("GET", "/sync/status")
 
@@ -329,7 +331,7 @@ class P2PAPIClient:
     # Improvement Loop
     # ==========================================
 
-    async def start_improvement_loop(self, config: Optional[Dict] = None) -> Dict[str, Any]:
+    async def start_improvement_loop(self, config: dict | None = None) -> dict[str, Any]:
         """Start the improvement loop."""
         return await self._request(
             "POST",
@@ -337,15 +339,15 @@ class P2PAPIClient:
             json_data={"config": config or {}}
         )
 
-    async def get_improvement_status(self) -> Dict[str, Any]:
+    async def get_improvement_status(self) -> dict[str, Any]:
         """Get improvement loop status."""
         return await self._request("GET", "/improvement/status")
 
     async def notify_phase_complete(
         self,
         phase: str,
-        result: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        result: dict[str, Any]
+    ) -> dict[str, Any]:
         """Notify completion of an improvement phase."""
         return await self._request(
             "POST",
@@ -357,7 +359,7 @@ class P2PAPIClient:
     # Pipeline
     # ==========================================
 
-    async def start_pipeline(self, config: Optional[Dict] = None) -> Dict[str, Any]:
+    async def start_pipeline(self, config: dict | None = None) -> dict[str, Any]:
         """Start the pipeline orchestrator."""
         return await self._request(
             "POST",
@@ -365,7 +367,7 @@ class P2PAPIClient:
             json_data={"config": config or {}}
         )
 
-    async def get_pipeline_status(self) -> Dict[str, Any]:
+    async def get_pipeline_status(self) -> dict[str, Any]:
         """Get pipeline status."""
         return await self._request("GET", "/pipeline/status")
 
@@ -408,10 +410,10 @@ class SelfplayCoordinator:
     def __init__(self, client: P2PAPIClient, config: P2PIntegrationConfig):
         self.client = client
         self.config = config
-        self._selfplay_targets: Dict[str, int] = {}
+        self._selfplay_targets: dict[str, int] = {}
         self._rate_multiplier: float = 1.0  # Feedback-driven multiplier
         # Phase 3.1: Curriculum weights for config prioritization
-        self._curriculum_weights: Dict[str, float] = {}  # config_key -> weight
+        self._curriculum_weights: dict[str, float] = {}  # config_key -> weight
         self._last_selected_config_idx: int = 0  # Round-robin base
 
     def adjust_target_rate(self, multiplier: float, reason: str) -> int:
@@ -435,7 +437,7 @@ class SelfplayCoordinator:
         """Get the current effective target rate after feedback adjustments."""
         return int(self.config.target_selfplay_games_per_hour * self._rate_multiplier)
 
-    def update_curriculum_weights(self, weights: Dict[str, float]) -> None:
+    def update_curriculum_weights(self, weights: dict[str, float]) -> None:
         """Update curriculum weights from the training loop.
 
         Phase 3.1: These weights influence which configs get more selfplay.
@@ -447,7 +449,7 @@ class SelfplayCoordinator:
         self._curriculum_weights = weights.copy()
         logger.info(f"[Selfplay] Updated curriculum weights: {len(weights)} configs")
 
-    def select_weighted_config(self) -> Tuple[str, int]:
+    def select_weighted_config(self) -> tuple[str, int]:
         """Select a config based on curriculum weights.
 
         Phase 3.1: Uses weighted random selection to prioritize configs that need
@@ -496,7 +498,7 @@ class SelfplayCoordinator:
         # This would integrate with selfplay stats endpoint
         return status.get("selfplay_rate", 0)
 
-    async def auto_scale(self) -> Dict[str, Any]:
+    async def auto_scale(self) -> dict[str, Any]:
         """Auto-scale selfplay to meet target rate.
 
         Phase 3.1: Uses curriculum weights to select configs for new selfplay jobs.
@@ -555,7 +557,7 @@ class SelfplayCoordinator:
             "actions": actions
         }
 
-    async def get_distribution(self) -> Dict[str, int]:
+    async def get_distribution(self) -> dict[str, int]:
         """Get selfplay job distribution across nodes."""
         nodes = await self.client.get_nodes()
         return {n.node_id: n.selfplay_jobs for n in nodes if n.is_alive}
@@ -574,9 +576,9 @@ class TrainingCoordinator:
     def __init__(self, client: P2PAPIClient, config: P2PIntegrationConfig):
         self.client = client
         self.config = config
-        self._current_training_node: Optional[str] = None
+        self._current_training_node: str | None = None
 
-    async def select_training_node(self) -> Optional[P2PNode]:
+    async def select_training_node(self) -> P2PNode | None:
         """Select the best node for training."""
         nodes = await self.client.get_nodes()
 
@@ -600,8 +602,8 @@ class TrainingCoordinator:
 
     async def start_training(
         self,
-        config: Optional[Dict] = None
-    ) -> Dict[str, Any]:
+        config: dict | None = None
+    ) -> dict[str, Any]:
         """Start training on the best available node."""
         node = await self.select_training_node()
 
@@ -612,13 +614,13 @@ class TrainingCoordinator:
 
         return await self.client.start_training(node.node_id, config)
 
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """Get current training status."""
         status = await self.client.get_training_status()
         status["selected_node"] = self._current_training_node
         return status
 
-    async def aggregate_data(self, target_node: str) -> Dict[str, Any]:
+    async def aggregate_data(self, target_node: str) -> dict[str, Any]:
         """Aggregate training data to target node."""
         nodes = await self.client.get_nodes()
 
@@ -650,9 +652,9 @@ class EvaluationCoordinator:
 
     async def run_tournament(
         self,
-        models: List[str],
-        games_per_pair: Optional[int] = None
-    ) -> Dict[str, Any]:
+        models: list[str],
+        games_per_pair: int | None = None
+    ) -> dict[str, Any]:
         """Run evaluation tournament."""
         games = games_per_pair or self.config.tournament_games_per_pair
 
@@ -667,11 +669,11 @@ class EvaluationCoordinator:
         model_a: str,
         model_b: str,
         games: int = 100
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run head-to-head comparison between two models."""
         return await self.run_tournament([model_a, model_b], games)
 
-    async def get_leaderboard(self) -> List[Dict[str, Any]]:
+    async def get_leaderboard(self) -> list[dict[str, Any]]:
         """Get current ELO leaderboard."""
         result = await self.client.get_elo_leaderboard()
         return result.get("leaderboard", [])
@@ -689,7 +691,7 @@ class P2PIntegrationManager:
     with the distributed P2P cluster.
     """
 
-    def __init__(self, config: Optional[P2PIntegrationConfig] = None):
+    def __init__(self, config: P2PIntegrationConfig | None = None):
         self.config = config or P2PIntegrationConfig()
 
         # Load auth token from environment if not set
@@ -704,8 +706,8 @@ class P2PIntegrationManager:
 
         # State
         self._running = False
-        self._tasks: List[asyncio.Task] = []
-        self._callbacks: Dict[str, List[Callable]] = {}
+        self._tasks: list[asyncio.Task] = []
+        self._callbacks: dict[str, list[Callable]] = {}
         self._last_health_check: float = 0
         self._cluster_healthy: bool = False
 
@@ -726,10 +728,8 @@ class P2PIntegrationManager:
 
         for task in self._tasks:
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
         await self.client.close()
         self._tasks.clear()
@@ -759,8 +759,8 @@ class P2PIntegrationManager:
 
     async def start_improvement_cycle(
         self,
-        phases: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        phases: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Start a complete improvement cycle.
 
@@ -777,7 +777,7 @@ class P2PIntegrationManager:
     async def trigger_training(
         self,
         wait_for_completion: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Trigger training on the cluster."""
         result = await self.training.start_training()
 
@@ -796,8 +796,8 @@ class P2PIntegrationManager:
     async def evaluate_model(
         self,
         model_id: str,
-        reference_model: Optional[str] = None
-    ) -> Dict[str, Any]:
+        reference_model: str | None = None
+    ) -> dict[str, Any]:
         """
         Evaluate a model against references.
 
@@ -818,7 +818,7 @@ class P2PIntegrationManager:
         self,
         model_id: str,
         model_path: Path
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sync a model file to all cluster nodes."""
         nodes = await self.client.get_nodes()
         healthy_nodes = [n for n in nodes if n.is_healthy]
@@ -842,7 +842,7 @@ class P2PIntegrationManager:
         version: int,
         priority: str = "normal",
         reason: str = "manual"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schedule an evaluation tournament for a model.
 
@@ -989,7 +989,7 @@ class P2PIntegrationManager:
             try:
                 if self._cluster_healthy and self.config.data_sync_enabled:
                     # Check if sync is needed
-                    _sync_status = await self.client.get_sync_status()  # noqa: F841
+                    _sync_status = await self.client.get_sync_status()
 
                     # Trigger sync if needed
                     # This would implement sync logic based on data manifest
@@ -1005,7 +1005,7 @@ class P2PIntegrationManager:
                 logger.error(f"Sync loop error: {e}")
                 await asyncio.sleep(60)
 
-    async def _reconcile_elo(self) -> Dict[str, Any]:
+    async def _reconcile_elo(self) -> dict[str, Any]:
         """Reconcile Elo ratings across cluster nodes.
 
         Uses Mac Studio as authoritative source and propagates to other nodes.
@@ -1050,7 +1050,7 @@ class P2PIntegrationManager:
                             if synced:
                                 result["synced_nodes"] += 1
                 except Exception as e:
-                    result["errors"].append(f"{host}: {str(e)}")
+                    result["errors"].append(f"{host}: {e!s}")
 
         except Exception as e:
             logger.error(f"Elo reconciliation error: {e}")
@@ -1058,10 +1058,10 @@ class P2PIntegrationManager:
 
         return result
 
-    async def _fetch_node_elo(self, host: str, port: int) -> Optional[Dict]:
+    async def _fetch_node_elo(self, host: str, port: int) -> dict | None:
         """Fetch Elo leaderboard from a cluster node."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"http://{host}:{port}/api/elo/leaderboard"
         try:
@@ -1072,7 +1072,7 @@ class P2PIntegrationManager:
         except Exception:
             return None
 
-    async def _check_elo_divergence(self, local_db: Path, node_elo: Dict, threshold: float = 50.0) -> bool:
+    async def _check_elo_divergence(self, local_db: Path, node_elo: dict, threshold: float = 50.0) -> bool:
         """Check if node Elo ratings have diverged from local."""
         from app.tournament.unified_elo_db import EloDatabase
 
@@ -1084,9 +1084,8 @@ class P2PIntegrationManager:
             node_models = {m.get("model_id"): m.get("elo", 1500) for m in node_elo.get("leaderboard", [])}
 
             for model_id, local_elo in local_models.items():
-                if model_id in node_models:
-                    if abs(local_elo - node_models[model_id]) > threshold:
-                        return True
+                if model_id in node_models and abs(local_elo - node_models[model_id]) > threshold:
+                    return True
 
             return False
         except Exception:
@@ -1114,7 +1113,7 @@ class P2PIntegrationManager:
     # Status & Reporting
     # ==========================================
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get integration manager status."""
         return {
             "running": self._running,
@@ -1123,7 +1122,7 @@ class P2PIntegrationManager:
             "config": asdict(self.config)
         }
 
-    async def get_cluster_summary(self) -> Dict[str, Any]:
+    async def get_cluster_summary(self) -> dict[str, Any]:
         """Get comprehensive cluster summary."""
         status = await self.client.get_cluster_status()
 
@@ -1151,7 +1150,7 @@ class P2PIntegrationManager:
 
 async def connect_to_cluster(
     base_url: str = "http://localhost:8770",
-    auth_token: Optional[str] = None
+    auth_token: str | None = None
 ) -> P2PIntegrationManager:
     """
     Connect to P2P cluster and return integration manager.
@@ -1444,7 +1443,7 @@ def integrate_selfplay_with_training(
     training_triggers=None,
     training_scheduler=None,
     auto_trigger: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Integrate selfplay game completion with training triggers.
 
@@ -1469,8 +1468,8 @@ def integrate_selfplay_with_training(
     triggers = training_triggers or get_training_triggers()
 
     # Track per-config game counts
-    game_counts: Dict[str, int] = {}
-    pending_training: List[str] = []
+    game_counts: dict[str, int] = {}
+    pending_training: list[str] = []
 
     # Import event bus for publishing events
     try:
@@ -1612,7 +1611,7 @@ def create_full_selfplay_training_loop(
     training_scheduler=None,
     feedback_controller=None,
     auto_trigger: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create a fully integrated selfplay → training loop.
 

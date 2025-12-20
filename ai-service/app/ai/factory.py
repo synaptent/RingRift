@@ -27,9 +27,11 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
-from typing import Any, Callable, Dict, Optional, Type, TypedDict, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from app.models.core import AIConfig, AIType
 
@@ -73,7 +75,7 @@ class DifficultyProfile(TypedDict):
 # For 2P games, the default ladder below applies.
 # For 3-4P games, use MULTIPLAYER_DIFFICULTY_OVERRIDES which swaps
 # Minimax levels for MaxN/BRS (better suited for multi-player).
-CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
+CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
     1: {
         # Beginner: pure random baseline
         "ai_type": AIType.RANDOM,
@@ -170,7 +172,7 @@ CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
 
 # Overrides for 3-4 player games where MaxN/BRS outperform Minimax
 # Benchmarks show: MaxN > BRS > MCTS in 4P; MaxN ≈ BRS ≈ MCTS in 3P
-MULTIPLAYER_DIFFICULTY_OVERRIDES: Dict[int, DifficultyProfile] = {
+MULTIPLAYER_DIFFICULTY_OVERRIDES: dict[int, DifficultyProfile] = {
     4: {
         # For 3-4P: BRS (Best Reply Search) - faster than MaxN, good for 3P
         "ai_type": AIType.BRS,
@@ -190,7 +192,7 @@ MULTIPLAYER_DIFFICULTY_OVERRIDES: Dict[int, DifficultyProfile] = {
 }
 
 # Overrides for large boards where Minimax is too slow
-LARGE_BOARD_DIFFICULTY_OVERRIDES: Dict[int, DifficultyProfile] = {
+LARGE_BOARD_DIFFICULTY_OVERRIDES: dict[int, DifficultyProfile] = {
     4: {
         # For large boards: Descent+NN (Minimax too slow)
         "ai_type": AIType.DESCENT,
@@ -211,7 +213,7 @@ LARGE_BOARD_DIFFICULTY_OVERRIDES: Dict[int, DifficultyProfile] = {
 
 # Difficulty level descriptions for UI/documentation
 # Adapted based on player count and board size
-DIFFICULTY_DESCRIPTIONS: Dict[int, str] = {
+DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     1: "Beginner - Pure random moves",
     2: "Easy - Simple heuristic with randomness",
     3: "Lower-mid - Policy-only (neural network move selection)",
@@ -238,7 +240,7 @@ def get_difficulty_profile(
     difficulty: int,
     *,
     num_players: int = 2,
-    board_type: Optional[str] = None,
+    board_type: str | None = None,
 ) -> DifficultyProfile:
     """Return the difficulty profile for the given level, player count, and board.
 
@@ -267,9 +269,8 @@ def get_difficulty_profile(
         return MULTIPLAYER_DIFFICULTY_OVERRIDES[effective]
 
     # Check for large board override (Minimax too slow)
-    if board_type and board_type.lower() in LARGE_BOARD_TYPES:
-        if effective in LARGE_BOARD_DIFFICULTY_OVERRIDES:
-            return LARGE_BOARD_DIFFICULTY_OVERRIDES[effective]
+    if board_type and board_type.lower() in LARGE_BOARD_TYPES and effective in LARGE_BOARD_DIFFICULTY_OVERRIDES:
+        return LARGE_BOARD_DIFFICULTY_OVERRIDES[effective]
 
     return profile
 
@@ -342,16 +343,16 @@ class AIFactory:
 
     # Registry for custom AI implementations
     # Maps string identifiers to callables that create AI instances
-    _custom_registry: Dict[str, Callable[..., "BaseAI"]] = {}
+    _custom_registry: dict[str, Callable[..., BaseAI]] = {}
 
     # Cache for imported AI classes (lazy loading)
-    _class_cache: Dict[AIType, Type["BaseAI"]] = {}
+    _class_cache: dict[AIType, type[BaseAI]] = {}
 
     @classmethod
     def register(
         cls,
         identifier: str,
-        constructor: Callable[..., "BaseAI"],
+        constructor: Callable[..., BaseAI],
     ) -> None:
         """Register a custom AI implementation.
 
@@ -382,7 +383,7 @@ class AIFactory:
         return False
 
     @classmethod
-    def list_registered(cls) -> Dict[str, str]:
+    def list_registered(cls) -> dict[str, str]:
         """List all registered AI types.
 
         Returns:
@@ -402,7 +403,7 @@ class AIFactory:
         return result
 
     @classmethod
-    def _get_ai_class(cls, ai_type: AIType) -> Type["BaseAI"]:
+    def _get_ai_class(cls, ai_type: AIType) -> type[BaseAI]:
         """Get the AI class for a given type, with lazy loading.
 
         Args:
@@ -473,8 +474,8 @@ class AIFactory:
         player_number: int,
         config: AIConfig,
         *,
-        allow_neural_demo: Optional[bool] = None,
-    ) -> "BaseAI":
+        allow_neural_demo: bool | None = None,
+    ) -> BaseAI:
         """Create an AI instance with explicit type and configuration.
 
         Args:
@@ -513,13 +514,13 @@ class AIFactory:
         player_number: int,
         *,
         num_players: int = 2,
-        board_type: Optional[str] = None,
-        think_time_override: Optional[int] = None,
-        randomness_override: Optional[float] = None,
-        rng_seed: Optional[int] = None,
-        heuristic_profile_id: Optional[str] = None,
-        nn_model_id: Optional[str] = None,
-    ) -> "BaseAI":
+        board_type: str | None = None,
+        think_time_override: int | None = None,
+        randomness_override: float | None = None,
+        rng_seed: int | None = None,
+        heuristic_profile_id: str | None = None,
+        nn_model_id: str | None = None,
+    ) -> BaseAI:
         """Create an AI instance from a difficulty level.
 
         This is the recommended way to create AIs for normal gameplay,
@@ -565,7 +566,7 @@ class AIFactory:
         player_number: int,
         config: AIConfig,
         **kwargs: Any,
-    ) -> "BaseAI":
+    ) -> BaseAI:
         """Create an AI instance from a registered custom implementation.
 
         Args:
@@ -597,9 +598,9 @@ class AIFactory:
         board_type: str = "square8",
         num_players: int = 2,
         *,
-        rng_seed: Optional[int] = None,
-        nn_model_id: Optional[str] = None,
-    ) -> "BaseAI":
+        rng_seed: int | None = None,
+        nn_model_id: str | None = None,
+    ) -> BaseAI:
         """Create an AI for tournament use.
 
         This method supports both built-in agent IDs and custom registered AIs.
@@ -675,10 +676,8 @@ class AIFactory:
             # Parse optional temperature: policy_0.5, policy_1.0, etc.
             temperature = 1.0
             if "_" in agent_key:
-                try:
+                with contextlib.suppress(ValueError, IndexError):
                     temperature = float(agent_key.split("_")[1])
-                except (ValueError, IndexError):
-                    pass
 
             config = AIConfig(
                 difficulty=5,
@@ -796,7 +795,7 @@ create_ai_from_difficulty = AIFactory.create_from_difficulty
 create_tournament_ai = AIFactory.create_for_tournament
 
 
-def get_all_difficulties() -> Dict[int, DifficultyProfile]:
+def get_all_difficulties() -> dict[int, DifficultyProfile]:
     """Get all canonical difficulty profiles.
 
     Returns:

@@ -33,9 +33,8 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -54,10 +53,10 @@ class CMAESRunConfig:
     num_players: int
     opponent_mode: str = "baseline-only"
     eval_mode: str = "sequential"
-    seed: Optional[int] = None
-    run_id: Optional[str] = None
+    seed: int | None = None
+    run_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "population_size": self.population_size,
             "sigma": self.sigma,
@@ -78,11 +77,11 @@ def register_cmaes_result(
     num_players: int,
     fitness: float,
     generation: int,
-    cmaes_config: Optional[Dict[str, Any]] = None,
-    registry_dir: Optional[Path] = None,
+    cmaes_config: dict[str, Any] | None = None,
+    registry_dir: Path | None = None,
     auto_promote: bool = True,
     min_fitness_improvement: float = 0.02,
-) -> Tuple[str, int]:
+) -> tuple[str, int]:
     """Register a CMA-ES optimization result in the model registry.
 
     Parameters
@@ -113,10 +112,10 @@ def register_cmaes_result(
     """
     # Import here to avoid circular imports
     from app.training.model_registry import (
+        ModelMetrics,
         ModelRegistry,
         ModelStage,
         ModelType,
-        ModelMetrics,
         TrainingConfig,
     )
 
@@ -134,7 +133,7 @@ def register_cmaes_result(
 
     # Load weights file to get metadata
     with open(weights_path) as f:
-        weights_data = json.load(f)
+        json.load(f)
 
     # Build metrics - convert fitness to approximate Elo equivalent
     # Fitness of 0.5 = 50% win rate = 0 Elo diff, higher fitness = higher Elo
@@ -216,7 +215,7 @@ def register_cmaes_result(
 
     # Emit Prometheus metrics if available
     try:
-        from prometheus_client import Counter, Gauge, REGISTRY
+        from prometheus_client import REGISTRY, Counter, Gauge
 
         def _get_metric(name, metric_type, description, labels):
             """Get or create a Prometheus metric."""
@@ -264,9 +263,9 @@ def register_cmaes_result(
 def get_best_heuristic_model(
     board_type: str,
     num_players: int,
-    registry_dir: Optional[Path] = None,
-    stage: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    registry_dir: Path | None = None,
+    stage: str | None = None,
+) -> dict[str, Any] | None:
     """Get the best heuristic model for a board configuration.
 
     Parameters
@@ -287,8 +286,8 @@ def get_best_heuristic_model(
     """
     from app.training.model_registry import (
         ModelRegistry,
-        ModelType,
         ModelStage,
+        ModelType,
     )
 
     registry_dir = registry_dir or DEFAULT_REGISTRY_DIR
@@ -321,9 +320,9 @@ def get_best_heuristic_model(
 def load_heuristic_weights_from_registry(
     board_type: str,
     num_players: int,
-    registry_dir: Optional[Path] = None,
+    registry_dir: Path | None = None,
     stage: str = "production",
-) -> Optional[Dict[str, float]]:
+) -> dict[str, float] | None:
     """Load heuristic weights from the best registered model.
 
     Parameters
@@ -358,11 +357,11 @@ def load_heuristic_weights_from_registry(
 
 
 def list_cmaes_runs(
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-    registry_dir: Optional[Path] = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
+    registry_dir: Path | None = None,
     limit: int = 10,
-) -> list[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """List recent CMA-ES optimization runs from the registry.
 
     Parameters

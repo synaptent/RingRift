@@ -27,10 +27,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Tuple
 
 import torch
-
 
 # =============================================================================
 # MPS Compatibility Helpers
@@ -96,10 +94,10 @@ class GamePhase(IntEnum):
 @dataclass
 class DetectedLine:
     """A detected marker line with metadata for processing."""
-    positions: List[Tuple[int, int]]  # All marker positions in the line
+    positions: list[tuple[int, int]]  # All marker positions in the line
     length: int                        # Total length of line
     is_overlength: bool               # True if len > required_length
-    direction: Tuple[int, int]        # Direction vector (dy, dx)
+    direction: tuple[int, int]        # Direction vector (dy, dx)
 
 
 def get_required_line_length(board_size: int, num_players: int) -> int:
@@ -142,17 +140,17 @@ LINE_DIRECTIONS = [
 
 
 __all__ = [
-    # Functions
-    'get_int_dtype',
-    'get_required_line_length',
-    # Enums
-    'GameStatus',
-    'MoveType',
-    'GamePhase',
-    # Dataclasses
-    'DetectedLine',
+    'LINE_DIRECTIONS',
     # Constants
     'MAX_STACK_HEIGHT',
     'SQUARE_DIRECTIONS',
-    'LINE_DIRECTIONS',
+    # Dataclasses
+    'DetectedLine',
+    'GamePhase',
+    # Enums
+    'GameStatus',
+    'MoveType',
+    # Functions
+    'get_int_dtype',
+    'get_required_line_length',
 ]

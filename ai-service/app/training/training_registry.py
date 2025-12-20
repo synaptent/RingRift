@@ -34,9 +34,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +60,15 @@ def register_trained_model(
     model_path: str,
     board_type: str,
     num_players: int,
-    training_config: Optional[Dict[str, Any]] = None,
-    metrics: Optional[Dict[str, Any]] = None,
-    model_name: Optional[str] = None,
+    training_config: dict[str, Any] | None = None,
+    metrics: dict[str, Any] | None = None,
+    model_name: str | None = None,
     description: str = "",
-    tags: Optional[List[str]] = None,
+    tags: list[str] | None = None,
     source: str = "training",
-    parent_model_id: Optional[str] = None,
-    data_path: Optional[str] = None,
-) -> Optional[str]:
+    parent_model_id: str | None = None,
+    data_path: str | None = None,
+) -> str | None:
     """Register a trained model in the model registry.
 
     Args:
@@ -109,7 +108,7 @@ def register_trained_model(
 
     # Build training config
     try:
-        from app.training.model_registry import TrainingConfig, ModelMetrics, ModelStage, ModelType
+        from app.training.model_registry import ModelMetrics, ModelStage, ModelType, TrainingConfig
 
         tc = TrainingConfig(
             learning_rate=training_config.get("learning_rate", 0.001) if training_config else 0.001,
@@ -153,7 +152,7 @@ def register_trained_model(
         return None
 
 
-def _compute_data_hash(data_path: str) -> Optional[str]:
+def _compute_data_hash(data_path: str) -> str | None:
     """Compute a hash of the training data file."""
     if not data_path or not os.path.exists(data_path):
         return None
@@ -174,7 +173,7 @@ def _compute_data_hash(data_path: str) -> Optional[str]:
         return None
 
 
-def get_model_lineage(model_id: str) -> List[Dict[str, Any]]:
+def get_model_lineage(model_id: str) -> list[dict[str, Any]]:
     """Get the lineage (parent chain) for a model."""
     registry = _get_registry()
     if registry is None:
@@ -210,7 +209,7 @@ def find_best_model(
     board_type: str,
     num_players: int,
     metric: str = "elo",
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Find the best model for a board config by metric.
 
     Args:

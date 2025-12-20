@@ -27,12 +27,11 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.training.hot_data_buffer import HotDataBuffer
@@ -43,8 +42,8 @@ logger = logging.getLogger(__name__)
 # Import centralized quality thresholds
 try:
     from app.quality.thresholds import (
-        MIN_QUALITY_FOR_PRIORITY_SYNC,
         HIGH_QUALITY_THRESHOLD,
+        MIN_QUALITY_FOR_PRIORITY_SYNC,
     )
 except ImportError:
     MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
@@ -92,7 +91,7 @@ class CoordinatorStats:
     avg_quality_score: float = 0.0
     avg_elo: float = 0.0
     preparation_count: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 class TrainingDataCoordinator:
@@ -108,12 +107,12 @@ class TrainingDataCoordinator:
     quality data available across the cluster.
     """
 
-    _instance: Optional["TrainingDataCoordinator"] = None
+    _instance: TrainingDataCoordinator | None = None
 
     def __init__(
         self,
-        config: Optional[CoordinatorConfig] = None,
-        selfplay_dir: Optional[Path] = None,
+        config: CoordinatorConfig | None = None,
+        selfplay_dir: Path | None = None,
     ):
         """Initialize the training data coordinator.
 
@@ -128,15 +127,15 @@ class TrainingDataCoordinator:
         # Lazy-loaded components
         self._quality_bridge = None
         self._sync_coordinator = None
-        self._hot_buffer: Optional["HotDataBuffer"] = None
-        self._streaming_pipeline: Optional["StreamingDataPipeline"] = None
+        self._hot_buffer: HotDataBuffer | None = None
+        self._streaming_pipeline: StreamingDataPipeline | None = None
 
         # State
         self._initialized = False
         self._last_preparation_time = 0.0
 
         # Event callbacks (December 2025)
-        self._promotion_callbacks: List = []
+        self._promotion_callbacks: list = []
         self._event_bus_subscription = None
 
         logger.info(
@@ -148,8 +147,8 @@ class TrainingDataCoordinator:
     @classmethod
     def get_instance(
         cls,
-        config: Optional[CoordinatorConfig] = None,
-    ) -> "TrainingDataCoordinator":
+        config: CoordinatorConfig | None = None,
+    ) -> TrainingDataCoordinator:
         """Get or create the singleton instance."""
         if cls._instance is None:
             cls._instance = cls(config)
@@ -190,7 +189,7 @@ class TrainingDataCoordinator:
                 logger.warning(f"Failed to initialize SyncCoordinator: {e}")
         return self._sync_coordinator
 
-    def _create_hot_buffer(self) -> Optional["HotDataBuffer"]:
+    def _create_hot_buffer(self) -> HotDataBuffer | None:
         """Create and configure a HotDataBuffer instance."""
         if self._hot_buffer is not None:
             return self._hot_buffer
@@ -231,7 +230,7 @@ class TrainingDataCoordinator:
         num_players: int = 2,
         force_sync: bool = False,
         load_from_db: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prepare training data for a training run.
 
         This method:
@@ -299,7 +298,7 @@ class TrainingDataCoordinator:
 
         return result
 
-    async def _sync_high_quality_data(self, force: bool = False) -> Dict[str, Any]:
+    async def _sync_high_quality_data(self, force: bool = False) -> dict[str, Any]:
         """Sync high-quality games from the cluster."""
         result = {"games_synced": 0, "errors": []}
 
@@ -373,7 +372,7 @@ class TrainingDataCoordinator:
     # Data Access
     # =========================================================================
 
-    def get_hot_buffer(self) -> Optional["HotDataBuffer"]:
+    def get_hot_buffer(self) -> HotDataBuffer | None:
         """Get the configured HotDataBuffer instance."""
         if self._hot_buffer is None:
             self._create_hot_buffer()
@@ -428,9 +427,9 @@ class TrainingDataCoordinator:
 
     def get_high_quality_game_ids(
         self,
-        min_quality: Optional[float] = None,
+        min_quality: float | None = None,
         limit: int = 10000,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get list of high-quality game IDs.
 
         Args:
@@ -468,7 +467,7 @@ class TrainingDataCoordinator:
 
         return self._stats
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get detailed coordinator status."""
         stats = self.get_stats()
 
@@ -550,7 +549,7 @@ class TrainingDataCoordinator:
         if callback in self._promotion_callbacks:
             self._promotion_callbacks.remove(callback)
 
-    async def handle_promotion_event(self, event_data: Dict[str, Any]) -> None:
+    async def handle_promotion_event(self, event_data: dict[str, Any]) -> None:
         """Handle a model promotion event.
 
         Called when a model is promoted. This can trigger:
@@ -672,7 +671,7 @@ class TrainingDataCoordinator:
 # =============================================================================
 
 def get_data_coordinator(
-    config: Optional[CoordinatorConfig] = None,
+    config: CoordinatorConfig | None = None,
 ) -> TrainingDataCoordinator:
     """Get the singleton TrainingDataCoordinator instance."""
     return TrainingDataCoordinator.get_instance(config)
@@ -682,7 +681,7 @@ async def prepare_training_data(
     board_type: str = "square8",
     num_players: int = 2,
     force_sync: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convenience function to prepare training data."""
     coordinator = get_data_coordinator()
     return await coordinator.prepare_for_training(
@@ -695,13 +694,13 @@ async def prepare_training_data(
 def get_high_quality_games(
     min_quality: float = HIGH_QUALITY_THRESHOLD,
     limit: int = 10000,
-) -> List[str]:
+) -> list[str]:
     """Convenience function to get high-quality game IDs."""
     coordinator = get_data_coordinator()
     return coordinator.get_high_quality_game_ids(min_quality=min_quality, limit=limit)
 
 
-def wire_promotion_events(coordinator: Optional[TrainingDataCoordinator] = None) -> bool:
+def wire_promotion_events(coordinator: TrainingDataCoordinator | None = None) -> bool:
     """Wire promotion events to the data coordinator.
 
     This function connects the TrainingDataCoordinator to receive
@@ -725,11 +724,11 @@ def wire_promotion_events(coordinator: Optional[TrainingDataCoordinator] = None)
 
 
 __all__ = [
-    "TrainingDataCoordinator",
     "CoordinatorConfig",
     "CoordinatorStats",
+    "TrainingDataCoordinator",
     "get_data_coordinator",
-    "prepare_training_data",
     "get_high_quality_games",
+    "prepare_training_data",
     "wire_promotion_events",
 ]

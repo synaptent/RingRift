@@ -36,8 +36,8 @@ from fastapi import FastAPI
 from app.routes.replay import router as replay_router
 
 __all__ = [
-    "replay_router",
     "include_all_routes",
+    "replay_router",
 ]
 
 

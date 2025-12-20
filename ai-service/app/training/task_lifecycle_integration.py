@@ -33,34 +33,31 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+import time
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Any
 
 from app.coordination.task_lifecycle_coordinator import (
-    TaskLifecycleCoordinator,
-    TrackedTask,
-    TaskStatus,
     get_task_lifecycle_coordinator,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "TrainingTaskType",
+    "HeartbeatSender",
     "TrainingTaskTracker",
-    "register_training_job",
+    "TrainingTaskType",
+    "complete_training_task",
+    "fail_training_task",
+    "get_training_task_tracker",
     "register_data_loader_task",
     "register_evaluation_task",
     "register_selfplay_task",
+    "register_training_job",
     "send_training_heartbeat",
-    "complete_training_task",
-    "fail_training_task",
     "training_task_context",
-    "HeartbeatSender",
-    "get_training_task_tracker",
 ]
 
 
@@ -89,11 +86,11 @@ class TrainingTaskInfo:
     task_type: str
     config_key: str
     node_id: str
-    job_id: Optional[str] = None
+    job_id: str | None = None
     started_at: float = field(default_factory=time.time)
     step: int = 0
     epoch: int = 0
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict)
 
 
 class TrainingTaskTracker:
@@ -113,10 +110,10 @@ class TrainingTaskTracker:
             node_id: Node identifier for this instance
         """
         self.node_id = node_id or self._get_node_id()
-        self._tasks: Dict[str, TrainingTaskInfo] = {}
+        self._tasks: dict[str, TrainingTaskInfo] = {}
         self._coordinator = get_task_lifecycle_coordinator()
         self._lock = threading.Lock()
-        self._heartbeat_threads: Dict[str, HeartbeatSender] = {}
+        self._heartbeat_threads: dict[str, HeartbeatSender] = {}
 
     def _get_node_id(self) -> str:
         """Get node ID from environment or hostname."""
@@ -128,7 +125,7 @@ class TrainingTaskTracker:
         self,
         job_id: str,
         config_key: str,
-        node_id: Optional[str] = None,
+        node_id: str | None = None,
         auto_heartbeat: bool = True,
         heartbeat_interval: float = 30.0,
     ) -> TrainingTaskInfo:
@@ -176,7 +173,7 @@ class TrainingTaskTracker:
         self,
         loader_id: str,
         config_key: str,
-        node_id: Optional[str] = None,
+        node_id: str | None = None,
     ) -> TrainingTaskInfo:
         """Register a data loader task.
 
@@ -214,8 +211,8 @@ class TrainingTaskTracker:
         self,
         eval_id: str,
         config_key: str,
-        job_id: Optional[str] = None,
-        node_id: Optional[str] = None,
+        job_id: str | None = None,
+        node_id: str | None = None,
     ) -> TrainingTaskInfo:
         """Register an evaluation task.
 
@@ -256,7 +253,7 @@ class TrainingTaskTracker:
         selfplay_id: str,
         config_key: str,
         iteration: int,
-        node_id: Optional[str] = None,
+        node_id: str | None = None,
     ) -> TrainingTaskInfo:
         """Register a selfplay task.
 
@@ -292,7 +289,7 @@ class TrainingTaskTracker:
         logger.debug(f"[TrainingTaskTracker] Registered selfplay: {selfplay_id}")
         return info
 
-    def heartbeat(self, task_id: str, step: Optional[int] = None, metrics: Optional[Dict[str, float]] = None) -> bool:
+    def heartbeat(self, task_id: str, step: int | None = None, metrics: dict[str, float] | None = None) -> bool:
         """Send heartbeat for a task.
 
         Args:
@@ -319,7 +316,7 @@ class TrainingTaskTracker:
         self,
         task_id: str,
         success: bool = True,
-        result: Optional[Dict[str, Any]] = None,
+        result: dict[str, Any] | None = None,
     ) -> None:
         """Mark a task as completed.
 
@@ -337,12 +334,13 @@ class TrainingTaskTracker:
 
         # Emit event to coordinator
         try:
-            from app.coordination.event_emitters import emit_task_completed, emit_task_failed
             import asyncio
+
+            from app.coordination.event_emitters import emit_task_completed, emit_task_failed
 
             if success:
                 try:
-                    loop = asyncio.get_running_loop()
+                    asyncio.get_running_loop()
                     asyncio.create_task(emit_task_completed(
                         task_id=task_id,
                         result=result or {},
@@ -355,7 +353,7 @@ class TrainingTaskTracker:
             else:
                 error = result.get("error", "Unknown error") if result else "Unknown error"
                 try:
-                    loop = asyncio.get_running_loop()
+                    asyncio.get_running_loop()
                     asyncio.create_task(emit_task_failed(
                         task_id=task_id,
                         error=error,
@@ -381,12 +379,12 @@ class TrainingTaskTracker:
         """
         self.complete(task_id, success=False, result={"error": error})
 
-    def get_task(self, task_id: str) -> Optional[TrainingTaskInfo]:
+    def get_task(self, task_id: str) -> TrainingTaskInfo | None:
         """Get task info by ID."""
         with self._lock:
             return self._tasks.get(task_id)
 
-    def get_all_tasks(self) -> List[TrainingTaskInfo]:
+    def get_all_tasks(self) -> list[TrainingTaskInfo]:
         """Get all tracked tasks."""
         with self._lock:
             return list(self._tasks.values())
@@ -431,7 +429,7 @@ class HeartbeatSender:
         self.tracker = tracker
         self.interval = interval
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         """Start heartbeat thread."""
@@ -471,7 +469,7 @@ class HeartbeatSender:
 # Global Instance and Convenience Functions
 # =============================================================================
 
-_training_tracker: Optional[TrainingTaskTracker] = None
+_training_tracker: TrainingTaskTracker | None = None
 
 
 def get_training_task_tracker() -> TrainingTaskTracker:
@@ -493,7 +491,7 @@ def reset_training_task_tracker() -> None:
 def register_training_job(
     job_id: str,
     config_key: str,
-    node_id: Optional[str] = None,
+    node_id: str | None = None,
     auto_heartbeat: bool = True,
 ) -> TrainingTaskInfo:
     """Register a training job with the global tracker."""
@@ -519,7 +517,7 @@ def register_data_loader_task(
 def register_evaluation_task(
     eval_id: str,
     config_key: str,
-    job_id: Optional[str] = None,
+    job_id: str | None = None,
 ) -> TrainingTaskInfo:
     """Register an evaluation task with the global tracker."""
     return get_training_task_tracker().register_evaluation(
@@ -544,8 +542,8 @@ def register_selfplay_task(
 
 def send_training_heartbeat(
     task_id: str,
-    step: Optional[int] = None,
-    metrics: Optional[Dict[str, float]] = None,
+    step: int | None = None,
+    metrics: dict[str, float] | None = None,
 ) -> bool:
     """Send heartbeat for a training task."""
     return get_training_task_tracker().heartbeat(
@@ -558,7 +556,7 @@ def send_training_heartbeat(
 def complete_training_task(
     task_id: str,
     success: bool = True,
-    result: Optional[Dict[str, Any]] = None,
+    result: dict[str, Any] | None = None,
 ) -> None:
     """Mark a training task as completed."""
     get_training_task_tracker().complete(

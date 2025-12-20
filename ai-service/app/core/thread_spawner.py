@@ -33,24 +33,20 @@ import logging
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "ThreadSpawner",
+    "RestartPolicy",
     "SpawnedThread",
     "ThreadGroup",
-    "RestartPolicy",
+    "ThreadSpawner",
     "ThreadState",
     "get_thread_spawner",
     "spawn_thread",
@@ -93,23 +89,23 @@ class SpawnedThread:
     """
     name: str
     target: Callable[..., Any]
-    args: Tuple[Any, ...] = ()
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    args: tuple[Any, ...] = ()
+    kwargs: dict[str, Any] = field(default_factory=dict)
     state: ThreadState = ThreadState.PENDING
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    started_at: float | None = None
+    completed_at: float | None = None
     restarts: int = 0
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     restart_policy: RestartPolicy = RestartPolicy.NEVER
     max_restarts: int = 3
     restart_delay: float = 1.0
-    _thread: Optional[threading.Thread] = field(default=None, repr=False)
+    _thread: threading.Thread | None = field(default=None, repr=False)
     _stop_event: threading.Event = field(default_factory=threading.Event, repr=False)
     _result: Any = field(default=None, repr=False)
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Get thread duration in seconds."""
         if self.started_at is None:
             return None
@@ -140,14 +136,14 @@ class SpawnedThread:
         """Check if stop was requested (use in target function)."""
         return self._stop_event.is_set()
 
-    def join(self, timeout: Optional[float] = None) -> bool:
+    def join(self, timeout: float | None = None) -> bool:
         """Wait for thread to complete."""
         if self._thread:
             self._thread.join(timeout=timeout)
             return not self._thread.is_alive()
         return True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -181,16 +177,16 @@ class ThreadGroup:
         group.stop_all()  # Or stop all
     """
 
-    def __init__(self, name: str, spawner: "ThreadSpawner"):
+    def __init__(self, name: str, spawner: ThreadSpawner):
         self.name = name
         self._spawner = spawner
-        self._threads: Dict[str, SpawnedThread] = {}
+        self._threads: dict[str, SpawnedThread] = {}
         self._lock = threading.Lock()
 
     def spawn(
         self,
         target: Callable[..., Any],
-        name: Optional[str] = None,
+        name: str | None = None,
         **kwargs: Any,
     ) -> SpawnedThread:
         """Spawn a thread in this group."""
@@ -199,7 +195,7 @@ class ThreadGroup:
             self._threads[thread.name] = thread
         return thread
 
-    def join_all(self, timeout: Optional[float] = None) -> bool:
+    def join_all(self, timeout: float | None = None) -> bool:
         """Wait for all threads to complete."""
         with self._lock:
             threads = list(self._threads.values())
@@ -224,7 +220,7 @@ class ThreadGroup:
         return stopped
 
     @property
-    def threads(self) -> List[SpawnedThread]:
+    def threads(self) -> list[SpawnedThread]:
         """Get all threads in group."""
         return list(self._threads.values())
 
@@ -280,8 +276,8 @@ class ThreadSpawner:
             default_restart_policy: Default restart policy
         """
         self._default_restart_policy = default_restart_policy
-        self._threads: Dict[str, SpawnedThread] = {}
-        self._groups: Dict[str, ThreadGroup] = {}
+        self._threads: dict[str, SpawnedThread] = {}
+        self._groups: dict[str, ThreadGroup] = {}
         self._lock = threading.RLock()
         self._counter = 0
         self._shutting_down = False
@@ -297,16 +293,16 @@ class ThreadSpawner:
     def spawn(
         self,
         target: Callable[..., Any],
-        name: Optional[str] = None,
-        args: Tuple[Any, ...] = (),
-        kwargs: Optional[Dict[str, Any]] = None,
-        restart_policy: Optional[RestartPolicy] = None,
+        name: str | None = None,
+        args: tuple[Any, ...] = (),
+        kwargs: dict[str, Any] | None = None,
+        restart_policy: RestartPolicy | None = None,
         max_restarts: int = 3,
         restart_delay: float = 1.0,
-        group: Optional[str] = None,
+        group: str | None = None,
         daemon: bool = True,
-        on_complete: Optional[Callable[[SpawnedThread], None]] = None,
-        on_error: Optional[Callable[[SpawnedThread, Exception], None]] = None,
+        on_complete: Callable[[SpawnedThread], None] | None = None,
+        on_error: Callable[[SpawnedThread, Exception], None] | None = None,
     ) -> SpawnedThread:
         """Spawn a supervised thread.
 
@@ -452,11 +448,11 @@ class ThreadSpawner:
         self._groups[name] = group
         return group
 
-    def get_group(self, name: str) -> Optional[ThreadGroup]:
+    def get_group(self, name: str) -> ThreadGroup | None:
         """Get a thread group by name."""
         return self._groups.get(name)
 
-    def get_thread(self, name: str) -> Optional[SpawnedThread]:
+    def get_thread(self, name: str) -> SpawnedThread | None:
         """Get a thread by name."""
         with self._lock:
             return self._threads.get(name)
@@ -509,7 +505,7 @@ class ThreadSpawner:
 
         logger.info("Thread spawner shutdown complete")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get spawner statistics."""
         with self._lock:
             running = sum(1 for t in self._threads.values() if t.is_running)
@@ -518,6 +514,7 @@ class ThreadSpawner:
             return {
                 **self._stats,
                 "threads_running": running,
+                "threads_completed": completed,
                 "threads_tracked": len(self._threads),
                 "groups": len(self._groups),
                 "shutting_down": self._shutting_down,
@@ -525,9 +522,9 @@ class ThreadSpawner:
 
     def list_threads(
         self,
-        state: Optional[ThreadState] = None,
-        group: Optional[str] = None,
-    ) -> List[SpawnedThread]:
+        state: ThreadState | None = None,
+        group: str | None = None,
+    ) -> list[SpawnedThread]:
         """List threads matching criteria."""
         with self._lock:
             threads = list(self._threads.values())
@@ -543,7 +540,7 @@ class ThreadSpawner:
 
         return threads
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Get health status of all threads."""
         with self._lock:
             threads = list(self._threads.values())
@@ -576,7 +573,7 @@ class ThreadSpawner:
 # Global Instance
 # =============================================================================
 
-_spawner: Optional[ThreadSpawner] = None
+_spawner: ThreadSpawner | None = None
 _spawner_lock = threading.Lock()
 
 

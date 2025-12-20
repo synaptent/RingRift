@@ -29,22 +29,23 @@ Environment Variable Overrides:
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
 import yaml
 
 # Import canonical threshold constants
 try:
     from app.config.thresholds import (
-        INITIAL_ELO_RATING,
-        ELO_K_FACTOR,
         ELO_DROP_ROLLBACK,
+        ELO_K_FACTOR,
+        INITIAL_ELO_RATING,
         MIN_GAMES_FOR_ELO,
-        TRAINING_TRIGGER_GAMES,
         TRAINING_MIN_INTERVAL_SECONDS,
+        TRAINING_TRIGGER_GAMES,
     )
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
@@ -72,7 +73,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG_PATH = "config/unified_loop.yaml"
 
 # Singleton instance
-_config_instance: Optional[UnifiedConfig] = None
+_config_instance: UnifiedConfig | None = None
 
 
 @dataclass
@@ -84,7 +85,7 @@ class DataIngestionConfig:
     deduplication: bool = True
     min_games_per_sync: int = 5
     remote_db_pattern: str = "data/games/*.db"
-    remote_selfplay_patterns: List[str] = field(default_factory=lambda: [
+    remote_selfplay_patterns: list[str] = field(default_factory=lambda: [
         "data/selfplay/gpu_*/games*.jsonl",
         "data/selfplay/p2p_gpu/*/games*.jsonl",
         "data/games/gpu_selfplay/*/games*.jsonl",
@@ -133,7 +134,7 @@ class EvaluationConfig:
     shadow_games_per_config: int = 15
     full_tournament_interval_seconds: int = 3600  # 1 hour
     full_tournament_games: int = 50
-    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
+    baseline_models: list[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
     min_games_for_elo: int = 30
     elo_k_factor: int = 32
 
@@ -309,8 +310,8 @@ class SlurmConfig:
     partition_training: str = "gpu-train"
     partition_selfplay: str = "gpu-selfplay"
     partition_tournament: str = "cpu-eval"
-    account: Optional[str] = None
-    qos: Optional[str] = None
+    account: str | None = None
+    qos: str | None = None
     default_time_training: str = "08:00:00"
     default_time_selfplay: str = "02:00:00"
     default_time_tournament: str = "02:00:00"
@@ -325,12 +326,12 @@ class SlurmConfig:
     mem_tournament: str = "16G"
     job_dir: str = "data/slurm/jobs"
     log_dir: str = "data/slurm/logs"
-    shared_root: Optional[str] = None
+    shared_root: str | None = None
     repo_subdir: str = "ai-service"
-    venv_activate: Optional[str] = None
-    venv_activate_arm64: Optional[str] = None
-    setup_commands: List[str] = field(default_factory=list)
-    extra_sbatch_args: List[str] = field(default_factory=list)
+    venv_activate: str | None = None
+    venv_activate_arm64: str | None = None
+    setup_commands: list[str] = field(default_factory=list)
+    extra_sbatch_args: list[str] = field(default_factory=list)
     poll_interval_seconds: int = 20
 
 
@@ -411,7 +412,7 @@ class TournamentConfig:
     min_games_for_rating: int = 30
 
     # Baseline models
-    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
+    baseline_models: list[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
 
 
 @dataclass
@@ -506,7 +507,7 @@ class PBTConfig:
     enabled: bool = False  # Disabled by default - resource intensive
     population_size: int = 8
     exploit_interval_steps: int = 1000
-    tunable_params: List[str] = field(default_factory=lambda: ["learning_rate", "batch_size", "temperature"])
+    tunable_params: list[str] = field(default_factory=lambda: ["learning_rate", "batch_size", "temperature"])
     check_interval_seconds: int = 1800  # Check PBT status every 30 min
     auto_start: bool = False  # Auto-start PBT when training completes
 
@@ -559,7 +560,7 @@ class DataLoadingConfig:
 
     # Filtering
     filter_empty_policies: bool = True
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
 
     # Streaming buffer
     buffer_size: int = 10000
@@ -571,7 +572,7 @@ class DataLoadingConfig:
     max_sources: int = 10
 
     # Phase-based weighting (consolidated from 3 locations)
-    phase_weights: Dict[str, float] = field(default_factory=lambda: {
+    phase_weights: dict[str, float] = field(default_factory=lambda: {
         "ring_placement": 0.8,
         "movement": 1.0,
         "capture": 1.2,
@@ -579,7 +580,7 @@ class DataLoadingConfig:
     })
 
     # Victory type weighting
-    victory_type_weights: Dict[str, float] = field(default_factory=lambda: {
+    victory_type_weights: dict[str, float] = field(default_factory=lambda: {
         "elimination": 1.0,
         "territory": 1.2,
         "ring_out": 0.8,
@@ -638,7 +639,7 @@ class QualityConfig:
     decisive_bonus: float = 1.0
     draw_credit: float = 0.3
 
-    def get_sync_weights(self) -> Dict[str, float]:
+    def get_sync_weights(self) -> dict[str, float]:
         """Get weights for sync quality extraction."""
         return {
             "elo_weight": self.sync_elo_weight,
@@ -656,7 +657,7 @@ class StoragePathsConfig:
     elo_database: str = "data/unified_elo.db"
     sync_staging: str = "data/sync_staging"
     local_scratch: str = "/tmp/ringrift"
-    nfs_base: Optional[str] = None  # NFS base path if applicable
+    nfs_base: str | None = None  # NFS base path if applicable
     use_nfs_for_sync: bool = False
     skip_rsync_to_nfs_nodes: bool = False
 
@@ -665,8 +666,8 @@ class StoragePathsConfig:
 class ProviderDetectionConfig:
     """Rules for detecting which storage provider to use."""
     check_path: str = ""
-    hostname_patterns: List[str] = field(default_factory=list)
-    os_type: Optional[str] = None
+    hostname_patterns: list[str] = field(default_factory=list)
+    os_type: str | None = None
 
 
 @dataclass
@@ -697,7 +698,7 @@ class StorageConfig:
         local_scratch="/tmp/ringrift",
     ))
     # Provider detection rules
-    provider_detection: Dict[str, ProviderDetectionConfig] = field(default_factory=dict)
+    provider_detection: dict[str, ProviderDetectionConfig] = field(default_factory=dict)
 
 
 @dataclass
@@ -727,7 +728,7 @@ class P2PClusterConfig:
     """
     enabled: bool = False  # Enable P2P cluster coordination
     p2p_base_url: str = "http://localhost:8770"  # P2P orchestrator URL
-    auth_token: Optional[str] = None  # Auth token (defaults to RINGRIFT_CLUSTER_AUTH_TOKEN env)
+    auth_token: str | None = None  # Auth token (defaults to RINGRIFT_CLUSTER_AUTH_TOKEN env)
     model_sync_enabled: bool = True  # Auto-sync models to cluster
     model_sync_on_promotion: bool = True  # Auto-sync when model is promoted
     target_selfplay_games_per_hour: int = 1000  # Target selfplay rate across cluster
@@ -825,10 +826,10 @@ class UnifiedConfig:
     metrics_port: int = 9090
 
     # Board configurations
-    _board_configs: List[Dict[str, Any]] = field(default_factory=list)
+    _board_configs: list[dict[str, Any]] = field(default_factory=list)
 
     # Source file for debugging
-    _source_path: Optional[str] = None
+    _source_path: str | None = None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> UnifiedConfig:
@@ -846,7 +847,7 @@ class UnifiedConfig:
         return config
 
     @classmethod
-    def _from_dict(cls, data: Dict[str, Any]) -> UnifiedConfig:
+    def _from_dict(cls, data: dict[str, Any]) -> UnifiedConfig:
         """Create config from dictionary."""
         config = cls()
 
@@ -1161,7 +1162,7 @@ class UnifiedConfig:
 
         return config
 
-    def get_all_board_configs(self) -> List[BoardConfig]:
+    def get_all_board_configs(self) -> list[BoardConfig]:
         """Get all 9 board configurations."""
         configs = []
         for bc in self._board_configs:
@@ -1177,19 +1178,19 @@ class UnifiedConfig:
 
         return configs
 
-    def get_elo_db_path(self, base_path: Optional[Path] = None) -> Path:
+    def get_elo_db_path(self, base_path: Path | None = None) -> Path:
         """Get absolute path to Elo database."""
         if base_path is None:
             base_path = Path(__file__).parent.parent.parent
         return base_path / self.elo_db
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration values and return list of errors.
 
         Returns:
             List of error messages. Empty list means valid.
         """
-        errors: List[str] = []
+        errors: list[str] = []
         valid_backends = {"auto", "local", "ssh", "p2p", "slurm"}
         backend_value = str(self.execution_backend or "auto").lower()
         if backend_value not in valid_backends:
@@ -1260,7 +1261,7 @@ class UnifiedConfig:
         """Validate and raise ValueError if invalid."""
         errors = self.validate()
         if errors:
-            raise ValueError(f"Config validation failed:\n  " + "\n  ".join(errors))
+            raise ValueError("Config validation failed:\n  " + "\n  ".join(errors))
 
     def apply_env_overrides(self) -> None:
         """Apply environment variable overrides."""
@@ -1280,7 +1281,7 @@ class UnifiedConfig:
             logger.info(f"Elo DB overridden to {self.elo_db}")
 
 
-def get_config(config_path: Optional[str | Path] = None, force_reload: bool = False) -> UnifiedConfig:
+def get_config(config_path: str | Path | None = None, force_reload: bool = False) -> UnifiedConfig:
     """Get the unified configuration singleton.
 
     Args:
@@ -1493,7 +1494,7 @@ def _get_legacy_threshold() -> int:
 
 # Export commonly used constants (computed at import time for backwards compat)
 # NOTE: These are evaluated once at import - use get_training_threshold() for dynamic access
-ALL_BOARD_CONFIGS: List[Tuple[str, int]] = [
+ALL_BOARD_CONFIGS: list[tuple[str, int]] = [
     ("square8", 2), ("square8", 3), ("square8", 4),
     ("square19", 2), ("square19", 3), ("square19", 4),
     ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
@@ -1505,10 +1506,10 @@ ALL_BOARD_CONFIGS: List[Tuple[str, int]] = [
 # =============================================================================
 
 def create_training_manager(
-    model: Optional[Any] = None,
+    model: Any | None = None,
     board_type: str = "square8",
-    config: Optional[UnifiedConfig] = None,
-) -> Optional[Any]:
+    config: UnifiedConfig | None = None,
+) -> Any | None:
     """Create an IntegratedTrainingManager from UnifiedConfig.
 
     Factory function that creates a training enhancement manager using
@@ -1538,8 +1539,8 @@ def create_training_manager(
 
     try:
         from app.training.integrated_enhancements import (
-            IntegratedTrainingManager,
             IntegratedEnhancementsConfig as EnhancementsConfig,
+            IntegratedTrainingManager,
         )
 
         # Map UnifiedConfig.enhancements to IntegratedEnhancementsConfig
@@ -1628,7 +1629,7 @@ def detect_storage_provider() -> str:
     return "default"
 
 
-def get_storage_paths(provider: Optional[str] = None) -> StoragePathsConfig:
+def get_storage_paths(provider: str | None = None) -> StoragePathsConfig:
     """Get storage paths for the current or specified provider.
 
     Args:
@@ -1662,22 +1663,22 @@ def get_storage_paths(provider: Optional[str] = None) -> StoragePathsConfig:
         return config.storage.default
 
 
-def get_selfplay_dir(provider: Optional[str] = None) -> Path:
+def get_selfplay_dir(provider: str | None = None) -> Path:
     """Get the selfplay games directory for the current provider."""
     return Path(get_storage_paths(provider).selfplay_games)
 
 
-def get_model_checkpoint_dir(provider: Optional[str] = None) -> Path:
+def get_model_checkpoint_dir(provider: str | None = None) -> Path:
     """Get the model checkpoint directory for the current provider."""
     return Path(get_storage_paths(provider).model_checkpoints)
 
 
-def get_training_data_dir(provider: Optional[str] = None) -> Path:
+def get_training_data_dir(provider: str | None = None) -> Path:
     """Get the training data directory for the current provider."""
     return Path(get_storage_paths(provider).training_data)
 
 
-def get_nfs_base(provider: Optional[str] = None) -> Optional[Path]:
+def get_nfs_base(provider: str | None = None) -> Path | None:
     """Get the NFS base path if available for the provider."""
     paths = get_storage_paths(provider)
     if paths.nfs_base:
@@ -1685,7 +1686,7 @@ def get_nfs_base(provider: Optional[str] = None) -> Optional[Path]:
     return None
 
 
-def should_use_nfs_sync(provider: Optional[str] = None) -> bool:
+def should_use_nfs_sync(provider: str | None = None) -> bool:
     """Check if NFS should be used for data sync (no rsync needed)."""
     return get_storage_paths(provider).use_nfs_for_sync
 
@@ -1705,7 +1706,7 @@ def should_skip_rsync_to_node(node_id: str) -> bool:
     return False
 
 
-def ensure_storage_dirs(provider: Optional[str] = None) -> None:
+def ensure_storage_dirs(provider: str | None = None) -> None:
     """Ensure all storage directories exist for the provider.
 
     Creates directories if they don't exist.

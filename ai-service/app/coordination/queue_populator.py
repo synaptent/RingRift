@@ -14,7 +14,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from app.coordination.work_queue import WorkItem, WorkQueue
@@ -37,12 +37,12 @@ class ConfigTarget:
     num_players: int
     target_elo: float = 2000.0
     current_best_elo: float = 1500.0
-    best_model_id: Optional[str] = None
+    best_model_id: str | None = None
     games_played: int = 0
     training_runs: int = 0
     last_updated: float = field(default_factory=time.time)
     # Elo history for velocity tracking: list of (timestamp, elo) tuples
-    elo_history: List[tuple] = field(default_factory=list)
+    elo_history: list[tuple] = field(default_factory=list)
 
     @property
     def target_met(self) -> bool:
@@ -93,7 +93,7 @@ class ConfigTarget:
         return slope * 86400  # points per day
 
     @property
-    def days_to_target(self) -> Optional[float]:
+    def days_to_target(self) -> float | None:
         """Estimate days to reach target at current velocity.
 
         Returns None if target already met or velocity is zero/negative.
@@ -107,7 +107,7 @@ class ConfigTarget:
 
         return self.elo_gap / velocity
 
-    def record_elo(self, elo: float, timestamp: Optional[float] = None) -> None:
+    def record_elo(self, elo: float, timestamp: float | None = None) -> None:
         """Record an Elo measurement for velocity tracking."""
         ts = timestamp or time.time()
         self.elo_history.append((ts, elo))
@@ -132,12 +132,12 @@ class PopulatorConfig:
     tournament_ratio: float = 0.10
 
     # Board types to train
-    board_types: List[str] = field(default_factory=lambda: [
+    board_types: list[str] = field(default_factory=lambda: [
         "square8", "square19", "hex8", "hexagonal"
     ])
 
     # Player counts to train
-    player_counts: List[int] = field(default_factory=lambda: [2, 3, 4])
+    player_counts: list[int] = field(default_factory=lambda: [2, 3, 4])
 
     # Selfplay settings
     selfplay_games_per_item: int = 50
@@ -169,23 +169,23 @@ class QueuePopulator:
 
     def __init__(
         self,
-        config: Optional[PopulatorConfig] = None,
+        config: PopulatorConfig | None = None,
         work_queue: Optional["WorkQueue"] = None,
-        elo_db_path: Optional[str] = None,
+        elo_db_path: str | None = None,
     ):
         self.config = config or PopulatorConfig()
         self._work_queue = work_queue
         self._elo_db_path = elo_db_path
 
         # Track configuration targets
-        self._targets: Dict[str, ConfigTarget] = {}
+        self._targets: dict[str, ConfigTarget] = {}
         self._init_targets()
 
         # Load existing Elo ratings from database
         self._load_existing_elo()
 
         # Track what we've queued
-        self._queued_work_ids: Set[str] = set()
+        self._queued_work_ids: set[str] = set()
         self._last_populate_time: float = 0
 
     def _init_targets(self) -> None:
@@ -287,7 +287,7 @@ class QueuePopulator:
         board_type: str,
         num_players: int,
         elo: float,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
     ) -> None:
         """Update the current best Elo for a configuration."""
         key = f"{board_type}_{num_players}p"
@@ -327,11 +327,11 @@ class QueuePopulator:
         """Check if all configurations have reached target Elo."""
         return all(t.target_met for t in self._targets.values())
 
-    def get_unmet_targets(self) -> List[ConfigTarget]:
+    def get_unmet_targets(self) -> list[ConfigTarget]:
         """Get configurations that haven't reached target Elo."""
         return [t for t in self._targets.values() if not t.target_met]
 
-    def get_priority_target(self) -> Optional[ConfigTarget]:
+    def get_priority_target(self) -> ConfigTarget | None:
         """Get the configuration that needs the most attention.
 
         Prioritizes by:
@@ -366,7 +366,7 @@ class QueuePopulator:
         self,
         board_type: str,
         num_players: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a selfplay work item.
 
         Uses the best model for this config if available (1700+ Elo preferred).
@@ -409,7 +409,7 @@ class QueuePopulator:
         self,
         board_type: str,
         num_players: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a training work item with symmetry augmentation enabled."""
         from app.coordination.work_queue import WorkItem, WorkType
 
@@ -438,7 +438,7 @@ class QueuePopulator:
         self,
         board_type: str,
         num_players: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a tournament work item."""
         from app.coordination.work_queue import WorkItem, WorkType
 
@@ -603,7 +603,7 @@ class QueuePopulator:
 
         return added
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get populator status for monitoring."""
         unmet = self.get_unmet_targets()
         met = [t for t in self._targets.values() if t.target_met]
@@ -639,7 +639,7 @@ class QueuePopulator:
         }
 
 
-def load_populator_config_from_yaml(yaml_config: Dict[str, Any]) -> PopulatorConfig:
+def load_populator_config_from_yaml(yaml_config: dict[str, Any]) -> PopulatorConfig:
     """Load PopulatorConfig from YAML configuration dict."""
     populator = yaml_config.get("queue_populator", {})
 
@@ -666,11 +666,11 @@ def load_populator_config_from_yaml(yaml_config: Dict[str, Any]) -> PopulatorCon
 # Singleton pattern
 # =============================================================================
 
-_populator: Optional[QueuePopulator] = None
+_populator: QueuePopulator | None = None
 
 
 def get_queue_populator(
-    config: Optional[PopulatorConfig] = None,
+    config: PopulatorConfig | None = None,
     work_queue: Optional["WorkQueue"] = None,
 ) -> QueuePopulator:
     """Get or create the singleton QueuePopulator instance."""
@@ -706,7 +706,7 @@ def wire_queue_populator_events() -> QueuePopulator:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -763,9 +763,9 @@ __all__ = [
     "PopulatorConfig",
     # Main class
     "QueuePopulator",
+    "get_queue_populator",
     # Functions
     "load_populator_config_from_yaml",
-    "get_queue_populator",
     "reset_queue_populator",
     "wire_queue_populator_events",
 ]

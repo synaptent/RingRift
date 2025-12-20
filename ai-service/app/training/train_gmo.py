@@ -17,10 +17,8 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -31,7 +29,6 @@ from ..ai.gmo_ai import (
     GMOValueNetWithUncertainty,
     MoveEncoder,
     StateEncoder,
-    gmo_combined_loss,
     nll_loss_with_uncertainty,
 )
 from ..models import AIConfig, BoardType, GameState, Move
@@ -54,21 +51,21 @@ class GMODataset(Dataset):
         data_path: Path,
         state_encoder: StateEncoder,
         move_encoder: MoveEncoder,
-        max_samples: Optional[int] = None,
+        max_samples: int | None = None,
     ):
         self.data_path = data_path
         self.state_encoder = state_encoder
         self.move_encoder = move_encoder
-        self.samples: List[Tuple[torch.Tensor, torch.Tensor, float]] = []
+        self.samples: list[tuple[torch.Tensor, torch.Tensor, float]] = []
 
         self._load_data(max_samples)
 
-    def _load_data(self, max_samples: Optional[int]) -> None:
+    def _load_data(self, max_samples: int | None) -> None:
         """Load and process game records."""
         logger.info(f"Loading data from {self.data_path}")
         games_processed = 0
 
-        with open(self.data_path, "r") as f:
+        with open(self.data_path) as f:
             for line_num, line in enumerate(f):
                 if max_samples and len(self.samples) >= max_samples:
                     break
@@ -88,7 +85,7 @@ class GMODataset(Dataset):
 
         logger.info(f"Processed {games_processed} games, loaded {len(self.samples)} training samples")
 
-    def _process_record(self, record: Dict) -> None:
+    def _process_record(self, record: dict) -> None:
         """Process a single game record.
 
         Uses simplified approach: encode initial state once and pair with each move.
@@ -147,14 +144,14 @@ class GMODataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         state_features, move_embed, outcome = self.samples[idx]
         return state_features, move_embed, torch.tensor(outcome, dtype=torch.float32)
 
 
 def collate_fn(batch):
     """Custom collate function for DataLoader."""
-    states, moves, outcomes = zip(*batch)
+    states, moves, outcomes = zip(*batch, strict=False)
     return (
         torch.stack(states),
         torch.stack(moves),
@@ -214,7 +211,7 @@ def evaluate_epoch(
     value_net: GMOValueNetWithUncertainty,
     dataloader: DataLoader,
     device: torch.device,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Evaluate on validation set.
 
     Returns:
@@ -262,22 +259,27 @@ def evaluate_vs_random(
     gmo_ai: GMOAI,
     num_games: int = 20,
     board_type: BoardType = BoardType.SQUARE8,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Evaluate GMO AI against Random AI.
 
     Returns:
         Dictionary with win_rate, draw_rate, avg_game_length
     """
     from datetime import datetime
+
     from ..ai.random_ai import RandomAI
     from ..game_engine import GameEngine
     from ..models import (
-        BoardState, GamePhase, GameStatus, Player, TimeControl,
+        BoardState,
+        GamePhase,
+        GameStatus,
+        Player,
+        TimeControl,
     )
     from ..rules.core import (
         BOARD_CONFIGS,
-        get_victory_threshold,
         get_territory_victory_threshold,
+        get_victory_threshold,
     )
 
     engine = GameEngine()
@@ -407,7 +409,7 @@ def train_gmo(
     num_epochs: int = 50,
     batch_size: int = 64,
     learning_rate: float = 0.001,
-    max_samples: Optional[int] = None,
+    max_samples: int | None = None,
     eval_interval: int = 5,
     device_str: str = "cpu",
 ) -> None:

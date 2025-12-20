@@ -6,11 +6,11 @@ rather than alerting after problems have already happened.
 """
 
 import logging
-import statistics
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,8 @@ class Alert:
     message: str
     action: str                 # Recommended action
     created_at: float = field(default_factory=time.time)
-    predicted_issue_time: Optional[float] = None  # When issue is predicted to occur
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    predicted_issue_time: float | None = None  # When issue is predicted to occur
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,22 +93,22 @@ class PredictiveAlertManager:
     and alerts with enough lead time for proactive action.
     """
 
-    def __init__(self, config: Optional[PredictiveAlertConfig] = None):
+    def __init__(self, config: PredictiveAlertConfig | None = None):
         self.config = config or PredictiveAlertConfig()
 
         # Metric history for trend analysis
-        self._disk_history: Dict[str, List[MetricSample]] = {}
-        self._memory_history: Dict[str, List[MetricSample]] = {}
-        self._elo_history: Dict[str, List[MetricSample]] = {}
-        self._queue_history: List[MetricSample] = []
+        self._disk_history: dict[str, list[MetricSample]] = {}
+        self._memory_history: dict[str, list[MetricSample]] = {}
+        self._elo_history: dict[str, list[MetricSample]] = {}
+        self._queue_history: list[MetricSample] = []
 
         # Alert tracking for throttling
-        self._recent_alerts: Dict[str, float] = {}  # key -> last alert time
+        self._recent_alerts: dict[str, float] = {}  # key -> last alert time
         self._alerts_this_hour: int = 0
         self._hour_start: float = time.time()
 
         # Notification callback
-        self._notify_callback: Optional[Callable] = None
+        self._notify_callback: Callable | None = None
 
     def set_notify_callback(self, callback: Callable) -> None:
         """Set callback for sending notifications."""
@@ -158,7 +158,7 @@ class PredictiveAlertManager:
 
     def _cleanup_history(
         self,
-        history: List[MetricSample],
+        history: list[MetricSample],
         max_age_hours: int,
     ) -> None:
         """Remove old samples from history."""
@@ -168,9 +168,9 @@ class PredictiveAlertManager:
 
     def _calculate_trend(
         self,
-        samples: List[MetricSample],
+        samples: list[MetricSample],
         window_hours: int,
-    ) -> Optional[float]:
+    ) -> float | None:
         """
         Calculate linear trend (slope) over the window.
 
@@ -217,10 +217,7 @@ class PredictiveAlertManager:
 
         # Check throttle
         last_alert = self._recent_alerts.get(alert_key, 0)
-        if time.time() - last_alert < self.config.alert_throttle_minutes * 60:
-            return False
-
-        return True
+        return not time.time() - last_alert < self.config.alert_throttle_minutes * 60
 
     def _record_alert(self, alert_key: str) -> None:
         """Record that an alert was sent."""
@@ -230,8 +227,8 @@ class PredictiveAlertManager:
     def predict_disk_full(
         self,
         node_id: str,
-        hours_ahead: Optional[int] = None,
-    ) -> Optional[Alert]:
+        hours_ahead: int | None = None,
+    ) -> Alert | None:
         """
         Predict if disk will fill based on current write rate.
 
@@ -307,8 +304,8 @@ class PredictiveAlertManager:
     def predict_elo_degradation(
         self,
         model_id: str,
-        window_hours: Optional[int] = None,
-    ) -> Optional[Alert]:
+        window_hours: int | None = None,
+    ) -> Alert | None:
         """
         Detect early signs of Elo regression.
 
@@ -356,7 +353,7 @@ class PredictiveAlertManager:
 
         return None
 
-    def predict_queue_backlog(self) -> Optional[Alert]:
+    def predict_queue_backlog(self) -> Alert | None:
         """
         Predict if work queue will become backlogged.
 
@@ -408,7 +405,7 @@ class PredictiveAlertManager:
 
         return None
 
-    def check_training_stall(self, last_training_time: float) -> Optional[Alert]:
+    def check_training_stall(self, last_training_time: float) -> Alert | None:
         """
         Check if training has stalled.
 
@@ -440,10 +437,10 @@ class PredictiveAlertManager:
 
     async def run_all_checks(
         self,
-        node_ids: List[str],
-        model_ids: List[str],
+        node_ids: list[str],
+        model_ids: list[str],
         last_training_time: float,
-    ) -> List[Alert]:
+    ) -> list[Alert]:
         """
         Run all predictive checks and return alerts.
 
@@ -499,7 +496,7 @@ class PredictiveAlertManager:
             logger.error(f"Failed to send alert: {e}")
             return False
 
-    def get_alert_stats(self) -> Dict[str, Any]:
+    def get_alert_stats(self) -> dict[str, Any]:
         """Get alerting statistics for monitoring."""
         return {
             "enabled": self.config.enabled,
@@ -512,7 +509,7 @@ class PredictiveAlertManager:
         }
 
 
-def load_alert_config_from_yaml(yaml_config: Dict[str, Any]) -> PredictiveAlertConfig:
+def load_alert_config_from_yaml(yaml_config: dict[str, Any]) -> PredictiveAlertConfig:
     """Load PredictiveAlertConfig from YAML configuration dict."""
     monitoring = yaml_config.get("proactive_monitoring", {})
 

@@ -11,15 +11,14 @@ Classes:
 import logging
 import os
 import random
-from typing import Optional
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from app.ai.neural_net import (
-    HEX_BOARD_SIZE,
     HEX8_BOARD_SIZE,
+    HEX_BOARD_SIZE,
     get_policy_size_for_board,
 )
 from app.models import BoardType
@@ -70,7 +69,7 @@ class RingRiftDataset(Dataset):
         self.use_multi_player_values = use_multi_player_values
         self.filter_empty_policies = filter_empty_policies
         self.return_num_players = return_num_players
-        self.hex_transform: Optional[HexSymmetryTransform] = None
+        self.hex_transform: HexSymmetryTransform | None = None
 
         # Initialize hex transform if augmentation enabled
         if self.augment_hex:
@@ -91,7 +90,7 @@ class RingRiftDataset(Dataset):
         self.valid_indices = None
         # Multi-player value support metadata
         self.has_multi_player_values = False
-        self.num_players_arr: Optional[np.ndarray] = None
+        self.num_players_arr: np.ndarray | None = None
         # Effective dense policy vector length inferred from data
         self.policy_size: int = 0
 
@@ -455,7 +454,7 @@ class WeightedRingRiftDataset(RingRiftDataset):
         )
 
         self.weighting = weighting
-        self.sample_weights: Optional[np.ndarray] = None
+        self.sample_weights: np.ndarray | None = None
 
         if self.length > 0:
             self._compute_weights()

@@ -31,20 +31,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Import base monitoring framework for integration (2025-12)
 try:
     from app.monitoring.base import (
+        Alert as BaseAlert,
         HealthMonitor as BaseHealthMonitor,
         HealthStatus,
-        Alert as BaseAlert,
         MonitoringResult,
     )
     from app.monitoring.thresholds import AlertLevel
@@ -61,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 from app.utils.paths import DATA_DIR
+
 HEALTH_DB_PATH = DATA_DIR / "training" / "health_state.json"
 
 # Thresholds
@@ -92,7 +92,7 @@ class AlertSeverity(Enum):
     WARNING = "warning"
     CRITICAL = "critical"
 
-    def to_alert_level(self) -> "AlertLevel":
+    def to_alert_level(self) -> AlertLevel:
         """Convert to AlertLevel from monitoring framework."""
         if HAS_MONITORING_FRAMEWORK:
             mapping = {
@@ -109,10 +109,10 @@ class TrainingRunStatus:
     """Status of a single training run."""
     config_key: str
     started_at: float
-    completed_at: Optional[float] = None
-    success: Optional[bool] = None
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    error_message: Optional[str] = None
+    completed_at: float | None = None
+    success: bool | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    error_message: str | None = None
 
 
 @dataclass
@@ -127,7 +127,7 @@ class ConfigHealth:
     model_count: int = 0
     win_rate: float = 0.5
     is_training: bool = False
-    training_start_time: Optional[float] = None
+    training_start_time: float | None = None
 
 
 @dataclass
@@ -135,12 +135,12 @@ class Alert:
     """A health alert."""
     id: str
     severity: AlertSeverity
-    config_key: Optional[str]
+    config_key: str | None
     message: str
     created_at: float
-    resolved_at: Optional[float] = None
+    resolved_at: float | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "severity": self.severity.value,
@@ -156,11 +156,11 @@ class HealthReport:
     """Overall health report."""
     status: HealthStatus
     timestamp: float
-    configs: Dict[str, ConfigHealth]
-    active_alerts: List[Alert]
+    configs: dict[str, ConfigHealth]
+    active_alerts: list[Alert]
     summary: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status.value,
             "timestamp": self.timestamp,
@@ -179,16 +179,16 @@ class TrainingHealthMonitor(BaseHealthMonitor):
     - Integration with cluster-wide health reporting
     """
 
-    def __init__(self, state_path: Optional[Path] = None, name: str = "training"):
+    def __init__(self, state_path: Path | None = None, name: str = "training"):
         if HAS_MONITORING_FRAMEWORK:
             super().__init__(name=name)
         self.state_path = state_path or HEALTH_DB_PATH
-        self._configs: Dict[str, ConfigHealth] = {}
-        self._active_runs: Dict[str, TrainingRunStatus] = {}
-        self._alerts: Dict[str, Alert] = {}
+        self._configs: dict[str, ConfigHealth] = {}
+        self._active_runs: dict[str, TrainingRunStatus] = {}
+        self._alerts: dict[str, Alert] = {}
         self._load_state()
 
-    def check_health(self) -> "MonitoringResult":
+    def check_health(self) -> MonitoringResult:
         """Perform health check and return result.
 
         Implements the HealthMonitor interface for integration with
@@ -249,7 +249,7 @@ class TrainingHealthMonitor(BaseHealthMonitor):
         """Load state from disk."""
         if self.state_path.exists():
             try:
-                with open(self.state_path, "r") as f:
+                with open(self.state_path) as f:
                     data = json.load(f)
                     for key, config_data in data.get("configs", {}).items():
                         self._configs[key] = ConfigHealth(config_key=key, **config_data)
@@ -303,8 +303,8 @@ class TrainingHealthMonitor(BaseHealthMonitor):
         self,
         config_key: str,
         success: bool,
-        metrics: Optional[Dict[str, Any]] = None,
-        error_message: Optional[str] = None,
+        metrics: dict[str, Any] | None = None,
+        error_message: str | None = None,
     ) -> None:
         """Record that training has completed."""
         now = time.time()
@@ -367,7 +367,7 @@ class TrainingHealthMonitor(BaseHealthMonitor):
         self,
         alert_id: str,
         severity: AlertSeverity,
-        config_key: Optional[str],
+        config_key: str | None,
         message: str,
     ) -> None:
         """Create or update an alert."""
@@ -427,7 +427,7 @@ class TrainingHealthMonitor(BaseHealthMonitor):
                         f"No new data for {config_key} in {hours_since_data:.1f} hours",
                     )
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get all active (unresolved) alerts."""
         return [a for a in self._alerts.values() if a.resolved_at is None]
 
@@ -474,7 +474,7 @@ class TrainingHealthMonitor(BaseHealthMonitor):
 
         # Training status metrics
         for config_key, config in self._configs.items():
-            safe_key = config_key.replace("-", "_")
+            config_key.replace("-", "_")
             lines.append(f'ringrift_training_is_running{{config="{config_key}"}} {1 if config.is_training else 0}')
             lines.append(f'ringrift_training_consecutive_failures{{config="{config_key}"}} {config.consecutive_failures}')
             lines.append(f'ringrift_training_last_success_timestamp{{config="{config_key}"}} {config.last_training_time}')
@@ -493,7 +493,7 @@ class TrainingHealthMonitor(BaseHealthMonitor):
 
 
 # Singleton instance
-_monitor_instance: Optional[TrainingHealthMonitor] = None
+_monitor_instance: TrainingHealthMonitor | None = None
 
 
 def get_training_health_monitor() -> TrainingHealthMonitor:

@@ -24,6 +24,7 @@ Usage:
     coordinator.unregister_task(task_id)
 """
 
+import contextlib
 import fcntl
 import json
 import logging
@@ -32,20 +33,21 @@ import socket
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Set, Callable
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 # Import queue monitor for backpressure checks
 try:
     from app.coordination.queue_monitor import (
-        get_queue_monitor,
-        QueueType,
         BackpressureLevel,
+        QueueType,
+        get_queue_monitor,
         get_throttle_factor,
     )
     HAS_QUEUE_MONITOR = True
@@ -57,10 +59,10 @@ except ImportError:
 # Import host health policy for pre-spawn health checks (December 2025)
 try:
     from app.coordination.host_health_policy import (
-        is_host_healthy,
-        pre_spawn_check,
         check_host_health,
+        is_host_healthy,
         mark_host_unhealthy,
+        pre_spawn_check,
     )
     HAS_HOST_HEALTH = True
 except ImportError:
@@ -156,7 +158,7 @@ def is_cpu_task(task_type: TaskType) -> bool:
 # Map task types to relevant queue types for backpressure checks (December 2025)
 # Some tasks produce data for queues, others consume from queues
 # We check producer queues before spawning producer tasks
-TASK_TO_QUEUE_MAP: Dict = {}
+TASK_TO_QUEUE_MAP: dict = {}
 if HAS_QUEUE_MONITOR:
     TASK_TO_QUEUE_MAP = {
         TaskType.SELFPLAY: QueueType.TRAINING_DATA,      # Produces training data
@@ -237,7 +239,7 @@ class TaskInfo:
     started_at: float
     pid: int = 0
     status: str = "running"
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class CoordinatorState(Enum):
@@ -264,8 +266,8 @@ class OrchestratorLock:
         lock_dir = Path("/tmp/ringrift_locks")
         lock_dir.mkdir(exist_ok=True)
         self.lock_file = lock_dir / f"{lock_name}.lock"
-        self._fd: Optional[int] = None
-        self._holder_pid: Optional[int] = None
+        self._fd: int | None = None
+        self._holder_pid: int | None = None
 
     def acquire(self, blocking: bool = False, timeout: float = 10.0) -> bool:
         """
@@ -305,10 +307,8 @@ class OrchestratorLock:
         except Exception as e:
             logger.error(f"Failed to acquire lock: {e}")
             if self._fd is not None:
-                try:
+                with contextlib.suppress(OSError):
                     os.close(self._fd)
-                except OSError:
-                    pass
                 self._fd = None
             return False
 
@@ -323,7 +323,7 @@ class OrchestratorLock:
             self._fd = None
             self._holder_pid = None
 
-    def get_holder(self) -> Optional[int]:
+    def get_holder(self) -> int | None:
         """Get PID of current lock holder, if any."""
         try:
             if self.lock_file.exists():
@@ -489,7 +489,7 @@ class TaskRegistry:
         )
         self.conn.commit()
 
-    def get_task(self, task_id: str) -> Optional[TaskInfo]:
+    def get_task(self, task_id: str) -> TaskInfo | None:
         """Get a task by ID."""
         cursor = self.conn.execute(
             "SELECT * FROM tasks WHERE task_id = ?", (task_id,)
@@ -499,7 +499,7 @@ class TaskRegistry:
             return None
         return self._row_to_task(row)
 
-    def get_tasks_by_node(self, node_id: str) -> List[TaskInfo]:
+    def get_tasks_by_node(self, node_id: str) -> list[TaskInfo]:
         """Get all tasks for a node."""
         cursor = self.conn.execute(
             "SELECT * FROM tasks WHERE node_id = ? AND status = 'running'",
@@ -507,7 +507,7 @@ class TaskRegistry:
         )
         return [self._row_to_task(row) for row in cursor.fetchall()]
 
-    def get_tasks_by_type(self, task_type: TaskType) -> List[TaskInfo]:
+    def get_tasks_by_type(self, task_type: TaskType) -> list[TaskInfo]:
         """Get all tasks of a type."""
         cursor = self.conn.execute(
             "SELECT * FROM tasks WHERE task_type = ? AND status = 'running'",
@@ -515,7 +515,7 @@ class TaskRegistry:
         )
         return [self._row_to_task(row) for row in cursor.fetchall()]
 
-    def get_all_running_tasks(self) -> List[TaskInfo]:
+    def get_all_running_tasks(self) -> list[TaskInfo]:
         """Get all running tasks."""
         cursor = self.conn.execute(
             "SELECT * FROM tasks WHERE status = 'running'"
@@ -530,7 +530,7 @@ class TaskRegistry:
         )
         return cursor.fetchone()[0]
 
-    def count_by_node(self, node_id: str, task_type: Optional[TaskType] = None) -> int:
+    def count_by_node(self, node_id: str, task_type: TaskType | None = None) -> int:
         """Count running tasks on a node."""
         if task_type:
             cursor = self.conn.execute(
@@ -585,7 +585,7 @@ class TaskRegistry:
         """, (key, value, datetime.now().isoformat()))
         self.conn.commit()
 
-    def get_state(self, key: str) -> Optional[str]:
+    def get_state(self, key: str) -> str | None:
         """Get coordinator state."""
         cursor = self.conn.execute(
             "SELECT value FROM coordinator_state WHERE key = ?", (key,)
@@ -616,7 +616,7 @@ class TaskRegistry:
         """, (time.time(), task_id))
         self.conn.commit()
 
-    def get_orphaned_tasks(self, timeout_seconds: float = 300.0) -> List[TaskInfo]:
+    def get_orphaned_tasks(self, timeout_seconds: float = 300.0) -> list[TaskInfo]:
         """Get tasks that haven't sent heartbeat within timeout.
 
         Args:
@@ -662,7 +662,7 @@ class TaskHeartbeatMonitor:
         self.timeout_seconds = timeout_seconds
         self.check_interval = check_interval_seconds
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
         # Event emission
         try:
@@ -696,7 +696,7 @@ class TaskHeartbeatMonitor:
                 logger.warning(f"[HeartbeatMonitor] Check failed: {e}")
             time.sleep(self.check_interval)
 
-    def check_for_orphans(self) -> List[TaskInfo]:
+    def check_for_orphans(self) -> list[TaskInfo]:
         """Check for orphaned tasks and emit events."""
         orphans = self.registry.get_orphaned_tasks(self.timeout_seconds)
 
@@ -787,18 +787,18 @@ class TaskCoordinator:
         )
 
         # Callbacks
-        self._on_limit_reached: List[Callable] = []
-        self._on_emergency: List[Callable] = []
+        self._on_limit_reached: list[Callable] = []
+        self._on_emergency: list[Callable] = []
 
         # Last spawn time per node (for cooldown)
-        self._last_spawn: Dict[str, float] = {}
+        self._last_spawn: dict[str, float] = {}
 
         # Resource cache (refreshed periodically)
-        self._resource_cache: Dict[str, Dict[str, float]] = {}
+        self._resource_cache: dict[str, dict[str, float]] = {}
         self._resource_cache_time: float = 0
 
         # Gauntlet evaluation: reserved workers
-        self._gauntlet_reserved: Set[str] = set()
+        self._gauntlet_reserved: set[str] = set()
         self._gauntlet_lock = threading.RLock()
 
         # Heartbeat monitor for orphan detection (December 2025)
@@ -856,7 +856,7 @@ class TaskCoordinator:
     # Gauntlet Worker Reservation
     # ==========================================
 
-    def reserve_for_gauntlet(self, node_ids: List[str]) -> List[str]:
+    def reserve_for_gauntlet(self, node_ids: list[str]) -> list[str]:
         """Reserve workers for gauntlet evaluation.
 
         Reserved workers are excluded from selfplay task assignment
@@ -877,7 +877,7 @@ class TaskCoordinator:
                     logger.info(f"[Gauntlet] Reserved worker: {node_id}")
         return reserved
 
-    def release_from_gauntlet(self, node_ids: List[str]) -> None:
+    def release_from_gauntlet(self, node_ids: list[str]) -> None:
         """Release workers from gauntlet reservation.
 
         Args:
@@ -914,12 +914,12 @@ class TaskCoordinator:
         with self._gauntlet_lock:
             return node_id in self._gauntlet_reserved
 
-    def get_gauntlet_reserved(self) -> Set[str]:
+    def get_gauntlet_reserved(self) -> set[str]:
         """Get set of all workers reserved for gauntlet."""
         with self._gauntlet_lock:
             return self._gauntlet_reserved.copy()
 
-    def get_available_for_gauntlet(self, all_nodes: List[str], count: int = 2) -> List[str]:
+    def get_available_for_gauntlet(self, all_nodes: list[str], count: int = 2) -> list[str]:
         """Get available nodes that can be reserved for gauntlet.
 
         Prefers CPU-only nodes over GPU nodes for gauntlet evaluation.
@@ -1165,7 +1165,7 @@ class TaskCoordinator:
             logger.debug(f"Backpressure check failed: {e}")
             return (False, "")  # Fail open if check fails
 
-    def get_queue_backpressure(self, task_type: TaskType) -> Optional[str]:
+    def get_queue_backpressure(self, task_type: TaskType) -> str | None:
         """Get current backpressure level for a task's queue.
 
         Args:
@@ -1224,7 +1224,7 @@ class TaskCoordinator:
         task_type: TaskType,
         node_id: str,
         pid: int = 0,
-        metadata: Optional[Dict] = None
+        metadata: dict | None = None
     ) -> None:
         """Register a newly spawned task."""
         task = TaskInfo(
@@ -1255,7 +1255,7 @@ class TaskCoordinator:
         self,
         task_id: str,
         success: bool = True,
-        result_data: Optional[Dict[str, Any]] = None,
+        result_data: dict[str, Any] | None = None,
     ) -> None:
         """Complete a task and emit appropriate StageEvent.
 
@@ -1292,7 +1292,7 @@ class TaskCoordinator:
     def fail_task(
         self,
         task_id: str,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """Fail a task and emit appropriate StageEvent.
 
@@ -1310,7 +1310,7 @@ class TaskCoordinator:
         self,
         task: TaskInfo,
         success: bool,
-        result_data: Dict[str, Any],
+        result_data: dict[str, Any],
     ) -> None:
         """Emit StageEvent for task completion.
 
@@ -1321,13 +1321,14 @@ class TaskCoordinator:
         - DATA_SYNC → SYNC_COMPLETE
         """
         try:
+            import asyncio
+            from datetime import datetime
+
             from app.coordination.stage_events import (
-                StageEvent,
                 StageCompletionResult,
+                StageEvent,
                 get_event_bus,
             )
-            from datetime import datetime
-            import asyncio
 
             # Map TaskType to StageEvent
             event_map = {
@@ -1366,7 +1367,7 @@ class TaskCoordinator:
 
             # Try async emit, fall back to sync
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(bus.emit(result))
             except RuntimeError:
                 asyncio.run(bus.emit(result))
@@ -1385,11 +1386,12 @@ class TaskCoordinator:
         and coordination systems like TaskLifecycleCoordinator.
         """
         try:
-            from app.distributed.data_events import emit_task_spawned
             import asyncio
 
+            from app.distributed.data_events import emit_task_spawned
+
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(emit_task_spawned(
                     task_id=task.task_id,
                     task_type=task.task_type.value,
@@ -1415,12 +1417,13 @@ class TaskCoordinator:
         self,
         task: TaskInfo,
         success: bool,
-        result_data: Dict[str, Any],
+        result_data: dict[str, Any],
     ) -> None:
         """Emit TASK_COMPLETED or TASK_FAILED event (December 2025)."""
         try:
-            from app.distributed.data_events import emit_task_completed, emit_task_failed
             import asyncio
+
+            from app.distributed.data_events import emit_task_completed, emit_task_failed
 
             duration = time.time() - task.started_at
 
@@ -1432,7 +1435,7 @@ class TaskCoordinator:
                 event_name = "TASK_FAILED"
 
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(emit_fn(
                     task_id=task.task_id,
                     task_type=task.task_type.value,
@@ -1482,12 +1485,11 @@ class TaskCoordinator:
 
         # Auto-pause on critical resource usage
         if (disk_percent >= self.limits.halt_on_disk_percent or
-            memory_percent >= self.limits.halt_on_memory_percent):
-            if self.state == CoordinatorState.RUNNING:
-                logger.warning(
-                    f"Critical resources on {node_id}: "
-                    f"disk={disk_percent:.0f}%, mem={memory_percent:.0f}%"
-                )
+            memory_percent >= self.limits.halt_on_memory_percent) and self.state == CoordinatorState.RUNNING:
+            logger.warning(
+                f"Critical resources on {node_id}: "
+                f"disk={disk_percent:.0f}%, mem={memory_percent:.0f}%"
+            )
 
     # ==========================================
     # Callbacks
@@ -1505,12 +1507,12 @@ class TaskCoordinator:
     # Statistics
     # ==========================================
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get coordinator statistics."""
         tasks = self.registry.get_all_running_tasks()
 
-        by_type: Dict[str, int] = {}
-        by_node: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
+        by_node: dict[str, int] = {}
 
         for task in tasks:
             by_type[task.task_type.value] = by_type.get(task.task_type.value, 0) + 1
@@ -1538,9 +1540,9 @@ class TaskCoordinator:
 
     def get_tasks(
         self,
-        task_type: Optional[TaskType] = None,
-        node_id: Optional[str] = None
-    ) -> List[TaskInfo]:
+        task_type: TaskType | None = None,
+        node_id: str | None = None
+    ) -> list[TaskInfo]:
         """Get tasks with optional filtering."""
         if task_type:
             return self.registry.get_tasks_by_type(task_type)
@@ -1560,7 +1562,7 @@ class TaskCoordinator:
             logger.info(f"Cleaned up {count} stale tasks")
         return count
 
-    def verify_tasks(self) -> Dict[str, Any]:
+    def verify_tasks(self) -> dict[str, Any]:
         """Verify registered tasks are still running."""
         tasks = self.registry.get_all_running_tasks()
         verified = 0
@@ -1603,7 +1605,7 @@ class CoordinatedTask:
         self,
         task_type: TaskType,
         node_id: str,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
         pid: int = 0
     ):
         self.task_type = task_type
@@ -1721,7 +1723,7 @@ def wire_task_coordinator_events() -> TaskCoordinator:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -1789,28 +1791,28 @@ def wire_task_coordinator_events() -> TaskCoordinator:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "TaskType",
-    "ResourceType",
+    "CoordinatedTask",
     "CoordinatorState",
-    # Functions
-    "get_task_resource_type",
-    "is_gpu_task",
-    "is_cpu_task",
-    "get_queue_for_task",
-    # Classes
-    "TaskLimits",
-    "TaskInfo",
     "OrchestratorLock",
     "RateLimiter",
-    "TaskRegistry",
-    "TaskHeartbeatMonitor",
+    "ResourceType",
     "TaskCoordinator",
-    "CoordinatedTask",
-    # Convenience functions
-    "get_coordinator",
+    "TaskHeartbeatMonitor",
+    "TaskInfo",
+    # Classes
+    "TaskLimits",
+    "TaskRegistry",
+    # Enums
+    "TaskType",
     "can_spawn",
     "emergency_stop_all",
+    # Convenience functions
+    "get_coordinator",
+    "get_queue_for_task",
+    # Functions
+    "get_task_resource_type",
+    "is_cpu_task",
+    "is_gpu_task",
     # Event wiring
     "wire_task_coordinator_events",
 ]

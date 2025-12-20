@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -48,10 +47,10 @@ DEFAULT_HYPERPARAMETERS = {
 }
 
 # Cache for loaded config
-_config_cache: Optional[Dict[str, Any]] = None
+_config_cache: dict[str, Any] | None = None
 
 
-def _load_config() -> Dict[str, Any]:
+def _load_config() -> dict[str, Any]:
     """Load hyperparameters config from file."""
     global _config_cache
 
@@ -88,7 +87,7 @@ def get_hyperparameters(
     num_players: int,
     *,
     require_optimized: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get hyperparameters for a specific board/player configuration.
 
     Args:
@@ -122,7 +121,7 @@ def get_hyperparameters(
     return params
 
 
-def get_hyperparameter_info(board_type: str, num_players: int) -> Dict[str, Any]:
+def get_hyperparameter_info(board_type: str, num_players: int) -> dict[str, Any]:
     """Get hyperparameter metadata for a configuration.
 
     Returns info about tuning status, confidence, etc.
@@ -142,7 +141,7 @@ def get_hyperparameter_info(board_type: str, num_players: int) -> Dict[str, Any]
     }
 
 
-def get_all_configs() -> Dict[str, Dict[str, Any]]:
+def get_all_configs() -> dict[str, dict[str, Any]]:
     """Get hyperparameter info for all configurations."""
     config = _load_config()
     return config.get("configs", {})

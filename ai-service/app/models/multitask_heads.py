@@ -5,13 +5,12 @@ Provides auxiliary prediction heads to improve representation learning
 and enable additional capabilities beyond policy and value prediction.
 """
 
-import math
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+import math
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from abc import ABC, abstractmethod
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +45,15 @@ class TaskConfig:
     enabled: bool = True
     loss_weight: float = 0.1
     hidden_dim: int = 128
-    num_classes: Optional[int] = None
-    output_dim: Optional[int] = None
+    num_classes: int | None = None
+    output_dim: int | None = None
     loss_fn: str = "mse"  # mse, cross_entropy, bce
 
 
 @dataclass
 class MultiTaskConfig:
     """Configuration for multi-task learning."""
-    tasks: List[TaskConfig] = field(default_factory=list)
+    tasks: list[TaskConfig] = field(default_factory=list)
     uncertainty_weighting: bool = False  # Learn loss weights automatically
     gradient_normalization: bool = False  # GradNorm balancing
     shared_layers: int = 0  # Number of shared layers before task heads
@@ -134,7 +133,7 @@ if TORCH_AVAILABLE:
         """Predict territory/influence map over the board."""
 
         def __init__(self, input_dim: int, config: TaskConfig,
-                     board_size: Tuple[int, int] = (8, 8)):
+                     board_size: tuple[int, int] = (8, 8)):
             super().__init__(input_dim, config)
 
             self.board_size = board_size
@@ -282,7 +281,7 @@ if TORCH_AVAILABLE:
             base_model: nn.Module,
             config: MultiTaskConfig,
             feature_dim: int = 256,
-            board_size: Tuple[int, int] = (8, 8)
+            board_size: tuple[int, int] = (8, 8)
         ):
             super().__init__()
             self.base_model = base_model
@@ -328,7 +327,7 @@ if TORCH_AVAILABLE:
                         head = head_class(self.feature_dim, task_config)
                     self.task_heads[task_config.task_type.value] = head
 
-        def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
             """
             Forward pass returning all task outputs.
 
@@ -369,9 +368,9 @@ if TORCH_AVAILABLE:
 
         def compute_losses(
             self,
-            outputs: Dict[str, torch.Tensor],
-            targets: Dict[str, torch.Tensor]
-        ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+            outputs: dict[str, torch.Tensor],
+            targets: dict[str, torch.Tensor]
+        ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
             """
             Compute all task losses.
 
@@ -423,7 +422,7 @@ if TORCH_AVAILABLE:
 
             return total_loss, losses
 
-        def get_task_weights(self) -> Dict[str, float]:
+        def get_task_weights(self) -> dict[str, float]:
             """Get current task weights (static or learned)."""
             weights = {}
 
@@ -459,9 +458,9 @@ if TORCH_AVAILABLE:
 
         def compute_losses_batched(
             self,
-            outputs: Dict[str, torch.Tensor],
-            targets: Dict[str, torch.Tensor]
-        ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Dict[str, float]]:
+            outputs: dict[str, torch.Tensor],
+            targets: dict[str, torch.Tensor]
+        ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, float]]:
             """
             Compute all task losses with batched GPU->CPU transfer for logging.
 
@@ -543,7 +542,7 @@ if TORCH_AVAILABLE:
         def __init__(
             self,
             model: MultiTaskModel,
-            task_names: List[str],
+            task_names: list[str],
             alpha: float = 1.5,
             lr: float = 0.01
         ):
@@ -556,11 +555,11 @@ if TORCH_AVAILABLE:
             self.optimizer = torch.optim.Adam(self.weights.values(), lr=lr)
 
             # Initial loss values for normalization
-            self.initial_losses: Dict[str, float] = {}
+            self.initial_losses: dict[str, float] = {}
 
         def update_weights(
             self,
-            losses: Dict[str, torch.Tensor],
+            losses: dict[str, torch.Tensor],
             shared_layer: nn.Module
         ):
             """
@@ -652,7 +651,7 @@ if TORCH_AVAILABLE:
                 for w in self.weights.values():
                     w.data = w.data / weight_sum * len(self.task_names)
 
-        def get_weights(self) -> Dict[str, float]:
+        def get_weights(self) -> dict[str, float]:
             """Get current task weights (batched GPU->CPU transfer)."""
             weight_names = list(self.weights.keys())
             weight_tensors = torch.stack([self.weights[n] for n in weight_names])
@@ -689,7 +688,7 @@ if TORCH_AVAILABLE:
         @staticmethod
         def generate_territory_label(
             game_state: Any,
-            board_size: Tuple[int, int] = (8, 8)
+            board_size: tuple[int, int] = (8, 8)
         ) -> torch.Tensor:
             """Generate territory influence map."""
             territory = torch.zeros(board_size[0] * board_size[1])
@@ -729,8 +728,8 @@ if TORCH_AVAILABLE:
         def generate_labels(
             game_state: Any,
             value: float,
-            board_size: Tuple[int, int] = (8, 8)
-        ) -> Dict[str, torch.Tensor]:
+            board_size: tuple[int, int] = (8, 8)
+        ) -> dict[str, torch.Tensor]:
             """Generate all auxiliary labels for a game state."""
             return {
                 'move_count': torch.tensor(

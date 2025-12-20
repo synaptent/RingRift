@@ -10,19 +10,20 @@ Game records are the canonical format for storing completed games, supporting:
 Mirrors TypeScript types from src/shared/types/gameRecord.ts
 """
 
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Tuple, Literal
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from .core import (
     BoardType,
+    LineInfo,
+    Move,
     MoveType,
     Position,
-    LineInfo,
-    Territory,
-    Move,
     ProgressSnapshot,
+    Territory,
 )
 
 
@@ -52,10 +53,10 @@ class PlayerRecordInfo(BaseModel):
     player_number: int = Field(alias="playerNumber")
     username: str
     player_type: Literal["human", "ai"] = Field(alias="playerType")
-    rating_before: Optional[int] = Field(None, alias="ratingBefore")
-    rating_after: Optional[int] = Field(None, alias="ratingAfter")
-    ai_difficulty: Optional[int] = Field(None, alias="aiDifficulty")
-    ai_type: Optional[str] = Field(None, alias="aiType")
+    rating_before: int | None = Field(None, alias="ratingBefore")
+    rating_after: int | None = Field(None, alias="ratingAfter")
+    ai_difficulty: int | None = Field(None, alias="aiDifficulty")
+    ai_type: str | None = Field(None, alias="aiType")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -71,32 +72,32 @@ class MoveRecord(BaseModel):
     move_number: int = Field(alias="moveNumber")
     player: int
     type: MoveType
-    from_pos: Optional[Position] = Field(None, alias="from")
-    to: Optional[Position] = None
+    from_pos: Position | None = Field(None, alias="from")
+    to: Position | None = None
 
     # Capture metadata (when applicable)
-    capture_target: Optional[Position] = Field(None, alias="captureTarget")
+    capture_target: Position | None = Field(None, alias="captureTarget")
 
     # Placement metadata
-    placement_count: Optional[int] = Field(None, alias="placementCount")
-    placed_on_stack: Optional[bool] = Field(None, alias="placedOnStack")
+    placement_count: int | None = Field(None, alias="placementCount")
+    placed_on_stack: bool | None = Field(None, alias="placedOnStack")
 
     # Line/territory processing metadata
-    formed_lines: Optional[Tuple[LineInfo, ...]] = Field(None, alias="formedLines")
-    collapsed_markers: Optional[Tuple[Position, ...]] = Field(None, alias="collapsedMarkers")
-    disconnected_regions: Optional[Tuple[Territory, ...]] = Field(None, alias="disconnectedRegions")
-    eliminated_rings: Optional[Tuple[Dict[str, int], ...]] = Field(None, alias="eliminatedRings")
+    formed_lines: tuple[LineInfo, ...] | None = Field(None, alias="formedLines")
+    collapsed_markers: tuple[Position, ...] | None = Field(None, alias="collapsedMarkers")
+    disconnected_regions: tuple[Territory, ...] | None = Field(None, alias="disconnectedRegions")
+    eliminated_rings: tuple[dict[str, int], ...] | None = Field(None, alias="eliminatedRings")
 
     # Timing
     think_time_ms: int = Field(alias="thinkTimeMs")
 
     # Optional RingRift Notation representation
-    rrn: Optional[str] = None
+    rrn: str | None = None
 
     # MCTS visit distribution for KL-divergence training
     # Maps move indices to visit probabilities (normalized visit counts)
     # Only populated when MCTS is used during self-play
-    mcts_policy: Optional[Dict[int, float]] = Field(None, alias="mctsPolicy")
+    mcts_policy: dict[int, float] | None = Field(None, alias="mctsPolicy")
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
@@ -125,24 +126,24 @@ class GameRecordMetadata(BaseModel):
     record_version: str = Field("1.0", alias="recordVersion")
     created_at: datetime = Field(alias="createdAt")
     source: RecordSource
-    source_id: Optional[str] = Field(None, alias="sourceId")  # e.g., CMA-ES run ID
-    generation: Optional[int] = None  # For evolutionary algorithms
-    candidate_id: Optional[int] = Field(None, alias="candidateId")
-    tags: List[str] = Field(default_factory=list)
+    source_id: str | None = Field(None, alias="sourceId")  # e.g., CMA-ES run ID
+    generation: int | None = None  # For evolutionary algorithms
+    candidate_id: int | None = Field(None, alias="candidateId")
+    tags: list[str] = Field(default_factory=list)
     # FSM validation status (Phase 7: Data Pipeline)
     # - True: All moves validated against FSM orchestrator
     # - False: One or more moves failed FSM validation
     # - None: FSM validation not performed (legacy data)
-    fsm_validated: Optional[bool] = Field(None, alias="fsmValidated")
+    fsm_validated: bool | None = Field(None, alias="fsmValidated")
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class FinalScore(BaseModel):
     """Final score breakdown at game end."""
-    rings_eliminated: Dict[int, int] = Field(alias="ringsEliminated")
-    territory_spaces: Dict[int, int] = Field(alias="territorySpaces")
-    rings_remaining: Dict[int, int] = Field(alias="ringsRemaining")
+    rings_eliminated: dict[int, int] = Field(alias="ringsEliminated")
+    territory_spaces: dict[int, int] = Field(alias="territorySpaces")
+    rings_remaining: dict[int, int] = Field(alias="ringsRemaining")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -168,14 +169,14 @@ class GameRecord(BaseModel):
     # Game configuration
     board_type: BoardType = Field(alias="boardType")
     num_players: int = Field(alias="numPlayers")
-    rng_seed: Optional[int] = Field(None, alias="rngSeed")
+    rng_seed: int | None = Field(None, alias="rngSeed")
     is_rated: bool = Field(alias="isRated")
 
     # Players
-    players: List[PlayerRecordInfo]
+    players: list[PlayerRecordInfo]
 
     # Game result
-    winner: Optional[int] = None
+    winner: int | None = None
     outcome: GameOutcome
     final_score: FinalScore = Field(alias="finalScore")
 
@@ -186,15 +187,15 @@ class GameRecord(BaseModel):
     total_duration_ms: int = Field(alias="totalDurationMs")
 
     # Move history
-    moves: List[MoveRecord]
+    moves: list[MoveRecord]
 
     # Record metadata
     metadata: GameRecordMetadata
 
     # Optional extended data
-    initial_state_hash: Optional[str] = Field(None, alias="initialStateHash")
-    final_state_hash: Optional[str] = Field(None, alias="finalStateHash")
-    progress_snapshots: Optional[List[ProgressSnapshot]] = Field(
+    initial_state_hash: str | None = Field(None, alias="initialStateHash")
+    final_state_hash: str | None = Field(None, alias="finalStateHash")
+    progress_snapshots: list[ProgressSnapshot] | None = Field(
         None, alias="progressSnapshots"
     )
 
@@ -305,7 +306,7 @@ class RRNMove(BaseModel):
 def _generate_rrn(record: MoveRecord, board_type: BoardType) -> str:
     """Generate RingRift Notation string from a MoveRecord."""
 
-    def pos_to_str(pos: Optional[Position]) -> str:
+    def pos_to_str(pos: Position | None) -> str:
         if pos is None:
             return "?"
         return RRNCoordinate.from_position(pos, board_type).notation
@@ -378,7 +379,7 @@ def _generate_rrn(record: MoveRecord, board_type: BoardType) -> str:
         return f"?{t}"
 
 
-def parse_rrn_move(notation: str, board_type: BoardType) -> Tuple[MoveType, Optional[Position], Optional[Position]]:
+def parse_rrn_move(notation: str, board_type: BoardType) -> tuple[MoveType, Position | None, Position | None]:
     """
     Parse a RingRift Notation move string.
 
@@ -491,7 +492,7 @@ def game_record_to_rrn(record: GameRecord) -> str:
 
 def rrn_to_moves(
     rrn_string: str
-) -> Tuple[BoardType, int, Optional[int], List[Tuple[MoveType, Optional[Position], Optional[Position]]]]:
+) -> tuple[BoardType, int, int | None, list[tuple[MoveType, Position | None, Position | None]]]:
     """
     Parse an RRN string to extract board config and move list.
 

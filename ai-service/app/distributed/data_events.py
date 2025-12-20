@@ -26,14 +26,15 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Union
 
 __all__ = [
+    "DataEvent",
     # Event types
     "DataEventType",
-    "DataEvent",
     # Event bus
     "EventBus",
     "get_event_bus",
@@ -41,7 +42,7 @@ __all__ = [
 ]
 
 # Global singleton instance
-_event_bus: Optional["EventBus"] = None
+_event_bus: EventBus | None = None
 
 
 class DataEventType(Enum):
@@ -217,11 +218,11 @@ class DataEvent:
     """A data pipeline event."""
 
     event_type: DataEventType
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
     source: str = ""  # Component that generated the event
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "event_type": self.event_type.value,
@@ -231,7 +232,7 @@ class DataEvent:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DataEvent":
+    def from_dict(cls, data: dict[str, Any]) -> DataEvent:
         """Create from dictionary."""
         return cls(
             event_type=DataEventType(data["event_type"]),
@@ -254,15 +255,15 @@ class EventBus:
     """
 
     def __init__(self, max_history: int = 1000, warn_unsubscribed: bool = True):
-        self._subscribers: Dict[DataEventType, List[EventCallback]] = {}
-        self._global_subscribers: List[EventCallback] = []
-        self._event_history: List[DataEvent] = []
+        self._subscribers: dict[DataEventType, list[EventCallback]] = {}
+        self._global_subscribers: list[EventCallback] = []
+        self._event_history: list[DataEvent] = []
         self._max_history = max_history
         self._lock = asyncio.Lock()
 
         # Subscription registry (December 2025)
         self._warn_unsubscribed = warn_unsubscribed
-        self._published_event_types: Dict[DataEventType, int] = {}  # type -> count
+        self._published_event_types: dict[DataEventType, int] = {}  # type -> count
         self._warned_event_types: set = set()  # Types we've already warned about
 
         # Observability metrics (December 2025)
@@ -270,14 +271,14 @@ class EventBus:
         self._total_events_published = 0
         self._total_callbacks_invoked = 0
         self._total_callback_errors = 0
-        self._callback_latencies: List[float] = []  # Recent latencies in ms
+        self._callback_latencies: list[float] = []  # Recent latencies in ms
         self._max_latency_samples = 1000
-        self._errors_by_type: Dict[DataEventType, int] = {}
+        self._errors_by_type: dict[DataEventType, int] = {}
         self._last_event_time: float = 0.0
 
     def subscribe(
         self,
-        event_type: Optional[DataEventType],
+        event_type: DataEventType | None,
         callback: EventCallback,
     ) -> None:
         """Subscribe to events.
@@ -295,7 +296,7 @@ class EventBus:
 
     def unsubscribe(
         self,
-        event_type: Optional[DataEventType],
+        event_type: DataEventType | None,
         callback: EventCallback,
     ) -> bool:
         """Unsubscribe from events.
@@ -307,10 +308,9 @@ class EventBus:
                 self._global_subscribers.remove(callback)
                 return True
         else:
-            if event_type in self._subscribers:
-                if callback in self._subscribers[event_type]:
-                    self._subscribers[event_type].remove(callback)
-                    return True
+            if event_type in self._subscribers and callback in self._subscribers[event_type]:
+                self._subscribers[event_type].remove(callback)
+                return True
         return False
 
     async def publish(self, event: DataEvent, bridge_cross_process: bool = True) -> None:
@@ -400,10 +400,10 @@ class EventBus:
 
     def get_history(
         self,
-        event_type: Optional[DataEventType] = None,
-        since: Optional[float] = None,
+        event_type: DataEventType | None = None,
+        since: float | None = None,
         limit: int = 100,
-    ) -> List[DataEvent]:
+    ) -> list[DataEvent]:
         """Get recent events from history.
 
         Args:
@@ -429,11 +429,11 @@ class EventBus:
     # Subscription Registry (December 2025)
     # =========================================================================
 
-    def get_subscribed_event_types(self) -> List[DataEventType]:
+    def get_subscribed_event_types(self) -> list[DataEventType]:
         """Get list of event types that have at least one subscriber."""
         return list(self._subscribers.keys())
 
-    def get_unsubscribed_published_types(self) -> List[DataEventType]:
+    def get_unsubscribed_published_types(self) -> list[DataEventType]:
         """Get event types that have been published but have no subscribers.
 
         This is useful for debugging to find events that are being published
@@ -454,7 +454,7 @@ class EventBus:
             count += len(self._subscribers[event_type])
         return count
 
-    def get_subscription_stats(self) -> Dict[str, Any]:
+    def get_subscription_stats(self) -> dict[str, Any]:
         """Get statistics about subscriptions and published events.
 
         Returns:
@@ -473,7 +473,7 @@ class EventBus:
     # Observability Metrics (December 2025)
     # =========================================================================
 
-    def get_observability_metrics(self) -> Dict[str, Any]:
+    def get_observability_metrics(self) -> dict[str, Any]:
         """Get comprehensive observability metrics for the event bus.
 
         Returns:
@@ -530,7 +530,7 @@ class EventBus:
             "history_size": len(self._event_history),
         }
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get health status of the event bus.
 
         Returns:
@@ -699,7 +699,7 @@ async def emit_training_completed(
     config: str,
     success: bool,
     duration: float,
-    model_path: Optional[str] = None,
+    model_path: str | None = None,
     source: str = "",
 ) -> None:
     """Emit a TRAINING_COMPLETED event."""
@@ -758,7 +758,7 @@ async def emit_model_promoted(
 async def emit_error(
     component: str,
     error: str,
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
     source: str = "",
 ) -> None:
     """Emit an ERROR event."""
@@ -862,8 +862,8 @@ async def emit_quality_score_updated(
 
 async def emit_curriculum_rebalanced(
     config: str,
-    old_weights: Dict[str, float],
-    new_weights: Dict[str, float],
+    old_weights: dict[str, float],
+    new_weights: dict[str, float],
     trigger: str = "scheduled",
     source: str = "",
 ) -> None:
@@ -919,7 +919,7 @@ async def emit_plateau_detected(
 async def emit_cmaes_triggered(
     config: str,
     reason: str,
-    current_params: Dict[str, Any],
+    current_params: dict[str, Any],
     source: str = "",
 ) -> None:
     """Emit a CMAES_TRIGGERED event.
@@ -944,7 +944,7 @@ async def emit_cmaes_triggered(
 async def emit_nas_triggered(
     config: str,
     reason: str,
-    search_space: Optional[Dict[str, Any]] = None,
+    search_space: dict[str, Any] | None = None,
     source: str = "",
 ) -> None:
     """Emit a NAS_TRIGGERED event.
@@ -1091,7 +1091,7 @@ async def emit_data_sync_failed(
 
 async def emit_host_online(
     host: str,
-    capabilities: Optional[List[str]] = None,
+    capabilities: list[str] | None = None,
     source: str = "",
 ) -> None:
     """Emit a HOST_ONLINE event.
@@ -1114,7 +1114,7 @@ async def emit_host_online(
 async def emit_host_offline(
     host: str,
     reason: str = "",
-    last_seen: Optional[float] = None,
+    last_seen: float | None = None,
     source: str = "",
 ) -> None:
     """Emit a HOST_OFFLINE event.
@@ -1196,7 +1196,7 @@ async def emit_daemon_stopped(
 
 async def emit_training_started(
     config: str,
-    model_path: Optional[str] = None,
+    model_path: str | None = None,
     source: str = "",
 ) -> None:
     """Emit a TRAINING_STARTED event.
@@ -1458,8 +1458,8 @@ async def emit_lock_released(
 
 
 async def emit_deadlock_detected(
-    resources: List[str],
-    holders: List[str],
+    resources: list[str],
+    holders: list[str],
     source: str = "",
 ) -> None:
     """Emit a DEADLOCK_DETECTED event."""
@@ -1482,7 +1482,7 @@ async def emit_checkpoint_saved(
     checkpoint_path: str,
     epoch: int = 0,
     step: int = 0,
-    metrics: Optional[Dict[str, float]] = None,
+    metrics: dict[str, float] | None = None,
     source: str = "",
 ) -> None:
     """Emit a CHECKPOINT_SAVED event."""
@@ -1570,7 +1570,7 @@ async def emit_task_completed(
     task_type: str,
     node_id: str,
     duration_seconds: float = 0.0,
-    result: Optional[Dict[str, Any]] = None,
+    result: dict[str, Any] | None = None,
     source: str = "",
 ) -> None:
     """Emit a TASK_COMPLETED event."""

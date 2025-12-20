@@ -22,19 +22,18 @@ CANONICAL CONFIG KEY FORMAT:
 from __future__ import annotations
 
 import re
-from typing import Tuple
 
 from app.models import BoardType
 
 __all__ = [
-    "normalize_board_type",
-    "get_board_type_enum",
-    "make_config_key",
-    "parse_config_key",
-    "is_valid_board_type",
-    "get_all_config_keys",
-    "normalize_database_filename",
     "CANONICAL_CONFIG_KEYS",
+    "get_all_config_keys",
+    "get_board_type_enum",
+    "is_valid_board_type",
+    "make_config_key",
+    "normalize_board_type",
+    "normalize_database_filename",
+    "parse_config_key",
 ]
 
 
@@ -162,7 +161,7 @@ def make_config_key(board_type: str | BoardType, num_players: int) -> str:
     return f"{canonical}_{num_players}p"
 
 
-def parse_config_key(config_key: str) -> Tuple[str, int]:
+def parse_config_key(config_key: str) -> tuple[str, int]:
     """Parse a config key into board type and player count.
 
     Args:

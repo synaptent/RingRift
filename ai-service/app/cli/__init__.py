@@ -28,30 +28,30 @@ Usage:
     args, logger = setup_script("my_script", description="Does something")
 """
 
+from app.cli.output import (
+    ProgressBar,
+    print_error,
+    print_progress,
+    print_status,
+    print_success,
+    print_table,
+)
 from app.cli.runner import (
     ScriptRunner,
     add_common_args,
     setup_script,
 )
-from app.cli.output import (
-    print_status,
-    print_error,
-    print_success,
-    print_table,
-    print_progress,
-    ProgressBar,
-)
 
 __all__ = [
+    "ProgressBar",
     # Runner
     "ScriptRunner",
     "add_common_args",
-    "setup_script",
+    "print_error",
+    "print_progress",
     # Output
     "print_status",
-    "print_error",
     "print_success",
     "print_table",
-    "print_progress",
-    "ProgressBar",
+    "setup_script",
 ]

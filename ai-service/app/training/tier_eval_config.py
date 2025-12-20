@@ -13,9 +13,9 @@ be added by extending the TIER_EVAL_CONFIGS mapping.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Literal
+from typing import Literal
 
-from app.models import BoardType, AIType
+from app.models import AIType, BoardType
 
 TierRole = Literal["baseline", "previous_tier", "peer", "other"]
 
@@ -27,10 +27,10 @@ class TierOpponentConfig:
     id: str
     description: str
     difficulty: int
-    ai_type: Optional[AIType] = None
+    ai_type: AIType | None = None
     role: TierRole = "baseline"
     weight: float = 1.0
-    games: Optional[int] = None
+    games: int | None = None
 
 
 @dataclass(frozen=True)
@@ -43,11 +43,11 @@ class TierEvaluationConfig:
     num_players: int
     num_games: int
     candidate_difficulty: int
-    time_budget_ms: Optional[int]
-    opponents: List[TierOpponentConfig] = field(default_factory=list)
-    min_win_rate_vs_baseline: Optional[float] = None
+    time_budget_ms: int | None
+    opponents: list[TierOpponentConfig] = field(default_factory=list)
+    min_win_rate_vs_baseline: float | None = None
     min_win_rate_vs_previous_tier: float = 0.50
-    max_regression_vs_previous_tier: Optional[float] = None
+    max_regression_vs_previous_tier: float | None = None
     # Confidence level used for Wilson lower-bound gating against baseline.
     # When set, min_win_rate_vs_baseline is applied to the lower bound of the
     # Wilson interval rather than the raw win rate.
@@ -55,10 +55,10 @@ class TierEvaluationConfig:
     description: str = ""
 
 
-TIER_EVAL_CONFIGS: Dict[str, TierEvaluationConfig] = {}
+TIER_EVAL_CONFIGS: dict[str, TierEvaluationConfig] = {}
 
 
-def _build_default_configs() -> Dict[str, TierEvaluationConfig]:
+def _build_default_configs() -> dict[str, TierEvaluationConfig]:
     """Return the built-in tier evaluation profiles.
 
     The defaults are intentionally modest and primarily intended as a
@@ -75,7 +75,7 @@ def _build_default_configs() -> Dict[str, TierEvaluationConfig]:
     #
     # The 75% cap for D7+ is calibrated based on observed neural model
     # performance vs random (~70-76% typical for strong models).
-    configs: Dict[str, TierEvaluationConfig] = {
+    configs: dict[str, TierEvaluationConfig] = {
         "D1": TierEvaluationConfig(
             tier_name="D1",
             display_name="D1 – random baseline (square8, 2p)",
@@ -724,7 +724,7 @@ class HeuristicTierSpec:
 # tiers assume the canonical v1 balanced heuristic weights; CMA-ES or GA jobs
 # can point candidate_profile_id at alternative entries in
 # HEURISTIC_WEIGHT_PROFILES without needing code changes.
-HEURISTIC_TIER_SPECS: List[HeuristicTierSpec] = [
+HEURISTIC_TIER_SPECS: list[HeuristicTierSpec] = [
     HeuristicTierSpec(
         id="sq8_heuristic_baseline_v1",
         name="Square8 – heuristic_v1 vs baseline_v1 (eval pool v1)",

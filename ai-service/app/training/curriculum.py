@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class CurriculumStage:
 class CurriculumState:
     """Current state of curriculum learning."""
     current_stage_idx: int = 0
-    stages_completed: List[str] = field(default_factory=list)
+    stages_completed: list[str] = field(default_factory=list)
     stage_start_time: float = 0.0
     stage_games_played: int = 0
     stage_wins: int = 0
@@ -49,8 +49,8 @@ class CurriculumController:
 
     def __init__(
         self,
-        stages: List[CurriculumStage],
-        checkpoint_path: Optional[Path] = None,
+        stages: list[CurriculumStage],
+        checkpoint_path: Path | None = None,
         auto_advance: bool = True,
     ):
         if not stages:
@@ -61,7 +61,7 @@ class CurriculumController:
         self.auto_advance = auto_advance
         self.state = CurriculumState()
         self.state.stage_start_time = time.time()
-        self.history: List[Dict[str, Any]] = []
+        self.history: list[dict[str, Any]] = []
 
         if checkpoint_path and checkpoint_path.exists():
             self._load_checkpoint()
@@ -70,7 +70,7 @@ class CurriculumController:
         idx = min(self.state.current_stage_idx, len(self.stages) - 1)
         return self.stages[idx]
 
-    def get_stage_parameters(self) -> Dict[str, Any]:
+    def get_stage_parameters(self) -> dict[str, Any]:
         stage = self.get_current_stage()
         return {
             "name": stage.name,
@@ -135,7 +135,7 @@ class CurriculumController:
             self._save_checkpoint()
         return True
 
-    def get_progress(self) -> Dict[str, Any]:
+    def get_progress(self) -> dict[str, Any]:
         stage = self.get_current_stage()
         return {
             "current_stage": stage.name,

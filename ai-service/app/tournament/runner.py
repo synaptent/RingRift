@@ -4,17 +4,18 @@ from __future__ import annotations
 import json
 import logging
 import random
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 import torch
 
 from app.models import BoardType, GameStatus
 
-from .agents import AIAgent, AIAgentRegistry, AgentType
+from .agents import AgentType, AIAgent, AIAgentRegistry
 from .elo import EloCalculator
 from .scheduler import Match, TournamentScheduler
 
@@ -70,19 +71,19 @@ class MatchResult:
     """Result of a single match."""
 
     match_id: str
-    agent_ids: List[str]
-    rankings: List[str]  # Ordered by finish position (1st, 2nd, ...)
-    winner: Optional[str]  # Agent ID of winner, None for draw/timeout
+    agent_ids: list[str]
+    rankings: list[str]  # Ordered by finish position (1st, 2nd, ...)
+    winner: str | None  # Agent ID of winner, None for draw/timeout
     game_length: int
     termination_reason: str
     duration_seconds: float
-    metadata: Dict = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
     @property
     def is_draw(self) -> bool:
         return self.winner is None and "draw" in self.termination_reason.lower()
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "match_id": self.match_id,
             "agent_ids": self.agent_ids,
@@ -101,10 +102,10 @@ class TournamentResults:
 
     tournament_id: str
     started_at: datetime
-    completed_at: Optional[datetime] = None
-    match_results: List[MatchResult] = field(default_factory=list)
-    final_ratings: Dict[str, float] = field(default_factory=dict)
-    agent_stats: Dict[str, Dict] = field(default_factory=dict)
+    completed_at: datetime | None = None
+    match_results: list[MatchResult] = field(default_factory=list)
+    final_ratings: dict[str, float] = field(default_factory=dict)
+    agent_stats: dict[str, dict] = field(default_factory=dict)
 
     def add_result(self, result: MatchResult) -> None:
         self.match_results.append(result)
@@ -151,7 +152,7 @@ class TournamentResults:
                 stats["avg_game_length"] = 0.0
                 stats["avg_position"] = 0.0
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "tournament_id": self.tournament_id,
             "started_at": self.started_at.isoformat(),
@@ -175,12 +176,12 @@ class TournamentRunner:
         self,
         agent_registry: AIAgentRegistry,
         scheduler: TournamentScheduler,
-        elo_calculator: Optional[EloCalculator] = None,
+        elo_calculator: EloCalculator | None = None,
         max_workers: int = 4,
         max_moves: int = 10000,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         persist_to_unified_elo: bool = True,
-        tournament_id: Optional[str] = None,
+        tournament_id: str | None = None,
     ):
         """Initialize tournament runner.
 
@@ -204,8 +205,8 @@ class TournamentRunner:
         self.persist_to_unified_elo = persist_to_unified_elo
         self.tournament_id = tournament_id
 
-        self.results: Optional[TournamentResults] = None
-        self._match_executor: Optional[Callable] = None
+        self.results: TournamentResults | None = None
+        self._match_executor: Callable | None = None
         self._unified_elo_db = None
 
         # Try to initialize unified Elo database if persistence enabled
@@ -218,7 +219,7 @@ class TournamentRunner:
 
     def set_match_executor(
         self,
-        executor: Callable[[Match, Dict[str, AIAgent]], MatchResult],
+        executor: Callable[[Match, dict[str, AIAgent]], MatchResult],
     ) -> None:
         """Set custom match executor for distributed execution.
 
@@ -229,11 +230,11 @@ class TournamentRunner:
 
     def run_tournament(
         self,
-        agent_ids: List[str],
+        agent_ids: list[str],
         board_type: BoardType,
         num_players: int = 2,
         games_per_pairing: int = 2,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> TournamentResults:
         """Run a complete tournament.
 
@@ -411,6 +412,7 @@ class TournamentRunner:
             elif model_type == "cnn":
                 try:
                     from pathlib import Path
+
                     from app.ai.neural_net import NeuralNetAI
                     from app.models import AIConfig
 
@@ -507,7 +509,7 @@ class TournamentRunner:
     def _execute_match_local(
         self,
         match: Match,
-        agents: Dict[str, AIAgent],
+        agents: dict[str, AIAgent],
     ) -> MatchResult:
         """Execute a single match locally.
 
@@ -516,8 +518,7 @@ class TournamentRunner:
         """
         import time
 
-        from app.game_engine import GameEngine, PhaseRequirementType
-        from app.models import Move, MoveType
+        from app.game_engine import GameEngine
         from app.training.initial_state import create_initial_state
 
         start_time = time.time()
@@ -615,8 +616,8 @@ class TournamentRunner:
     def _compute_rankings(
         self,
         state: Any,  # GameState
-        agent_ids: List[str],
-    ) -> List[str]:
+        agent_ids: list[str],
+    ) -> list[str]:
         """Compute player rankings from final game state.
 
         Note: Game uses 1-based player numbers but agent_ids is 0-indexed.
@@ -654,7 +655,7 @@ class TournamentRunner:
         player_scores.sort(key=lambda x: x[1], reverse=True)
         return [agent_ids[player_idx] for player_idx, _ in player_scores]
 
-    def _create_bookkeeping_move(self, requirement: Any, player: int) -> Optional[Any]:
+    def _create_bookkeeping_move(self, requirement: Any, player: int) -> Any | None:
         """Create a bookkeeping move based on phase requirement.
 
         Args:
@@ -665,6 +666,7 @@ class TournamentRunner:
             A Move object for the bookkeeping action, or None if unsupported
         """
         from datetime import datetime
+
         from app.game_engine import PhaseRequirementType
         from app.models import Move, MoveType
 
@@ -735,7 +737,7 @@ class TournamentRunner:
 
         return state
 
-    def get_leaderboard(self) -> List[Tuple[str, float, Dict]]:
+    def get_leaderboard(self) -> list[tuple[str, float, dict]]:
         """Get current leaderboard with ratings and stats.
 
         Returns:

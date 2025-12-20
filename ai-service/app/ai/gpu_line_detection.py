@@ -8,7 +8,7 @@ December 2025: Extracted as part of R5 refactoring.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 
 
 def detect_lines_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     player: int,
-    game_mask: Optional[torch.Tensor] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    game_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Vectorized line detection returning positions mask and line count.
 
     Per RR-CANON-R120: A line is a sequence of consecutive MARKERS (not stacks)
@@ -152,9 +152,9 @@ def detect_lines_vectorized(
 
 
 def has_lines_batch_vectorized(
-    state: "BatchGameState",
+    state: BatchGameState,
     player: int,
-    game_mask: Optional[torch.Tensor] = None,
+    game_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Fast vectorized check for whether a player has any lines.
 
@@ -174,10 +174,10 @@ def has_lines_batch_vectorized(
 
 
 def detect_lines_with_metadata(
-    state: "BatchGameState",
+    state: BatchGameState,
     player: int,
-    game_mask: Optional[torch.Tensor] = None,
-) -> List[List[DetectedLine]]:
+    game_mask: torch.Tensor | None = None,
+) -> list[list[DetectedLine]]:
     """Detect lines with full metadata including overlength status.
 
     Per RR-CANON-R120: A line for player P is a maximal sequence of positions
@@ -203,7 +203,7 @@ def detect_lines_with_metadata(
     if game_mask is None:
         game_mask = torch.ones(batch_size, dtype=torch.bool, device=state.device)
 
-    lines_per_game: List[List[DetectedLine]] = [[] for _ in range(batch_size)]
+    lines_per_game: list[list[DetectedLine]] = [[] for _ in range(batch_size)]
 
     # Early exit: use vectorized detection to quickly identify games WITH lines
     _, line_counts = detect_lines_vectorized(state, player, game_mask)
@@ -258,10 +258,10 @@ def detect_lines_with_metadata(
 
 
 def detect_lines_batch(
-    state: "BatchGameState",
+    state: BatchGameState,
     player: int,
-    game_mask: Optional[torch.Tensor] = None,
-) -> List[List[Tuple[int, int]]]:
+    game_mask: torch.Tensor | None = None,
+) -> list[list[tuple[int, int]]]:
     """Detect lines of consecutive same-owner MARKERS for a player.
 
     Per RR-CANON-R120: A line for player P is a maximal sequence of positions
@@ -293,7 +293,7 @@ def detect_lines_batch(
 
 
 def _eliminate_one_ring_from_any_stack(
-    state: "BatchGameState",
+    state: BatchGameState,
     game_idx: int,
     player: int,
 ) -> bool:
@@ -333,8 +333,8 @@ def _eliminate_one_ring_from_any_stack(
 
 
 def process_lines_batch(
-    state: "BatchGameState",
-    game_mask: Optional[torch.Tensor] = None,
+    state: BatchGameState,
+    game_mask: torch.Tensor | None = None,
     option2_probability: float = 0.3,
 ) -> None:
     """Process formed marker lines for all players (in-place).
@@ -408,9 +408,9 @@ def process_lines_batch(
 
 
 __all__ = [
-    'detect_lines_vectorized',
-    'has_lines_batch_vectorized',
-    'detect_lines_with_metadata',
     'detect_lines_batch',
+    'detect_lines_vectorized',
+    'detect_lines_with_metadata',
+    'has_lines_batch_vectorized',
     'process_lines_batch',
 ]

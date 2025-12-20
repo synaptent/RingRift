@@ -1,7 +1,7 @@
-from app.models import GameState, Move, GamePhase
-from app.rules.interfaces import Validator
 # from app.game_engine import GameEngine
 from app.board_manager import BoardManager
+from app.models import GamePhase, GameState, Move
+from app.rules.interfaces import Validator
 
 
 class MovementValidator(Validator):

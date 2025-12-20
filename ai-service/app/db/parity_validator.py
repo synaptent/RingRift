@@ -20,17 +20,18 @@ RINGRIFT_PARITY_DUMP_DIR
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
-import logging
+from typing import Any
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
 from app.game_engine import GameEngine
 from app.models import BoardType
+
 # NOTE: create_initial_state is imported lazily inside functions to avoid circular imports
 from app.rules.serialization import serialize_game_state
 
@@ -96,15 +97,15 @@ class ParityDivergence:
     game_id: str
     db_path: str
     diverged_at: int
-    mismatch_kinds: List[str]
+    mismatch_kinds: list[str]
     mismatch_context: str
     total_moves_python: int
     total_moves_ts: int
-    python_summary: Optional[StateSummary]
-    ts_summary: Optional[StateSummary]
-    move_at_divergence: Optional[Dict[str, Any]] = None
+    python_summary: StateSummary | None
+    ts_summary: StateSummary | None
+    move_at_divergence: dict[str, Any] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         result = asdict(self)
         if self.python_summary:
@@ -117,7 +118,7 @@ class ParityDivergence:
 class ParityValidationError(Exception):
     """Raised when parity validation fails in strict mode."""
 
-    def __init__(self, divergence: ParityDivergence, message: Optional[str] = None):
+    def __init__(self, divergence: ParityDivergence, message: str | None = None):
         self.divergence = divergence
         msg = message or self._default_message()
         super().__init__(msg)
@@ -224,7 +225,7 @@ def _get_python_initial_state_for_replay(db: GameReplayDB, game_id: str):
     return create_initial_state(board_type=board_type, num_players=num_players)
 
 
-def _run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSummary]]:
+def _run_ts_replay(db_path: Path, game_id: str) -> tuple[int, dict[int, StateSummary]]:
     """Invoke the TS harness and parse its per-move summaries.
 
     Returns:
@@ -262,7 +263,7 @@ def _run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSum
         )
 
     total_ts_moves = 0
-    summaries: Dict[int, StateSummary] = {}
+    summaries: dict[int, StateSummary] = {}
 
     for line in stdout.splitlines():
         line = line.strip()
@@ -351,7 +352,7 @@ def dump_divergence_bundle(
         ks = [before_k, div_k] if div_k != before_k else [div_k]
 
     # Collect Python states
-    py_states: Dict[int, Dict[str, Any]] = {}
+    py_states: dict[int, dict[str, Any]] = {}
     for ts_k in ks:
         state = _get_python_state_for_ts_k(
             db, divergence.game_id, ts_k, divergence.total_moves_python
@@ -363,7 +364,7 @@ def dump_divergence_bundle(
                 continue
 
     # Collect TS states by invoking replay with dump
-    ts_states: Dict[int, Dict[str, Any]] = {}
+    ts_states: dict[int, dict[str, Any]] = {}
     try:
         root = _repo_root()
         env = os.environ.copy()
@@ -417,7 +418,7 @@ def dump_divergence_bundle(
         logger.warning(f"Failed to dump TS states: {e}", exc_info=True)
 
     # Get move metadata around divergence
-    moves_window: List[Dict[str, Any]] = []
+    moves_window: list[dict[str, Any]] = []
     try:
         moves = db.get_moves(divergence.game_id)
         if moves:
@@ -470,9 +471,9 @@ def dump_divergence_bundle(
 def validate_game_parity(
     db_path: str,
     game_id: str,
-    mode: Optional[str] = None,
-    dump_dir: Optional[Path] = None,
-) -> Optional[ParityDivergence]:
+    mode: str | None = None,
+    dump_dir: Path | None = None,
+) -> ParityDivergence | None:
     """Validate a recorded game against the TS canonical engine.
 
     Args:
@@ -524,13 +525,13 @@ def validate_game_parity(
             raise ParityValidationError(divergence)
         return None
 
-    divergence: Optional[ParityDivergence] = None
+    divergence: ParityDivergence | None = None
 
     # Compare initial states (TS k=0 vs Python initial_state)
     ts_initial = ts_summaries.get(0)
     if ts_initial is not None:
         py_initial = _summarize_python_initial_state(db, game_id)
-        init_mismatches: List[str] = []
+        init_mismatches: list[str] = []
         if py_initial.current_player != ts_initial.current_player:
             init_mismatches.append("current_player")
         if py_initial.current_phase != ts_initial.current_phase:
@@ -614,7 +615,7 @@ def validate_game_parity(
                 )
                 break
 
-            step_mismatches: List[str] = []
+            step_mismatches: list[str] = []
 
             if py_summary.current_player != ts_summary.current_player:
                 step_mismatches.append("current_player")
@@ -695,9 +696,9 @@ def validate_game_parity(
 def validate_after_recording(
     db: GameReplayDB,
     game_id: str,
-    mode: Optional[str] = None,
-    dump_dir: Optional[Path] = None,
-) -> Optional[ParityDivergence]:
+    mode: str | None = None,
+    dump_dir: Path | None = None,
+) -> ParityDivergence | None:
     """Validate a game immediately after recording.
 
     This is a convenience wrapper for use in recording functions.

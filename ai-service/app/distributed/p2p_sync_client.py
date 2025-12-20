@@ -26,20 +26,19 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Import circuit breaker for fault tolerance
 try:
     from app.distributed.circuit_breaker import (
-        get_operation_breaker,
-        get_adaptive_timeout,
         CircuitOpenError,
+        get_adaptive_timeout,
+        get_operation_breaker,
     )
     HAS_CIRCUIT_BREAKER = True
 except ImportError:
@@ -67,16 +66,16 @@ class SyncResult:
     files_synced: int = 0
     bytes_transferred: int = 0
     duration_seconds: float = 0.0
-    errors: List[str] = field(default_factory=list)
-    checksums: Dict[str, str] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    checksums: dict[str, str] = field(default_factory=dict)
 
 
 class P2PSyncClient:
     """HTTP-based P2P sync client."""
 
-    def __init__(self, config: Optional[P2PSyncConfig] = None):
+    def __init__(self, config: P2PSyncConfig | None = None):
         self.config = config or P2PSyncConfig()
-        self._session: Optional[Any] = None
+        self._session: Any | None = None
 
     async def _get_session(self):
         """Get or create aiohttp session."""
@@ -137,7 +136,7 @@ class P2PSyncClient:
         peer_host: str,
         peer_port: int,
         pattern: str = "data/games/*.db",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List files available on a peer.
 
         Returns list of file info dicts with path, size, mtime.
@@ -163,7 +162,7 @@ class P2PSyncClient:
         peer_port: int,
         remote_path: str,
         local_path: Path,
-    ) -> Tuple[bool, int, str]:
+    ) -> tuple[bool, int, str]:
         """Download a single file from peer.
 
         Returns (success, bytes_transferred, checksum).
@@ -207,13 +206,12 @@ class P2PSyncClient:
 
                 # Verify checksum if provided in headers
                 expected_checksum = resp.headers.get("X-Checksum")
-                if expected_checksum and self.config.verify_checksum:
-                    if checksum != expected_checksum:
-                        logger.error(f"Checksum mismatch for {remote_path}: expected {expected_checksum}, got {checksum}")
-                        temp_path.unlink(missing_ok=True)
-                        if HAS_CIRCUIT_BREAKER:
-                            get_operation_breaker("p2p").record_failure(peer_host)
-                        return False, 0, ""
+                if expected_checksum and self.config.verify_checksum and checksum != expected_checksum:
+                    logger.error(f"Checksum mismatch for {remote_path}: expected {expected_checksum}, got {checksum}")
+                    temp_path.unlink(missing_ok=True)
+                    if HAS_CIRCUIT_BREAKER:
+                        get_operation_breaker("p2p").record_failure(peer_host)
+                    return False, 0, ""
 
                 # Move to final location
                 temp_path.rename(local_path)
@@ -272,9 +270,9 @@ class P2PSyncClient:
         self,
         peer_host: str,
         peer_port: int,
-        files: Optional[List[str]] = None,
+        files: list[str] | None = None,
         pattern: str = "data/games/*.db",
-        local_dir: Optional[Path] = None,
+        local_dir: Path | None = None,
     ) -> SyncResult:
         """Sync files from a peer.
 
@@ -349,7 +347,7 @@ class P2PSyncClient:
         orchestrator_port: int,
         source_node_id: str,
         target_node_id: str,
-        files: List[str],
+        files: list[str],
     ) -> bool:
         """Request the P2P orchestrator to initiate a pull.
 
@@ -393,7 +391,7 @@ class P2PFallbackSync:
         self.client = P2PSyncClient(P2PSyncConfig(connect_timeout=connect_timeout))
 
         # Track which hosts support P2P
-        self._p2p_capable_hosts: Dict[str, bool] = {}
+        self._p2p_capable_hosts: dict[str, bool] = {}
 
     async def close(self):
         """Close the client."""
@@ -421,7 +419,7 @@ class P2PFallbackSync:
         local_dir: Path,
         ssh_timeout: int = 30,
         rsync_timeout: int = 300,
-    ) -> Tuple[bool, int, str]:
+    ) -> tuple[bool, int, str]:
         """Sync from host with SSH as primary and P2P HTTP as fallback.
 
         Returns (success, games_synced, method_used).
@@ -439,7 +437,7 @@ class P2PFallbackSync:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, _stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=rsync_timeout,
             )
@@ -505,7 +503,7 @@ async def sync_with_p2p_fallback(
     remote_db_path: str,
     local_dir: Path,
     p2p_port: int = 8770,
-) -> Tuple[bool, int, str]:
+) -> tuple[bool, int, str]:
     """Convenience function for one-shot sync with P2P fallback.
 
     Returns (success, games_synced, method_used).

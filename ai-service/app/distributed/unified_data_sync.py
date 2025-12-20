@@ -37,7 +37,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import signal
@@ -47,7 +46,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import yaml
 
@@ -91,11 +90,11 @@ except ImportError:
 # Quality extraction for priority-based sync
 try:
     from app.distributed.quality_extractor import (
+        QualityExtractorConfig,
+        compute_priority_score,
         extract_batch_quality,
         extract_quality_from_synced_db,
         get_elo_lookup_from_service,
-        compute_priority_score,
-        QualityExtractorConfig,
     )
     from app.distributed.unified_manifest import GameQualityMetadata
     HAS_QUALITY_EXTRACTION = True
@@ -109,15 +108,17 @@ try:
     from app.distributed.storage_provider import (
         StorageProvider,
         get_storage_provider,
-        should_sync_to_node,
         is_nfs_available,
+        should_sync_to_node,
     )
     HAS_STORAGE_PROVIDER = True
 except ImportError:
     HAS_STORAGE_PROVIDER = False
     get_storage_provider = None
-    should_sync_to_node = lambda x: True  # Always sync if no provider
-    is_nfs_available = lambda: False
+    def should_sync_to_node(x):
+        return True  # Always sync if no provider
+    def is_nfs_available():
+        return False
 
 try:
     from app.distributed.ingestion_wal import (
@@ -132,10 +133,10 @@ except ImportError:
 
 try:
     from app.distributed.data_events import (
-        DataEventType,
         DataEvent,
-        get_event_bus,
+        DataEventType,
         emit_new_games,
+        get_event_bus,
     )
     HAS_EVENT_BUS = True
 except ImportError:
@@ -143,22 +144,22 @@ except ImportError:
 
 # Import coordination helpers (consolidated imports)
 from app.coordination.helpers import (
-    # Sync lock
-    has_sync_lock,
     acquire_sync_lock_safe,
-    release_sync_lock_safe,
-    # Bandwidth
-    has_bandwidth_manager,
-    get_transfer_priorities,
-    request_bandwidth_safe,
-    release_bandwidth_safe,
-    # Orchestrator
-    has_coordination,
     get_orchestrator_roles,
     get_registry_safe,
+    get_transfer_priorities,
+    # Bandwidth
+    has_bandwidth_manager,
+    # Orchestrator
+    has_coordination,
     # Cross-process events
     has_cross_process_events,
+    # Sync lock
+    has_sync_lock,
     publish_event_safe,
+    release_bandwidth_safe,
+    release_sync_lock_safe,
+    request_bandwidth_safe,
 )
 
 HAS_SYNC_LOCK = has_sync_lock()
@@ -183,17 +184,17 @@ TransferPriority = get_transfer_priorities()
 OrchestratorRole = get_orchestrator_roles()
 get_registry = get_registry_safe
 
-def publish_cross_process_event(event_type: str, payload: dict = None):
+def publish_cross_process_event(event_type: str, payload: dict | None = None):
     publish_event_safe(event_type, payload)
 
 # Circuit breaker still has its own import (not in helpers)
 try:
     from app.distributed.circuit_breaker import (
-        get_host_breaker,
-        get_circuit_registry,
-        FallbackChain,
         CircuitOpenError,
         CircuitState,
+        FallbackChain,
+        get_circuit_registry,
+        get_host_breaker,
     )
     HAS_CIRCUIT_BREAKER = True
 except ImportError:
@@ -224,9 +225,9 @@ except ImportError:
 # Gossip sync for P2P data replication (optional backend)
 try:
     from app.distributed.gossip_sync import (
+        GOSSIP_PORT,
         GossipSyncDaemon,
         load_peer_config,
-        GOSSIP_PORT,
     )
     HAS_GOSSIP_SYNC = True
 except ImportError:
@@ -237,16 +238,17 @@ except ImportError:
 # Aria2 transport for high-performance multi-connection downloads
 try:
     from app.distributed.aria2_transport import (
-        Aria2Transport,
         Aria2Config,
-        create_aria2_transport,
+        Aria2Transport,
         check_aria2_available,
+        create_aria2_transport,
     )
     HAS_ARIA2_TRANSPORT = True
 except ImportError:
     HAS_ARIA2_TRANSPORT = False
     Aria2Transport = None
-    check_aria2_available = lambda: False
+    def check_aria2_available():
+        return False
 
 
 # =============================================================================
@@ -268,7 +270,7 @@ class SyncHostConfig:
     ssh_host: str
     ssh_user: str = "ubuntu"
     ssh_port: int = 22
-    ssh_key: Optional[str] = None
+    ssh_key: str | None = None
     remote_db_path: str = "~/ringrift/ai-service/data/games"
     enabled: bool = True
     role: str = "selfplay"
@@ -344,7 +346,7 @@ class SyncConfig:
     aria2_data_server_port: int = 8766  # Port for aria2 data servers
     aria2_connections_per_server: int = 16
     aria2_split: int = 16
-    aria2_source_urls: List[str] = field(default_factory=list)  # type: ignore[misc]
+    aria2_source_urls: list[str] = field(default_factory=list)  # type: ignore[misc]
 
     # Quality extraction for priority-based sync
     enable_quality_extraction: bool = True  # Extract quality scores during sync
@@ -463,12 +465,12 @@ class _LegacyDataManifest:
 
     def mark_games_synced(
         self,
-        game_ids: List[str],
+        game_ids: list[str],
         source_host: str,
         source_db: str,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-        content_hashes: Optional[List[str]] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        content_hashes: list[str] | None = None,
     ):
         """Mark games as synced."""
         conn = sqlite3.connect(self.db_path)
@@ -512,7 +514,7 @@ class _LegacyDataManifest:
         conn.commit()
         conn.close()
 
-    def load_host_state(self, host_name: str) -> Optional[HostSyncState]:
+    def load_host_state(self, host_name: str) -> HostSyncState | None:
         """Load host sync state."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -610,14 +612,14 @@ class UnifiedDataSyncService:
     def __init__(
         self,
         config: SyncConfig,
-        hosts: List[HostConfig],
+        hosts: list[HostConfig],
         manifest: DataManifest,
         http_port: int = 8772,
     ):
         self.config = config
         self.hosts = {h.name: h for h in hosts}
         self.manifest = manifest
-        self.host_states: Dict[str, HostSyncState] = {}
+        self.host_states: dict[str, HostSyncState] = {}
         self.http_port = http_port
 
         # Runtime state
@@ -636,8 +638,8 @@ class UnifiedDataSyncService:
         }
 
         # Categorize hosts
-        self._ephemeral_hosts: Set[str] = set()
-        self._persistent_hosts: Set[str] = set()
+        self._ephemeral_hosts: set[str] = set()
+        self._persistent_hosts: set[str] = set()
         for host in hosts:
             if host.is_ephemeral:
                 self._ephemeral_hosts.add(host.name)
@@ -645,12 +647,12 @@ class UnifiedDataSyncService:
                 self._persistent_hosts.add(host.name)
 
         # Initialize sub-components
-        self._manifest_replicator: Optional[ManifestReplicator] = None
-        self._p2p_fallback: Optional[P2PFallbackSync] = None
-        self._content_deduplicator: Optional[ContentDeduplicator] = None
-        self._ingestion_wal: Optional[IngestionWAL] = None
-        self._gossip_daemon: Optional[GossipSyncDaemon] = None
-        self._aria2_transport: Optional[Aria2Transport] = None
+        self._manifest_replicator: ManifestReplicator | None = None
+        self._p2p_fallback: P2PFallbackSync | None = None
+        self._content_deduplicator: ContentDeduplicator | None = None
+        self._ingestion_wal: IngestionWAL | None = None
+        self._gossip_daemon: GossipSyncDaemon | None = None
+        self._aria2_transport: Aria2Transport | None = None
 
         self._init_components()
 
@@ -879,7 +881,7 @@ class UnifiedDataSyncService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            stdout, _stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=self.config.ssh_timeout
             )
@@ -907,7 +909,7 @@ class UnifiedDataSyncService:
         self,
         local_dir: Path,
         host_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Validate checksums of synced database files.
 
         This validates:
@@ -971,7 +973,7 @@ class UnifiedDataSyncService:
                 "checksums": {},
             }
 
-    async def _sync_host_ssh(self, host: HostConfig, local_dir: Path) -> Tuple[int, str]:
+    async def _sync_host_ssh(self, host: HostConfig, local_dir: Path) -> tuple[int, str]:
         """Sync from host using SSH/rsync.
 
         Returns (games_synced, error_message).
@@ -985,7 +987,7 @@ class UnifiedDataSyncService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=self.config.rsync_timeout
             )
@@ -1014,7 +1016,7 @@ class UnifiedDataSyncService:
         except Exception as e:
             return 0, str(e)[:200]
 
-    async def _sync_host_p2p(self, host: HostConfig, local_dir: Path) -> Tuple[int, str]:
+    async def _sync_host_p2p(self, host: HostConfig, local_dir: Path) -> tuple[int, str]:
         """Sync from host using P2P HTTP fallback.
 
         Returns (games_synced, error_message).
@@ -1023,7 +1025,7 @@ class UnifiedDataSyncService:
             return 0, "P2P fallback not available"
 
         try:
-            success, games, method = await self._p2p_fallback.sync_with_fallback(
+            success, games, _method = await self._p2p_fallback.sync_with_fallback(
                 host=host.name,
                 ssh_host=host.ssh_host,
                 ssh_user=host.ssh_user,
@@ -1040,7 +1042,7 @@ class UnifiedDataSyncService:
         except Exception as e:
             return 0, str(e)[:200]
 
-    async def _sync_host_aria2(self, host: HostConfig, local_dir: Path) -> Tuple[int, str]:
+    async def _sync_host_aria2(self, host: HostConfig, local_dir: Path) -> tuple[int, str]:
         """Sync from host using aria2 high-performance transport.
 
         Returns (games_synced, error_message).
@@ -1120,17 +1122,16 @@ class UnifiedDataSyncService:
         # NFS optimization: Skip sync if both nodes have shared NFS storage
         # This is a major performance win for Lambda Labs where all nodes
         # have access to the same 14PB shared filesystem
-        if HAS_STORAGE_PROVIDER and not should_sync_to_node(host.name):
-            if is_nfs_available():
-                logger.debug(
-                    f"{host.name}: Skipping sync - both nodes have shared NFS storage"
-                )
-                # Still update state to reflect availability via shared storage.
-                state.last_sync_time = time.time()
-                state.consecutive_failures = 0
-                state.last_error = ""
-                self.manifest.save_host_state(state)
-                return 0
+        if HAS_STORAGE_PROVIDER and not should_sync_to_node(host.name) and is_nfs_available():
+            logger.debug(
+                f"{host.name}: Skipping sync - both nodes have shared NFS storage"
+            )
+            # Still update state to reflect availability via shared storage.
+            state.last_sync_time = time.time()
+            state.consecutive_failures = 0
+            state.last_error = ""
+            self.manifest.save_host_state(state)
+            return 0
 
         # Circuit breaker check
         if HAS_CIRCUIT_BREAKER:
@@ -1552,7 +1553,7 @@ class UnifiedDataSyncService:
         self._running = False
         self._shutdown_event.set()
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get comprehensive statistics."""
         stats = {
             "running": self._running,
@@ -1591,8 +1592,8 @@ class UnifiedDataSyncService:
     def from_config(
         cls,
         config_path: Path,
-        hosts_config_path: Optional[Path] = None,
-    ) -> "UnifiedDataSyncService":
+        hosts_config_path: Path | None = None,
+    ) -> UnifiedDataSyncService:
         """Create service from configuration files."""
         # Load main config
         with open(config_path) as f:
@@ -1652,7 +1653,7 @@ class UnifiedDataSyncService:
 # Host Loading
 # =============================================================================
 
-def load_hosts_from_yaml(path: Path) -> List[HostConfig]:
+def load_hosts_from_yaml(path: Path) -> list[HostConfig]:
     """Load host configurations from YAML file."""
     if not path.exists():
         return []

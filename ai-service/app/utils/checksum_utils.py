@@ -29,16 +29,16 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 __all__ = [
-    "compute_file_checksum",
-    "compute_bytes_checksum",
-    "compute_string_checksum",
-    "verify_file_checksum",
-    "compute_content_id",
     "DEFAULT_CHUNK_SIZE",
     "LARGE_CHUNK_SIZE",
+    "compute_bytes_checksum",
+    "compute_content_id",
+    "compute_file_checksum",
+    "compute_string_checksum",
+    "verify_file_checksum",
 ]
 
 # Default chunk size for file reading (8KB - good balance for most files)
@@ -53,7 +53,7 @@ def compute_file_checksum(
     *,
     algorithm: str = "sha256",
     chunk_size: int = DEFAULT_CHUNK_SIZE,
-    truncate: Optional[int] = None,
+    truncate: int | None = None,
     return_empty_for_missing: bool = True,
 ) -> str:
     """Compute checksum of a file.
@@ -112,7 +112,7 @@ def compute_bytes_checksum(
     data: bytes,
     *,
     algorithm: str = "sha256",
-    truncate: Optional[int] = None,
+    truncate: int | None = None,
 ) -> str:
     """Compute checksum of bytes data.
 
@@ -142,7 +142,7 @@ def compute_string_checksum(
     content: str,
     *,
     algorithm: str = "sha256",
-    truncate: Optional[int] = None,
+    truncate: int | None = None,
     encoding: str = "utf-8",
 ) -> str:
     """Compute checksum of a string.

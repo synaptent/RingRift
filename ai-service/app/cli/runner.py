@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import signal
-import sys
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 __all__ = [
     "ScriptRunner",
@@ -32,7 +31,7 @@ class ScriptConfig:
     name: str
     verbose: bool = False
     dry_run: bool = False
-    config_path: Optional[Path] = None
+    config_path: Path | None = None
     log_level: str = "INFO"
 
 
@@ -99,7 +98,7 @@ class ScriptRunner:
     def __init__(
         self,
         name: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         add_common: bool = True,
     ):
         """Initialize the script runner.
@@ -115,9 +114,9 @@ class ScriptRunner:
             description=description,
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
-        self.logger: Optional[logging.Logger] = None
+        self.logger: logging.Logger | None = None
         self._shutdown_requested = False
-        self._cleanup_handlers: List[Callable[[], None]] = []
+        self._cleanup_handlers: list[Callable[[], None]] = []
 
         if add_common:
             add_common_args(self.parser)
@@ -137,7 +136,7 @@ class ScriptRunner:
         """
         return self.parser.add_subparsers(**kwargs)
 
-    def parse_args(self, args: Optional[List[str]] = None) -> argparse.Namespace:
+    def parse_args(self, args: list[str] | None = None) -> argparse.Namespace:
         """Parse command line arguments and set up logging.
 
         Args:
@@ -228,7 +227,7 @@ class ScriptRunner:
         """Check if shutdown has been requested."""
         return self._shutdown_requested
 
-    def _setup_signal_handlers(self) -> Dict[int, Any]:
+    def _setup_signal_handlers(self) -> dict[int, Any]:
         """Set up signal handlers for graceful shutdown."""
         original = {}
 
@@ -238,27 +237,23 @@ class ScriptRunner:
             self._shutdown_requested = True
 
         for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
+            with suppress(ValueError, OSError):
                 original[sig] = signal.signal(sig, handler)
-            except (ValueError, OSError):
-                pass
 
         return original
 
-    def _restore_signal_handlers(self, original: Dict[int, Any]) -> None:
+    def _restore_signal_handlers(self, original: dict[int, Any]) -> None:
         """Restore original signal handlers."""
         for sig, handler in original.items():
-            try:
+            with suppress(ValueError, OSError):
                 signal.signal(sig, handler)
-            except (ValueError, OSError):
-                pass
 
 
 def setup_script(
     name: str,
-    description: Optional[str] = None,
-    **extra_args: Dict[str, Any],
-) -> Tuple[argparse.Namespace, logging.Logger]:
+    description: str | None = None,
+    **extra_args: dict[str, Any],
+) -> tuple[argparse.Namespace, logging.Logger]:
     """Quick setup for simple scripts.
 
     Creates a runner, adds any extra arguments, parses args, and returns

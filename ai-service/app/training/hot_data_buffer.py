@@ -36,9 +36,10 @@ import logging
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -62,8 +63,8 @@ except ImportError:
 # Legacy event bus (fallback if router unavailable)
 try:
     from app.distributed.data_events import (
-        DataEventType,
         DataEvent,
+        DataEventType,
         get_event_bus,
     )
     HAS_EVENT_SYSTEM = True
@@ -74,8 +75,8 @@ except ImportError:
 # Quality scoring integration (December 2025)
 try:
     from app.quality.unified_quality import (
-        UnifiedQualityScorer,
         GameQuality,
+        UnifiedQualityScorer,
         get_quality_scorer,
     )
     HAS_QUALITY_SCORER = True
@@ -118,7 +119,7 @@ from typing import Protocol, runtime_checkable
 class StateEncoder(Protocol):
     """Protocol for state encoders compatible with HotDataBuffer."""
 
-    def encode_state(self, state: Any) -> Tuple[np.ndarray, np.ndarray]:
+    def encode_state(self, state: Any) -> tuple[np.ndarray, np.ndarray]:
         """Encode a game state to (board_features, global_features)."""
         ...
 
@@ -130,8 +131,8 @@ class GameRecord:
     game_id: str
     board_type: str
     num_players: int
-    moves: List[Dict[str, Any]]  # List of move records with state/action
-    outcome: Dict[str, float]  # Player ID -> final score
+    moves: list[dict[str, Any]]  # List of move records with state/action
+    outcome: dict[str, float]  # Player ID -> final score
     timestamp: float = field(default_factory=time.time)
     source: str = "hot_buffer"
     # Priority fields for experience replay
@@ -143,8 +144,8 @@ class GameRecord:
 
     def to_training_samples(
         self,
-        encoder: Optional[StateEncoder] = None,
-    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, float]]:
+        encoder: StateEncoder | None = None,
+    ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, float]]:
         """Convert game to training samples.
 
         Args:
@@ -187,7 +188,7 @@ class GameRecord:
                 ))
         return samples
 
-    def to_training_samples_legacy(self) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+    def to_training_samples_legacy(self) -> list[tuple[np.ndarray, np.ndarray, float]]:
         """Legacy method for backward compatibility (board_features, policy, value)."""
         samples = []
         for move in self.moves:
@@ -220,7 +221,7 @@ class HotDataBuffer:
         batch_notification_size: int = 50,
         enable_validation: bool = True,
         skip_invalid_games: bool = False,
-        encoder: Optional[StateEncoder] = None,
+        encoder: StateEncoder | None = None,
     ):
         """Initialize the hot data buffer.
 
@@ -247,7 +248,7 @@ class HotDataBuffer:
 
         self._buffer: OrderedDict[str, GameRecord] = OrderedDict()
         self._lock = threading.RLock()
-        self._sample_cache: List[Tuple[np.ndarray, np.ndarray, np.ndarray, float]] = []
+        self._sample_cache: list[tuple[np.ndarray, np.ndarray, np.ndarray, float]] = []
         self._cache_dirty = True
         self._total_samples = 0
         self._flushed_game_ids: set = set()
@@ -255,10 +256,10 @@ class HotDataBuffer:
         # Event tracking
         self._games_since_notification = 0
         self._training_threshold_emitted = False
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
         # Validation
-        self._validator: Optional[DataValidator] = None
+        self._validator: DataValidator | None = None
         if self.enable_validation:
             self._validator = DataValidator(DataValidatorConfig(
                 sample_rate=1.0,  # Validate all samples
@@ -271,13 +272,13 @@ class HotDataBuffer:
         }
 
         # Manifest quality lookup (populated via set_quality_lookup)
-        self._quality_lookup: Dict[str, float] = {}
-        self._elo_lookup: Dict[str, float] = {}
+        self._quality_lookup: dict[str, float] = {}
+        self._elo_lookup: dict[str, float] = {}
 
     def set_quality_lookup(
         self,
-        quality_lookup: Optional[Dict[str, float]] = None,
-        elo_lookup: Optional[Dict[str, float]] = None,
+        quality_lookup: dict[str, float] | None = None,
+        elo_lookup: dict[str, float] | None = None,
     ) -> int:
         """Set manifest quality lookup tables for priority computation.
 
@@ -320,7 +321,7 @@ class HotDataBuffer:
         self._encoder = encoder
         self._cache_dirty = True  # Invalidate cache to re-encode with new encoder
 
-    def _validate_game(self, game: GameRecord) -> Tuple[bool, Optional[ValidationResult]]:
+    def _validate_game(self, game: GameRecord) -> tuple[bool, ValidationResult | None]:
         """Validate a game record's training samples.
 
         Args:
@@ -365,11 +366,11 @@ class HotDataBuffer:
             logger.warning(f"Validation error for game {game.game_id}: {e}")
             return False, None
 
-    def get_validation_stats(self) -> Dict[str, int]:
+    def get_validation_stats(self) -> dict[str, int]:
         """Get validation statistics."""
         return self._validation_stats.copy()
 
-    def _try_emit_event(self, event_type: DataEventType, payload: Dict[str, Any]) -> None:
+    def _try_emit_event(self, event_type: DataEventType, payload: dict[str, Any]) -> None:
         """Try to emit an event (fire-and-forget from sync context).
 
         Uses unified router if available, falls back to direct EventBus.
@@ -423,7 +424,7 @@ class HotDataBuffer:
         except Exception as e:
             logger.debug(f"Failed to emit event {event_type_str}: {e}")
 
-    async def emit_event_async(self, event_type: DataEventType, payload: Dict[str, Any]) -> None:
+    async def emit_event_async(self, event_type: DataEventType, payload: dict[str, Any]) -> None:
         """Emit an event asynchronously.
 
         Uses unified router if available, falls back to direct EventBus.
@@ -456,7 +457,6 @@ class HotDataBuffer:
 
     def add_game(self, game: GameRecord) -> None:
         """Add a game to the buffer (thread-safe)."""
-        evicted = False
         should_emit_new_games = False
         should_emit_threshold = False
 
@@ -482,7 +482,6 @@ class HotDataBuffer:
             # Evict oldest entries if over capacity
             while len(self._buffer) > self.max_size:
                 self._buffer.popitem(last=False)
-                evicted = True
 
         # Emit events outside lock
         if should_emit_new_games:
@@ -502,7 +501,7 @@ class HotDataBuffer:
             })
             logger.info(f"Hot buffer '{self.buffer_name}' reached training threshold ({self.training_threshold} games)")
 
-    def add_game_from_dict(self, data: Dict[str, Any]) -> None:
+    def add_game_from_dict(self, data: dict[str, Any]) -> None:
         """Add a game from a dictionary representation."""
         game_id = str(data.get("game_id", ""))
 
@@ -534,7 +533,7 @@ class HotDataBuffer:
         game.priority = self.compute_game_priority(game)
         self.add_game(game)
 
-    def get_game(self, game_id: str) -> Optional[GameRecord]:
+    def get_game(self, game_id: str) -> GameRecord | None:
         """Get a game by ID (thread-safe)."""
         with self._lock:
             return self._buffer.get(game_id)
@@ -548,12 +547,12 @@ class HotDataBuffer:
                 return True
             return False
 
-    def get_all_games(self) -> List[GameRecord]:
+    def get_all_games(self) -> list[GameRecord]:
         """Get all games in the buffer (thread-safe copy)."""
         with self._lock:
             return list(self._buffer.values())
 
-    def get_unflushed_games(self) -> List[GameRecord]:
+    def get_unflushed_games(self) -> list[GameRecord]:
         """Get games that haven't been flushed to DB yet."""
         with self._lock:
             return [
@@ -584,7 +583,7 @@ class HotDataBuffer:
         self,
         batch_size: int = 256,
         shuffle: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get a batch of training samples.
 
         Args:
@@ -639,7 +638,7 @@ class HotDataBuffer:
         self,
         batch_size: int = 256,
         epochs: int = 1,
-    ) -> Iterator[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Iterator over training samples for multiple epochs.
 
         Yields batches of (board_features, global_features, policies, values).
@@ -689,7 +688,7 @@ class HotDataBuffer:
         """Number of games in buffer."""
         return len(self)
 
-    def mark_flushed(self, game_ids: List[str]) -> None:
+    def mark_flushed(self, game_ids: list[str]) -> None:
         """Mark games as flushed to persistent storage."""
         with self._lock:
             self._flushed_game_ids.update(game_ids)
@@ -701,7 +700,7 @@ class HotDataBuffer:
         """
         with self._lock:
             to_remove = [
-                gid for gid in self._buffer.keys()
+                gid for gid in self._buffer
                 if gid in self._flushed_game_ids
             ]
             for gid in to_remove:
@@ -836,7 +835,7 @@ class HotDataBuffer:
 
         return written
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get buffer statistics."""
         with self._lock:
             if self._cache_dirty:
@@ -943,9 +942,9 @@ class HotDataBuffer:
     def update_game_priority(
         self,
         game_id: str,
-        td_error: Optional[float] = None,
-        from_promoted: Optional[bool] = None,
-        avg_elo: Optional[float] = None,
+        td_error: float | None = None,
+        from_promoted: bool | None = None,
+        avg_elo: float | None = None,
     ) -> bool:
         """Update priority for a specific game.
 
@@ -988,7 +987,7 @@ class HotDataBuffer:
         self,
         batch_size: int = 256,
         importance_beta: float = 0.4,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get a batch of training samples with priority-weighted sampling.
 
         Uses proportional prioritization (Schaul et al., 2015) with
@@ -1080,7 +1079,7 @@ class HotDataBuffer:
         batch_size: int = 256,
         epochs: int = 1,
         importance_beta: float = 0.4,
-    ) -> Iterator[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Iterator over priority-weighted training samples.
 
         Each epoch resamples with current priorities, allowing priorities
@@ -1105,7 +1104,7 @@ class HotDataBuffer:
                     importance_beta=importance_beta,
                 )
 
-    def mark_games_from_promoted_model(self, model_id: str, game_ids: List[str]) -> int:
+    def mark_games_from_promoted_model(self, model_id: str, game_ids: list[str]) -> int:
         """Mark games as coming from a model that was promoted.
 
         This boosts their priority for future training.
@@ -1326,7 +1325,7 @@ class HotDataBuffer:
     # Quality Auto-Calibration (December 2025)
     # -------------------------------------------------------------------------
 
-    def get_quality_distribution(self) -> Dict[str, Any]:
+    def get_quality_distribution(self) -> dict[str, Any]:
         """Get quality score distribution for games in buffer.
 
         Returns:
@@ -1377,7 +1376,7 @@ class HotDataBuffer:
         self,
         target_high_ratio: float = 0.3,
         target_low_ratio: float = 0.1,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Auto-calibrate quality thresholds based on buffer distribution.
 
         Adjusts thresholds so that approximately:
@@ -1432,7 +1431,7 @@ class HotDataBuffer:
 
     def recompute_quality_with_scorer(
         self,
-        elo_lookup: Optional[Dict[str, float]] = None,
+        elo_lookup: dict[str, float] | None = None,
     ) -> int:
         """Recompute quality scores using UnifiedQualityScorer.
 
@@ -1488,7 +1487,7 @@ class HotDataBuffer:
         self,
         min_quality_percentile: float = 0.1,
         evict_below_percentile: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Auto-calibrate quality and optionally evict low-quality games.
 
         This method:

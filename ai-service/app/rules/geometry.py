@@ -3,7 +3,7 @@ Shared geometry logic for RingRift AI and Rules Engine.
 Centralizes adjacency, line-of-sight, and board coordinate calculations.
 """
 
-from typing import List, Tuple, Set
+
 from ..models import BoardType, Position
 
 
@@ -15,7 +15,7 @@ class BoardGeometry:
         position: Position,
         board_type: BoardType,
         board_size: int
-    ) -> List[Position]:
+    ) -> list[Position]:
         """
         Get all valid adjacent positions for a given position.
 
@@ -27,7 +27,7 @@ class BoardGeometry:
         Returns:
             List of valid adjacent Position objects
         """
-        neighbors: List[Position] = []
+        neighbors: list[Position] = []
 
         if board_type in (BoardType.SQUARE8, BoardType.SQUARE19):
             limit = 8 if board_type == BoardType.SQUARE8 else 19
@@ -65,7 +65,7 @@ class BoardGeometry:
     @staticmethod
     def get_line_of_sight_directions(
         board_type: BoardType
-    ) -> List[Tuple[int, int, int]]:
+    ) -> list[tuple[int, int, int]]:
         """Get all valid line-of-sight directions for the board type"""
         if board_type in (BoardType.SQUARE8, BoardType.SQUARE19):
             directions = []
@@ -87,7 +87,7 @@ class BoardGeometry:
     def get_center_positions(
         board_type: BoardType,
         board_size: int
-    ) -> Set[str]:
+    ) -> set[str]:
         """Get the set of position keys representing the center of the board"""
         center = set()
 
@@ -166,7 +166,7 @@ class BoardGeometry:
     def get_path_positions(
         from_pos: Position,
         to_pos: Position,
-    ) -> List[Position]:
+    ) -> list[Position]:
         """Get all positions along a straight-line path between two
         positions, inclusive of endpoints.
 
@@ -190,11 +190,11 @@ class BoardGeometry:
         step_z = dz / steps
 
         for i in range(1, steps + 1):
-            x = int(round(from_pos.x + step_x * i))
-            y = int(round(from_pos.y + step_y * i))
+            x = round(from_pos.x + step_x * i)
+            y = round(from_pos.y + step_y * i)
             pos_kwargs = {"x": x, "y": y}
             if from_pos.z is not None or to_pos.z is not None:
-                z = int(round(dz_from + step_z * i))
+                z = round(dz_from + step_z * i)
                 pos_kwargs["z"] = z
             path.append(Position(**pos_kwargs))  # type: ignore[arg-type]
 

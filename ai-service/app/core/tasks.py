@@ -38,22 +38,24 @@ Integration with Shutdown (December 2025):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import logging
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "background_task",
-    "TaskManager",
-    "get_task_manager",
     "TaskInfo",
+    "TaskManager",
     "TaskState",
+    "background_task",
+    "get_task_manager",
 ]
 
 F = TypeVar("F", bound=Callable[..., Coroutine[Any, Any, Any]])
@@ -75,13 +77,13 @@ class TaskInfo:
     name: str
     state: TaskState = TaskState.PENDING
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    finished_at: Optional[float] = None
-    error: Optional[str] = None
+    started_at: float | None = None
+    finished_at: float | None = None
+    error: str | None = None
     result: Any = None
 
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Get task duration in seconds."""
         if self.started_at is None:
             return None
@@ -104,7 +106,7 @@ class TaskManager:
     - Statistics and monitoring
     """
 
-    _instance: Optional["TaskManager"] = None
+    _instance: TaskManager | None = None
 
     def __init__(
         self,
@@ -118,15 +120,15 @@ class TaskManager:
             register_shutdown_hook: Whether to register with ShutdownManager
         """
         self.shutdown_timeout = shutdown_timeout
-        self._tasks: Dict[str, asyncio.Task] = {}
-        self._task_info: Dict[str, TaskInfo] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
+        self._task_info: dict[str, TaskInfo] = {}
         self._running = True
 
         if register_shutdown_hook:
             self._register_shutdown_hook()
 
     @classmethod
-    def get_instance(cls) -> "TaskManager":
+    def get_instance(cls) -> TaskManager:
         """Get singleton instance."""
         if cls._instance is None:
             cls._instance = cls()
@@ -157,7 +159,7 @@ class TaskManager:
         name: str,
         coro: Coroutine[Any, Any, Any],
         *,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> str:
         """Spawn a new background task.
 
@@ -220,17 +222,15 @@ class TaskManager:
 
         task.cancel()
 
-        try:
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
             await asyncio.wait_for(
                 asyncio.shield(task),
                 timeout=timeout,
             )
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            pass
 
         return True
 
-    async def shutdown_all(self, timeout: Optional[float] = None) -> int:
+    async def shutdown_all(self, timeout: float | None = None) -> int:
         """Cancel all running tasks and wait for completion.
 
         Args:
@@ -248,14 +248,14 @@ class TaskManager:
         logger.info(f"Shutting down {len(self._tasks)} background tasks")
 
         # Cancel all tasks
-        for task_id, task in list(self._tasks.items()):
+        for _task_id, task in list(self._tasks.items()):
             if not task.done():
                 task.cancel()
 
         # Wait for all to complete
         if self._tasks:
             tasks = list(self._tasks.values())
-            done, pending = await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 tasks,
                 timeout=timeout,
                 return_when=asyncio.ALL_COMPLETED,
@@ -271,18 +271,18 @@ class TaskManager:
 
         return cancelled
 
-    def get_task(self, task_id: str) -> Optional[TaskInfo]:
+    def get_task(self, task_id: str) -> TaskInfo | None:
         """Get task information by ID."""
         return self._task_info.get(task_id)
 
-    def get_active_tasks(self) -> List[TaskInfo]:
+    def get_active_tasks(self) -> list[TaskInfo]:
         """Get all active (pending/running) tasks."""
         return [
             info for info in self._task_info.values()
             if info.is_active
         ]
 
-    def get_all_tasks(self) -> List[TaskInfo]:
+    def get_all_tasks(self) -> list[TaskInfo]:
         """Get all tasks (including completed)."""
         return list(self._task_info.values())
 
@@ -330,7 +330,7 @@ class BackgroundTaskWrapper:
         self.name = name
         self.restart_on_failure = restart_on_failure
         self.restart_delay = restart_delay
-        self._task_id: Optional[str] = None
+        self._task_id: str | None = None
         functools.update_wrapper(self, func)
 
     async def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -380,7 +380,7 @@ class BackgroundTaskWrapper:
         return await manager.cancel(self._task_id, timeout)
 
     @property
-    def task_id(self) -> Optional[str]:
+    def task_id(self) -> str | None:
         """Get the current task ID."""
         return self._task_id
 
@@ -394,7 +394,7 @@ class BackgroundTaskWrapper:
 
 
 def background_task(
-    name: Optional[str] = None,
+    name: str | None = None,
     restart_on_failure: bool = False,
     restart_delay: float = 5.0,
 ) -> Callable[[F], BackgroundTaskWrapper]:

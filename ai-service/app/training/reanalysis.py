@@ -34,7 +34,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -74,9 +74,9 @@ class ReanalyzedPosition:
     original_value: float
     reanalyzed_value: float
     blended_value: float
-    original_policy: Optional[np.ndarray]
-    reanalyzed_policy: Optional[np.ndarray]
-    blended_policy: Optional[np.ndarray]
+    original_policy: np.ndarray | None
+    reanalyzed_policy: np.ndarray | None
+    blended_policy: np.ndarray | None
     game_id: str
     move_number: int
     reanalysis_timestamp: float
@@ -91,9 +91,9 @@ class ReanalysisEngine:
 
     def __init__(
         self,
-        model: "nn.Module",
+        model: nn.Module,
         config: ReanalysisConfig,
-        device: Optional["torch.device"] = None,
+        device: torch.device | None = None,
     ):
         """Initialize the reanalysis engine.
 
@@ -124,7 +124,7 @@ class ReanalysisEngine:
     def reanalyze_npz(
         self,
         npz_path: Path,
-        output_path: Optional[Path] = None,
+        output_path: Path | None = None,
     ) -> Path:
         """Reanalyze positions from an NPZ file.
 
@@ -250,8 +250,8 @@ class ReanalysisEngine:
         output_dir: Path,
         encoder: Any,
         board_type: str,
-        max_games: Optional[int] = None,
-    ) -> List[Path]:
+        max_games: int | None = None,
+    ) -> list[Path]:
         """Reanalyze games from JSONL format.
 
         Args:
@@ -280,7 +280,7 @@ class ReanalysisEngine:
 
         logger.info(f"[Reanalysis] Processing games from {jsonl_path}")
 
-        with open(jsonl_path, "r") as f:
+        with open(jsonl_path) as f:
             for line in f:
                 if games_processed >= max_games:
                     break
@@ -335,12 +335,9 @@ class ReanalysisEngine:
 
         # Check time since last reanalysis
         hours_since = (time.time() - self.last_reanalysis_time) / 3600
-        if hours_since < self.config.reanalysis_interval_hours:
-            return False
+        return not hours_since < self.config.reanalysis_interval_hours
 
-        return True
-
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get reanalysis statistics."""
         return {
             "positions_reanalyzed": self.positions_reanalyzed,
@@ -354,8 +351,8 @@ class ReanalyzedDataset(Dataset):
 
     def __init__(
         self,
-        fresh_npz_paths: List[Path],
-        reanalyzed_npz_paths: List[Path],
+        fresh_npz_paths: list[Path],
+        reanalyzed_npz_paths: list[Path],
         reanalyzed_ratio: float = 0.3,
     ):
         """Initialize combined dataset.
@@ -374,7 +371,7 @@ class ReanalyzedDataset(Dataset):
 
         logger.info(f"[ReanalyzedDataset] {self.n_fresh} fresh + {self.n_reanalyzed} reanalyzed samples")
 
-    def _load_npz_files(self, paths: List[Path]) -> Optional[Dict[str, np.ndarray]]:
+    def _load_npz_files(self, paths: list[Path]) -> dict[str, np.ndarray] | None:
         """Load and concatenate multiple NPZ files."""
         if not paths:
             return None
@@ -406,7 +403,7 @@ class ReanalyzedDataset(Dataset):
     def __len__(self) -> int:
         return self.n_fresh + self.n_reanalyzed
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Probabilistically sample from reanalyzed data
         use_reanalyzed = (
             self.n_reanalyzed > 0 and
@@ -428,7 +425,7 @@ class ReanalyzedDataset(Dataset):
 
 
 def create_reanalysis_engine(
-    model: "nn.Module",
+    model: nn.Module,
     batch_size: int = 64,
     value_blend: float = 0.7,
 ) -> ReanalysisEngine:
@@ -450,11 +447,11 @@ def create_reanalysis_engine(
 
 
 def reanalyze_training_data(
-    model: "nn.Module",
-    npz_paths: List[Path],
+    model: nn.Module,
+    npz_paths: list[Path],
     output_dir: Path,
     batch_size: int = 64,
-) -> List[Path]:
+) -> list[Path]:
     """Convenience function to reanalyze multiple NPZ files.
 
     Args:

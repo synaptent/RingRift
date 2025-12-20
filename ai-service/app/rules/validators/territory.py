@@ -1,7 +1,7 @@
-from app.models import GameState, Move, GamePhase, MoveType
-from app.rules.interfaces import Validator
 from app.board_manager import BoardManager
+from app.models import GamePhase, GameState, Move, MoveType
 from app.rules.elimination import EliminationContext, is_stack_eligible_for_elimination
+from app.rules.interfaces import Validator
 
 
 class TerritoryValidator(Validator):

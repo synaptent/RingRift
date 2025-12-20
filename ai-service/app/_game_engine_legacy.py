@@ -30,27 +30,27 @@ SSoT checklist" in ``docs/RULES_ENGINE_SURFACE_AUDIT.md``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import List, Optional
 import json
 import os
 import sys
 import time
+from dataclasses import dataclass
+from enum import Enum
+
+from .board_manager import BoardManager
 from .models import (
-    GameState,
-    Move,
-    Position,
+    BoardState,
     BoardType,
     GamePhase,
-    RingStack,
-    MarkerInfo,
+    GameState,
     GameStatus,
+    MarkerInfo,
+    Move,
     MoveType,
-    BoardState,
+    Position,
+    RingStack,
     Territory,
 )
-from .board_manager import BoardManager
 
 __all__ = [
     # Classes
@@ -96,19 +96,18 @@ class PhaseRequirement:
 
     type: PhaseRequirementType
     player: int
-    eligible_positions: List[Position]
+    eligible_positions: list[Position]
 
 
 from .ai.zobrist import ZobristHash
-from .rules.geometry import BoardGeometry
-from .rules.core import count_rings_in_play_for_player, get_effective_line_length
 from .rules.capture_chain import enumerate_capture_moves_py
+from .rules.core import count_rings_in_play_for_player, get_effective_line_length
+from .rules.geometry import BoardGeometry
 from .rules.recovery import (
+    apply_recovery_slide,
     get_expanded_recovery_moves,
     has_any_recovery_move,
-    apply_recovery_slide,
 )
-
 
 DEBUG_ENGINE = os.environ.get("RINGRIFT_DEBUG_ENGINE") == "1"
 STRICT_NO_MOVE_INVARIANT = os.environ.get(
@@ -153,7 +152,7 @@ class GameEngine:
     """
 
     @staticmethod
-    def get_valid_moves(game_state: GameState, player_number: int) -> List[Move]:
+    def get_valid_moves(game_state: GameState, player_number: int) -> list[Move]:
         """Return all valid moves for ``player_number`` in ``game_state``.
 
         This mirrors the TS `GameEngine.getValidMoves` surface and is used
@@ -172,14 +171,14 @@ class GameEngine:
         # NOTE: chainCaptureState affects legal capture sequences but is not
         # encoded in Zobrist or board structure; move_cache bypasses caching
         # when chainCaptureState is present.
-        from .ai.move_cache import get_cached_moves, cache_moves
+        from .ai.move_cache import cache_moves, get_cached_moves
 
         cached = get_cached_moves(game_state, player_number)
         if cached is not None:
             return cached
 
         phase = game_state.current_phase
-        moves: List[Move] = []
+        moves: list[Move] = []
 
         # ═══════════════════════════════════════════════════════════════════
         # STRICT R076: Core rules MUST NOT auto-generate bookkeeping moves.
@@ -307,7 +306,7 @@ class GameEngine:
         clear_move_cache()
 
     @staticmethod
-    def get_phase_requirement(game_state: GameState, player_number: int) -> Optional[PhaseRequirement]:
+    def get_phase_requirement(game_state: GameState, player_number: int) -> PhaseRequirement | None:
         """
         Return the phase requirement when no interactive moves exist.
 
@@ -1673,7 +1672,7 @@ class GameEngine:
         return BoardGeometry.calculate_distance(board_type, from_pos, to_pos)
 
     @staticmethod
-    def _get_path_positions(from_pos: Position, to_pos: Position) -> List[Position]:
+    def _get_path_positions(from_pos: Position, to_pos: Position) -> list[Position]:
         """Thin wrapper around shared geometry path helper.
 
         Delegates to ``BoardGeometry.get_path_positions`` to keep a single
@@ -1701,9 +1700,7 @@ class GameEngine:
         # Square boards: orthogonal or diagonal only.
         if dx == 0 and dy == 0:
             return False
-        if dx != 0 and dy != 0 and abs(dx) != abs(dy):
-            return False
-        return True
+        return not (dx != 0 and dy != 0 and abs(dx) != abs(dy))
 
     @staticmethod
     def _is_path_clear_for_movement(board, from_pos: Position, to_pos: Position) -> bool:
@@ -2131,7 +2128,7 @@ class GameEngine:
         # === Capture reachability ===
         for direction in directions:
             step = 1
-            target_pos: Optional[Position] = None
+            target_pos: Position | None = None
 
             # Find first stack along this ray that could be a capture target.
             while True:
@@ -2242,7 +2239,7 @@ class GameEngine:
             thinkTime=0,
             moveNumber=len(game_state.move_history) + 1,
         )
-        temp_state.move_history = list(game_state.move_history) + [synthetic_move]
+        temp_state.move_history = [*list(game_state.move_history), synthetic_move]
 
         # Use limit=1 for early-return optimization - we only need to know
         # if at least one valid move exists, not enumerate all of them.
@@ -2271,7 +2268,7 @@ class GameEngine:
     def _get_skip_placement_moves(
         game_state: GameState,
         player_number: int,
-    ) -> List[Move]:
+    ) -> list[Move]:
         """
         Enumerate legal SKIP_PLACEMENT moves.
 
@@ -2350,7 +2347,7 @@ class GameEngine:
     def _get_ring_placement_moves(
         game_state: GameState,
         player_number: int,
-    ) -> List[Move]:
+    ) -> list[Move]:
         """
         Enumerate legal PLACE_RING moves for the given player.
 
@@ -2365,7 +2362,7 @@ class GameEngine:
           movement/capture availability from the placed stack on a
           hypothetical post-placement board.
         """
-        moves: List[Move] = []
+        moves: list[Move] = []
         board = game_state.board
 
         # Check if player has rings in hand
@@ -2477,7 +2474,7 @@ class GameEngine:
         return moves
 
     @staticmethod
-    def _get_capture_moves(game_state: GameState, player_number: int, limit: int | None = None) -> List[Move]:
+    def _get_capture_moves(game_state: GameState, player_number: int, limit: int | None = None) -> list[Move]:
         """
         Enumerate legal overtaking capture segments for the player.
 
@@ -2493,7 +2490,7 @@ class GameEngine:
         Args:
             limit: If provided, return at most this many moves (for early-return checks).
         """
-        moves: List[Move] = []
+        moves: list[Move] = []
         move_number = len(game_state.move_history) + 1
 
         if game_state.chain_capture_state:
@@ -2791,9 +2788,7 @@ class GameEngine:
             return True
         if GameEngine._has_valid_captures(game_state, player_number):
             return True
-        if has_any_recovery_move(game_state, player_number):
-            return True
-        return False
+        return bool(has_any_recovery_move(game_state, player_number))
 
     @staticmethod
     def _has_real_action_for_player(
@@ -2821,9 +2816,7 @@ class GameEngine:
             return True
         if GameEngine._has_valid_movements(game_state, player_number, ignore_must_move_key=True):
             return True
-        if GameEngine._has_valid_captures(game_state, player_number):
-            return True
-        return False
+        return bool(GameEngine._has_valid_captures(game_state, player_number))
 
     @staticmethod
     def _maybe_apply_lps_victory_at_turn_start(game_state: GameState) -> None:
@@ -2920,7 +2913,7 @@ class GameEngine:
         # has material and must be included in LPS round tracking (TS parity:
         # playerHasMaterial uses countRingsInPlayForPlayer, which counts buried
         # rings).
-        active_players: List[int] = []
+        active_players: list[int] = []
         for player in game_state.players:
             if GameEngine._player_has_any_rings(game_state, player.player_number):
                 active_players.append(player.player_number)
@@ -2962,7 +2955,7 @@ class GameEngine:
             # Cycled back to first player - finalize the previous round.
             # Determine if exactly one active player had real actions.
             true_players = [pid for pid in active_players if mask.get(pid, False)]
-            exclusive_player: Optional[int] = None
+            exclusive_player: int | None = None
             if len(true_players) == 1:
                 exclusive_player = true_players[0]
             game_state.lps_exclusive_player_for_completed_round = exclusive_player
@@ -2994,7 +2987,7 @@ class GameEngine:
         mask[current] = has_real_action
 
     @staticmethod
-    def _get_forced_elimination_moves(game_state: GameState, player_number: int) -> List[Move]:
+    def _get_forced_elimination_moves(game_state: GameState, player_number: int) -> list[Move]:
         """
         Get forced elimination moves for a blocked player.
 
@@ -3020,7 +3013,7 @@ class GameEngine:
         # When caps are equal, order is arbitrary (first in iteration)
         player_stacks.sort(key=lambda s: s.cap_height if s.cap_height > 0 else float("inf"))
 
-        moves: List[Move] = []
+        moves: list[Move] = []
         for stack in player_stacks:
             pos = stack.position
             moves.append(
@@ -3070,7 +3063,7 @@ class GameEngine:
     def _get_line_processing_moves(
         game_state: GameState,
         player_number: int,
-    ) -> List[Move]:
+    ) -> list[Move]:
         """
         Enumerate canonical line-processing **decision** moves for the player.
 
@@ -3099,7 +3092,7 @@ class GameEngine:
             return []
 
         required_len = get_effective_line_length(game_state.board.type, num_players)
-        moves: List[Move] = []
+        moves: list[Move] = []
 
         for idx, line in enumerate(player_lines):
             # PROCESS_LINE decision for this line.
@@ -3212,7 +3205,7 @@ class GameEngine:
     def _get_territory_processing_moves(
         game_state: GameState,
         player_number: int,
-    ) -> List[Move]:
+    ) -> list[Move]:
         """
         Enumerate canonical territory-processing **decision** moves.
 
@@ -3311,7 +3304,7 @@ class GameEngine:
             )
         ]
 
-        moves: List[Move] = []
+        moves: list[Move] = []
 
         if eligible_regions:
             for idx, region in enumerate(eligible_regions):
@@ -3433,7 +3426,7 @@ class GameEngine:
         player_number: int,
         limit: int | None = None,
         ignore_must_move_key: bool = False,
-    ) -> List[Move]:
+    ) -> list[Move]:
         """
         Get valid non-capture movement moves.
 
@@ -3443,7 +3436,7 @@ class GameEngine:
                 constraint. Used when checking valid actions for FE eligibility
                 where the constraint shouldn't apply.
         """
-        moves: List[Move] = []
+        moves: list[Move] = []
         board = game_state.board
 
         # Per-turn must-move constraint: when a ring has been placed this
@@ -4055,7 +4048,7 @@ class GameEngine:
         required_len = get_effective_line_length(board.type, num_players)
 
         # 3. Decide which positions to collapse.
-        positions_to_collapse: List[Position]
+        positions_to_collapse: list[Position]
 
         if move.type in (MoveType.PROCESS_LINE, MoveType.LINE_FORMATION):
             # PROCESS_LINE / LINE_FORMATION always collapse the entire line.
@@ -4107,9 +4100,8 @@ class GameEngine:
 
             # Check if there was a marker there (should be for line formation)
             marker = board.markers.get(key)
-            if marker:
-                if game_state.zobrist_hash is not None:
-                    game_state.zobrist_hash ^= zobrist.get_marker_hash(key, marker.player)
+            if marker and game_state.zobrist_hash is not None:
+                game_state.zobrist_hash ^= zobrist.get_marker_hash(key, marker.player)
             BoardManager.set_collapsed_space(pos, move.player, board)
             if game_state.zobrist_hash is not None:
                 game_state.zobrist_hash ^= zobrist.get_collapsed_hash(key)
@@ -4245,9 +4237,8 @@ class GameEngine:
             # Check for marker (unlikely if we just eliminated rings,
             # but possible if empty)
             marker = board.markers.get(key)
-            if marker:
-                if game_state.zobrist_hash is not None:
-                    game_state.zobrist_hash ^= zobrist.get_marker_hash(key, marker.player)
+            if marker and game_state.zobrist_hash is not None:
+                game_state.zobrist_hash ^= zobrist.get_marker_hash(key, marker.player)
             BoardManager.set_collapsed_space(pos, player, board)
             if game_state.zobrist_hash is not None:
                 game_state.zobrist_hash ^= zobrist.get_collapsed_hash(key)
@@ -4256,9 +4247,8 @@ class GameEngine:
         for pos in border_markers:
             key = pos.to_key()
             marker = board.markers.get(key)
-            if marker:
-                if game_state.zobrist_hash is not None:
-                    game_state.zobrist_hash ^= zobrist.get_marker_hash(key, marker.player)
+            if marker and game_state.zobrist_hash is not None:
+                game_state.zobrist_hash ^= zobrist.get_marker_hash(key, marker.player)
             BoardManager.set_collapsed_space(pos, player, board)
             if game_state.zobrist_hash is not None:
                 game_state.zobrist_hash ^= zobrist.get_collapsed_hash(key)
@@ -4272,7 +4262,7 @@ class GameEngine:
                     break
 
     @staticmethod
-    def _generate_all_positions(board_type: BoardType, size: int) -> List[Position]:
+    def _generate_all_positions(board_type: BoardType, size: int) -> list[Position]:
         """Generate all valid positions"""
         # Use BoardManager logic (replicated here or delegated if BoardManager
         # exposed it)
@@ -4296,7 +4286,7 @@ class GameEngine:
         return positions
 
     @staticmethod
-    def _get_adjacent_positions(pos: Position, board_type: BoardType, size: int) -> List[Position]:
+    def _get_adjacent_positions(pos: Position, board_type: BoardType, size: int) -> list[Position]:
         """Get adjacent positions"""
         # Use BoardManager logic
         # For now, keep existing logic
@@ -4327,7 +4317,7 @@ class GameEngine:
         return adjacent
 
     @staticmethod
-    def get_visible_stacks(pos: Position, game_state: GameState) -> List[RingStack]:
+    def get_visible_stacks(pos: Position, game_state: GameState) -> list[RingStack]:
         """
         Get all stacks visible from a given position (line of sight).
         This is used for determining capture/overtake potential.

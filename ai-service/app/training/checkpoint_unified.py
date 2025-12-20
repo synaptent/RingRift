@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ from app.training.utils import get_torch
 
 # Event emission for checkpoint observability (optional)
 try:
-    from app.distributed.data_events import emit_checkpoint_saved, emit_checkpoint_loaded
+    from app.distributed.data_events import emit_checkpoint_loaded, emit_checkpoint_saved
     HAS_CHECKPOINT_EVENTS = True
 except ImportError:
     HAS_CHECKPOINT_EVENTS = False
@@ -52,27 +52,27 @@ class CheckpointMetadata:
     epoch: int
     global_step: int
     timestamp: datetime
-    metrics: Dict[str, float]
-    training_config: Dict[str, Any]
+    metrics: dict[str, float]
+    training_config: dict[str, Any]
     file_path: str
     file_hash: str
-    parent_checkpoint: Optional[str] = None
+    parent_checkpoint: str | None = None
     # Additional metadata from SmartCheckpointManager
-    adaptive_interval: Optional[int] = None
-    improvement_rate: Optional[float] = None
+    adaptive_interval: int | None = None
+    improvement_rate: float | None = None
     # Architecture versioning metadata (integrated from model_versioning.py)
-    architecture_version: Optional[str] = None
-    model_class: Optional[str] = None
-    model_config: Optional[Dict[str, Any]] = None
+    architecture_version: str | None = None
+    model_class: str | None = None
+    model_config: dict[str, Any] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d['checkpoint_type'] = self.checkpoint_type.value
         d['timestamp'] = self.timestamp.isoformat()
         return d
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> 'CheckpointMetadata':
+    def from_dict(cls, d: dict[str, Any]) -> CheckpointMetadata:
         d = d.copy()
         d['checkpoint_type'] = CheckpointType(d['checkpoint_type'])
         d['timestamp'] = datetime.fromisoformat(d['timestamp'])
@@ -86,21 +86,21 @@ class TrainingProgress:
     global_step: int = 0
     batch_idx: int = 0
     samples_seen: int = 0
-    best_metric: Optional[float] = None
+    best_metric: float | None = None
     best_metric_name: str = "loss"
     best_epoch: int = 0
     total_epochs: int = 100
     learning_rate: float = 0.001
-    optimizer_state: Optional[Dict[str, Any]] = None
-    scheduler_state: Optional[Dict[str, Any]] = None
-    random_state: Optional[Dict[str, Any]] = None
-    extra_state: Dict[str, Any] = field(default_factory=dict)
+    optimizer_state: dict[str, Any] | None = None
+    scheduler_state: dict[str, Any] | None = None
+    random_state: dict[str, Any] | None = None
+    extra_state: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> 'TrainingProgress':
+    def from_dict(cls, d: dict[str, Any]) -> TrainingProgress:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -160,14 +160,14 @@ class UnifiedCheckpointManager:
             )
     """
 
-    def __init__(self, config: Optional[UnifiedCheckpointConfig] = None):
+    def __init__(self, config: UnifiedCheckpointConfig | None = None):
         self.config = config or UnifiedCheckpointConfig()
         self.checkpoint_dir = Path(self.config.checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         # Metadata tracking
         self.metadata_file = self.checkpoint_dir / "checkpoints.json"
-        self.checkpoints: List[CheckpointMetadata] = []
+        self.checkpoints: list[CheckpointMetadata] = []
 
         # Adaptive checkpointing state (from SmartCheckpointManager)
         self._last_save_epoch = -1
@@ -177,7 +177,7 @@ class UnifiedCheckpointManager:
 
         # Async saving
         self._save_lock = threading.Lock()
-        self._save_thread: Optional[threading.Thread] = None
+        self._save_thread: threading.Thread | None = None
 
         self._load_metadata()
 
@@ -238,7 +238,7 @@ class UnifiedCheckpointManager:
         self,
         epoch: int,
         loss: float,
-        step: Optional[int] = None,
+        step: int | None = None,
         force: bool = False,
     ) -> bool:
         """
@@ -264,9 +264,7 @@ class UnifiedCheckpointManager:
             # Fall back to simple interval
             if epoch - self._last_save_epoch >= self.config.min_interval_epochs:
                 return True
-            if step is not None and step - self._last_save_step >= self.config.checkpoint_interval_steps:
-                return True
-            return False
+            return bool(step is not None and step - self._last_save_step >= self.config.checkpoint_interval_steps)
 
         # Adaptive logic from SmartCheckpointManager
         if epoch - self._last_save_epoch < self.config.min_interval_epochs:
@@ -296,16 +294,16 @@ class UnifiedCheckpointManager:
 
     def save_checkpoint(
         self,
-        model_state: Dict[str, Any],
+        model_state: dict[str, Any],
         progress: TrainingProgress,
         checkpoint_type: CheckpointType = CheckpointType.REGULAR,
-        metrics: Optional[Dict[str, float]] = None,
-        training_config: Optional[Dict[str, Any]] = None,
-        optimizer_state: Optional[Dict[str, Any]] = None,
-        scheduler_state: Optional[Dict[str, Any]] = None,
-        architecture_version: Optional[str] = None,
-        model_class: Optional[str] = None,
-        model_config: Optional[Dict[str, Any]] = None,
+        metrics: dict[str, float] | None = None,
+        training_config: dict[str, Any] | None = None,
+        optimizer_state: dict[str, Any] | None = None,
+        scheduler_state: dict[str, Any] | None = None,
+        architecture_version: str | None = None,
+        model_class: str | None = None,
+        model_config: dict[str, Any] | None = None,
     ) -> CheckpointMetadata:
         """
         Save a training checkpoint with full metadata.
@@ -374,7 +372,7 @@ class UnifiedCheckpointManager:
                 try:
                     with open(file_path, 'rb') as f:
                         os.fsync(f.fileno())
-                except (OSError, IOError) as e:
+                except OSError as e:
                     # fsync may fail on some filesystems (e.g., NFS without sync option)
                     # Fall back to global sync as a last resort
                     logger.debug(f"fsync failed ({e}), using os.sync() fallback")
@@ -454,13 +452,13 @@ class UnifiedCheckpointManager:
         else:
             return _do_save()
 
-    def _calculate_improvement_rate(self, current_loss: Optional[float]) -> Optional[float]:
+    def _calculate_improvement_rate(self, current_loss: float | None) -> float | None:
         """Calculate improvement rate from last checkpoint."""
         if current_loss is None or self._last_loss == float('inf'):
             return None
         return (self._last_loss - current_loss) / (abs(self._last_loss) + 1e-8)
 
-    def _cleanup_checkpoints(self, current_metrics: Optional[Dict[str, float]] = None):
+    def _cleanup_checkpoints(self, current_metrics: dict[str, float] | None = None):
         """Remove old checkpoints based on retention policy."""
         if len(self.checkpoints) <= self.config.max_checkpoints:
             return
@@ -505,14 +503,14 @@ class UnifiedCheckpointManager:
 
     def load_checkpoint(
         self,
-        checkpoint_id: Optional[str] = None,
-        checkpoint_type: Optional[CheckpointType] = None,
-        best_by_metric: Optional[str] = None,
+        checkpoint_id: str | None = None,
+        checkpoint_type: CheckpointType | None = None,
+        best_by_metric: str | None = None,
         device: str = 'cpu',
-        expected_version: Optional[str] = None,
-        expected_class: Optional[str] = None,
+        expected_version: str | None = None,
+        expected_class: str | None = None,
         strict_version: bool = False,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Load a checkpoint.
 
@@ -613,7 +611,7 @@ class UnifiedCheckpointManager:
         self,
         metric_name: str = 'loss',
         lower_is_better: bool = True
-    ) -> Optional[CheckpointMetadata]:
+    ) -> CheckpointMetadata | None:
         """Get the best checkpoint by a metric."""
         valid = [c for c in self.checkpoints if metric_name in c.metrics]
         if not valid:
@@ -621,20 +619,20 @@ class UnifiedCheckpointManager:
 
         return min(valid, key=lambda c: c.metrics[metric_name] * (1 if lower_is_better else -1))
 
-    def get_latest_checkpoint(self) -> Optional[CheckpointMetadata]:
+    def get_latest_checkpoint(self) -> CheckpointMetadata | None:
         """Get the most recent checkpoint."""
         return self.checkpoints[-1] if self.checkpoints else None
 
     def list_checkpoints(
         self,
-        checkpoint_type: Optional[CheckpointType] = None
-    ) -> List[CheckpointMetadata]:
+        checkpoint_type: CheckpointType | None = None
+    ) -> list[CheckpointMetadata]:
         """List checkpoints, optionally filtered by type."""
         if checkpoint_type:
             return [c for c in self.checkpoints if c.checkpoint_type == checkpoint_type]
         return list(self.checkpoints)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get checkpoint manager statistics."""
         return {
             'num_checkpoints': len(self.checkpoints),
@@ -650,12 +648,12 @@ class UnifiedCheckpointManager:
 
     def save_best_if_improved(
         self,
-        model_state: Dict[str, Any],
+        model_state: dict[str, Any],
         progress: TrainingProgress,
         metric_name: str,
         metric_value: float,
-        training_config: Optional[Dict[str, Any]] = None,
-    ) -> Optional[CheckpointMetadata]:
+        training_config: dict[str, Any] | None = None,
+    ) -> CheckpointMetadata | None:
         """
         Save a BEST checkpoint only if this is an improvement.
 
@@ -672,9 +670,8 @@ class UnifiedCheckpointManager:
         # Check if this is the best
         current_best = self.get_best_checkpoint(metric_name)
 
-        if current_best is not None:
-            if metric_value >= current_best.metrics.get(metric_name, float('inf')):
-                return None  # Not an improvement
+        if current_best is not None and metric_value >= current_best.metrics.get(metric_name, float('inf')):
+            return None  # Not an improvement
 
         # Save as best
         return self.save_checkpoint(
@@ -699,10 +696,10 @@ CheckpointManager = UnifiedCheckpointManager
 # This allows callers to import from checkpoint_unified instead of deprecated checkpointing
 try:
     from app.training.checkpointing import (
-        GracefulShutdownHandler,
-        save_checkpoint,
-        load_checkpoint,
         AsyncCheckpointer,
+        GracefulShutdownHandler,
+        load_checkpoint,
+        save_checkpoint,
     )
     _HAS_LEGACY_CHECKPOINTING = True
 except ImportError:

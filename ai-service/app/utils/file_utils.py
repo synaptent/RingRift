@@ -21,9 +21,10 @@ from __future__ import annotations
 
 import os
 import tempfile
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Generator, Optional, Union
+from typing import Union
 
 
 @contextmanager
@@ -83,10 +84,8 @@ def atomic_write(
 
     except Exception:
         # Clean up temp file on error
-        try:
+        with suppress(FileNotFoundError):
             os.unlink(tmp_path)
-        except FileNotFoundError:
-            pass
         raise
 
 
@@ -117,9 +116,9 @@ def write_atomic(
 
 def read_safe(
     path: Union[str, Path],
-    default: Optional[str] = None,
+    default: str | None = None,
     encoding: str = "utf-8",
-) -> Optional[str]:
+) -> str | None:
     """Read a text file safely with fallback on error.
 
     Args:
@@ -139,14 +138,14 @@ def read_safe(
 
     try:
         return path.read_text(encoding=encoding)
-    except (IOError, OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError):
         return default
 
 
 def read_bytes_safe(
     path: Union[str, Path],
-    default: Optional[bytes] = None,
-) -> Optional[bytes]:
+    default: bytes | None = None,
+) -> bytes | None:
     """Read a binary file safely with fallback on error.
 
     Args:
@@ -162,7 +161,7 @@ def read_bytes_safe(
 
     try:
         return path.read_bytes()
-    except (IOError, OSError):
+    except OSError:
         return default
 
 
@@ -197,7 +196,7 @@ def backup_file(
     path: Union[str, Path],
     suffix: str = ".bak",
     overwrite: bool = True,
-) -> Optional[Path]:
+) -> Path | None:
     """Create a backup copy of a file.
 
     Args:
@@ -273,13 +272,13 @@ def get_file_mtime(path: Union[str, Path]) -> float:
 
 __all__ = [
     "atomic_write",
-    "write_atomic",
-    "read_safe",
-    "read_bytes_safe",
-    "file_exists",
-    "ensure_file_dir",
     "backup_file",
-    "remove_safe",
-    "get_file_size",
+    "ensure_file_dir",
+    "file_exists",
     "get_file_mtime",
+    "get_file_size",
+    "read_bytes_safe",
+    "read_safe",
+    "remove_safe",
+    "write_atomic",
 ]

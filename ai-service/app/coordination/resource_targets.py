@@ -33,7 +33,7 @@ import time
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.utils.yaml_utils import safe_load_yaml
 
@@ -64,7 +64,7 @@ _DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "coordination.
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "unified_loop.yaml"
 
 
-def _load_config_targets(config_path: Optional[Path] = None) -> Dict[str, Any]:
+def _load_config_targets(config_path: Path | None = None) -> dict[str, Any]:
     """Load resource_targets from config file."""
     path = config_path or _DEFAULT_CONFIG_PATH
     config = safe_load_yaml(path, default={}, log_errors=True)
@@ -151,7 +151,7 @@ class HostTargets:
 
 
 # Host tier classification based on known hosts
-HOST_TIER_MAP: Dict[str, HostTier] = {
+HOST_TIER_MAP: dict[str, HostTier] = {
     # High-end (>= 80GB VRAM, modern architecture)
     "lambda-h100": HostTier.HIGH_END,
     "lambda-h200": HostTier.HIGH_END,
@@ -177,7 +177,7 @@ HOST_TIER_MAP: Dict[str, HostTier] = {
 }
 
 # Tier-specific target adjustments
-TIER_ADJUSTMENTS: Dict[HostTier, Dict[str, float]] = {
+TIER_ADJUSTMENTS: dict[HostTier, dict[str, float]] = {
     HostTier.HIGH_END: {
         "cpu_boost": 5.0,      # Can run 5% higher CPU
         "gpu_boost": 5.0,      # Can run 5% higher GPU
@@ -211,16 +211,16 @@ class ResourceTargetManager:
     - Utilization history tracking
     """
 
-    _instance: Optional["ResourceTargetManager"] = None
+    _instance: ResourceTargetManager | None = None
     _lock = threading.RLock()
 
-    def __init__(self, db_path: Optional[Path] = None, config_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None, config_path: Path | None = None):
         self._db_path = db_path or _DEFAULT_DB_PATH
         self._config_path = config_path or _DEFAULT_CONFIG_PATH
         self._targets = self._load_targets_from_config()
         self._tier_overrides = self._load_tier_overrides_from_config()
-        self._host_targets: Dict[str, HostTargets] = {}
-        self._utilization_history: Dict[str, List[Tuple[float, float, float]]] = {}
+        self._host_targets: dict[str, HostTargets] = {}
+        self._utilization_history: dict[str, list[tuple[float, float, float]]] = {}
         self._backpressure_factor: float = 1.0
         self._last_adaptive_update: float = 0.0
         self._init_db()
@@ -251,7 +251,7 @@ class ResourceTargetManager:
             throughput_max=config.get("throughput_max", 2000),
         )
 
-    def _load_tier_overrides_from_config(self) -> Dict[HostTier, Dict[str, Any]]:
+    def _load_tier_overrides_from_config(self) -> dict[HostTier, dict[str, Any]]:
         """Load tier-specific overrides from config file."""
         config = _load_config_targets(self._config_path)
         tier_config = config.get("tier_overrides", {})
@@ -272,7 +272,7 @@ class ResourceTargetManager:
         return overrides
 
     @classmethod
-    def get_instance(cls, db_path: Optional[Path] = None) -> "ResourceTargetManager":
+    def get_instance(cls, db_path: Path | None = None) -> ResourceTargetManager:
         """Get or create the singleton instance."""
         with cls._lock:
             if cls._instance is None:
@@ -324,7 +324,7 @@ class ResourceTargetManager:
             self._host_targets[host] = self._compute_host_targets(host)
         return self._host_targets[host]
 
-    def _get_node_hardware(self, host: str) -> Optional[Dict[str, Any]]:
+    def _get_node_hardware(self, host: str) -> dict[str, Any] | None:
         """Get hardware info for a node from the coordination DB."""
         try:
             conn = sqlite3.connect(self._db_path, timeout=5.0)
@@ -426,7 +426,7 @@ class ResourceTargetManager:
         current_cpu: float,
         current_gpu: float = 0.0,
         current_jobs: int = 0,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Check if a host should scale up (add jobs).
 
         Returns: (should_scale_up, reason)
@@ -455,7 +455,7 @@ class ResourceTargetManager:
         current_cpu: float,
         current_gpu: float = 0.0,
         current_memory: float = 0.0,
-    ) -> Tuple[bool, int, str]:
+    ) -> tuple[bool, int, str]:
         """Check if a host should scale down (remove jobs).
 
         Returns: (should_scale_down, reduction_count, reason)
@@ -620,7 +620,7 @@ class ResourceTargetManager:
         """Update targets based on historical utilization patterns."""
         # Check training pipeline backpressure
         try:
-            from app.coordination.queue_monitor import get_throttle_factor, QueueType
+            from app.coordination.queue_monitor import QueueType, get_throttle_factor
             self._backpressure_factor = get_throttle_factor(QueueType.TRAINING_DATA)
         except Exception:
             self._backpressure_factor = 1.0
@@ -633,7 +633,7 @@ class ResourceTargetManager:
         self._backpressure_factor = max(0.0, min(1.0, factor))
         self._host_targets.clear()
 
-    def get_cluster_summary(self) -> Dict:
+    def get_cluster_summary(self) -> dict:
         """Get summary of cluster utilization state."""
         total_cpu = 0.0
         total_gpu = 0.0
@@ -641,7 +641,7 @@ class ResourceTargetManager:
         total_jobs = 0
         host_count = 0
 
-        for host, targets in self._host_targets.items():
+        for _host, targets in self._host_targets.items():
             if targets.last_update > time.time() - 120:  # Updated in last 2 min
                 total_cpu += targets.last_cpu
                 total_gpu += targets.last_gpu
@@ -672,7 +672,7 @@ class ResourceTargetManager:
 
 
 # Module-level singleton accessors
-_manager: Optional[ResourceTargetManager] = None
+_manager: ResourceTargetManager | None = None
 _manager_lock = threading.RLock()
 
 
@@ -691,7 +691,7 @@ def should_scale_up(
     current_cpu: float,
     current_gpu: float = 0.0,
     current_jobs: int = 0,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Check if a host should scale up."""
     return ResourceTargetManager.get_instance().should_scale_up(
         host, current_cpu, current_gpu, current_jobs
@@ -703,7 +703,7 @@ def should_scale_down(
     current_cpu: float,
     current_gpu: float = 0.0,
     current_memory: float = 0.0,
-) -> Tuple[bool, int, str]:
+) -> tuple[bool, int, str]:
     """Check if a host should scale down."""
     return ResourceTargetManager.get_instance().should_scale_down(
         host, current_cpu, current_gpu, current_memory
@@ -742,7 +742,7 @@ def record_utilization(
     )
 
 
-def get_cluster_summary() -> Dict:
+def get_cluster_summary() -> dict:
     """Get cluster utilization summary."""
     return ResourceTargetManager.get_instance().get_cluster_summary()
 
@@ -758,10 +758,10 @@ def reset_resource_targets() -> None:
 
 
 def select_host_for_task(
-    available_hosts: List[str],
+    available_hosts: list[str],
     task_resource_type: str,
-    host_metrics: Optional[Dict[str, Dict[str, float]]] = None,
-) -> Optional[str]:
+    host_metrics: dict[str, dict[str, float]] | None = None,
+) -> str | None:
     """Select the best host for a task based on its resource requirements.
 
     This enables CPU and GPU utilization targets to be pursued independently:
@@ -826,9 +826,9 @@ def select_host_for_task(
 
 
 def get_hosts_for_gpu_tasks(
-    available_hosts: List[str],
+    available_hosts: list[str],
     max_gpu_util: float = 70.0,
-) -> List[str]:
+) -> list[str]:
     """Get hosts suitable for GPU tasks (low GPU utilization).
 
     Returns hosts sorted by GPU availability (lowest utilization first).
@@ -850,9 +850,9 @@ def get_hosts_for_gpu_tasks(
 
 
 def get_hosts_for_cpu_tasks(
-    available_hosts: List[str],
+    available_hosts: list[str],
     max_cpu_util: float = 70.0,
-) -> List[str]:
+) -> list[str]:
     """Get hosts suitable for CPU tasks (low CPU utilization).
 
     Returns hosts sorted by CPU availability (lowest utilization first).
@@ -878,25 +878,25 @@ def get_hosts_for_cpu_tasks(
 # =============================================================================
 
 __all__ = [
+    "HostTargets",
     # Enums
     "HostTier",
-    # Data classes
-    "UtilizationTargets",
-    "HostTargets",
     # Main class
     "ResourceTargetManager",
+    # Data classes
+    "UtilizationTargets",
+    "get_cluster_summary",
+    "get_host_targets",
+    "get_hosts_for_cpu_tasks",
+    "get_hosts_for_gpu_tasks",
     # Functions
     "get_resource_targets",
-    "get_host_targets",
-    "should_scale_up",
-    "should_scale_down",
     "get_target_job_count",
     "get_utilization_score",
     "record_utilization",
-    "get_cluster_summary",
-    "set_backpressure",
     "reset_resource_targets",
     "select_host_for_task",
-    "get_hosts_for_gpu_tasks",
-    "get_hosts_for_cpu_tasks",
+    "set_backpressure",
+    "should_scale_down",
+    "should_scale_up",
 ]

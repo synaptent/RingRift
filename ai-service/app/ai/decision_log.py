@@ -38,7 +38,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +93,16 @@ except ImportError:
 
 # Optional OpenTelemetry tracing
 try:
-    from app.tracing import get_current_span, add_ai_move_attributes, is_tracing_enabled
+    from app.tracing import add_ai_move_attributes, get_current_span, is_tracing_enabled
     HAS_TRACING = True
 except ImportError:
     HAS_TRACING = False
-    get_current_span = lambda: None
-    add_ai_move_attributes = lambda *args, **kwargs: None
-    is_tracing_enabled = lambda: False
+    def get_current_span():
+        return None
+    def add_ai_move_attributes(*args, **kwargs):
+        return None
+    def is_tracing_enabled():
+        return False
 
 
 @dataclass
@@ -129,13 +132,13 @@ class AIDecisionLog:
 
     # Timing
     time_ms: float = 0.0
-    time_breakdown: Dict[str, float] = field(default_factory=dict)
+    time_breakdown: dict[str, float] = field(default_factory=dict)
 
     # Move selection
     chosen_move: str = ""
     move_score: float = 0.0
     move_confidence: float = 0.0
-    top_alternatives: List[Tuple[str, float]] = field(default_factory=list)
+    top_alternatives: list[tuple[str, float]] = field(default_factory=list)
 
     # Diagnostics
     cache_hit: bool = False
@@ -153,9 +156,9 @@ class AIDecisionLog:
     fallback_reason: str = ""
 
     # Error tracking
-    error: Optional[str] = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
         # Convert datetime to ISO format
@@ -166,7 +169,7 @@ class AIDecisionLog:
         """Convert to JSON string."""
         return json.dumps(self.to_dict())
 
-    def to_structured_log(self) -> Dict[str, Any]:
+    def to_structured_log(self) -> dict[str, Any]:
         """Convert to structured log format for logging frameworks."""
         return {
             "event": "ai_decision",
@@ -278,10 +281,10 @@ class AIDecisionContext:
             model_version=model_version,
         )
         self.auto_log = auto_log
-        self._start_time: Optional[float] = None
-        self._time_marks: Dict[str, float] = {}
+        self._start_time: float | None = None
+        self._time_marks: dict[str, float] = {}
 
-    def __enter__(self) -> 'AIDecisionContext':
+    def __enter__(self) -> AIDecisionContext:
         self._start_time = time.perf_counter()
         return self
 
@@ -310,7 +313,7 @@ class AIDecisionContext:
         move: Any,
         score: float = 0.0,
         confidence: float = 0.0,
-        alternatives: Optional[List[Tuple[str, float]]] = None,
+        alternatives: list[tuple[str, float]] | None = None,
     ) -> None:
         """Record the chosen move and its evaluation.
 
@@ -411,7 +414,7 @@ def track_ai_decision(
 
 def create_decision_log_from_stats(
     move: Any,
-    stats: Dict[str, Any],
+    stats: dict[str, Any],
     game_id: str = "",
     difficulty: int = 0,
 ) -> AIDecisionLog:

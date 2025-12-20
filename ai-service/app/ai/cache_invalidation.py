@@ -26,10 +26,12 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ class CacheInvalidationResult:
     cache_name: str
     success: bool
     items_cleared: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     duration_ms: float = 0.0
 
 
@@ -50,7 +52,7 @@ class FullInvalidationResult:
     total_success: bool = True
     caches_cleared: int = 0
     total_items_cleared: int = 0
-    results: List[CacheInvalidationResult] = field(default_factory=list)
+    results: list[CacheInvalidationResult] = field(default_factory=list)
     trigger_reason: str = ""
     model_id: str = ""
 
@@ -81,7 +83,7 @@ class ModelPromotionCacheInvalidator:
         self._subscribed = False
 
         # Registry of cache invalidation functions
-        self._cache_invalidators: Dict[str, Callable[[], int]] = {}
+        self._cache_invalidators: dict[str, Callable[[], int]] = {}
         self._register_default_invalidators()
 
     def _register_default_invalidators(self) -> None:
@@ -304,7 +306,7 @@ class ModelPromotionCacheInvalidator:
 
     def _invalidate_selective(
         self,
-        caches: List[str],
+        caches: list[str],
         trigger_reason: str = "selective",
         model_id: str = "",
     ) -> FullInvalidationResult:
@@ -478,16 +480,15 @@ class ModelPromotionCacheInvalidator:
         """Clear GPU/MPS memory caches."""
         try:
             import gc
+
             import torch
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                try:
+                with contextlib.suppress(Exception):
                     torch.mps.empty_cache()
-                except Exception:
-                    pass
 
             gc.collect()
             logger.debug("[CacheInvalidator] GPU/MPS memory cleared")
@@ -525,7 +526,7 @@ class ModelPromotionCacheInvalidator:
         except Exception as e:
             logger.debug(f"Failed to emit invalidation event: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get invalidation statistics.
 
         Returns:
@@ -541,7 +542,7 @@ class ModelPromotionCacheInvalidator:
 
 
 # Singleton cache invalidator
-_cache_invalidator: Optional[ModelPromotionCacheInvalidator] = None
+_cache_invalidator: ModelPromotionCacheInvalidator | None = None
 
 
 def wire_promotion_to_cache_invalidation(
@@ -613,7 +614,7 @@ def wire_all_cache_invalidation_triggers(
     return _cache_invalidator
 
 
-def get_cache_invalidator() -> Optional[ModelPromotionCacheInvalidator]:
+def get_cache_invalidator() -> ModelPromotionCacheInvalidator | None:
     """Get the global cache invalidator if configured."""
     return _cache_invalidator
 

@@ -36,21 +36,22 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "State",
-    "Transition",
-    "StateMachine",
-    "StateMachineError",
-    "InvalidTransitionError",
     # Pre-built state sets
     "CoordinatorStates",
+    "InvalidTransitionError",
     "OrchestratorStates",
     "PipelineStates",
+    "State",
+    "StateMachine",
+    "StateMachineError",
+    "Transition",
 ]
 
 
@@ -87,9 +88,9 @@ class State:
     name: str
     initial: bool = False
     terminal: bool = False
-    on_enter: Optional[Callable[["StateMachine"], None]] = None
-    on_exit: Optional[Callable[["StateMachine"], None]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    on_enter: Callable[[StateMachine], None] | None = None
+    on_exit: Callable[[StateMachine], None] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -121,11 +122,11 @@ class Transition:
     """
     from_state: State
     to_state: State
-    guard: Optional[Callable[["StateMachine"], bool]] = None
-    action: Optional[Callable[["StateMachine"], None]] = None
-    name: Optional[str] = None
+    guard: Callable[[StateMachine], bool] | None = None
+    action: Callable[[StateMachine], None] | None = None
+    name: str | None = None
 
-    def can_execute(self, machine: "StateMachine") -> bool:
+    def can_execute(self, machine: StateMachine) -> bool:
         """Check if this transition can be executed."""
         if self.guard is None:
             return True
@@ -135,7 +136,7 @@ class Transition:
             logger.warning(f"Transition guard failed: {e}")
             return False
 
-    def execute(self, machine: "StateMachine") -> None:
+    def execute(self, machine: StateMachine) -> None:
         """Execute the transition action."""
         if self.action is not None:
             self.action(machine)
@@ -147,7 +148,7 @@ class StateHistory:
     from_state: str
     to_state: str
     timestamp: float
-    transition_name: Optional[str] = None
+    transition_name: str | None = None
     duration_in_previous: float = 0.0
 
 
@@ -181,11 +182,11 @@ class StateMachine:
     """
 
     # Subclasses should override these
-    TRANSITIONS: List[Transition] = []
+    TRANSITIONS: list[Transition] = []
 
     def __init__(
         self,
-        initial_state: Optional[State] = None,
+        initial_state: State | None = None,
         record_history: bool = True,
         max_history: int = 100,
     ):
@@ -202,9 +203,9 @@ class StateMachine:
         self._state_entered_at = time.time()
         self._record_history = record_history
         self._max_history = max_history
-        self._history: List[StateHistory] = []
+        self._history: list[StateHistory] = []
 
-    def _collect_states(self) -> Dict[str, State]:
+    def _collect_states(self) -> dict[str, State]:
         """Collect all State attributes from the class."""
         states = {}
         for name in dir(self.__class__):
@@ -213,9 +214,9 @@ class StateMachine:
                 states[attr.name] = attr
         return states
 
-    def _build_transition_map(self) -> Dict[str, List[Transition]]:
+    def _build_transition_map(self) -> dict[str, list[Transition]]:
         """Build a map of from_state -> valid transitions."""
-        transition_map: Dict[str, List[Transition]] = {}
+        transition_map: dict[str, list[Transition]] = {}
         for t in self.TRANSITIONS:
             from_name = t.from_state.name
             if from_name not in transition_map:
@@ -254,7 +255,7 @@ class StateMachine:
         return time.time() - self._state_entered_at
 
     @property
-    def history(self) -> List[StateHistory]:
+    def history(self) -> list[StateHistory]:
         """Get state change history."""
         return list(self._history)
 
@@ -373,7 +374,7 @@ class StateMachine:
         self,
         from_state: State,
         to_state: State,
-    ) -> Optional[Transition]:
+    ) -> Transition | None:
         """Find a transition between two states."""
         transitions = self._transitions.get(from_state.name, [])
         for t in transitions:
@@ -385,7 +386,7 @@ class StateMachine:
         self,
         from_state: State,
         to_state: State,
-        transition: Optional[Transition],
+        transition: Transition | None,
         duration: float,
     ) -> None:
         """Record a state transition in history."""
@@ -402,7 +403,7 @@ class StateMachine:
         if len(self._history) > self._max_history:
             self._history = self._history[-self._max_history:]
 
-    def get_valid_transitions(self) -> List[str]:
+    def get_valid_transitions(self) -> list[str]:
         """Get list of valid target states from current state."""
         if self._current_state.terminal:
             return []

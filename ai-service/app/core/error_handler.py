@@ -48,34 +48,35 @@ import functools
 import logging
 import random
 import time
-from typing import Any, Callable, Optional, Sequence, Type, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 __all__ = [
+    # Constants
+    "EMERGENCY_HALT_FILE",
+    "EmergencyHaltError",
+    "ErrorAggregator",
+    "FatalError",
+    "RetryPolicy",
+    # Retry policy classes
+    "RetryStrategy",
+    "RetryableError",
     # Exception types (re-exported from app.errors)
     "RingRiftError",
-    "RetryableError",
-    "FatalError",
-    "EmergencyHaltError",
     # Emergency halt functions
     "check_emergency_halt",
-    "set_emergency_halt",
     "clear_emergency_halt",
-    "with_emergency_halt_check",
-    "with_emergency_halt_check_async",
     # Retry decorators
     "retry",
     "retry_async",
-    # Retry policy classes
-    "RetryStrategy",
-    "RetryPolicy",
-    "with_retry_policy",
-    "with_retry_policy_async",
     # Safe execution
     "safe_execute",
     "safe_execute_async",
-    "ErrorAggregator",
-    # Constants
-    "EMERGENCY_HALT_FILE",
+    "set_emergency_halt",
+    "with_emergency_halt_check",
+    "with_emergency_halt_check_async",
+    "with_retry_policy",
+    "with_retry_policy_async",
 ]
 
 logger = logging.getLogger(__name__)
@@ -97,12 +98,11 @@ EMERGENCY_HALT_FILE = DATA_DIR / "coordination" / "EMERGENCY_HALT"
 
 # Import error classes from the unified errors module
 from app.errors import (
-    RingRiftError,
-    RetryableError,
-    FatalError,  # Alias for NonRetryableError
     EmergencyHaltError,
+    FatalError,  # Alias for NonRetryableError
+    RetryableError,
+    RingRiftError,
 )
-
 
 # ============================================================================
 # Emergency Halt Functions
@@ -182,8 +182,8 @@ def retry(
     delay: float = 1.0,
     backoff: float = 2.0,
     max_delay: float = 60.0,
-    exceptions: Sequence[Type[Exception]] = (Exception,),
-    on_retry: Optional[Callable[[Exception, int], None]] = None,
+    exceptions: Sequence[type[Exception]] = (Exception,),
+    on_retry: Callable[[Exception, int], None] | None = None,
     reraise: bool = True,
     jitter: bool = False,
 ) -> Callable[[F], F]:
@@ -266,11 +266,11 @@ def retry_async(
     delay: float = 1.0,
     backoff: float = 2.0,
     max_delay: float = 60.0,
-    exceptions: Sequence[Type[Exception]] = (Exception,),
-    on_retry: Optional[Callable[[Exception, int], None]] = None,
+    exceptions: Sequence[type[Exception]] = (Exception,),
+    on_retry: Callable[[Exception, int], None] | None = None,
     reraise: bool = True,
     jitter: bool = False,
-    circuit_breaker_key: Optional[str] = None,
+    circuit_breaker_key: str | None = None,
 ) -> Callable[[AF], AF]:
     """Async version of retry decorator.
 
@@ -460,7 +460,7 @@ class RetryPolicy:
         }
 
     @classmethod
-    def from_config(cls, config: dict) -> "RetryPolicy":
+    def from_config(cls, config: dict) -> RetryPolicy:
         """Create policy from configuration dict.
 
         Args:
@@ -665,7 +665,7 @@ class ErrorAggregator:
         self.operation = operation
         self.errors: list[tuple[Exception, dict]] = []
 
-    def add(self, error: Exception, context: Optional[dict] = None) -> None:
+    def add(self, error: Exception, context: dict | None = None) -> None:
         """Add an error to the collection."""
         self.errors.append((error, context or {}))
 
@@ -694,7 +694,7 @@ class ErrorAggregator:
 
         return "\n".join(lines)
 
-    def raise_if_any(self, error_class: Type[Exception] = RingRiftError) -> None:
+    def raise_if_any(self, error_class: type[Exception] = RingRiftError) -> None:
         """Raise an exception if any errors were collected."""
         if self.errors:
             raise error_class(self.summary())

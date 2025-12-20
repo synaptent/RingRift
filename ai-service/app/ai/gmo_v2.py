@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -326,7 +325,7 @@ class GMOv2ValueNet(nn.Module):
         self,
         state_embed: torch.Tensor,
         move_embed: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass for value and uncertainty.
 
         Returns:
@@ -392,7 +391,7 @@ class GMOv2AI(BaseAI):
         self,
         player_number: int,
         config: AIConfig,
-        gmo_config: Optional[GMOv2Config] = None,
+        gmo_config: GMOv2Config | None = None,
     ):
         super().__init__(player_number, config)
 
@@ -448,7 +447,7 @@ class GMOv2AI(BaseAI):
         self,
         state_embed: torch.Tensor,
         move_embed: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Estimate value and uncertainty via MC Dropout.
 
         Returns:
@@ -475,7 +474,7 @@ class GMOv2AI(BaseAI):
         state_embed: torch.Tensor,
         initial_embed: torch.Tensor,
         exploration_temp: float,
-    ) -> List[torch.Tensor]:
+    ) -> list[torch.Tensor]:
         """Run ensemble of gradient optimization paths.
 
         Returns list of optimized embeddings from different paths.
@@ -496,7 +495,7 @@ class GMOv2AI(BaseAI):
                 optimizer.zero_grad()
 
                 # Estimate value and uncertainty
-                mean_value, entropy, variance = self._estimate_uncertainty(
+                mean_value, _entropy, variance = self._estimate_uncertainty(
                     state_embed, move_embed
                 )
 
@@ -521,7 +520,7 @@ class GMOv2AI(BaseAI):
 
     def _ensemble_vote(
         self,
-        optimized_embeds: List[torch.Tensor],
+        optimized_embeds: list[torch.Tensor],
         state_embed: torch.Tensor,
         legal_move_embeds: torch.Tensor,
     ) -> torch.Tensor:
@@ -548,7 +547,7 @@ class GMOv2AI(BaseAI):
             # Soft voting: average scores
             return scores_tensor.mean(dim=0)
 
-    def select_move(self, game_state: GameState) -> Optional[Move]:
+    def select_move(self, game_state: GameState) -> Move | None:
         """Select best move using enhanced GMO algorithm."""
         from ..game_engine import GameEngine
 
@@ -674,7 +673,7 @@ class GMOv2AI(BaseAI):
         torch.save(checkpoint, checkpoint_path)
         logger.info(f"Saved GMO v2 checkpoint to {checkpoint_path}")
 
-    def get_parameters(self) -> List[torch.nn.Parameter]:
+    def get_parameters(self) -> list[torch.nn.Parameter]:
         """Get all trainable parameters."""
         params = []
         params.extend(self.state_encoder.parameters())
@@ -690,7 +689,7 @@ class GMOv2AI(BaseAI):
 def create_gmo_v2(
     player_number: int,
     device: str = "cpu",
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
 ) -> GMOv2AI:
     """Create a GMO v2 AI instance.
 

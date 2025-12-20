@@ -19,11 +19,6 @@ Usage:
     from app.config.thresholds import TRAINING_TRIGGER_GAMES, ELO_DROP_ROLLBACK
 """
 
-from app.config.training_config import (
-    CMAESConfig,
-    NeuralNetConfig,
-    SelfPlayConfig,
-)
 from app.config.config_validator import (
     ConfigValidator,
     ValidationResult,
@@ -33,26 +28,31 @@ from app.config.config_validator import (
 
 # Unified config loader (December 2025)
 from app.config.loader import (
-    load_config,
-    save_config,
     ConfigLoader,
+    ConfigLoadError,
     ConfigSource,
     env_override,
+    load_config,
     merge_configs,
+    save_config,
     validate_config,
-    ConfigLoadError,
+)
+from app.config.training_config import (
+    CMAESConfig,
+    NeuralNetConfig,
+    SelfPlayConfig,
 )
 
 # Unified configuration (December 2025)
 try:
     from app.config.unified_config import (
+        DataLoadingConfig,
+        IntegratedEnhancementsConfig,
+        QualityConfig,
         UnifiedConfig,
+        create_training_manager,
         get_config,
         get_training_threshold,
-        IntegratedEnhancementsConfig,
-        create_training_manager,
-        DataLoadingConfig,
-        QualityConfig,
     )
     HAS_UNIFIED_CONFIG = True
 except ImportError:
@@ -61,70 +61,70 @@ except ImportError:
     QualityConfig = None
 
 __all__ = [
+    "HAS_UNIFIED_CONFIG",
     # Training configs
     "CMAESConfig",
-    "NeuralNetConfig",
-    "SelfPlayConfig",
-    # Validation
-    "ConfigValidator",
-    "ValidationResult",
-    "validate_all_configs",
-    "validate_startup",
-    "HAS_UNIFIED_CONFIG",
-    # Config loader (December 2025)
-    "load_config",
-    "save_config",
+    "ConfigLoadError",
     "ConfigLoader",
     "ConfigSource",
+    # Validation
+    "ConfigValidator",
+    "NeuralNetConfig",
+    "SelfPlayConfig",
+    "ValidationResult",
     "env_override",
+    # Config loader (December 2025)
+    "load_config",
     "merge_configs",
+    "save_config",
+    "validate_all_configs",
     "validate_config",
-    "ConfigLoadError",
+    "validate_startup",
 ]
 
 if HAS_UNIFIED_CONFIG:
     __all__.extend([
+        "DataLoadingConfig",
+        "IntegratedEnhancementsConfig",
+        "QualityConfig",
         "UnifiedConfig",
+        "create_training_manager",
         "get_config",
         "get_training_threshold",
-        "IntegratedEnhancementsConfig",
-        "create_training_manager",
-        "DataLoadingConfig",
-        "QualityConfig",
     ])
 
 # Re-export key threshold constants for convenience
 from app.config.thresholds import (
-    # Training thresholds
-    TRAINING_TRIGGER_GAMES,
-    TRAINING_MIN_INTERVAL_SECONDS,
-    TRAINING_STALENESS_HOURS,
-    TRAINING_MAX_CONCURRENT,
     # Rollback thresholds
     ELO_DROP_ROLLBACK,
-    WIN_RATE_DROP_ROLLBACK,
-    MIN_GAMES_REGRESSION,
     # Promotion thresholds
     ELO_IMPROVEMENT_PROMOTE,
-    MIN_GAMES_PROMOTE,
+    ELO_K_FACTOR,
     # Elo system
     INITIAL_ELO_RATING,
-    ELO_K_FACTOR,
     MIN_GAMES_FOR_ELO,
+    MIN_GAMES_PROMOTE,
+    MIN_GAMES_REGRESSION,
+    TRAINING_MAX_CONCURRENT,
+    TRAINING_MIN_INTERVAL_SECONDS,
+    TRAINING_STALENESS_HOURS,
+    # Training thresholds
+    TRAINING_TRIGGER_GAMES,
+    WIN_RATE_DROP_ROLLBACK,
 )
 
 __all__.extend([
-    # Threshold constants
-    "TRAINING_TRIGGER_GAMES",
+    "ELO_DROP_ROLLBACK",
+    "ELO_IMPROVEMENT_PROMOTE",
+    "ELO_K_FACTOR",
+    "INITIAL_ELO_RATING",
+    "MIN_GAMES_FOR_ELO",
+    "MIN_GAMES_PROMOTE",
+    "MIN_GAMES_REGRESSION",
+    "TRAINING_MAX_CONCURRENT",
     "TRAINING_MIN_INTERVAL_SECONDS",
     "TRAINING_STALENESS_HOURS",
-    "TRAINING_MAX_CONCURRENT",
-    "ELO_DROP_ROLLBACK",
+    # Threshold constants
+    "TRAINING_TRIGGER_GAMES",
     "WIN_RATE_DROP_ROLLBACK",
-    "MIN_GAMES_REGRESSION",
-    "ELO_IMPROVEMENT_PROMOTE",
-    "MIN_GAMES_PROMOTE",
-    "INITIAL_ELO_RATING",
-    "ELO_K_FACTOR",
-    "MIN_GAMES_FOR_ELO",
 ])

@@ -39,21 +39,23 @@ import sqlite3
 import threading
 import time
 import uuid
-from contextlib import contextmanager
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 # Path setup
 from app.utils.paths import UNIFIED_ELO_DB
+
 DEFAULT_ELO_DB_PATH = UNIFIED_ELO_DB
 
 # Import canonical thresholds
 try:
     from app.config.thresholds import (
-        INITIAL_ELO_RATING,
         ELO_K_FACTOR,
+        INITIAL_ELO_RATING,
         MIN_GAMES_FOR_ELO,
     )
 except ImportError:
@@ -66,10 +68,10 @@ except ImportError:
 # Using the new coordination module (cluster_coordinator is deprecated)
 try:
     from app.coordination.helpers import (
+        get_orchestrator_roles,
+        get_role_holder,
         has_coordination as _has_coordination,
         has_role,
-        get_role_holder,
-        get_orchestrator_roles,
     )
     HAS_COORDINATION = _has_coordination()
     OrchestratorRole = get_orchestrator_roles()
@@ -80,7 +82,7 @@ except ImportError:
     get_role_holder = None
 
 # Singleton instance
-_elo_service_instance: Optional["EloService"] = None
+_elo_service_instance: EloService | None = None
 _elo_service_lock = threading.RLock()
 
 # Event emission for ELO updates
@@ -118,14 +120,14 @@ class EloRating:
 class MatchResult:
     """Result of a single match."""
     match_id: str
-    participant_ids: List[str]
-    winner_id: Optional[str]  # None for draw
+    participant_ids: list[str]
+    winner_id: str | None  # None for draw
     game_length: int
     duration_sec: float
     board_type: str
     num_players: int
     timestamp: str
-    elo_changes: Dict[str, float] = field(default_factory=dict)
+    elo_changes: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -177,7 +179,7 @@ class EloService:
     INITIAL_ELO = float(INITIAL_ELO_RATING)
     CONFIDENCE_GAMES = MIN_GAMES_FOR_ELO  # Games needed for high confidence
 
-    def __init__(self, db_path: Optional[Path] = None, enforce_single_writer: bool = True):
+    def __init__(self, db_path: Path | None = None, enforce_single_writer: bool = True):
         """Initialize the Elo service.
 
         Args:
@@ -187,7 +189,7 @@ class EloService:
         self.db_path = db_path or DEFAULT_ELO_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
-        self._feedback_callbacks: List[Callable[[TrainingFeedback], None]] = []
+        self._feedback_callbacks: list[Callable[[TrainingFeedback], None]] = []
         self._enforce_single_writer = enforce_single_writer and HAS_COORDINATION
         self._init_db()
 
@@ -228,7 +230,7 @@ class EloService:
             conn.rollback()
             raise
 
-    def check_write_permission(self) -> Tuple[bool, str]:
+    def check_write_permission(self) -> tuple[bool, str]:
         """Check if this process can write to the Elo database.
 
         Returns:
@@ -252,8 +254,8 @@ class EloService:
     def execute_query(
         self,
         query: str,
-        params: Tuple = ()
-    ) -> List[sqlite3.Row]:
+        params: tuple = ()
+    ) -> list[sqlite3.Row]:
         """Execute a read-only query and return results.
 
         This provides a centralized way to run custom queries against the Elo
@@ -369,10 +371,10 @@ class EloService:
         participant_id: str,
         name: str,
         ai_type: str,
-        difficulty: Optional[int] = None,
+        difficulty: int | None = None,
         use_neural_net: bool = False,
-        model_path: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        model_path: str | None = None,
+        metadata: dict | None = None
     ) -> None:
         """Register a new participant (model or AI baseline)."""
         with self._transaction() as conn:
@@ -396,8 +398,8 @@ class EloService:
         model_id: str,
         board_type: str,
         num_players: int,
-        model_path: Optional[str] = None,
-        parent_model_id: Optional[str] = None
+        model_path: str | None = None,
+        parent_model_id: str | None = None
     ) -> None:
         """Register a trained model and initialize its Elo rating."""
         # Register as participant
@@ -459,12 +461,12 @@ class EloService:
         self,
         participant_a: str,
         participant_b: str,
-        winner: Optional[str],  # None for draw
+        winner: str | None,  # None for draw
         board_type: str,
         num_players: int,
         game_length: int = 0,
         duration_sec: float = 0.0,
-        tournament_id: Optional[str] = None
+        tournament_id: str | None = None
     ) -> MatchResult:
         """Record a match result and update Elo ratings."""
         match_id = str(uuid.uuid4())
@@ -552,7 +554,7 @@ class EloService:
             try:
                 # Try to get running event loop
                 try:
-                    loop = asyncio.get_running_loop()
+                    asyncio.get_running_loop()
                     # Schedule coroutines in the running loop
                     for pid, old_elo, new_elo in [
                         (participant_a, elo_before[participant_a], elo_after[participant_a]),
@@ -591,7 +593,7 @@ class EloService:
         num_players: int,
         limit: int = 50,
         min_games: int = 0
-    ) -> List[LeaderboardEntry]:
+    ) -> list[LeaderboardEntry]:
         """Get the Elo leaderboard for a configuration."""
         conn = self._get_connection()
         cursor = conn.execute("""
@@ -711,10 +713,8 @@ class EloService:
 
         # Notify callbacks
         for callback in self._feedback_callbacks:
-            try:
+            with suppress(Exception):
                 callback(feedback)
-            except Exception:
-                pass
 
         return feedback
 
@@ -747,7 +747,7 @@ class EloService:
         baseline_id: str,
         board_type: str,
         num_players: int
-    ) -> Tuple[float, int]:
+    ) -> tuple[float, int]:
         """Get win rate of model vs specific baseline."""
         conn = self._get_connection()
         cursor = conn.execute("""
@@ -769,7 +769,7 @@ class EloService:
         return win_rate, total
 
 
-def get_elo_service(db_path: Optional[Path] = None) -> EloService:
+def get_elo_service(db_path: Path | None = None) -> EloService:
     """Get the singleton EloService instance."""
     global _elo_service_instance
     with _elo_service_lock:
@@ -785,12 +785,12 @@ def get_elo_service(db_path: Optional[Path] = None) -> EloService:
 # to allow smooth migration of orchestrators to use this centralized service.
 
 
-def init_elo_database(db_path: Optional[Path] = None) -> EloService:
+def init_elo_database(db_path: Path | None = None) -> EloService:
     """Initialize and return the Elo service (backwards compatible)."""
     return get_elo_service(db_path)
 
 
-def register_models(db: EloService, models: List[Dict[str, Any]]) -> None:
+def register_models(db: EloService, models: list[dict[str, Any]]) -> None:
     """Register multiple models in the Elo database.
 
     Args:
@@ -818,12 +818,12 @@ def update_elo_after_match(
     db: EloService,
     model_a_id: str,
     model_b_id: str,
-    winner: Optional[str],  # model_a_id, model_b_id, "draw", or None
+    winner: str | None,  # model_a_id, model_b_id, "draw", or None
     board_type: str = "square8",
     num_players: int = 2,
     game_length: int = 0,
     duration_sec: float = 0.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Update Elo ratings after a match (backwards compatible).
 
     Args:
@@ -878,7 +878,7 @@ def get_leaderboard(
     num_players: int = 2,
     limit: int = 50,
     min_games: int = 0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get Elo leaderboard (backwards compatible).
 
     Args:
@@ -909,9 +909,9 @@ def get_head_to_head(
     db: EloService,
     participant_a: str,
     participant_b: str,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
-) -> Dict[str, Any]:
+    board_type: str | None = None,
+    num_players: int | None = None,
+) -> dict[str, Any]:
     """Get head-to-head stats between two participants.
 
     Args:
@@ -930,7 +930,7 @@ def get_head_to_head(
         SELECT winner_id FROM match_history
         WHERE participant_ids LIKE ? AND participant_ids LIKE ?
     """
-    params: List[Any] = [f'%{participant_a}%', f'%{participant_b}%']
+    params: list[Any] = [f'%{participant_a}%', f'%{participant_b}%']
 
     if board_type:
         query += " AND board_type = ?"
@@ -967,7 +967,7 @@ def get_head_to_head(
     }
 
 
-def get_database_stats(db: EloService) -> Dict[str, Any]:
+def get_database_stats(db: EloService) -> dict[str, Any]:
     """Get overall database statistics.
 
     Args:
@@ -1007,12 +1007,12 @@ def get_database_stats(db: EloService) -> Dict[str, Any]:
 
 def get_match_history(
     db: EloService,
-    participant_id: Optional[str] = None,
-    tournament_id: Optional[str] = None,
-    board_type: Optional[str] = None,
-    num_players: Optional[int] = None,
+    participant_id: str | None = None,
+    tournament_id: str | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     limit: int = 100,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get match history with optional filters.
 
     Args:
@@ -1029,7 +1029,7 @@ def get_match_history(
     conn = db._get_connection()
 
     query = "SELECT * FROM match_history WHERE 1=1"
-    params: List[Any] = []
+    params: list[Any] = []
 
     if participant_id:
         query += " AND participant_ids LIKE ?"
@@ -1053,20 +1053,14 @@ def get_match_history(
         r = dict(row)
         # Parse JSON fields if present
         if r.get("participant_ids"):
-            try:
+            with suppress(json.JSONDecodeError, TypeError):
                 r["participant_ids"] = json.loads(r["participant_ids"])
-            except (json.JSONDecodeError, TypeError):
-                pass
         if r.get("elo_before"):
-            try:
+            with suppress(json.JSONDecodeError, TypeError):
                 r["elo_before"] = json.loads(r["elo_before"])
-            except (json.JSONDecodeError, TypeError):
-                pass
         if r.get("elo_after"):
-            try:
+            with suppress(json.JSONDecodeError, TypeError):
                 r["elo_after"] = json.loads(r["elo_after"])
-            except (json.JSONDecodeError, TypeError):
-                pass
         results.append(r)
     return results
 
@@ -1077,7 +1071,7 @@ def get_rating_history(
     board_type: str,
     num_players: int,
     limit: int = 100,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get rating history for a participant in a specific config.
 
     Args:

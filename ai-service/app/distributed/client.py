@@ -31,12 +31,12 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 # Memory requirements per board type (in GB)
 # Must be kept in sync with cluster_worker.py BOARD_MEMORY_REQUIREMENTS
-BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
+BOARD_MEMORY_REQUIREMENTS: dict[str, int] = {
     "square8": 8,      # 8GB minimum for 8x8 games
     "square19": 48,    # 48GB minimum for 19x19 games
     "hexagonal": 48,   # 48GB minimum for hex games
@@ -69,12 +69,12 @@ class TaskResult:
     evaluation_time_sec: float
     worker_id: str
     status: str  # "success" or "error"
-    error: Optional[str] = None
+    error: str | None = None
     # Optional game replay data (only populated if task requested recording)
-    game_replays: Optional[List[Dict[str, Any]]] = None
+    game_replays: list[dict[str, Any]] | None = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TaskResult":
+    def from_dict(cls, data: dict[str, Any]) -> TaskResult:
         return cls(
             task_id=data.get("task_id", ""),
             candidate_id=data.get("candidate_id", -1),
@@ -97,9 +97,9 @@ class EvaluationStats:
     failed_evaluations: int = 0
     total_games: int = 0
     total_time_sec: float = 0.0
-    worker_task_counts: Dict[str, int] = field(default_factory=dict)
+    worker_task_counts: dict[str, int] = field(default_factory=dict)
     # Aggregated game replays from all workers (populated when record_games=True)
-    all_game_replays: List[Dict[str, Any]] = field(default_factory=list)
+    all_game_replays: list[dict[str, Any]] = field(default_factory=list)
 
     def add_result(self, result: TaskResult) -> None:
         self.total_candidates += 1
@@ -146,7 +146,7 @@ class WorkerClient:
         else:
             self._base_url = f"http://{worker_url}"
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """
         Check worker health.
 
@@ -164,7 +164,7 @@ class WorkerClient:
             return {"status": "error", "error": f"HTTP {e.code}"}
         except URLError as e:
             return {"status": "error", "error": f"URL error: {e.reason}"}
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             return {"status": "error", "error": "Request timeout"}
         except json.JSONDecodeError as e:
             return {"status": "error", "error": f"Invalid JSON: {e}"}
@@ -176,7 +176,7 @@ class WorkerClient:
         result = self.health_check()
         return result.get("status") == "healthy"
 
-    def get_memory_info(self) -> Dict[str, Any]:
+    def get_memory_info(self) -> dict[str, Any]:
         """
         Get worker memory information.
 
@@ -216,7 +216,7 @@ class WorkerClient:
         required_gb = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
         return total_gb >= required_gb
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get detailed worker statistics."""
         try:
             url = f"{self._base_url}/stats"
@@ -227,7 +227,7 @@ class WorkerClient:
             return {"status": "error", "error": f"HTTP {e.code}"}
         except URLError as e:
             return {"status": "error", "error": f"URL error: {e.reason}"}
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             return {"status": "error", "error": "Request timeout"}
         except json.JSONDecodeError as e:
             return {"status": "error", "error": f"Invalid JSON: {e}"}
@@ -239,7 +239,7 @@ class WorkerClient:
         board_type: str,
         num_players: int,
         pool_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Request worker to preload a state pool.
 
@@ -276,14 +276,14 @@ class WorkerClient:
             return {"status": "error", "error": f"HTTP {e.code}"}
         except URLError as e:
             return {"status": "error", "error": f"URL error: {e.reason}"}
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             return {"status": "error", "error": "Request timeout"}
         except json.JSONDecodeError as e:
             return {"status": "error", "error": f"Invalid JSON: {e}"}
         except OSError as e:
             return {"status": "error", "error": f"Network error: {e}"}
 
-    def evaluate(self, task: Dict[str, Any]) -> TaskResult:
+    def evaluate(self, task: dict[str, Any]) -> TaskResult:
         """
         Submit an evaluation task to the worker.
 
@@ -332,7 +332,7 @@ class WorkerClient:
                 status="error",
                 error=f"URL error: {e.reason}",
             )
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             return TaskResult(
                 task_id=task.get("task_id", ""),
                 candidate_id=task.get("candidate_id", -1),
@@ -378,7 +378,7 @@ class DistributedEvaluator:
 
     def __init__(
         self,
-        workers: List[str],
+        workers: list[str],
         board_type: str = "square8",
         num_players: int = 2,
         games_per_eval: int = 24,
@@ -386,7 +386,7 @@ class DistributedEvaluator:
         state_pool_id: str = "v1",
         max_moves: int = 10000,
         eval_randomness: float = 0.0,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         timeout: float = 300.0,
         max_retries: int = 2,
         fallback_fitness: float = 0.0,
@@ -442,10 +442,10 @@ class DistributedEvaluator:
         self._clients = {url: WorkerClient(url, timeout) for url in workers}
 
         # Track worker health
-        self._healthy_workers: List[str] = []
+        self._healthy_workers: list[str] = []
         self._worker_task_idx = 0
 
-    def verify_workers(self, check_memory: bool = True) -> List[str]:
+    def verify_workers(self, check_memory: bool = True) -> list[str]:
         """
         Verify which workers are healthy and can handle the configured board type.
 
@@ -505,7 +505,7 @@ class DistributedEvaluator:
 
         return self._healthy_workers
 
-    def preload_pools(self) -> Dict[str, Any]:
+    def preload_pools(self) -> dict[str, Any]:
         """
         Preload state pools on all workers.
 
@@ -547,7 +547,7 @@ class DistributedEvaluator:
         candidate_id: int,
         weights: HeuristicWeights,
         baseline_weights: HeuristicWeights,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a task specification for a candidate."""
         return {
             "task_id": str(uuid.uuid4()),
@@ -567,7 +567,7 @@ class DistributedEvaluator:
 
     def _evaluate_with_retry(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         worker_url: str,
     ) -> TaskResult:
         """Evaluate a task with retry logic."""
@@ -606,10 +606,10 @@ class DistributedEvaluator:
 
     def evaluate_population(
         self,
-        population: List[HeuristicWeights],
-        baseline_weights: Optional[HeuristicWeights] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> Tuple[List[float], EvaluationStats]:
+        population: list[HeuristicWeights],
+        baseline_weights: HeuristicWeights | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> tuple[list[float], EvaluationStats]:
         """
         Evaluate a population of candidates in parallel across workers.
 
@@ -652,7 +652,7 @@ class DistributedEvaluator:
 
         # Execute in parallel
         start_time = time.time()
-        results: Dict[int, TaskResult] = {}
+        results: dict[int, TaskResult] = {}
         stats = EvaluationStats()
 
         with ThreadPoolExecutor(max_workers=len(healthy)) as executor:
@@ -707,7 +707,7 @@ class DistributedEvaluator:
 
         return fitness_scores, stats
 
-    def get_worker_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_worker_stats(self) -> dict[str, dict[str, Any]]:
         """Get statistics from all workers."""
         stats = {}
         for url, client in self._clients.items():
@@ -740,10 +740,10 @@ class QueueDistributedEvaluator:
         state_pool_id: str = "v1",
         max_moves: int = 10000,
         eval_randomness: float = 0.0,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         timeout: float = 300.0,
         fallback_fitness: float = 0.0,
-        run_id: Optional[str] = None,
+        run_id: str | None = None,
         record_games: bool = False,
         **queue_kwargs,
     ):
@@ -805,11 +805,11 @@ class QueueDistributedEvaluator:
 
     def evaluate_population(
         self,
-        population: List[HeuristicWeights],
-        baseline_weights: Optional[HeuristicWeights] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        population: list[HeuristicWeights],
+        baseline_weights: HeuristicWeights | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
         generation: int = 0,
-    ) -> Tuple[List[float], EvaluationStats]:
+    ) -> tuple[list[float], EvaluationStats]:
         """
         Evaluate a population of candidates via queue-based workers.
 
@@ -848,7 +848,7 @@ class QueueDistributedEvaluator:
         )
 
         # Publish all tasks
-        task_ids: Dict[str, int] = {}  # task_id -> candidate_id
+        task_ids: dict[str, int] = {}  # task_id -> candidate_id
         start_time = time.time()
 
         for candidate_id, weights in enumerate(population):
@@ -876,7 +876,7 @@ class QueueDistributedEvaluator:
         logger.info(f"Published {population_size} tasks, collecting results...")
 
         # Collect results
-        results: Dict[int, float] = {}
+        results: dict[int, float] = {}
         stats = EvaluationStats()
         stats.total_candidates = population_size
 
@@ -933,7 +933,7 @@ class QueueDistributedEvaluator:
 
         return fitness_scores, stats
 
-    def get_queue_stats(self) -> Dict[str, Any]:
+    def get_queue_stats(self) -> dict[str, Any]:
         """Get queue statistics for monitoring."""
         try:
             if hasattr(self.queue, "get_queue_lengths"):

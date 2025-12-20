@@ -43,21 +43,19 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from app.utils.canonical_naming import (
-    normalize_board_type,
+    CANONICAL_CONFIG_KEYS,
     make_config_key,
     parse_config_key,
-    CANONICAL_CONFIG_KEYS,
 )
 
 # Unified signals integration - defer maintenance when training is urgent
 try:
     from app.training.unified_signals import (
-        get_signal_computer,
-        TrainingUrgency,
         TrainingSignals,
+        TrainingUrgency,
+        get_signal_computer,
     )
     HAS_UNIFIED_SIGNALS = True
 except ImportError:
@@ -100,7 +98,7 @@ class MaintenanceResult:
     models_after: int
     archived: int
     deleted: int
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
 
 
@@ -111,7 +109,7 @@ class FullMaintenanceResult:
     total_archived: int = 0
     total_deleted: int = 0
     total_errors: int = 0
-    per_config_results: Dict[str, MaintenanceResult] = field(default_factory=dict)
+    per_config_results: dict[str, MaintenanceResult] = field(default_factory=dict)
     duration_seconds: float = 0.0
     timestamp: float = field(default_factory=time.time)
 
@@ -130,9 +128,9 @@ class ModelRetentionManager:
 
     def __init__(
         self,
-        model_dir: Optional[Path] = None,
-        elo_db_path: Optional[Path] = None,
-        policy: Optional[RetentionPolicy] = None,
+        model_dir: Path | None = None,
+        elo_db_path: Path | None = None,
+        policy: RetentionPolicy | None = None,
     ):
         """Initialize lifecycle manager.
 
@@ -146,7 +144,7 @@ class ModelRetentionManager:
         self.policy = policy or RetentionPolicy()
 
         # Track last maintenance time per config
-        self._last_maintenance: Dict[str, float] = {}
+        self._last_maintenance: dict[str, float] = {}
 
         # Unified signals integration - check training urgency before maintenance
         self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
@@ -196,7 +194,7 @@ class ModelRetentionManager:
         cooldown_seconds = self.policy.cooldown_hours * 3600
         return time.time() - last >= cooldown_seconds
 
-    def _should_defer_for_training(self, config_key: str) -> Tuple[bool, str]:
+    def _should_defer_for_training(self, config_key: str) -> tuple[bool, str]:
         """Check if maintenance should be deferred due to training urgency.
 
         When training is CRITICAL or HIGH urgency, defer non-essential maintenance
@@ -227,7 +225,7 @@ class ModelRetentionManager:
             logger.warning(f"Failed to check training urgency for {config_key}: {e}")
             return False, f"error: {e}"
 
-    def get_training_signals(self, config_key: str) -> Optional["TrainingSignals"]:
+    def get_training_signals(self, config_key: str) -> TrainingSignals | None:
         """Get current training signals for a config.
 
         Args:
@@ -249,7 +247,7 @@ class ModelRetentionManager:
             logger.warning(f"Failed to get training signals for {config_key}: {e}")
             return None
 
-    def get_models_for_config(self, config_key: str) -> List[Path]:
+    def get_models_for_config(self, config_key: str) -> list[Path]:
         """Get all model files for a config.
 
         Args:
@@ -273,7 +271,7 @@ class ModelRetentionManager:
         # Deduplicate
         return list(set(models))
 
-    def get_archived_models(self, config_key: str) -> List[Path]:
+    def get_archived_models(self, config_key: str) -> list[Path]:
         """Get archived models for a config."""
         archive_dir = self.model_dir / "archived" / config_key
         if not archive_dir.exists():
@@ -343,9 +341,8 @@ class ModelRetentionManager:
         for model_path in archived:
             try:
                 mtime = datetime.fromtimestamp(model_path.stat().st_mtime)
-                if mtime < cutoff:
-                    if self.delete_archived_model(model_path):
-                        deleted += 1
+                if mtime < cutoff and self.delete_archived_model(model_path):
+                    deleted += 1
             except Exception as e:
                 logger.warning(f"Error checking {model_path}: {e}")
 
@@ -431,7 +428,7 @@ class ModelRetentionManager:
             errors=errors,
         )
 
-    def run_maintenance(self, configs: Optional[List[str]] = None, force: bool = False) -> FullMaintenanceResult:
+    def run_maintenance(self, configs: list[str] | None = None, force: bool = False) -> FullMaintenanceResult:
         """Run maintenance across all configs.
 
         Args:
@@ -470,7 +467,7 @@ class ModelRetentionManager:
 
         return result
 
-    def get_status(self) -> Dict[str, Dict]:
+    def get_status(self) -> dict[str, dict]:
         """Get status summary for all configs.
 
         Returns:
@@ -494,8 +491,8 @@ class ModelRetentionManager:
 
 # Convenience function for scripts
 def run_model_maintenance(
-    model_dir: Optional[str] = None,
-    elo_db: Optional[str] = None,
+    model_dir: str | None = None,
+    elo_db: str | None = None,
     force: bool = False,
 ) -> FullMaintenanceResult:
     """Run model maintenance with default settings.

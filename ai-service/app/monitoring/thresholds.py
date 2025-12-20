@@ -14,24 +14,24 @@ Usage (deprecated, still works):
 
 # Re-export everything from the canonical source
 from app.config.thresholds import (
-    # Alert levels
-    AlertLevel,
+    MONITORING_THRESHOLDS,
     # Threshold dict
     THRESHOLDS,
-    MONITORING_THRESHOLDS,
+    # Alert levels
+    AlertLevel,
+    get_all_thresholds,
     # Helper functions
     get_threshold,
     should_alert,
-    get_all_thresholds,
     update_threshold,
 )
 
 __all__ = [
-    "AlertLevel",
-    "THRESHOLDS",
     "MONITORING_THRESHOLDS",
+    "THRESHOLDS",
+    "AlertLevel",
+    "get_all_thresholds",
     "get_threshold",
     "should_alert",
-    "get_all_thresholds",
     "update_threshold",
 ]

@@ -31,7 +31,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from app.utils.paths import DATA_DIR
 
@@ -52,16 +52,16 @@ class RollbackEvent:
     reason: str
     triggered_by: str  # "manual", "auto_elo", "auto_error", etc.
     timestamp: str
-    from_metrics: Dict[str, Any] = field(default_factory=dict)
-    to_metrics: Dict[str, Any] = field(default_factory=dict)
+    from_metrics: dict[str, Any] = field(default_factory=dict)
+    to_metrics: dict[str, Any] = field(default_factory=dict)
     success: bool = True
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "RollbackEvent":
+    def from_dict(cls, d: dict[str, Any]) -> RollbackEvent:
         return cls(**d)
 
 
@@ -81,17 +81,17 @@ class RollbackManager:
     def __init__(
         self,
         registry,  # ModelRegistry instance
-        thresholds: Optional[RollbackThresholds] = None,
-        history_path: Optional[Path] = None,
+        thresholds: RollbackThresholds | None = None,
+        history_path: Path | None = None,
     ):
         self.registry = registry
         self.thresholds = thresholds or RollbackThresholds()
         self.history_path = history_path or ROLLBACK_HISTORY_PATH
-        self._history: List[RollbackEvent] = []
+        self._history: list[RollbackEvent] = []
         self._load_history()
 
         # Performance baseline cache (model_id -> metrics snapshot)
-        self._baselines: Dict[str, Dict[str, Any]] = {}
+        self._baselines: dict[str, dict[str, Any]] = {}
 
     def _load_history(self):
         """Load rollback history from disk."""
@@ -112,7 +112,7 @@ class RollbackManager:
         except Exception as e:
             logger.warning(f"Failed to save rollback history: {e}")
 
-    def set_baseline(self, model_id: str, metrics: Dict[str, Any]):
+    def set_baseline(self, model_id: str, metrics: dict[str, Any]):
         """Set performance baseline for a model.
 
         Call this after promoting a model to production to establish
@@ -129,8 +129,8 @@ class RollbackManager:
     def check_performance(
         self,
         model_id: str,
-        current_metrics: Dict[str, Any],
-    ) -> Tuple[bool, str]:
+        current_metrics: dict[str, Any],
+    ) -> tuple[bool, str]:
         """Check if current performance is acceptable.
 
         Returns:
@@ -171,8 +171,8 @@ class RollbackManager:
     def should_rollback(
         self,
         model_id: str,
-        current_metrics: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[bool, str]:
+        current_metrics: dict[str, Any] | None = None,
+    ) -> tuple[bool, str]:
         """Check if a rollback should be triggered for the model.
 
         Args:
@@ -207,7 +207,7 @@ class RollbackManager:
 
         return False, "No rollback needed"
 
-    def get_rollback_candidate(self, model_id: str) -> Optional[Dict[str, Any]]:
+    def get_rollback_candidate(self, model_id: str) -> dict[str, Any] | None:
         """Get the best candidate for rolling back to.
 
         Returns the most recent archived version with good metrics.
@@ -236,10 +236,10 @@ class RollbackManager:
     def rollback_model(
         self,
         model_id: str,
-        to_version: Optional[int] = None,
+        to_version: int | None = None,
         reason: str = "Manual rollback",
         triggered_by: str = "manual",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a rollback to a previous version.
 
         Args:
@@ -311,7 +311,7 @@ class RollbackManager:
                     model_id,
                     target_version,
                     ModelStage.DEVELOPMENT,
-                    reason=f"Rollback: restoring from archive",
+                    reason="Rollback: restoring from archive",
                     promoted_by="rollback_manager",
                 )
 
@@ -320,7 +320,7 @@ class RollbackManager:
                 model_id,
                 target_version,
                 ModelStage.STAGING,
-                reason=f"Rollback: staging for production",
+                reason="Rollback: staging for production",
                 promoted_by="rollback_manager",
             )
 
@@ -388,7 +388,7 @@ class RollbackManager:
     def _emit_rollback_metric(self, model_id: str, triggered_by: str):
         """Emit Prometheus metric for rollback event."""
         try:
-            from prometheus_client import Counter, REGISTRY
+            from prometheus_client import REGISTRY, Counter
 
             # Try to get existing metric or create new
             metric_name = "ringrift_model_rollbacks_total"
@@ -403,9 +403,9 @@ class RollbackManager:
 
     def get_rollback_history(
         self,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         limit: int = 20,
-    ) -> List[RollbackEvent]:
+    ) -> list[RollbackEvent]:
         """Get rollback history, optionally filtered by model."""
         history = self._history
         if model_id:
@@ -414,7 +414,7 @@ class RollbackManager:
         # Return most recent first
         return sorted(history, key=lambda e: e.timestamp, reverse=True)[:limit]
 
-    def get_rollback_stats(self) -> Dict[str, Any]:
+    def get_rollback_stats(self) -> dict[str, Any]:
         """Get statistics about rollbacks."""
         total = len(self._history)
         successful = sum(1 for e in self._history if e.success)
@@ -520,9 +520,9 @@ class AutoRollbackHandler:
         self.rollback_manager = rollback_manager
         self.auto_rollback_enabled = auto_rollback_enabled
         self.require_approval_for_severe = require_approval_for_severe
-        self._pending_rollbacks: Dict[str, Dict[str, Any]] = {}
+        self._pending_rollbacks: dict[str, dict[str, Any]] = {}
 
-    def on_regression(self, event: "RegressionEvent") -> None:
+    def on_regression(self, event: RegressionEvent) -> None:
         """Handle regression event from RegressionDetector.
 
         Implements the RegressionListener protocol.
@@ -538,7 +538,7 @@ class AutoRollbackHandler:
         )
 
         if not self.auto_rollback_enabled:
-            logger.info(f"[AutoRollbackHandler] Auto-rollback disabled, logging only")
+            logger.info("[AutoRollbackHandler] Auto-rollback disabled, logging only")
             return
 
         if severity == RegressionSeverity.CRITICAL:
@@ -742,7 +742,7 @@ class AutoRollbackHandler:
             logger.error(f"[AutoRollbackHandler] Rollback exception for {model_id}: {e}")
             return False
 
-    def approve_pending_rollback(self, model_id: str) -> Dict[str, Any]:
+    def approve_pending_rollback(self, model_id: str) -> dict[str, Any]:
         """Approve and execute a pending rollback.
 
         Args:
@@ -768,7 +768,7 @@ class AutoRollbackHandler:
 
         return result
 
-    def get_pending_rollbacks(self) -> Dict[str, Dict[str, Any]]:
+    def get_pending_rollbacks(self) -> dict[str, dict[str, Any]]:
         """Get all pending rollbacks awaiting approval."""
         return self._pending_rollbacks.copy()
 
@@ -782,7 +782,7 @@ class AutoRollbackHandler:
 
 
 # Singleton and wiring functions
-_auto_handler: Optional[AutoRollbackHandler] = None
+_auto_handler: AutoRollbackHandler | None = None
 
 
 def wire_regression_to_rollback(
@@ -840,6 +840,6 @@ def wire_regression_to_rollback(
         raise
 
 
-def get_auto_rollback_handler() -> Optional[AutoRollbackHandler]:
+def get_auto_rollback_handler() -> AutoRollbackHandler | None:
     """Get the global auto-rollback handler if configured."""
     return _auto_handler

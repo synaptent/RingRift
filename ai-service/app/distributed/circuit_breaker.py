@@ -42,29 +42,30 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from threading import RLock
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 __all__ = [
+    "CircuitBreaker",
+    # Registry and singletons
+    "CircuitBreakerRegistry",
+    "CircuitOpenError",
     # Core classes
     "CircuitState",
     "CircuitStatus",
-    "CircuitBreaker",
-    "CircuitOpenError",
-    # Registry and singletons
-    "CircuitBreakerRegistry",
-    "get_circuit_registry",
-    "get_host_breaker",
-    "get_training_breaker",
-    "get_operation_breaker",
-    "set_host_breaker_callback",
+    "FallbackChain",
     # Utilities
     "format_circuit_status",
     "get_adaptive_timeout",
-    "FallbackChain",
+    "get_circuit_registry",
+    "get_host_breaker",
+    "get_operation_breaker",
+    "get_training_breaker",
+    "set_host_breaker_callback",
     "with_circuit_breaker",
 ]
 
@@ -100,7 +101,7 @@ except ImportError:
 # ============================================
 
 try:
-    from prometheus_client import Counter, Gauge, REGISTRY
+    from prometheus_client import REGISTRY, Counter, Gauge
     HAS_PROMETHEUS = True
 except ImportError:
     HAS_PROMETHEUS = False
@@ -169,20 +170,20 @@ class CircuitStatus:
     state: CircuitState
     failure_count: int
     success_count: int
-    last_failure_time: Optional[float]
-    last_success_time: Optional[float]
-    opened_at: Optional[float]
-    half_open_at: Optional[float]
+    last_failure_time: float | None
+    last_success_time: float | None
+    opened_at: float | None
+    half_open_at: float | None
     consecutive_opens: int = 0  # For exponential backoff tracking
 
     @property
-    def time_since_open(self) -> Optional[float]:
+    def time_since_open(self) -> float | None:
         """Seconds since circuit opened."""
         if self.opened_at:
             return time.time() - self.opened_at
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "target": self.target,
             "state": self.state.value,
@@ -203,10 +204,10 @@ class _CircuitData:
     state: CircuitState = CircuitState.CLOSED
     failure_count: int = 0
     success_count: int = 0
-    last_failure_time: Optional[float] = None
-    last_success_time: Optional[float] = None
-    opened_at: Optional[float] = None
-    half_open_at: Optional[float] = None
+    last_failure_time: float | None = None
+    last_success_time: float | None = None
+    opened_at: float | None = None
+    half_open_at: float | None = None
     half_open_calls: int = 0
     # Exponential backoff tracking
     consecutive_opens: int = 0  # How many times circuit opened without full recovery
@@ -239,7 +240,7 @@ class CircuitBreaker:
         recovery_timeout: float = DEFAULT_RECOVERY_TIMEOUT,
         half_open_max_calls: int = DEFAULT_HALF_OPEN_MAX_CALLS,
         success_threshold: int = 1,
-        on_state_change: Optional[Callable[[str, CircuitState, CircuitState], None]] = None,
+        on_state_change: Callable[[str, CircuitState, CircuitState], None] | None = None,
         operation_type: str = "default",  # For Prometheus metrics labeling
         backoff_multiplier: float = 2.0,
         max_backoff: float = DEFAULT_MAX_BACKOFF,
@@ -255,7 +256,7 @@ class CircuitBreaker:
         self.max_backoff = max_backoff
         self.jitter_factor = jitter_factor
 
-        self._circuits: Dict[str, _CircuitData] = {}
+        self._circuits: dict[str, _CircuitData] = {}
         self._lock = RLock()
 
     def _notify_state_change(self, target: str, old_state: CircuitState, new_state: CircuitState) -> None:
@@ -379,7 +380,7 @@ class CircuitBreaker:
         if old_state is not None and new_state is not None:
             self._notify_state_change(target, old_state, new_state)
 
-    def record_failure(self, target: str, error: Optional[Exception] = None) -> None:
+    def record_failure(self, target: str, error: Exception | None = None) -> None:
         """Record a failed operation for target."""
         old_state = None
         new_state = None
@@ -454,7 +455,7 @@ class CircuitBreaker:
                 consecutive_opens=circuit.consecutive_opens,
             )
 
-    def get_all_states(self) -> Dict[str, CircuitStatus]:
+    def get_all_states(self) -> dict[str, CircuitStatus]:
         """Get status for all tracked targets."""
         with self._lock:
             return {
@@ -545,7 +546,7 @@ class CircuitBreaker:
         self,
         target: str,
         func: Callable[[], T],
-        fallback: Optional[Callable[[], T]] = None,
+        fallback: Callable[[], T] | None = None,
     ) -> T:
         """Execute function with circuit breaker protection.
 
@@ -577,7 +578,7 @@ class CircuitBreaker:
         self,
         target: str,
         func: Callable[[], T],
-        fallback: Optional[Callable[[], T]] = None,
+        fallback: Callable[[], T] | None = None,
     ) -> T:
         """Execute async function with circuit breaker protection."""
         if not self.can_execute(target):
@@ -600,8 +601,8 @@ class CircuitOpenError(Exception):
 
 
 # Global circuit breaker instance for hosts
-_host_breaker: Optional[CircuitBreaker] = None
-_host_breaker_callback: Optional[Callable[[str, CircuitState, CircuitState], None]] = None
+_host_breaker: CircuitBreaker | None = None
+_host_breaker_callback: Callable[[str, CircuitState, CircuitState], None] | None = None
 
 
 def set_host_breaker_callback(
@@ -639,7 +640,7 @@ def get_host_breaker() -> CircuitBreaker:
 
 
 # Global circuit breaker for training operations
-_training_breaker: Optional[CircuitBreaker] = None
+_training_breaker: CircuitBreaker | None = None
 
 
 def get_training_breaker() -> CircuitBreaker:
@@ -695,16 +696,16 @@ class CircuitBreakerRegistry:
             ...
     """
 
-    _instance: Optional["CircuitBreakerRegistry"] = None
+    _instance: CircuitBreakerRegistry | None = None
     _lock = RLock()
 
     def __init__(self):
-        self._breakers: Dict[str, CircuitBreaker] = {}
+        self._breakers: dict[str, CircuitBreaker] = {}
         # Use centralized config from app/config/thresholds.py (December 2025)
         self._configs = CIRCUIT_BREAKER_CONFIGS.copy()
 
     @classmethod
-    def get_instance(cls) -> "CircuitBreakerRegistry":
+    def get_instance(cls) -> CircuitBreakerRegistry:
         """Get singleton instance."""
         if cls._instance is None:
             with cls._lock:
@@ -738,7 +739,7 @@ class CircuitBreakerRegistry:
             return min(default * 0.3, 15.0)
         return default
 
-    def get_all_open_circuits(self) -> Dict[str, Dict[str, CircuitStatus]]:
+    def get_all_open_circuits(self) -> dict[str, dict[str, CircuitStatus]]:
         """Get all circuits that are currently OPEN or HALF_OPEN."""
         result = {}
         with self._lock:
@@ -754,7 +755,7 @@ class CircuitBreakerRegistry:
         return result
 
 
-_circuit_registry: Optional[CircuitBreakerRegistry] = None
+_circuit_registry: CircuitBreakerRegistry | None = None
 
 
 def get_circuit_registry() -> CircuitBreakerRegistry:
@@ -797,15 +798,15 @@ class FallbackChain:
     def __init__(self, total_timeout: float = 300.0):
         self.total_timeout = total_timeout
         self._operations: list = []
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
 
     def add_operation(
         self,
         operation_type: str,
         func: Callable,
         timeout: float,
-        name: Optional[str] = None,
-    ) -> "FallbackChain":
+        name: str | None = None,
+    ) -> FallbackChain:
         """Add an operation to the fallback chain."""
         self._operations.append({
             "operation_type": operation_type,
@@ -830,7 +831,7 @@ class FallbackChain:
         Raises the last exception if all operations fail.
         """
         self._start_time = time.time()
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         registry = get_circuit_registry()
 
         for op in self._operations:

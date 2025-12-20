@@ -33,14 +33,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
-import time
-from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
-from app.core.health import HealthCheck, HealthStatus, HealthState, HealthRegistry
-from app.core.lifecycle import Service, ServiceState, LifecycleManager
+from app.core.health import HealthStatus
+from app.core.lifecycle import LifecycleManager, Service
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +75,7 @@ class BackgroundEvalService(Service):
     def __init__(
         self,
         model_getter: Callable[[], Any],
-        board_type: Optional[Any] = None,
+        board_type: Any | None = None,
         use_real_games: bool = False,
         eval_interval: int = 1000,
         games_per_eval: int = 20,
@@ -90,14 +88,14 @@ class BackgroundEvalService(Service):
         self._eval_interval = eval_interval
         self._games_per_eval = games_per_eval
         self._use_event_driven = use_event_driven
-        self._evaluator: Optional[Any] = None
+        self._evaluator: Any | None = None
 
     @property
     def name(self) -> str:
         return "background_eval"
 
     @property
-    def dependencies(self) -> List[str]:
+    def dependencies(self) -> list[str]:
         # Depends on data coordinator if using real games
         if self._use_real_games:
             return ["data_coordinator"]
@@ -106,8 +104,8 @@ class BackgroundEvalService(Service):
     async def on_start(self) -> None:
         """Start the background evaluator."""
         from app.training.background_eval import (
-            BackgroundEvaluator,
             BackgroundEvalConfig,
+            BackgroundEvaluator,
         )
 
         config = BackgroundEvalConfig(
@@ -175,7 +173,7 @@ class BackgroundEvalService(Service):
             passes_gating=passes_gating,
         )
 
-    def get_evaluator(self) -> Optional[Any]:
+    def get_evaluator(self) -> Any | None:
         """Get the underlying evaluator instance."""
         return self._evaluator
 
@@ -203,20 +201,20 @@ class BackgroundSelfplayService(Service):
 
     def __init__(
         self,
-        config: Dict[str, Any],
-        ai_service_root: Optional[Path] = None,
+        config: dict[str, Any],
+        ai_service_root: Path | None = None,
     ):
         super().__init__()
         self._config = config
         self._ai_service_root = ai_service_root
-        self._manager: Optional[Any] = None
+        self._manager: Any | None = None
 
     @property
     def name(self) -> str:
         return "background_selfplay"
 
     @property
-    def dependencies(self) -> List[str]:
+    def dependencies(self) -> list[str]:
         return []  # No dependencies for selfplay
 
     async def on_start(self) -> None:
@@ -280,8 +278,8 @@ class BackgroundSelfplayService(Service):
 
     async def wait_for_current(
         self,
-        timeout: Optional[float] = None,
-    ) -> tuple[bool, Optional[Path], int]:
+        timeout: float | None = None,
+    ) -> tuple[bool, Path | None, int]:
         """Wait for current selfplay to complete."""
         if not self._manager:
             return True, None, 0
@@ -293,7 +291,7 @@ class BackgroundSelfplayService(Service):
             lambda: self._manager.wait_for_current(timeout),
         )
 
-    def get_manager(self) -> Optional[Any]:
+    def get_manager(self) -> Any | None:
         """Get the underlying manager instance."""
         return self._manager
 
@@ -311,21 +309,21 @@ class DataCoordinatorService(Service):
     def __init__(
         self,
         config_key: str,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         buffer_size: int = 10000,
     ):
         super().__init__()
         self._config_key = config_key
         self._db_path = db_path
         self._buffer_size = buffer_size
-        self._coordinator: Optional[Any] = None
+        self._coordinator: Any | None = None
 
     @property
     def name(self) -> str:
         return "data_coordinator"
 
     @property
-    def dependencies(self) -> List[str]:
+    def dependencies(self) -> list[str]:
         return []  # Data coordinator is typically first
 
     async def on_start(self) -> None:
@@ -365,7 +363,7 @@ class DataCoordinatorService(Service):
 
         return HealthStatus.healthy("Data coordinator initialized")
 
-    def get_coordinator(self) -> Optional[Any]:
+    def get_coordinator(self) -> Any | None:
         """Get the underlying coordinator instance."""
         return self._coordinator
 
@@ -403,12 +401,12 @@ class TrainingLifecycleManager:
             health_timeout=10.0,
             shutdown_timeout=30.0,
         )
-        self._services: Dict[str, Service] = {}
+        self._services: dict[str, Service] = {}
 
     def register_eval_service(
         self,
         model_getter: Callable[[], Any],
-        board_type: Optional[Any] = None,
+        board_type: Any | None = None,
         use_real_games: bool = False,
         **kwargs: Any,
     ) -> BackgroundEvalService:
@@ -435,8 +433,8 @@ class TrainingLifecycleManager:
 
     def register_selfplay_service(
         self,
-        config: Dict[str, Any],
-        ai_service_root: Optional[Path] = None,
+        config: dict[str, Any],
+        ai_service_root: Path | None = None,
     ) -> BackgroundSelfplayService:
         """Register background selfplay service.
 
@@ -458,7 +456,7 @@ class TrainingLifecycleManager:
     def register_data_service(
         self,
         config_key: str,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         **kwargs: Any,
     ) -> DataCoordinatorService:
         """Register data coordinator service.
@@ -485,7 +483,7 @@ class TrainingLifecycleManager:
         self._lifecycle.register(service)
         self._services[service.name] = service
 
-    async def start_all(self) -> List[str]:
+    async def start_all(self) -> list[str]:
         """Start all registered services in dependency order.
 
         Returns:
@@ -497,7 +495,7 @@ class TrainingLifecycleManager:
         """Stop all services in reverse order."""
         await self._lifecycle.stop_all()
 
-    async def check_health(self) -> Dict[str, HealthStatus]:
+    async def check_health(self) -> dict[str, HealthStatus]:
         """Check health of all services.
 
         Returns:
@@ -506,7 +504,7 @@ class TrainingLifecycleManager:
         result = await self._lifecycle.check_health()
         return result.components
 
-    async def get_health_summary(self) -> Dict[str, Any]:
+    async def get_health_summary(self) -> dict[str, Any]:
         """Get health summary for API response.
 
         Returns:
@@ -515,11 +513,11 @@ class TrainingLifecycleManager:
         result = await self._lifecycle.check_health()
         return result.to_dict()
 
-    def get_service(self, name: str) -> Optional[Service]:
+    def get_service(self, name: str) -> Service | None:
         """Get a registered service by name."""
         return self._services.get(name)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get status of all services."""
         return self._lifecycle.get_status()
 
@@ -533,7 +531,7 @@ class TrainingLifecycleManager:
 # Global Instance
 # =============================================================================
 
-_training_lifecycle: Optional[TrainingLifecycleManager] = None
+_training_lifecycle: TrainingLifecycleManager | None = None
 
 
 def get_training_lifecycle() -> TrainingLifecycleManager:

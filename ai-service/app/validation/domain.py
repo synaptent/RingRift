@@ -9,16 +9,15 @@ Provides validators for RingRift-specific data types:
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from app.validation.core import ValidationResult
 
 __all__ = [
-    "is_valid_config_key",
     "is_valid_board_type",
+    "is_valid_config_key",
     "is_valid_elo",
     "is_valid_model_path",
     "is_valid_num_players",

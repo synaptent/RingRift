@@ -56,17 +56,17 @@ Typical usage:
     registry.promote_model(model_id, ModelStage.PRODUCTION)
 """
 
-import json
-import sqlite3
 import hashlib
-import shutil
+import json
 import logging
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
-from dataclasses import dataclass, field, asdict
-from enum import Enum
+import shutil
+import sqlite3
 import threading
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
 
 # Centralized database utilities (December 2025)
 try:
@@ -112,20 +112,20 @@ class ModelType(Enum):
 @dataclass
 class ModelMetrics:
     """Performance metrics for a model."""
-    elo: Optional[float] = None
-    elo_uncertainty: Optional[float] = None
-    win_rate: Optional[float] = None
-    draw_rate: Optional[float] = None
+    elo: float | None = None
+    elo_uncertainty: float | None = None
+    win_rate: float | None = None
+    draw_rate: float | None = None
     games_played: int = 0
-    avg_move_time_ms: Optional[float] = None
-    policy_accuracy: Optional[float] = None
-    value_mse: Optional[float] = None
+    avg_move_time_ms: float | None = None
+    policy_accuracy: float | None = None
+    value_mse: float | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> 'ModelMetrics':
+    def from_dict(cls, d: dict[str, Any]) -> 'ModelMetrics':
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -140,16 +140,16 @@ class TrainingConfig:
     num_residual_blocks: int = 10
     num_filters: int = 128
     augmentation_enabled: bool = True
-    curriculum_stage: Optional[str] = None
-    parent_model_id: Optional[str] = None
-    training_data_hash: Optional[str] = None
-    extra_config: Dict[str, Any] = field(default_factory=dict)
+    curriculum_stage: str | None = None
+    parent_model_id: str | None = None
+    training_data_hash: str | None = None
+    extra_config: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> 'TrainingConfig':
+    def from_dict(cls, d: dict[str, Any]) -> 'TrainingConfig':
         known_fields = set(cls.__dataclass_fields__.keys())
         known = {k: v for k, v in d.items() if k in known_fields and k != 'extra_config'}
         extra = {k: v for k, v in d.items() if k not in known_fields}
@@ -174,9 +174,9 @@ class ModelVersion:
     metrics: ModelMetrics
     training_config: TrainingConfig
     description: str = ""
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d['model_type'] = self.model_type.value
         d['stage'] = self.stage.value
@@ -406,7 +406,7 @@ class RegistryDatabase:
         """, (model_id, version, tag))
         self.conn.commit()
 
-    def get_version(self, model_id: str, version: int) -> Optional[Dict[str, Any]]:
+    def get_version(self, model_id: str, version: int) -> dict[str, Any] | None:
         """Get a specific version."""
         cursor = self.conn.execute("""
             SELECT v.*, m.name, m.description, m.model_type
@@ -442,7 +442,7 @@ class RegistryDatabase:
             'tags': tags
         }
 
-    def get_versions_by_stage(self, stage: ModelStage) -> List[Dict[str, Any]]:
+    def get_versions_by_stage(self, stage: ModelStage) -> list[dict[str, Any]]:
         """Get all versions in a specific stage."""
         cursor = self.conn.execute("""
             SELECT v.*, m.name, m.model_type
@@ -466,7 +466,7 @@ class RegistryDatabase:
             })
         return results
 
-    def get_latest_production(self, model_type: Optional[ModelType] = None) -> Optional[Dict[str, Any]]:
+    def get_latest_production(self, model_type: ModelType | None = None) -> dict[str, Any] | None:
         """Get the latest production model."""
         query = """
             SELECT v.*, m.name, m.model_type
@@ -494,7 +494,7 @@ class RegistryDatabase:
             'metrics': json.loads(row['metrics_json']) if row['metrics_json'] else {}
         }
 
-    def search_by_tag(self, tag: str) -> List[Dict[str, Any]]:
+    def search_by_tag(self, tag: str) -> list[dict[str, Any]]:
         """Search for models by tag."""
         cursor = self.conn.execute("""
             SELECT v.model_id, v.version, m.name, v.stage, v.file_path
@@ -508,7 +508,7 @@ class RegistryDatabase:
     def record_comparison(self, model_a_id: str, model_a_version: int,
                           model_b_id: str, model_b_version: int,
                           games: int, a_wins: int, b_wins: int, draws: int,
-                          elo_diff: Optional[float] = None, notes: str = "") -> None:
+                          elo_diff: float | None = None, notes: str = "") -> None:
         """Record a model comparison result."""
         now = datetime.now().isoformat()
         self.conn.execute("""
@@ -522,7 +522,7 @@ class RegistryDatabase:
         ))
         self.conn.commit()
 
-    def get_stage_history(self, model_id: str, version: int) -> List[Dict[str, Any]]:
+    def get_stage_history(self, model_id: str, version: int) -> list[dict[str, Any]]:
         """Get stage transition history for a version."""
         cursor = self.conn.execute("""
             SELECT * FROM stage_transitions
@@ -539,7 +539,7 @@ class RegistryDatabase:
         self,
         model_id: str,
         version: int,
-        baselines: Optional[List[str]] = None,
+        baselines: list[str] | None = None,
         games_per_matchup: int = 50,
     ) -> None:
         """Create a validation entry for a model version."""
@@ -561,7 +561,7 @@ class RegistryDatabase:
             """, (baselines_str, games_per_matchup, now, model_id, version))
             self.conn.commit()
 
-    def get_validation_status(self, model_id: str, version: int) -> Optional[str]:
+    def get_validation_status(self, model_id: str, version: int) -> str | None:
         """Get validation status for a model version."""
         cursor = self.conn.execute(
             "SELECT status FROM validations WHERE model_id = ? AND version = ?",
@@ -575,8 +575,8 @@ class RegistryDatabase:
         model_id: str,
         version: int,
         status: str,
-        work_id: Optional[str] = None,
-        results: Optional[Dict[str, Any]] = None,
+        work_id: str | None = None,
+        results: dict[str, Any] | None = None,
     ) -> None:
         """Update validation status for a model version."""
         now = datetime.now().isoformat()
@@ -607,7 +607,7 @@ class RegistryDatabase:
         """, params)
         self.conn.commit()
 
-    def get_models_needing_validation(self) -> List[Dict[str, Any]]:
+    def get_models_needing_validation(self) -> list[dict[str, Any]]:
         """Get all models that need validation (status = pending)."""
         cursor = self.conn.execute("""
             SELECT v.model_id, v.version, v.file_path, v.stage,
@@ -634,7 +634,7 @@ class RegistryDatabase:
             })
         return results
 
-    def get_models_without_validation(self) -> List[Dict[str, Any]]:
+    def get_models_without_validation(self) -> list[dict[str, Any]]:
         """Get all models that don't have a validation entry yet."""
         cursor = self.conn.execute("""
             SELECT v.model_id, v.version, v.file_path, v.stage, m.name, m.model_type
@@ -657,7 +657,7 @@ class RegistryDatabase:
             })
         return results
 
-    def get_validation(self, model_id: str, version: int) -> Optional[Dict[str, Any]]:
+    def get_validation(self, model_id: str, version: int) -> dict[str, Any] | None:
         """Get full validation record for a model version."""
         cursor = self.conn.execute("""
             SELECT * FROM validations WHERE model_id = ? AND version = ?
@@ -690,7 +690,7 @@ class ModelRegistry:
     # Default registry directory
     DEFAULT_REGISTRY_DIR = Path("data/model_registry")
 
-    def __init__(self, registry_dir: Optional[Path] = None, model_storage_dir: Optional[Path] = None):
+    def __init__(self, registry_dir: Path | None = None, model_storage_dir: Path | None = None):
         self.registry_dir = Path(registry_dir) if registry_dir else self.DEFAULT_REGISTRY_DIR
         self.registry_dir.mkdir(parents=True, exist_ok=True)
 
@@ -726,12 +726,12 @@ class ModelRegistry:
         model_path: Path,
         model_type: ModelType = ModelType.POLICY_VALUE,
         description: str = "",
-        metrics: Optional[ModelMetrics] = None,
-        training_config: Optional[TrainingConfig] = None,
-        tags: Optional[List[str]] = None,
+        metrics: ModelMetrics | None = None,
+        training_config: TrainingConfig | None = None,
+        tags: list[str] | None = None,
         initial_stage: ModelStage = ModelStage.DEVELOPMENT,
-        model_id: Optional[str] = None
-    ) -> Tuple[str, int]:
+        model_id: str | None = None
+    ) -> tuple[str, int]:
         """
         Register a new model or new version of existing model.
 
@@ -830,7 +830,7 @@ class ModelRegistry:
         """Update metrics for a model version."""
         self.db.update_metrics(model_id, version, metrics)
 
-    def get_model(self, model_id: str, version: Optional[int] = None) -> Optional[ModelVersion]:
+    def get_model(self, model_id: str, version: int | None = None) -> ModelVersion | None:
         """
         Get a model version.
 
@@ -862,15 +862,15 @@ class ModelRegistry:
             tags=data.get('tags', [])
         )
 
-    def get_production_model(self, model_type: Optional[ModelType] = None) -> Optional[ModelVersion]:
+    def get_production_model(self, model_type: ModelType | None = None) -> ModelVersion | None:
         """Get the current production model."""
         data = self.db.get_latest_production(model_type)
         if not data:
             return None
         return self.get_model(data['model_id'], data['version'])
 
-    def list_models(self, stage: Optional[ModelStage] = None,
-                    model_type: Optional[ModelType] = None) -> List[Dict[str, Any]]:
+    def list_models(self, stage: ModelStage | None = None,
+                    model_type: ModelType | None = None) -> list[dict[str, Any]]:
         """List all models, optionally filtered."""
         if stage:
             models = self.db.get_versions_by_stage(stage)
@@ -903,15 +903,15 @@ class ModelRegistry:
 
     def compare_models(
         self,
-        model_a: Tuple[str, int],
-        model_b: Tuple[str, int],
+        model_a: tuple[str, int],
+        model_b: tuple[str, int],
         games: int,
         a_wins: int,
         b_wins: int,
         draws: int,
-        elo_diff: Optional[float] = None,
+        elo_diff: float | None = None,
         notes: str = ""
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Record and return a comparison between two models.
         """
@@ -937,11 +937,11 @@ class ModelRegistry:
         """Add a tag to a model version."""
         self.db.add_tag(model_id, version, tag)
 
-    def search_by_tag(self, tag: str) -> List[Dict[str, Any]]:
+    def search_by_tag(self, tag: str) -> list[dict[str, Any]]:
         """Search for models by tag."""
         return self.db.search_by_tag(tag)
 
-    def get_stage_history(self, model_id: str, version: int) -> List[Dict[str, Any]]:
+    def get_stage_history(self, model_id: str, version: int) -> list[dict[str, Any]]:
         """Get the stage transition history for a model."""
         return self.db.get_stage_history(model_id, version)
 
@@ -965,8 +965,8 @@ class ModelRegistry:
         logger.info(f"Exported {model_id}:v{version} to {dest_path}")
         return dest_path
 
-    def import_model(self, model_path: Path, metadata_path: Optional[Path] = None,
-                     model_id: Optional[str] = None) -> Tuple[str, int]:
+    def import_model(self, model_path: Path, metadata_path: Path | None = None,
+                     model_id: str | None = None) -> tuple[str, int]:
         """Import a model from an exported file."""
         model_path = Path(model_path)
 
@@ -1010,11 +1010,11 @@ class ModelRegistry:
     # VALIDATION TRACKING CONVENIENCE METHODS
     # =========================================================================
 
-    def get_models_needing_validation(self) -> List[Dict[str, Any]]:
+    def get_models_needing_validation(self) -> list[dict[str, Any]]:
         """Get all models with pending validation status."""
         return self.db.get_models_needing_validation()
 
-    def get_unvalidated_models(self) -> List[Dict[str, Any]]:
+    def get_unvalidated_models(self) -> list[dict[str, Any]]:
         """Get all models without any validation entry."""
         return self.db.get_models_without_validation()
 
@@ -1022,7 +1022,7 @@ class ModelRegistry:
         self,
         model_id: str,
         version: int,
-        baselines: Optional[List[str]] = None,
+        baselines: list[str] | None = None,
         games_per_matchup: int = 50,
     ) -> None:
         """Create or reset a validation entry for a model."""
@@ -1045,7 +1045,7 @@ class ModelRegistry:
         self,
         model_id: str,
         version: int,
-        results: Optional[Dict[str, Any]] = None,
+        results: dict[str, Any] | None = None,
     ) -> None:
         """Mark a model's validation as passed."""
         self.db.update_validation_status(model_id, version, "passed", results=results)
@@ -1054,16 +1054,16 @@ class ModelRegistry:
         self,
         model_id: str,
         version: int,
-        results: Optional[Dict[str, Any]] = None,
+        results: dict[str, Any] | None = None,
     ) -> None:
         """Mark a model's validation as failed."""
         self.db.update_validation_status(model_id, version, "failed", results=results)
 
-    def get_validation(self, model_id: str, version: int) -> Optional[Dict[str, Any]]:
+    def get_validation(self, model_id: str, version: int) -> dict[str, Any] | None:
         """Get the validation record for a model."""
         return self.db.get_validation(model_id, version)
 
-    def get_validation_status(self, model_id: str, version: int) -> Optional[str]:
+    def get_validation_status(self, model_id: str, version: int) -> str | None:
         """Get just the validation status for a model."""
         return self.db.get_validation_status(model_id, version)
 
@@ -1081,9 +1081,9 @@ class AutoPromoter:
         self,
         registry: ModelRegistry,
         criteria: Optional["PromotionCriteria"] = None,
-        min_elo_improvement: Optional[float] = None,
-        min_games: Optional[int] = None,
-        min_win_rate_vs_current: Optional[float] = None,
+        min_elo_improvement: float | None = None,
+        min_games: int | None = None,
+        min_win_rate_vs_current: float | None = None,
         auto_archive_after_days: int = 30
     ):
         """Initialize AutoPromoter with unified or custom criteria.
@@ -1119,7 +1119,7 @@ class AutoPromoter:
                 self.min_games = min_games if min_games is not None else 100
                 self.min_win_rate_vs_current = min_win_rate_vs_current if min_win_rate_vs_current is not None else 0.52
 
-    def evaluate_for_staging(self, model_id: str, version: int) -> Tuple[bool, str]:
+    def evaluate_for_staging(self, model_id: str, version: int) -> tuple[bool, str]:
         """
         Evaluate if a development model should be promoted to staging.
 
@@ -1144,7 +1144,7 @@ class AutoPromoter:
 
         return True, "Model meets staging criteria"
 
-    def evaluate_for_production(self, model_id: str, version: int) -> Tuple[bool, str]:
+    def evaluate_for_production(self, model_id: str, version: int) -> tuple[bool, str]:
         """
         Evaluate if a staging model should be promoted to production.
 
@@ -1178,7 +1178,7 @@ class AutoPromoter:
             # No production model, promote if metrics are reasonable
             return True, "No current production model"
 
-    def auto_promote(self, model_id: str, version: int) -> Optional[ModelStage]:
+    def auto_promote(self, model_id: str, version: int) -> ModelStage | None:
         """
         Automatically promote model if criteria are met.
 
@@ -1204,10 +1204,10 @@ class AutoPromoter:
 
 
 # Singleton instance
-_model_registry: Optional[ModelRegistry] = None
+_model_registry: ModelRegistry | None = None
 
 
-def get_model_registry(registry_dir: Optional[Path] = None) -> ModelRegistry:
+def get_model_registry(registry_dir: Path | None = None) -> ModelRegistry:
     """Get the global model registry singleton.
 
     Args:
@@ -1231,6 +1231,7 @@ def reset_model_registry() -> None:
 def main():
     """Example usage of the model registry."""
     import tempfile
+
     import torch
     import torch.nn as nn
 

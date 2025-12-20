@@ -1,6 +1,6 @@
 from app.models import GameState, Move
-from app.rules.interfaces import Mutator
 from app.rules.capture_chain import apply_capture_py
+from app.rules.interfaces import Mutator
 
 
 class CaptureMutator(Mutator):

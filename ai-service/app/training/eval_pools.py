@@ -14,16 +14,16 @@ diagnostics in the multi-board, multi-start regime:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
 import argparse
 import json
 import os
 import random
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, quantiles
+from typing import Any
 
 from app.ai.heuristic_ai import HeuristicAI  # type: ignore
 from app.game_engine import GameEngine  # type: ignore
@@ -41,7 +41,6 @@ from app.training.tier_eval_config import (
 )
 from app.training.tournament import infer_victory_reason
 
-
 # Canonical mapping from (BoardType, pool_id) to JSONL pool paths.
 # 2-player CMA-ES / GA runs should use the ``"v1"`` pools below together with
 # eval_mode="multi-start" so that evaluation is driven from fixed mid/late-game
@@ -53,7 +52,7 @@ from app.training.tournament import infer_victory_reason
 # pool_id="v1" will never see those states. Hex pools target the canonical
 # radius-12 geometry; see ``HEX_DATA_DEPRECATION_NOTICE.md`` for details and
 # generation commands.
-POOL_PATHS: Dict[Tuple[BoardType, str], str] = {
+POOL_PATHS: dict[tuple[BoardType, str], str] = {
     # Canonical 2-player evaluation pools (mid/late-game heavy).
     (BoardType.SQUARE8, "v1"): "data/eval_pools/square8/pool_v1.jsonl",
     (BoardType.SQUARE19, "v1"): "data/eval_pools/square19/pool_v1.jsonl",
@@ -98,13 +97,13 @@ class EvalScenario:
     board_type: BoardType
     num_players: int
     initial_state: GameState
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
 
 # Stable registry of named evaluation pools used by tournaments and evaluation
 # harnesses. This sits on top of :data:`POOL_PATHS` so that callers never need
 # to hard-code (BoardType, pool_id, num_players) triples.
-EVAL_POOLS: Dict[str, EvalPoolConfig] = {
+EVAL_POOLS: dict[str, EvalPoolConfig] = {
     # Square8 2-player canonical core pool (mid/late-game states).
     "square8_2p_core": EvalPoolConfig(
         name="square8_2p_core",
@@ -189,7 +188,7 @@ def get_eval_pool_config(name: str) -> EvalPoolConfig:
         ) from exc
 
 
-def list_eval_pools() -> List[EvalPoolConfig]:
+def list_eval_pools() -> list[EvalPoolConfig]:
     """Return all registered evaluation pools in a deterministic order."""
     return sorted(
         EVAL_POOLS.values(),
@@ -199,8 +198,8 @@ def list_eval_pools() -> List[EvalPoolConfig]:
 
 def load_eval_pool(
     name: str,
-    max_scenarios: Optional[int] = None,
-) -> List[EvalScenario]:
+    max_scenarios: int | None = None,
+) -> list[EvalScenario]:
     """Load a named evaluation pool as a list of :class:`EvalScenario`.
 
     This is a thin wrapper over :func:`load_state_pool` that resolves
@@ -214,10 +213,10 @@ def load_eval_pool(
         max_states=max_scenarios,
         num_players=cfg.num_players,
     )
-    scenarios: List[EvalScenario] = []
+    scenarios: list[EvalScenario] = []
     for index, state in enumerate(states):
         scenario_id = f"{name}:{index}"
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "pool_name": name,
             "pool_id": cfg.pool_id,
             "index": index,
@@ -237,9 +236,9 @@ def load_eval_pool(
 def load_state_pool(
     board_type: BoardType,
     pool_id: str = "v1",
-    max_states: Optional[int] = None,
-    num_players: Optional[int] = None,
-) -> List[GameState]:
+    max_states: int | None = None,
+    num_players: int | None = None,
+) -> list[GameState]:
     """Load a deterministically ordered pool of GameState records.
 
     Parameters
@@ -286,11 +285,11 @@ def load_state_pool(
             f"for board_type={board_type!r}, pool_id={pool_id!r}"
         )
 
-    states: List[GameState] = []
+    states: list[GameState] = []
     if max_states is not None and max_states <= 0:
         return states
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             if max_states is not None and len(states) >= max_states:
                 break
@@ -331,7 +330,7 @@ def _compute_margins(
     final_state: GameState,
     candidate_player: int,
     opponent_player: int,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Compute simple ring/territory margins for a 2-player game."""
     # Rings eliminated (by causing player id string in eliminated_rings).
     rings_eliminated = final_state.board.eliminated_rings
@@ -358,10 +357,10 @@ def _compute_margins(
 def run_heuristic_tier_eval(
     tier_spec: HeuristicTierSpec,
     rng_seed: int,
-    max_games: Optional[int] = None,
-    max_moves_override: Optional[int] = None,
+    max_games: int | None = None,
+    max_moves_override: int | None = None,
     skip_shadow_contracts: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Evaluate a heuristic profile against a baseline on an eval pool.
 
     This runner:
@@ -429,10 +428,10 @@ def run_heuristic_tier_eval(
     draws = 0
     games_played = 0
 
-    ring_margins: List[float] = []
-    territory_margins: List[float] = []
-    candidate_latencies_ms: List[float] = []
-    victory_reasons: Dict[str, int] = {}
+    ring_margins: list[float] = []
+    territory_margins: list[float] = []
+    candidate_latencies_ms: list[float] = []
+    victory_reasons: dict[str, int] = {}
     total_moves = 0
 
     for game_index in range(games_to_play):
@@ -566,15 +565,15 @@ def run_heuristic_tier_eval(
         ring_margins.append(margins["ring_margin"])
         territory_margins.append(margins["territory_margin"])
 
-    avg_ring_margin: Optional[float] = None
-    avg_territory_margin: Optional[float] = None
+    avg_ring_margin: float | None = None
+    avg_territory_margin: float | None = None
     if ring_margins:
         avg_ring_margin = float(mean(ring_margins))
     if territory_margins:
         avg_territory_margin = float(mean(territory_margins))
 
-    mean_latency: Optional[float] = None
-    p95_latency: Optional[float] = None
+    mean_latency: float | None = None
+    p95_latency: float | None = None
     if candidate_latencies_ms:
         mean_latency = float(mean(candidate_latencies_ms))
         # Use 95th percentile based on 20-quantiles (19/20 ≈ 0.95).
@@ -584,7 +583,7 @@ def run_heuristic_tier_eval(
             # Fallback to max when quantiles is unhappy with sample size.
             p95_latency = float(max(candidate_latencies_ms))
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "tier_id": tier_spec.id,
         "tier_name": tier_spec.name,
         "board_type": tier_spec.board_type.value,
@@ -614,12 +613,12 @@ def run_heuristic_tier_eval(
 
 
 def run_all_heuristic_tiers(
-    tiers: List[HeuristicTierSpec],
+    tiers: list[HeuristicTierSpec],
     rng_seed: int,
-    max_games: Optional[int] = None,
-    max_moves_override: Optional[int] = None,
-    tier_ids: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    max_games: int | None = None,
+    max_moves_override: int | None = None,
+    tier_ids: list[str] | None = None,
+) -> dict[str, Any]:
     """Run heuristic tier evaluation across a set of tiers.
 
     Args:
@@ -645,7 +644,7 @@ def run_all_heuristic_tiers(
     ts_str = timestamp.strftime("%Y%m%dT%H%M%SZ")
     run_id = f"heuristic_tier_eval_{ts_str}"
 
-    tier_results: List[Dict[str, Any]] = []
+    tier_results: list[dict[str, Any]] = []
     for idx, spec in enumerate(tiers):
         tier_seed = (rng_seed * 97_911 + idx * 1_000_003) & 0x7FFFFFFF
         tier_res = run_heuristic_tier_eval(
@@ -658,7 +657,7 @@ def run_all_heuristic_tiers(
 
     git_commit = os.getenv("GIT_COMMIT") or os.getenv("RINGRIFT_GIT_COMMIT")
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "run_id": run_id,
         "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rng_seed": rng_seed,
@@ -715,7 +714,7 @@ def _parse_heuristic_cli_args() -> argparse.Namespace:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     args = _parse_heuristic_cli_args()
-    tier_filter: Optional[List[str]] = None
+    tier_filter: list[str] | None = None
     if args.tiers:
         tier_filter = [t.strip() for t in args.tiers.split(",") if t.strip()]
 

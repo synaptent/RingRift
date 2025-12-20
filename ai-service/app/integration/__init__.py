@@ -43,52 +43,52 @@ from typing import TYPE_CHECKING
 
 # Lazy imports to avoid circular dependencies
 if TYPE_CHECKING:
-    from .unified_loop_extensions import UnifiedLoopExtensions, ExtensionConfig
+    from .model_lifecycle import LifecycleConfig, ModelLifecycleManager
+    from .p2p_integration import P2PIntegrationConfig, P2PIntegrationManager
     from .pipeline_feedback import (
-        PipelineFeedbackController, FeedbackAction, FeedbackSignal,
-        FeedbackSignalRouter, OpponentWinRateTracker,
-        create_feedback_controller, create_feedback_router, create_opponent_tracker
+        FeedbackAction,
+        FeedbackSignal,
+        FeedbackSignalRouter,
+        OpponentWinRateTracker,
+        PipelineFeedbackController,
+        create_feedback_controller,
+        create_feedback_router,
+        create_opponent_tracker,
     )
-    from .model_lifecycle import ModelLifecycleManager, LifecycleConfig
-    from .p2p_integration import P2PIntegrationManager, P2PIntegrationConfig
+    from .unified_loop_extensions import ExtensionConfig, UnifiedLoopExtensions
 
 __all__ = [
-    # Unified loop extensions
-    "UnifiedLoopExtensions",
+    # Evaluation → Curriculum bridge
+    "EvaluationCurriculumBridge",
     "ExtensionConfig",
-    "integrate_extensions",
-
-    # Pipeline feedback
-    "PipelineFeedbackController",
     "FeedbackAction",
     "FeedbackSignal",
     "FeedbackSignalRouter",
-    "OpponentWinRateTracker",
-    "create_feedback_controller",
-    "create_feedback_router",
-    "create_opponent_tracker",
-
-    # Model lifecycle
-    "ModelLifecycleManager",
     "LifecycleConfig",
-    "create_lifecycle_manager",
-
-    # P2P integration
-    "P2PIntegrationManager",
-    "P2PIntegrationConfig",
-    "connect_to_cluster",
-    "integrate_lifecycle_with_p2p",
-    "integrate_feedback_with_selfplay",
-    "integrate_selfplay_with_training",
-    "create_full_selfplay_training_loop",
-
-    # Evaluation → Curriculum bridge
-    "EvaluationCurriculumBridge",
-    "create_evaluation_bridge",
-    "integrate_evaluation_with_curriculum",
-
     # Auto Elo integration
     "ModelEloIntegration",
+    # Model lifecycle
+    "ModelLifecycleManager",
+    "OpponentWinRateTracker",
+    "P2PIntegrationConfig",
+    # P2P integration
+    "P2PIntegrationManager",
+    # Pipeline feedback
+    "PipelineFeedbackController",
+    # Unified loop extensions
+    "UnifiedLoopExtensions",
+    "connect_to_cluster",
+    "create_evaluation_bridge",
+    "create_feedback_controller",
+    "create_feedback_router",
+    "create_full_selfplay_training_loop",
+    "create_lifecycle_manager",
+    "create_opponent_tracker",
+    "integrate_evaluation_with_curriculum",
+    "integrate_extensions",
+    "integrate_feedback_with_selfplay",
+    "integrate_lifecycle_with_p2p",
+    "integrate_selfplay_with_training",
     "register_model_for_elo",
 ]
 

@@ -21,9 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import statistics
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 try:
     from app.distributed.data_events import (
         DataEventType,
-        get_event_bus,
-        emit_plateau_detected,
         emit_hyperparameter_updated,
+        emit_plateau_detected,
+        get_event_bus,
     )
     HAS_EVENT_SYSTEM = True
 except ImportError:
@@ -73,7 +73,7 @@ class AdaptiveController:
     min_eval_games: int = 50
     max_eval_games: int = 200
     base_win_rate: float = 0.55
-    history: List[IterationResult] = field(default_factory=list)
+    history: list[IterationResult] = field(default_factory=list)
     config_name: str = "default"
     enable_events: bool = True
     _last_game_count: int = field(default=0, repr=False)
@@ -195,9 +195,9 @@ class AdaptiveController:
 
     def setup_event_subscriptions(
         self,
-        on_training_completed: Optional[Callable] = None,
-        on_evaluation_failed: Optional[Callable] = None,
-        on_quality_warning: Optional[Callable] = None,
+        on_training_completed: Callable | None = None,
+        on_evaluation_failed: Callable | None = None,
+        on_quality_warning: Callable | None = None,
     ) -> None:
         """Set up subscriptions to relevant events.
 
@@ -276,7 +276,7 @@ class AdaptiveController:
             count += 1
         return count
 
-    def compute_games(self, recent_win_rate: Optional[float] = None) -> int:
+    def compute_games(self, recent_win_rate: float | None = None) -> int:
         """Compute optimal number of selfplay games for next iteration.
 
         Strategy:
@@ -303,7 +303,7 @@ class AdaptiveController:
 
         return max(self.min_games, min(self.max_games, adjusted))
 
-    def compute_eval_games(self, recent_win_rate: Optional[float] = None) -> int:
+    def compute_eval_games(self, recent_win_rate: float | None = None) -> int:
         """Compute optimal number of evaluation games.
 
         Strategy:
@@ -436,7 +436,7 @@ class AdaptiveController:
         path.write_text(json.dumps(state, indent=2))
 
     @classmethod
-    def load(cls, path: Path, config_name: Optional[str] = None) -> "AdaptiveController":
+    def load(cls, path: Path, config_name: str | None = None) -> AdaptiveController:
         """Load controller state from JSON file.
 
         Args:
@@ -477,7 +477,7 @@ def create_adaptive_controller(
     config_name: str = "default",
     enable_events: bool = True,
     setup_subscriptions: bool = False,
-    state_path: Optional[Path] = None,
+    state_path: Path | None = None,
 ) -> AdaptiveController:
     """Factory function to create an adaptive controller.
 

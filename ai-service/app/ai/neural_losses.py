@@ -8,10 +8,9 @@ December 2025: Extracted from neural_net.py as part of N7 refactoring.
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 
 import torch
-
 
 # Maximum number of players for multi-player value head
 MAX_PLAYERS = 4
@@ -187,10 +186,10 @@ def rank_distribution_loss(
 def ranks_from_game_result(
     winner: int,
     num_players: int,
-    player_territories: Optional[list[int]] = None,
-    player_eliminated_rings: Optional[list[int]] = None,
-    player_markers_on_board: Optional[list[int]] = None,
-    elimination_order: Optional[list[int]] = None,
+    player_territories: list[int] | None = None,
+    player_eliminated_rings: list[int] | None = None,
+    player_markers_on_board: list[int] | None = None,
+    elimination_order: list[int] | None = None,
 ) -> torch.Tensor:
     """
     Compute rank indices from game result using canonical ranking rules.
@@ -359,9 +358,9 @@ def build_rank_targets(
 
 __all__ = [
     'MAX_PLAYERS',
+    'build_rank_targets',
+    'masked_policy_kl',
     'multi_player_value_loss',
     'rank_distribution_loss',
     'ranks_from_game_result',
-    'masked_policy_kl',
-    'build_rank_targets',
 ]

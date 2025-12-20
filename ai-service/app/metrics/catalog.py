@@ -45,16 +45,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "MetricCatalog",
-    "get_metric_catalog",
     "MetricCategory",
-    "MetricType",
     "MetricInfo",
+    "MetricType",
+    "get_metric_catalog",
     "register_metric",
 ]
 
@@ -101,10 +100,10 @@ class MetricInfo:
     description: str
     metric_type: MetricType
     category: MetricCategory
-    labels: List[str] = field(default_factory=list)
-    unit: Optional[str] = None  # seconds, bytes, etc.
-    buckets: Optional[List[float]] = None  # For histograms
-    module: Optional[str] = None  # Source module
+    labels: list[str] = field(default_factory=list)
+    unit: str | None = None  # seconds, bytes, etc.
+    buckets: list[float] | None = None  # For histograms
+    module: str | None = None  # Source module
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -129,17 +128,17 @@ class MetricCatalog:
     metrics used in the RingRift AI service.
     """
 
-    _instance: Optional["MetricCatalog"] = None
+    _instance: MetricCatalog | None = None
 
     def __init__(self):
-        self._metrics: Dict[str, MetricInfo] = {}
-        self._by_category: Dict[MetricCategory, Set[str]] = {
+        self._metrics: dict[str, MetricInfo] = {}
+        self._by_category: dict[MetricCategory, set[str]] = {
             cat: set() for cat in MetricCategory
         }
         self._initialized = False
 
     @classmethod
-    def get_instance(cls) -> "MetricCatalog":
+    def get_instance(cls) -> MetricCatalog:
         """Get singleton instance."""
         if cls._instance is None:
             cls._instance = cls()
@@ -155,7 +154,7 @@ class MetricCatalog:
         self._metrics[info.name] = info
         self._by_category[info.category].add(info.name)
 
-    def get(self, name: str) -> Optional[MetricInfo]:
+    def get(self, name: str) -> MetricInfo | None:
         """Get metric info by name.
 
         Args:
@@ -166,7 +165,7 @@ class MetricCatalog:
         """
         return self._metrics.get(name)
 
-    def get_by_category(self, category: MetricCategory) -> List[MetricInfo]:
+    def get_by_category(self, category: MetricCategory) -> list[MetricInfo]:
         """Get all metrics in a category.
 
         Args:
@@ -178,7 +177,7 @@ class MetricCatalog:
         names = self._by_category.get(category, set())
         return [self._metrics[n] for n in names if n in self._metrics]
 
-    def search(self, query: str) -> List[MetricInfo]:
+    def search(self, query: str) -> list[MetricInfo]:
         """Search metrics by name or description.
 
         Args:
@@ -194,7 +193,7 @@ class MetricCatalog:
             or query_lower in info.description.lower()
         ]
 
-    def list_all(self) -> List[MetricInfo]:
+    def list_all(self) -> list[MetricInfo]:
         """Get all registered metrics.
 
         Returns:
@@ -202,7 +201,7 @@ class MetricCatalog:
         """
         return list(self._metrics.values())
 
-    def list_names(self) -> List[str]:
+    def list_names(self) -> list[str]:
         """Get all metric names.
 
         Returns:
@@ -588,8 +587,8 @@ def register_metric(
     description: str,
     metric_type: MetricType,
     category: MetricCategory,
-    labels: Optional[List[str]] = None,
-    unit: Optional[str] = None,
+    labels: list[str] | None = None,
+    unit: str | None = None,
 ) -> MetricInfo:
     """Register a new metric in the catalog.
 

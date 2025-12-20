@@ -38,6 +38,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gzip
 import hashlib
 import json
@@ -48,7 +49,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from app.coordination.coordinator_base import SQLitePersistenceMixin
 
@@ -78,7 +79,7 @@ class StateSerializer:
     @classmethod
     def serialize(
         cls,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         compress: bool = True,
     ) -> bytes:
         """Serialize state to bytes.
@@ -113,7 +114,7 @@ class StateSerializer:
         return json_bytes
 
     @classmethod
-    def deserialize(cls, data: bytes) -> Dict[str, Any]:
+    def deserialize(cls, data: bytes) -> dict[str, Any]:
         """Deserialize bytes to state dictionary.
 
         Args:
@@ -159,9 +160,9 @@ class StateSerializer:
     @classmethod
     def _migrate_state(
         cls,
-        wrapped: Dict[str, Any],
+        wrapped: dict[str, Any],
         from_version: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Migrate state from old version to current.
 
         Args:
@@ -200,17 +201,17 @@ class StateSnapshot:
 
     coordinator_name: str
     timestamp: float
-    state: Dict[str, Any]
+    state: dict[str, Any]
     checksum: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def create(
         cls,
         coordinator_name: str,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         **metadata,
-    ) -> "StateSnapshot":
+    ) -> StateSnapshot:
         """Create a new snapshot with checksum.
 
         Args:
@@ -232,7 +233,7 @@ class StateSnapshot:
             metadata=metadata,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "coordinator_name": self.coordinator_name,
@@ -243,7 +244,7 @@ class StateSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "StateSnapshot":
+    def from_dict(cls, data: dict[str, Any]) -> StateSnapshot:
         """Create from dictionary."""
         return cls(
             coordinator_name=data["coordinator_name"],
@@ -273,11 +274,11 @@ class StateSnapshot:
 class StatePersistable(Protocol):
     """Protocol for persistable coordinators."""
 
-    def _get_state_for_persistence(self) -> Dict[str, Any]:
+    def _get_state_for_persistence(self) -> dict[str, Any]:
         """Get state dictionary to persist."""
         ...
 
-    def _restore_state_from_persistence(self, state: Dict[str, Any]) -> None:
+    def _restore_state_from_persistence(self, state: dict[str, Any]) -> None:
         """Restore state from persisted dictionary."""
         ...
 
@@ -311,7 +312,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
     _persistence_initialized: bool = False
     _auto_snapshot_interval: float = 300.0  # 5 minutes default
     _max_snapshots: int = 10
-    _snapshot_task: Optional[asyncio.Task] = None
+    _snapshot_task: asyncio.Task | None = None
 
     def init_persistence(
         self,
@@ -393,10 +394,8 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
         """Stop automatic snapshot task."""
         if self._snapshot_task:
             self._snapshot_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._snapshot_task
-            except asyncio.CancelledError:
-                pass
             self._snapshot_task = None
 
     async def _auto_snapshot_loop(self) -> None:
@@ -413,7 +412,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
                     f"Auto-snapshot failed: {e}"
                 )
 
-    async def save_snapshot(self, **metadata) -> Optional[StateSnapshot]:
+    async def save_snapshot(self, **metadata) -> StateSnapshot | None:
         """Save current state as a snapshot.
 
         Args:
@@ -490,7 +489,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
             logger.error(f"[{name}] Failed to save snapshot: {e}")
             raise
 
-    async def load_latest_snapshot(self) -> Optional[StateSnapshot]:
+    async def load_latest_snapshot(self) -> StateSnapshot | None:
         """Load the most recent snapshot.
 
         Returns:
@@ -534,7 +533,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
 
     async def restore_from_snapshot(
         self,
-        snapshot: Optional[StateSnapshot] = None,
+        snapshot: StateSnapshot | None = None,
     ) -> bool:
         """Restore state from a snapshot.
 
@@ -612,7 +611,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
 
         return deleted
 
-    def get_snapshot_stats(self) -> Dict[str, Any]:
+    def get_snapshot_stats(self) -> dict[str, Any]:
         """Get snapshot statistics.
 
         Returns:
@@ -653,7 +652,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
             return {"initialized": True, "error": str(e)}
 
     # Abstract methods for subclasses to implement
-    def _get_state_for_persistence(self) -> Dict[str, Any]:
+    def _get_state_for_persistence(self) -> dict[str, Any]:
         """Get state dictionary to persist.
 
         Override in subclass to return the state that should be persisted.
@@ -663,7 +662,7 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
         """
         return {}
 
-    def _restore_state_from_persistence(self, state: Dict[str, Any]) -> None:
+    def _restore_state_from_persistence(self, state: dict[str, Any]) -> None:
         """Restore state from persisted dictionary.
 
         Override in subclass to restore internal state from the dictionary.
@@ -697,7 +696,7 @@ class SnapshotCoordinator:
         await snapshot_coord.restore_all()
     """
 
-    _instance: Optional["SnapshotCoordinator"] = None
+    _instance: SnapshotCoordinator | None = None
     _lock = threading.Lock()
 
     def __init__(self, db_path: Path):
@@ -707,11 +706,11 @@ class SnapshotCoordinator:
             db_path: Path to the snapshot database
         """
         self._db_path = db_path
-        self._db_pool: Optional["ThreadLocalConnectionPool"] = None
+        self._db_pool: ThreadLocalConnectionPool | None = None
         self._init_db()
 
         # Track registered coordinators
-        self._coordinators: Dict[str, StatePersistenceMixin] = {}
+        self._coordinators: dict[str, StatePersistenceMixin] = {}
 
         logger.info("[SnapshotCoordinator] Initialized")
 
@@ -760,7 +759,7 @@ class SnapshotCoordinator:
         return self._db_pool.get_connection()
 
     @classmethod
-    def get_instance(cls, db_path: Optional[Path] = None) -> "SnapshotCoordinator":
+    def get_instance(cls, db_path: Path | None = None) -> SnapshotCoordinator:
         """Get singleton instance.
 
         Args:
@@ -808,7 +807,7 @@ class SnapshotCoordinator:
         self,
         description: str = "",
         **metadata,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Take synchronized snapshot of all registered coordinators.
 
         Args:
@@ -823,7 +822,7 @@ class SnapshotCoordinator:
             return None
 
         timestamp = time.time()
-        snapshots: Dict[str, StateSnapshot] = {}
+        snapshots: dict[str, StateSnapshot] = {}
 
         # Collect snapshots from all coordinators
         for name, coordinator in self._coordinators.items():
@@ -891,8 +890,8 @@ class SnapshotCoordinator:
 
     async def restore_all(
         self,
-        snapshot_id: Optional[int] = None,
-    ) -> Dict[str, bool]:
+        snapshot_id: int | None = None,
+    ) -> dict[str, bool]:
         """Restore all coordinators from a system snapshot.
 
         Args:
@@ -923,7 +922,7 @@ class SnapshotCoordinator:
             (snapshot_id,),
         ).fetchall()
 
-        results: Dict[str, bool] = {}
+        results: dict[str, bool] = {}
 
         for name, checksum, state_data in rows:
             coordinator = self._coordinators.get(name)
@@ -967,7 +966,7 @@ class SnapshotCoordinator:
     def list_snapshots(
         self,
         limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List available system snapshots.
 
         Args:
@@ -1003,7 +1002,7 @@ class SnapshotCoordinator:
     def get_snapshot_detail(
         self,
         snapshot_id: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get detailed information about a specific snapshot.
 
         Args:
@@ -1131,11 +1130,11 @@ class SnapshotCoordinator:
 # =============================================================================
 
 
-_snapshot_coordinator: Optional[SnapshotCoordinator] = None
+_snapshot_coordinator: SnapshotCoordinator | None = None
 
 
 def get_snapshot_coordinator(
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
 ) -> SnapshotCoordinator:
     """Get the global snapshot coordinator.
 
@@ -1161,11 +1160,11 @@ def reset_snapshot_coordinator() -> None:
 
 
 __all__ = [
-    "StateSerializer",
-    "StateSnapshot",
+    "SnapshotCoordinator",
     "StatePersistable",
     "StatePersistenceMixin",
-    "SnapshotCoordinator",
+    "StateSerializer",
+    "StateSnapshot",
     "get_snapshot_coordinator",
     "reset_snapshot_coordinator",
 ]

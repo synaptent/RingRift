@@ -5,7 +5,6 @@ Provides O(1) state hashing for transposition tables.
 
 import random
 import threading
-from typing import Dict, Tuple
 
 
 class ZobristHash:
@@ -25,7 +24,7 @@ class ZobristHash:
             with cls._lock:
                 # Check again inside lock to handle race condition
                 if cls._instance is None:
-                    instance = super(ZobristHash, cls).__new__(cls)
+                    instance = super().__new__(cls)
                     instance._initialize()
                     cls._instance = instance
         return cls._instance
@@ -47,11 +46,11 @@ class ZobristHash:
         # - Current player
         # - Current phase
 
-        self.stack_keys: Dict[str, int] = {}
-        self.marker_keys: Dict[str, int] = {}
-        self.collapsed_keys: Dict[str, int] = {}
-        self.player_keys: Dict[int, int] = {}
-        self.phase_keys: Dict[str, int] = {}
+        self.stack_keys: dict[str, int] = {}
+        self.marker_keys: dict[str, int] = {}
+        self.collapsed_keys: dict[str, int] = {}
+        self.player_keys: dict[int, int] = {}
+        self.phase_keys: dict[str, int] = {}
 
         # Pre-generate keys for common positions (lazy load others if needed,
         # but better to pre-gen for max speed). We back this with a large
@@ -82,7 +81,7 @@ class ZobristHash:
         pos_key: str,
         player: int,
         height: int,
-        rings: Tuple[int, ...]
+        rings: tuple[int, ...]
     ) -> int:
         """Get hash for a stack"""
         rings_str = ",".join(str(r) for r in rings)

@@ -28,13 +28,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -50,7 +49,7 @@ class Opening:
     opening_id: str
     board_type: str
     num_players: int
-    moves: List[Dict[str, Any]]  # List of move dicts
+    moves: list[dict[str, Any]]  # List of move dicts
     move_count: int
     # Statistics from usage
     times_used: int = 0
@@ -58,7 +57,7 @@ class Opening:
     win_rate_p1: float = 0.5
     diversity_score: float = 0.0  # How different from other openings
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "opening_id": self.opening_id,
@@ -73,7 +72,7 @@ class Opening:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Opening":
+    def from_dict(cls, data: dict[str, Any]) -> Opening:
         """Create from dictionary."""
         return cls(
             opening_id=data["opening_id"],
@@ -99,7 +98,7 @@ class OpeningGenerator:
         self,
         board_type: str = "square8",
         num_players: int = 2,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         """Initialize the opening generator.
 
@@ -121,7 +120,7 @@ class OpeningGenerator:
         min_moves: int = 4,
         max_moves: int = 10,
         unique_positions: bool = True,
-    ) -> List[Opening]:
+    ) -> list[Opening]:
         """Generate diverse opening sequences.
 
         Args:
@@ -134,14 +133,14 @@ class OpeningGenerator:
             List of Opening objects
         """
         try:
-            from app.training.env import RingRiftEnv
             from app.models import BoardType
+            from app.training.env import RingRiftEnv
         except ImportError:
             logger.error("Could not import RingRiftEnv")
             return []
 
         openings = []
-        seen_positions: Set[str] = set()
+        seen_positions: set[str] = set()
 
         # Convert board type
         try:
@@ -227,7 +226,7 @@ class OpeningGenerator:
         self,
         depth: int = 6,
         branch_factor: int = 3,
-    ) -> List[Opening]:
+    ) -> list[Opening]:
         """Generate openings systematically by exploring the game tree.
 
         Args:
@@ -238,8 +237,8 @@ class OpeningGenerator:
             List of Opening objects
         """
         try:
-            from app.training.env import RingRiftEnv
             from app.models import BoardType
+            from app.training.env import RingRiftEnv
         except ImportError:
             logger.error("Could not import RingRiftEnv")
             return []
@@ -282,7 +281,7 @@ class OpeningGenerator:
                     "to": move.to_position if hasattr(move, "to_position") else None,
                     "move_type": str(type(move).__name__),
                 }
-                new_moves = moves_so_far + [move_dict]
+                new_moves = [*moves_so_far, move_dict]
 
                 # Apply move
                 new_env = RingRiftEnv(
@@ -350,7 +349,7 @@ class OpeningBook:
         self.db_path = self.book_dir / f"openings_{self.config_key}.db"
 
         # In-memory cache
-        self.openings: List[Opening] = []
+        self.openings: list[Opening] = []
         self.weights: np.ndarray = np.array([])
 
         # Initialize database
@@ -429,7 +428,7 @@ class OpeningBook:
         weights = diversity_scores * usage_penalty
         self.weights = weights / weights.sum()
 
-    def add_openings(self, openings: List[Opening]):
+    def add_openings(self, openings: list[Opening]):
         """Add openings to the book.
 
         Args:
@@ -494,7 +493,7 @@ class OpeningBook:
         diversity = 1.0 / (1 + matches * 0.5)
         return diversity
 
-    def sample_opening(self) -> Optional[Opening]:
+    def sample_opening(self) -> Opening | None:
         """Sample an opening weighted by diversity and usage.
 
         Returns:
@@ -564,7 +563,7 @@ class OpeningBook:
         conn.commit()
         conn.close()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics about the opening book."""
         if not self.openings:
             return {"count": 0}
@@ -577,7 +576,7 @@ class OpeningBook:
             "balanced_openings": len([o for o in self.openings if 0.4 < o.win_rate_p1 < 0.6]),
         }
 
-    def get_unused_openings(self, limit: int = 100) -> List[Opening]:
+    def get_unused_openings(self, limit: int = 100) -> list[Opening]:
         """Get openings that haven't been used yet."""
         unused = [o for o in self.openings if o.times_used == 0]
         return unused[:limit]

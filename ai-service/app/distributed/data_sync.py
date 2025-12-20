@@ -48,11 +48,10 @@ import tempfile
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
-from app.utils.checksum_utils import compute_file_checksum
 
 import yaml
+
+from app.utils.checksum_utils import compute_file_checksum
 
 # Emit deprecation warning on module import
 warnings.warn(
@@ -73,9 +72,9 @@ logger = logging.getLogger(__name__)
 # Unified resource checking utilities (80% max utilization)
 try:
     from app.utils.resource_guard import (
+        LIMITS as RESOURCE_LIMITS,
         check_disk_space as unified_check_disk,
         get_disk_usage as unified_get_disk_usage,
-        LIMITS as RESOURCE_LIMITS,
     )
     HAS_RESOURCE_GUARD = True
 except ImportError:
@@ -85,7 +84,7 @@ except ImportError:
     RESOURCE_LIMITS = None
 
 from app.utils.env_config import env
-from app.utils.paths import AI_SERVICE_ROOT, MODELS_DIR, DATA_DIR
+from app.utils.paths import AI_SERVICE_ROOT, DATA_DIR, MODELS_DIR
 
 # Disk usage limits - 70% max enforced 2025-12-16
 MAX_DISK_USAGE_PERCENT = env.max_disk_percent
@@ -95,7 +94,7 @@ CONFIG_PATH = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
 SYNC_STATE_PATH = DATA_DIR / "sync_state.json"
 
 
-def check_disk_usage(path: Path = None) -> Tuple[bool, float]:
+def check_disk_usage(path: Path | None = None) -> tuple[bool, float]:
     """Check if disk has capacity for syncing.
 
     Uses unified resource_guard utilities when available for consistent
@@ -139,7 +138,7 @@ class SyncTarget:
     path: str
     priority: int = 5  # 1-10, higher = more important
     sync_interval: int = 300  # seconds
-    checksum: Optional[str] = None
+    checksum: str | None = None
     last_sync: float = 0
 
 
@@ -151,22 +150,22 @@ class NodeConfig:
     ssh_user: str = "root"
     ssh_port: int = 22
     ssh_key: str = "~/.ssh/id_cluster"
-    tailscale_ip: Optional[str] = None
-    cloudflare_tunnel: Optional[str] = None
+    tailscale_ip: str | None = None
+    cloudflare_tunnel: str | None = None
     ringrift_path: str = "~/ringrift/ai-service"
     status: str = "unknown"
     # Transports for pushing files TO nodes (aria2 is for pulling only)
-    transports: List[str] = field(default_factory=lambda: ["tailscale", "cloudflare", "ssh"])
+    transports: list[str] = field(default_factory=lambda: ["tailscale", "cloudflare", "ssh"])
 
 
 class DataSyncManager:
     """Manages data synchronization across cluster nodes."""
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         self.config_path = config_path or CONFIG_PATH
-        self.nodes: Dict[str, NodeConfig] = {}
-        self.sync_targets: List[SyncTarget] = []
-        self.sync_state: Dict = {}
+        self.nodes: dict[str, NodeConfig] = {}
+        self.sync_targets: list[SyncTarget] = []
+        self.sync_state: dict = {}
         self._load_config()
         self._load_sync_state()
         self._init_sync_targets()
@@ -279,7 +278,7 @@ class DataSyncManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
 
             if proc.returncode == 0:
                 logger.info(f"Tailscale sync to {node.name} succeeded")
@@ -297,7 +296,7 @@ class DataSyncManager:
 
     async def sync_via_aria2(
         self,
-        urls: List[str],
+        urls: list[str],
         local_path: Path,
         max_connections: int = 16,
     ) -> bool:
@@ -329,7 +328,7 @@ class DataSyncManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
 
             os.unlink(input_file)
 
@@ -382,7 +381,7 @@ class DataSyncManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=360)
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=360)
 
             if proc.returncode == 0:
                 logger.info(f"Cloudflare tunnel sync to {node.name} succeeded")
@@ -427,7 +426,7 @@ class DataSyncManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
 
             if proc.returncode == 0:
                 logger.info(f"SSH sync to {node.name} succeeded")
@@ -463,7 +462,7 @@ class DataSyncManager:
         logger.error(f"All transports failed for {node.name}")
         return False
 
-    async def sync_best_models(self) -> Dict[str, bool]:
+    async def sync_best_models(self) -> dict[str, bool]:
         """Sync best model checkpoints to all nodes."""
         results = {}
 
@@ -504,7 +503,7 @@ class DataSyncManager:
         self._save_sync_state()
         return results
 
-    async def sync_elo_database(self) -> Dict[str, bool]:
+    async def sync_elo_database(self) -> dict[str, bool]:
         """Sync unified ELO database to all nodes."""
         results = {}
 
@@ -540,7 +539,7 @@ class DataSyncManager:
         self._save_sync_state()
         return results
 
-    async def collect_training_data(self, pattern: str = "hex8*.db") -> List[Path]:
+    async def collect_training_data(self, pattern: str = "hex8*.db") -> list[Path]:
         """Collect training databases from all nodes."""
         # Check disk usage before collecting (70% limit enforced 2025-12-16)
         has_capacity, disk_percent = check_disk_usage()

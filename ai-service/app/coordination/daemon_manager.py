@@ -40,12 +40,14 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import contextlib
 import logging
 import signal
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -93,17 +95,17 @@ class DaemonInfo:
     """Information about a registered daemon."""
     daemon_type: DaemonType
     state: DaemonState = DaemonState.STOPPED
-    task: Optional[asyncio.Task] = None
+    task: asyncio.Task | None = None
     start_time: float = 0.0
     restart_count: int = 0
-    last_error: Optional[str] = None
+    last_error: str | None = None
     health_check_interval: float = 60.0
     auto_restart: bool = True
     max_restarts: int = 5
     restart_delay: float = 5.0
 
     # Dependencies
-    depends_on: List[DaemonType] = field(default_factory=list)
+    depends_on: list[DaemonType] = field(default_factory=list)
 
     @property
     def uptime_seconds(self) -> float:
@@ -130,14 +132,14 @@ class DaemonManager:
     coordinated shutdown for all background services.
     """
 
-    _instance: Optional["DaemonManager"] = None
+    _instance: DaemonManager | None = None
 
-    def __init__(self, config: Optional[DaemonManagerConfig] = None):
+    def __init__(self, config: DaemonManagerConfig | None = None):
         self.config = config or DaemonManagerConfig()
-        self._daemons: Dict[DaemonType, DaemonInfo] = {}
-        self._factories: Dict[DaemonType, Callable[[], Coroutine[Any, Any, None]]] = {}
+        self._daemons: dict[DaemonType, DaemonInfo] = {}
+        self._factories: dict[DaemonType, Callable[[], Coroutine[Any, Any, None]]] = {}
         self._running = False
-        self._health_task: Optional[asyncio.Task] = None
+        self._health_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
         self._lock = asyncio.Lock()
 
@@ -148,7 +150,7 @@ class DaemonManager:
         self._register_default_factories()
 
     @classmethod
-    def get_instance(cls, config: Optional[DaemonManagerConfig] = None) -> "DaemonManager":
+    def get_instance(cls, config: DaemonManagerConfig | None = None) -> DaemonManager:
         """Get or create the singleton instance."""
         if cls._instance is None:
             cls._instance = cls(config)
@@ -188,7 +190,7 @@ class DaemonManager:
         self,
         daemon_type: DaemonType,
         factory: Callable[[], Coroutine[Any, Any, None]],
-        depends_on: Optional[List[DaemonType]] = None,
+        depends_on: list[DaemonType] | None = None,
         health_check_interval: float = 60.0,
         auto_restart: bool = True,
         max_restarts: int = 5,
@@ -332,7 +334,7 @@ class DaemonManager:
             logger.info(f"Stopped daemon: {daemon_type.value}")
             return True
 
-    async def start_all(self, types: Optional[List[DaemonType]] = None) -> Dict[DaemonType, bool]:
+    async def start_all(self, types: list[DaemonType] | None = None) -> dict[DaemonType, bool]:
         """Start all (or specified) daemons in dependency order.
 
         Args:
@@ -341,7 +343,7 @@ class DaemonManager:
         Returns:
             Dict mapping daemon type to start success
         """
-        results: Dict[DaemonType, bool] = {}
+        results: dict[DaemonType, bool] = {}
         types_to_start = types or list(self._factories.keys())
 
         # Sort by dependencies (topological sort)
@@ -357,14 +359,14 @@ class DaemonManager:
 
         return results
 
-    async def stop_all(self) -> Dict[DaemonType, bool]:
+    async def stop_all(self) -> dict[DaemonType, bool]:
         """Stop all running daemons.
 
         Returns:
             Dict mapping daemon type to stop success
         """
         self._running = False
-        results: Dict[DaemonType, bool] = {}
+        results: dict[DaemonType, bool] = {}
 
         # Stop in reverse dependency order
         sorted_types = list(reversed(self._sort_by_dependencies(list(self._daemons.keys()))))
@@ -383,10 +385,8 @@ class DaemonManager:
         # Stop health check
         if self._health_task:
             self._health_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._health_task
-            except asyncio.CancelledError:
-                pass
 
         # Stop all daemons
         await self.stop_all()
@@ -403,11 +403,11 @@ class DaemonManager:
             # No running loop
             pass
 
-    def _sort_by_dependencies(self, types: List[DaemonType]) -> List[DaemonType]:
+    def _sort_by_dependencies(self, types: list[DaemonType]) -> list[DaemonType]:
         """Sort daemon types by dependencies (topological sort)."""
-        result: List[DaemonType] = []
-        visited: Set[DaemonType] = set()
-        visiting: Set[DaemonType] = set()
+        result: list[DaemonType] = []
+        visited: set[DaemonType] = set()
+        visiting: set[DaemonType] = set()
 
         def visit(dt: DaemonType) -> None:
             if dt in visited:
@@ -460,7 +460,7 @@ class DaemonManager:
                 else:
                     info.state = DaemonState.FAILED
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get status of all daemons.
 
         Returns:
@@ -502,7 +502,7 @@ class DaemonManager:
     async def _create_sync_coordinator(self) -> None:
         """Create and run the sync coordinator daemon."""
         try:
-            from app.distributed.sync_coordinator import SyncCoordinator, SyncCategory
+            from app.distributed.sync_coordinator import SyncCategory, SyncCoordinator
 
             coordinator = SyncCoordinator.get_instance()
             await coordinator.start_background_sync(
@@ -518,7 +518,7 @@ class DaemonManager:
         try:
             from app.distributed.sync_coordinator import wire_all_quality_events_to_sync
 
-            watcher = wire_all_quality_events_to_sync(
+            _watcher = wire_all_quality_events_to_sync(
                 sync_cooldown_seconds=60.0,
                 min_quality_score=0.7,
                 max_games_per_sync=500,
@@ -614,10 +614,10 @@ class DaemonManager:
 
 
 # Singleton accessor
-_daemon_manager: Optional[DaemonManager] = None
+_daemon_manager: DaemonManager | None = None
 
 
-def get_daemon_manager(config: Optional[DaemonManagerConfig] = None) -> DaemonManager:
+def get_daemon_manager(config: DaemonManagerConfig | None = None) -> DaemonManager:
     """Get the singleton DaemonManager instance.
 
     Args:
@@ -665,14 +665,14 @@ def setup_signal_handlers() -> None:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "DaemonType",
-    "DaemonState",
     # Data classes
     "DaemonInfo",
-    "DaemonManagerConfig",
     # Main class
     "DaemonManager",
+    "DaemonManagerConfig",
+    "DaemonState",
+    # Enums
+    "DaemonType",
     # Functions
     "get_daemon_manager",
     "reset_daemon_manager",

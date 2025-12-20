@@ -28,24 +28,25 @@ import json
 import os
 import sqlite3
 import threading
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional, Union
+from typing import Any, Union
 
 from app.utils.file_utils import atomic_write
 
 # Import centralized timeout constants (December 2025)
 try:
     from app.config.thresholds import (
-        SQLITE_TIMEOUT,
-        SQLITE_SHORT_TIMEOUT,
-        SQLITE_BUSY_TIMEOUT_MS,
         SQLITE_BUSY_TIMEOUT_LONG_MS,
+        SQLITE_BUSY_TIMEOUT_MS,
         SQLITE_BUSY_TIMEOUT_SHORT_MS,
-        SQLITE_JOURNAL_MODE,
-        SQLITE_SYNCHRONOUS,
-        SQLITE_WAL_AUTOCHECKPOINT,
         SQLITE_CACHE_SIZE_KB,
+        SQLITE_JOURNAL_MODE,
+        SQLITE_SHORT_TIMEOUT,
+        SQLITE_SYNCHRONOUS,
+        SQLITE_TIMEOUT,
+        SQLITE_WAL_AUTOCHECKPOINT,
     )
 except ImportError:
     SQLITE_TIMEOUT = 30
@@ -105,7 +106,7 @@ class PragmaProfile:
 def apply_pragmas(
     conn: sqlite3.Connection,
     profile: str = "standard",
-    custom_pragmas: Optional[Dict[str, Any]] = None,
+    custom_pragmas: dict[str, Any] | None = None,
 ) -> None:
     """Apply PRAGMA settings to a SQLite connection.
 
@@ -173,10 +174,10 @@ class ThreadLocalConnectionPool:
     def __init__(
         self,
         db_path: Union[str, Path],
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
         profile: str = "standard",
         row_factory: bool = True,
-        custom_pragmas: Optional[Dict[str, Any]] = None,
+        custom_pragmas: dict[str, Any] | None = None,
     ):
         """Initialize the connection pool.
 
@@ -223,10 +224,8 @@ class ThreadLocalConnectionPool:
     def close_connection(self) -> None:
         """Close the thread-local connection."""
         if hasattr(self._local, "conn") and self._local.conn is not None:
-            try:
+            with suppress(Exception):
                 self._local.conn.close()
-            except Exception:
-                pass
             self._local.conn = None
 
     def execute(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
@@ -295,7 +294,7 @@ def create_coordinator_pool(
 def get_db_connection(
     db_path: Union[str, Path],
     quick: bool = False,
-    timeout: Optional[float] = None,
+    timeout: float | None = None,
     row_factory: bool = True,
 ) -> sqlite3.Connection:
     """Get a SQLite connection with standardized timeout.
@@ -333,8 +332,8 @@ def get_db_connection(
 @contextmanager
 def safe_transaction(
     db_path: Union[str, Path],
-    timeout: Optional[float] = None,
-    isolation_level: Optional[str] = None,
+    timeout: float | None = None,
+    isolation_level: str | None = None,
 ) -> Generator[sqlite3.Connection, None, None]:
     """Execute a SQLite transaction with automatic rollback on error.
 
@@ -503,7 +502,7 @@ class TransactionManager:
 # Convenience function for common pattern
 def save_state_atomically(
     state_path: Union[str, Path],
-    state: Dict[str, Any],
+    state: dict[str, Any],
 ) -> None:
     """Save state dictionary to JSON file atomically.
 
@@ -517,8 +516,8 @@ def save_state_atomically(
 
 def load_state_safely(
     state_path: Union[str, Path],
-    default: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    default: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Load state dictionary from JSON file safely.
 
     Args:
@@ -535,7 +534,7 @@ def load_state_safely(
     try:
         with open(path) as f:
             return json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return default or {}
 
 
@@ -565,11 +564,11 @@ class DatabaseRegistry:
     """
 
     # Singleton instance
-    _instance: Optional["DatabaseRegistry"] = None
+    _instance: DatabaseRegistry | None = None
     _lock = threading.RLock()
 
     # Well-known database identifiers and their relative paths
-    KNOWN_DATABASES: Dict[str, str] = {
+    KNOWN_DATABASES: dict[str, str] = {
         "elo": "data/unified_elo.db",
         "unified_elo": "data/unified_elo.db",
         "selfplay": "data/games/selfplay.db",
@@ -581,7 +580,7 @@ class DatabaseRegistry:
         "holdout": "data/holdouts/holdout.db",
     }
 
-    def __new__(cls) -> "DatabaseRegistry":
+    def __new__(cls) -> DatabaseRegistry:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -594,11 +593,11 @@ class DatabaseRegistry:
             return
 
         self._initialized = True
-        self._base_path: Optional[Path] = None
-        self._connections: Dict[str, sqlite3.Connection] = {}
+        self._base_path: Path | None = None
+        self._connections: dict[str, sqlite3.Connection] = {}
         self._pool_lock = threading.RLock()
-        self._custom_paths: Dict[str, Path] = {}
-        self._schema_versions: Dict[str, int] = {}
+        self._custom_paths: dict[str, Path] = {}
+        self._schema_versions: dict[str, int] = {}
 
         # Try to auto-detect base path
         self._detect_base_path()
@@ -756,10 +755,8 @@ class DatabaseRegistry:
         """Close all pooled connections."""
         with self._pool_lock:
             for conn in self._connections.values():
-                try:
+                with suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
             self._connections.clear()
 
     def get_schema_version(self, identifier: str) -> int:
@@ -809,7 +806,7 @@ class DatabaseRegistry:
             )
             self._schema_versions[identifier] = version
 
-    def list_databases(self) -> Dict[str, Path]:
+    def list_databases(self) -> dict[str, Path]:
         """List all known databases and their paths.
 
         Returns:
@@ -836,7 +833,7 @@ class DatabaseRegistry:
 
 
 # Module-level singleton access
-_registry: Optional[DatabaseRegistry] = None
+_registry: DatabaseRegistry | None = None
 
 
 def get_registry() -> DatabaseRegistry:
@@ -913,4 +910,5 @@ def close_all_connections() -> None:
 
 # Register cleanup on module unload
 import atexit
+
 atexit.register(close_all_connections)

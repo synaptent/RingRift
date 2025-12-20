@@ -10,10 +10,9 @@ magic numbers in the tests themselves.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
 
-from app.models import BoardType
 from app.config.ladder_config import get_ladder_tier_config
+from app.models import BoardType
 
 
 @dataclass(frozen=True)
@@ -48,7 +47,7 @@ class TierPerfBudget:
     notes: str = ""
 
 
-def _build_square8_two_player_budgets() -> Dict[str, TierPerfBudget]:
+def _build_square8_two_player_budgets() -> dict[str, TierPerfBudget]:
     """Construct perf budgets for Square8 2‑player D4/D6/D8 tiers.
 
     Budgets are derived from the canonical LadderTierConfig entries for
@@ -57,7 +56,7 @@ def _build_square8_two_player_budgets() -> Dict[str, TierPerfBudget]:
     account for environment overhead and host variance while still being
     strict enough to catch large regressions.
     """
-    budgets: Dict[str, TierPerfBudget] = {}
+    budgets: dict[str, TierPerfBudget] = {}
 
     def _from_ladder(difficulty: int, label: str) -> TierPerfBudget:
         ladder_cfg = get_ladder_tier_config(difficulty, BoardType.SQUARE8, 2)
@@ -98,7 +97,7 @@ def _build_square8_two_player_budgets() -> Dict[str, TierPerfBudget]:
     return budgets
 
 
-TIER_PERF_BUDGETS: Dict[str, TierPerfBudget] = (
+TIER_PERF_BUDGETS: dict[str, TierPerfBudget] = (
     _build_square8_two_player_budgets()
 )
 
@@ -120,4 +119,4 @@ def get_tier_perf_budget(tier_name: str) -> TierPerfBudget:
         ) from exc
 
 
-__all__ = ["TierPerfBudget", "TIER_PERF_BUDGETS", "get_tier_perf_budget"]
+__all__ = ["TIER_PERF_BUDGETS", "TierPerfBudget", "get_tier_perf_budget"]

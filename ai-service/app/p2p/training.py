@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from .config import GPU_POWER_RANKINGS, get_p2p_config
 
@@ -48,7 +47,7 @@ class TrainingThresholds:
     # Maximum consecutive stagnant runs before pause
     max_stagnant_runs: int = 3
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "min_games": self.min_games,
             "batch_size": self.batch_size,
@@ -104,8 +103,8 @@ def should_trigger_training(
     hours_since_last_training: float,
     _last_elo_change: float = 0.0,
     consecutive_stagnant: int = 0,
-    thresholds: Optional[TrainingThresholds] = None,
-) -> Tuple[bool, str]:
+    thresholds: TrainingThresholds | None = None,
+) -> tuple[bool, str]:
     """Determine if training should be triggered.
 
     Args:
@@ -138,10 +137,10 @@ def should_trigger_training(
 
 
 def rank_training_nodes(
-    nodes: List[Dict[str, Any]],
+    nodes: list[dict[str, Any]],
     board_type: str = "square8",
     num_players: int = 2,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Rank nodes by training suitability.
 
     Args:

@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -70,10 +70,10 @@ class NNUEMetricsReport:
     calibration_error: float = 0.0  # Mean absolute difference between pred and actual win rate
 
     # Distribution stats
-    phase_balance: Dict[str, float] = field(default_factory=dict)
-    value_histogram: Dict[str, int] = field(default_factory=dict)
+    phase_balance: dict[str, float] = field(default_factory=dict)
+    value_histogram: dict[str, int] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging."""
         return {
             "total_samples": self.total_samples,
@@ -120,7 +120,7 @@ class NNUEQualityMetrics:
     then computes comprehensive quality metrics at the end of each epoch.
     """
 
-    def __init__(self, phase_config: Optional[PhaseConfig] = None):
+    def __init__(self, phase_config: PhaseConfig | None = None):
         """Initialize metrics tracker.
 
         Args:
@@ -132,17 +132,17 @@ class NNUEQualityMetrics:
     def reset(self) -> None:
         """Reset all accumulated metrics."""
         # Accumulated data
-        self._predictions: List[float] = []
-        self._targets: List[float] = []
-        self._move_numbers: List[int] = []
-        self._losses: List[float] = []
+        self._predictions: list[float] = []
+        self._targets: list[float] = []
+        self._move_numbers: list[int] = []
+        self._losses: list[float] = []
 
     def update(
         self,
         predictions: np.ndarray,
         targets: np.ndarray,
-        move_numbers: Optional[np.ndarray] = None,
-        losses: Optional[np.ndarray] = None,
+        move_numbers: np.ndarray | None = None,
+        losses: np.ndarray | None = None,
     ) -> None:
         """Update metrics with a batch of predictions.
 
@@ -280,7 +280,7 @@ class NNUEQualityMetrics:
             return 0.0
 
         correct = 0
-        for pred, target in zip(predictions, targets):
+        for pred, target in zip(predictions, targets, strict=False):
             if target > 0:
                 # Win - prediction should be positive
                 if pred > 0:
@@ -330,7 +330,7 @@ class NNUEQualityMetrics:
     def _compute_value_histogram(
         self,
         targets: np.ndarray,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Compute histogram of target values."""
         wins = int(np.sum(targets > 0))
         losses = int(np.sum(targets < 0))
@@ -380,7 +380,7 @@ def analyze_dataset_quality(
     db_path: str,
     board_type: str = "square8",
     num_players: int = 2,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Analyze the quality and balance of an NNUE training dataset.
 
     Args:
@@ -466,7 +466,7 @@ def _generate_quality_warnings(
     mid: int,
     late: int,
     total: int,
-) -> List[str]:
+) -> list[str]:
     """Generate warnings about dataset quality issues."""
     warnings = []
 

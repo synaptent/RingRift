@@ -16,36 +16,36 @@ from __future__ import annotations
 from app.db.unified_recording import (
     # Constants
     DEFAULT_SELFPLAY_DB_PATH,
-    # Utilities
-    _augment_metadata_with_env,
-    is_recording_enabled,
-    get_default_db_path,
-    validate_move_fsm,
-    should_record_games,
-    get_or_create_db,
     # GameRecorder
     GameRecorder,
-    # One-shot recording
-    record_completed_game,
-    record_completed_game_with_parity_check,
-    record_completed_game_with_nnue_cache,
+    # Utilities
+    _augment_metadata_with_env,
+    cache_nnue_features_batch,
     # NNUE caching
     cache_nnue_features_for_game,
-    cache_nnue_features_batch,
+    get_default_db_path,
+    get_or_create_db,
+    is_recording_enabled,
+    # One-shot recording
+    record_completed_game,
+    record_completed_game_with_nnue_cache,
+    record_completed_game_with_parity_check,
+    should_record_games,
+    validate_move_fsm,
 )
 
 __all__ = [
     "DEFAULT_SELFPLAY_DB_PATH",
-    "_augment_metadata_with_env",
-    "is_recording_enabled",
-    "get_default_db_path",
-    "validate_move_fsm",
-    "should_record_games",
-    "get_or_create_db",
     "GameRecorder",
-    "record_completed_game",
-    "record_completed_game_with_parity_check",
-    "record_completed_game_with_nnue_cache",
-    "cache_nnue_features_for_game",
+    "_augment_metadata_with_env",
     "cache_nnue_features_batch",
+    "cache_nnue_features_for_game",
+    "get_default_db_path",
+    "get_or_create_db",
+    "is_recording_enabled",
+    "record_completed_game",
+    "record_completed_game_with_nnue_cache",
+    "record_completed_game_with_parity_check",
+    "should_record_games",
+    "validate_move_fsm",
 ]

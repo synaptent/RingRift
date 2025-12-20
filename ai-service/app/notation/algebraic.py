@@ -10,16 +10,15 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Union
 
 from app.models import BoardType, GameState, Move, MoveType, Position
-
 
 # ============================================================================
 # MoveType <-> Notation Code Mapping (per GAME_NOTATION_SPEC.md Section 6.1)
 # ============================================================================
 
-MOVE_TYPE_TO_CODE: Dict[MoveType, str] = {
+MOVE_TYPE_TO_CODE: dict[MoveType, str] = {
     MoveType.PLACE_RING: "P",
     MoveType.SKIP_PLACEMENT: "SP",
     MoveType.SWAP_SIDES: "SW",
@@ -41,7 +40,7 @@ MOVE_TYPE_TO_CODE: Dict[MoveType, str] = {
     MoveType.FORCED_ELIMINATION: "E",
 }
 
-CODE_TO_MOVE_TYPE: Dict[str, MoveType] = {
+CODE_TO_MOVE_TYPE: dict[str, MoveType] = {
     "P": MoveType.PLACE_RING,
     "SP": MoveType.SKIP_PLACEMENT,
     "SW": MoveType.SWAP_SIDES,
@@ -268,13 +267,13 @@ def algebraic_to_move(
         raise ValueError(f"Unknown move code: {code}")
 
     board_type = state.board_type
-    from_pos: Optional[Position] = None
-    to_pos: Optional[Position] = None
-    capture_target: Optional[Position] = None
-    marker_left: Optional[Position] = None
+    from_pos: Position | None = None
+    to_pos: Position | None = None
+    capture_target: Position | None = None
+    marker_left: Position | None = None
 
     # Parse remaining parts based on move type
-    for i, part in enumerate(parts[1:], 1):
+    for _i, part in enumerate(parts[1:], 1):
         if part.startswith('x'):
             # Capture target
             capture_target = algebraic_to_position(part[1:], board_type)
@@ -316,9 +315,9 @@ def algebraic_to_move(
 # ============================================================================
 
 def moves_to_notation_list(
-    moves: List[Move],
+    moves: list[Move],
     board_type: BoardType,
-) -> List[str]:
+) -> list[str]:
     """Convert a list of moves to algebraic notation strings.
 
     Args:
@@ -332,8 +331,8 @@ def moves_to_notation_list(
 
 
 def game_to_pgn(
-    moves: List[Move],
-    metadata: Dict[str, Union[str, int, None]],
+    moves: list[Move],
+    metadata: dict[str, Union[str, int, None]],
     board_type: BoardType,
 ) -> str:
     """Generate PGN-style game record.
@@ -371,7 +370,7 @@ def game_to_pgn(
         lines.append(f'[Player2 "{metadata["player2"]}"]')
 
     # Result: "1-0", "0-1", or "1/2-1/2"
-    if "winner" in metadata and metadata["winner"]:
+    if metadata.get("winner"):
         winner = metadata["winner"]
         if winner == 1:
             result = "1-0"
@@ -422,7 +421,7 @@ def game_to_pgn(
     return '\n'.join(lines)
 
 
-def parse_pgn(pgn_text: str) -> Tuple[Dict[str, str], List[str]]:
+def parse_pgn(pgn_text: str) -> tuple[dict[str, str], list[str]]:
     """Parse a PGN-format game record.
 
     Args:
@@ -431,8 +430,8 @@ def parse_pgn(pgn_text: str) -> Tuple[Dict[str, str], List[str]]:
     Returns:
         Tuple of (metadata dict, list of notation strings)
     """
-    metadata: Dict[str, str] = {}
-    move_notations: List[str] = []
+    metadata: dict[str, str] = {}
+    move_notations: list[str] = []
 
     lines = pgn_text.strip().split('\n')
     in_moves = False

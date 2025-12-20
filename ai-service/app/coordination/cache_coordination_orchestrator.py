@@ -42,9 +42,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class NodeCacheState:
     total_hits: int = 0
     total_misses: int = 0
     last_update: float = field(default_factory=time.time)
-    caches_by_type: Dict[str, int] = field(default_factory=dict)
+    caches_by_type: dict[str, int] = field(default_factory=dict)
 
     @property
     def utilization(self) -> float:
@@ -147,9 +148,9 @@ class CacheStats:
     total_hits: int = 0
     total_misses: int = 0
     overall_hit_rate: float = 0.0
-    by_type: Dict[str, int] = field(default_factory=dict)
-    by_node: Dict[str, int] = field(default_factory=dict)
-    by_model: Dict[str, int] = field(default_factory=dict)
+    by_type: dict[str, int] = field(default_factory=dict)
+    by_node: dict[str, int] = field(default_factory=dict)
+    by_model: dict[str, int] = field(default_factory=dict)
 
     @property
     def total_caches(self) -> int:
@@ -182,20 +183,20 @@ class CacheCoordinationOrchestrator:
         self.stale_threshold_seconds = stale_threshold_seconds
 
         # Cache tracking
-        self._entries: Dict[str, CacheEntry] = {}  # cache_id -> entry
-        self._by_node: Dict[str, Set[str]] = {}  # node_id -> cache_ids
-        self._by_model: Dict[str, Set[str]] = {}  # model_id -> cache_ids
-        self._by_type: Dict[CacheType, Set[str]] = {}  # cache_type -> cache_ids
+        self._entries: dict[str, CacheEntry] = {}  # cache_id -> entry
+        self._by_node: dict[str, set[str]] = {}  # node_id -> cache_ids
+        self._by_model: dict[str, set[str]] = {}  # model_id -> cache_ids
+        self._by_type: dict[CacheType, set[str]] = {}  # cache_type -> cache_ids
 
         # Node state
-        self._node_states: Dict[str, NodeCacheState] = {}
+        self._node_states: dict[str, NodeCacheState] = {}
 
         # Statistics
         self._total_invalidations = 0
         self._cache_id_counter = 0
 
         # Callbacks
-        self._invalidation_callbacks: List[Callable[[str, str], None]] = []  # model_id, node_id
+        self._invalidation_callbacks: list[Callable[[str, str], None]] = []  # model_id, node_id
 
         # Subscription state
         self._subscribed = False
@@ -262,7 +263,7 @@ class CacheCoordinationOrchestrator:
         cache_type: str,
         model_id: str,
         size_bytes: int = 0,
-        ttl_seconds: Optional[float] = None,
+        ttl_seconds: float | None = None,
     ) -> CacheEntry:
         """Register a new cache entry.
 
@@ -382,7 +383,7 @@ class CacheCoordinationOrchestrator:
 
         cache_ids = list(self._by_model[model_id])
         count = 0
-        affected_nodes: Set[str] = set()
+        affected_nodes: set[str] = set()
 
         for cache_id in cache_ids:
             if cache_id in self._entries:
@@ -419,7 +420,7 @@ class CacheCoordinationOrchestrator:
 
         cache_ids = list(self._by_node[node_id])
         count = 0
-        affected_models: Set[str] = set()
+        affected_models: set[str] = set()
 
         for cache_id in cache_ids:
             if cache_id in self._entries:
@@ -495,7 +496,7 @@ class CacheCoordinationOrchestrator:
         total_hits = sum(e.hits for e in entries)
         total_misses = sum(e.misses for e in entries)
 
-        by_type: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
         for e in entries:
             by_type[e.cache_type.value] = by_type.get(e.cache_type.value, 0) + 1
 
@@ -515,8 +516,8 @@ class CacheCoordinationOrchestrator:
         invalidation_type: str,
         target_id: str,
         count: int,
-        affected_nodes: List[str],
-        affected_models: Optional[List[str]] = None,
+        affected_nodes: list[str],
+        affected_models: list[str] | None = None,
     ) -> None:
         """Emit CACHE_INVALIDATED event (December 2025).
 
@@ -530,8 +531,9 @@ class CacheCoordinationOrchestrator:
             affected_models: List of affected model IDs (for node invalidation)
         """
         try:
-            from app.coordination.event_emitters import emit_cache_invalidated
             import asyncio
+
+            from app.coordination.event_emitters import emit_cache_invalidated
 
             try:
                 asyncio.get_running_loop()
@@ -569,11 +571,11 @@ class CacheCoordinationOrchestrator:
         """
         self._invalidation_callbacks.append(callback)
 
-    def get_cache(self, cache_id: str) -> Optional[CacheEntry]:
+    def get_cache(self, cache_id: str) -> CacheEntry | None:
         """Get a specific cache entry."""
         return self._entries.get(cache_id)
 
-    def get_caches_by_node(self, node_id: str) -> List[CacheEntry]:
+    def get_caches_by_node(self, node_id: str) -> list[CacheEntry]:
         """Get all cache entries for a node."""
         if node_id not in self._by_node:
             return []
@@ -583,7 +585,7 @@ class CacheCoordinationOrchestrator:
             if cid in self._entries
         ]
 
-    def get_caches_by_model(self, model_id: str) -> List[CacheEntry]:
+    def get_caches_by_model(self, model_id: str) -> list[CacheEntry]:
         """Get all cache entries for a model."""
         if model_id not in self._by_model:
             return []
@@ -593,7 +595,7 @@ class CacheCoordinationOrchestrator:
             if cid in self._entries
         ]
 
-    def get_caches_by_type(self, cache_type: CacheType) -> List[CacheEntry]:
+    def get_caches_by_type(self, cache_type: CacheType) -> list[CacheEntry]:
         """Get all cache entries of a type."""
         if cache_type not in self._by_type:
             return []
@@ -603,7 +605,7 @@ class CacheCoordinationOrchestrator:
             if cid in self._entries
         ]
 
-    def get_node_state(self, node_id: str) -> Optional[NodeCacheState]:
+    def get_node_state(self, node_id: str) -> NodeCacheState | None:
         """Get cache state for a node."""
         return self._node_states.get(node_id)
 
@@ -649,7 +651,7 @@ class CacheCoordinationOrchestrator:
             by_model=by_model,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring."""
         stats = self.get_stats()
         total_size_mb = stats.total_size_bytes / (1024 * 1024)
@@ -674,7 +676,7 @@ class CacheCoordinationOrchestrator:
 # Singleton and convenience functions
 # =============================================================================
 
-_cache_orchestrator: Optional[CacheCoordinationOrchestrator] = None
+_cache_orchestrator: CacheCoordinationOrchestrator | None = None
 
 
 def get_cache_orchestrator() -> CacheCoordinationOrchestrator:
@@ -708,13 +710,13 @@ def invalidate_model_caches(model_id: str) -> int:
 
 __all__ = [
     "CacheCoordinationOrchestrator",
-    "CacheType",
-    "CacheStatus",
     "CacheEntry",
-    "NodeCacheState",
     "CacheStats",
+    "CacheStatus",
+    "CacheType",
+    "NodeCacheState",
     "get_cache_orchestrator",
-    "wire_cache_events",
-    "register_cache",
     "invalidate_model_caches",
+    "register_cache",
+    "wire_cache_events",
 ]

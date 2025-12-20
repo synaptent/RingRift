@@ -30,20 +30,19 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import Tuple
 
 __all__ = [
-    "get_system_load",
-    "get_cpu_count",
-    "is_system_overloaded",
-    "get_load_info",
-    "wait_for_load_decrease",
-    "wait_for_load_decrease_async",
-    "LoadThrottler",
+    "LOAD_BACKOFF_SECONDS",
+    "MAX_LOAD_ABSOLUTE",
     # Configuration
     "MAX_LOAD_FACTOR",
-    "MAX_LOAD_ABSOLUTE",
-    "LOAD_BACKOFF_SECONDS",
+    "LoadThrottler",
+    "get_cpu_count",
+    "get_load_info",
+    "get_system_load",
+    "is_system_overloaded",
+    "wait_for_load_decrease",
+    "wait_for_load_decrease_async",
 ]
 
 # Configuration from environment
@@ -52,7 +51,7 @@ MAX_LOAD_ABSOLUTE = float(os.environ.get("RINGRIFT_MAX_LOAD_ABSOLUTE", "100.0"))
 LOAD_BACKOFF_SECONDS = float(os.environ.get("RINGRIFT_LOAD_BACKOFF_SECONDS", "30.0"))
 
 
-def get_system_load() -> Tuple[float, float, float]:
+def get_system_load() -> tuple[float, float, float]:
     """Get system load averages (1min, 5min, 15min).
 
     Returns (0.0, 0.0, 0.0) on systems without getloadavg (e.g., Windows).
@@ -240,31 +239,29 @@ class LoadThrottler:
         """Check if execution was skipped due to overload."""
         return self._should_skip
 
-    def __enter__(self) -> "LoadThrottler":
-        if is_system_overloaded(verbose=self.verbose):
-            if not wait_for_load_decrease(
-                max_wait_seconds=self.max_wait_seconds,
-                verbose=self.verbose,
-            ):
-                if self.skip_if_overloaded:
-                    self._should_skip = True
-                    return self
-                raise RuntimeError("System overloaded - cannot proceed")
+    def __enter__(self) -> LoadThrottler:
+        if is_system_overloaded(verbose=self.verbose) and not wait_for_load_decrease(
+            max_wait_seconds=self.max_wait_seconds,
+            verbose=self.verbose,
+        ):
+            if self.skip_if_overloaded:
+                self._should_skip = True
+                return self
+            raise RuntimeError("System overloaded - cannot proceed")
         return self
 
     def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:
         pass
 
-    async def __aenter__(self) -> "LoadThrottler":
-        if is_system_overloaded(verbose=self.verbose):
-            if not await wait_for_load_decrease_async(
-                max_wait_seconds=self.max_wait_seconds,
-                verbose=self.verbose,
-            ):
-                if self.skip_if_overloaded:
-                    self._should_skip = True
-                    return self
-                raise RuntimeError("System overloaded - cannot proceed")
+    async def __aenter__(self) -> LoadThrottler:
+        if is_system_overloaded(verbose=self.verbose) and not await wait_for_load_decrease_async(
+            max_wait_seconds=self.max_wait_seconds,
+            verbose=self.verbose,
+        ):
+            if self.skip_if_overloaded:
+                self._should_skip = True
+                return self
+            raise RuntimeError("System overloaded - cannot proceed")
         return self
 
     async def __aexit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:

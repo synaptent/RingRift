@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +38,11 @@ logger = logging.getLogger(__name__)
 class CurriculumState:
     """Tracks curriculum state for all configurations."""
     # Config key -> current weight (1.0 = normal priority)
-    weights: Dict[str, float] = field(default_factory=dict)
+    weights: dict[str, float] = field(default_factory=dict)
     # Config key -> recent Elo ratings
-    elo_history: Dict[str, List[float]] = field(default_factory=dict)
+    elo_history: dict[str, list[float]] = field(default_factory=dict)
     # Config key -> recent win rates
-    win_rate_history: Dict[str, List[float]] = field(default_factory=dict)
+    win_rate_history: dict[str, list[float]] = field(default_factory=dict)
     # Last update timestamp
     last_update: float = 0.0
     # Number of updates
@@ -93,7 +94,7 @@ class EvaluationCurriculumBridge:
         self.strong_threshold = strong_threshold
         self.history_size = history_size
         self.state = CurriculumState()
-        self._callbacks: List[Callable] = []
+        self._callbacks: list[Callable] = []
 
         # Initialize all configs with default weight
         for config in self.ALL_CONFIGS:
@@ -102,10 +103,10 @@ class EvaluationCurriculumBridge:
     def add_evaluation_result(
         self,
         config_key: str,
-        elo: Optional[float] = None,
-        win_rate: Optional[float] = None,
+        elo: float | None = None,
+        win_rate: float | None = None,
         games_played: int = 0,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Add an evaluation result and recompute curriculum weights.
 
@@ -196,7 +197,7 @@ class EvaluationCurriculumBridge:
         recent = elos[-lookback:]
         return recent[-1] - recent[0]
 
-    def get_weak_configs(self) -> List[str]:
+    def get_weak_configs(self) -> list[str]:
         """Get list of weak configurations that need more attention."""
         weak = []
         for config in self.ALL_CONFIGS:
@@ -207,15 +208,15 @@ class EvaluationCurriculumBridge:
                     weak.append(config)
         return weak
 
-    def get_curriculum_weights(self) -> Dict[str, float]:
+    def get_curriculum_weights(self) -> dict[str, float]:
         """Get current curriculum weights."""
         return self.state.weights.copy()
 
-    def register_callback(self, callback: Callable[[str, Dict[str, float]], None]) -> None:
+    def register_callback(self, callback: Callable[[str, dict[str, float]], None]) -> None:
         """Register callback for weight updates."""
         self._callbacks.append(callback)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get bridge status."""
         return {
             "weights": self.state.weights.copy(),
@@ -277,7 +278,7 @@ def create_evaluation_bridge(
 
     # Subscribe to evaluation events from feedback controller
     if feedback_controller and hasattr(feedback_controller, 'register_handler'):
-        async def on_evaluation_result(result: Dict[str, Any]) -> None:
+        async def on_evaluation_result(result: dict[str, Any]) -> None:
             """Handle evaluation result from feedback controller."""
             config_key = result.get('config_key')
             if not config_key:
@@ -330,10 +331,10 @@ def integrate_evaluation_with_curriculum(
 
 
 # Convenience: Global bridge instance
-_global_bridge: Optional[EvaluationCurriculumBridge] = None
+_global_bridge: EvaluationCurriculumBridge | None = None
 
 
-def get_evaluation_bridge() -> Optional[EvaluationCurriculumBridge]:
+def get_evaluation_bridge() -> EvaluationCurriculumBridge | None:
     """Get the global evaluation bridge instance."""
     return _global_bridge
 

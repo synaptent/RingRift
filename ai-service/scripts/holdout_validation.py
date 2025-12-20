@@ -515,7 +515,8 @@ def evaluate_model_on_holdout(
         from app.training.nnue_model import RingRiftNNUE
 
         model = RingRiftNNUE(board_type=board_type)
-        state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
         model.load_state_dict(state_dict)
         model.eval()
     except Exception as e:
@@ -652,7 +653,8 @@ def evaluate_model_stratified(
             from app.training.nnue_model import RingRiftNNUE
 
             model = RingRiftNNUE(board_type=board_type)
-            state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+            state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
             model.load_state_dict(state_dict)
             model.eval()
         except Exception as e:

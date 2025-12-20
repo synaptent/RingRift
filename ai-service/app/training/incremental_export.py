@@ -20,14 +20,12 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -105,7 +103,7 @@ class GameIdTracker:
         conn.commit()
         conn.close()
 
-    def get_exported_game_ids(self) -> Set[str]:
+    def get_exported_game_ids(self) -> set[str]:
         """Get all previously exported game IDs."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.execute("SELECT game_id FROM exported_games")
@@ -113,7 +111,7 @@ class GameIdTracker:
         conn.close()
         return game_ids
 
-    def get_unexported_game_ids(self, all_game_ids: Set[str]) -> Set[str]:
+    def get_unexported_game_ids(self, all_game_ids: set[str]) -> set[str]:
         """Get game IDs that haven't been exported yet.
 
         Args:
@@ -127,7 +125,7 @@ class GameIdTracker:
 
     def mark_exported(
         self,
-        game_ids: List[str],
+        game_ids: list[str],
         source_file: str = "",
         shard_file: str = ""
     ):
@@ -269,11 +267,11 @@ class ShardManager:
         logger.info(f"Saved shard with {len(features)} samples to {shard_path}")
         return shard_path
 
-    def get_all_shards(self) -> List[Path]:
+    def get_all_shards(self) -> list[Path]:
         """Get all shard files in order."""
         return sorted(self.shard_dir.glob("shard_*.npz"))
 
-    def merge_shards(self, output_path: Path, max_samples: Optional[int] = None) -> int:
+    def merge_shards(self, output_path: Path, max_samples: int | None = None) -> int:
         """Merge all shards into a single NPZ file.
 
         Args:
@@ -425,11 +423,11 @@ class IncrementalExporter:
             board_type, num_players, shard_dir, max_samples_per_shard
         )
 
-    def get_unexported_game_ids(self, all_game_ids: Set[str]) -> Set[str]:
+    def get_unexported_game_ids(self, all_game_ids: set[str]) -> set[str]:
         """Get game IDs that haven't been exported yet."""
         return self.tracker.get_unexported_game_ids(all_game_ids)
 
-    def mark_exported(self, game_ids: List[str], source_file: str = "", shard_file: str = ""):
+    def mark_exported(self, game_ids: list[str], source_file: str = "", shard_file: str = ""):
         """Mark games as exported."""
         self.tracker.mark_exported(game_ids, source_file, shard_file)
 
@@ -445,7 +443,7 @@ class IncrementalExporter:
         move_numbers: np.ndarray,
         total_game_moves: np.ndarray,
         phases: np.ndarray,
-        game_ids: List[str],
+        game_ids: list[str],
         source_file: str = "",
     ) -> Path:
         """Save training data as a shard and mark games as exported.
@@ -477,11 +475,11 @@ class IncrementalExporter:
 
         return shard_path
 
-    def merge_to_npz(self, output_path: Path, max_samples: Optional[int] = None) -> int:
+    def merge_to_npz(self, output_path: Path, max_samples: int | None = None) -> int:
         """Merge all shards into a single NPZ file."""
         return self.shard_manager.merge_shards(output_path, max_samples)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get export statistics."""
         return {
             "config": self.config_key,

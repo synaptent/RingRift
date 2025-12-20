@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 
 __all__ = [
-    "sanitize_error_detail",
     "IS_PRODUCTION",
+    "sanitize_error_detail",
 ]
 
 # Check if we're in production mode

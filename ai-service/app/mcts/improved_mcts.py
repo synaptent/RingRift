@@ -9,24 +9,21 @@ Provides advanced MCTS features including:
 - Tree reuse between moves
 """
 
-import math
-import time
 import logging
-import threading
-from typing import Dict, List, Optional, Tuple, Any, Callable
-from dataclasses import dataclass, field
-from collections import defaultdict
-from abc import ABC, abstractmethod
+import math
 import random
+import threading
+import time
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from app.utils.checksum_utils import compute_string_checksum
 from app.utils.optional_imports import (
-    numpy as np,
     NUMPY_AVAILABLE,
-    torch,
-    TORCH_AVAILABLE,
+    numpy as np,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +52,7 @@ class GameState(ABC):
     """Abstract interface for game states."""
 
     @abstractmethod
-    def get_legal_moves(self) -> List[int]:
+    def get_legal_moves(self) -> list[int]:
         """Get list of legal moves."""
         pass
 
@@ -89,7 +86,7 @@ class NeuralNetworkInterface(ABC):
     """Abstract interface for neural network."""
 
     @abstractmethod
-    def evaluate(self, state: GameState) -> Tuple[List[float], float]:
+    def evaluate(self, state: GameState) -> tuple[list[float], float]:
         """
         Evaluate state with neural network.
 
@@ -104,12 +101,12 @@ class MCTSNode:
     """Node in the MCTS tree."""
     state_hash: str
     parent: Optional['MCTSNode'] = None
-    move: Optional[int] = None
+    move: int | None = None
     prior: float = 0.0
     visit_count: int = 0
     value_sum: float = 0.0
     virtual_loss: float = 0.0
-    children: Dict[int, 'MCTSNode'] = field(default_factory=dict)
+    children: dict[int, 'MCTSNode'] = field(default_factory=dict)
     is_expanded: bool = False
 
     @property
@@ -130,11 +127,11 @@ class TranspositionTable:
 
     def __init__(self, max_size: int = 100000):
         self.max_size = max_size
-        self.table: Dict[str, Tuple[List[float], float]] = {}
-        self.access_count: Dict[str, int] = defaultdict(int)
+        self.table: dict[str, tuple[list[float], float]] = {}
+        self.access_count: dict[str, int] = defaultdict(int)
         self._lock = threading.RLock()
 
-    def get(self, state_hash: str) -> Optional[Tuple[List[float], float]]:
+    def get(self, state_hash: str) -> tuple[list[float], float] | None:
         """Get cached evaluation."""
         with self._lock:
             if state_hash in self.table:
@@ -142,7 +139,7 @@ class TranspositionTable:
                 return self.table[state_hash]
             return None
 
-    def put(self, state_hash: str, policy: List[float], value: float):
+    def put(self, state_hash: str, policy: list[float], value: float):
         """Store evaluation."""
         with self._lock:
             # Evict if full
@@ -179,7 +176,7 @@ class ImprovedMCTS:
     ):
         self.network = network
         self.config = config or MCTSConfig()
-        self.root: Optional[MCTSNode] = None
+        self.root: MCTSNode | None = None
         self.transposition_table = TranspositionTable(self.config.tt_max_size) \
             if self.config.use_transposition_table else None
         self._lock = threading.RLock()
@@ -215,7 +212,7 @@ class ImprovedMCTS:
         self,
         node: MCTSNode,
         state: GameState
-    ) -> Tuple[int, MCTSNode]:
+    ) -> tuple[int, MCTSNode]:
         """Select child with highest PUCT score."""
         parent_visits = node.effective_visits
         legal_moves = state.get_legal_moves()
@@ -245,7 +242,7 @@ class ImprovedMCTS:
         self,
         node: MCTSNode,
         state: GameState,
-        policy: List[float]
+        policy: list[float]
     ):
         """Expand a node with policy prior."""
         legal_moves = state.get_legal_moves()
@@ -276,7 +273,7 @@ class ImprovedMCTS:
 
         node.is_expanded = True
 
-    def _add_noise(self, node: MCTSNode, legal_moves: List[int]):
+    def _add_noise(self, node: MCTSNode, legal_moves: list[int]):
         """Add Dirichlet noise to root for exploration."""
         alpha = self.config.root_dirichlet_alpha
         noise = np.random.dirichlet([alpha] * len(legal_moves))
@@ -313,7 +310,7 @@ class ImprovedMCTS:
             current = current.parent
             current_player = 1 - current_player
 
-    def _evaluate(self, state: GameState) -> Tuple[List[float], float]:
+    def _evaluate(self, state: GameState) -> tuple[list[float], float]:
         """Evaluate state, using transposition table if available."""
         state_hash = state.hash()
 
@@ -440,7 +437,7 @@ class ImprovedMCTS:
 
         return best_move
 
-    def get_policy(self, temperature: float = 1.0) -> List[float]:
+    def get_policy(self, temperature: float = 1.0) -> list[float]:
         """
         Get policy distribution from visit counts.
 
@@ -475,14 +472,14 @@ class ImprovedMCTS:
             policy = policy.tolist()
 
         # Map to full action space
-        full_policy = [0.0] * max(moves + [0]) + [0.0]
-        for move, prob in zip(moves, policy):
+        full_policy = [0.0] * max([*moves, 0]) + [0.0]
+        for move, prob in zip(moves, policy, strict=False):
             if move < len(full_policy):
                 full_policy[move] = prob
 
         return full_policy
 
-    def get_search_statistics(self) -> Dict[str, Any]:
+    def get_search_statistics(self) -> dict[str, Any]:
         """Get statistics about the search."""
         if self.root is None:
             return {}
@@ -529,7 +526,7 @@ class ParallelMCTS:
         self.network = network
         self.config = config or MCTSConfig()
         self.num_threads = num_threads
-        self.root: Optional[MCTSNode] = None
+        self.root: MCTSNode | None = None
         self.transposition_table = TranspositionTable(self.config.tt_max_size)
         self._lock = threading.RLock()
 
@@ -571,7 +568,7 @@ class ParallelMCTS:
         # Select best move
         return self._select_best_move()
 
-    def _expand(self, node: MCTSNode, state: GameState, policy: List[float]):
+    def _expand(self, node: MCTSNode, state: GameState, policy: list[float]):
         """Expand node."""
         legal_moves = state.get_legal_moves()
         for move in legal_moves:
@@ -586,7 +583,7 @@ class ParallelMCTS:
             node.children[move] = child
         node.is_expanded = True
 
-    def _add_noise(self, node: MCTSNode, legal_moves: List[int]):
+    def _add_noise(self, node: MCTSNode, legal_moves: list[int]):
         """Add Dirichlet noise to root."""
         alpha = self.config.root_dirichlet_alpha
         noise = np.random.dirichlet([alpha] * len(legal_moves))
@@ -622,9 +619,9 @@ class MCTSWithPonder:
     ):
         self.mcts = ImprovedMCTS(network, config)
         self._pondering = False
-        self._ponder_thread: Optional[threading.Thread] = None
+        self._ponder_thread: threading.Thread | None = None
         self._stop_ponder = threading.Event()
-        self._current_state: Optional[GameState] = None
+        self._current_state: GameState | None = None
 
     def search(self, state: GameState, add_noise: bool = True) -> int:
         """Run search, using pondering results if available."""
@@ -677,7 +674,7 @@ def main():
             self._player = player
             self.move_history = move_history or []
 
-        def get_legal_moves(self) -> List[int]:
+        def get_legal_moves(self) -> list[int]:
             return [i for i in range(64) if self.board[i] == 0]
 
         def apply_move(self, move: int) -> 'DummyState':
@@ -686,7 +683,7 @@ def main():
             return DummyState(
                 new_board,
                 1 - self._player,
-                self.move_history + [move]
+                [*self.move_history, move]
             )
 
         def is_terminal(self) -> bool:
@@ -702,7 +699,7 @@ def main():
             return compute_string_checksum(str(self.board), algorithm="md5")
 
     class DummyNetwork(NeuralNetworkInterface):
-        def evaluate(self, state: GameState) -> Tuple[List[float], float]:
+        def evaluate(self, state: GameState) -> tuple[list[float], float]:
             # Random policy and value
             legal_moves = state.get_legal_moves()
             policy = [0.0] * 64
@@ -737,18 +734,18 @@ def main():
 
     # Get statistics
     stats = mcts.get_search_statistics()
-    print(f"\nSearch Statistics:")
+    print("\nSearch Statistics:")
     print(f"  Root visits: {stats['root_visits']}")
     print(f"  Root value: {stats['root_value']:.4f}")
     print(f"  Transposition table size: {stats['transposition_table_size']}")
 
-    print(f"\nTop moves:")
+    print("\nTop moves:")
     for mv in stats['top_moves'][:3]:
         print(f"  Move {mv['move']}: visits={mv['visits']}, value={mv['value']:.3f}, prior={mv['prior']:.3f}")
 
     # Get policy
     policy = mcts.get_policy(temperature=1.0)
-    print(f"\nPolicy (top 5):")
+    print("\nPolicy (top 5):")
     sorted_policy = sorted(enumerate(policy), key=lambda x: x[1], reverse=True)[:5]
     for move, prob in sorted_policy:
         print(f"  Move {move}: {prob:.3f}")
@@ -759,7 +756,7 @@ def main():
     new_state = new_state.apply_move(random.choice(new_state.get_legal_moves()))
 
     start = time.perf_counter()
-    best_move2 = mcts.search(new_state)
+    mcts.search(new_state)
     elapsed2 = time.perf_counter() - start
 
     print(f"Second search time: {elapsed2:.3f}s")

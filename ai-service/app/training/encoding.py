@@ -6,42 +6,43 @@ boards. The HexStateEncoder class handles the conversion of hex game states
 to feature tensors suitable for the HexNeuralNet model.
 """
 
-from typing import List, Tuple, Union, Optional
+from typing import Union
+
 import numpy as np
 
-from app.models import (
-    Move,
-    BoardState,
-    GameState,
-    BoardType,
-    Position,
-    GamePhase,
-)
-from app.ai.neural_net import (
-    NeuralNetAI,
-    ActionEncoderHex,
-    INVALID_MOVE_INDEX,
-    HEX_BOARD_SIZE,
-    HEX8_BOARD_SIZE,
-    P_HEX,
-    POLICY_SIZE_HEX8,
-    _to_canonical_xy,
-    _from_canonical_xy,
-    _pos_from_key,
-)
-from app.rules.geometry import BoardGeometry
 from app.ai.game_state_utils import (
     infer_num_players,
     infer_rings_per_player,
     select_threat_opponent,
 )
+from app.ai.neural_net import (
+    HEX8_BOARD_SIZE,
+    HEX_BOARD_SIZE,
+    INVALID_MOVE_INDEX,
+    P_HEX,
+    POLICY_SIZE_HEX8,
+    ActionEncoderHex,
+    NeuralNetAI,
+    _from_canonical_xy,
+    _pos_from_key,
+    _to_canonical_xy,
+)
+from app.models import (
+    BoardState,
+    BoardType,
+    GamePhase,
+    GameState,
+    Move,
+    Position,
+)
+from app.rules.geometry import BoardGeometry
 
 
 def encode_legal_moves(
-    moves: List[Move],
+    moves: list[Move],
     neural_net: NeuralNetAI,
     board_context: Union[BoardState, GameState],
-) -> List[int]:
+) -> list[int]:
     """
     Encode a list of legal moves into their policy indices for the given
     board context.
@@ -50,7 +51,7 @@ def encode_legal_moves(
     NeuralNetAI. Moves that cannot be encoded (INVALID_MOVE_INDEX) are
     filtered out.
     """
-    encoded_moves: List[int] = []
+    encoded_moves: list[int] = []
     for m in moves:
         idx = neural_net.encode_move(m, board_context)
         if idx != INVALID_MOVE_INDEX:
@@ -59,17 +60,17 @@ def encode_legal_moves(
 
 
 def encode_hex_legal_moves(
-    moves: List[Move],
+    moves: list[Move],
     encoder: ActionEncoderHex,
     board: BoardState,
-) -> List[int]:
+) -> list[int]:
     """
     Encode a list of legal moves for hex boards using ActionEncoderHex.
 
     The returned indices live in the P_HEX policy head (91,876 actions).
     Moves that cannot be encoded (INVALID_MOVE_INDEX) are filtered out.
     """
-    encoded_moves: List[int] = []
+    encoded_moves: list[int] = []
     for m in moves:
         idx = encoder.encode_move(m, board)
         if idx != INVALID_MOVE_INDEX:
@@ -207,7 +208,7 @@ class HexStateEncoder:
         """
         return self._valid_mask.astype(np.float32)[np.newaxis, :, :]
 
-    def axial_to_canonical(self, q: int, r: int) -> Tuple[int, int]:
+    def axial_to_canonical(self, q: int, r: int) -> tuple[int, int]:
         """
         Convert axial coordinates (q, r) to canonical grid coords (cx, cy).
 
@@ -220,7 +221,7 @@ class HexStateEncoder:
         """
         return q + self.radius, r + self.radius
 
-    def canonical_to_axial(self, cx: int, cy: int) -> Tuple[int, int]:
+    def canonical_to_axial(self, cx: int, cy: int) -> tuple[int, int]:
         """
         Convert canonical grid coords (cx, cy) to axial coordinates (q, r).
 
@@ -235,7 +236,7 @@ class HexStateEncoder:
 
     def encode_position(
         self, pos: Position, board: BoardState
-    ) -> Optional[Tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """
         Encode a game Position to canonical grid coordinates.
 
@@ -253,7 +254,7 @@ class HexStateEncoder:
 
     def decode_position(
         self, cx: int, cy: int, board: BoardState
-    ) -> Optional[Position]:
+    ) -> Position | None:
         """
         Decode canonical grid coordinates to a game Position.
 
@@ -267,7 +268,7 @@ class HexStateEncoder:
         """
         return _from_canonical_xy(board, cx, cy)
 
-    def encode_state(self, state: GameState) -> Tuple[np.ndarray, np.ndarray]:
+    def encode_state(self, state: GameState) -> tuple[np.ndarray, np.ndarray]:
         """
         Encode a hex game state to feature tensors.
 
@@ -554,7 +555,7 @@ class HexStateEncoder:
 
         return features, globals_vec
 
-    def encode(self, state: GameState) -> Tuple[np.ndarray, np.ndarray]:
+    def encode(self, state: GameState) -> tuple[np.ndarray, np.ndarray]:
         """
         Alias for encode_state() for backwards compatibility.
         """
@@ -563,9 +564,9 @@ class HexStateEncoder:
     def encode_with_history(
         self,
         state: GameState,
-        history_frames: List[np.ndarray],
+        history_frames: list[np.ndarray],
         history_length: int = 3,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Encode a game state with historical feature frames.
 
@@ -589,7 +590,7 @@ class HexStateEncoder:
             hist.append(np.zeros_like(features))
 
         # Stack: current + history
-        stack = np.concatenate([features] + hist, axis=0)
+        stack = np.concatenate([features, *hist], axis=0)
 
         return stack, globals_vec
 
@@ -606,7 +607,7 @@ class HexStateEncoder:
         """
         return self.action_encoder.encode_move(move, board)
 
-    def decode_move(self, index: int, state: GameState) -> Optional[Move]:
+    def decode_move(self, index: int, state: GameState) -> Move | None:
         """
         Decode a policy index to a move.
 
@@ -620,8 +621,8 @@ class HexStateEncoder:
         return self.action_encoder.decode_move(index, state)
 
     def encode_legal_moves(
-        self, moves: List[Move], board: BoardState
-    ) -> List[int]:
+        self, moves: list[Move], board: BoardState
+    ) -> list[int]:
         """
         Encode a list of legal moves.
 
@@ -636,8 +637,8 @@ class HexStateEncoder:
 
     def create_policy_target(
         self,
-        move_indices: List[int],
-        move_probs: List[float],
+        move_indices: list[int],
+        move_probs: list[float],
     ) -> np.ndarray:
         """
         Create a dense policy target vector from sparse move probabilities.
@@ -650,16 +651,16 @@ class HexStateEncoder:
             Dense policy vector of shape (P_HEX,)
         """
         policy = np.zeros(self.POLICY_SIZE, dtype=np.float32)
-        for idx, prob in zip(move_indices, move_probs):
+        for idx, prob in zip(move_indices, move_probs, strict=False):
             if 0 <= idx < self.POLICY_SIZE:
                 policy[idx] = prob
         return policy
 
     def create_sparse_policy_target(
         self,
-        move_indices: List[int],
-        move_probs: List[float],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        move_indices: list[int],
+        move_probs: list[float],
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Create sparse policy target arrays.
 
@@ -672,7 +673,7 @@ class HexStateEncoder:
         """
         valid_indices = []
         valid_probs = []
-        for idx, prob in zip(move_indices, move_probs):
+        for idx, prob in zip(move_indices, move_probs, strict=False):
             if 0 <= idx < self.POLICY_SIZE:
                 valid_indices.append(idx)
                 valid_probs.append(prob)
@@ -767,19 +768,18 @@ class HexStateEncoderV3:
 
     def encode_position(
         self, pos: Position, board: BoardState
-    ) -> Optional[Tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """Convert axial position to canonical grid coordinates."""
         q, r = pos.x, pos.y
         cx = q + self.radius
         cy = r + self.radius
-        if 0 <= cx < self.board_size and 0 <= cy < self.board_size:
-            if self._valid_mask[cy, cx]:
-                return (cx, cy)
+        if 0 <= cx < self.board_size and 0 <= cy < self.board_size and self._valid_mask[cy, cx]:
+            return (cx, cy)
         return None
 
     def encode_state(
         self, state: GameState
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Encode a hex game state to feature tensors.
 
@@ -1129,9 +1129,9 @@ class HexStateEncoderV3:
     def encode_with_history(
         self,
         state: GameState,
-        history_frames: List[np.ndarray],
+        history_frames: list[np.ndarray],
         history_length: int = 3,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Encode state with history frame stacking.
 
@@ -1149,7 +1149,7 @@ class HexStateEncoderV3:
             hist.append(np.zeros_like(features))
 
         # Stack: current + history
-        stack = np.concatenate([features] + hist, axis=0)
+        stack = np.concatenate([features, *hist], axis=0)
 
         return stack, globals_vec
 
@@ -1157,37 +1157,37 @@ class HexStateEncoderV3:
         """Encode a move to a policy index."""
         return self.action_encoder.encode_move(move, board)
 
-    def decode_move(self, index: int, state: GameState) -> Optional[Move]:
+    def decode_move(self, index: int, state: GameState) -> Move | None:
         """Decode a policy index to a move."""
         return self.action_encoder.decode_move(index, state)
 
     def encode_legal_moves(
-        self, moves: List[Move], board: BoardState
-    ) -> List[int]:
+        self, moves: list[Move], board: BoardState
+    ) -> list[int]:
         """Encode a list of legal moves."""
         return encode_hex_legal_moves(moves, self.action_encoder, board)
 
     def create_policy_target(
         self,
-        move_indices: List[int],
-        move_probs: List[float],
+        move_indices: list[int],
+        move_probs: list[float],
     ) -> np.ndarray:
         """Create a dense policy target vector."""
         policy = np.zeros(self.POLICY_SIZE, dtype=np.float32)
-        for idx, prob in zip(move_indices, move_probs):
+        for idx, prob in zip(move_indices, move_probs, strict=False):
             if 0 <= idx < self.POLICY_SIZE:
                 policy[idx] = prob
         return policy
 
     def create_sparse_policy_target(
         self,
-        move_indices: List[int],
-        move_probs: List[float],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        move_indices: list[int],
+        move_probs: list[float],
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Create sparse policy target arrays."""
         valid_indices = []
         valid_probs = []
-        for idx, prob in zip(move_indices, move_probs):
+        for idx, prob in zip(move_indices, move_probs, strict=False):
             if 0 <= idx < self.POLICY_SIZE:
                 valid_indices.append(idx)
                 valid_probs.append(prob)

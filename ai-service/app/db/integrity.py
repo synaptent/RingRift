@@ -26,10 +26,10 @@ import sqlite3
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 
-def check_database_integrity(db_path: Path) -> Tuple[bool, str]:
+def check_database_integrity(db_path: Path) -> tuple[bool, str]:
     """Check SQLite database integrity using PRAGMA integrity_check.
 
     Args:
@@ -135,7 +135,7 @@ def check_and_repair_databases(
     min_size_bytes: int = 1024 * 1024,  # Only check DBs > 1MB
     recursive: bool = False,
     log_prefix: str = "[DBIntegrity]"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Scan and repair corrupted SQLite databases.
 
     Args:
@@ -206,7 +206,7 @@ def check_and_repair_databases(
     return results
 
 
-def get_database_stats(db_path: Path) -> Optional[Dict[str, Any]]:
+def get_database_stats(db_path: Path) -> dict[str, Any] | None:
     """Get statistics about a database file.
 
     Args:

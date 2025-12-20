@@ -10,7 +10,6 @@ import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
 
 # Network Configuration
 DEFAULT_PORT = 8770
@@ -185,7 +184,7 @@ class P2PConfig:
         return os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"1", "true", "yes", "on"}
 
     @property
-    def auth_token(self) -> Optional[str]:
+    def auth_token(self) -> str | None:
         """Cluster authentication token."""
         # First check env var directly
         token = os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN")
@@ -219,7 +218,7 @@ class P2PConfig:
 
 
 # Singleton instance
-_config_instance: Optional[P2PConfig] = None
+_config_instance: P2PConfig | None = None
 
 
 def get_p2p_config() -> P2PConfig:

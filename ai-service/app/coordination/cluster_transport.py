@@ -44,18 +44,18 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Import centralized timeout constants (December 2025)
 try:
     from app.config.thresholds import (
+        CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
         CLUSTER_CONNECT_TIMEOUT,
         CLUSTER_OPERATION_TIMEOUT,
         HTTP_TIMEOUT,
-        CIRCUIT_BREAKER_FAILURE_THRESHOLD,
-        CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
     )
     DEFAULT_CONNECT_TIMEOUT = CLUSTER_CONNECT_TIMEOUT
     DEFAULT_OPERATION_TIMEOUT = CLUSTER_OPERATION_TIMEOUT
@@ -75,7 +75,7 @@ except ImportError:
 class NodeConfig:
     """Configuration for a cluster node."""
     hostname: str
-    tailscale_ip: Optional[str] = None
+    tailscale_ip: str | None = None
     ssh_port: int = 22
     http_port: int = 8080
     http_scheme: str = "http"
@@ -97,13 +97,13 @@ class NodeConfig:
 class TransportResult:
     """Result of a transport operation."""
     success: bool
-    transport_used: Optional[str] = None
-    data: Optional[Any] = None
-    error: Optional[str] = None
+    transport_used: str | None = None
+    data: Any | None = None
+    error: str | None = None
     latency_ms: float = 0.0
     bytes_transferred: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
             "transport_used": self.transport_used,
@@ -128,7 +128,7 @@ class ClusterTransport:
 
     def __init__(
         self,
-        p2p_url: Optional[str] = None,
+        p2p_url: str | None = None,
         connect_timeout: int = DEFAULT_CONNECT_TIMEOUT,
         operation_timeout: int = DEFAULT_OPERATION_TIMEOUT,
     ):
@@ -271,7 +271,7 @@ class ClusterTransport:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=self.operation_timeout + 10,
             )
@@ -298,9 +298,9 @@ class ClusterTransport:
         node: NodeConfig,
         endpoint: str,
         method: str = "GET",
-        data: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        timeout: Optional[int] = None,
+        data: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
+        timeout: int | None = None,
     ) -> TransportResult:
         """Make an HTTP request to a node.
 
@@ -338,7 +338,7 @@ class ClusterTransport:
             async with aiohttp.ClientSession(timeout=client_timeout) as session:
                 url = f"{node.http_base_url}{endpoint}"
 
-                kwargs: Dict[str, Any] = {}
+                kwargs: dict[str, Any] = {}
                 if data:
                     kwargs["data"] = data
                 if json_data:
@@ -442,7 +442,7 @@ class ClusterTransport:
         """Reset all circuit breakers."""
         self._circuit_breaker.reset_all()
 
-    def get_health_summary(self) -> Dict[str, Any]:
+    def get_health_summary(self) -> dict[str, Any]:
         """Get health summary of all circuit breakers."""
         all_states = self._circuit_breaker.get_all_states()
         return {
@@ -457,7 +457,7 @@ class ClusterTransport:
 
 
 # Singleton instance for convenience
-_transport_instance: Optional[ClusterTransport] = None
+_transport_instance: ClusterTransport | None = None
 
 
 def get_cluster_transport() -> ClusterTransport:
@@ -473,11 +473,11 @@ def get_cluster_transport() -> ClusterTransport:
 # =============================================================================
 
 __all__ = [
+    # Main class
+    "ClusterTransport",
     # Data classes
     "NodeConfig",
     "TransportResult",
-    # Main class
-    "ClusterTransport",
     # Functions
     "get_cluster_transport",
 ]

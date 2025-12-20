@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.config import ladder_config
-from app.models import BoardType, AIType
+from app.models import AIType, BoardType
 from app.utils.paths import AI_SERVICE_ROOT
 
 # Default registry location for Square-8 2-player tier candidates.
@@ -15,7 +14,7 @@ DEFAULT_SQUARE8_2P_REGISTRY_PATH = os.fspath(
 )
 
 
-def _default_square8_two_player_registry() -> Dict[str, Any]:
+def _default_square8_two_player_registry() -> dict[str, Any]:
     """Return an empty candidate registry for square8 2-player tiers."""
     return {
         "board": "square8",
@@ -25,8 +24,8 @@ def _default_square8_two_player_registry() -> Dict[str, Any]:
 
 
 def load_square8_two_player_registry(
-    path: Optional[str] = None,
-) -> Dict[str, Any]:
+    path: str | None = None,
+) -> dict[str, Any]:
     """Load the Square-8 2-player candidate registry.
 
     When *path* is None, the default registry path under ``ai-service/config``
@@ -37,13 +36,13 @@ def load_square8_two_player_registry(
     if not os.path.exists(registry_path):
         return _default_square8_two_player_registry()
 
-    with open(registry_path, "r", encoding="utf-8") as f:
+    with open(registry_path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_square8_two_player_registry(
-    registry: Dict[str, Any],
-    path: Optional[str] = None,
+    registry: dict[str, Any],
+    path: str | None = None,
 ) -> None:
     """Persist the Square-8 2-player candidate registry to disk.
 
@@ -66,7 +65,7 @@ def _status_from_decision(decision: str) -> str:
     return "gated_reject"
 
 
-def get_current_ladder_model_for_tier(tier: str) -> Dict[str, Any]:
+def get_current_ladder_model_for_tier(tier: str) -> dict[str, Any]:
     """Return a small summary of the live ladder assignment for *tier*.
 
     This helper is square8 2-player specific and uses the canonical
@@ -109,12 +108,12 @@ def get_current_ladder_model_for_tier(tier: str) -> Dict[str, Any]:
 
 
 def record_promotion_plan(
-    registry: Dict[str, Any],
+    registry: dict[str, Any],
     tier: str,
     candidate_id: str,
     run_dir: str,
-    promotion_plan: Dict[str, Any],
-) -> Dict[str, Any]:
+    promotion_plan: dict[str, Any],
+) -> dict[str, Any]:
     """Add or update a candidate entry in the registry.
 
     Args:
@@ -153,7 +152,7 @@ def record_promotion_plan(
     tier_block["current"] = get_current_ladder_model_for_tier(tier_name)
 
     candidates = tier_block.setdefault("candidates", [])
-    candidate_entry: Optional[Dict[str, Any]] = None
+    candidate_entry: dict[str, Any] | None = None
 
     for entry in candidates:
         if entry.get("candidate_id") == candidate_id or entry.get(
@@ -195,9 +194,9 @@ def update_square8_two_player_registry_for_run(
     tier: str,
     candidate_id: str,
     run_dir: str,
-    promotion_plan: Dict[str, Any],
-    path: Optional[str] = None,
-) -> Dict[str, Any]:
+    promotion_plan: dict[str, Any],
+    path: str | None = None,
+) -> dict[str, Any]:
     """Load, update, and persist the Square-8 2p tier candidate registry.
 
     This is a convenience helper intended for orchestration scripts

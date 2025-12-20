@@ -41,19 +41,13 @@ import asyncio
 import logging
 import threading
 import time
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
     Any,
-    AsyncGenerator,
-    Dict,
-    Generator,
-    List,
-    Optional,
     Protocol,
-    Set,
-    Tuple,
     TypeVar,
     Union,
     runtime_checkable,
@@ -62,23 +56,23 @@ from typing import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # Protocols
-    "SyncLockProtocol",
     "AsyncLockProtocol",
-    "LockProtocol",
+    "LockDiagnostics",
+    # Exceptions
+    "LockError",
     # Classes
     "LockFactory",
     "LockHierarchy",
-    "OrderedLockGroup",
+    "LockHierarchyViolation",
+    "LockOrderViolation",
     "LockPool",
-    "LockDiagnostics",
+    "LockProtocol",
+    "OrderedLockGroup",
+    # Protocols
+    "SyncLockProtocol",
     # Functions
     "acquire_locks",
     "acquire_locks_sync",
-    # Exceptions
-    "LockError",
-    "LockOrderViolation",
-    "LockHierarchyViolation",
 ]
 
 T = TypeVar("T")
@@ -96,7 +90,7 @@ class LockError(Exception):
 class LockOrderViolation(LockError):
     """Raised when locks are acquired in incorrect order."""
 
-    def __init__(self, expected_order: List[str], actual: str):
+    def __init__(self, expected_order: list[str], actual: str):
         self.expected_order = expected_order
         self.actual = actual
         super().__init__(
@@ -181,10 +175,10 @@ class OrderedLockGroup:
     """
 
     def __init__(self):
-        self._locks: Dict[str, AsyncLockProtocol] = {}
-        self._acquired: List[str] = []
+        self._locks: dict[str, AsyncLockProtocol] = {}
+        self._acquired: list[str] = []
 
-    def add(self, name: str, lock: AsyncLockProtocol) -> "OrderedLockGroup":
+    def add(self, name: str, lock: AsyncLockProtocol) -> OrderedLockGroup:
         """Add a lock to the group.
 
         Args:
@@ -238,7 +232,7 @@ class OrderedLockGroup:
 
         self._acquired.clear()
 
-    async def __aenter__(self) -> "OrderedLockGroup":
+    async def __aenter__(self) -> OrderedLockGroup:
         if not await self.acquire_all():
             raise LockError("Failed to acquire all locks")
         return self
@@ -275,9 +269,9 @@ class LockHierarchy:
     """
 
     def __init__(self):
-        self._levels: Dict[str, int] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
-        self._held: Dict[int, Set[str]] = {}  # thread_id -> held lock names
+        self._levels: dict[str, int] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._held: dict[int, set[str]] = {}  # thread_id -> held lock names
         self._lock = threading.RLock()
 
     def define_level(self, name: str, level: int) -> None:
@@ -399,7 +393,7 @@ class LockPool:
             cleanup_interval: Seconds between cleanup runs
         """
         self._max_size = max_size
-        self._locks: Dict[str, Tuple[asyncio.Lock, float]] = {}  # name -> (lock, last_used)
+        self._locks: dict[str, tuple[asyncio.Lock, float]] = {}  # name -> (lock, last_used)
         self._lock = threading.RLock()
         self._cleanup_interval = cleanup_interval
         self._last_cleanup = time.time()
@@ -470,7 +464,7 @@ class LockPool:
         finally:
             lock.release()
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get pool statistics."""
         with self._lock:
             active = sum(1 for _, (lock, _) in self._locks.items() if lock.locked())
@@ -583,7 +577,7 @@ class LockFactory:
 async def acquire_locks(
     *names: str,
     timeout: float = 30.0,
-    factory: Optional[LockFactory] = None,
+    factory: LockFactory | None = None,
 ) -> AsyncGenerator[None, None]:
     """Acquire multiple locks in consistent order.
 
@@ -606,7 +600,7 @@ async def acquire_locks(
         factory = LockFactory()
 
     sorted_names = sorted(names)
-    acquired: List[str] = []
+    acquired: list[str] = []
 
     try:
         for name in sorted_names:
@@ -634,7 +628,7 @@ def acquire_locks_sync(
     """
     sorted_names = sorted(names)
     locks = [threading.Lock() for _ in sorted_names]
-    acquired: List[threading.Lock] = []
+    acquired: list[threading.Lock] = []
 
     try:
         for lock in locks:
@@ -661,7 +655,7 @@ class LockStats:
     contentions: int = 0  # Failed immediate acquisitions
     total_hold_time: float = 0.0
     max_hold_time: float = 0.0
-    current_holder: Optional[str] = None
+    current_holder: str | None = None
 
 
 class LockDiagnostics:
@@ -679,7 +673,7 @@ class LockDiagnostics:
     """
 
     def __init__(self):
-        self._stats: Dict[str, LockStats] = {}
+        self._stats: dict[str, LockStats] = {}
         self._lock = threading.RLock()
 
     def track(self, name: str) -> None:
@@ -716,17 +710,17 @@ class LockDiagnostics:
                 stats.max_hold_time = max(stats.max_hold_time, hold_time)
                 stats.current_holder = None
 
-    def get_stats(self, name: str) -> Optional[LockStats]:
+    def get_stats(self, name: str) -> LockStats | None:
         """Get stats for a specific lock."""
         with self._lock:
             return self._stats.get(name)
 
-    def get_all_stats(self) -> Dict[str, LockStats]:
+    def get_all_stats(self) -> dict[str, LockStats]:
         """Get stats for all tracked locks."""
         with self._lock:
             return dict(self._stats)
 
-    def get_contentious_locks(self, min_contentions: int = 10) -> List[LockStats]:
+    def get_contentious_locks(self, min_contentions: int = 10) -> list[LockStats]:
         """Get locks with high contention."""
         with self._lock:
             return [
@@ -734,7 +728,7 @@ class LockDiagnostics:
                 if stats.contentions >= min_contentions
             ]
 
-    def get_long_held_locks(self, threshold: float = 5.0) -> List[LockStats]:
+    def get_long_held_locks(self, threshold: float = 5.0) -> list[LockStats]:
         """Get locks with long average hold times."""
         with self._lock:
             results = []

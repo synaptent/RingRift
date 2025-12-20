@@ -25,14 +25,11 @@ import asyncio
 import json
 import logging
 import time
-import sqlite3
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field
 from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass, field
 from enum import Enum
-
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +65,14 @@ class FeedbackSignal:
     magnitude: float  # 0.0 to 1.0
     reason: str
     timestamp: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class FeedbackState:
     """Persistent state for feedback system."""
     # Curriculum weights by config (config_key -> weight multiplier)
-    curriculum_weights: Dict[str, float] = field(default_factory=lambda: defaultdict(lambda: 1.0))
+    curriculum_weights: dict[str, float] = field(default_factory=lambda: defaultdict(lambda: 1.0))
 
     # Temperature adjustments
     temperature_multiplier: float = 1.0
@@ -88,7 +85,7 @@ class FeedbackState:
     games_per_worker_multiplier: float = 1.0
 
     # Elo tracking for plateau detection
-    elo_history: List[Tuple[float, float]] = field(default_factory=list)  # (timestamp, elo)
+    elo_history: list[tuple[float, float]] = field(default_factory=list)  # (timestamp, elo)
     plateau_count: int = 0
 
     # Parity tracking
@@ -108,15 +105,15 @@ class FeedbackState:
     # Promotion tracking
     consecutive_promotion_failures: int = 0
     last_promotion_success: float = 0.0
-    promotion_failure_configs: Dict[str, int] = field(default_factory=dict)  # config -> failure count
+    promotion_failure_configs: dict[str, int] = field(default_factory=dict)  # config -> failure count
 
 
 class EvaluationAnalyzer:
     """Analyzes evaluation results to identify weaknesses."""
 
     def __init__(self):
-        self.win_rates: Dict[str, List[float]] = defaultdict(list)
-        self.elo_trends: Dict[str, List[float]] = defaultdict(list)
+        self.win_rates: dict[str, list[float]] = defaultdict(list)
+        self.elo_trends: dict[str, list[float]] = defaultdict(list)
 
     def add_result(self, config_key: str, win_rate: float, elo: float):
         """Add an evaluation result."""
@@ -129,7 +126,7 @@ class EvaluationAnalyzer:
         if len(self.elo_trends[config_key]) > 20:
             self.elo_trends[config_key] = self.elo_trends[config_key][-20:]
 
-    def get_weak_configs(self, threshold: float = 0.45) -> List[str]:
+    def get_weak_configs(self, threshold: float = 0.45) -> list[str]:
         """Get configurations with below-threshold win rate."""
         weak = []
         for config_key, rates in self.win_rates.items():
@@ -158,11 +155,11 @@ class DataQualityMonitor:
     """Monitors data quality and identifies problematic games."""
 
     def __init__(self):
-        self.parity_results: List[bool] = []  # True = passed, False = failed
-        self.game_lengths: List[int] = []
-        self.outlier_games: List[str] = []
+        self.parity_results: list[bool] = []  # True = passed, False = failed
+        self.game_lengths: list[int] = []
+        self.outlier_games: list[str] = []
 
-    def add_parity_result(self, passed: bool, game_id: Optional[str] = None):
+    def add_parity_result(self, passed: bool, game_id: str | None = None):
         """Record a parity validation result."""
         self.parity_results.append(passed)
 
@@ -190,12 +187,12 @@ class TrainingMonitor:
     """Monitors training progress and identifies issues."""
 
     def __init__(self):
-        self.loss_history: List[float] = []
-        self.val_loss_history: List[float] = []
-        self.learning_rate_history: List[float] = []
+        self.loss_history: list[float] = []
+        self.val_loss_history: list[float] = []
+        self.learning_rate_history: list[float] = []
 
-    def add_training_metrics(self, loss: float, val_loss: Optional[float] = None,
-                             learning_rate: Optional[float] = None):
+    def add_training_metrics(self, loss: float, val_loss: float | None = None,
+                             learning_rate: float | None = None):
         """Record training metrics."""
         self.loss_history.append(loss)
         if val_loss is not None:
@@ -233,8 +230,8 @@ class PipelineFeedbackController:
 
     def __init__(
         self,
-        state_path: Optional[Path] = None,
-        config: Optional[Dict[str, Any]] = None
+        state_path: Path | None = None,
+        config: dict[str, Any] | None = None
     ):
         self.config = config or {}
 
@@ -249,7 +246,7 @@ class PipelineFeedbackController:
         self.training_monitor = TrainingMonitor()
 
         # Signal history
-        self.signals: List[FeedbackSignal] = []
+        self.signals: list[FeedbackSignal] = []
         self._max_signals = 100
 
     def _load_state(self):
@@ -298,7 +295,7 @@ class PipelineFeedbackController:
     # Stage Completion Handlers
     # =========================================================================
 
-    async def on_stage_complete(self, stage: str, result: Dict[str, Any]):
+    async def on_stage_complete(self, stage: str, result: dict[str, Any]):
         """Handle completion of a pipeline stage."""
         handlers = {
             'evaluation': self._on_evaluation_complete,
@@ -317,7 +314,7 @@ class PipelineFeedbackController:
 
         self._save_state()
 
-    async def on_stage_failed(self, stage: str, result: Dict[str, Any]):
+    async def on_stage_failed(self, stage: str, result: dict[str, Any]):
         """Handle failure of a pipeline stage.
 
         This method is called when a stage fails (error, timeout, etc.) to:
@@ -381,7 +378,7 @@ class PipelineFeedbackController:
     async def _on_evaluation_failed(self, config_key: str, error: str):
         """Handle evaluation failure - skip model, potentially adjust eval parameters."""
         # Track model as problematic
-        model_id = config_key.split('/')[-1] if '/' in config_key else config_key
+        config_key.split('/')[-1] if '/' in config_key else config_key
 
         # If evaluation times out repeatedly, reduce eval games
         if 'timeout' in error.lower():
@@ -431,7 +428,7 @@ class PipelineFeedbackController:
         if hasattr(self.state, 'consecutive_failures'):
             self.state.consecutive_failures[stage] = 0
 
-    async def _on_evaluation_complete(self, result: Dict[str, Any]):
+    async def _on_evaluation_complete(self, result: dict[str, Any]):
         """Handle evaluation completion - adjust curriculum weights."""
         config_key = result.get('config_key', 'default')
         win_rate = result.get('win_rate')
@@ -488,11 +485,11 @@ class PipelineFeedbackController:
         else:
             self.state.plateau_count = max(0, self.state.plateau_count - 1)
 
-    async def _on_training_complete(self, result: Dict[str, Any]):
+    async def _on_training_complete(self, result: dict[str, Any]):
         """Handle training completion - analyze loss patterns."""
         final_loss = result.get('final_loss')
         val_loss = result.get('val_loss')
-        epochs_completed = result.get('epochs', 0)
+        result.get('epochs', 0)
 
         if final_loss is not None:
             self.training_monitor.add_training_metrics(final_loss, val_loss)
@@ -519,7 +516,7 @@ class PipelineFeedbackController:
             ))
             self.state.temperature_multiplier = min(1.5, self.state.temperature_multiplier * 1.1)
 
-    async def _on_parity_validation_complete(self, result: Dict[str, Any]):
+    async def _on_parity_validation_complete(self, result: dict[str, Any]):
         """Handle parity validation - adjust selfplay parameters."""
         passed = result.get('passed', 0)
         failed = result.get('failed', 0)
@@ -557,7 +554,7 @@ class PipelineFeedbackController:
         else:
             self.state.consecutive_parity_failures = 0
 
-    async def _on_selfplay_complete(self, result: Dict[str, Any]):
+    async def _on_selfplay_complete(self, result: dict[str, Any]):
         """Handle selfplay completion - track data generation."""
         games_generated = result.get('games', 0)
         config_key = result.get('config_key')
@@ -566,7 +563,7 @@ class PipelineFeedbackController:
             # Could track per-config generation rates here
             pass
 
-    async def _on_cmaes_complete(self, result: Dict[str, Any]):
+    async def _on_cmaes_complete(self, result: dict[str, Any]):
         """Handle CMA-ES completion - track optimization results."""
         improved = result.get('improved', False)
 
@@ -574,7 +571,7 @@ class PipelineFeedbackController:
             # Reset plateau count on successful optimization
             self.state.plateau_count = 0
 
-    async def _on_promotion_complete(self, result: Dict[str, Any]):
+    async def _on_promotion_complete(self, result: dict[str, Any]):
         """Handle model promotion completion - track success/failure and adjust training.
 
         If promotion fails repeatedly for a config, increase its curriculum weight
@@ -666,11 +663,11 @@ class PipelineFeedbackController:
                     target_stage='cmaes',
                     action=FeedbackAction.TRIGGER_CMAES,
                     magnitude=1.0,
-                    reason=f"5+ consecutive promotion failures, trying hyperparameter optimization"
+                    reason="5+ consecutive promotion failures, trying hyperparameter optimization"
                 ))
                 self.state.last_cmaes_trigger = time.time()
 
-    async def _on_utilization_complete(self, result: Dict[str, Any]):
+    async def _on_utilization_complete(self, result: dict[str, Any]):
         """Handle utilization report - adjust selfplay rate for optimal throughput.
 
         This feedback helps maintain 60-80% CPU/GPU utilization for maximum
@@ -768,10 +765,10 @@ class PipelineFeedbackController:
 
     def update_data_quality(
         self,
-        parity_results: Optional[List[bool]] = None,
-        game_lengths: Optional[List[int]] = None,
-        draw_rate: Optional[float] = None,
-        timeout_rate: Optional[float] = None,
+        parity_results: list[bool] | None = None,
+        game_lengths: list[int] | None = None,
+        draw_rate: float | None = None,
+        timeout_rate: float | None = None,
     ) -> float:
         """Update data quality metrics and compute overall quality score.
 
@@ -833,7 +830,7 @@ class PipelineFeedbackController:
 
         return score
 
-    def get_pending_actions(self) -> List[FeedbackSignal]:
+    def get_pending_actions(self) -> list[FeedbackSignal]:
         """Get pending feedback actions that require external handling."""
         pending = []
         actionable_types = (
@@ -847,7 +844,7 @@ class PipelineFeedbackController:
                 pending.append(signal)
         return pending
 
-    def get_state_summary(self) -> Dict[str, Any]:
+    def get_state_summary(self) -> dict[str, Any]:
         """Get summary of current feedback state."""
         return {
             'curriculum_weights': dict(self.state.curriculum_weights),
@@ -888,15 +885,15 @@ class FeedbackSignalRouter:
     """
 
     def __init__(self):
-        self._handlers: Dict[FeedbackAction, List[callable]] = defaultdict(list)
-        self._signal_history: List[Tuple[float, FeedbackSignal, str]] = []  # (timestamp, signal, handler_result)
+        self._handlers: dict[FeedbackAction, list[callable]] = defaultdict(list)
+        self._signal_history: list[tuple[float, FeedbackSignal, str]] = []  # (timestamp, signal, handler_result)
         self._max_history = 500
 
     def register_handler(
         self,
         action: FeedbackAction,
         handler: callable,
-        name: Optional[str] = None
+        name: str | None = None
     ):
         """Register a handler for a specific feedback action.
 
@@ -919,7 +916,7 @@ class FeedbackSignalRouter:
             if h['handler'] != handler
         ]
 
-    async def route(self, signal: FeedbackSignal) -> List[Tuple[str, bool]]:
+    async def route(self, signal: FeedbackSignal) -> list[tuple[str, bool]]:
         """Route a signal to all registered handlers for its action.
 
         Returns:
@@ -963,9 +960,9 @@ class FeedbackSignalRouter:
 
     def get_history(
         self,
-        action: Optional[FeedbackAction] = None,
+        action: FeedbackAction | None = None,
         limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get signal routing history.
 
         Args:
@@ -989,7 +986,7 @@ class FeedbackSignalRouter:
             for t, s, r in history[-limit:]
         ]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get routing statistics."""
         stats = {
             'total_signals_routed': len(self._signal_history),
@@ -1028,16 +1025,16 @@ class OpponentWinRateTracker:
         self.weak_threshold = weak_threshold
 
         # model_id -> opponent_id -> {wins, losses}
-        self._records: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(
+        self._records: dict[str, dict[str, dict[str, int]]] = defaultdict(
             lambda: defaultdict(lambda: {'wins': 0, 'losses': 0, 'draws': 0})
         )
-        self._history: List[Tuple[float, str, str, str]] = []  # (timestamp, model, opponent, result)
+        self._history: list[tuple[float, str, str, str]] = []  # (timestamp, model, opponent, result)
 
     def record_game(
         self,
         model_id: str,
         opponent_id: str,
-        won: Optional[bool] = None,
+        won: bool | None = None,
         draw: bool = False
     ):
         """Record a game result against an opponent."""
@@ -1057,7 +1054,7 @@ class OpponentWinRateTracker:
         if len(self._history) > 10000:
             self._history = self._history[-10000:]
 
-    def get_win_rate(self, model_id: str, opponent_id: str) -> Optional[float]:
+    def get_win_rate(self, model_id: str, opponent_id: str) -> float | None:
         """Get win rate against a specific opponent. Returns None if insufficient games."""
         record = self._records.get(model_id, {}).get(opponent_id)
         if not record:
@@ -1070,31 +1067,31 @@ class OpponentWinRateTracker:
         # Count draws as half wins
         return (record['wins'] + 0.5 * record['draws']) / total
 
-    def get_weak_opponents(self, model_id: str) -> List[Tuple[str, float]]:
+    def get_weak_opponents(self, model_id: str) -> list[tuple[str, float]]:
         """Get opponents where model has below-threshold win rate.
 
         Returns:
             List of (opponent_id, win_rate) tuples, sorted by win rate ascending
         """
         weak = []
-        for opponent_id, record in self._records.get(model_id, {}).items():
+        for opponent_id, _record in self._records.get(model_id, {}).items():
             win_rate = self.get_win_rate(model_id, opponent_id)
             if win_rate is not None and win_rate < self.weak_threshold:
                 weak.append((opponent_id, win_rate))
 
         return sorted(weak, key=lambda x: x[1])
 
-    def get_strong_opponents(self, model_id: str, threshold: float = 0.60) -> List[Tuple[str, float]]:
+    def get_strong_opponents(self, model_id: str, threshold: float = 0.60) -> list[tuple[str, float]]:
         """Get opponents where model has above-threshold win rate."""
         strong = []
-        for opponent_id, record in self._records.get(model_id, {}).items():
+        for opponent_id, _record in self._records.get(model_id, {}).items():
             win_rate = self.get_win_rate(model_id, opponent_id)
             if win_rate is not None and win_rate >= threshold:
                 strong.append((opponent_id, win_rate))
 
         return sorted(strong, key=lambda x: x[1], reverse=True)
 
-    def get_summary(self, model_id: str) -> Dict[str, Any]:
+    def get_summary(self, model_id: str) -> dict[str, Any]:
         """Get summary of opponent performance for a model."""
         opponents = self._records.get(model_id, {})
         summary = {
@@ -1122,7 +1119,7 @@ class OpponentWinRateTracker:
 
 def create_feedback_controller(
     ai_service_dir: Path,
-    config: Optional[Dict[str, Any]] = None
+    config: dict[str, Any] | None = None
 ) -> PipelineFeedbackController:
     """Create a feedback controller with standard paths."""
     # Ensure ai_service_dir is a Path object

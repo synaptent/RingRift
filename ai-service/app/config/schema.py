@@ -33,20 +33,14 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from re import Pattern
 from typing import (
     Any,
-    Callable,
-    Dict,
     Generic,
-    List,
-    Optional,
-    Pattern,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
     Union,
 )
@@ -54,20 +48,20 @@ from typing import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BoolField",
+    "DictField",
+    "EnumField",
     "Field",
+    "FloatField",
+    "IntField",
+    "ListField",
+    "PathField",
     "Schema",
-    "validate_config",
-    "ValidationError",
     "SchemaError",
     # Field types
     "StringField",
-    "IntField",
-    "FloatField",
-    "BoolField",
-    "ListField",
-    "DictField",
-    "PathField",
-    "EnumField",
+    "ValidationError",
+    "validate_config",
 ]
 
 T = TypeVar("T")
@@ -99,8 +93,8 @@ class ValidationError(Exception):
 class ValidationResult:
     """Result of validation with errors."""
     valid: bool
-    errors: List[ValidationError] = field(default_factory=list)
-    validated: Dict[str, Any] = field(default_factory=dict)
+    errors: list[ValidationError] = field(default_factory=list)
+    validated: dict[str, Any] = field(default_factory=dict)
 
     def raise_if_invalid(self) -> None:
         """Raise exception if validation failed."""
@@ -133,27 +127,27 @@ class Field(Generic[T]):
         env_var: Environment variable to read from
         description: Field description
     """
-    type_: Type[T]
+    type_: type[T]
     required: bool = False
-    default: Optional[T] = None
-    default_factory: Optional[Callable[[], T]] = None
-    min_val: Optional[float] = None
-    max_val: Optional[float] = None
-    min_length: Optional[int] = None
-    max_length: Optional[int] = None
-    choices: Optional[List[T]] = None
-    pattern: Optional[str] = None
-    validator: Optional[Callable[[T], bool]] = None
+    default: T | None = None
+    default_factory: Callable[[], T] | None = None
+    min_val: float | None = None
+    max_val: float | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    choices: list[T] | None = None
+    pattern: str | None = None
+    validator: Callable[[T], bool] | None = None
     coerce: bool = True
-    env_var: Optional[str] = None
+    env_var: str | None = None
     description: str = ""
 
     def __post_init__(self):
-        self._compiled_pattern: Optional[Pattern] = None
+        self._compiled_pattern: Pattern | None = None
         if self.pattern:
             self._compiled_pattern = re.compile(self.pattern)
 
-    def get_default(self) -> Optional[T]:
+    def get_default(self) -> T | None:
         """Get the default value."""
         if self.default_factory is not None:
             return self.default_factory()
@@ -163,7 +157,7 @@ class Field(Generic[T]):
         """Check if field has a default value."""
         return self.default is not None or self.default_factory is not None
 
-    def validate(self, value: Any, path: str = "") -> Tuple[T, List[ValidationError]]:
+    def validate(self, value: Any, path: str = "") -> tuple[T, list[ValidationError]]:
         """Validate a value against this field.
 
         Args:
@@ -173,7 +167,7 @@ class Field(Generic[T]):
         Returns:
             Tuple of (validated_value, errors)
         """
-        errors: List[ValidationError] = []
+        errors: list[ValidationError] = []
 
         # Check for None/missing
         if value is None:
@@ -300,12 +294,12 @@ class Field(Generic[T]):
 # Convenience field types
 def StringField(
     required: bool = False,
-    default: Optional[str] = None,
-    min_length: Optional[int] = None,
-    max_length: Optional[int] = None,
-    pattern: Optional[str] = None,
-    choices: Optional[List[str]] = None,
-    env_var: Optional[str] = None,
+    default: str | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+    choices: list[str] | None = None,
+    env_var: str | None = None,
     description: str = "",
 ) -> Field[str]:
     """Create a string field."""
@@ -324,10 +318,10 @@ def StringField(
 
 def IntField(
     required: bool = False,
-    default: Optional[int] = None,
-    min_val: Optional[int] = None,
-    max_val: Optional[int] = None,
-    env_var: Optional[str] = None,
+    default: int | None = None,
+    min_val: int | None = None,
+    max_val: int | None = None,
+    env_var: str | None = None,
     description: str = "",
 ) -> Field[int]:
     """Create an integer field."""
@@ -344,10 +338,10 @@ def IntField(
 
 def FloatField(
     required: bool = False,
-    default: Optional[float] = None,
-    min_val: Optional[float] = None,
-    max_val: Optional[float] = None,
-    env_var: Optional[str] = None,
+    default: float | None = None,
+    min_val: float | None = None,
+    max_val: float | None = None,
+    env_var: str | None = None,
     description: str = "",
 ) -> Field[float]:
     """Create a float field."""
@@ -364,8 +358,8 @@ def FloatField(
 
 def BoolField(
     required: bool = False,
-    default: Optional[bool] = None,
-    env_var: Optional[str] = None,
+    default: bool | None = None,
+    env_var: str | None = None,
     description: str = "",
 ) -> Field[bool]:
     """Create a boolean field."""
@@ -380,9 +374,9 @@ def BoolField(
 
 def PathField(
     required: bool = False,
-    default: Optional[Path] = None,
+    default: Path | None = None,
     must_exist: bool = False,
-    env_var: Optional[str] = None,
+    env_var: str | None = None,
     description: str = "",
 ) -> Field[Path]:
     """Create a path field."""
@@ -402,13 +396,13 @@ def PathField(
 
 
 def ListField(
-    item_type: Type[T] = Any,
+    item_type: type[T] = Any,
     required: bool = False,
-    default: Optional[List[T]] = None,
-    min_length: Optional[int] = None,
-    max_length: Optional[int] = None,
+    default: list[T] | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
     description: str = "",
-) -> Field[List[T]]:
+) -> Field[list[T]]:
     """Create a list field."""
     return Field(
         type_=list,
@@ -423,9 +417,9 @@ def ListField(
 
 def DictField(
     required: bool = False,
-    default: Optional[Dict[str, Any]] = None,
+    default: dict[str, Any] | None = None,
     description: str = "",
-) -> Field[Dict[str, Any]]:
+) -> Field[dict[str, Any]]:
     """Create a dict field."""
     return Field(
         type_=dict,
@@ -437,9 +431,9 @@ def DictField(
 
 
 def EnumField(
-    enum_class: Type[Enum],
+    enum_class: type[Enum],
     required: bool = False,
-    default: Optional[Enum] = None,
+    default: Enum | None = None,
     description: str = "",
 ) -> Field[Enum]:
     """Create an enum field."""
@@ -474,7 +468,7 @@ class Schema:
 
     def __init__(
         self,
-        fields: Dict[str, Union[Field, "Schema"]],
+        fields: dict[str, Union[Field, Schema]],
         strict: bool = False,
         allow_extra: bool = True,
     ):
@@ -491,7 +485,7 @@ class Schema:
 
     def validate(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         path: str = "",
     ) -> ValidationResult:
         """Validate a configuration dictionary.
@@ -503,8 +497,8 @@ class Schema:
         Returns:
             ValidationResult with validated config and errors
         """
-        errors: List[ValidationError] = []
-        validated: Dict[str, Any] = {}
+        errors: list[ValidationError] = []
+        validated: dict[str, Any] = {}
 
         # Process env vars first
         config = self._apply_env_vars(config)
@@ -555,7 +549,7 @@ class Schema:
             validated=validated,
         )
 
-    def _apply_env_vars(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_env_vars(self, config: dict[str, Any]) -> dict[str, Any]:
         """Apply environment variable overrides."""
         result = dict(config)
 
@@ -567,9 +561,9 @@ class Schema:
 
         return result
 
-    def get_defaults(self) -> Dict[str, Any]:
+    def get_defaults(self) -> dict[str, Any]:
         """Get all default values."""
-        defaults: Dict[str, Any] = {}
+        defaults: dict[str, Any] = {}
 
         for name, field_def in self._fields.items():
             if isinstance(field_def, Schema):
@@ -579,9 +573,9 @@ class Schema:
 
         return defaults
 
-    def get_documentation(self) -> Dict[str, Any]:
+    def get_documentation(self) -> dict[str, Any]:
         """Generate documentation for the schema."""
-        docs: Dict[str, Any] = {}
+        docs: dict[str, Any] = {}
 
         for name, field_def in self._fields.items():
             if isinstance(field_def, Schema):
@@ -617,10 +611,10 @@ class Schema:
 # =============================================================================
 
 def validate_config(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     schema: Schema,
     raise_on_error: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Validate a configuration against a schema.
 
     Args:

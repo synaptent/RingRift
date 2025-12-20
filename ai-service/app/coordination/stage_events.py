@@ -37,10 +37,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -105,27 +106,27 @@ class StageCompletionResult:
     games_generated: int = 0
 
     # Training metrics
-    model_path: Optional[str] = None
-    model_id: Optional[str] = None
-    train_loss: Optional[float] = None
-    val_loss: Optional[float] = None
+    model_path: str | None = None
+    model_id: str | None = None
+    train_loss: float | None = None
+    val_loss: float | None = None
 
     # Evaluation metrics
-    win_rate: Optional[float] = None
-    elo_delta: Optional[float] = None
+    win_rate: float | None = None
+    elo_delta: float | None = None
 
     # Promotion metrics
     promoted: bool = False
-    promotion_reason: Optional[str] = None
+    promotion_reason: str | None = None
 
     # Error handling
-    error: Optional[str] = None
-    error_details: Optional[str] = None
+    error: str | None = None
+    error_details: str | None = None
 
     # Extensible metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "event": self.event.value,
@@ -149,7 +150,7 @@ class StageCompletionResult:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "StageCompletionResult":
+    def from_dict(cls, data: dict[str, Any]) -> StageCompletionResult:
         """Create from dictionary."""
         event_value = data.get("event", "selfplay_complete")
         if isinstance(event_value, str):
@@ -220,11 +221,11 @@ class StageEventBus:
         Args:
             max_history: Maximum number of events to keep in history
         """
-        self._subscribers: Dict[StageEvent, List[StageCompletionCallback]] = {}
-        self._log_callback: Optional[Callable[[str], None]] = None
-        self._history: List[StageCompletionResult] = []
+        self._subscribers: dict[StageEvent, list[StageCompletionCallback]] = {}
+        self._log_callback: Callable[[str], None] | None = None
+        self._history: list[StageCompletionResult] = []
         self._max_history = max_history
-        self._callback_errors: List[Dict[str, Any]] = []
+        self._callback_errors: list[dict[str, Any]] = []
 
     def set_logger(self, log_fn: Callable[[str], None]) -> None:
         """Set a logging function for event notifications.
@@ -271,7 +272,7 @@ class StageEventBus:
             return True
         return False
 
-    def clear_subscribers(self, event: Optional[StageEvent] = None) -> int:
+    def clear_subscribers(self, event: StageEvent | None = None) -> int:
         """Clear all subscribers for an event, or all events if none specified.
 
         Args:
@@ -350,8 +351,8 @@ class StageEventBus:
     async def emit_and_wait(
         self,
         result: StageCompletionResult,
-        timeout: Optional[float] = None,
-    ) -> List[Any]:
+        timeout: float | None = None,
+    ) -> list[Any]:
         """Emit event and wait for all callbacks to complete.
 
         Args:
@@ -389,9 +390,9 @@ class StageEventBus:
 
     def get_history(
         self,
-        event: Optional[StageEvent] = None,
+        event: StageEvent | None = None,
         limit: int = 50,
-    ) -> List[StageCompletionResult]:
+    ) -> list[StageCompletionResult]:
         """Get event history, optionally filtered by event type.
 
         Args:
@@ -408,7 +409,7 @@ class StageEventBus:
 
         return list(reversed(filtered[-limit:]))
 
-    def get_callback_errors(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_callback_errors(self, limit: int = 20) -> list[dict[str, Any]]:
         """Get recent callback errors.
 
         Args:
@@ -419,7 +420,7 @@ class StageEventBus:
         """
         return list(reversed(self._callback_errors[-limit:]))
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get event bus statistics.
 
         Returns:
@@ -439,7 +440,7 @@ class StageEventBus:
 
 
 # Global event bus singleton
-_global_event_bus: Optional[StageEventBus] = None
+_global_event_bus: StageEventBus | None = None
 
 
 def get_event_bus() -> StageEventBus:
@@ -461,7 +462,7 @@ def reset_event_bus() -> None:
 # ============================================================================
 
 
-def create_pipeline_callbacks() -> Dict[StageEvent, StageCompletionCallback]:
+def create_pipeline_callbacks() -> dict[StageEvent, StageCompletionCallback]:
     """Create standard callbacks for pipeline stage transitions.
 
     These callbacks implement the typical pipeline flow:
@@ -475,7 +476,7 @@ def create_pipeline_callbacks() -> Dict[StageEvent, StageCompletionCallback]:
     Returns:
         Dict mapping events to their standard callbacks
     """
-    callbacks: Dict[StageEvent, StageCompletionCallback] = {}
+    callbacks: dict[StageEvent, StageCompletionCallback] = {}
 
     async def on_selfplay_complete(result: StageCompletionResult) -> None:
         """Standard handler for selfplay completion."""
@@ -513,7 +514,7 @@ def create_pipeline_callbacks() -> Dict[StageEvent, StageCompletionCallback]:
     return callbacks
 
 
-def register_standard_callbacks(bus: Optional[StageEventBus] = None) -> None:
+def register_standard_callbacks(bus: StageEventBus | None = None) -> None:
     """Register standard pipeline callbacks on an event bus.
 
     Args:
@@ -525,15 +526,15 @@ def register_standard_callbacks(bus: Optional[StageEventBus] = None) -> None:
 
 
 __all__ = [
+    "StageCompletionCallback",
+    "StageCompletionResult",
+    "StageEvent",
     # Core classes
     "StageEventBus",
-    "StageEvent",
-    "StageCompletionResult",
-    "StageCompletionCallback",
-    # Global access
-    "get_event_bus",
-    "reset_event_bus",
     # Pipeline helpers
     "create_pipeline_callbacks",
+    # Global access
+    "get_event_bus",
     "register_standard_callbacks",
+    "reset_event_bus",
 ]

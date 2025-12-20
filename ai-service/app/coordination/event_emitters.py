@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 
 try:
     from app.coordination.stage_events import (
-        StageEvent,
         StageCompletionResult,
+        StageEvent,
         get_event_bus as get_stage_bus,
     )
     HAS_STAGE_EVENTS = True
@@ -98,7 +98,7 @@ def _get_timestamp() -> str:
 
 async def _emit_via_router(
     event_type: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     source: str = "event_emitters",
 ) -> bool:
     """Emit an event via the unified event router.
@@ -134,7 +134,7 @@ async def _emit_via_router(
 
 def _emit_via_router_sync(
     event_type: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     source: str = "event_emitters",
 ) -> bool:
     """Emit an event synchronously via the unified router.
@@ -169,8 +169,8 @@ def _emit_via_router_sync(
 
 
 async def _emit_stage_event(
-    event: "StageEvent",
-    result: "StageCompletionResult",
+    event: StageEvent,
+    result: StageCompletionResult,
 ) -> bool:
     """Emit a StageEvent with proper error handling.
 
@@ -212,8 +212,8 @@ async def _emit_stage_event(
 
 
 def _emit_stage_event_sync(
-    event: "StageEvent",
-    result: "StageCompletionResult",
+    event: StageEvent,
+    result: StageCompletionResult,
 ) -> bool:
     """Emit a StageEvent synchronously (for use in sync contexts).
 
@@ -246,7 +246,7 @@ def _emit_stage_event_sync(
 
         # Try async emit first
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             asyncio.create_task(bus.emit(result))
             return True
         except RuntimeError:
@@ -312,9 +312,9 @@ async def emit_training_complete(
     board_type: str,
     num_players: int,
     success: bool = True,
-    final_loss: Optional[float] = None,
-    final_elo: Optional[float] = None,
-    model_path: Optional[str] = None,
+    final_loss: float | None = None,
+    final_elo: float | None = None,
+    model_path: str | None = None,
     epochs_completed: int = 0,
     **metadata,
 ) -> bool:
@@ -404,7 +404,7 @@ async def emit_selfplay_complete(
     duration_seconds: float = 0.0,
     selfplay_type: str = "standard",  # "standard", "gpu_accelerated", "canonical"
     iteration: int = 0,
-    error: Optional[str] = None,
+    error: str | None = None,
     **metadata,
 ) -> bool:
     """Emit SELFPLAY_COMPLETE event.
@@ -466,8 +466,8 @@ async def emit_evaluation_complete(
     board_type: str,
     num_players: int,
     success: bool = True,
-    win_rate: Optional[float] = None,
-    elo_delta: Optional[float] = None,
+    win_rate: float | None = None,
+    elo_delta: float | None = None,
     games_played: int = 0,
     **metadata,
 ) -> bool:
@@ -517,8 +517,8 @@ async def emit_promotion_complete(
     board_type: str,
     num_players: int,
     promotion_type: str = "production",
-    elo_improvement: Optional[float] = None,
-    model_path: Optional[str] = None,
+    elo_improvement: float | None = None,
+    model_path: str | None = None,
     **metadata,
 ) -> bool:
     """Emit PROMOTION_COMPLETE event.
@@ -568,8 +568,8 @@ async def emit_sync_complete(
     duration_seconds: float = 0.0,
     source: str = "",
     iteration: int = 0,
-    components: Optional[list] = None,
-    errors: Optional[list] = None,
+    components: list | None = None,
+    errors: list | None = None,
     **metadata,
 ) -> bool:
     """Emit SYNC_COMPLETE event.
@@ -677,7 +677,7 @@ async def emit_task_complete(
     success: bool = True,
     node_id: str = "",
     duration_seconds: float = 0.0,
-    result_data: Optional[Dict[str, Any]] = None,
+    result_data: dict[str, Any] | None = None,
 ) -> bool:
     """Emit task completion event.
 
@@ -749,7 +749,7 @@ async def emit_optimization_triggered(
     run_id: str,
     reason: str,
     parameters_searched: int = 0,
-    search_space: Optional[Dict[str, Any]] = None,
+    search_space: dict[str, Any] | None = None,
     generations: int = 0,
     population_size: int = 0,
     **metadata,
@@ -1023,8 +1023,8 @@ async def emit_cache_invalidated(
     invalidation_type: str,  # "model" or "node"
     target_id: str,
     count: int,
-    affected_nodes: Optional[list] = None,
-    affected_models: Optional[list] = None,
+    affected_nodes: list | None = None,
+    affected_models: list | None = None,
     **metadata,
 ) -> bool:
     """Emit CACHE_INVALIDATED event.
@@ -1078,7 +1078,7 @@ async def emit_cache_invalidated(
 async def emit_host_online(
     node_id: str,
     host_type: str = "",
-    capabilities: Optional[Dict[str, Any]] = None,
+    capabilities: dict[str, Any] | None = None,
     **metadata,
 ) -> bool:
     """Emit HOST_ONLINE event.
@@ -1220,7 +1220,7 @@ async def emit_node_recovered(
 async def emit_training_rollback_needed(
     model_id: str,
     reason: str,
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
     severity: str = "moderate",
     **metadata,
 ) -> bool:
@@ -1368,7 +1368,7 @@ async def emit_coordinator_health_degraded(
     coordinator_name: str,
     reason: str,
     health_score: float = 0.0,
-    issues: Optional[list] = None,
+    issues: list | None = None,
     **metadata,
 ) -> bool:
     """Emit COORDINATOR_HEALTH_DEGRADED event.
@@ -1417,7 +1417,7 @@ async def emit_coordinator_shutdown(
     coordinator_name: str,
     reason: str = "graceful",
     remaining_tasks: int = 0,
-    state_snapshot: Optional[Dict[str, Any]] = None,
+    state_snapshot: dict[str, Any] | None = None,
     **metadata,
 ) -> bool:
     """Emit COORDINATOR_SHUTDOWN event for graceful shutdown.
@@ -1822,48 +1822,48 @@ async def emit_training_triggered(
 
 
 __all__ = [
-    # Training events
-    "emit_training_started",
-    "emit_training_complete",
-    "emit_training_complete_sync",
-    # Selfplay events
-    "emit_selfplay_complete",
-    # Evaluation events
-    "emit_evaluation_complete",
-    # Promotion events
-    "emit_promotion_complete",
-    # Sync events
-    "emit_sync_complete",
-    # Quality events
-    "emit_quality_updated",
-    # Generic task events
-    "emit_task_complete",
-    # Optimization events (December 2025)
-    "emit_optimization_triggered",
-    # Metrics events (December 2025)
-    "emit_plateau_detected",
-    "emit_regression_detected",
     # Backpressure events (December 2025)
     "emit_backpressure_activated",
     "emit_backpressure_released",
     # Cache events (December 2025)
     "emit_cache_invalidated",
-    # Host/Node events (December 2025)
-    "emit_host_online",
-    "emit_host_offline",
-    "emit_node_recovered",
-    # Error Recovery & Resilience events (December 2025)
-    "emit_training_rollback_needed",
-    "emit_training_rollback_completed",
-    "emit_handler_failed",
-    "emit_handler_timeout",
     "emit_coordinator_health_degraded",
-    "emit_coordinator_shutdown",
     "emit_coordinator_heartbeat",
-    "emit_task_abandoned",
-    "emit_task_orphaned",
-    "emit_model_corrupted",
+    "emit_coordinator_shutdown",
     # Curriculum events (December 2025)
     "emit_curriculum_rebalanced",
+    # Evaluation events
+    "emit_evaluation_complete",
+    "emit_handler_failed",
+    "emit_handler_timeout",
+    "emit_host_offline",
+    # Host/Node events (December 2025)
+    "emit_host_online",
+    "emit_model_corrupted",
+    "emit_node_recovered",
+    # Optimization events (December 2025)
+    "emit_optimization_triggered",
+    # Metrics events (December 2025)
+    "emit_plateau_detected",
+    # Promotion events
+    "emit_promotion_complete",
+    # Quality events
+    "emit_quality_updated",
+    "emit_regression_detected",
+    # Selfplay events
+    "emit_selfplay_complete",
+    # Sync events
+    "emit_sync_complete",
+    "emit_task_abandoned",
+    # Generic task events
+    "emit_task_complete",
+    "emit_task_orphaned",
+    "emit_training_complete",
+    "emit_training_complete_sync",
+    "emit_training_rollback_completed",
+    # Error Recovery & Resilience events (December 2025)
+    "emit_training_rollback_needed",
+    # Training events
+    "emit_training_started",
     "emit_training_triggered",
 ]

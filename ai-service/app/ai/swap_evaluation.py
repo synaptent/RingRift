@@ -22,7 +22,7 @@ Evaluation approaches:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import FrozenSet, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ..models import GameState, Position
 
@@ -70,7 +70,7 @@ class SwapWeights:
     exploration_temperature: float = 0.0
 
     @classmethod
-    def from_heuristic_ai(cls, ai: "HeuristicAI") -> "SwapWeights":
+    def from_heuristic_ai(cls, ai: HeuristicAI) -> SwapWeights:
         """Extract swap weights from a HeuristicAI instance.
 
         Parameters
@@ -114,15 +114,15 @@ class SwapEvaluator:
 
     def __init__(
         self,
-        weights: Optional[SwapWeights] = None,
-        fast_geo: Optional["FastGeometry"] = None,
+        weights: SwapWeights | None = None,
+        fast_geo: FastGeometry | None = None,
     ) -> None:
         self.weights = weights or SwapWeights()
         self._fast_geo = fast_geo
         self._center_cache: dict = {}
 
     @property
-    def fast_geo(self) -> "FastGeometry":
+    def fast_geo(self) -> FastGeometry:
         """Lazily initialize FastGeometry if not provided."""
         if self._fast_geo is None:
             from .fast_geometry import FastGeometry
@@ -130,7 +130,7 @@ class SwapEvaluator:
             self._fast_geo = FastGeometry.get_instance()
         return self._fast_geo
 
-    def get_center_positions(self, game_state: GameState) -> FrozenSet[str]:
+    def get_center_positions(self, game_state: GameState) -> frozenset[str]:
         """Get center position keys for the board.
 
         Uses caching for repeated calls with the same board type.
@@ -146,7 +146,7 @@ class SwapEvaluator:
         self,
         position: Position,
         game_state: GameState,
-    ) -> List[Position]:
+    ) -> list[Position]:
         """Get adjacent positions around a position."""
         from ..rules.geometry import BoardGeometry
 
@@ -476,7 +476,7 @@ class SwapEvaluator:
 # Convenience function for quick swap evaluation
 def evaluate_swap_bonus(
     game_state: GameState,
-    weights: Optional[SwapWeights] = None,
+    weights: SwapWeights | None = None,
 ) -> float:
     """Convenience function for evaluating swap opening bonus.
 
@@ -498,7 +498,7 @@ def evaluate_swap_bonus(
 
 def evaluate_swap_classifier(
     game_state: GameState,
-    weights: Optional[SwapWeights] = None,
+    weights: SwapWeights | None = None,
 ) -> float:
     """Convenience function for classifier-based swap evaluation.
 

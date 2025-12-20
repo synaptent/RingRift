@@ -25,11 +25,11 @@ Requirements:
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class WorkerInfo:
     port: int
     hostname: str
     discovered_at: datetime = field(default_factory=datetime.now)
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: dict[str, Any] = field(default_factory=dict)
 
     @property
     def url(self) -> str:
@@ -80,7 +80,7 @@ class WorkerDiscovery:
 
     def __init__(self, service_type: str = SERVICE_TYPE):
         self.service_type = service_type
-        self._workers: Dict[str, WorkerInfo] = {}
+        self._workers: dict[str, WorkerInfo] = {}
         self._lock = threading.RLock()
         self._zeroconf = None
         self._browser = None
@@ -201,17 +201,17 @@ class WorkerDiscovery:
         # Re-add to update info
         self.add_service(zc, type_, name)
 
-    def get_workers(self) -> List[WorkerInfo]:
+    def get_workers(self) -> list[WorkerInfo]:
         """Get list of currently discovered workers."""
         with self._lock:
             return list(self._workers.values())
 
-    def get_worker_urls(self) -> List[str]:
+    def get_worker_urls(self) -> list[str]:
         """Get list of worker URLs (address:port)."""
         with self._lock:
             return [w.url for w in self._workers.values()]
 
-    def __enter__(self) -> "WorkerDiscovery":
+    def __enter__(self) -> WorkerDiscovery:
         self.start()
         return self
 
@@ -222,7 +222,7 @@ class WorkerDiscovery:
 def discover_workers(
     discovery_time: float = 2.0,
     service_type: str = SERVICE_TYPE,
-) -> List[WorkerInfo]:
+) -> list[WorkerInfo]:
     """
     Discover workers on the local network.
 
@@ -251,7 +251,7 @@ def wait_for_workers(
     timeout: float = 30.0,
     check_interval: float = 1.0,
     service_type: str = SERVICE_TYPE,
-) -> List[WorkerInfo]:
+) -> list[WorkerInfo]:
     """
     Wait until at least `min_workers` are discovered or timeout is reached.
 
@@ -298,7 +298,7 @@ def wait_for_workers(
         return workers
 
 
-def parse_manual_workers(worker_list: str) -> List[WorkerInfo]:
+def parse_manual_workers(worker_list: str) -> list[WorkerInfo]:
     """
     Parse a comma-separated list of worker addresses.
 
@@ -357,8 +357,8 @@ def verify_worker_health(worker: WorkerInfo, timeout: float = 5.0) -> bool:
         True if worker is healthy, False otherwise.
     """
     try:
-        import urllib.request
         import json
+        import urllib.request
 
         url = f"http://{worker.url}/health"
         request = urllib.request.Request(url, method="GET")
@@ -371,9 +371,9 @@ def verify_worker_health(worker: WorkerInfo, timeout: float = 5.0) -> bool:
 
 
 def filter_healthy_workers(
-    workers: List[WorkerInfo],
+    workers: list[WorkerInfo],
     timeout: float = 5.0,
-) -> List[WorkerInfo]:
+) -> list[WorkerInfo]:
     """
     Filter workers to only include those that respond to health checks.
 

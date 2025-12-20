@@ -32,14 +32,13 @@ import logging
 import os
 import shutil
 import sqlite3
-import time
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from app.utils.paths import AI_SERVICE_ROOT
 from app.utils.checksum_utils import compute_file_checksum
+from app.utils.paths import AI_SERVICE_ROOT
 
 logger = logging.getLogger(__name__)
 DEFAULT_BACKUP_DIR = AI_SERVICE_ROOT / "data" / "registry_backups"
@@ -59,11 +58,11 @@ class BackupMetadata:
     source_host: str
     created_by: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "BackupMetadata":
+    def from_dict(cls, d: dict[str, Any]) -> BackupMetadata:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -73,7 +72,7 @@ class RegistryBackupManager:
     def __init__(
         self,
         registry_path: Path,
-        backup_dir: Optional[Path] = None,
+        backup_dir: Path | None = None,
         max_backups: int = 10,
         auto_backup_interval_hours: float = 24.0,
     ):
@@ -92,7 +91,7 @@ class RegistryBackupManager:
         self.auto_backup_interval_hours = auto_backup_interval_hours
 
         self._metadata_file = self.backup_dir / "backup_manifest.json"
-        self._backups: List[BackupMetadata] = []
+        self._backups: list[BackupMetadata] = []
         self._load_manifest()
 
     def _load_manifest(self):
@@ -123,7 +122,7 @@ class RegistryBackupManager:
         """Compute SHA256 hash of a file."""
         return compute_file_checksum(file_path, return_empty_for_missing=False)
 
-    def _get_registry_stats(self) -> Dict[str, int]:
+    def _get_registry_stats(self) -> dict[str, int]:
         """Get model and version counts from registry."""
         if not self.registry_path.exists():
             return {"model_count": 0, "version_count": 0}
@@ -148,7 +147,7 @@ class RegistryBackupManager:
         self,
         reason: str = "Manual backup",
         created_by: str = "system",
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """Create a backup of the registry database.
 
         Args:
@@ -250,7 +249,7 @@ class RegistryBackupManager:
 
         return hours_since >= self.auto_backup_interval_hours
 
-    def list_backups(self) -> List[Dict[str, Any]]:
+    def list_backups(self) -> list[dict[str, Any]]:
         """List all available backups.
 
         Returns:
@@ -262,14 +261,14 @@ class RegistryBackupManager:
             reverse=True,
         )
 
-    def get_backup(self, backup_id: str) -> Optional[BackupMetadata]:
+    def get_backup(self, backup_id: str) -> BackupMetadata | None:
         """Get metadata for a specific backup."""
         for backup in self._backups:
             if backup.backup_id == backup_id:
                 return backup
         return None
 
-    def verify_backup(self, backup_id: str) -> Dict[str, Any]:
+    def verify_backup(self, backup_id: str) -> dict[str, Any]:
         """Verify integrity of a backup.
 
         Returns:
@@ -341,7 +340,7 @@ class RegistryBackupManager:
         self,
         backup_id: str,
         create_pre_restore_backup: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Restore registry from a backup.
 
         Args:
@@ -362,7 +361,7 @@ class RegistryBackupManager:
             result["error"] = f"Backup verification failed: {verification['errors']}"
             return result
 
-        backup = self.get_backup(backup_id)
+        self.get_backup(backup_id)
         backup_db = self.backup_dir / backup_id / "registry.db"
 
         # Create pre-restore backup
@@ -392,7 +391,7 @@ class RegistryBackupManager:
 
         return result
 
-    def get_latest_backup(self) -> Optional[BackupMetadata]:
+    def get_latest_backup(self) -> BackupMetadata | None:
         """Get the most recent backup."""
         if not self._backups:
             return None
@@ -417,7 +416,7 @@ class RegistryBackupManager:
 
         return removed
 
-    def get_backup_stats(self) -> Dict[str, Any]:
+    def get_backup_stats(self) -> dict[str, Any]:
         """Get statistics about backups."""
         if not self._backups:
             return {
@@ -442,7 +441,7 @@ class RegistryBackupManager:
         }
 
 
-def backup_before_sync(registry_path: Path) -> Optional[Path]:
+def backup_before_sync(registry_path: Path) -> Path | None:
     """Create a backup before a sync operation.
 
     Convenience function for use in sync operations.
@@ -451,7 +450,7 @@ def backup_before_sync(registry_path: Path) -> Optional[Path]:
     return manager.create_backup(reason="Pre-sync backup", created_by="sync_operation")
 
 
-def auto_backup_if_needed(registry_path: Path) -> Optional[Path]:
+def auto_backup_if_needed(registry_path: Path) -> Path | None:
     """Create an auto-backup if enough time has passed.
 
     Convenience function for scheduled backup checks.

@@ -29,7 +29,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,11 @@ class OptimizationRun:
     updated_at: float
     current_generation: int = 0
     total_generations: int = 0
-    best_score: Optional[float] = None
-    best_params: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    best_score: float | None = None
+    best_params: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "type": self.opt_type.value,
@@ -89,11 +89,11 @@ class OptimizationOrchestrator:
     """
 
     def __init__(self, max_history: int = 100):
-        self._active_runs: Dict[str, OptimizationRun] = {}
-        self._completed_runs: List[OptimizationRun] = []
+        self._active_runs: dict[str, OptimizationRun] = {}
+        self._completed_runs: list[OptimizationRun] = []
         self._max_history = max_history
         self._subscribed = False
-        self._event_counts: Dict[str, int] = {}
+        self._event_counts: dict[str, int] = {}
 
     def subscribe_to_events(self) -> bool:
         """Subscribe to all optimization-related events.
@@ -169,7 +169,7 @@ class OptimizationOrchestrator:
         """Track event count for metrics."""
         self._event_counts[event_type] = self._event_counts.get(event_type, 0) + 1
 
-    def _get_run_id(self, payload: Dict[str, Any], opt_type: OptimizationType) -> str:
+    def _get_run_id(self, payload: dict[str, Any], opt_type: OptimizationType) -> str:
         """Generate or extract run ID from event payload."""
         if "run_id" in payload:
             return payload["run_id"]
@@ -383,8 +383,8 @@ class OptimizationOrchestrator:
     def _find_active_run(
         self,
         opt_type: OptimizationType,
-        payload: Dict[str, Any],
-    ) -> Optional[str]:
+        payload: dict[str, Any],
+    ) -> str | None:
         """Find active run matching the event payload."""
         # Check for explicit run_id
         if "run_id" in payload:
@@ -443,15 +443,15 @@ class OptimizationOrchestrator:
     # Public API
     # =========================================================================
 
-    def get_active_runs(self) -> List[Dict[str, Any]]:
+    def get_active_runs(self) -> list[dict[str, Any]]:
         """Get all currently active optimization runs."""
         return [run.to_dict() for run in self._active_runs.values()]
 
-    def get_completed_runs(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_completed_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         """Get recently completed runs."""
         return [run.to_dict() for run in self._completed_runs[-limit:]]
 
-    def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Get a specific run by ID."""
         if run_id in self._active_runs:
             return self._active_runs[run_id].to_dict()
@@ -460,7 +460,7 @@ class OptimizationOrchestrator:
                 return run.to_dict()
         return None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status summary."""
         active_by_type = {}
         for run in self._active_runs.values():
@@ -477,7 +477,7 @@ class OptimizationOrchestrator:
 
 
 # Singleton instance
-_optimization_orchestrator: Optional[OptimizationOrchestrator] = None
+_optimization_orchestrator: OptimizationOrchestrator | None = None
 
 
 def get_optimization_orchestrator() -> OptimizationOrchestrator:

@@ -32,82 +32,82 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 if TYPE_CHECKING:
     from app.models import BoardType
 
-from .agents import AIAgent, AIAgentRegistry, AgentType
-from .elo import EloRating, EloCalculator
-from .scheduler import Match, MatchStatus, TournamentScheduler, RoundRobinScheduler, SwissScheduler
-from .runner import MatchResult, TournamentRunner, TournamentResults
-from .unified_elo_db import (
-    EloDatabase,
-    UnifiedEloRating,
-    MatchRecord,
-    get_elo_database,
-    reset_elo_database,
-)
-
 # Canonical Elo service (preferred for new code)
 # unified_elo_db is maintained for backward compatibility
 from app.training.elo_service import (
-    EloService,
-    get_elo_service,
     ELO_DB_PATH,
-    get_head_to_head,
+    EloService,
     get_database_stats,
+    get_elo_service,
+    get_head_to_head,
     get_match_history,
     get_rating_history,
 )
+
+from .agents import AgentType, AIAgent, AIAgentRegistry
+from .elo import EloCalculator, EloRating
 from .orchestrator import (
+    EvaluationResult,
     TournamentOrchestrator,
     TournamentSummary,
-    EvaluationResult,
-    run_quick_evaluation,
     run_elo_calibration,
+    run_quick_evaluation,
+)
+from .runner import MatchResult, TournamentResults, TournamentRunner
+from .scheduler import Match, MatchStatus, RoundRobinScheduler, SwissScheduler, TournamentScheduler
+from .unified_elo_db import (
+    EloDatabase,
+    MatchRecord,
+    UnifiedEloRating,
+    get_elo_database,
+    reset_elo_database,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # High-level API
-    "run_quick_tournament",
-    "create_tournament_runner",
+    "ELO_DB_PATH",
     # Core classes
     "AIAgent",
     "AIAgentRegistry",
     "AgentType",
-    "EloRating",
     "EloCalculator",
-    "Match",
-    "MatchStatus",
-    "TournamentScheduler",
-    "RoundRobinScheduler",
-    "SwissScheduler",
-    "MatchResult",
-    "TournamentRunner",
-    "TournamentResults",
     # Unified Elo database (legacy - use EloService for new code)
     "EloDatabase",
-    "UnifiedEloRating",
-    "MatchRecord",
-    "get_elo_database",
-    "reset_elo_database",
+    "EloRating",
     # Canonical Elo service (preferred)
     "EloService",
-    "get_elo_service",
-    "ELO_DB_PATH",
-    "get_head_to_head",
-    "get_database_stats",
-    "get_match_history",
-    "get_rating_history",
+    "EvaluationResult",
+    "Match",
+    "MatchRecord",
+    "MatchResult",
+    "MatchStatus",
+    "RoundRobinScheduler",
+    "SwissScheduler",
     # Tournament orchestrator
     "TournamentOrchestrator",
+    "TournamentResults",
+    "TournamentRunner",
+    "TournamentScheduler",
     "TournamentSummary",
-    "EvaluationResult",
-    "run_quick_evaluation",
+    "UnifiedEloRating",
+    "create_tournament_runner",
+    "get_database_stats",
+    "get_elo_database",
+    "get_elo_service",
+    "get_head_to_head",
+    "get_match_history",
+    "get_rating_history",
+    "reset_elo_database",
     "run_elo_calibration",
+    "run_quick_evaluation",
+    # High-level API
+    "run_quick_tournament",
 ]
 
 
 # Singleton registry for convenience
-_default_registry: Optional[AIAgentRegistry] = None
+_default_registry: AIAgentRegistry | None = None
 
 
 def get_default_registry() -> AIAgentRegistry:
@@ -122,7 +122,7 @@ def create_tournament_runner(
     scheduler_type: str = "round_robin",
     max_workers: int = 4,
     persist_to_unified_elo: bool = True,
-    registry: Optional[AIAgentRegistry] = None,
+    registry: AIAgentRegistry | None = None,
 ) -> TournamentRunner:
     """Create a configured tournament runner.
 
@@ -162,14 +162,14 @@ def create_tournament_runner(
 
 
 def run_quick_tournament(
-    agent_ids: List[str],
-    board_type: Union[str, "BoardType"] = "square8",
+    agent_ids: list[str],
+    board_type: Union[str, BoardType] = "square8",
     num_players: int = 2,
     games_per_pairing: int = 10,
     scheduler_type: str = "round_robin",
     max_workers: int = 4,
     persist_to_unified_elo: bool = True,
-    progress_callback: Optional[Any] = None,
+    progress_callback: Any | None = None,
 ) -> TournamentResults:
     """Run a quick tournament with minimal setup.
 

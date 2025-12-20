@@ -32,18 +32,19 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "HealthState",
-    "HealthStatus",
     "HealthCheck",
     "HealthRegistry",
     "HealthResult",
+    "HealthState",
+    "HealthStatus",
     "ProbeType",
     "health_check",
 ]
@@ -77,7 +78,7 @@ class HealthStatus:
     """
     state: HealthState
     message: str = ""
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     latency_ms: float = 0.0
     timestamp: float = field(default_factory=time.time)
 
@@ -116,7 +117,7 @@ class HealthStatus:
         """Create an unknown status."""
         return cls(state=HealthState.UNKNOWN, message=message, details=details)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "state": self.state.value,
@@ -222,7 +223,7 @@ class HealthResult:
         timestamp: When the check was performed
     """
     state: HealthState
-    components: Dict[str, HealthStatus]
+    components: dict[str, HealthStatus]
     total_latency_ms: float = 0.0
     timestamp: float = field(default_factory=time.time)
 
@@ -241,7 +242,7 @@ class HealthResult:
         """Count of unhealthy components."""
         return sum(1 for s in self.components.values() if s.is_unhealthy)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "state": self.state.value,
@@ -284,9 +285,9 @@ class HealthRegistry:
         Args:
             timeout: Default timeout for health checks in seconds
         """
-        self._components: Dict[str, HealthCheck] = {}
+        self._components: dict[str, HealthCheck] = {}
         self._timeout = timeout
-        self._last_result: Optional[HealthResult] = None
+        self._last_result: HealthResult | None = None
         self._critical_components: set[str] = set()
 
     def register(
@@ -313,12 +314,12 @@ class HealthRegistry:
         self._critical_components.discard(name)
 
     @property
-    def component_names(self) -> List[str]:
+    def component_names(self) -> list[str]:
         """Get registered component names."""
         return list(self._components.keys())
 
     @property
-    def last_result(self) -> Optional[HealthResult]:
+    def last_result(self) -> HealthResult | None:
         """Get the last health check result."""
         return self._last_result
 
@@ -326,7 +327,7 @@ class HealthRegistry:
         self,
         name: str,
         probe_type: ProbeType = ProbeType.READINESS,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> HealthStatus:
         """Check health of a specific component.
 
@@ -361,7 +362,7 @@ class HealthRegistry:
         self,
         probe_type: ProbeType = ProbeType.READINESS,
         parallel: bool = True,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> HealthResult:
         """Check health of all registered components.
 
@@ -397,7 +398,7 @@ class HealthRegistry:
         self,
         probe_type: ProbeType,
         timeout: float,
-    ) -> Dict[str, HealthStatus]:
+    ) -> dict[str, HealthStatus]:
         """Check all components in parallel."""
         async def check_one(name: str) -> tuple[str, HealthStatus]:
             status = await self.check(name, probe_type, timeout)
@@ -421,7 +422,7 @@ class HealthRegistry:
         self,
         probe_type: ProbeType,
         timeout: float,
-    ) -> Dict[str, HealthStatus]:
+    ) -> dict[str, HealthStatus]:
         """Check all components sequentially."""
         statuses = {}
         for name in self._components:
@@ -430,7 +431,7 @@ class HealthRegistry:
 
     def _compute_overall_state(
         self,
-        statuses: Dict[str, HealthStatus],
+        statuses: dict[str, HealthStatus],
     ) -> HealthState:
         """Compute overall health state from component statuses."""
         if not statuses:
@@ -456,7 +457,7 @@ class HealthRegistry:
 
 # Decorator for simple health checks
 def health_check(
-    name: Optional[str] = None,
+    name: str | None = None,
     cache_seconds: float = 0,
 ) -> Callable:
     """Decorator to create a simple health check function.
@@ -472,7 +473,7 @@ def health_check(
         cache_seconds: Cache result for this many seconds
     """
     def decorator(func: Callable[[], HealthStatus]) -> Callable:
-        _cache: Dict[str, Any] = {"status": None, "expires": 0}
+        _cache: dict[str, Any] = {"status": None, "expires": 0}
         check_name = name or func.__name__
 
         async def wrapper() -> HealthStatus:
@@ -534,7 +535,7 @@ class FunctionHealthCheck(HealthCheck):
 class CompositeHealthCheck(HealthCheck):
     """Health check that combines multiple checks."""
 
-    def __init__(self, checks: Dict[str, HealthCheck]):
+    def __init__(self, checks: dict[str, HealthCheck]):
         self._checks = checks
 
     async def check_health(self) -> HealthStatus:

@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,10 @@ class HealthCheckResult:
     component: str
     status: HealthStatus
     message: str = ""
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     check_time: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "component": self.component,
             "status": self.status.value,
@@ -65,12 +66,12 @@ class SystemHealthReport:
     """Comprehensive system health report."""
     overall_status: HealthStatus
     healthy: bool
-    checks: List[HealthCheckResult]
-    issues: List[str]
+    checks: list[HealthCheckResult]
+    issues: list[str]
     timestamp: float
     duration_ms: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "overall_status": self.overall_status.value,
             "healthy": self.healthy,
@@ -92,8 +93,8 @@ class UnifiedHealthOrchestrator:
     """
 
     def __init__(self):
-        self._health_checks: Dict[str, Callable[[], HealthCheckResult]] = {}
-        self._last_report: Optional[SystemHealthReport] = None
+        self._health_checks: dict[str, Callable[[], HealthCheckResult]] = {}
+        self._last_report: SystemHealthReport | None = None
         self._register_default_checks()
 
     def _register_default_checks(self) -> None:
@@ -150,12 +151,13 @@ class UnifiedHealthOrchestrator:
         # Resource health
         def check_resources() -> HealthCheckResult:
             try:
+                import psutil
+
                 from app.config.thresholds import (
                     CPU_CRITICAL_PERCENT,
-                    MEMORY_CRITICAL_PERCENT,
                     DISK_CRITICAL_PERCENT,
+                    MEMORY_CRITICAL_PERCENT,
                 )
-                import psutil
 
                 cpu = psutil.cpu_percent()
                 memory = psutil.virtual_memory().percent
@@ -293,8 +295,8 @@ class UnifiedHealthOrchestrator:
             SystemHealthReport with all check results
         """
         start_time = time.time()
-        checks: List[HealthCheckResult] = []
-        issues: List[str] = []
+        checks: list[HealthCheckResult] = []
+        issues: list[str] = []
 
         for name, check_fn in self._health_checks.items():
             check_start = time.time()
@@ -339,7 +341,7 @@ class UnifiedHealthOrchestrator:
         self._last_report = report
         return report
 
-    def check_component(self, name: str) -> Optional[HealthCheckResult]:
+    def check_component(self, name: str) -> HealthCheckResult | None:
         """Check health of a specific component.
 
         Args:
@@ -365,17 +367,17 @@ class UnifiedHealthOrchestrator:
                 check_time=(time.time() - start_time) * 1000,
             )
 
-    def get_last_report(self) -> Optional[SystemHealthReport]:
+    def get_last_report(self) -> SystemHealthReport | None:
         """Get the last health report."""
         return self._last_report
 
-    def get_registered_checks(self) -> List[str]:
+    def get_registered_checks(self) -> list[str]:
         """Get list of registered health check names."""
         return list(self._health_checks.keys())
 
 
 # Singleton instance
-_health_orchestrator: Optional[UnifiedHealthOrchestrator] = None
+_health_orchestrator: UnifiedHealthOrchestrator | None = None
 
 
 def get_health_orchestrator() -> UnifiedHealthOrchestrator:
@@ -386,7 +388,7 @@ def get_health_orchestrator() -> UnifiedHealthOrchestrator:
     return _health_orchestrator
 
 
-def check_system_health() -> Dict[str, Any]:
+def check_system_health() -> dict[str, Any]:
     """Convenience function to check system health.
 
     Returns:

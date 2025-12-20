@@ -38,7 +38,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +67,14 @@ class ClusterNode:
     """Unified node representation across all providers."""
     name: str
     provider: Provider
-    tailscale_ip: Optional[str] = None
-    public_ip: Optional[str] = None
+    tailscale_ip: str | None = None
+    public_ip: str | None = None
     ssh_user: str = "ubuntu"
     ssh_port: int = 22
-    ssh_host: Optional[str] = None  # SSH jump host if needed
+    ssh_host: str | None = None  # SSH jump host if needed
 
     # Hardware
-    gpu_name: Optional[str] = None
+    gpu_name: str | None = None
     gpu_count: int = 1
     gpu_memory_gb: float = 0
     cpu_cores: int = 0
@@ -87,12 +87,12 @@ class ClusterNode:
     last_seen: float = 0
 
     # Provider-specific IDs
-    provider_id: Optional[str] = None  # e.g., Vast instance ID, AWS instance ID
+    provider_id: str | None = None  # e.g., Vast instance ID, AWS instance ID
 
     # Workload
     selfplay_running: bool = False
     training_running: bool = False
-    current_job: Optional[str] = None
+    current_job: str | None = None
 
     def ssh_command(self, cmd: str) -> str:
         """Generate SSH command for this node."""
@@ -105,12 +105,12 @@ class MultiProviderOrchestrator:
     """Orchestrates nodes across multiple cloud providers."""
 
     def __init__(self):
-        self.nodes: Dict[str, ClusterNode] = {}
+        self.nodes: dict[str, ClusterNode] = {}
         self._discovery_lock = asyncio.Lock()
         self._last_discovery = 0
         self._discovery_interval = 60  # seconds
 
-    async def discover_all(self) -> Dict[str, ClusterNode]:
+    async def discover_all(self) -> dict[str, ClusterNode]:
         """Discover nodes from all providers."""
         async with self._discovery_lock:
             logger.info("[Orchestrator] Starting multi-provider discovery...")
@@ -141,7 +141,7 @@ class MultiProviderOrchestrator:
 
             return self.nodes
 
-    async def _discover_tailscale(self) -> List[ClusterNode]:
+    async def _discover_tailscale(self) -> list[ClusterNode]:
         """Discover nodes from Tailscale network."""
         nodes = []
         try:
@@ -155,7 +155,7 @@ class MultiProviderOrchestrator:
             data = json.loads(result.stdout)
             peers = data.get("Peer", {})
 
-            for peer_key, peer in peers.items():
+            for _peer_key, peer in peers.items():
                 name = peer.get("HostName", "unknown")
                 ts_ips = peer.get("TailscaleIPs", [])
                 ts_ip = ts_ips[0] if ts_ips else None
@@ -192,7 +192,7 @@ class MultiProviderOrchestrator:
 
         return nodes
 
-    async def _discover_vast(self) -> List[ClusterNode]:
+    async def _discover_vast(self) -> list[ClusterNode]:
         """Discover nodes from Vast.ai."""
         nodes = []
         try:
@@ -256,7 +256,7 @@ class MultiProviderOrchestrator:
 
         return nodes
 
-    async def _discover_aws(self) -> List[ClusterNode]:
+    async def _discover_aws(self) -> list[ClusterNode]:
         """Discover nodes from AWS EC2."""
         nodes = []
         try:
@@ -312,7 +312,7 @@ class MultiProviderOrchestrator:
 
         return nodes
 
-    async def _discover_hetzner(self) -> List[ClusterNode]:
+    async def _discover_hetzner(self) -> list[ClusterNode]:
         """Discover nodes from Hetzner Cloud."""
         nodes = []
         try:
@@ -376,7 +376,7 @@ class MultiProviderOrchestrator:
 
         return nodes
 
-    async def _discover_lambda_from_config(self) -> List[ClusterNode]:
+    async def _discover_lambda_from_config(self) -> list[ClusterNode]:
         """Load Lambda nodes from config file."""
         nodes = []
         config_path = Path(__file__).parents[2] / "config" / "distributed_hosts.yaml"
@@ -510,7 +510,7 @@ class MultiProviderOrchestrator:
             logger.error(f"[Orchestrator] Selfplay deploy error on {node.name}: {e}")
             return False
 
-    async def deploy_to_all_online_nodes(self, role: str = "selfplay") -> Dict[str, bool]:
+    async def deploy_to_all_online_nodes(self, role: str = "selfplay") -> dict[str, bool]:
         """Deploy workload to all online nodes."""
         results = {}
 
@@ -524,22 +524,22 @@ class MultiProviderOrchestrator:
 
         return results
 
-    def get_online_nodes(self) -> List[ClusterNode]:
+    def get_online_nodes(self) -> list[ClusterNode]:
         """Get all online nodes."""
         return [n for n in self.nodes.values() if n.is_online]
 
-    def get_nodes_by_provider(self, provider: Provider) -> List[ClusterNode]:
+    def get_nodes_by_provider(self, provider: Provider) -> list[ClusterNode]:
         """Get nodes from a specific provider."""
         return [n for n in self.nodes.values() if n.provider == provider]
 
-    def get_idle_nodes(self) -> List[ClusterNode]:
+    def get_idle_nodes(self) -> list[ClusterNode]:
         """Get nodes that are online but not running workloads."""
         return [
             n for n in self.nodes.values()
             if n.is_online and not n.selfplay_running and not n.training_running
         ]
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get cluster status summary."""
         online = self.get_online_nodes()
         by_provider = {}
@@ -585,7 +585,7 @@ class MultiProviderOrchestrator:
 
 
 # Global orchestrator instance
-_orchestrator: Optional[MultiProviderOrchestrator] = None
+_orchestrator: MultiProviderOrchestrator | None = None
 
 
 def get_orchestrator() -> MultiProviderOrchestrator:
@@ -596,12 +596,12 @@ def get_orchestrator() -> MultiProviderOrchestrator:
     return _orchestrator
 
 
-async def discover_all_nodes() -> Dict[str, ClusterNode]:
+async def discover_all_nodes() -> dict[str, ClusterNode]:
     """Convenience function to discover all nodes."""
     return await get_orchestrator().discover_all()
 
 
-async def deploy_to_all_nodes(role: str = "selfplay") -> Dict[str, bool]:
+async def deploy_to_all_nodes(role: str = "selfplay") -> dict[str, bool]:
     """Convenience function to deploy to all nodes."""
     orch = get_orchestrator()
     await orch.discover_all()
@@ -663,7 +663,7 @@ def wire_orchestrator_events() -> MultiProviderOrchestrator:
 
         bus = get_event_bus()
 
-        def _event_payload(event: Any) -> Dict[str, Any]:
+        def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
                 return event
             payload = getattr(event, "payload", None)
@@ -716,17 +716,17 @@ def wire_orchestrator_events() -> MultiProviderOrchestrator:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "Provider",
-    "NodeRole",
     # Data classes
     "ClusterNode",
     # Main class
     "MultiProviderOrchestrator",
+    "NodeRole",
+    # Enums
+    "Provider",
+    "deploy_to_all_nodes",
+    "discover_all_nodes",
     # Functions
     "get_orchestrator",
-    "discover_all_nodes",
-    "deploy_to_all_nodes",
     "reset_orchestrator",
     "wire_orchestrator_events",
 ]

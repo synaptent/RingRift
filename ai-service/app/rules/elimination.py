@@ -20,9 +20,9 @@ line, territory, and forced elimination. Recovery uses buried ring extraction.
 """
 
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from enum import Enum
+from typing import Any
 
 
 class EliminationContext(Enum):
@@ -66,7 +66,7 @@ class EliminationAuditEvent:
 
     timestamp: datetime
     context: EliminationContext
-    reason: Optional[EliminationReason]
+    reason: EliminationReason | None
     player: int
     stack_position: tuple
     rings_eliminated: int
@@ -74,7 +74,7 @@ class EliminationAuditEvent:
     stack_height_after: int
     cap_height_before: int
     controlling_player_before: int
-    controlling_player_after: Optional[int]
+    controlling_player_after: int | None
 
 
 @dataclass
@@ -83,12 +83,12 @@ class EliminationResult:
 
     success: bool
     rings_eliminated: int
-    updated_stack: Optional[List[int]]  # None if stack removed
-    error: Optional[str] = None
-    audit_event: Optional[EliminationAuditEvent] = None
+    updated_stack: list[int] | None  # None if stack removed
+    error: str | None = None
+    audit_event: EliminationAuditEvent | None = None
 
 
-def calculate_cap_height(rings: List[int]) -> int:
+def calculate_cap_height(rings: list[int]) -> int:
     """
     Calculate cap height - number of consecutive rings from top belonging to controlling player.
 
@@ -115,7 +115,7 @@ def calculate_cap_height(rings: List[int]) -> int:
 
 
 def is_stack_eligible_for_elimination(
-    rings: List[int],
+    rings: list[int],
     controlling_player: int,
     context: EliminationContext,
     player: int,
@@ -159,7 +159,7 @@ def is_stack_eligible_for_elimination(
     return StackEligibility(eligible=True, reason=f"{context.value} allows any controlled stack")
 
 
-def get_rings_to_eliminate(rings: List[int], context: EliminationContext) -> int:
+def get_rings_to_eliminate(rings: list[int], context: EliminationContext) -> int:
     """
     Calculate how many rings to eliminate based on context.
 
@@ -188,13 +188,13 @@ def get_rings_to_eliminate(rings: List[int], context: EliminationContext) -> int
 
 
 def eliminate_from_stack(
-    rings: List[int],
+    rings: list[int],
     controlling_player: int,
     context: EliminationContext,
     player: int,
-    reason: Optional[EliminationReason] = None,
-    buried_ring_index: Optional[int] = None,
-    stack_position: Optional[tuple] = None,
+    reason: EliminationReason | None = None,
+    buried_ring_index: int | None = None,
+    stack_position: tuple | None = None,
 ) -> EliminationResult:
     """
     Perform elimination from a stack.
@@ -289,11 +289,11 @@ def eliminate_from_stack(
 
 
 def enumerate_eligible_stacks(
-    stacks: Dict[tuple, Dict[str, Any]],
+    stacks: dict[tuple, dict[str, Any]],
     player: int,
     context: EliminationContext,
-    exclude_positions: Optional[set] = None,
-) -> List[tuple]:
+    exclude_positions: set | None = None,
+) -> list[tuple]:
     """
     Enumerate all eligible stack positions for elimination in a given context.
 
@@ -324,10 +324,10 @@ def enumerate_eligible_stacks(
 
 
 def has_eligible_elimination_target(
-    stacks: Dict[tuple, Dict[str, Any]],
+    stacks: dict[tuple, dict[str, Any]],
     player: int,
     context: EliminationContext,
-    exclude_positions: Optional[set] = None,
+    exclude_positions: set | None = None,
 ) -> bool:
     """
     Check if player has any eligible elimination targets for a given context.

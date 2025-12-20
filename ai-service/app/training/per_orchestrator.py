@@ -35,8 +35,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +93,8 @@ class PEROrchestrator:
         self.max_history_per_buffer = max_history_per_buffer
 
         # Buffer tracking
-        self._buffers: Dict[str, PERBufferState] = {}
-        self._buffer_history: Dict[str, List[Dict[str, Any]]] = {}
+        self._buffers: dict[str, PERBufferState] = {}
+        self._buffer_history: dict[str, list[dict[str, Any]]] = {}
 
         # Statistics
         self._total_rebuilds: int = 0
@@ -240,7 +240,7 @@ class PEROrchestrator:
                 "timestamp": time.time(),
             })
 
-    def _add_to_history(self, buffer_path: str, event_type: str, data: Dict[str, Any]) -> None:
+    def _add_to_history(self, buffer_path: str, event_type: str, data: dict[str, Any]) -> None:
         """Add entry to buffer history.
 
         Args:
@@ -291,7 +291,7 @@ class PEROrchestrator:
         except Exception as e:
             logger.debug(f"Failed to emit stats event: {e}")
 
-    def get_buffer_state(self, buffer_path: str) -> Optional[PERBufferState]:
+    def get_buffer_state(self, buffer_path: str) -> PERBufferState | None:
         """Get state of a specific buffer.
 
         Args:
@@ -302,7 +302,7 @@ class PEROrchestrator:
         """
         return self._buffers.get(buffer_path)
 
-    def get_active_buffers(self) -> List[PERBufferState]:
+    def get_active_buffers(self) -> list[PERBufferState]:
         """Get all active (non-stale) buffers.
 
         Returns:
@@ -318,7 +318,7 @@ class PEROrchestrator:
 
         return active
 
-    def get_buffer_history(self, buffer_path: Optional[str] = None) -> Dict[str, List[Dict]]:
+    def get_buffer_history(self, buffer_path: str | None = None) -> dict[str, list[dict]]:
         """Get buffer history.
 
         Args:
@@ -358,7 +358,7 @@ class PEROrchestrator:
             last_activity_time=last_activity,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring.
 
         Returns:
@@ -380,7 +380,7 @@ class PEROrchestrator:
 
 
 # Singleton instance
-_per_orchestrator: Optional[PEROrchestrator] = None
+_per_orchestrator: PEROrchestrator | None = None
 
 
 def wire_per_events(
@@ -413,7 +413,7 @@ def wire_per_events(
     return _per_orchestrator
 
 
-def get_per_orchestrator() -> Optional[PEROrchestrator]:
+def get_per_orchestrator() -> PEROrchestrator | None:
     """Get the global PER orchestrator if configured."""
     return _per_orchestrator
 
@@ -427,10 +427,10 @@ def reset_per_orchestrator() -> None:
 
 
 __all__ = [
-    "PEROrchestrator",
     "PERBufferState",
+    "PEROrchestrator",
     "PERStats",
-    "wire_per_events",
     "get_per_orchestrator",
     "reset_per_orchestrator",
+    "wire_per_events",
 ]

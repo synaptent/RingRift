@@ -8,9 +8,10 @@ states based on missing fields.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from app.models import GameState, BoardType
+from app.models import BoardType, GameState
 from app.rules.core import (
     get_rings_per_player,
     get_territory_victory_threshold,
@@ -28,7 +29,7 @@ def infer_num_players(game_state: GameState) -> int:
     if players:
         return len(players)
 
-    max_players: Optional[int] = getattr(game_state, "max_players", None)
+    max_players: int | None = getattr(game_state, "max_players", None)
     if isinstance(max_players, int) and max_players > 0:
         return max_players
 
@@ -37,7 +38,7 @@ def infer_num_players(game_state: GameState) -> int:
     return 2
 
 
-def _infer_board_type(state: Any) -> Optional[BoardType]:
+def _infer_board_type(state: Any) -> BoardType | None:
     raw = getattr(state, "board_type", getattr(state, "_board_type", None))
     if raw is not None:
         if isinstance(raw, BoardType):
@@ -62,7 +63,7 @@ def _infer_board_type(state: Any) -> Optional[BoardType]:
         return None
 
 
-def _get_player_counts(state: Any, player_number: int) -> Tuple[int, int]:
+def _get_player_counts(state: Any, player_number: int) -> tuple[int, int]:
     """Return (eliminated_rings, territory_spaces) for a player.
 
     Supports both immutable GameState (players list) and MutableGameState
@@ -103,7 +104,7 @@ def victory_progress_for_player(state: Any, player_number: int) -> float:
     rules_options = getattr(
         state, "rules_options", getattr(state, "rulesOptions", None)
     )
-    rings_override: Optional[int] = None
+    rings_override: int | None = None
     if isinstance(rules_options, dict):
         raw_rings_override = rules_options.get("ringsPerPlayer")
         try:
@@ -172,9 +173,7 @@ def victory_progress_for_player(state: Any, player_number: int) -> float:
 
         # LPS can convert quickly once a player has any exclusive-round momentum.
         # Use a high-threat scale rather than a simple linear fraction.
-        if lps_rounds >= required_rounds:
-            lps_progress = 1.0
-        elif required_rounds == 1:
+        if lps_rounds >= required_rounds or required_rounds == 1:
             lps_progress = 1.0
         else:
             # Map 1..(required-1) → [0.90, 0.99] with the final pre-win round
@@ -200,7 +199,7 @@ def infer_rings_per_player(state: Any) -> int:
     rules_options = getattr(
         state, "rules_options", getattr(state, "rulesOptions", None)
     )
-    override: Optional[int] = None
+    override: int | None = None
     if isinstance(rules_options, dict):
         raw = rules_options.get("ringsPerPlayer")
         try:
@@ -217,7 +216,7 @@ def _iter_player_numbers(state: Any) -> Iterable[int]:
         return players.keys()
     if players:
         return [
-            int(getattr(p, "player_number"))
+            int(p.player_number)
             for p in players
             if getattr(p, "player_number", None) is not None
         ]
@@ -227,13 +226,13 @@ def _iter_player_numbers(state: Any) -> Iterable[int]:
 def select_threat_opponent(
     state: Any,
     perspective_player_number: int,
-) -> Optional[int]:
+) -> int | None:
     """Select the opponent most likely to win soon.
 
     For 3p/4p Paranoid reductions we treat the leading opponent (by
     victory_progress_for_player) as the primary adversary.
     """
-    best_player: Optional[int] = None
+    best_player: int | None = None
     best_progress = -1.0
 
     for pid in _iter_player_numbers(state):

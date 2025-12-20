@@ -25,18 +25,18 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Union
 
 __all__ = [
+    "SENSITIVE_KEY_PATTERNS",
+    "SecretString",
+    "get_env_masked",
+    "is_sensitive_key",
+    "load_secret_from_env",
     "mask_secret",
     "mask_secret_prefix",
-    "is_sensitive_key",
-    "sanitize_value",
     "sanitize_for_log",
-    "SecretString",
-    "load_secret_from_env",
-    "get_env_masked",
-    "SENSITIVE_KEY_PATTERNS",
+    "sanitize_value",
 ]
 
 
@@ -76,7 +76,7 @@ SECRET_VALUE_PATTERNS = [
 ]
 
 
-def mask_secret(value: Optional[str], visible_chars: int = 4) -> str:
+def mask_secret(value: str | None, visible_chars: int = 4) -> str:
     """Mask a secret value, showing only the last few characters.
 
     Args:
@@ -103,7 +103,7 @@ def mask_secret(value: Optional[str], visible_chars: int = 4) -> str:
     return "***" + value[-visible_chars:]
 
 
-def mask_secret_prefix(value: Optional[str], visible_chars: int = 4) -> str:
+def mask_secret_prefix(value: str | None, visible_chars: int = 4) -> str:
     """Mask a secret value, showing only the first few characters.
 
     Args:
@@ -135,7 +135,7 @@ def is_sensitive_key(key: str) -> bool:
     return any(pattern in key_lower for pattern in SENSITIVE_KEY_PATTERNS)
 
 
-def sanitize_value(value: Any, key: Optional[str] = None) -> Any:
+def sanitize_value(value: Any, key: str | None = None) -> Any:
     """Sanitize a value for safe logging.
 
     Args:
@@ -170,9 +170,9 @@ def sanitize_value(value: Any, key: Optional[str] = None) -> Any:
 
 
 def sanitize_for_log(
-    data: Union[Dict[str, Any], Any],
-    additional_sensitive_keys: Optional[Set[str]] = None,
-) -> Union[Dict[str, Any], Any]:
+    data: Union[dict[str, Any], Any],
+    additional_sensitive_keys: set[str] | None = None,
+) -> Union[dict[str, Any], Any]:
     """Sanitize a dictionary for safe logging by masking sensitive values.
 
     Args:
@@ -257,9 +257,9 @@ class SecretString:
 
 def load_secret_from_env(
     key: str,
-    default: Optional[str] = None,
+    default: str | None = None,
     required: bool = False,
-) -> Optional[SecretString]:
+) -> SecretString | None:
     """Load a secret from environment variable.
 
     Args:

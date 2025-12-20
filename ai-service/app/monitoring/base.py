@@ -17,9 +17,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-from app.monitoring.thresholds import AlertLevel, THRESHOLDS
+from app.monitoring.thresholds import AlertLevel
 
 
 class HealthStatus(str, Enum):
@@ -37,13 +37,13 @@ class Alert:
     category: str
     message: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    node: Optional[str] = None
-    metric_name: Optional[str] = None
-    metric_value: Optional[float] = None
-    threshold: Optional[float] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    node: str | None = None
+    metric_name: str | None = None
+    metric_value: float | None = None
+    threshold: float | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert alert to dictionary for serialization."""
         return {
             "level": self.level.value,
@@ -72,10 +72,10 @@ class MonitoringResult:
     """Result of a health check."""
     status: HealthStatus
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    alerts: List[Alert] = field(default_factory=list)
-    details: Dict[str, Any] = field(default_factory=dict)
-    duration_ms: Optional[float] = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    alerts: list[Alert] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
+    duration_ms: float | None = None
 
     @property
     def is_healthy(self) -> bool:
@@ -88,11 +88,11 @@ class MonitoringResult:
         return len(self.alerts) > 0
 
     @property
-    def critical_alerts(self) -> List[Alert]:
+    def critical_alerts(self) -> list[Alert]:
         """Get only critical alerts."""
         return [a for a in self.alerts if a.level == AlertLevel.CRITICAL]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary."""
         return {
             "status": self.status.value,
@@ -116,15 +116,15 @@ class HealthMonitor(ABC):
     - format_report(): Custom report formatting
     """
 
-    def __init__(self, name: Optional[str] = None):
+    def __init__(self, name: str | None = None):
         """Initialize monitor.
 
         Args:
             name: Monitor name (default: class name)
         """
         self._name = name or self.__class__.__name__
-        self._last_result: Optional[MonitoringResult] = None
-        self._last_check: Optional[datetime] = None
+        self._last_result: MonitoringResult | None = None
+        self._last_check: datetime | None = None
 
     @property
     def name(self) -> str:
@@ -132,7 +132,7 @@ class HealthMonitor(ABC):
         return self._name
 
     @property
-    def last_result(self) -> Optional[MonitoringResult]:
+    def last_result(self) -> MonitoringResult | None:
         """Get result of last health check."""
         return self._last_result
 
@@ -151,7 +151,7 @@ class HealthMonitor(ABC):
         """
         pass
 
-    def should_alert(self) -> Optional[Alert]:
+    def should_alert(self) -> Alert | None:
         """Determine if an alert should be sent based on last check.
 
         Default implementation returns highest-severity alert from last check.
@@ -222,7 +222,7 @@ class HealthMonitor(ABC):
                 alerts=[Alert(
                     level=AlertLevel.CRITICAL,
                     category="monitor_error",
-                    message=f"Health check failed: {str(e)}",
+                    message=f"Health check failed: {e!s}",
                 )],
             )
 
@@ -242,7 +242,7 @@ class CompositeMonitor(HealthMonitor):
 
     def __init__(self, name: str = "CompositeMonitor"):
         super().__init__(name)
-        self._monitors: List[HealthMonitor] = []
+        self._monitors: list[HealthMonitor] = []
 
     def add_monitor(self, monitor: HealthMonitor) -> None:
         """Add a sub-monitor."""
@@ -254,9 +254,9 @@ class CompositeMonitor(HealthMonitor):
 
     def check_health(self) -> MonitoringResult:
         """Run all sub-monitors and aggregate results."""
-        all_metrics: Dict[str, Any] = {}
-        all_alerts: List[Alert] = []
-        all_details: Dict[str, Any] = {}
+        all_metrics: dict[str, Any] = {}
+        all_alerts: list[Alert] = []
+        all_details: dict[str, Any] = {}
         worst_status = HealthStatus.HEALTHY
 
         for monitor in self._monitors:
@@ -285,7 +285,7 @@ class CompositeMonitor(HealthMonitor):
                 all_alerts.append(Alert(
                     level=AlertLevel.WARNING,
                     category="sub_monitor_error",
-                    message=f"Sub-monitor {monitor.name} failed: {str(e)}",
+                    message=f"Sub-monitor {monitor.name} failed: {e!s}",
                 ))
 
         return MonitoringResult(
@@ -300,8 +300,8 @@ class CompositeMonitor(HealthMonitor):
 # Monitor Registry (December 2025)
 # =============================================================================
 
-import threading
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -354,10 +354,10 @@ class MonitorRegistry:
             return
 
         self._initialized = True
-        self._monitors: Dict[str, HealthMonitor] = {}
-        self._categories: Dict[str, List[str]] = {}  # category -> monitor_names
+        self._monitors: dict[str, HealthMonitor] = {}
+        self._categories: dict[str, list[str]] = {}  # category -> monitor_names
         self._composite: CompositeMonitor = CompositeMonitor("GlobalHealth")
-        self._last_overall_status: Optional[HealthStatus] = None
+        self._last_overall_status: HealthStatus | None = None
 
     def register(
         self,
@@ -382,7 +382,7 @@ class MonitorRegistry:
 
             logger.info(f"Registered monitor: {name} (category: {category})")
 
-    def unregister(self, monitor_name: str) -> Optional[HealthMonitor]:
+    def unregister(self, monitor_name: str) -> HealthMonitor | None:
         """Unregister a monitor by name.
 
         Args:
@@ -400,14 +400,14 @@ class MonitorRegistry:
                         cat_monitors.remove(monitor_name)
             return monitor
 
-    def get_monitor(self, name: str) -> Optional[HealthMonitor]:
+    def get_monitor(self, name: str) -> HealthMonitor | None:
         """Get a monitor by name."""
         return self._monitors.get(name)
 
     def get_monitors(
         self,
-        category: Optional[str] = None,
-    ) -> List[HealthMonitor]:
+        category: str | None = None,
+    ) -> list[HealthMonitor]:
         """Get monitors, optionally filtered by category.
 
         Args:
@@ -421,7 +421,7 @@ class MonitorRegistry:
             return [self._monitors[n] for n in names if n in self._monitors]
         return list(self._monitors.values())
 
-    def get_categories(self) -> List[str]:
+    def get_categories(self) -> list[str]:
         """Get all registered categories."""
         return list(self._categories.keys())
 
@@ -455,7 +455,7 @@ class MonitorRegistry:
             temp_composite.add_monitor(monitor)
         return temp_composite.run_check()
 
-    def get_all_alerts(self) -> List[Alert]:
+    def get_all_alerts(self) -> list[Alert]:
         """Get all current alerts from all monitors."""
         alerts = []
         for monitor in self._monitors.values():
@@ -463,7 +463,7 @@ class MonitorRegistry:
                 alerts.extend(monitor._last_result.alerts)
         return alerts
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get a summary of all monitors and their status.
 
         Returns:
@@ -488,12 +488,12 @@ class MonitorRegistry:
 
     def _emit_status_change(
         self,
-        old_status: Optional[HealthStatus],
+        old_status: HealthStatus | None,
         new_status: HealthStatus,
     ) -> None:
         """Emit event on overall status change."""
         try:
-            from app.distributed.data_events import DataEventType, DataEvent, get_event_bus
+            from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
 
             bus = get_event_bus()
             event = DataEvent(
@@ -521,7 +521,7 @@ class MonitorRegistry:
 
 
 # Module-level singleton access
-_registry: Optional[MonitorRegistry] = None
+_registry: MonitorRegistry | None = None
 
 
 def get_monitor_registry() -> MonitorRegistry:

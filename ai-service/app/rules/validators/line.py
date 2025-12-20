@@ -1,8 +1,8 @@
-from typing import TYPE_CHECKING, Set
+from typing import TYPE_CHECKING
 
-from app.models import GameState, Move, GamePhase, MoveType, Position
-from app.rules.interfaces import Validator
+from app.models import GamePhase, GameState, Move, MoveType, Position
 from app.rules.core import get_effective_line_length
+from app.rules.interfaces import Validator
 
 if TYPE_CHECKING:
     from app.models import LineInfo
@@ -80,7 +80,7 @@ class LineValidator(Validator):
         self,
         state: GameState,
         move: Move,
-        target_line: "LineInfo"  # noqa: F821
+        target_line: "LineInfo"
     ) -> bool:
         """
         Validate collapsed_markers for line reward choice.
@@ -103,13 +103,10 @@ class LineValidator(Validator):
         # This is valid for any overlength line.
         if len(collapsed) == target_line.length:
             # Verify all positions are actually from the line
-            line_pos_keys: Set[str] = set(
+            line_pos_keys: set[str] = {
                 _position_to_string(p) for p in target_line.positions
-            )
-            for pos in collapsed:
-                if _position_to_string(pos) not in line_pos_keys:
-                    return False
-            return True
+            }
+            return all(_position_to_string(pos) in line_pos_keys for pos in collapsed)
 
         # Otherwise it's Option 2 (minimum collapse)
         # Must have exactly required_length positions
@@ -121,9 +118,9 @@ class LineValidator(Validator):
             return False
 
         # Verify all collapsed positions are part of the line
-        line_pos_keys = set(
+        line_pos_keys = {
             _position_to_string(p) for p in target_line.positions
-        )
+        }
         for pos in collapsed:
             if _position_to_string(pos) not in line_pos_keys:
                 return False
@@ -143,8 +140,4 @@ class LineValidator(Validator):
             return False
 
         indices.sort()
-        for i in range(len(indices) - 1):
-            if indices[i + 1] != indices[i] + 1:
-                return False
-
-        return True
+        return all(indices[i + 1] == indices[i] + 1 for i in range(len(indices) - 1))

@@ -42,12 +42,10 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
-import threading
-import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -67,8 +65,8 @@ except ImportError:
 # Training event publishing (December 2025 consolidation)
 try:
     from app.training.event_integration import (
-        publish_step_completed_sync,
         publish_checkpoint_saved_sync,
+        publish_step_completed_sync,
     )
     _HAS_TRAINING_EVENTS = True
 except ImportError:
@@ -104,7 +102,7 @@ class OrchestratorConfig:
     auto_tune_batch_size: bool = True  # Auto-tune batch size via profiling
 
     # Data settings
-    data_path: Optional[str] = None
+    data_path: str | None = None
     train_val_split: float = 0.1
 
     # =========================================================================
@@ -182,7 +180,7 @@ class HotBufferWrapper:
         if self._buffer is not None:
             self._buffer.add_game(game_record)
 
-    def get_batch(self, batch_size: int) -> Optional[Tuple]:
+    def get_batch(self, batch_size: int) -> tuple | None:
         """Get a training batch from the buffer."""
         if self._buffer is not None:
             return self._buffer.get_training_batch(batch_size)
@@ -207,8 +205,8 @@ class EnhancementsWrapper:
 
         try:
             from app.training.integrated_enhancements import (
-                IntegratedTrainingManager,
                 IntegratedEnhancementsConfig,
+                IntegratedTrainingManager,
             )
 
             enh_config = IntegratedEnhancementsConfig(
@@ -248,12 +246,12 @@ class EnhancementsWrapper:
             return self._manager.augment_batch(features, policy_indices, policy_values)
         return features, policy_indices, policy_values
 
-    def update_step(self, game_won: Optional[bool] = None):
+    def update_step(self, game_won: bool | None = None):
         """Update step counter and related components."""
         if self._manager is not None:
             self._manager.update_step(game_won)
 
-    def get_curriculum_params(self) -> Dict[str, Any]:
+    def get_curriculum_params(self) -> dict[str, Any]:
         """Get current curriculum stage parameters."""
         if self._manager is not None:
             return self._manager.get_curriculum_parameters()
@@ -278,8 +276,8 @@ class DistributedWrapper:
 
         try:
             from app.training.distributed_unified import (
-                UnifiedDistributedTrainer,
                 UnifiedDistributedConfig,
+                UnifiedDistributedTrainer,
             )
 
             dist_config = UnifiedDistributedConfig(
@@ -302,7 +300,7 @@ class DistributedWrapper:
             return self._trainer.model
         return model
 
-    def train_step(self, batch: Tuple, loss_fn: Callable) -> float:
+    def train_step(self, batch: tuple, loss_fn: Callable) -> float:
         """Execute distributed training step."""
         if self._trainer is not None:
             return self._trainer.train_step(batch, loss_fn)
@@ -407,8 +405,8 @@ class CheckpointWrapper:
         """Initialize unified checkpoint manager."""
         try:
             from app.training.checkpoint_unified import (
-                UnifiedCheckpointManager,
                 UnifiedCheckpointConfig,
+                UnifiedCheckpointManager,
             )
 
             ckpt_config = UnifiedCheckpointConfig(
@@ -424,7 +422,7 @@ class CheckpointWrapper:
         except ImportError as e:
             logger.warning(f"[Orchestrator] Checkpoint manager not available: {e}")
 
-    def should_save(self, epoch: int, loss: float, step: int = None) -> bool:
+    def should_save(self, epoch: int, loss: float, step: int | None = None) -> bool:
         """Check if checkpoint should be saved using adaptive logic."""
         if self._manager is None:
             return False
@@ -433,7 +431,7 @@ class CheckpointWrapper:
         # Fallback for non-unified manager
         return step is not None and step % self.config.checkpoint_interval == 0
 
-    def save(self, model_state: Dict, progress: Any, metrics: Dict = None):
+    def save(self, model_state: dict, progress: Any, metrics: dict | None = None):
         """Save checkpoint."""
         if self._manager is not None:
             # Import from canonical source (fault_tolerance re-exports from checkpoint_unified)
@@ -446,7 +444,7 @@ class CheckpointWrapper:
                 metrics=metrics,
             )
 
-    def save_best(self, model_state: Dict, progress: Any, metric_name: str, metric_value: float):
+    def save_best(self, model_state: dict, progress: Any, metric_name: str, metric_value: float):
         """Save checkpoint if this is the best by metric."""
         if self._manager is None:
             return
@@ -458,20 +456,19 @@ class CheckpointWrapper:
                 metric_value=metric_value,
             )
 
-    def load_latest(self) -> Optional[Dict]:
+    def load_latest(self) -> dict | None:
         """Load latest checkpoint."""
         if self._manager is not None:
             return self._manager.load_checkpoint()
         return None
 
-    def load_best(self, metric_name: str = 'loss') -> Optional[Dict]:
+    def load_best(self, metric_name: str = 'loss') -> dict | None:
         """Load best checkpoint by metric."""
-        if self._manager is not None:
-            if hasattr(self._manager, 'load_checkpoint'):
-                return self._manager.load_checkpoint(best_by_metric=metric_name)
+        if self._manager is not None and hasattr(self._manager, 'load_checkpoint'):
+            return self._manager.load_checkpoint(best_by_metric=metric_name)
         return None
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get checkpoint manager statistics."""
         if self._manager is not None and hasattr(self._manager, 'get_stats'):
             return self._manager.get_stats()
@@ -514,9 +511,9 @@ class UnifiedTrainingOrchestrator:
     def __init__(
         self,
         model: Any,
-        config: Optional[OrchestratorConfig] = None,
-        optimizer: Optional[Any] = None,
-        loss_fn: Optional[Callable] = None,
+        config: OrchestratorConfig | None = None,
+        optimizer: Any | None = None,
+        loss_fn: Callable | None = None,
     ):
         """Initialize unified training orchestrator.
 
@@ -537,8 +534,8 @@ class UnifiedTrainingOrchestrator:
         self._initialized = False
 
         # Loss history for training quality feedback (plateau/overfit detection)
-        self._loss_history: List[float] = []
-        self._val_loss_history: List[float] = []
+        self._loss_history: list[float] = []
+        self._val_loss_history: list[float] = []
         self._loss_history_maxlen = 100  # Keep last 100 steps
 
         # Component wrappers
@@ -559,7 +556,7 @@ class UnifiedTrainingOrchestrator:
         torch = get_torch()
 
         # Track component health and initialization times
-        component_health: Dict[str, Dict[str, Any]] = {}
+        component_health: dict[str, dict[str, Any]] = {}
         total_start = _time.perf_counter()
 
         # Create optimizer if not provided
@@ -649,7 +646,7 @@ class UnifiedTrainingOrchestrator:
                     f"status={health['status']}, time={health['init_time_ms']}ms"
                 )
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get component health status for monitoring.
 
         Returns:
@@ -675,7 +672,7 @@ class UnifiedTrainingOrchestrator:
 
         checkpoint = self._checkpoint.load_latest()
         if checkpoint is not None:
-            torch = get_torch()
+            get_torch()
             self._model.load_state_dict(checkpoint.get("model_state_dict", {}))
             if self._optimizer and "optimizer_state_dict" in checkpoint:
                 self._optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -735,7 +732,7 @@ class UnifiedTrainingOrchestrator:
         except Exception as e:
             logger.warning(f"[Orchestrator] Batch size auto-tuning failed: {e}. Using original.")
 
-    def train_step(self, batch: Tuple[Any, ...]) -> Dict[str, float]:
+    def train_step(self, batch: tuple[Any, ...]) -> dict[str, float]:
         """Execute a single training step.
 
         Args:
@@ -751,9 +748,9 @@ class UnifiedTrainingOrchestrator:
 
         # Get dynamic batch size from enhancements
         if self._enhancements.available and self.config.enable_batch_scheduling:
-            batch_size = self._enhancements.get_batch_size()
+            self._enhancements.get_batch_size()
         else:
-            batch_size = self.config.batch_size
+            pass
 
         # Apply data augmentation
         if self._enhancements.available and self.config.enable_augmentation:
@@ -841,7 +838,7 @@ class UnifiedTrainingOrchestrator:
 
         return metrics
 
-    def _save_checkpoint(self, metrics: Dict[str, float]):
+    def _save_checkpoint(self, metrics: dict[str, float]):
         """Save training checkpoint."""
         if not self._checkpoint.available:
             return
@@ -865,7 +862,7 @@ class UnifiedTrainingOrchestrator:
             # Fallback to unlocked save if distributed locks unavailable
             self._save_checkpoint_locked(metrics, config_key)
 
-    def _save_checkpoint_locked(self, metrics: Dict[str, float], config_key: str):
+    def _save_checkpoint_locked(self, metrics: dict[str, float], config_key: str):
         """Save checkpoint while holding the distributed lock.
 
         Args:
@@ -908,7 +905,7 @@ class UnifiedTrainingOrchestrator:
         except Exception as e:
             logger.warning(f"[Orchestrator] Checkpoint save failed: {e}")
 
-    def _log_progress(self, metrics: Dict[str, float]):
+    def _log_progress(self, metrics: dict[str, float]):
         """Log training progress."""
         elo = self._background_eval.get_current_elo()
         curriculum = self._enhancements.get_curriculum_params()
@@ -958,7 +955,7 @@ class UnifiedTrainingOrchestrator:
         """Check if training should stop (early stopping)."""
         return self._background_eval.should_early_stop()
 
-    def get_training_quality(self, config_key: str = "") -> Dict[str, Any]:
+    def get_training_quality(self, config_key: str = "") -> dict[str, Any]:
         """Get training quality metrics for selfplay feedback loop.
 
         Analyzes recent loss history to detect plateau and overfitting,
@@ -1016,7 +1013,7 @@ class UnifiedTrainingOrchestrator:
 
         return result
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get comprehensive metrics from all components."""
         metrics = {
             "step": self._step,

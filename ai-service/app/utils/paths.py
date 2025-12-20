@@ -18,52 +18,51 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
 
 __all__ = [
     # Core paths
     "AI_SERVICE_ROOT",
-    "get_project_root",
-    # Data directories
-    "DATA_DIR",
-    "GAMES_DIR",
-    "SELFPLAY_DIR",
-    "METRICS_DIR",
-    "HOLDOUT_DIR",
-    "QUARANTINE_DIR",
-    "BACKUP_DIR",
-    # Model directories
-    "MODELS_DIR",
     "ARCHIVED_MODELS_DIR",
-    # Log directories
-    "LOGS_DIR",
-    "TRAINING_LOGS_DIR",
-    "DEPLOYMENT_LOGS_DIR",
-    # Runtime directories
-    "RUNS_DIR",
-    "PROMOTION_DIR",
-    "LOCKS_DIR",
+    "BACKUP_DIR",
     # Configuration directories
     "CONFIG_DIR",
-    "SCRIPTS_DIR",
-    # Database paths
-    "UNIFIED_ELO_DB",
-    "TRAINING_METRICS_DB",
-    "WORK_QUEUE_DB",
+    # Data directories
+    "DATA_DIR",
+    "DEPLOYMENT_LOGS_DIR",
+    "GAMES_DIR",
+    "GAUNTLET_RESULTS_FILE",
+    "HOLDOUT_DIR",
+    "LOCKS_DIR",
+    # Log directories
+    "LOGS_DIR",
+    "METRICS_DIR",
+    # Model directories
+    "MODELS_DIR",
+    "MODEL_REGISTRY_FILE",
+    "PROMOTION_DIR",
     # Configuration files
     "PROMOTION_HISTORY_FILE",
-    "GAUNTLET_RESULTS_FILE",
-    "MODEL_REGISTRY_FILE",
-    # Helper functions
-    "get_models_dir",
-    "get_data_dir",
-    "get_games_db_path",
-    "get_selfplay_db_path",
-    "get_model_path",
-    "get_log_path",
+    "QUARANTINE_DIR",
+    # Runtime directories
+    "RUNS_DIR",
+    "SCRIPTS_DIR",
+    "SELFPLAY_DIR",
+    "TRAINING_LOGS_DIR",
+    "TRAINING_METRICS_DB",
+    # Database paths
+    "UNIFIED_ELO_DB",
+    "WORK_QUEUE_DB",
     "ensure_dir",
     "ensure_parent_dir",
+    "get_data_dir",
     "get_env_path",
+    "get_games_db_path",
+    "get_log_path",
+    "get_model_path",
+    # Helper functions
+    "get_models_dir",
+    "get_project_root",
+    "get_selfplay_db_path",
 ]
 
 # =============================================================================
@@ -137,7 +136,7 @@ MODEL_REGISTRY_FILE = DATA_DIR / "model_registry.json"
 # Helper Functions
 # =============================================================================
 
-def get_models_dir(board_type: Optional[str] = None) -> Path:
+def get_models_dir(board_type: str | None = None) -> Path:
     """Get the models directory, optionally for a specific board type.
 
     Args:
@@ -151,7 +150,7 @@ def get_models_dir(board_type: Optional[str] = None) -> Path:
     return MODELS_DIR
 
 
-def get_data_dir(subdir: Optional[str] = None) -> Path:
+def get_data_dir(subdir: str | None = None) -> Path:
     """Get the data directory, optionally with a subdirectory.
 
     Args:
@@ -189,7 +188,7 @@ def get_selfplay_db_path(config_key: str) -> Path:
     return SELFPLAY_DIR / f"selfplay_{config_key}.db"
 
 
-def get_model_path(model_name: str, board_type: Optional[str] = None) -> Path:
+def get_model_path(model_name: str, board_type: str | None = None) -> Path:
     """Get the path to a model file.
 
     Args:
@@ -203,7 +202,7 @@ def get_model_path(model_name: str, board_type: Optional[str] = None) -> Path:
     return base / model_name
 
 
-def get_log_path(name: str, subdir: Optional[str] = None) -> Path:
+def get_log_path(name: str, subdir: str | None = None) -> Path:
     """Get a log file path.
 
     Args:

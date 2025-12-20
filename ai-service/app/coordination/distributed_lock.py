@@ -46,9 +46,8 @@ import os
 import socket
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Optional
 
 from app.utils.paths import DATA_DIR
 
@@ -111,7 +110,7 @@ def get_appropriate_lock(
     name: str,
     scope: str = "distributed",
     timeout: int = 3600,
-) -> "DistributedLock":
+) -> DistributedLock:
     """Factory function to get an appropriate lock based on scope.
 
     Args:
@@ -136,8 +135,8 @@ def get_appropriate_lock(
 # Import centralized defaults (December 2025)
 try:
     from app.config.thresholds import (
-        DEFAULT_LOCK_TIMEOUT,
         DEFAULT_ACQUIRE_TIMEOUT,
+        DEFAULT_LOCK_TIMEOUT,
     )
 except ImportError:
     # Fallback for standalone use
@@ -181,8 +180,8 @@ class DistributedLock:
         self.name = name
         self.lock_timeout = lock_timeout
         self._lock_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-        self._redis_client: Optional["redis.Redis"] = None
-        self._file_fd: Optional[int] = None
+        self._redis_client: redis.Redis | None = None
+        self._file_fd: int | None = None
         self._acquired = False
         self._use_redis = use_redis and HAS_REDIS
 
@@ -366,10 +365,8 @@ class DistributedLock:
             self._file_fd = None
 
         # Try to remove lock file
-        try:
+        with suppress(Exception):
             self._get_lock_path().unlink(missing_ok=True)
-        except Exception:
-            pass
 
     def _is_file_locked(self) -> bool:
         """Check if file lock exists and is held."""
@@ -397,7 +394,7 @@ class DistributedLock:
             return True
 
         try:
-            with open(lock_path, "r") as f:
+            with open(lock_path) as f:
                 lines = f.readlines()
                 if len(lines) >= 3:
                     lock_time = float(lines[1].strip())
@@ -414,7 +411,7 @@ class DistributedLock:
 def acquire_training_lock(
     config_key: str,
     timeout: int = DEFAULT_ACQUIRE_TIMEOUT,
-) -> Optional[DistributedLock]:
+) -> DistributedLock | None:
     """Acquire a training lock for a config.
 
     Args:
@@ -430,7 +427,7 @@ def acquire_training_lock(
     return None
 
 
-def release_training_lock(lock: Optional[DistributedLock]) -> None:
+def release_training_lock(lock: DistributedLock | None) -> None:
     """Release a training lock."""
     if lock is not None:
         lock.release()
@@ -458,16 +455,16 @@ def training_lock(config_key: str, timeout: int = DEFAULT_ACQUIRE_TIMEOUT):
 
 
 __all__ = [
+    "DEFAULT_ACQUIRE_TIMEOUT",
     # Constants
     "DEFAULT_LOCK_TIMEOUT",
-    "DEFAULT_ACQUIRE_TIMEOUT",
-    # Protocol
-    "LockProtocol",
     # Main class
     "DistributedLock",
+    # Protocol
+    "LockProtocol",
+    "acquire_training_lock",
     # Functions
     "get_appropriate_lock",
-    "acquire_training_lock",
     "release_training_lock",
     "training_lock",
 ]

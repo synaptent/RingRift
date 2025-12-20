@@ -46,14 +46,15 @@ import contextvars
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Context variable for trace propagation
-_current_trace: contextvars.ContextVar[Optional["TraceContext"]] = contextvars.ContextVar(
+_current_trace: contextvars.ContextVar[TraceContext | None] = contextvars.ContextVar(
     "current_trace", default=None
 )
 
@@ -64,15 +65,15 @@ class TraceSpan:
     span_id: str
     name: str
     trace_id: str
-    parent_span_id: Optional[str] = None
+    parent_span_id: str | None = None
     start_time: float = 0.0
     end_time: float = 0.0
     duration_ms: float = 0.0
     status: str = "ok"
-    tags: Dict[str, Any] = field(default_factory=dict)
-    events: List[Dict[str, Any]] = field(default_factory=list)
+    tags: dict[str, Any] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "span_id": self.span_id,
             "name": self.name,
@@ -98,16 +99,16 @@ class TraceContext:
     trace_id: str
     name: str
     start_time: float = 0.0
-    tags: Dict[str, Any] = field(default_factory=dict)
-    spans: List[TraceSpan] = field(default_factory=list)
-    _current_span: Optional[TraceSpan] = field(default=None, repr=False)
+    tags: dict[str, Any] = field(default_factory=dict)
+    spans: list[TraceSpan] = field(default_factory=list)
+    _current_span: TraceSpan | None = field(default=None, repr=False)
 
     def __post_init__(self):
         if self.start_time == 0.0:
             self.start_time = time.time()
 
     @classmethod
-    def new(cls, name: str = "unnamed", **tags) -> "TraceContext":
+    def new(cls, name: str = "unnamed", **tags) -> TraceContext:
         """Create a new trace context."""
         return cls(
             trace_id=generate_trace_id(),
@@ -117,7 +118,7 @@ class TraceContext:
         )
 
     @classmethod
-    def from_trace_id(cls, trace_id: str, name: str = "continued") -> "TraceContext":
+    def from_trace_id(cls, trace_id: str, name: str = "continued") -> TraceContext:
         """Continue a trace from an existing trace_id."""
         return cls(
             trace_id=trace_id,
@@ -174,7 +175,7 @@ class TraceContext:
         else:
             self.tags[key] = value
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert trace to dictionary for serialization."""
         return {
             "trace_id": self.trace_id,
@@ -199,7 +200,7 @@ def generate_span_id() -> str:
     return f"span-{uuid.uuid4().hex[:8]}"
 
 
-def get_trace_id() -> Optional[str]:
+def get_trace_id() -> str | None:
     """Get the current trace ID from context.
 
     Returns:
@@ -209,7 +210,7 @@ def get_trace_id() -> Optional[str]:
     return ctx.trace_id if ctx else None
 
 
-def get_trace_context() -> Optional[TraceContext]:
+def get_trace_context() -> TraceContext | None:
     """Get the current trace context.
 
     Returns:
@@ -314,7 +315,7 @@ def span(name: str, **tags):
             ctx.end_span(status="ok")
 
 
-def traced(name: Optional[str] = None):
+def traced(name: str | None = None):
     """Decorator to automatically trace a function.
 
     Args:
@@ -356,7 +357,7 @@ def inject_trace_into_event(event: Any) -> None:
         event.payload['trace_id'] = trace_id
 
 
-def extract_trace_from_event(event: Any) -> Optional[str]:
+def extract_trace_from_event(event: Any) -> str | None:
     """Extract trace_id from an event payload.
 
     Call this when receiving events to continue traces.
@@ -369,7 +370,7 @@ def extract_trace_from_event(event: Any) -> Optional[str]:
     return None
 
 
-def inject_trace_into_headers(headers: Dict[str, str]) -> Dict[str, str]:
+def inject_trace_into_headers(headers: dict[str, str]) -> dict[str, str]:
     """Inject current trace_id into HTTP headers.
 
     Args:
@@ -387,7 +388,7 @@ def inject_trace_into_headers(headers: Dict[str, str]) -> Dict[str, str]:
     return headers
 
 
-def extract_trace_from_headers(headers: Dict[str, str]) -> Optional[str]:
+def extract_trace_from_headers(headers: dict[str, str]) -> str | None:
     """Extract trace_id from HTTP headers.
 
     Args:
@@ -413,7 +414,7 @@ class TraceCollector:
     def __init__(self, max_traces: int = 1000, log_traces: bool = False):
         self.max_traces = max_traces
         self.log_traces = log_traces
-        self._traces: List[Dict[str, Any]] = []
+        self._traces: list[dict[str, Any]] = []
         self._lock = None  # Lazy init threading.Lock
 
     def collect(self, trace: TraceContext) -> None:
@@ -432,18 +433,18 @@ class TraceCollector:
         if self.log_traces:
             logger.info(f"[TraceCollector] {trace.trace_id}: {trace.name} ({trace.get_duration_ms():.2f}ms)")
 
-    def get_traces(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_traces(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent traces."""
         return self._traces[-limit:]
 
-    def find_trace(self, trace_id: str) -> Optional[Dict[str, Any]]:
+    def find_trace(self, trace_id: str) -> dict[str, Any] | None:
         """Find a trace by ID."""
         for trace in reversed(self._traces):
             if trace.get('trace_id') == trace_id:
                 return trace
         return None
 
-    def get_slow_traces(self, threshold_ms: float = 1000.0) -> List[Dict[str, Any]]:
+    def get_slow_traces(self, threshold_ms: float = 1000.0) -> list[dict[str, Any]]:
         """Get traces exceeding duration threshold."""
         result = []
         for trace in self._traces:
@@ -456,7 +457,7 @@ class TraceCollector:
 
 
 # Global trace collector
-_collector: Optional[TraceCollector] = None
+_collector: TraceCollector | None = None
 
 
 def get_trace_collector() -> TraceCollector:
@@ -477,24 +478,24 @@ def collect_trace(trace: TraceContext) -> None:
 # =============================================================================
 
 __all__ = [
+    "TraceCollector",
+    "TraceContext",
     # Classes
     "TraceSpan",
-    "TraceContext",
-    "TraceCollector",
+    "collect_trace",
+    "extract_trace_from_event",
+    "extract_trace_from_headers",
+    "generate_span_id",
     # Functions
     "generate_trace_id",
-    "generate_span_id",
-    "get_trace_id",
+    "get_trace_collector",
     "get_trace_context",
-    "set_trace_id",
+    "get_trace_id",
+    "inject_trace_into_event",
+    "inject_trace_into_headers",
     "new_trace",
-    "with_trace",
+    "set_trace_id",
     "span",
     "traced",
-    "inject_trace_into_event",
-    "extract_trace_from_event",
-    "inject_trace_into_headers",
-    "extract_trace_from_headers",
-    "get_trace_collector",
-    "collect_trace",
+    "with_trace",
 ]

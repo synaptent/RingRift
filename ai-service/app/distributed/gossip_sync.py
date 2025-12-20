@@ -26,15 +26,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 import random
 import socket
 import sqlite3
 import struct
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import yaml
 
@@ -65,8 +64,8 @@ class GossipPeer:
 class SyncState:
     """State of the gossip sync daemon."""
     node_id: str
-    peers: Dict[str, GossipPeer] = field(default_factory=dict)
-    known_game_ids: Set[str] = field(default_factory=set)
+    peers: dict[str, GossipPeer] = field(default_factory=dict)
+    known_game_ids: set[str] = field(default_factory=set)
     last_sync_time: float = 0.0
     total_games_pushed: int = 0
     total_games_pulled: int = 0
@@ -81,7 +80,7 @@ class BloomFilter:
         self.hash_count = hash_count
         self.bits = bytearray(size // 8 + 1)
 
-    def _hashes(self, item: str) -> List[int]:
+    def _hashes(self, item: str) -> list[int]:
         """Generate hash positions for an item."""
         h1 = int(hashlib.md5(item.encode()).hexdigest(), 16)
         h2 = int(hashlib.sha1(item.encode()).hexdigest(), 16)
@@ -104,7 +103,7 @@ class BloomFilter:
         return bytes(self.bits)
 
     @classmethod
-    def from_bytes(cls, data: bytes, size: int = BLOOM_FILTER_SIZE) -> "BloomFilter":
+    def from_bytes(cls, data: bytes, size: int = BLOOM_FILTER_SIZE) -> BloomFilter:
         """Deserialize a filter."""
         bf = cls(size=size)
         bf.bits = bytearray(data)
@@ -118,7 +117,7 @@ class GossipSyncDaemon:
         self,
         node_id: str,
         data_dir: Path,
-        peers_config: Dict[str, Dict],
+        peers_config: dict[str, dict],
         listen_port: int = GOSSIP_PORT,
     ):
         self.node_id = node_id
@@ -126,7 +125,7 @@ class GossipSyncDaemon:
         self.listen_port = listen_port
         self.state = SyncState(node_id=node_id)
         self._running = False
-        self._server: Optional[asyncio.Server] = None
+        self._server: asyncio.Server | None = None
 
         # Initialize peers from config
         for name, config in peers_config.items():
@@ -297,7 +296,7 @@ class GossipSyncDaemon:
             writer.close()
             await writer.wait_closed()
 
-    def _get_games_data(self, game_ids: List[str]) -> List[Dict]:
+    def _get_games_data(self, game_ids: list[str]) -> list[dict]:
         """Get game data for specified IDs from local databases."""
         games = []
         for db_path in self.data_dir.glob("*.db"):
@@ -312,13 +311,13 @@ class GossipSyncDaemon:
                 )
                 columns = [desc[0] for desc in cursor.description]
                 for row in cursor:
-                    games.append(dict(zip(columns, row)))
+                    games.append(dict(zip(columns, row, strict=False)))
                 conn.close()
             except Exception:
                 pass
         return games
 
-    def _store_games(self, games: List[Dict]) -> int:
+    def _store_games(self, games: list[dict]) -> int:
         """Store received games in local database."""
         if not games:
             return 0
@@ -354,19 +353,19 @@ class GossipSyncDaemon:
         conn.close()
         return stored
 
-    def _get_peer_game_ids(self, sample: List[str]) -> List[str]:
+    def _get_peer_game_ids(self, sample: list[str]) -> list[str]:
         """Get game IDs that peer might have but we don't."""
         # In a full implementation, this would be more sophisticated
         return sample
 
-    async def _send_message(self, writer: asyncio.StreamWriter, message: Dict):
+    async def _send_message(self, writer: asyncio.StreamWriter, message: dict):
         """Send a JSON message with length prefix."""
         data = json.dumps(message).encode()
         writer.write(struct.pack(">I", len(data)))
         writer.write(data)
         await writer.drain()
 
-    async def _recv_message(self, reader: asyncio.StreamReader) -> Dict:
+    async def _recv_message(self, reader: asyncio.StreamReader) -> dict:
         """Receive a JSON message with length prefix."""
         length_data = await asyncio.wait_for(reader.readexactly(4), timeout=30)
         length = struct.unpack(">I", length_data)[0]
@@ -422,7 +421,7 @@ class GossipSyncDaemon:
             writer.close()
             await writer.wait_closed()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current sync status."""
         return {
             "node_id": self.node_id,
@@ -443,7 +442,7 @@ class GossipSyncDaemon:
         }
 
 
-def load_peer_config(config_path: Path) -> Dict[str, Dict]:
+def load_peer_config(config_path: Path) -> dict[str, dict]:
     """Load peer configuration from remote_hosts.yaml."""
     with open(config_path) as f:
         data = yaml.safe_load(f)

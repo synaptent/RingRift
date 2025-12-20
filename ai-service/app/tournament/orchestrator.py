@@ -37,18 +37,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 # Event bus integration for training feedback (December 2025)
 try:
     from app.distributed.data_events import (
         DataEventType,
-        get_event_bus,
         emit_elo_updated,
+        get_event_bus,
     )
     HAS_EVENT_BUS = True
 except ImportError:
@@ -68,7 +68,7 @@ class EvaluationResult:
     games_played: int
     passed: bool
     confidence: float = 0.0
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -81,10 +81,10 @@ class TournamentSummary:
     completed_at: datetime
     total_games: int
     duration_seconds: float
-    final_ratings: Dict[str, float]
-    win_rates: Dict[str, float]
-    agent_stats: Dict[str, Dict]
-    evaluation_results: List[EvaluationResult] = field(default_factory=list)
+    final_ratings: dict[str, float]
+    win_rates: dict[str, float]
+    agent_stats: dict[str, dict]
+    evaluation_results: list[EvaluationResult] = field(default_factory=list)
 
 
 class TournamentOrchestrator:
@@ -144,10 +144,10 @@ class TournamentOrchestrator:
 
     def run_round_robin(
         self,
-        agents: List[str],
+        agents: list[str],
         games_per_pairing: int = 20,
         *,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> TournamentSummary:
         """Run a full round-robin tournament.
 
@@ -221,12 +221,12 @@ class TournamentOrchestrator:
     def run_evaluation(
         self,
         candidate_model: str,
-        baseline_models: List[str],
+        baseline_models: list[str],
         games_per_pairing: int = 20,
         *,
         elo_threshold: float = 25.0,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> Tuple[TournamentSummary, List[EvaluationResult]]:
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> tuple[TournamentSummary, list[EvaluationResult]]:
         """Run an evaluation tournament for a candidate model.
 
         Args:
@@ -239,7 +239,7 @@ class TournamentOrchestrator:
         Returns:
             Tuple of (TournamentSummary, list of EvaluationResult)
         """
-        all_agents = [candidate_model] + baseline_models
+        all_agents = [candidate_model, *baseline_models]
 
         # Run round-robin
         summary = self.run_round_robin(
@@ -258,9 +258,7 @@ class TournamentOrchestrator:
             elo_delta = candidate_elo - baseline_elo
 
             # Get head-to-head stats
-            h2h_wins = 0
-            h2h_games = 0
-            for result in summary.agent_stats.get(candidate_model, {}).get("match_results", []):
+            for _result in summary.agent_stats.get(candidate_model, {}).get("match_results", []):
                 # This is simplified - actual h2h would need match filtering
                 pass
 
@@ -290,7 +288,7 @@ class TournamentOrchestrator:
     def _emit_evaluation_events(
         self,
         candidate_id: str,
-        evaluation_results: List[EvaluationResult],
+        evaluation_results: list[EvaluationResult],
         summary: TournamentSummary,
     ) -> None:
         """Emit events after evaluation for training feedback loop (December 2025).
@@ -333,7 +331,7 @@ class TournamentOrchestrator:
         candidate: str,
         games: int = 15,
         *,
-        baselines: Optional[List[str]] = None,
+        baselines: list[str] | None = None,
         elo_threshold: float = 25.0,
     ) -> bool:
         """Run a quick shadow evaluation.
@@ -370,7 +368,7 @@ class TournamentOrchestrator:
 
         return passed
 
-    def get_current_elo(self, agent_id: str) -> Optional[float]:
+    def get_current_elo(self, agent_id: str) -> float | None:
         """Get current Elo rating for an agent from the database.
 
         Args:
@@ -390,7 +388,7 @@ class TournamentOrchestrator:
             logger.warning(f"Failed to get Elo for {agent_id}: {e}")
             return None
 
-    def get_leaderboard(self, top_n: int = 10) -> List[Dict[str, Any]]:
+    def get_leaderboard(self, top_n: int = 10) -> list[dict[str, Any]]:
         """Get the current Elo leaderboard.
 
         Args:
@@ -475,11 +473,11 @@ class TournamentOrchestrator:
 
 def run_quick_evaluation(
     candidate: str,
-    baselines: Optional[List[str]] = None,
+    baselines: list[str] | None = None,
     board_type: str = "square8",
     num_players: int = 2,
     games_per_pairing: int = 20,
-) -> Tuple[bool, float]:
+) -> tuple[bool, float]:
     """Run a quick model evaluation.
 
     Args:
@@ -513,11 +511,11 @@ def run_quick_evaluation(
 
 
 def run_elo_calibration(
-    agents: List[str],
+    agents: list[str],
     board_type: str = "square8",
     num_players: int = 2,
     games_per_pairing: int = 50,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Run an Elo calibration tournament.
 
     Args:

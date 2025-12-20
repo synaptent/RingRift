@@ -24,9 +24,10 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -123,14 +124,14 @@ class LogContext:
     """
 
     logger: PrefixedLogger | logging.Logger
-    context: Dict[str, Any] = field(default_factory=dict)
-    _original_prefix: Optional[str] = field(default=None, init=False)
+    context: dict[str, Any] = field(default_factory=dict)
+    _original_prefix: str | None = field(default=None, init=False)
 
     def __init__(self, logger: PrefixedLogger | logging.Logger, **context):
         self.logger = logger
         self.context = context
 
-    def __enter__(self) -> "LogContext":
+    def __enter__(self) -> LogContext:
         if isinstance(self.logger, PrefixedLogger):
             self._original_prefix = self.logger._prefix
             context_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
@@ -212,7 +213,7 @@ def log_duration_async(
 
 def configure_logging(
     level: int = logging.INFO,
-    format_string: Optional[str] = None,
+    format_string: str | None = None,
     stream=None,
 ) -> None:
     """Configure the root logger with standard format.
@@ -245,11 +246,11 @@ def silence_logger(name: str, level: int = logging.WARNING) -> None:
 
 
 __all__ = [
-    "PrefixedLogger",
-    "get_logger",
     "LogContext",
+    "PrefixedLogger",
+    "configure_logging",
+    "get_logger",
     "log_duration",
     "log_duration_async",
-    "configure_logging",
     "silence_logger",
 ]

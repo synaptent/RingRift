@@ -43,9 +43,10 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +105,13 @@ class OptimizationRun:
     completed_at: float = 0.0
 
     # Configuration
-    parameters_searched: List[str] = field(default_factory=list)
-    search_space: Dict[str, Any] = field(default_factory=dict)
+    parameters_searched: list[str] = field(default_factory=list)
+    search_space: dict[str, Any] = field(default_factory=dict)
     generations: int = 0
     population_size: int = 0
 
     # Results
-    best_params: Dict[str, Any] = field(default_factory=dict)
+    best_params: dict[str, Any] = field(default_factory=dict)
     best_score: float = 0.0
     iterations_completed: int = 0
     evaluations: int = 0
@@ -133,10 +134,10 @@ class OptimizationStats:
     total_runs: int = 0
     successful_runs: int = 0
     failed_runs: int = 0
-    current_running: Optional[str] = None
+    current_running: str | None = None
     total_evaluations: int = 0
     avg_run_duration: float = 0.0
-    runs_by_type: Dict[str, int] = field(default_factory=dict)
+    runs_by_type: dict[str, int] = field(default_factory=dict)
     plateaus_detected: int = 0
     last_optimization_time: float = 0.0
 
@@ -172,25 +173,25 @@ class OptimizationCoordinator:
         self.max_history = max_history
 
         # Metric tracking for plateau detection
-        self._metric_history: Dict[str, deque] = {}  # metric_name -> values
-        self._metric_best: Dict[str, float] = {}
-        self._epochs_since_improvement: Dict[str, int] = {}
+        self._metric_history: dict[str, deque] = {}  # metric_name -> values
+        self._metric_best: dict[str, float] = {}
+        self._epochs_since_improvement: dict[str, int] = {}
 
         # Optimization tracking
-        self._current_optimization: Optional[OptimizationRun] = None
-        self._optimization_history: List[OptimizationRun] = []
+        self._current_optimization: OptimizationRun | None = None
+        self._optimization_history: list[OptimizationRun] = []
         self._last_optimization_end: float = 0.0
         self._run_id_counter = 0
 
         # Plateau tracking
-        self._plateaus: List[PlateauDetection] = []
+        self._plateaus: list[PlateauDetection] = []
 
         # Statistics
         self._total_evaluations = 0
 
         # Callbacks
-        self._plateau_callbacks: List[Callable[[PlateauDetection], None]] = []
-        self._optimization_callbacks: List[Callable[[OptimizationRun], None]] = []
+        self._plateau_callbacks: list[Callable[[PlateauDetection], None]] = []
+        self._optimization_callbacks: list[Callable[[OptimizationRun], None]] = []
 
         # Subscription state
         self._subscribed = False
@@ -276,7 +277,7 @@ class OptimizationCoordinator:
                 parameters=["learning_rate", "weight_decay", "batch_size"],
             )
 
-    def _should_auto_trigger_cmaes(self, plateau: "PlateauDetection") -> bool:
+    def _should_auto_trigger_cmaes(self, plateau: PlateauDetection) -> bool:
         """Check if CMAES should be auto-triggered for this plateau.
 
         Args:
@@ -472,8 +473,9 @@ class OptimizationCoordinator:
         Uses centralized event_emitters for consistent event emission.
         """
         try:
-            from app.coordination.event_emitters import emit_optimization_triggered
             import asyncio
+
+            from app.coordination.event_emitters import emit_optimization_triggered
 
             if run.optimization_type not in (OptimizationType.CMAES, OptimizationType.NAS):
                 return
@@ -522,11 +524,9 @@ class OptimizationCoordinator:
         """Check if optimization can be triggered."""
         if self.is_optimization_running():
             return False
-        if self.is_in_cooldown():
-            return False
-        return True
+        return not self.is_in_cooldown()
 
-    def detect_plateau(self, metric_name: str) -> Optional[PlateauDetection]:
+    def detect_plateau(self, metric_name: str) -> PlateauDetection | None:
         """Check if a metric is in plateau.
 
         Returns:
@@ -563,11 +563,11 @@ class OptimizationCoordinator:
     def trigger_cmaes(
         self,
         reason: str,
-        parameters: Optional[List[str]] = None,
-        search_space: Optional[Dict] = None,
+        parameters: list[str] | None = None,
+        search_space: dict | None = None,
         generations: int = 10,
         population_size: int = 8,
-    ) -> Optional[OptimizationRun]:
+    ) -> OptimizationRun | None:
         """Trigger CMA-ES optimization.
 
         Returns:
@@ -599,10 +599,10 @@ class OptimizationCoordinator:
     def trigger_nas(
         self,
         reason: str,
-        search_space: Optional[Dict] = None,
+        search_space: dict | None = None,
         generations: int = 5,
         population_size: int = 4,
-    ) -> Optional[OptimizationRun]:
+    ) -> OptimizationRun | None:
         """Trigger NAS optimization.
 
         Returns:
@@ -654,15 +654,15 @@ class OptimizationCoordinator:
         """Register callback for optimization completions."""
         self._optimization_callbacks.append(callback)
 
-    def get_current_optimization(self) -> Optional[OptimizationRun]:
+    def get_current_optimization(self) -> OptimizationRun | None:
         """Get the currently running optimization."""
         return self._current_optimization
 
-    def get_optimization_history(self, limit: int = 50) -> List[OptimizationRun]:
+    def get_optimization_history(self, limit: int = 50) -> list[OptimizationRun]:
         """Get recent optimization history."""
         return self._optimization_history[-limit:]
 
-    def get_plateau_history(self, limit: int = 50) -> List[PlateauDetection]:
+    def get_plateau_history(self, limit: int = 50) -> list[PlateauDetection]:
         """Get recent plateau detections."""
         return self._plateaus[-limit:]
 
@@ -672,7 +672,7 @@ class OptimizationCoordinator:
         failed = [r for r in self._optimization_history if r.status == OptimizationStatus.FAILED]
 
         # Count by type
-        by_type: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
         for run in self._optimization_history:
             by_type[run.optimization_type.value] = by_type.get(run.optimization_type.value, 0) + 1
 
@@ -692,7 +692,7 @@ class OptimizationCoordinator:
             last_optimization_time=self._last_optimization_end,
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring."""
         stats = self.get_stats()
 
@@ -715,7 +715,7 @@ class OptimizationCoordinator:
 # Singleton and convenience functions
 # =============================================================================
 
-_optimization_coordinator: Optional[OptimizationCoordinator] = None
+_optimization_coordinator: OptimizationCoordinator | None = None
 
 
 def get_optimization_coordinator() -> OptimizationCoordinator:
@@ -745,33 +745,33 @@ def get_optimization_stats() -> OptimizationStats:
     """Convenience function to get optimization statistics."""
     return get_optimization_coordinator().get_stats()
 
-def trigger_cmaes(reason: str = "manual") -> Optional[OptimizationRun]:
+def trigger_cmaes(reason: str = "manual") -> OptimizationRun | None:
     """Convenience function to trigger CMA-ES optimization."""
     return get_optimization_coordinator().trigger_cmaes(reason)
 
-def trigger_nas(reason: str = "manual") -> Optional[OptimizationRun]:
+def trigger_nas(reason: str = "manual") -> OptimizationRun | None:
     """Convenience function to trigger NAS optimization."""
     return get_optimization_coordinator().trigger_nas(reason)
 
 
-def trigger_hyperparameter_optimization(reason: str = "manual") -> Optional[OptimizationRun]:
+def trigger_hyperparameter_optimization(reason: str = "manual") -> OptimizationRun | None:
     """Convenience function to trigger CMA-ES."""
     return get_optimization_coordinator().trigger_cmaes(reason)
 
 
 __all__ = [
     "OptimizationCoordinator",
-    "OptimizationType",
-    "OptimizationStatus",
-    "PlateauType",
-    "PlateauDetection",
     "OptimizationRun",
     "OptimizationStats",
+    "OptimizationStatus",
+    "OptimizationType",
+    "PlateauDetection",
+    "PlateauType",
     "get_optimization_coordinator",
-    "wire_optimization_events",
-    "is_optimization_running",
     "get_optimization_stats",
+    "is_optimization_running",
     "trigger_cmaes",
-    "trigger_nas",
     "trigger_hyperparameter_optimization",
+    "trigger_nas",
+    "wire_optimization_events",
 ]

@@ -33,11 +33,10 @@ Configuration Import Guide:
     from app.training.selfplay_config import SelfplayConfig
 """
 
-from dataclasses import dataclass, field
 import os
-from typing import Dict, Optional
-from app.models import BoardType
+from dataclasses import dataclass, field
 
+from app.models import BoardType
 
 # =============================================================================
 # GPU Scaling Configuration
@@ -108,7 +107,7 @@ class GpuScalingConfig:
 
 
 # Default GPU scaling configuration (can be overridden via from_env())
-_gpu_scaling_config: Optional[GpuScalingConfig] = None
+_gpu_scaling_config: GpuScalingConfig | None = None
 
 
 def get_gpu_scaling_config() -> GpuScalingConfig:
@@ -140,7 +139,7 @@ def _get_gpu_memory_gb() -> float:
 def _scale_batch_size_for_gpu(
     base_batch: int,
     policy_size: int = 7000,
-    config: Optional[GpuScalingConfig] = None,
+    config: GpuScalingConfig | None = None,
 ) -> int:
     """Scale batch size based on available GPU memory.
 
@@ -427,14 +426,14 @@ class TrainConfig:
 
     # Board-specific model architecture parameters
     # If None, uses defaults from neural_net.get_model_config_for_board()
-    num_res_blocks: Optional[int] = None
-    num_filters: Optional[int] = None
-    policy_size: Optional[int] = None
+    num_res_blocks: int | None = None
+    num_filters: int | None = None
+    policy_size: int | None = None
 
     # GPU parallel data generation settings
     # When enabled, uses ParallelGameRunner for 5-10x faster data generation
     # None = auto-detect (True if CUDA available), False = disabled, True = forced
-    use_gpu_parallel_datagen: Optional[bool] = None
+    use_gpu_parallel_datagen: bool | None = None
     gpu_batch_size: int = 50  # Number of games to run in parallel on GPU
 
     # Data loading prefetch settings for improved GPU utilization
@@ -507,7 +506,7 @@ class TrainConfig:
 
 def get_training_config_for_board(
     board_type: BoardType,
-    base_config: Optional[TrainConfig] = None,
+    base_config: TrainConfig | None = None,
 ) -> TrainConfig:
     """
     Get a training configuration optimized for a specific board type.
@@ -534,10 +533,10 @@ def get_training_config_for_board(
 
     # Import here to avoid circular imports
     from app.ai.neural_net import (
+        P_HEX,
+        POLICY_SIZE_HEX8,
         POLICY_SIZE_8x8,
         POLICY_SIZE_19x19,
-        POLICY_SIZE_HEX8,
-        P_HEX,
     )
 
     if board_type == BoardType.SQUARE8:
@@ -611,9 +610,7 @@ def get_model_version_for_board(board_type: BoardType) -> str:
     str
         Model version string: 'v3' for hex boards and square8, 'v2' otherwise.
     """
-    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
-        return "v3"
-    elif board_type == BoardType.SQUARE8:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8) or board_type == BoardType.SQUARE8:
         return "v3"
     else:
         return "v2"
@@ -774,7 +771,7 @@ class TrainingPipelineConfig:
     # Experiment metadata
     experiment_name: str = ""
     description: str = ""
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def for_board_type(
@@ -909,7 +906,7 @@ class TrainingPipelineConfig:
 
         return cls._from_dict(config_dict)
 
-    def _to_dict(self) -> Dict:
+    def _to_dict(self) -> dict:
         """Convert config to dictionary for serialization."""
         from dataclasses import asdict
 
@@ -934,7 +931,7 @@ class TrainingPipelineConfig:
         return result
 
     @classmethod
-    def _from_dict(cls, d: Dict) -> "TrainingPipelineConfig":
+    def _from_dict(cls, d: dict) -> "TrainingPipelineConfig":
         """Create config from dictionary."""
         config = cls()
 

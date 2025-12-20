@@ -47,7 +47,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.ai.descent_ai import DescentAI
 from app.main import _create_ai_instance, _get_difficulty_profile
@@ -112,7 +112,7 @@ def generate_territory_dataset(
     output_path: str,
     board_type: BoardType = BoardType.SQUARE8,
     max_moves: int = 2000,  # Minimum 2000 for all boards
-    seed: Optional[int] = None,
+    seed: int | None = None,
     engine_mode: str = "descent-only",
     num_players: int = 2,
     gamma: float = 0.99,
@@ -190,9 +190,9 @@ def generate_territory_dataset(
             player_numbers = [p.player_number for p in state.players]
 
             # Per-game AI selection.
-            ai_by_player: Dict[int, Any] = {}
-            ai_types: Dict[int, AIType] = {}
-            ai_difficulties: Dict[int, int] = {}
+            ai_by_player: dict[int, Any] = {}
+            ai_types: dict[int, AIType] = {}
+            ai_difficulties: dict[int, int] = {}
 
             if engine_mode == "descent-only":
                 # Preserve the legacy behaviour exactly for 2-player games
@@ -290,11 +290,11 @@ def generate_territory_dataset(
                     ai_difficulties[pnum] = difficulty
 
             # String labels for metadata logging
-            ai_type_labels: Dict[int, str] = {
+            ai_type_labels: dict[int, str] = {
                 pnum: ai_types[pnum].value for pnum in player_numbers
             }
 
-            trajectory_states: List[GameState] = []
+            trajectory_states: list[GameState] = []
             move_count = 0
 
             while (
@@ -327,7 +327,7 @@ def generate_territory_dataset(
             # Compute final combined margins once, then emit weighted
             # examples for each recorded state from all players'
             # perspectives.
-            margins: Dict[int, float] = {
+            margins: dict[int, float] = {
                 p.player_number: float(
                     _final_combined_margin(final_state, p.player_number)
                 )
@@ -349,7 +349,7 @@ def generate_territory_dataset(
                 )
 
                 # Precompute per-player engine metadata for logging.
-                metadata: Dict[str, object] = {
+                metadata: dict[str, object] = {
                     "engine_mode": engine_mode,
                     "num_players": len(player_numbers_sorted),
                 }

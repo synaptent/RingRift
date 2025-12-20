@@ -49,10 +49,9 @@ import sqlite3
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 from .elo import EloCalculator
 
@@ -60,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 # Bridge to canonical EloService for unified rating tracking
 try:
-    from app.training.elo_service import get_elo_service, EloService
+    from app.training.elo_service import EloService, get_elo_service
     HAS_ELO_SERVICE = True
 except ImportError:
     HAS_ELO_SERVICE = False
@@ -72,7 +71,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "unified_elo.db"
 
 # Global singleton
-_elo_db_instance: Optional["EloDatabase"] = None
+_elo_db_instance: EloDatabase | None = None
 _elo_db_lock = threading.RLock()
 
 
@@ -89,7 +88,7 @@ class UnifiedEloRating:
     losses: int = 0
     draws: int = 0
     rating_deviation: float = 350.0  # Initial RD (high uncertainty)
-    last_update: Optional[float] = None
+    last_update: float | None = None
 
     # Glicko-style constants
     INITIAL_RD: float = 350.0
@@ -112,7 +111,7 @@ class UnifiedEloRating:
             return 0.0
         return self.wins / self.games_played
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "participant_id": self.participant_id,
             "board_type": self.board_type,
@@ -132,16 +131,16 @@ class MatchRecord:
     """Record of a completed match."""
 
     match_id: str
-    participant_ids: List[str]
-    rankings: List[int]  # Position in final standings (0=1st, 1=2nd, etc.)
-    winner_id: Optional[str]
+    participant_ids: list[str]
+    rankings: list[int]  # Position in final standings (0=1st, 1=2nd, etc.)
+    winner_id: str | None
     board_type: str
     num_players: int
     game_length: int
     duration_sec: float
     timestamp: str
     tournament_id: str
-    worker: Optional[str] = None
+    worker: str | None = None
 
 
 class EloDatabase:
@@ -151,7 +150,7 @@ class EloDatabase:
     to track separate ratings for each game configuration.
     """
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
@@ -428,15 +427,15 @@ class EloDatabase:
     def register_participant(
         self,
         participant_id: str,
-        name: Optional[str] = None,
+        name: str | None = None,
         participant_type: str = "model",
-        ai_type: Optional[str] = None,
-        difficulty: Optional[int] = None,
+        ai_type: str | None = None,
+        difficulty: int | None = None,
         use_neural_net: bool = False,
-        model_id: Optional[str] = None,
-        model_path: Optional[str] = None,
-        model_version: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+        model_id: str | None = None,
+        model_path: str | None = None,
+        model_version: str | None = None,
+        metadata: dict | None = None,
     ) -> None:
         """Register a participant (model, baseline, or AI type)."""
         conn = self._get_connection()
@@ -469,7 +468,7 @@ class EloDatabase:
         ))
         conn.commit()
 
-    def get_participant(self, participant_id: str) -> Optional[Dict[str, Any]]:
+    def get_participant(self, participant_id: str) -> dict[str, Any] | None:
         """Get participant info."""
         conn = self._get_connection()
         row = conn.execute(
@@ -523,10 +522,10 @@ class EloDatabase:
 
     def get_ratings_batch(
         self,
-        participant_ids: List[str],
+        participant_ids: list[str],
         board_type: str,
         num_players: int,
-    ) -> Dict[str, UnifiedEloRating]:
+    ) -> dict[str, UnifiedEloRating]:
         """Get ratings for multiple participants at once."""
         return {
             pid: self.get_rating(pid, board_type, num_players)
@@ -538,7 +537,7 @@ class EloDatabase:
         "baseline_random": 400.0,  # Random player pinned at 400 ELO as anchor
     }
 
-    def _is_pinned_baseline(self, participant_id: str) -> Optional[float]:
+    def _is_pinned_baseline(self, participant_id: str) -> float | None:
         """Check if participant is a pinned baseline and return pinned ELO if so."""
         for prefix, pinned_elo in self.PINNED_BASELINES.items():
             if participant_id.startswith(prefix):
@@ -580,7 +579,7 @@ class EloDatabase:
         ))
         conn.commit()
 
-    def update_ratings_batch(self, ratings: List[UnifiedEloRating]) -> None:
+    def update_ratings_batch(self, ratings: list[UnifiedEloRating]) -> None:
         """Update multiple ratings in a single transaction."""
         conn = self._get_connection()
         now = time.time()
@@ -650,16 +649,16 @@ class EloDatabase:
 
     def record_match(
         self,
-        participant_ids: List[str],
-        rankings: List[int],
+        participant_ids: list[str],
+        rankings: list[int],
         board_type: str,
         num_players: int,
         tournament_id: str,
         game_length: int = 0,
         duration_sec: float = 0.0,
-        worker: Optional[str] = None,
-        metadata: Optional[Dict] = None,
-        game_id: Optional[str] = None,
+        worker: str | None = None,
+        metadata: dict | None = None,
+        game_id: str | None = None,
     ) -> int:
         """Record a match without updating Elo ratings.
 
@@ -686,7 +685,7 @@ class EloDatabase:
 
         # Determine winner (participant with ranking 0)
         winner_id = None
-        for pid, rank in zip(participant_ids, rankings):
+        for pid, rank in zip(participant_ids, rankings, strict=False):
             if rank == 0:
                 winner_id = pid
                 break
@@ -745,18 +744,18 @@ class EloDatabase:
 
     def record_match_and_update(
         self,
-        participant_ids: List[str],
-        rankings: List[int],
+        participant_ids: list[str],
+        rankings: list[int],
         board_type: str,
         num_players: int,
         tournament_id: str,
         game_length: int = 0,
         duration_sec: float = 0.0,
-        worker: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+        worker: str | None = None,
+        metadata: dict | None = None,
         k_factor: float = 32.0,
-        game_id: Optional[str] = None,
-    ) -> Tuple[int, Dict[str, float]]:
+        game_id: str | None = None,
+    ) -> tuple[int, dict[str, float]]:
         """Record a match and update Elo ratings atomically.
 
         Uses IMMEDIATE transaction to prevent race conditions between
@@ -837,7 +836,7 @@ class EloDatabase:
 
             # Sort participants by ranking for the multiplayer update
             sorted_participants = sorted(
-                zip(participant_ids, rankings),
+                zip(participant_ids, rankings, strict=False),
                 key=lambda x: x[1]
             )
             ordered_ids = [pid for pid, _ in sorted_participants]
@@ -853,7 +852,7 @@ class EloDatabase:
 
             # Determine winner (participant with ranking 0)
             winner_id = None
-            for pid, rank in zip(participant_ids, rankings):
+            for pid, rank in zip(participant_ids, rankings, strict=False):
                 if rank == 0:
                     winner_id = pid
                     break
@@ -972,8 +971,8 @@ class EloDatabase:
         is_draw: bool = False,
         game_length: int = 0,
         duration_sec: float = 0.0,
-        worker: Optional[str] = None,
-    ) -> Tuple[int, Dict[str, float]]:
+        worker: str | None = None,
+    ) -> tuple[int, dict[str, float]]:
         """Convenience method for recording a two-player match result.
 
         Args:
@@ -1012,11 +1011,11 @@ class EloDatabase:
 
     def get_leaderboard(
         self,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         min_games: int = 1,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get leaderboard, optionally filtered by configuration."""
         conn = self._get_connection()
 
@@ -1042,7 +1041,7 @@ class EloDatabase:
                 FROM elo_ratings
                 WHERE games_played >= ?
             """
-        params: List[Any] = [min_games]
+        params: list[Any] = [min_games]
 
         if board_type:
             query += " AND board_type = ?"
@@ -1059,17 +1058,17 @@ class EloDatabase:
 
     def get_match_history(
         self,
-        participant_id: Optional[str] = None,
-        tournament_id: Optional[str] = None,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
+        participant_id: str | None = None,
+        tournament_id: str | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get match history with optional filters."""
         conn = self._get_connection()
 
         query = "SELECT * FROM match_history WHERE 1=1"
-        params: List[Any] = []
+        params: list[Any] = []
 
         if participant_id:
             query += " AND participant_ids LIKE ?"
@@ -1104,7 +1103,7 @@ class EloDatabase:
         board_type: str,
         num_players: int,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get rating history for a participant in a specific config."""
         conn = self._get_connection()
         rows = conn.execute("""
@@ -1119,9 +1118,9 @@ class EloDatabase:
         self,
         participant_a: str,
         participant_b: str,
-        board_type: Optional[str] = None,
-        num_players: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> dict[str, Any]:
         """Get head-to-head stats between two participants."""
         conn = self._get_connection()
 
@@ -1130,7 +1129,7 @@ class EloDatabase:
             SELECT * FROM match_history
             WHERE participant_ids LIKE ? AND participant_ids LIKE ?
         """
-        params: List[Any] = [f'%"{participant_a}"%', f'%"{participant_b}"%']
+        params: list[Any] = [f'%"{participant_a}"%', f'%"{participant_b}"%']
 
         if board_type:
             query += " AND board_type = ?"
@@ -1166,7 +1165,7 @@ class EloDatabase:
             "b_win_rate": b_wins / total if total > 0 else 0.0,
         }
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get overall database statistics."""
         conn = self._get_connection()
 
@@ -1198,9 +1197,9 @@ class EloDatabase:
 
     def check_win_loss_invariant(
         self,
-        board_type: Optional[str] = None,
+        board_type: str | None = None,
         raise_on_violation: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check win/loss conservation invariant for 2-player games.
 
         In 2-player games, every win corresponds to exactly one loss.
@@ -1220,7 +1219,7 @@ class EloDatabase:
             FROM elo_ratings
             WHERE num_players = 2 AND archived_at IS NULL
         """
-        params: List[Any] = []
+        params: list[Any] = []
 
         if board_type:
             query = """
@@ -1260,7 +1259,7 @@ class EloDatabase:
 
         return result
 
-    def verify_database_integrity(self) -> Dict[str, Any]:
+    def verify_database_integrity(self) -> dict[str, Any]:
         """Run comprehensive database integrity checks.
 
         Returns dict with results of all checks:
@@ -1333,7 +1332,7 @@ class EloDatabase:
 # Singleton Access
 # =============================================================================
 
-def get_elo_database(db_path: Optional[Path] = None) -> EloDatabase:
+def get_elo_database(db_path: Path | None = None) -> EloDatabase:
     """Get or create the singleton EloDatabase instance.
 
     Args:

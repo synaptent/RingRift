@@ -26,7 +26,7 @@ import fnmatch
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from app.utils.yaml_utils import safe_load_yaml
 
@@ -39,18 +39,16 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "node_pol
 class NodePolicy:
     """Policy for a node or node type."""
     name: str
-    patterns: List[str] = field(default_factory=list)
-    allowed: Set[str] = field(default_factory=set)
-    denied: Set[str] = field(default_factory=set)
-    priorities: Dict[str, int] = field(default_factory=dict)
+    patterns: list[str] = field(default_factory=list)
+    allowed: set[str] = field(default_factory=set)
+    denied: set[str] = field(default_factory=set)
+    priorities: dict[str, int] = field(default_factory=dict)
 
     def is_allowed(self, work_type: str) -> bool:
         """Check if a work type is allowed."""
         if work_type in self.denied:
             return False
-        if self.allowed and work_type not in self.allowed:
-            return False
-        return True
+        return not (self.allowed and work_type not in self.allowed)
 
     def get_priority(self, work_type: str) -> int:
         """Get priority for a work type (higher = prefer)."""
@@ -58,19 +56,16 @@ class NodePolicy:
 
     def matches_node(self, node_id: str) -> bool:
         """Check if this policy matches a node ID."""
-        for pattern in self.patterns:
-            if fnmatch.fnmatch(node_id.lower(), pattern.lower()):
-                return True
-        return False
+        return any(fnmatch.fnmatch(node_id.lower(), pattern.lower()) for pattern in self.patterns)
 
 
 class NodePolicyManager:
     """Manages work assignment policies for nodes."""
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         self.config_path = config_path or DEFAULT_CONFIG_PATH
-        self.policies: Dict[str, NodePolicy] = {}
-        self.overrides: Dict[str, NodePolicy] = {}
+        self.policies: dict[str, NodePolicy] = {}
+        self.overrides: dict[str, NodePolicy] = {}
         self.default_policy: NodePolicy = NodePolicy(
             name="default",
             allowed={"training", "gpu_cmaes", "tournament", "selfplay"},
@@ -96,7 +91,7 @@ class NodePolicyManager:
                 self.policies[name] = self._parse_policy(name, config[name])
 
         # Load overrides for specific nodes
-        if "overrides" in config and config["overrides"]:
+        if config.get("overrides"):
             for node_id, policy_config in config["overrides"].items():
                 self.overrides[node_id.lower()] = self._parse_policy(
                     f"override:{node_id}", policy_config
@@ -104,7 +99,7 @@ class NodePolicyManager:
 
         logger.info(f"Loaded {len(self.policies)} node policies, {len(self.overrides)} overrides")
 
-    def _parse_policy(self, name: str, config: Dict[str, Any]) -> NodePolicy:
+    def _parse_policy(self, name: str, config: dict[str, Any]) -> NodePolicy:
         """Parse a policy from config dict."""
         return NodePolicy(
             name=name,
@@ -135,7 +130,7 @@ class NodePolicyManager:
         policy = self.get_node_policy(node_id)
         return policy.is_allowed(work_type)
 
-    def get_allowed_work_types(self, node_id: str) -> Set[str]:
+    def get_allowed_work_types(self, node_id: str) -> set[str]:
         """Get all allowed work types for a node."""
         policy = self.get_node_policy(node_id)
         if policy.allowed:
@@ -144,12 +139,12 @@ class NodePolicyManager:
         all_types = {"training", "gpu_cmaes", "cpu_cmaes", "tournament", "gauntlet", "selfplay", "data_merge"}
         return all_types - policy.denied
 
-    def get_denied_work_types(self, node_id: str) -> Set[str]:
+    def get_denied_work_types(self, node_id: str) -> set[str]:
         """Get all denied work types for a node."""
         policy = self.get_node_policy(node_id)
         return policy.denied
 
-    def get_best_work_type(self, node_id: str, available_types: List[str]) -> Optional[str]:
+    def get_best_work_type(self, node_id: str, available_types: list[str]) -> str | None:
         """Get the best work type for a node from available options.
 
         Returns the highest priority allowed work type, or None if none allowed.
@@ -200,7 +195,7 @@ class NodePolicyManager:
 
 
 # Singleton instance
-_policy_manager: Optional[NodePolicyManager] = None
+_policy_manager: NodePolicyManager | None = None
 
 
 def get_policy_manager() -> NodePolicyManager:
@@ -216,7 +211,7 @@ def is_work_allowed(node_id: str, work_type: str) -> bool:
     return get_policy_manager().is_work_allowed(node_id, work_type)
 
 
-def get_best_work_type(node_id: str, available_types: List[str]) -> Optional[str]:
+def get_best_work_type(node_id: str, available_types: list[str]) -> str | None:
     """Convenience function to get best work type for a node."""
     return get_policy_manager().get_best_work_type(node_id, available_types)
 
@@ -236,9 +231,9 @@ __all__ = [
     "NodePolicy",
     # Main class
     "NodePolicyManager",
+    "get_best_work_type",
     # Functions
     "get_policy_manager",
     "is_work_allowed",
-    "get_best_work_type",
     "reset_policy_manager",
 ]

@@ -11,9 +11,10 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -23,10 +24,10 @@ if TYPE_CHECKING:
 # Import canonical threshold constants
 try:
     from app.config.thresholds import (
-        INITIAL_ELO_RATING,
         ELO_DROP_ROLLBACK,
-        MIN_WIN_RATE_VS_RANDOM,
+        INITIAL_ELO_RATING,
         MIN_WIN_RATE_VS_HEURISTIC,
+        MIN_WIN_RATE_VS_RANDOM,
     )
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
@@ -55,7 +56,7 @@ class BackgroundEvalConfig:
     """
     eval_interval_steps: int = 1000  # Steps between evaluations
     games_per_eval: int = 20  # Games per evaluation
-    baselines: List[str] = field(default_factory=lambda: ["random", "heuristic"])
+    baselines: list[str] = field(default_factory=lambda: ["random", "heuristic"])
     elo_checkpoint_threshold: float = 10.0  # Min Elo gain to checkpoint
     elo_drop_threshold: float = ELO_DROP_ROLLBACK  # Elo drop for early stopping
     auto_checkpoint: bool = True
@@ -63,7 +64,7 @@ class BackgroundEvalConfig:
     # Baseline gating: minimum win rates required against each baseline
     # Checkpoints that don't meet these are considered "unqualified"
     # Values imported from app.config.thresholds for single source of truth
-    min_baseline_win_rates: Dict[str, float] = field(default_factory=lambda: {
+    min_baseline_win_rates: dict[str, float] = field(default_factory=lambda: {
         "random": MIN_WIN_RATE_VS_RANDOM,
         "heuristic": MIN_WIN_RATE_VS_HEURISTIC,
     })
@@ -82,9 +83,9 @@ class EvalResult:
     elo_std: float
     games_played: int
     win_rate: float
-    baseline_results: Dict[str, float]  # baseline -> win rate
+    baseline_results: dict[str, float]  # baseline -> win rate
     passes_baseline_gating: bool = True  # Whether all baseline thresholds are met
-    failed_baselines: List[str] = field(default_factory=list)  # Which baselines failed
+    failed_baselines: list[str] = field(default_factory=list)  # Which baselines failed
 
 
 class BackgroundEvaluator:
@@ -100,8 +101,8 @@ class BackgroundEvaluator:
     def __init__(
         self,
         model_getter: Callable[[], Any],  # Function to get current model
-        config: Optional[EvalConfig] = None,
-        board_type: Optional[Any] = None,  # BoardType for real games
+        config: EvalConfig | None = None,
+        board_type: Any | None = None,  # BoardType for real games
         use_real_games: bool = False,  # Whether to play real games
     ):
         """Initialize background evaluator.
@@ -131,12 +132,12 @@ class BackgroundEvaluator:
         self.last_eval_step = 0
         self.best_elo = 0.0
         self.current_elo = INITIAL_ELO_RATING
-        self.elo_history: List[Tuple[int, float]] = []
-        self.eval_results: List[EvalResult] = []
+        self.elo_history: list[tuple[int, float]] = []
+        self.eval_results: list[EvalResult] = []
 
         # Threading - use ThreadSpawner for supervised execution
         self._running = False
-        self._eval_thread: Optional["SpawnedThread"] = None
+        self._eval_thread: SpawnedThread | None = None
         self._lock = threading.Lock()
         self._use_thread_spawner = True  # Use supervised threading
 
@@ -158,7 +159,7 @@ class BackgroundEvaluator:
 
         if self._use_thread_spawner:
             try:
-                from app.training.thread_integration import spawn_eval_thread, RestartPolicy
+                from app.training.thread_integration import RestartPolicy, spawn_eval_thread
 
                 self._eval_thread = spawn_eval_thread(
                     target=self._eval_loop,
@@ -341,8 +342,8 @@ class BackgroundEvaluator:
     def _run_real_evaluation(self, step: int, model_info: Any) -> EvalResult:
         """Run actual games using game_gauntlet module."""
         from app.training.game_gauntlet import (
-            run_baseline_gauntlet,
             BaselineOpponent,
+            run_baseline_gauntlet,
         )
 
         # Map config baselines to BaselineOpponent enums
@@ -410,7 +411,7 @@ class BackgroundEvaluator:
             logger.error(f"[BackgroundEval] Real evaluation failed: {e}, using placeholder")
             return self._run_placeholder_evaluation(step)
 
-    def _save_temp_model(self, model_info: Any) -> Optional[Path]:
+    def _save_temp_model(self, model_info: Any) -> Path | None:
         """Save model weights to temp file for evaluation.
 
         Args:
@@ -428,7 +429,7 @@ class BackgroundEvaluator:
 
             # If model_info is a dict with state_dict
             if isinstance(model_info, dict):
-                if 'path' in model_info and model_info['path']:
+                if model_info.get('path'):
                     return Path(model_info['path'])
                 if 'state_dict' in model_info:
                     torch.save(model_info['state_dict'], self._temp_model_path)
@@ -506,7 +507,6 @@ class BackgroundEvaluator:
             self.eval_results.append(result)
             self.elo_history.append((result.step, result.elo_estimate))
 
-            old_elo = self.current_elo
             self.current_elo = result.elo_estimate
 
             # Check for improvement
@@ -544,12 +544,12 @@ class BackgroundEvaluator:
         with self._lock:
             return self.current_elo
 
-    def get_elo_history(self) -> List[Tuple[int, float]]:
+    def get_elo_history(self) -> list[tuple[int, float]]:
         """Get Elo history [(step, elo), ...]."""
         with self._lock:
             return self.elo_history.copy()
 
-    def get_thread_health(self) -> Dict[str, Any]:
+    def get_thread_health(self) -> dict[str, Any]:
         """Get thread health status.
 
         Returns:
@@ -560,7 +560,7 @@ class BackgroundEvaluator:
             - restart_count: Number of restarts (SpawnedThread only)
             - state: Thread state (SpawnedThread only)
         """
-        health: Dict[str, Any] = {
+        health: dict[str, Any] = {
             "running": self._running,
             "thread_alive": False,
             "thread_type": "none",
@@ -587,7 +587,7 @@ class BackgroundEvaluator:
         with self._lock:
             return (self.best_elo - self.current_elo) > self.config.elo_drop_threshold
 
-    def get_baseline_gating_status(self) -> Tuple[bool, List[str], int]:
+    def get_baseline_gating_status(self) -> tuple[bool, list[str], int]:
         """Get current baseline gating status.
 
         Returns:
@@ -633,7 +633,7 @@ def create_background_evaluator(
     model_getter: Callable[[], Any],
     eval_interval: int = 1000,
     games_per_eval: int = 20,
-    board_type: Optional[Any] = None,
+    board_type: Any | None = None,
     use_real_games: bool = False,
 ) -> BackgroundEvaluator:
     """Create a background evaluator.
@@ -664,12 +664,12 @@ def create_background_evaluator(
 # Auto-wiring and Singleton Management (December 2025)
 # =============================================================================
 
-_background_evaluator: Optional[BackgroundEvaluator] = None
+_background_evaluator: BackgroundEvaluator | None = None
 
 
 def wire_background_evaluator(
     model_getter: Callable[[], Any],
-    board_type: Optional[Any] = None,
+    board_type: Any | None = None,
     use_real_games: bool = False,
     eval_interval: int = 1000,
     games_per_eval: int = 20,
@@ -740,7 +740,7 @@ def wire_background_evaluator(
     return _background_evaluator
 
 
-def get_background_evaluator() -> Optional[BackgroundEvaluator]:
+def get_background_evaluator() -> BackgroundEvaluator | None:
     """Get the global background evaluator if configured.
 
     Returns:
@@ -757,7 +757,7 @@ def reset_background_evaluator() -> None:
     _background_evaluator = None
 
 
-def auto_wire_from_training_coordinator() -> Optional[BackgroundEvaluator]:
+def auto_wire_from_training_coordinator() -> BackgroundEvaluator | None:
     """Auto-wire background evaluator from training coordinator context.
 
     This function attempts to automatically create and wire a BackgroundEvaluator
@@ -836,16 +836,16 @@ def auto_wire_from_training_coordinator() -> Optional[BackgroundEvaluator]:
 
 
 __all__ = [
+    "BackgroundEvalConfig",
     # Core classes
     "BackgroundEvaluator",
-    "BackgroundEvalConfig",
     "EvalConfig",  # Backwards-compatible alias
     "EvalResult",
+    "auto_wire_from_training_coordinator",
     # Factory functions
     "create_background_evaluator",
-    # Auto-wiring (December 2025)
-    "wire_background_evaluator",
     "get_background_evaluator",
     "reset_background_evaluator",
-    "auto_wire_from_training_coordinator",
+    # Auto-wiring (December 2025)
+    "wire_background_evaluator",
 ]

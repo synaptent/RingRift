@@ -15,7 +15,7 @@ class ResidualBlock(nn.Module):
     """Residual block with two 3x3 convolutions and skip connection."""
 
     def __init__(self, channels: int):
-        super(ResidualBlock, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(channels)
         self.relu = nn.ReLU()
@@ -54,7 +54,7 @@ class SEResidualBlock(nn.Module):
             channels: Number of input/output channels
             reduction: Reduction ratio for SE bottleneck (default 16)
         """
-        super(SEResidualBlock, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(channels)
         self.relu = nn.ReLU()
@@ -103,7 +103,7 @@ class AttentionResidualBlock(nn.Module):
         dropout: float = 0.08,
         kernel_size: int = 3,
     ):
-        super(AttentionResidualBlock, self).__init__()
+        super().__init__()
         self.channels = channels
         self.num_heads = num_heads
 

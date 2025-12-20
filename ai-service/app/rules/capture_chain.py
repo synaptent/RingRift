@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Literal, Tuple, Union
+from typing import Literal, Union
 
+from app.board_manager import BoardManager
 from app.models import (
+    BoardState,
+    BoardType,
     GameState,
     Move,
-    Position,
-    BoardType,
-    BoardState,
     MoveType,
+    Position,
 )
-from app.board_manager import BoardManager
+
 from .geometry import BoardGeometry
 
 
@@ -37,7 +38,7 @@ class PyChainCaptureStateSnapshot:
     """
     player: int
     current_position: Position
-    captured_this_chain: List[Position]
+    captured_this_chain: list[Position]
 
 
 @dataclass
@@ -49,7 +50,7 @@ class PyChainCaptureEnumerationOptions:
     and must remain False for rules-level enumeration.
     """
     disallow_revisited_targets: bool = False
-    move_number: Optional[int] = None
+    move_number: int | None = None
     kind: Literal["initial", "continuation"] = "continuation"
 
 
@@ -59,7 +60,7 @@ class PyChainCaptureContinuationInfo:
     Python analogue of TS ChainCaptureContinuationInfo.
     """
     must_continue: bool
-    available_continuations: List[Move]
+    available_continuations: list[Move]
 
 
 @dataclass
@@ -214,9 +215,9 @@ def enumerate_capture_moves_py(
     player: int,
     from_pos: Position,
     *,
-    move_number: Optional[int] = None,
+    move_number: int | None = None,
     kind: Literal["initial", "continuation"] = "initial",
-) -> List[Move]:
+) -> list[Move]:
     """
     Enumerate all legal overtaking capture segments from a given origin.
 
@@ -244,14 +245,14 @@ def enumerate_capture_moves_py(
         if move_number is not None
         else len(state.move_history) + 1
     )
-    moves: List[Move] = []
+    moves: list[Move] = []
     directions = BoardManager._get_all_directions(board_type)
 
     for direction in directions:
         # Step 1: find the first potential target along this ray.
         # This implicitly validates the path from attacker to target is clear.
         step = 1
-        target_pos: Optional[Position] = None
+        target_pos: Position | None = None
         steps_to_target = 0
 
         while True:
@@ -343,8 +344,8 @@ def enumerate_capture_moves_py(
 def enumerate_chain_capture_segments_py(
     state: GameState,
     snapshot: PyChainCaptureStateSnapshot,
-    options: Optional[PyChainCaptureEnumerationOptions] = None,
-) -> List[Move]:
+    options: PyChainCaptureEnumerationOptions | None = None,
+) -> list[Move]:
     """
     Enumerate all legal chain-capture continuation segments from a snapshot.
 
@@ -372,7 +373,7 @@ def enumerate_chain_capture_segments_py(
 
     if opts.disallow_revisited_targets and snapshot.captured_this_chain:
         visited_keys = {pos.to_key() for pos in snapshot.captured_this_chain}
-        filtered: List[Move] = []
+        filtered: list[Move] = []
         for move in base_moves:
             if move.capture_target is None:
                 filtered.append(move)
@@ -464,7 +465,7 @@ def apply_capture_segment_py(
 def apply_capture_py(
     state: GameState,
     move: Move,
-) -> Tuple[bool, Optional[GameState], Union[List[Position], str]]:
+) -> tuple[bool, GameState | None, Union[list[Position], str]]:
     """
     High-level capture application helper, analogous to TS applyCapture.
 

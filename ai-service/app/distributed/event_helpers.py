@@ -50,7 +50,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -68,15 +69,15 @@ _emit_elo_updated = None
 
 try:
     from app.distributed.data_events import (
-        DataEventType,
         DataEvent,
+        DataEventType,
         EventBus,
-        get_event_bus,
+        emit_elo_updated,
+        emit_error,
+        emit_evaluation_completed,
         emit_model_promoted,
         emit_training_completed,
-        emit_evaluation_completed,
-        emit_error,
-        emit_elo_updated,
+        get_event_bus,
     )
     _HAS_EVENT_BUS = True
     _DataEventType = DataEventType
@@ -141,7 +142,7 @@ def has_event_bus() -> bool:
     return _HAS_EVENT_BUS
 
 
-def get_event_bus_safe() -> Optional[Any]:
+def get_event_bus_safe() -> Any | None:
     """Get the event bus instance if available.
 
     Returns:
@@ -167,9 +168,9 @@ def get_event_types():
 
 def create_event(
     event_type: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     source: str = ""
-) -> Optional[Any]:
+) -> Any | None:
     """Create a DataEvent if the event bus is available.
 
     Args:
@@ -197,9 +198,9 @@ def create_event(
 
 async def emit_event_safe(
     event_type: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     source: str = "",
-    use_router: Optional[bool] = None,
+    use_router: bool | None = None,
 ) -> bool:
     """Safely emit an event, handling unavailable event bus gracefully.
 
@@ -248,7 +249,7 @@ async def emit_event_safe(
 def subscribe_safe(
     event_type: str,
     handler: Callable,
-    bus: Optional[Any] = None
+    bus: Any | None = None
 ) -> bool:
     """Safely subscribe to an event type.
 
@@ -692,7 +693,7 @@ async def emit_tier_promotion_safe(
 
 def emit_sync(
     event_type: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     source: str = ""
 ) -> bool:
     """Synchronous wrapper for emitting events.
@@ -732,38 +733,38 @@ EventBus = _EventBus
 
 # Router-related exports (December 2025)
 __all__ = [
-    # Availability checks
-    "has_event_bus",
-    "has_event_router",
     # Configuration
     "USE_ROUTER_BY_DEFAULT",
-    "set_use_router_by_default",
+    "DataEvent",
+    # Re-exports
+    "DataEventType",
+    "EventBus",
+    "create_event",
+    "emit_elo_updated_safe",
+    "emit_error_safe",
+    "emit_evaluation_completed_safe",
+    "emit_event_safe",
+    "emit_high_quality_data_available_safe",
+    "emit_low_quality_data_warning_safe",
+    # Convenience emitters
+    "emit_model_promoted_safe",
+    "emit_new_games_safe",
+    "emit_quality_distribution_changed_safe",
+    # Quality events
+    "emit_quality_score_updated_safe",
+    # Sync wrapper
+    "emit_sync",
+    # Tier events
+    "emit_tier_promotion_safe",
+    "emit_training_completed_safe",
+    "emit_training_failed_safe",
+    "emit_training_started_safe",
     # Core functions
     "get_event_bus_safe",
     "get_event_types",
-    "create_event",
-    "emit_event_safe",
+    # Availability checks
+    "has_event_bus",
+    "has_event_router",
+    "set_use_router_by_default",
     "subscribe_safe",
-    # Convenience emitters
-    "emit_model_promoted_safe",
-    "emit_training_completed_safe",
-    "emit_evaluation_completed_safe",
-    "emit_error_safe",
-    "emit_elo_updated_safe",
-    "emit_new_games_safe",
-    "emit_training_started_safe",
-    "emit_training_failed_safe",
-    # Quality events
-    "emit_quality_score_updated_safe",
-    "emit_quality_distribution_changed_safe",
-    "emit_high_quality_data_available_safe",
-    "emit_low_quality_data_warning_safe",
-    # Tier events
-    "emit_tier_promotion_safe",
-    # Sync wrapper
-    "emit_sync",
-    # Re-exports
-    "DataEventType",
-    "DataEvent",
-    "EventBus",
 ]

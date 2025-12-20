@@ -15,22 +15,22 @@ import json
 import logging
 import os
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.training.model_versioning import (
+    LegacyCheckpointError,
     ModelMetadata,
     ModelVersionManager,
-    LegacyCheckpointError,
 )
-from app.training.tournament import Tournament, VICTORY_REASONS
+from app.training.tournament import VICTORY_REASONS, Tournament
 
 # Import canonical thresholds
 try:
     from app.config.thresholds import (
-        INITIAL_ELO_RATING,
         ELO_K_FACTOR,
+        INITIAL_ELO_RATING,
         PROMOTION_WIN_RATE_THRESHOLD,
     )
 except ImportError:
@@ -65,7 +65,7 @@ class RegisteredModel:
         if not self.registered_at:
             self.registered_at = datetime.now(timezone.utc).isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = asdict(self)
         # ModelMetadata needs special handling
@@ -73,7 +73,7 @@ class RegisteredModel:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RegisteredModel":
+    def from_dict(cls, data: dict[str, Any]) -> "RegisteredModel":
         """Create from dictionary."""
         data["metadata"] = ModelMetadata.from_dict(data["metadata"])
         return cls(**data)
@@ -92,7 +92,7 @@ class MatchResult:
 
     model_a_id: str
     model_b_id: str
-    winner_id: Optional[str]  # None for draw
+    winner_id: str | None  # None for draw
     victory_reason: str
     game_number: int
     played_at: str = ""
@@ -107,15 +107,15 @@ class TournamentResult:
     """Results from a full tournament."""
 
     tournament_id: str
-    participants: List[str]
-    matches: List[MatchResult]
-    final_elo_ratings: Dict[str, float]
-    final_standings: List[Tuple[str, float]]  # (model_id, rating) sorted
+    participants: list[str]
+    matches: list[MatchResult]
+    final_elo_ratings: dict[str, float]
+    final_standings: list[tuple[str, float]]  # (model_id, rating) sorted
     started_at: str
     finished_at: str = ""
-    victory_reasons: Dict[str, int] = field(default_factory=dict)
+    victory_reasons: dict[str, int] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "tournament_id": self.tournament_id,
@@ -147,13 +147,13 @@ class ChallengerResult:
     champion_final_elo: float
     should_promote: bool
     evaluation_time: str = ""
-    victory_reasons: Dict[str, int] = field(default_factory=dict)
+    victory_reasons: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.evaluation_time:
             self.evaluation_time = datetime.now(timezone.utc).isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return asdict(self)
 
@@ -214,7 +214,7 @@ def _binomial_coefficient(n: int, k: int) -> int:
 
 def calculate_elo_change(
     rating_a: float, rating_b: float, score_a: float, k_factor: float = 32.0
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Calculate Elo rating changes for both players.
 
@@ -296,7 +296,7 @@ class AutoTournamentPipeline:
         self,
         models_dir: str,
         results_dir: str,
-        registry_file: Optional[str] = None,
+        registry_file: str | None = None,
     ):
         """
         Initialize the tournament pipeline.
@@ -314,13 +314,13 @@ class AutoTournamentPipeline:
         )
 
         # Registered models by ID
-        self._models: Dict[str, RegisteredModel] = {}
+        self._models: dict[str, RegisteredModel] = {}
 
         # Model version manager for checkpoint operations
         self._version_manager = ModelVersionManager()
 
         # Tournament history
-        self._tournament_history: List[TournamentResult] = []
+        self._tournament_history: list[TournamentResult] = []
 
         # Ensure directories exist
         os.makedirs(models_dir, exist_ok=True)
@@ -333,7 +333,7 @@ class AutoTournamentPipeline:
         """Load model registry from disk."""
         if os.path.exists(self.registry_file):
             try:
-                with open(self.registry_file, "r") as f:
+                with open(self.registry_file) as f:
                     data = json.load(f)
 
                 self._models = {
@@ -367,8 +367,8 @@ class AutoTournamentPipeline:
     def register_model(
         self,
         model_path: str,
-        metadata: Optional[ModelMetadata] = None,
-        initial_elo: Optional[float] = None,
+        metadata: ModelMetadata | None = None,
+        initial_elo: float | None = None,
     ) -> str:
         """
         Register a new model version for tournament.
@@ -438,18 +438,18 @@ class AutoTournamentPipeline:
 
         return model_id
 
-    def get_champion(self) -> Optional[RegisteredModel]:
+    def get_champion(self) -> RegisteredModel | None:
         """Get the current champion model."""
         for model in self._models.values():
             if model.is_champion:
                 return model
         return None
 
-    def get_model(self, model_id: str) -> Optional[RegisteredModel]:
+    def get_model(self, model_id: str) -> RegisteredModel | None:
         """Get a registered model by ID."""
         return self._models.get(model_id)
 
-    def list_models(self) -> List[RegisteredModel]:
+    def list_models(self) -> list[RegisteredModel]:
         """List all registered models sorted by Elo rating."""
         return sorted(
             self._models.values(),
@@ -459,7 +459,7 @@ class AutoTournamentPipeline:
 
     def run_tournament(
         self,
-        participants: Optional[List[str]] = None,
+        participants: list[str] | None = None,
         games_per_match: int = 10,
     ) -> TournamentResult:
         """
@@ -495,10 +495,8 @@ class AutoTournamentPipeline:
         ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         tournament_id = f"tournament_{ts}"
         started_at = datetime.now(timezone.utc).isoformat()
-        matches: List[MatchResult] = []
-        victory_reasons: Dict[str, int] = {
-            reason: 0 for reason in VICTORY_REASONS
-        }
+        matches: list[MatchResult] = []
+        victory_reasons: dict[str, int] = dict.fromkeys(VICTORY_REASONS, 0)
 
         # Round-robin tournament
         game_number = 0
@@ -527,7 +525,7 @@ class AutoTournamentPipeline:
                 results = tournament.run()
 
                 # Record individual games
-                for g in range(results["A"]):
+                for _g in range(results["A"]):
                     game_number += 1
                     matches.append(
                         MatchResult(
@@ -539,7 +537,7 @@ class AutoTournamentPipeline:
                         )
                     )
 
-                for g in range(results["B"]):
+                for _g in range(results["B"]):
                     game_number += 1
                     matches.append(
                         MatchResult(
@@ -551,7 +549,7 @@ class AutoTournamentPipeline:
                         )
                     )
 
-                for g in range(results["Draw"]):
+                for _g in range(results["Draw"]):
                     game_number += 1
                     matches.append(
                         MatchResult(
@@ -625,7 +623,7 @@ class AutoTournamentPipeline:
         self,
         challenger_path: str,
         games: int = 50,
-        challenger_metadata: Optional[ModelMetadata] = None,
+        challenger_metadata: ModelMetadata | None = None,
     ) -> ChallengerResult:
         """
         Evaluate new model against current champion.
@@ -819,7 +817,7 @@ class AutoTournamentPipeline:
 
         logger.info(f"Promoted {model_id} to champion")
 
-    def get_elo_rankings(self) -> List[Tuple[str, float]]:
+    def get_elo_rankings(self) -> list[tuple[str, float]]:
         """
         Get current Elo rankings for all models.
 
@@ -933,9 +931,7 @@ class AutoTournamentPipeline:
         ])
 
         # Aggregate victory reasons from all tournaments
-        total_reasons: Dict[str, int] = {
-            reason: 0 for reason in VICTORY_REASONS
-        }
+        total_reasons: dict[str, int] = dict.fromkeys(VICTORY_REASONS, 0)
         for t in self._tournament_history:
             for reason, count in t.victory_reasons.items():
                 total_reasons[reason] += count
@@ -953,7 +949,7 @@ class AutoTournamentPipeline:
 
         return "\n".join(lines)
 
-    def save_report(self, filename: Optional[str] = None) -> str:
+    def save_report(self, filename: str | None = None) -> str:
         """
         Save report to a markdown file.
 

@@ -172,8 +172,9 @@ type = "forbidden"
 source_modules = ["app.ai"]
 forbidden_modules = ["app.training"]
 ignore_imports = [
-    # Allow specific exceptions for shared utilities
-    "app.ai.neural_net -> app.training.train",  # NeuralNetAI needs training utils
+    # Allow specific exceptions for cache utilities
+    "app.ai.cache_invalidation -> app.training.eval_cache",
+    "app.ai.cache_invalidation -> app.training.export_cache",
 ]
 
 [[tool.importlinter.contracts]]
@@ -186,7 +187,6 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "app.main",
-    "app.routers",
     "app.ai",
     "app.game_engine",
     "app.models",

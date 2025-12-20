@@ -22,9 +22,9 @@ See: app.config.thresholds for canonical Elo constants.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Sequence
 
 # Import canonical Elo constants
 try:
@@ -50,7 +50,7 @@ class EloRating:
     wins: int = 0
     losses: int = 0
     draws: int = 0
-    rating_history: List[Tuple[datetime, float]] = field(default_factory=list)
+    rating_history: list[tuple[datetime, float]] = field(default_factory=list)
 
     # Glicko-style rating deviation parameters
     # Initial RD for new players (high uncertainty)
@@ -91,7 +91,7 @@ class EloRating:
         decay_factor = math.exp(-self.games_played / self.RD_DECAY_GAMES)
         return self.MIN_RD + (self.INITIAL_RD - self.MIN_RD) * decay_factor
 
-    def confidence_interval(self, confidence: float = 0.95) -> Tuple[float, float]:
+    def confidence_interval(self, confidence: float = 0.95) -> tuple[float, float]:
         """Calculate confidence interval for the rating.
 
         Args:
@@ -120,7 +120,7 @@ class EloRating:
         return (round(self.rating - margin, 1), round(self.rating + margin, 1))
 
     @property
-    def ci_95(self) -> Tuple[float, float]:
+    def ci_95(self) -> tuple[float, float]:
         """Convenience property for 95% confidence interval."""
         return self.confidence_interval(0.95)
 
@@ -136,7 +136,7 @@ class EloRating:
         margin = round(1.96 * rd)
         return f"{round(self.rating)} ± {margin}"
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         ci_lower, ci_upper = self.ci_95
         return {
             "agent_id": self.agent_id,
@@ -181,7 +181,7 @@ class EloCalculator:
         self.k_factor_provisional = k_factor_provisional
         self.provisional_games = provisional_games
 
-        self._ratings: Dict[str, EloRating] = {}
+        self._ratings: dict[str, EloRating] = {}
 
     def get_rating(self, agent_id: str) -> EloRating:
         """Get or create rating for an agent."""
@@ -212,8 +212,8 @@ class EloCalculator:
         agent_a_id: str,
         agent_b_id: str,
         result: float,
-        timestamp: Optional[datetime] = None,
-    ) -> Tuple[float, float]:
+        timestamp: datetime | None = None,
+    ) -> tuple[float, float]:
         """Update ratings after a match.
 
         Args:
@@ -262,7 +262,7 @@ class EloCalculator:
 
         return new_rating_a, new_rating_b
 
-    def get_leaderboard(self) -> List[EloRating]:
+    def get_leaderboard(self) -> list[EloRating]:
         """Get ratings sorted by rating (descending)."""
         return sorted(
             self._ratings.values(),
@@ -270,7 +270,7 @@ class EloCalculator:
             reverse=True,
         )
 
-    def get_all_ratings(self) -> Dict[str, EloRating]:
+    def get_all_ratings(self) -> dict[str, EloRating]:
         """Get all ratings."""
         return self._ratings.copy()
 
@@ -281,8 +281,8 @@ class EloCalculator:
     def update_multiplayer_ratings(
         self,
         rankings: Sequence[str],
-        timestamp: Optional[datetime] = None,
-    ) -> Dict[str, float]:
+        timestamp: datetime | None = None,
+    ) -> dict[str, float]:
         """Update ratings after a multiplayer game based on final rankings.
 
         Decomposes the multiplayer result into virtual pairwise matchups.
@@ -312,7 +312,7 @@ class EloCalculator:
 
         # Get all ratings and calculate rating changes
         ratings = {agent_id: self.get_rating(agent_id) for agent_id in rankings}
-        rating_deltas: Dict[str, float] = {agent_id: 0.0 for agent_id in rankings}
+        rating_deltas: dict[str, float] = dict.fromkeys(rankings, 0.0)
 
         # Process all pairwise matchups
         # For each pair (i, j) where i < j: player at rank i beat player at rank j
@@ -359,9 +359,9 @@ class EloCalculator:
 
     def update_multiplayer_with_ties(
         self,
-        rankings: Sequence[Tuple[str, int]],
-        timestamp: Optional[datetime] = None,
-    ) -> Dict[str, float]:
+        rankings: Sequence[tuple[str, int]],
+        timestamp: datetime | None = None,
+    ) -> dict[str, float]:
         """Update ratings for multiplayer with potential ties.
 
         Args:
@@ -388,7 +388,7 @@ class EloCalculator:
         agents = [r[0] for r in rankings]
         ranks = {r[0]: r[1] for r in rankings}
         ratings = {agent_id: self.get_rating(agent_id) for agent_id in agents}
-        rating_deltas: Dict[str, float] = {agent_id: 0.0 for agent_id in agents}
+        rating_deltas: dict[str, float] = dict.fromkeys(agents, 0.0)
 
         # Process all pairwise matchups
         for i in range(n_players):
@@ -441,7 +441,7 @@ class EloCalculator:
 
         return new_ratings
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Serialize calculator state."""
         return {
             "ratings": {

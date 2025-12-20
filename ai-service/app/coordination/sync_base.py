@@ -25,9 +25,10 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,13 @@ class SyncState:
     Provides a unified schema for tracking sync progress.
     """
     last_sync_timestamp: float = 0.0
-    synced_nodes: Set[str] = field(default_factory=set)
-    pending_syncs: Set[str] = field(default_factory=set)
-    failed_nodes: Set[str] = field(default_factory=set)
+    synced_nodes: set[str] = field(default_factory=set)
+    pending_syncs: set[str] = field(default_factory=set)
+    failed_nodes: set[str] = field(default_factory=set)
     sync_count: int = 0
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize state to dictionary."""
         return {
             "last_sync_timestamp": self.last_sync_timestamp,
@@ -57,7 +58,7 @@ class SyncState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SyncState":
+    def from_dict(cls, data: dict[str, Any]) -> SyncState:
         """Deserialize state from dictionary."""
         return cls(
             last_sync_timestamp=data.get("last_sync_timestamp", 0.0),
@@ -106,9 +107,9 @@ class SyncManagerBase(ABC):
 
     def __init__(
         self,
-        state_path: Optional[Path] = None,
+        state_path: Path | None = None,
         sync_interval: float = 300.0,
-        circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
+        circuit_breaker_config: CircuitBreakerConfig | None = None,
     ):
         """Initialize base sync manager.
 
@@ -145,7 +146,7 @@ class SyncManagerBase(ABC):
         """Record successful sync with node."""
         self._circuit_breaker.record_success(node)
 
-    def _record_sync_failure(self, node: str, error: Optional[Exception] = None) -> None:
+    def _record_sync_failure(self, node: str, error: Exception | None = None) -> None:
         """Record failed sync with node."""
         self._circuit_breaker.record_failure(node, error)
 
@@ -183,7 +184,7 @@ class SyncManagerBase(ABC):
         pass
 
     @abstractmethod
-    def _get_nodes(self) -> List[str]:
+    def _get_nodes(self) -> list[str]:
         """Get list of nodes to sync with.
 
         Returns:
@@ -221,14 +222,14 @@ class SyncManagerBase(ABC):
             self._state.last_error = str(e)
             return False
 
-    async def sync_with_cluster(self) -> Dict[str, bool]:
+    async def sync_with_cluster(self) -> dict[str, bool]:
         """Sync with all nodes in the cluster.
 
         Returns:
             Dict mapping node -> success status
         """
         async with self._sync_lock:
-            results: Dict[str, bool] = {}
+            results: dict[str, bool] = {}
             nodes = self._get_nodes()
 
             for node in nodes:
@@ -263,7 +264,7 @@ class SyncManagerBase(ABC):
         self._save_state()
         logger.info("Sync manager stopped")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current sync manager status.
 
         Returns:
@@ -283,9 +284,9 @@ class SyncManagerBase(ABC):
 
 async def try_transports(
     node: str,
-    transports: List[Tuple[str, Callable]],
+    transports: list[tuple[str, Callable]],
     timeout: float = 30.0,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Try multiple transport methods with failover.
 
     Args:
@@ -318,11 +319,11 @@ async def try_transports(
 # =============================================================================
 
 __all__ = [
-    # Data classes
-    "SyncState",
     "CircuitBreakerConfig",
     # Classes
     "SyncManagerBase",
+    # Data classes
+    "SyncState",
     # Functions
     "try_transports",
 ]

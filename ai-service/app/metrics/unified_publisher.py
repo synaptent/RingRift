@@ -41,7 +41,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class MetricConfig:
     prefix: str = "ringrift"
 
     # Default labels applied to all metrics
-    default_labels: Dict[str, str] = field(default_factory=dict)
+    default_labels: dict[str, str] = field(default_factory=dict)
 
     # Histogram buckets
     default_histogram_buckets: tuple = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
@@ -82,17 +82,17 @@ class MetricsBackend(ABC):
     """Abstract base class for metrics backends."""
 
     @abstractmethod
-    def counter(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def counter(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Increment a counter."""
         pass
 
     @abstractmethod
-    def gauge(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def gauge(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Set a gauge value."""
         pass
 
     @abstractmethod
-    def histogram(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def histogram(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Record a histogram observation."""
         pass
 
@@ -103,11 +103,11 @@ class PrometheusBackend(MetricsBackend):
     def __init__(self, prefix: str, histogram_buckets: tuple):
         self.prefix = prefix
         self.histogram_buckets = histogram_buckets
-        self._counters: Dict[Tuple[str, Tuple[str, ...]], Any] = {}
-        self._gauges: Dict[Tuple[str, Tuple[str, ...]], Any] = {}
-        self._histograms: Dict[Tuple[str, Tuple[str, ...]], Any] = {}
+        self._counters: dict[tuple[str, tuple[str, ...]], Any] = {}
+        self._gauges: dict[tuple[str, tuple[str, ...]], Any] = {}
+        self._histograms: dict[tuple[str, tuple[str, ...]], Any] = {}
 
-    def _get_counter(self, name: str, labels: Dict[str, str]) -> Any:
+    def _get_counter(self, name: str, labels: dict[str, str]) -> Any:
         """Get or create a counter."""
         full_name = f"{self.prefix}_{name}" if self.prefix else name
         label_names = tuple(sorted(labels.keys()))
@@ -127,7 +127,7 @@ class PrometheusBackend(MetricsBackend):
 
         return self._counters.get(key)
 
-    def _get_gauge(self, name: str, labels: Dict[str, str]) -> Any:
+    def _get_gauge(self, name: str, labels: dict[str, str]) -> Any:
         """Get or create a gauge."""
         full_name = f"{self.prefix}_{name}" if self.prefix else name
         label_names = tuple(sorted(labels.keys()))
@@ -147,7 +147,7 @@ class PrometheusBackend(MetricsBackend):
 
         return self._gauges.get(key)
 
-    def _get_histogram(self, name: str, labels: Dict[str, str]) -> Any:
+    def _get_histogram(self, name: str, labels: dict[str, str]) -> Any:
         """Get or create a histogram."""
         full_name = f"{self.prefix}_{name}" if self.prefix else name
         label_names = tuple(sorted(labels.keys()))
@@ -168,7 +168,7 @@ class PrometheusBackend(MetricsBackend):
 
         return self._histograms.get(key)
 
-    def counter(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def counter(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Increment a counter."""
         counter = self._get_counter(name, labels)
         if counter:
@@ -177,7 +177,7 @@ class PrometheusBackend(MetricsBackend):
             except Exception as e:
                 logger.debug(f"Failed to increment counter {name}: {e}")
 
-    def gauge(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def gauge(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Set a gauge value."""
         gauge = self._get_gauge(name, labels)
         if gauge:
@@ -186,7 +186,7 @@ class PrometheusBackend(MetricsBackend):
             except Exception as e:
                 logger.debug(f"Failed to set gauge {name}: {e}")
 
-    def histogram(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def histogram(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Record a histogram observation."""
         hist = self._get_histogram(name, labels)
         if hist:
@@ -202,7 +202,7 @@ class EventBusBackend(MetricsBackend):
     def __init__(self, prefix: str):
         self.prefix = prefix
 
-    def _publish(self, metric_type: str, name: str, value: float, labels: Dict[str, str]) -> None:
+    def _publish(self, metric_type: str, name: str, value: float, labels: dict[str, str]) -> None:
         """Publish metric as event."""
         try:
             from app.distributed.data_events import (
@@ -229,13 +229,13 @@ class EventBusBackend(MetricsBackend):
         except Exception as e:
             logger.debug(f"Failed to publish metric event: {e}")
 
-    def counter(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def counter(self, name: str, value: float, labels: dict[str, str]) -> None:
         self._publish("counter", name, value, labels)
 
-    def gauge(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def gauge(self, name: str, value: float, labels: dict[str, str]) -> None:
         self._publish("gauge", name, value, labels)
 
-    def histogram(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def histogram(self, name: str, value: float, labels: dict[str, str]) -> None:
         self._publish("histogram", name, value, labels)
 
 
@@ -246,19 +246,19 @@ class LoggingBackend(MetricsBackend):
         self.prefix = prefix
         self._logger = logging.getLogger("metrics")
 
-    def _log(self, metric_type: str, name: str, value: float, labels: Dict[str, str]) -> None:
+    def _log(self, metric_type: str, name: str, value: float, labels: dict[str, str]) -> None:
         """Log metric."""
         full_name = f"{self.prefix}_{name}" if self.prefix else name
         labels_str = ", ".join(f"{k}={v}" for k, v in labels.items())
         self._logger.info(f"[{metric_type}] {full_name}={value} ({labels_str})")
 
-    def counter(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def counter(self, name: str, value: float, labels: dict[str, str]) -> None:
         self._log("counter", name, value, labels)
 
-    def gauge(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def gauge(self, name: str, value: float, labels: dict[str, str]) -> None:
         self._log("gauge", name, value, labels)
 
-    def histogram(self, name: str, value: float, labels: Dict[str, str]) -> None:
+    def histogram(self, name: str, value: float, labels: dict[str, str]) -> None:
         self._log("histogram", name, value, labels)
 
 
@@ -272,14 +272,14 @@ class MetricsPublisher:
     - StatsD (optional)
     """
 
-    def __init__(self, config: Optional[MetricConfig] = None):
+    def __init__(self, config: MetricConfig | None = None):
         """Initialize metrics publisher.
 
         Args:
             config: Configuration (default: MetricConfig())
         """
         self.config = config or MetricConfig()
-        self._backends: List[MetricsBackend] = []
+        self._backends: list[MetricsBackend] = []
 
         # Initialize backends
         if self.config.enable_prometheus:
@@ -299,7 +299,7 @@ class MetricsPublisher:
 
         logger.debug(f"[MetricsPublisher] Initialized with {len(self._backends)} backends")
 
-    def _merge_labels(self, labels: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    def _merge_labels(self, labels: dict[str, str] | None = None) -> dict[str, str]:
         """Merge provided labels with default labels."""
         merged = dict(self.config.default_labels)
         if labels:
@@ -310,7 +310,7 @@ class MetricsPublisher:
         self,
         name: str,
         value: float = 1.0,
-        labels: Optional[Dict[str, str]] = None,
+        labels: dict[str, str] | None = None,
     ) -> None:
         """Increment a counter metric.
 
@@ -330,7 +330,7 @@ class MetricsPublisher:
         self,
         name: str,
         value: float,
-        labels: Optional[Dict[str, str]] = None,
+        labels: dict[str, str] | None = None,
     ) -> None:
         """Set a gauge metric.
 
@@ -350,7 +350,7 @@ class MetricsPublisher:
         self,
         name: str,
         value: float,
-        labels: Optional[Dict[str, str]] = None,
+        labels: dict[str, str] | None = None,
     ) -> None:
         """Record a histogram observation.
 
@@ -366,7 +366,7 @@ class MetricsPublisher:
             except Exception as e:
                 logger.debug(f"Backend failed for histogram {name}: {e}")
 
-    def timer(self, name: str, labels: Optional[Dict[str, str]] = None) -> "MetricTimer":
+    def timer(self, name: str, labels: dict[str, str] | None = None) -> MetricTimer:
         """Create a context manager for timing operations.
 
         Args:
@@ -386,14 +386,14 @@ class MetricTimer:
         self,
         publisher: MetricsPublisher,
         name: str,
-        labels: Optional[Dict[str, str]] = None,
+        labels: dict[str, str] | None = None,
     ):
         self.publisher = publisher
         self.name = name
         self.labels = labels
         self._start_time: float = 0.0
 
-    def __enter__(self) -> "MetricTimer":
+    def __enter__(self) -> MetricTimer:
         self._start_time = time.time()
         return self
 
@@ -403,10 +403,10 @@ class MetricTimer:
 
 
 # Singleton instance
-_publisher: Optional[MetricsPublisher] = None
+_publisher: MetricsPublisher | None = None
 
 
-def get_metrics_publisher(config: Optional[MetricConfig] = None) -> MetricsPublisher:
+def get_metrics_publisher(config: MetricConfig | None = None) -> MetricsPublisher:
     """Get the global metrics publisher singleton.
 
     Args:
@@ -482,19 +482,19 @@ def time_operation(name: str, **labels) -> MetricTimer:
 
 
 __all__ = [
-    "MetricsPublisher",
-    "MetricConfig",
-    "MetricType",
-    "MetricsBackend",
-    "PrometheusBackend",
     "EventBusBackend",
     "LoggingBackend",
+    "MetricConfig",
     "MetricTimer",
+    "MetricType",
+    "MetricsBackend",
+    "MetricsPublisher",
+    "PrometheusBackend",
     "get_metrics_publisher",
-    "reset_metrics_publisher",
     # Convenience functions
     "publish_counter",
     "publish_gauge",
     "publish_histogram",
+    "reset_metrics_publisher",
     "time_operation",
 ]

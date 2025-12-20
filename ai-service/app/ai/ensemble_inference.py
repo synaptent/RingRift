@@ -33,7 +33,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
 
 import numpy as np
 
@@ -73,8 +73,8 @@ class EnsemblePrediction:
     policy: np.ndarray          # Combined policy distribution
     value: float                # Combined value estimate
     uncertainty: float          # Prediction uncertainty
-    individual_values: List[float]  # Per-model values
-    individual_policies: List[np.ndarray]  # Per-model policies
+    individual_values: list[float]  # Per-model values
+    individual_policies: list[np.ndarray]  # Per-model policies
     agreement: float            # Agreement between models (0-1)
 
 
@@ -83,8 +83,8 @@ class EnsemblePredictor:
 
     def __init__(
         self,
-        model_paths: Optional[List[Union[str, Path]]] = None,
-        model_configs: Optional[List[ModelConfig]] = None,
+        model_paths: list[Union[str, Path]] | None = None,
+        model_configs: list[ModelConfig] | None = None,
         strategy: Union[str, EnsembleStrategy] = EnsembleStrategy.WEIGHTED,
         temperature: float = 1.0,
         min_agreement_threshold: float = 0.5,
@@ -189,8 +189,8 @@ class EnsemblePredictor:
     def _forward_models(
         self,
         state: Any,
-        features: Optional[np.ndarray] = None,
-    ) -> Tuple[List[np.ndarray], List[float]]:
+        features: np.ndarray | None = None,
+    ) -> tuple[list[np.ndarray], list[float]]:
         """Run forward pass on all models.
 
         Args:
@@ -248,7 +248,7 @@ class EnsemblePredictor:
     def predict(
         self,
         state: Any = None,
-        features: Optional[np.ndarray] = None,
+        features: np.ndarray | None = None,
     ) -> EnsemblePrediction:
         """Get ensemble prediction.
 
@@ -301,7 +301,7 @@ class EnsemblePredictor:
 
     def _weighted_combine(
         self,
-        policies: List[np.ndarray],
+        policies: list[np.ndarray],
         weights: np.ndarray,
     ) -> np.ndarray:
         """Combine policies using weighted average."""
@@ -325,7 +325,7 @@ class EnsemblePredictor:
 
         return combined
 
-    def _voting_combine(self, policies: List[np.ndarray]) -> np.ndarray:
+    def _voting_combine(self, policies: list[np.ndarray]) -> np.ndarray:
         """Combine policies using voting."""
         if not policies:
             return np.ones(100) / 100
@@ -343,7 +343,7 @@ class EnsemblePredictor:
 
         return combined
 
-    def _max_combine(self, policies: List[np.ndarray]) -> np.ndarray:
+    def _max_combine(self, policies: list[np.ndarray]) -> np.ndarray:
         """Combine policies using max confidence."""
         if not policies:
             return np.ones(100) / 100
@@ -366,15 +366,15 @@ class EnsemblePredictor:
 
     def _compute_uncertainty(
         self,
-        policies: List[np.ndarray],
-        values: List[float],
+        policies: list[np.ndarray],
+        values: list[float],
     ) -> float:
         """Compute prediction uncertainty based on model disagreement."""
         if len(policies) < 2:
             return 0.0
 
         # Policy uncertainty: average KL divergence from mean
-        mean_policy = np.mean([p for p in policies], axis=0)
+        mean_policy = np.mean(list(policies), axis=0)
         policy_kl_divs = []
         for policy in policies:
             # KL(P || Q) = sum(P * log(P/Q))
@@ -394,7 +394,7 @@ class EnsemblePredictor:
 
         return float(uncertainty)
 
-    def _compute_agreement(self, policies: List[np.ndarray]) -> float:
+    def _compute_agreement(self, policies: list[np.ndarray]) -> float:
         """Compute agreement between models on best move."""
         if len(policies) < 2:
             return 1.0
@@ -413,8 +413,8 @@ class EnsemblePredictor:
     def get_best_move(
         self,
         state: Any = None,
-        features: Optional[np.ndarray] = None,
-    ) -> Tuple[int, float]:
+        features: np.ndarray | None = None,
+    ) -> tuple[int, float]:
         """Get best move with confidence score.
 
         Args:
@@ -434,9 +434,9 @@ class EnsemblePredictor:
     def get_move_with_uncertainty(
         self,
         state: Any = None,
-        features: Optional[np.ndarray] = None,
+        features: np.ndarray | None = None,
         exploration_bonus: float = 0.1,
-    ) -> Tuple[int, float, float]:
+    ) -> tuple[int, float, float]:
         """Get move considering uncertainty for exploration.
 
         Uses Upper Confidence Bound (UCB) style exploration:
@@ -466,8 +466,8 @@ class DynamicEnsemble(EnsemblePredictor):
 
     def __init__(
         self,
-        model_paths: Optional[List[Union[str, Path]]] = None,
-        model_configs: Optional[List[ModelConfig]] = None,
+        model_paths: list[Union[str, Path]] | None = None,
+        model_configs: list[ModelConfig] | None = None,
         learning_rate: float = 0.01,
         **kwargs,
     ):
@@ -481,7 +481,7 @@ class DynamicEnsemble(EnsemblePredictor):
         """
         super().__init__(model_paths, model_configs, **kwargs)
         self.learning_rate = learning_rate
-        self.performance_history: Dict[int, List[float]] = {
+        self.performance_history: dict[int, list[float]] = {
             i: [] for i in range(len(self.configs))
         }
 
@@ -510,7 +510,7 @@ class DynamicEnsemble(EnsemblePredictor):
 
     def record_prediction_outcome(
         self,
-        individual_predictions: List[int],
+        individual_predictions: list[int],
         correct_move: int,
     ):
         """Record outcome of predictions for weight learning.

@@ -5,7 +5,7 @@ concrete GameEngine implementation, allowing AI strategies to depend
 on a stable rules API rather than on internal engine details.
 """
 
-from .interfaces import RulesEngine  # re-export for convenience
 from .factory import get_rules_engine
+from .interfaces import RulesEngine  # re-export for convenience
 
 __all__ = ["RulesEngine", "get_rules_engine"]

@@ -28,16 +28,16 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Any, TypeVar
 
 from prometheus_client import (
+    REGISTRY,
     Counter,
+    Enum,
     Gauge,
     Histogram,
-    Summary,
     Info,
-    Enum,
-    REGISTRY,
+    Summary,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,11 +49,11 @@ M = TypeVar('M', Counter, Gauge, Histogram, Summary, Info, Enum)
 _registry_lock = threading.RLock()
 
 # Track metrics we've registered for debugging
-_registered_metrics: Dict[str, str] = {}  # name -> type
+_registered_metrics: dict[str, str] = {}  # name -> type
 
 
 def safe_metric(
-    metric_class: Type[M],
+    metric_class: type[M],
     name: str,
     doc: str,
     **kwargs: Any,
@@ -90,7 +90,7 @@ def safe_metric(
         return metric
 
 
-def get_metric(name: str) -> Optional[Any]:
+def get_metric(name: str) -> Any | None:
     """Get an existing metric by name.
 
     Args:
@@ -116,7 +116,7 @@ def is_metric_registered(name: str) -> bool:
         return name in REGISTRY._names_to_collectors
 
 
-def list_registered_metrics() -> Dict[str, str]:
+def list_registered_metrics() -> dict[str, str]:
     """List all metrics registered through safe_metric.
 
     Returns:
@@ -126,7 +126,7 @@ def list_registered_metrics() -> Dict[str, str]:
         return dict(_registered_metrics)
 
 
-def get_all_prometheus_metrics() -> Dict[str, Any]:
+def get_all_prometheus_metrics() -> dict[str, Any]:
     """Get all metrics from the Prometheus registry.
 
     Returns:
@@ -162,17 +162,17 @@ _safe_metric = safe_metric
 
 
 __all__ = [
-    # Main function
-    'safe_metric',
     '_safe_metric',  # Backwards compatibility
-    # Type-specific helpers
-    'safe_counter',
-    'safe_gauge',
-    'safe_histogram',
-    'safe_summary',
+    'get_all_prometheus_metrics',
     # Introspection
     'get_metric',
     'is_metric_registered',
     'list_registered_metrics',
-    'get_all_prometheus_metrics',
+    # Type-specific helpers
+    'safe_counter',
+    'safe_gauge',
+    'safe_histogram',
+    # Main function
+    'safe_metric',
+    'safe_summary',
 ]

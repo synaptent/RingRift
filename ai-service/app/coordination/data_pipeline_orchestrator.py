@@ -38,9 +38,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class StageTransition:
     timestamp: float = field(default_factory=time.time)
     success: bool = True
     duration_seconds: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -79,12 +80,12 @@ class IterationRecord:
     start_time: float
     end_time: float = 0.0
     success: bool = False
-    stages_completed: List[str] = field(default_factory=list)
+    stages_completed: list[str] = field(default_factory=list)
     games_generated: int = 0
-    model_id: Optional[str] = None
+    model_id: str | None = None
     elo_delta: float = 0.0
     promoted: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def duration(self) -> float:
@@ -104,7 +105,7 @@ class PipelineStats:
     total_models_trained: int = 0
     promotions: int = 0
     average_iteration_duration: float = 0.0
-    stage_durations: Dict[str, float] = field(default_factory=dict)
+    stage_durations: dict[str, float] = field(default_factory=dict)
     last_activity_time: float = 0.0
 
 
@@ -134,15 +135,15 @@ class DataPipelineOrchestrator:
         self._current_iteration = 0
 
         # Iteration tracking
-        self._iteration_records: Dict[int, IterationRecord] = {}
-        self._completed_iterations: List[IterationRecord] = []
+        self._iteration_records: dict[int, IterationRecord] = {}
+        self._completed_iterations: list[IterationRecord] = []
 
         # Stage timing
-        self._stage_start_times: Dict[PipelineStage, float] = {}
-        self._stage_durations: Dict[PipelineStage, List[float]] = {}
+        self._stage_start_times: dict[PipelineStage, float] = {}
+        self._stage_durations: dict[PipelineStage, list[float]] = {}
 
         # Transition history
-        self._transitions: List[StageTransition] = []
+        self._transitions: list[StageTransition] = []
 
         # Statistics
         self._total_games = 0
@@ -153,24 +154,24 @@ class DataPipelineOrchestrator:
         self._subscribed = False
 
         # Callbacks for stage transitions
-        self._stage_callbacks: Dict[PipelineStage, List[Callable]] = {}
+        self._stage_callbacks: dict[PipelineStage, list[Callable]] = {}
 
         # Quality distribution tracking (December 2025)
-        self._quality_distribution: Dict[str, float] = {}  # level -> percentage
+        self._quality_distribution: dict[str, float] = {}  # level -> percentage
         self._last_quality_update: float = 0.0
         self._cache_invalidation_count: int = 0
         self._pending_cache_refresh: bool = False
 
         # Optimization tracking (December 2025)
-        self._active_optimization: Optional[str] = None  # "cmaes" or "nas"
-        self._optimization_run_id: Optional[str] = None
+        self._active_optimization: str | None = None  # "cmaes" or "nas"
+        self._optimization_run_id: str | None = None
         self._optimization_start_time: float = 0.0
 
         # Resource constraint tracking (December 2025)
         self._paused: bool = False
-        self._pause_reason: Optional[str] = None
+        self._pause_reason: str | None = None
         self._pause_time: float = 0.0
-        self._resource_constraints: Dict[str, Dict] = {}  # resource_type -> constraint_info
+        self._resource_constraints: dict[str, dict] = {}  # resource_type -> constraint_info
         self._backpressure_active: bool = False
 
     def subscribe_to_events(self) -> bool:
@@ -273,7 +274,7 @@ class DataPipelineOrchestrator:
         new_stage: PipelineStage,
         iteration: int,
         success: bool = True,
-        metadata: Optional[Dict] = None,
+        metadata: dict | None = None,
     ) -> None:
         """Record a stage transition."""
         old_stage = self._current_stage
@@ -537,7 +538,6 @@ class DataPipelineOrchestrator:
         self._cache_invalidation_count += count
 
         # Check if this affects NPZ data caches
-        affected_types = ["npz_data", "feature_cache"]
         if invalidation_type == "model":
             # Model cache invalidation may require NPZ re-export
             self._pending_cache_refresh = True
@@ -688,7 +688,7 @@ class DataPipelineOrchestrator:
     def _has_critical_constraints(self) -> bool:
         """Check if any critical resource constraints are active."""
         now = time.time()
-        for resource_type, constraint in self._resource_constraints.items():
+        for _resource_type, constraint in self._resource_constraints.items():
             # Constraints older than 60s are considered stale
             if now - constraint.get("time", 0) > 60:
                 continue
@@ -700,7 +700,7 @@ class DataPipelineOrchestrator:
         """Check if pipeline is currently paused."""
         return self._paused
 
-    def get_pause_info(self) -> Optional[Dict[str, Any]]:
+    def get_pause_info(self) -> dict[str, Any] | None:
         """Get information about current pause state."""
         if not self._paused:
             return None
@@ -733,11 +733,11 @@ class DataPipelineOrchestrator:
         """Check if optimization is currently active."""
         return self._active_optimization is not None
 
-    def get_active_optimization(self) -> Optional[str]:
+    def get_active_optimization(self) -> str | None:
         """Get the type of active optimization, or None."""
         return self._active_optimization
 
-    def get_quality_distribution(self) -> Dict[str, float]:
+    def get_quality_distribution(self) -> dict[str, float]:
         """Get current quality distribution."""
         return dict(self._quality_distribution)
 
@@ -785,7 +785,7 @@ class DataPipelineOrchestrator:
         """Get the current iteration number."""
         return self._current_iteration
 
-    def get_iteration_record(self, iteration: int) -> Optional[IterationRecord]:
+    def get_iteration_record(self, iteration: int) -> IterationRecord | None:
         """Get record for a specific iteration."""
         if iteration in self._iteration_records:
             return self._iteration_records[iteration]
@@ -794,11 +794,11 @@ class DataPipelineOrchestrator:
                 return record
         return None
 
-    def get_recent_transitions(self, limit: int = 20) -> List[StageTransition]:
+    def get_recent_transitions(self, limit: int = 20) -> list[StageTransition]:
         """Get recent stage transitions."""
         return self._transitions[-limit:]
 
-    def get_stage_metrics(self) -> Dict[str, Any]:
+    def get_stage_metrics(self) -> dict[str, Any]:
         """Get timing metrics for each stage."""
         metrics = {}
         for stage, durations in self._stage_durations.items():
@@ -837,7 +837,7 @@ class DataPipelineOrchestrator:
             last_activity_time=time.time(),
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get orchestrator status for monitoring."""
         stats = self.get_stats()
 
@@ -906,7 +906,7 @@ class DataPipelineOrchestrator:
 # Singleton and convenience functions
 # =============================================================================
 
-_pipeline_orchestrator: Optional[DataPipelineOrchestrator] = None
+_pipeline_orchestrator: DataPipelineOrchestrator | None = None
 
 
 def get_pipeline_orchestrator() -> DataPipelineOrchestrator:
@@ -933,7 +933,7 @@ def wire_pipeline_events(auto_trigger: bool = False) -> DataPipelineOrchestrator
     return _pipeline_orchestrator
 
 
-def get_pipeline_status() -> Dict[str, Any]:
+def get_pipeline_status() -> dict[str, Any]:
     """Convenience function to get pipeline status."""
     return get_pipeline_orchestrator().get_status()
 
@@ -945,12 +945,12 @@ def get_current_pipeline_stage() -> PipelineStage:
 
 __all__ = [
     "DataPipelineOrchestrator",
-    "PipelineStage",
-    "StageTransition",
     "IterationRecord",
+    "PipelineStage",
     "PipelineStats",
-    "get_pipeline_orchestrator",
-    "wire_pipeline_events",
-    "get_pipeline_status",
+    "StageTransition",
     "get_current_pipeline_stage",
+    "get_pipeline_orchestrator",
+    "get_pipeline_status",
+    "wire_pipeline_events",
 ]

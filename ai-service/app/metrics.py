@@ -13,7 +13,6 @@ from typing import Final
 
 from prometheus_client import Counter, Gauge, Histogram
 
-
 AI_MOVE_REQUESTS: Final[Counter] = Counter(
     "ai_move_requests_total",
     (
@@ -570,60 +569,60 @@ def record_auto_rollback(
 
 
 __all__ = [
-    "AI_MOVE_REQUESTS",
-    "AI_MOVE_LATENCY",
     "AI_ERRORS",
     "AI_FALLBACKS",
     "AI_INSTANCE_CACHE_LOOKUPS",
     "AI_INSTANCE_CACHE_SIZE",
-    "PYTHON_INVARIANT_VIOLATIONS",
-    "GAME_OUTCOMES",
+    "AI_MOVE_LATENCY",
+    "AI_MOVE_REQUESTS",
+    "AUTO_ROLLBACKS",
+    "CLUSTER_CPU_UTILIZATION",
+    "CLUSTER_GPU_MEMORY_USED_BYTES",
+    "CLUSTER_GPU_UTILIZATION",
+    "CLUSTER_MEMORY_USED_BYTES",
+    "CLUSTER_NODE_COST_PER_HOUR",
+    # Cluster cost metrics
+    "CLUSTER_NODE_UP",
+    "DRAW_RATE",
+    "ELO_DRIFT_AVG",
+    "ELO_DRIFT_MAX",
+    "ELO_DRIFT_SIGNIFICANT",
+    "ELO_SYNC_CONFLICTS",
+    "ELO_SYNC_MATCHES_ADDED",
+    # Elo reconciliation metrics
+    "ELO_SYNC_OPERATIONS",
     "GAMES_COMPLETED",
     "GAMES_MOVES_TOTAL",
     "GAME_DURATION_SECONDS",
-    "WIN_RATE_BY_PLAYER",
-    "DRAW_RATE",
-    # Cluster cost metrics
-    "CLUSTER_NODE_UP",
-    "CLUSTER_NODE_COST_PER_HOUR",
-    "CLUSTER_GPU_UTILIZATION",
-    "CLUSTER_CPU_UTILIZATION",
-    "CLUSTER_GPU_MEMORY_USED_BYTES",
-    "CLUSTER_MEMORY_USED_BYTES",
+    "GAME_OUTCOMES",
     "GPU_HOURLY_RATES",
-    # Training data diversity metrics
-    "TRAINING_SAMPLES_BY_PHASE",
-    "TRAINING_SAMPLES_BY_MOVE_NUMBER",
-    "TRAINING_DATA_RECENCY",
-    "TRAINING_UNIQUE_POSITIONS",
-    "TRAINING_POSITION_ENTROPY",
     # Promotion metrics
     "PROMOTION_DECISIONS",
-    "PROMOTION_EXECUTIONS",
     "PROMOTION_ELO_IMPROVEMENT",
-    # Elo reconciliation metrics
-    "ELO_SYNC_OPERATIONS",
-    "ELO_SYNC_MATCHES_ADDED",
-    "ELO_SYNC_CONFLICTS",
-    "ELO_DRIFT_MAX",
-    "ELO_DRIFT_AVG",
-    "ELO_DRIFT_SIGNIFICANT",
+    "PROMOTION_EXECUTIONS",
+    "PYTHON_INVARIANT_VIOLATIONS",
+    "ROLLBACK_AT_RISK",
+    # Rollback metrics
+    "ROLLBACK_CHECKS",
+    "ROLLBACK_ELO_REGRESSION",
+    "TRAINING_DATA_RECENCY",
+    "TRAINING_POSITION_ENTROPY",
+    "TRAINING_SAMPLES_BY_MOVE_NUMBER",
+    # Training data diversity metrics
+    "TRAINING_SAMPLES_BY_PHASE",
+    "TRAINING_UNIQUE_POSITIONS",
+    "WIN_RATE_BY_PLAYER",
     # Helper functions
     "observe_ai_move_start",
     "record_ai_error",
     "record_ai_fallback",
+    "record_auto_rollback",
+    "record_elo_drift",
+    "record_elo_sync",
     "record_game_outcome",
-    "record_training_sample",
-    "report_cluster_node",
     "record_promotion_decision",
     "record_promotion_execution",
-    "record_elo_sync",
-    "record_elo_drift",
-    # Rollback metrics
-    "ROLLBACK_CHECKS",
-    "AUTO_ROLLBACKS",
-    "ROLLBACK_ELO_REGRESSION",
-    "ROLLBACK_AT_RISK",
     "record_rollback_check",
-    "record_auto_rollback",
+    "record_training_sample",
+    "report_cluster_node",
 ]

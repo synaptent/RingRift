@@ -35,7 +35,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class P2PNodeInfo:
     has_gpu: bool
     gpu_name: str
     memory_gb: int
-    capabilities: List[str]
+    capabilities: list[str]
     cpu_percent: float = 0.0
     memory_percent: float = 0.0
     disk_percent: float = 0.0
@@ -74,7 +74,7 @@ class P2PNodeInfo:
     is_alive: bool = True
     is_healthy: bool = True
 
-    def to_worker_config(self) -> Dict[str, Any]:
+    def to_worker_config(self) -> dict[str, Any]:
         """Convert to WorkerConfig-compatible dict for compatibility."""
         return {
             "name": self.node_id,
@@ -98,7 +98,7 @@ class P2PBackend:
     def __init__(
         self,
         leader_url: str,
-        auth_token: Optional[str] = None,
+        auth_token: str | None = None,
         timeout: float = P2P_HTTP_TIMEOUT,
     ):
         """Initialize P2P backend.
@@ -113,9 +113,9 @@ class P2PBackend:
         self.leader_url = leader_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN", "")
         self.timeout = timeout
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
-    async def _get_session(self) -> "aiohttp.ClientSession":
+    async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
         if self._session is None or self._session.closed:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
@@ -128,7 +128,7 @@ class P2PBackend:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def __aenter__(self) -> "P2PBackend":
+    async def __aenter__(self) -> P2PBackend:
         """Async context manager entry."""
         return self
 
@@ -136,7 +136,7 @@ class P2PBackend:
         """Async context manager exit."""
         await self.close()
 
-    async def get_cluster_status(self) -> Dict[str, Any]:
+    async def get_cluster_status(self) -> dict[str, Any]:
         """Get cluster status from the leader node."""
         session = await self._get_session()
         async with session.get(f"{self.leader_url}/api/cluster/status") as resp:
@@ -144,7 +144,7 @@ class P2PBackend:
                 raise RuntimeError(f"Failed to get cluster status: {resp.status}")
             return await resp.json()
 
-    async def get_nodes(self) -> List[P2PNodeInfo]:
+    async def get_nodes(self) -> list[P2PNodeInfo]:
         """Get all nodes in the cluster."""
         status = await self.get_cluster_status()
         nodes = []
@@ -170,15 +170,15 @@ class P2PBackend:
             )
         return nodes
 
-    async def get_healthy_nodes(self) -> List[P2PNodeInfo]:
+    async def get_healthy_nodes(self) -> list[P2PNodeInfo]:
         """Get all healthy nodes in the cluster."""
         return [n for n in await self.get_nodes() if n.is_alive and n.is_healthy]
 
-    async def get_gpu_nodes(self) -> List[P2PNodeInfo]:
+    async def get_gpu_nodes(self) -> list[P2PNodeInfo]:
         """Get all healthy GPU nodes."""
         return [n for n in await self.get_healthy_nodes() if n.has_gpu]
 
-    async def get_cpu_nodes(self) -> List[P2PNodeInfo]:
+    async def get_cpu_nodes(self) -> list[P2PNodeInfo]:
         """Get all healthy CPU-only nodes."""
         return [n for n in await self.get_healthy_nodes() if not n.has_gpu]
 
@@ -188,7 +188,7 @@ class P2PBackend:
         num_players: int = 2,
         games_per_node: int = 500,
         seed: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start canonical selfplay across the cluster.
 
         Args:
@@ -218,8 +218,8 @@ class P2PBackend:
         self,
         board_type: str = "square8",
         num_players: int = 2,
-        db_paths: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        db_paths: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Start parity validation on generated games.
 
         Args:
@@ -249,7 +249,7 @@ class P2PBackend:
         board_type: str = "square8",
         num_players: int = 2,
         output_dir: str = "data/training",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start NPZ export of validated games.
 
         Args:
@@ -278,7 +278,7 @@ class P2PBackend:
         board_type: str = "square8",
         num_players: int = 2,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Start neural network training.
 
         Args:
@@ -302,7 +302,7 @@ class P2PBackend:
                 raise RuntimeError(f"Failed to start training: {result.get('error')}")
             return result
 
-    async def get_pipeline_status(self) -> Dict[str, Any]:
+    async def get_pipeline_status(self) -> dict[str, Any]:
         """Get current pipeline status."""
         session = await self._get_session()
         async with session.get(f"{self.leader_url}/pipeline/status") as resp:
@@ -313,7 +313,7 @@ class P2PBackend:
         job_id: str,
         poll_interval: float = P2P_JOB_POLL_INTERVAL,
         timeout_minutes: float = MAX_PHASE_WAIT_MINUTES,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Wait for a pipeline job to complete.
 
         Args:
@@ -341,13 +341,13 @@ class P2PBackend:
             f"Pipeline job {job_id} did not complete within {timeout_minutes} minutes"
         )
 
-    async def trigger_data_sync(self) -> Dict[str, Any]:
+    async def trigger_data_sync(self) -> dict[str, Any]:
         """Trigger data synchronization across the cluster."""
         session = await self._get_session()
         async with session.post(f"{self.leader_url}/sync/start") as resp:
             return await resp.json()
 
-    async def trigger_git_update(self, node_id: Optional[str] = None) -> Dict[str, Any]:
+    async def trigger_git_update(self, node_id: str | None = None) -> dict[str, Any]:
         """Trigger git update on cluster nodes.
 
         Args:
@@ -361,7 +361,7 @@ class P2PBackend:
         async with session.post(f"{self.leader_url}/git/update", json=payload) as resp:
             return await resp.json()
 
-    async def get_job_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_job_history(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent job history.
 
         Args:
@@ -377,7 +377,7 @@ class P2PBackend:
             data = await resp.json()
             return data.get("jobs", [])
 
-    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+    async def cancel_job(self, job_id: str) -> dict[str, Any]:
         """Cancel a running job.
 
         Args:
@@ -435,11 +435,11 @@ def _is_tailscale_ip(host: str) -> bool:
 
 
 async def discover_p2p_leader_url(
-    seed_urls: List[str],
+    seed_urls: list[str],
     *,
     auth_token: str = "",
     timeout_seconds: float = 5.0,
-) -> Optional[str]:
+) -> str | None:
     """Discover the current effective P2P leader URL from one or more seed nodes.
 
     This keeps orchestration scripts resilient to leader churn: any reachable
@@ -474,23 +474,23 @@ async def discover_p2p_leader_url(
     headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
     timeout = aiohttp.ClientTimeout(total=float(timeout_seconds))
 
-    def _candidate_base_urls(info: Dict[str, Any]) -> List[str]:
+    def _candidate_base_urls(info: dict[str, Any]) -> list[str]:
         """Generate candidate URLs for the leader."""
         scheme = str(info.get("scheme") or "http").strip() or "http"
         host = str(info.get("host") or "").strip()
         rh = str(info.get("reported_host") or "").strip()
         try:
-            port = int(info.get("port", None))
+            port = int(info.get("port"))
         except Exception:
             port = None
         try:
-            rp = int(info.get("reported_port", None))
+            rp = int(info.get("reported_port"))
         except Exception:
             rp = None
 
-        candidates: List[str] = []
+        candidates: list[str] = []
 
-        def _add(h: str, p: Optional[int]) -> None:
+        def _add(h: str, p: int | None) -> None:
             h = (h or "").strip()
             if not h or _is_loopback(h):
                 return
@@ -510,8 +510,8 @@ async def discover_p2p_leader_url(
         return candidates
 
     async def _first_reachable_base(
-        session: "aiohttp.ClientSession", candidates: List[str]
-    ) -> Optional[str]:
+        session: aiohttp.ClientSession, candidates: list[str]
+    ) -> str | None:
         """Find the first reachable URL from candidates."""
         for base in candidates:
             try:
@@ -548,7 +548,7 @@ async def discover_p2p_leader_url(
                 status.get("peers") if isinstance(status.get("peers"), dict) else {}
             )
 
-            leader_info: Dict[str, Any] = {}
+            leader_info: dict[str, Any] = {}
             node_id = (status.get("node_id") or "").strip()
             if leader_id == node_id or leader_id == (
                 self_block.get("node_id") or ""
@@ -585,9 +585,9 @@ async def discover_p2p_leader_url(
 
 
 async def get_p2p_backend(
-    seed_urls: Optional[List[str]] = None,
-    leader_url: Optional[str] = None,
-    auth_token: Optional[str] = None,
+    seed_urls: list[str] | None = None,
+    leader_url: str | None = None,
+    auth_token: str | None = None,
 ) -> P2PBackend:
     """Get a P2P backend instance with automatic leader discovery.
 
@@ -627,9 +627,9 @@ async def get_p2p_backend(
 # Import OrchestratorRegistry for P2P leader sync
 try:
     from app.coordination.orchestrator_registry import (
+        OrchestratorInfo,
         OrchestratorRegistry,
         OrchestratorRole,
-        OrchestratorInfo,
     )
     HAS_ORCHESTRATOR_REGISTRY = True
 except ImportError:
@@ -688,7 +688,7 @@ def register_p2p_leader_in_registry(
         return False
 
 
-def get_p2p_leader_from_registry() -> Optional[str]:
+def get_p2p_leader_from_registry() -> str | None:
     """Get P2P leader URL from OrchestratorRegistry if available.
 
     Returns:
@@ -740,9 +740,9 @@ def sync_p2p_leader_heartbeat(leader_url: str, leader_id: str = "") -> None:
 
 
 async def get_p2p_backend_with_registry(
-    seed_urls: Optional[List[str]] = None,
-    leader_url: Optional[str] = None,
-    auth_token: Optional[str] = None,
+    seed_urls: list[str] | None = None,
+    leader_url: str | None = None,
+    auth_token: str | None = None,
     use_registry: bool = True,
 ) -> P2PBackend:
     """Get a P2P backend with OrchestratorRegistry integration.
@@ -801,19 +801,19 @@ async def get_p2p_backend_with_registry(
 
 
 __all__ = [
+    "HAS_AIOHTTP",
+    "HAS_ORCHESTRATOR_REGISTRY",
+    "MAX_PHASE_WAIT_MINUTES",
+    "P2P_DEFAULT_PORT",
+    "P2P_HTTP_TIMEOUT",
+    "P2P_JOB_POLL_INTERVAL",
     "P2PBackend",
     "P2PNodeInfo",
     "discover_p2p_leader_url",
     "get_p2p_backend",
-    "P2P_DEFAULT_PORT",
-    "P2P_HTTP_TIMEOUT",
-    "P2P_JOB_POLL_INTERVAL",
-    "MAX_PHASE_WAIT_MINUTES",
-    "HAS_AIOHTTP",
+    "get_p2p_backend_with_registry",
+    "get_p2p_leader_from_registry",
     # OrchestratorRegistry integration
     "register_p2p_leader_in_registry",
-    "get_p2p_leader_from_registry",
     "sync_p2p_leader_heartbeat",
-    "get_p2p_backend_with_registry",
-    "HAS_ORCHESTRATOR_REGISTRY",
 ]

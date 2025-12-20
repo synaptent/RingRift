@@ -26,10 +26,9 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, Mapping
+from collections.abc import Mapping
 
-
-HeuristicWeights = Dict[str, float]
+HeuristicWeights = dict[str, float]
 
 
 # --- v1 Balanced Base Profile ----------------------------------------------
@@ -482,7 +481,7 @@ HEURISTIC_V1_4P: HeuristicWeights = {
 #
 # Board abbreviations: sq8 = square8, sq19 = square19, hex = hexagonal
 
-HEURISTIC_WEIGHT_PROFILES: Dict[str, HeuristicWeights] = {
+HEURISTIC_WEIGHT_PROFILES: dict[str, HeuristicWeights] = {
     # High-level, persona-oriented ids (preferred for new configs).
     "heuristic_v1_balanced": HEURISTIC_V1_BALANCED,
     "heuristic_v1_aggressive": HEURISTIC_V1_AGGRESSIVE,
@@ -534,7 +533,7 @@ HEURISTIC_WEIGHT_PROFILES: Dict[str, HeuristicWeights] = {
 
 # --- Player-count-specific weight selection ---------------------------------
 
-PLAYER_COUNT_PROFILE_MAP: Dict[int, str] = {
+PLAYER_COUNT_PROFILE_MAP: dict[int, str] = {
     2: "heuristic_v1_2p",
     3: "heuristic_v1_3p",
     4: "heuristic_v1_4p",
@@ -545,14 +544,14 @@ PLAYER_COUNT_PROFILE_MAP: Dict[int, str] = {
 # its own CMA-ES optimized weights.
 #
 # Board type normalization: "square8" -> "sq8", "square19" -> "sq19", "hexagonal" -> "hex"
-BOARD_ABBREV: Dict[str, str] = {
+BOARD_ABBREV: dict[str, str] = {
     "square8": "sq8",
     "square19": "sq19",
     "hexagonal": "hex",
     "hex": "hex",  # Allow short form too
 }
 
-BOARD_PROFILE_MAP: Dict[tuple, str] = {
+BOARD_PROFILE_MAP: dict[tuple, str] = {
     # Square8 (primary training board)
     ("square8", 2): "heuristic_v1_sq8_2p",
     ("square8", 3): "heuristic_v1_sq8_3p",
@@ -719,7 +718,7 @@ def load_trained_profiles_if_available(
     *,
     mode: str = "override",
     suffix: str = "_trained",
-) -> Dict[str, HeuristicWeights]:
+) -> dict[str, HeuristicWeights]:
     """Load trained heuristic profiles from JSON and merge into the registry.
 
     Parameters
@@ -758,7 +757,7 @@ def load_trained_profiles_if_available(
         # configured as strict aliases of the legacy keys. This avoids silently
         # ignoring trained weights when production ladder tiers reference
         # board×player ids such as heuristic_v1_sq8_3p.
-        for (board_type, num_players), board_profile_id in BOARD_PROFILE_MAP.items():
+        for (_board_type, num_players), board_profile_id in BOARD_PROFILE_MAP.items():
             legacy_profile_id = PLAYER_COUNT_PROFILE_MAP.get(num_players)
             if not legacy_profile_id:
                 continue
@@ -770,11 +769,11 @@ def load_trained_profiles_if_available(
             ):
                 alias_targets.append((board_profile_id, legacy_profile_id))
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         payload = json.load(f)
 
     profiles = payload.get("profiles", {})
-    loaded: Dict[str, HeuristicWeights] = {}
+    loaded: dict[str, HeuristicWeights] = {}
 
     for pid, weights in profiles.items():
         if mode == "override":

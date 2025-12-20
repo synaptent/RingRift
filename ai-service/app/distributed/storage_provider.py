@@ -37,10 +37,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.distributed.aria2_transport import Aria2Transport
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class StoragePaths:
     elo_database: Path
     sync_staging: Path
     local_scratch: Path
-    nfs_base: Optional[Path] = None
+    nfs_base: Path | None = None
 
 
 class StorageProvider(ABC):
@@ -141,9 +141,7 @@ class StorageProvider(ABC):
         if not self.capabilities.skip_rsync_for_shared:
             return False
         # Skip rsync between Lambda nodes (both have NFS)
-        if target_node.startswith("lambda-") and self.provider_type == StorageProviderType.LAMBDA_NFS:
-            return True
-        return False
+        return bool(target_node.startswith("lambda-") and self.provider_type == StorageProviderType.LAMBDA_NFS)
 
     def ensure_directories(self) -> None:
         """Ensure all storage directories exist."""
@@ -162,7 +160,7 @@ class StorageProvider(ABC):
 
         logger.debug(f"Ensured storage directories for {self.provider_type.value}")
 
-    def get_sync_config(self) -> Dict[str, Any]:
+    def get_sync_config(self) -> dict[str, Any]:
         """Get recommended sync configuration for this provider.
 
         Returns config suitable for UnifiedDataSyncConfig or aria2.
@@ -183,7 +181,7 @@ class LambdaNFSProvider(StorageProvider):
 
     NFS_BASE = Path("/lambda/nfs/RingRift")
 
-    def __init__(self, nfs_base: Optional[Path] = None):
+    def __init__(self, nfs_base: Path | None = None):
         self._nfs_base = nfs_base or self.NFS_BASE
         self._paths = StoragePaths(
             selfplay_games=self._nfs_base / "selfplay",
@@ -227,7 +225,7 @@ class VastEphemeralProvider(StorageProvider):
 
     WORKSPACE_BASE = Path("/workspace")
 
-    def __init__(self, workspace_base: Optional[Path] = None):
+    def __init__(self, workspace_base: Path | None = None):
         self._workspace_base = workspace_base or self.WORKSPACE_BASE
         self._paths = StoragePaths(
             selfplay_games=self._workspace_base / "data" / "selfplay",
@@ -267,15 +265,13 @@ class VastEphemeralProvider(StorageProvider):
         if cls.WORKSPACE_BASE.exists():
             return True
         # Check environment variable
-        if os.environ.get("VAST_CONTAINERLABEL"):
-            return True
-        return False
+        return bool(os.environ.get("VAST_CONTAINERLABEL"))
 
 
 class LocalStorageProvider(StorageProvider):
     """Storage provider for local development."""
 
-    def __init__(self, base_dir: Optional[Path] = None):
+    def __init__(self, base_dir: Path | None = None):
         if base_dir is None:
             # Default to ai-service directory
             base_dir = Path(__file__).parent.parent.parent
@@ -316,7 +312,7 @@ class LocalStorageProvider(StorageProvider):
 # Provider Detection and Factory
 # =============================================================================
 
-_cached_provider: Optional[StorageProvider] = None
+_cached_provider: StorageProvider | None = None
 
 
 def detect_storage_provider() -> StorageProviderType:
@@ -354,7 +350,7 @@ def detect_storage_provider() -> StorageProviderType:
 
 
 def get_storage_provider(
-    provider_type: Optional[StorageProviderType] = None,
+    provider_type: StorageProviderType | None = None,
     force_refresh: bool = False,
 ) -> StorageProvider:
     """Get the storage provider instance.
@@ -420,11 +416,11 @@ class TransportConfig:
     gossip_sync_interval: int = 60
 
     # General
-    fallback_chain: List[str] = field(default_factory=lambda: ["aria2", "ssh", "p2p"])
+    fallback_chain: list[str] = field(default_factory=lambda: ["aria2", "ssh", "p2p"])
     total_timeout_budget: int = 900  # 15 minutes max for all fallback attempts
 
 
-def get_optimal_transport_config(provider: Optional[StorageProvider] = None) -> TransportConfig:
+def get_optimal_transport_config(provider: StorageProvider | None = None) -> TransportConfig:
     """Get optimal transport configuration for the current provider.
 
     Args:
@@ -505,7 +501,7 @@ def is_nfs_available() -> bool:
     return provider.capabilities.supports_direct_nfs
 
 
-def get_aria2_sources(exclude_self: bool = True) -> List[str]:
+def get_aria2_sources(exclude_self: bool = True) -> list[str]:
     """Get list of aria2 data server URLs from cluster.
 
     Args:

@@ -38,11 +38,10 @@ import os
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 # Import canonical Elo and timeout constants
 try:
@@ -52,13 +51,13 @@ except ImportError:
     SQLITE_TIMEOUT = 30
 
 # Import unified signals for cross-system consistency
+from app.utils.paths import AI_SERVICE_ROOT
+
 from .unified_signals import (
     TrainingSignals,
     TrainingUrgency,
     get_signal_computer,
 )
-
-from app.utils.paths import AI_SERVICE_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ class EloSnapshot:
     elo: float
     games_played: int
     timestamp: float
-    model_id: Optional[str] = None
+    model_id: str | None = None
 
 
 @dataclass
@@ -118,7 +117,7 @@ class ConfigMomentum:
     """
     config_key: str
     current_elo: float = INITIAL_ELO_RATING
-    elo_history: List[EloSnapshot] = field(default_factory=list)
+    elo_history: list[EloSnapshot] = field(default_factory=list)
     momentum_state: MomentumState = MomentumState.STABLE
     intensity: TrainingIntensity = TrainingIntensity.NORMAL
     games_since_training: int = 0
@@ -128,7 +127,7 @@ class ConfigMomentum:
     last_promotion_elo: float = INITIAL_ELO_RATING
     total_promotions: int = 0
 
-    def add_snapshot(self, elo: float, games: int, model_id: Optional[str] = None) -> None:
+    def add_snapshot(self, elo: float, games: int, model_id: str | None = None) -> None:
         """Add an Elo snapshot and update momentum."""
         snapshot = EloSnapshot(
             elo=elo,
@@ -157,7 +156,7 @@ class ConfigMomentum:
             return
 
         elo_change = recent[-1].elo - recent[0].elo
-        avg_change = elo_change / max(1, len(recent) - 1)
+        elo_change / max(1, len(recent) - 1)
 
         # Determine momentum state
         if elo_change >= ELO_STRONG_IMPROVEMENT:
@@ -237,7 +236,7 @@ class ConfigMomentum:
 
         return elo_diff / hours
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "config_key": self.config_key,
             "current_elo": self.current_elo,
@@ -273,10 +272,10 @@ class FeedbackAccelerator:
     stability.
     """
 
-    _instance: Optional["FeedbackAccelerator"] = None
+    _instance: FeedbackAccelerator | None = None
     _lock = threading.RLock()
 
-    def __new__(cls) -> "FeedbackAccelerator":
+    def __new__(cls) -> FeedbackAccelerator:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -293,10 +292,10 @@ class FeedbackAccelerator:
         self._db_lock = threading.RLock()
 
         # Per-config momentum tracking
-        self._configs: Dict[str, ConfigMomentum] = {}
+        self._configs: dict[str, ConfigMomentum] = {}
 
         # Callbacks for training triggers
-        self._training_callbacks: List[Callable[[str, TrainingDecision], None]] = []
+        self._training_callbacks: list[Callable[[str, TrainingDecision], None]] = []
 
         # Unified signal computer for cross-system consistency
         self._signal_computer = get_signal_computer()
@@ -364,27 +363,26 @@ class FeedbackAccelerator:
 
     def _load_state(self) -> None:
         """Load state from database."""
-        with self._db_lock:
-            with self._get_connection() as conn:
-                # Load config momentum
-                rows = conn.execute("SELECT * FROM config_momentum").fetchall()
-                for row in rows:
-                    config_key = row["config_key"]
-                    momentum = ConfigMomentum(
-                        config_key=config_key,
-                        current_elo=row["current_elo"],
-                        momentum_state=MomentumState(row["momentum_state"]),
-                        intensity=TrainingIntensity(row["intensity"]),
-                        games_since_training=row["games_since_training"],
-                        last_training_time=row["last_training_time"],
-                        consecutive_improvements=row["consecutive_improvements"],
-                        consecutive_plateaus=row["consecutive_plateaus"],
-                        last_promotion_elo=row["last_promotion_elo"],
-                        total_promotions=row["total_promotions"],
-                    )
+        with self._db_lock, self._get_connection() as conn:
+            # Load config momentum
+            rows = conn.execute("SELECT * FROM config_momentum").fetchall()
+            for row in rows:
+                config_key = row["config_key"]
+                momentum = ConfigMomentum(
+                    config_key=config_key,
+                    current_elo=row["current_elo"],
+                    momentum_state=MomentumState(row["momentum_state"]),
+                    intensity=TrainingIntensity(row["intensity"]),
+                    games_since_training=row["games_since_training"],
+                    last_training_time=row["last_training_time"],
+                    consecutive_improvements=row["consecutive_improvements"],
+                    consecutive_plateaus=row["consecutive_plateaus"],
+                    last_promotion_elo=row["last_promotion_elo"],
+                    total_promotions=row["total_promotions"],
+                )
 
-                    # Load recent Elo history
-                    history_rows = conn.execute("""
+                # Load recent Elo history
+                history_rows = conn.execute("""
                         SELECT elo, games_played, model_id, timestamp
                         FROM elo_history
                         WHERE config_key = ?
@@ -392,15 +390,15 @@ class FeedbackAccelerator:
                         LIMIT 100
                     """, (config_key,)).fetchall()
 
-                    for h in reversed(history_rows):
-                        momentum.elo_history.append(EloSnapshot(
-                            elo=h["elo"],
-                            games_played=h["games_played"],
-                            model_id=h["model_id"],
-                            timestamp=h["timestamp"],
-                        ))
+                for h in reversed(history_rows):
+                    momentum.elo_history.append(EloSnapshot(
+                        elo=h["elo"],
+                        games_played=h["games_played"],
+                        model_id=h["model_id"],
+                        timestamp=h["timestamp"],
+                    ))
 
-                    self._configs[config_key] = momentum
+                self._configs[config_key] = momentum
 
     def _save_config(self, config_key: str) -> None:
         """Save config momentum to database."""
@@ -408,9 +406,8 @@ class FeedbackAccelerator:
         if not momentum:
             return
 
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT OR REPLACE INTO config_momentum (
                         config_key, current_elo, momentum_state, intensity,
                         games_since_training, last_training_time,
@@ -418,13 +415,13 @@ class FeedbackAccelerator:
                         last_promotion_elo, total_promotions, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    config_key, momentum.current_elo, momentum.momentum_state.value,
-                    momentum.intensity.value, momentum.games_since_training,
-                    momentum.last_training_time, momentum.consecutive_improvements,
-                    momentum.consecutive_plateaus, momentum.last_promotion_elo,
-                    momentum.total_promotions, time.time(),
-                ))
-                conn.commit()
+                config_key, momentum.current_elo, momentum.momentum_state.value,
+                momentum.intensity.value, momentum.games_since_training,
+                momentum.last_training_time, momentum.consecutive_improvements,
+                momentum.consecutive_plateaus, momentum.last_promotion_elo,
+                momentum.total_promotions, time.time(),
+            ))
+            conn.commit()
 
     # =========================================================================
     # Elo Update Tracking
@@ -435,7 +432,7 @@ class FeedbackAccelerator:
         config_key: str,
         new_elo: float,
         games_played: int,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
     ) -> ConfigMomentum:
         """Record an Elo update and update momentum tracking.
 
@@ -464,13 +461,12 @@ class FeedbackAccelerator:
         )
 
         # Save to database
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT INTO elo_history (config_key, elo, games_played, model_id, timestamp)
                     VALUES (?, ?, ?, ?, ?)
                 """, (config_key, new_elo, games_played, model_id, time.time()))
-                conn.commit()
+            conn.commit()
 
         self._save_config(config_key)
 
@@ -497,8 +493,8 @@ class FeedbackAccelerator:
         self,
         config_key: str,
         success: bool = True,
-        new_elo: Optional[float] = None,
-        games_at_training: Optional[int] = None,
+        new_elo: float | None = None,
+        games_at_training: int | None = None,
     ) -> None:
         """Record that training completed for a config.
 
@@ -525,7 +521,7 @@ class FeedbackAccelerator:
         self,
         config_key: str,
         new_elo: float,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
     ) -> None:
         """Record a successful model promotion."""
         if config_key not in self._configs:
@@ -630,22 +626,21 @@ class FeedbackAccelerator:
 
     def _record_decision(self, decision: TrainingDecision) -> None:
         """Record a training decision for analysis."""
-        with self._db_lock:
-            with self._get_connection() as conn:
-                conn.execute("""
+        with self._db_lock, self._get_connection() as conn:
+            conn.execute("""
                     INSERT INTO training_decisions (
                         config_key, should_train, intensity, epochs_multiplier,
                         lr_multiplier, reason, momentum_state, timestamp
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    decision.config_key, int(decision.should_train),
-                    decision.intensity.value, decision.epochs_multiplier,
-                    decision.learning_rate_multiplier, decision.reason,
-                    decision.momentum.value, time.time(),
-                ))
-                conn.commit()
+                decision.config_key, int(decision.should_train),
+                decision.intensity.value, decision.epochs_multiplier,
+                decision.learning_rate_multiplier, decision.reason,
+                decision.momentum.value, time.time(),
+            ))
+            conn.commit()
 
-    def get_training_intensity(self, config_key: str) -> Dict[str, float]:
+    def get_training_intensity(self, config_key: str) -> dict[str, float]:
         """Get training intensity parameters for a config.
 
         Returns dict with epochs_multiplier, learning_rate_multiplier, etc.
@@ -662,7 +657,7 @@ class FeedbackAccelerator:
     # Curriculum Weight Recommendations
     # =========================================================================
 
-    def get_curriculum_weights(self) -> Dict[str, float]:
+    def get_curriculum_weights(self) -> dict[str, float]:
         """Get recommended curriculum weights based on momentum.
 
         Returns dict mapping config_key to weight multiplier.
@@ -721,7 +716,7 @@ class FeedbackAccelerator:
         else:
             return 1.0
 
-    def get_aggregate_selfplay_recommendation(self) -> Dict[str, Any]:
+    def get_aggregate_selfplay_recommendation(self) -> dict[str, Any]:
         """Get aggregate selfplay rate recommendation across all configs.
 
         Returns a recommendation based on the overall momentum state of the system,
@@ -794,22 +789,22 @@ class FeedbackAccelerator:
     # Status and Reporting
     # =========================================================================
 
-    def get_config_momentum(self, config_key: str) -> Optional[ConfigMomentum]:
+    def get_config_momentum(self, config_key: str) -> ConfigMomentum | None:
         """Get momentum data for a config."""
         return self._configs.get(config_key)
 
-    def get_all_momentum(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_momentum(self) -> dict[str, dict[str, Any]]:
         """Get momentum data for all configs."""
         return {k: v.to_dict() for k, v in self._configs.items()}
 
-    def get_improving_configs(self) -> List[str]:
+    def get_improving_configs(self) -> list[str]:
         """Get list of configs that are improving."""
         return [
             k for k, v in self._configs.items()
             if v.momentum_state in (MomentumState.ACCELERATING, MomentumState.IMPROVING)
         ]
 
-    def get_plateau_configs(self) -> List[str]:
+    def get_plateau_configs(self) -> list[str]:
         """Get list of configs that are in plateau."""
         return [
             k for k, v in self._configs.items()
@@ -838,7 +833,7 @@ class FeedbackAccelerator:
 
         return intensity_to_urgency.get(momentum.intensity, TrainingUrgency.NORMAL)
 
-    def get_unified_signals(self, config_key: str) -> Optional[TrainingSignals]:
+    def get_unified_signals(self, config_key: str) -> TrainingSignals | None:
         """Get unified training signals for a config.
 
         Combines FeedbackAccelerator state with unified signal computer
@@ -859,7 +854,7 @@ class FeedbackAccelerator:
 
         return signals
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get summary of feedback accelerator status."""
         improving = self.get_improving_configs()
         plateau = self.get_plateau_configs()
@@ -879,7 +874,7 @@ class FeedbackAccelerator:
             "configs": self.get_all_momentum(),
         }
 
-    def get_metrics_dict(self) -> Dict[str, Any]:
+    def get_metrics_dict(self) -> dict[str, Any]:
         """Get metrics suitable for Prometheus exposition."""
         metrics = {
             "ringrift_feedback_total_configs": len(self._configs),
@@ -907,7 +902,7 @@ class FeedbackAccelerator:
         """Register a callback to be called when training should be triggered."""
         self._training_callbacks.append(callback)
 
-    def check_and_trigger_training(self) -> List[TrainingDecision]:
+    def check_and_trigger_training(self) -> list[TrainingDecision]:
         """Check all configs and trigger training callbacks where appropriate.
 
         Returns list of training decisions that were triggered.
@@ -931,7 +926,7 @@ class FeedbackAccelerator:
 # Module-level convenience functions
 # =============================================================================
 
-_accelerator: Optional[FeedbackAccelerator] = None
+_accelerator: FeedbackAccelerator | None = None
 
 
 def get_feedback_accelerator() -> FeedbackAccelerator:
@@ -947,7 +942,7 @@ def should_trigger_training(config_key: str) -> bool:
     return get_feedback_accelerator().should_trigger_training(config_key)
 
 
-def get_training_intensity(config_key: str) -> Dict[str, float]:
+def get_training_intensity(config_key: str) -> dict[str, float]:
     """Get training intensity parameters for a config."""
     return get_feedback_accelerator().get_training_intensity(config_key)
 
@@ -956,7 +951,7 @@ def record_elo_update(
     config_key: str,
     new_elo: float,
     games_played: int,
-    model_id: Optional[str] = None,
+    model_id: str | None = None,
 ) -> None:
     """Record an Elo update."""
     get_feedback_accelerator().record_elo_update(config_key, new_elo, games_played, model_id)
@@ -972,7 +967,7 @@ def record_training_complete(
     success: bool = True,
     loss_improved: bool = False,
     games_used: int = 0,
-    new_elo: Optional[float] = None,
+    new_elo: float | None = None,
 ) -> None:
     """Record that training completed for a config.
 
@@ -993,12 +988,12 @@ def record_training_complete(
     )
 
 
-def record_promotion(config_key: str, new_elo: float, model_id: Optional[str] = None) -> None:
+def record_promotion(config_key: str, new_elo: float, model_id: str | None = None) -> None:
     """Record a successful model promotion."""
     get_feedback_accelerator().record_promotion(config_key, new_elo, model_id)
 
 
-def get_curriculum_weights() -> Dict[str, float]:
+def get_curriculum_weights() -> dict[str, float]:
     """Get recommended curriculum weights based on momentum."""
     return get_feedback_accelerator().get_curriculum_weights()
 
@@ -1008,7 +1003,7 @@ def get_selfplay_rate_recommendation(config_key: str) -> float:
     return get_feedback_accelerator().get_selfplay_rate_recommendation(config_key)
 
 
-def get_aggregate_selfplay_recommendation() -> Dict[str, Any]:
+def get_aggregate_selfplay_recommendation() -> dict[str, Any]:
     """Get aggregate selfplay rate recommendation across all configs.
 
     Returns:
