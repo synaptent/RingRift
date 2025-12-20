@@ -99,6 +99,8 @@ def play_random_game(
         BOOKKEEPING_MOVES = {
             MoveType.NO_LINE_ACTION,
             MoveType.NO_TERRITORY_ACTION,
+            MoveType.NO_PLACEMENT_ACTION,
+            MoveType.NO_MOVEMENT_ACTION,
             MoveType.SKIP_TERRITORY_PROCESSING,
             MoveType.LINE_FORMATION,
             MoveType.TERRITORY_CLAIM,

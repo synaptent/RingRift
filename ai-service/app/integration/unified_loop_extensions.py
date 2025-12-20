@@ -436,14 +436,14 @@ class UnifiedLoopExtensions:
             try:
                 now = time.time()
 
-                if now - self.state.last_benchmark_time >= interval:
-                    if self.benchmark_suite and self.model_registry:
-                        prod_model = self.model_registry.get_production_model()
-                        if prod_model:
-                            logger.info(f"Running daily benchmarks for {prod_model.model_id}")
-                            # Would load model and run benchmarks here
-                            self.state.last_benchmark_time = now
-                            self.state.benchmark_count += 1
+                if (now - self.state.last_benchmark_time >= interval
+                        and self.benchmark_suite and self.model_registry):
+                    prod_model = self.model_registry.get_production_model()
+                    if prod_model:
+                        logger.info(f"Running daily benchmarks for {prod_model.model_id}")
+                        # Would load model and run benchmarks here
+                        self.state.last_benchmark_time = now
+                        self.state.benchmark_count += 1
 
                 await asyncio.sleep(3600)  # Check hourly
 
