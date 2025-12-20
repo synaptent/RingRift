@@ -9,13 +9,18 @@ The package is organized as follows:
 - blocks.py: Reusable neural network building blocks
 - _neural_net_legacy.py: Original monolithic module (being migrated)
 
-For backwards compatibility, all public symbols are re-exported from
-the legacy module.
+For backwards compatibility, all public symbols are re-exported.
+Migration status: blocks.py contains extracted building blocks.
 """
 
-# Import torch for patching compatibility in tests
+# Building blocks - migrated to blocks.py (Phase 1)
+from app.ai.neural_net.blocks import (
+    AttentionResidualBlock,
+    ResidualBlock,
+    SEResidualBlock,
+)
 
-# Re-export everything from the legacy module for backwards compatibility
+# Re-export from legacy module for backwards compatibility
 # This ensures `from app.ai.neural_net import X` continues to work
 from app.ai._neural_net_legacy import (
     BOARD_POLICY_SIZES,
@@ -66,7 +71,6 @@ from app.ai._neural_net_legacy import (
     TERRITORY_SIZE_BUCKETS,
     # Hex architectures
     ActionEncoderHex,
-    AttentionResidualBlock,
     # Dataclasses
     DecodedPolicyIndex,
     HexNeuralNet_v2,
@@ -77,15 +81,12 @@ from app.ai._neural_net_legacy import (
     NeuralNetAI,
     POLICY_SIZE_8x8,
     POLICY_SIZE_19x19,
-    # Building blocks
-    ResidualBlock,
     # CNN architectures
     RingRiftCNN_v2,
     RingRiftCNN_v2_Lite,
     RingRiftCNN_v3,
     RingRiftCNN_v3_Lite,
     RingRiftCNN_v4,
-    SEResidualBlock,
     _decode_move_square8,
     _encode_move_square8,
     _from_canonical_xy,
