@@ -209,7 +209,7 @@ class UnifiedEventRouter:
         # Run async dispatch in sync context
         try:
             asyncio.get_running_loop()
-            loop.create_task(self._dispatch(router_event, exclude_origin=True))
+            asyncio.create_task(self._dispatch(router_event, exclude_origin=True))
         except RuntimeError:
             # No running loop - use sync dispatch
             self._dispatch_sync(router_event, exclude_origin=True)
