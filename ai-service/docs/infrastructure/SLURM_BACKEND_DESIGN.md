@@ -26,6 +26,21 @@ The design targets a minimal, high-ROI integration:
 - Implement cluster provisioning or Slurm installation automation.
 - Support non-shared-filesystem deployments in the initial version.
 
+## When Slurm Adds Value (and When It Does Not)
+
+Slurm is highest ROI when the cluster is stable and shared-state is reliable:
+
+- Stable node pool with predictable availability (no frequent churn).
+- Shared filesystem mounted at the same path on every node.
+- Clear partitions for training vs selfplay vs eval.
+- Need for fair scheduling, quota enforcement, and job accounting.
+
+P2P/SSH remains the better default when:
+
+- Nodes are elastic or ephemeral (spot/preemptible fleets).
+- You cannot rely on a shared filesystem.
+- Latency and multi-provider networking are primary constraints.
+
 ## Proposed Architecture
 
 ### Integration Point
@@ -106,6 +121,9 @@ slurm:
   job_dir: 'data/slurm/jobs'
   log_dir: 'data/slurm/logs'
   shared_root: '/shared/ringrift'
+  container_runtime: null # optional: apptainer|singularity|docker
+  container_image_x86_64: null
+  container_image_arm64: null
 ```
 
 Example config:
@@ -157,6 +175,13 @@ python scripts/run_nn_training_baseline.py \
 Lambda nodes with a shared filesystem are not an HPC cluster by default. They
 become HPC-like once you add a scheduler and enforce stable allocations.
 
+Classification:
+
+- **Not a stable HPC cluster** if nodes are ad-hoc, lack Slurm, or the shared
+  filesystem is only best-effort.
+- **Yes, HPC-like** once there is a Slurm controller, consistent hostnames,
+  shared filesystem, and enforced partitions/allocations.
+
 ### Required Components
 
 1. **Shared filesystem**: NFS/FSx/Lustre mounted on all nodes.
@@ -193,6 +218,20 @@ become HPC-like once you add a scheduler and enforce stable allocations.
 
 GH200 nodes are aarch64. The shared NFS venv built on x86_64 nodes cannot run on
 ARM. To include GH200 in standard partitions:
+
+Decision: prefer a containerized aarch64 runtime for GH200, with a source-build
+fallback when containers are unavailable.
+
+Recommended path (container-first):
+
+1. Build or pull a CUDA aarch64 image that includes PyTorch 2.6.0.
+2. Configure `slurm.container_runtime` and `slurm.container_image_arm64`.
+3. Update the Slurm backend to launch jobs via `srun --container-image` (or
+   Apptainer/Singularity) when `uname -m == aarch64`.
+4. Move GH200 nodes back into `gpu-train` and `gpu-selfplay` after parity and
+   training smoke tests pass.
+
+Fallback (source-build venv):
 
 1. Build PyTorch 2.6.0 + torchvision 0.21.0 from source on a GH200 node into
    aarch64 venvs on each GH200 node (for example,

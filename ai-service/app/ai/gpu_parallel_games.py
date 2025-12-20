@@ -963,10 +963,10 @@ class ParallelGameRunner:
             is_hex = self.board_type and self.board_type.lower() in ("hexagonal", "hex", "hex8")
             hex_center = self.board_size // 2 if is_hex else 0
 
-            def to_cpu_coords(row: int, col: int):
+            def to_cpu_coords(row: int, col: int, *, _is_hex: bool = is_hex, _hex_center: int = hex_center):
                 """Convert GPU grid to CPU coords."""
-                if is_hex:
-                    return col - hex_center, row - hex_center
+                if _is_hex:
+                    return col - _hex_center, row - _hex_center
                 return col, row
 
             # Extract GPU movement moves
@@ -1842,6 +1842,9 @@ class ParallelGameRunner:
             state.move_history[g, move_count, 3] = from_x
             state.move_history[g, move_count, 4] = to_y
             state.move_history[g, move_count, 5] = to_x
+            # Record phase (CAPTURE for first capture, CHAIN_CAPTURE for chain)
+            is_chain = state.in_capture_chain[g].item()
+            state.move_history[g, move_count, 6] = GamePhase.CHAIN_CAPTURE if is_chain else GamePhase.CAPTURE
 
         # Get moving stack info
         attacker_height = state.stack_height[g, from_y, from_x].item()
@@ -1907,6 +1910,7 @@ class ParallelGameRunner:
             state.move_history[g, move_count, 3] = from_x
             state.move_history[g, move_count, 4] = to_y
             state.move_history[g, move_count, 5] = to_x
+            state.move_history[g, move_count, 6] = GamePhase.MOVEMENT
 
         # Get moving stack info
         moving_height = state.stack_height[g, from_y, from_x].item()
@@ -1983,6 +1987,7 @@ class ParallelGameRunner:
             state.move_history[g, move_count, 3] = from_x
             state.move_history[g, move_count, 4] = to_y
             state.move_history[g, move_count, 5] = to_x
+            state.move_history[g, move_count, 6] = GamePhase.RECOVERY
 
         # Move marker from origin to destination
         state.marker_owner[g, from_y, from_x] = 0  # Clear origin

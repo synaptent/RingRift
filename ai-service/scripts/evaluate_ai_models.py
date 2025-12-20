@@ -10,6 +10,8 @@ Supported AI Types:
 - neural_network: DescentAI with trained neural network model
 - random: RandomAI as control baseline
 - minimax: MinimaxAI with configurable depth
+- policy_only: PolicyOnlyAI - uses neural network policy head without search
+- gumbel_mcts: GumbelMCTSAI - Gumbel MCTS with neural network guidance
 
 Usage Examples:
     # Baseline vs Random (50 games)
@@ -86,12 +88,14 @@ except ImportError:
 
 from app.ai.base import BaseAI
 from app.ai.descent_ai import DescentAI
+from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import (
     BASE_V1_BALANCED_WEIGHTS,
     HEURISTIC_WEIGHT_PROFILES,
 )
 from app.ai.minimax_ai import MinimaxAI
+from app.ai.policy_only_ai import PolicyOnlyAI
 from app.ai.random_ai import RandomAI
 from app.models import (
     AIConfig,
@@ -112,6 +116,8 @@ AI_TYPE_CMAES_HEURISTIC = "cmaes_heuristic"
 AI_TYPE_NEURAL_NETWORK = "neural_network"
 AI_TYPE_RANDOM = "random"
 AI_TYPE_MINIMAX = "minimax"
+AI_TYPE_POLICY_ONLY = "policy_only"
+AI_TYPE_GUMBEL_MCTS = "gumbel_mcts"
 
 SUPPORTED_AI_TYPES = [
     AI_TYPE_BASELINE_HEURISTIC,
@@ -119,6 +125,8 @@ SUPPORTED_AI_TYPES = [
     AI_TYPE_NEURAL_NETWORK,
     AI_TYPE_RANDOM,
     AI_TYPE_MINIMAX,
+    AI_TYPE_POLICY_ONLY,
+    AI_TYPE_GUMBEL_MCTS,
 ]
 
 
@@ -371,6 +379,60 @@ def create_ai(
                 else:
                     raise RuntimeError(f"Failed to load checkpoint {ckpt}: {e}") from e
 
+        return ai
+
+    if ai_type == AI_TYPE_POLICY_ONLY:
+        # PolicyOnlyAI - uses neural network policy head without search
+        ckpt = checkpoint
+        if not ckpt:
+            # Try to find a checkpoint in models/ or checkpoints/
+            models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+            checkpoints_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "checkpoints")
+            for search_dir in [models_dir, checkpoints_dir]:
+                if os.path.exists(search_dir):
+                    checkpoints = sorted([f for f in os.listdir(search_dir) if f.endswith(".pth")])
+                    if checkpoints:
+                        ckpt = os.path.join(search_dir, checkpoints[-1])
+                        break
+
+        config = AIConfig(
+            difficulty=5,
+            think_time=0,
+            randomness=0.0,
+            rngSeed=ai_rng_seed,
+            nn_model_id=ckpt if ckpt else None,
+            allow_fresh_weights=False,
+        )
+        ai = PolicyOnlyAI(player_num, config)
+        if ckpt:
+            print(f"PolicyOnlyAI loaded checkpoint: {ckpt}")
+        return ai
+
+    if ai_type == AI_TYPE_GUMBEL_MCTS:
+        # GumbelMCTSAI - Gumbel MCTS with neural network
+        ckpt = checkpoint
+        if not ckpt:
+            # Try to find a checkpoint in models/ or checkpoints/
+            models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+            checkpoints_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "checkpoints")
+            for search_dir in [models_dir, checkpoints_dir]:
+                if os.path.exists(search_dir):
+                    checkpoints = sorted([f for f in os.listdir(search_dir) if f.endswith(".pth")])
+                    if checkpoints:
+                        ckpt = os.path.join(search_dir, checkpoints[-1])
+                        break
+
+        config = AIConfig(
+            difficulty=5,
+            think_time=2000,  # 2 second think time for MCTS
+            randomness=0.0,
+            rngSeed=ai_rng_seed,
+            nn_model_id=ckpt if ckpt else None,
+            allow_fresh_weights=False,
+        )
+        ai = GumbelMCTSAI(player_num, config)
+        if ckpt:
+            print(f"GumbelMCTSAI loaded checkpoint: {ckpt}")
         return ai
 
     raise ValueError(f"Unknown AI type: {ai_type}. Supported: {SUPPORTED_AI_TYPES}")

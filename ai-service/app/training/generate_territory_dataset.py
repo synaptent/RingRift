@@ -262,8 +262,13 @@ def generate_territory_dataset(
                     10,  # Descent band
                 ]
 
-                def _build_mixed_ai(player_number: int):
-                    difficulty = game_rng.choice(difficulty_choices)
+                def _build_mixed_ai(
+                    player_number: int,
+                    *,
+                    _game_rng: random.Random = game_rng,
+                    _difficulty_choices: list = difficulty_choices,
+                ):
+                    difficulty = _game_rng.choice(_difficulty_choices)
                     profile = _get_difficulty_profile(difficulty)
                     ai_type = profile["ai_type"]
 
@@ -276,7 +281,7 @@ def generate_territory_dataset(
                         difficulty=difficulty,
                         randomness=profile["randomness"],
                         think_time=profile["think_time_ms"],
-                        rngSeed=game_rng.randrange(0, 2**31),
+                        rngSeed=_game_rng.randrange(0, 2**31),
                         heuristic_profile_id=heuristic_profile_id,
                         nn_model_id=nn_model_id,
                     )

@@ -351,9 +351,9 @@ class SyncCoordinator:
             try:
                 success = await loop.run_in_executor(
                     None,
-                    lambda: rsync_directory(
-                        host,
-                        remote_dir,
+                    lambda _host=host, _remote_dir=remote_dir: rsync_directory(
+                        _host,
+                        _remote_dir,
                         local_dir,
                         include_patterns=include_patterns,
                         exclude_patterns=["*"],

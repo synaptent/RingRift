@@ -816,8 +816,9 @@ class GPUSelfPlayGenerator:
                         for raw_move in raw_moves:
                             move_type_str = raw_move.get("move_type") or "PLACEMENT"
                             phase_str = raw_move.get("phase") or "RING_PLACEMENT"
+                            canonical_type = gpu_type_map.get(move_type_str, move_type_str.lower() if move_type_str else "unknown")
                             canonical_move = {
-                                "type": gpu_type_map.get(move_type_str, move_type_str.lower() if move_type_str else "unknown"),
+                                "type": canonical_type,
                                 "player": raw_move.get("player", 1),
                                 "phase": gpu_phase_map.get(phase_str, phase_str.lower() if phase_str else "ring_placement"),
                             }
@@ -828,6 +829,9 @@ class GPUSelfPlayGenerator:
                                 canonical_move["from"] = {"x": from_pos[1], "y": from_pos[0]}
                             if to_pos and isinstance(to_pos, tuple):
                                 canonical_move["to"] = {"x": to_pos[1], "y": to_pos[0]}
+                                # Add captureTarget for capture moves (same as to for overtaking)
+                                if canonical_type in ("overtaking_capture", "continue_capture_segment"):
+                                    canonical_move["captureTarget"] = {"x": to_pos[1], "y": to_pos[0]}
                             canonical_moves.append(canonical_move)
                         moves_for_record = canonical_moves
 

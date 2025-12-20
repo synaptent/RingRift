@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from .gpu_game_types import MoveType
+from .gpu_game_types import GamePhase, MoveType
 
 if TYPE_CHECKING:
     from .gpu_parallel_games import BatchGameState
@@ -1253,14 +1253,15 @@ def apply_single_chain_capture(
     marker_owner_np = state.marker_owner[game_idx].cpu().numpy()
     is_collapsed_np = state.is_collapsed[game_idx].cpu().numpy()
 
-    # Record in history
+    # Record in history - chain captures use CONTINUE_CAPTURE_SEGMENT and CHAIN_CAPTURE phase
     if mc < state.max_history_moves:
-        state.move_history[game_idx, mc, 0] = MoveType.CAPTURE
+        state.move_history[game_idx, mc, 0] = MoveType.CONTINUE_CAPTURE_SEGMENT
         state.move_history[game_idx, mc, 1] = player
         state.move_history[game_idx, mc, 2] = from_y
         state.move_history[game_idx, mc, 3] = from_x
         state.move_history[game_idx, mc, 4] = to_y
         state.move_history[game_idx, mc, 5] = to_x
+        state.move_history[game_idx, mc, 6] = GamePhase.CHAIN_CAPTURE
     state.move_count[game_idx] += 1
 
     # Capture move representation:

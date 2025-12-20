@@ -9642,10 +9642,13 @@ print(wins / total)
                 seed = seeds[i] if i < len(seeds) else 0
                 ais[player_num] = create_lightweight_ai(config, player_num, seed)
 
-            # Play game and record moves for training
+            # Keep initial state for training record
+            initial_state = state
+
+            # Play game and record actual Move objects for training
             move_count = 0
             max_moves = 500
-            recorded_moves = []  # Record moves for training data
+            recorded_moves = []  # List of actual Move objects for training
 
             while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
                 current_player = state.current_player
@@ -9661,11 +9664,8 @@ print(wins / total)
                 if move is None:
                     break
 
-                # Record move for training
-                recorded_moves.append({
-                    "player": current_player,
-                    "move": move.to_dict() if hasattr(move, 'to_dict') else str(move),
-                })
+                # Record actual Move object for training
+                recorded_moves.append(move)
 
                 state = engine.apply_move(state, move)
                 move_count += 1
@@ -9682,15 +9682,15 @@ print(wins / total)
             elif winner_player == 2:
                 winner = "model_b"
 
-            # Save game for training if moves were recorded
+            # Save game for training using proper GameRecord format
             if recorded_moves and winner_player > 0:
                 try:
                     self._save_tournament_game_for_training(
-                        board_type_str=board_type_str,
-                        num_players=num_players,
-                        winner=winner_player,
+                        initial_state=initial_state,
+                        final_state=state,
                         moves=recorded_moves,
-                        duration=duration,
+                        match_seed=match_seed,
+                        agent_configs=agent_configs,
                     )
                 except Exception as e:
                     logger.warning(f"Failed to save tournament game for training: {e}")
@@ -9710,54 +9710,97 @@ print(wins / total)
 
     def _save_tournament_game_for_training(
         self,
-        board_type_str: str,
-        num_players: int,
-        winner: int,
-        moves: list[dict],
-        duration: float,
+        initial_state,  # GameState
+        final_state,  # GameState
+        moves: list,  # List of Move objects
+        match_seed: int,
+        agent_configs: list[dict] | None = None,  # Optional AI configs for metadata
     ) -> None:
         """Save a tournament game to JSONL format for training.
 
-        Saves games to data/tournament_games/{board_type}_{num_players}p/ directory
-        in a format compatible with the training pipeline.
+        Uses build_training_game_record to create proper GameRecord format
+        compatible with the training pipeline. The saved games can be ingested
+        by the training system alongside selfplay games.
+
+        Saves games to data/tournament_games/{board_type}_{num_players}p/ directory.
+
+        Args:
+            initial_state: The initial game state
+            final_state: The final game state after all moves
+            moves: List of Move objects representing the game
+            match_seed: RNG seed used for this match
+            agent_configs: Optional list of AI configs for each player
         """
         import json
-        import os
-        from datetime import datetime
+        import sys
+        from datetime import datetime, timezone
         from pathlib import Path
+
+        # Ensure app module is importable
+        ai_service_path = str(Path(self.ringrift_path) / "ai-service")
+        if ai_service_path not in sys.path:
+            sys.path.insert(0, ai_service_path)
+
+        try:
+            from app.models.game_record import RecordSource
+            from app.training.game_record_export import build_training_game_record
+        except ImportError as e:
+            logger.warning(f"Cannot import game record modules: {e}")
+            return
+
+        board_type_str = initial_state.board_type.value if hasattr(initial_state.board_type, 'value') else str(initial_state.board_type)
+        num_players = len(initial_state.players)
 
         # Create output directory
         data_dir = Path(self.ringrift_path) / "ai-service" / "data" / "tournament_games"
         config_dir = data_dir / f"{board_type_str}_{num_players}p"
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Create game ID with full metadata
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         game_id = f"tournament_{self.node_id}_{timestamp}_{uuid.uuid4().hex[:8]}"
-        config_dir / f"{game_id}.jsonl"
 
-        # Build game record
-        game_record = {
-            "game_id": game_id,
-            "board_type": board_type_str,
-            "num_players": num_players,
-            "winner": winner,
-            "move_count": len(moves),
-            "duration_sec": duration,
-            "moves": moves,
-            "source": "tournament",
-            "node_id": self.node_id,
-            "timestamp": datetime.now().isoformat(),
-        }
+        # Build tags with detailed metadata for training filtering
+        tags = [
+            "elo_tournament",
+            f"node_{self.node_id}",
+            f"board_{board_type_str}",
+            f"players_{num_players}",
+        ]
+        if agent_configs:
+            for i, cfg in enumerate(agent_configs[:num_players]):
+                ai_type = cfg.get("ai_type", "unknown")
+                tags.append(f"player{i+1}_{ai_type}")
 
-        # Append to daily file for this config
-        daily_file = config_dir / f"tournament_{timestamp[:8]}.jsonl"
+        # Build proper GameRecord using the training export function
         try:
+            game_record = build_training_game_record(
+                game_id=game_id,
+                initial_state=initial_state,
+                final_state=final_state,
+                moves=moves,
+                source=RecordSource.TOURNAMENT,
+                rng_seed=match_seed,
+                terminated_by_budget_only=False,
+                created_at=datetime.now(timezone.utc),
+                tags=tags,
+                fsm_validated=None,  # Not FSM validated in tournament context
+            )
+
+            # Use the canonical to_jsonl_line() method for proper serialization
+            jsonl_line = game_record.to_jsonl_line()
+
+            # Append to daily file for this config
+            daily_file = config_dir / f"tournament_{timestamp[:8]}.jsonl"
             with open(daily_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(game_record) + "\n")
-            logger.debug(f"Saved tournament game {game_id} to {daily_file}")
+                f.write(jsonl_line + "\n")
+
+            logger.info(f"Saved tournament game {game_id} to {daily_file} ({len(moves)} moves, winner={final_state.winner})")
+
         except Exception as e:
-            logger.warning(f"Failed to save tournament game: {e}")
+            import traceback
+            logger.warning(f"Failed to build/save tournament game record: {e}")
+            traceback.print_exc()
 
     async def handle_ssh_tournament_start(self, request: web.Request) -> web.Response:
         """Start an SSH-distributed difficulty-tier tournament (leader only).

@@ -5957,10 +5957,10 @@ class UnifiedAILoop:
                                 print(f"[Promotion] Running holdout validation for {candidate['model_id']}...")
                                 result = await asyncio.get_event_loop().run_in_executor(
                                     None,
-                                    lambda: evaluate_model_on_holdout(
-                                        model_path=Path(model_path),
-                                        board_type=board_type,
-                                        num_players=num_players,
+                                    lambda _mp=model_path, _bt=board_type, _np=num_players: evaluate_model_on_holdout(
+                                        model_path=Path(_mp),
+                                        board_type=_bt,
+                                        num_players=_np,
                                         train_loss=0.0,  # Will be computed as gap
                                     )
                                 )
@@ -6086,10 +6086,10 @@ class UnifiedAILoop:
                             # Run holdout evaluation
                             result = await asyncio.get_event_loop().run_in_executor(
                                 None,
-                                lambda: evaluate_model_on_holdout(
-                                    model_path=model_path,
-                                    board_type=board_type,
-                                    num_players=num_players,
+                                lambda _mp=model_path, _bt=board_type, _np=num_players: evaluate_model_on_holdout(
+                                    model_path=_mp,
+                                    board_type=_bt,
+                                    num_players=_np,
                                     train_loss=0.0,  # Don't have train loss here
                                 )
                             )
@@ -7381,9 +7381,9 @@ class UnifiedAILoop:
                 # Run drift check (runs in thread pool to avoid blocking)
                 drift = await asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: self.elo_reconciler.check_drift(
-                        board_type=board_type,
-                        num_players=num_players,
+                    lambda _bt=board_type, _np=num_players: self.elo_reconciler.check_drift(
+                        board_type=_bt,
+                        num_players=_np,
                     )
                 )
 
@@ -7445,12 +7445,12 @@ class UnifiedAILoop:
                 # Run regression check
                 should_rollback, event = await asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: self.rollback_monitor.check_for_regression(
-                        model_id=model_id,
-                        board_type=board_type,
-                        num_players=num_players,
-                        previous_model_id=previous_model_id,
-                        baseline_elo=baseline_elo,
+                    lambda _mid=model_id, _bt=board_type, _np=num_players, _pmid=previous_model_id, _be=baseline_elo: self.rollback_monitor.check_for_regression(
+                        model_id=_mid,
+                        board_type=_bt,
+                        num_players=_np,
+                        previous_model_id=_pmid,
+                        baseline_elo=_be,
                     )
                 )
 
@@ -7473,7 +7473,7 @@ class UnifiedAILoop:
                     # Execute rollback
                     success = await asyncio.get_event_loop().run_in_executor(
                         None,
-                        lambda: self.rollback_monitor.execute_rollback(event)
+                        lambda _event=event: self.rollback_monitor.execute_rollback(_event)
                     )
 
                     if success:
