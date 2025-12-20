@@ -35,12 +35,12 @@ def get_process_counts():
             ["pgrep", "-fa", "selfplay|training|p2p|tournament"],
             capture_output=True, text=True, timeout=5
         )
-        lines = [l for l in result.stdout.strip().split("\n") if l]
+        lines = [line for line in result.stdout.strip().split("\n") if line]
         counts = {
-            "selfplay": sum(1 for l in lines if "selfplay" in l.lower()),
-            "training": sum(1 for l in lines if "training" in l.lower()),
-            "p2p": sum(1 for l in lines if "p2p" in l.lower()),
-            "tournament": sum(1 for l in lines if "tournament" in l.lower()),
+            "selfplay": sum(1 for line in lines if "selfplay" in line.lower()),
+            "training": sum(1 for line in lines if "training" in line.lower()),
+            "p2p": sum(1 for line in lines if "p2p" in line.lower()),
+            "tournament": sum(1 for line in lines if "tournament" in line.lower()),
         }
         return counts
     except Exception:
