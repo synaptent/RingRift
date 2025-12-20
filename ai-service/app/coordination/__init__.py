@@ -1811,7 +1811,6 @@ __all__ = [
     "record_task_completion_safe",
     "record_utilization",
     "register_cache",
-    # Coordinator Registration (December 2025)
     "register_coordinator",
     "register_host",
     "register_running_task",
@@ -1829,7 +1828,6 @@ __all__ = [
     "report_queue_depth",
     "report_queue_depth_safe",
     "request_bandwidth",
-    # Bandwidth helpers
     "request_bandwidth_safe",
     "request_evacuation",
     "request_training_slot",
@@ -1869,12 +1867,10 @@ __all__ = [
     "should_stop_production",
     "should_stop_safe",
     "should_throttle_production",
-    # Queue backpressure helpers
     "should_throttle_safe",
     "shutdown_all_coordinators",
     "shutdown_registered_coordinators",
     "span",
-    # Coordinator Heartbeats (December 2025)
     "start_coordinator_heartbeats",
     "start_event_coordinator",
     "stop_coordinator_heartbeats",

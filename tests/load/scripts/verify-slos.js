@@ -121,7 +121,10 @@ function extractMetrics(results) {
     concurrent_games_max: 0,
     true_errors_total: 0,
     auth_token_expired_total: 0,
-    rate_limit_hit_total: 0
+    rate_limit_hit_total: 0,
+    has_true_errors_metric: false,
+    has_auth_expired_metric: false,
+    has_rate_limit_metric: false
   };
 
   for (const entry of results) {
@@ -174,12 +177,15 @@ function extractMetrics(results) {
           break;
         case 'true_errors_total':
           metrics.true_errors_total += value;
+          metrics.has_true_errors_metric = true;
           break;
         case 'auth_token_expired_total':
           metrics.auth_token_expired_total += value;
+          metrics.has_auth_expired_metric = true;
           break;
         case 'rate_limit_hit_total':
           metrics.rate_limit_hit_total += value;
+          metrics.has_rate_limit_metric = true;
           break;
         case 'concurrent_active_games':
         case 'concurrent_games':
@@ -216,6 +222,17 @@ function extractMetrics(results) {
 
       if (m.true_errors_total?.values && metrics.true_errors_total === 0) {
         metrics.true_errors_total = m.true_errors_total.values.count || 0;
+        metrics.has_true_errors_metric = true;
+      }
+
+      if (m.auth_token_expired_total?.values && metrics.auth_token_expired_total === 0) {
+        metrics.auth_token_expired_total = m.auth_token_expired_total.values.count || 0;
+        metrics.has_auth_expired_metric = true;
+      }
+
+      if (m.rate_limit_hit_total?.values && metrics.rate_limit_hit_total === 0) {
+        metrics.rate_limit_hit_total = m.rate_limit_hit_total.values.count || 0;
+        metrics.has_rate_limit_metric = true;
       }
     }
   }
@@ -251,11 +268,24 @@ function verifySLOs(metrics, env) {
   const results = {};
   const slos = sloConfig.slos;
 
-  // Availability (inverse of error rate)
-  const errorRate = metrics.total_requests > 0 
-    ? (metrics.failed_requests / metrics.total_requests) * 100 
+  // Availability (inverse of filtered error rate when available)
+  const rawErrorRate = metrics.total_requests > 0
+    ? (metrics.failed_requests / metrics.total_requests) * 100
     : 0;
-  const availability = 100 - errorRate;
+  const trueErrorRate = metrics.total_requests > 0
+    ? (metrics.true_errors_total / metrics.total_requests) * 100
+    : 0;
+  const hasErrorClassification =
+    metrics.has_true_errors_metric ||
+    metrics.has_auth_expired_metric ||
+    metrics.has_rate_limit_metric;
+  const effectiveErrorRate = hasErrorClassification ? trueErrorRate : rawErrorRate;
+  const availability = 100 - effectiveErrorRate;
+  const errorRateNote = metrics.total_requests === 0
+    ? 'No request data collected'
+    : hasErrorClassification
+      ? `raw http_req_failed: ${rawErrorRate.toFixed(3)}%`
+      : 'true_errors_total not reported; using http_req_failed';
   const availabilityTarget = getTarget('availability', env);
 
   results.availability = {
@@ -264,7 +294,8 @@ function verifySLOs(metrics, env) {
     actual: parseFloat(availability.toFixed(3)),
     unit: slos.availability.unit,
     passed: availability >= availabilityTarget,
-    priority: slos.availability.priority
+    priority: slos.availability.priority,
+    note: errorRateNote
   };
 
   // API Latency p95
@@ -361,16 +392,14 @@ function verifySLOs(metrics, env) {
   results.error_rate = {
     name: slos.error_rate.name,
     target: errorRateTarget,
-    actual: parseFloat(errorRate.toFixed(3)),
+    actual: parseFloat(effectiveErrorRate.toFixed(3)),
     unit: slos.error_rate.unit,
-    passed: errorRate <= errorRateTarget,
-    priority: slos.error_rate.priority
+    passed: effectiveErrorRate <= errorRateTarget,
+    priority: slos.error_rate.priority,
+    note: errorRateNote
   };
 
   // True Error Rate (excludes auth and rate-limit noise)
-  const trueErrorRate = metrics.total_requests > 0
-    ? (metrics.true_errors_total / metrics.total_requests) * 100
-    : 0;
   const trueErrorRateTarget = getTarget('true_error_rate', env);
   results.true_error_rate = {
     name: slos.true_error_rate.name,
@@ -379,7 +408,11 @@ function verifySLOs(metrics, env) {
     unit: slos.true_error_rate.unit,
     passed: trueErrorRate <= trueErrorRateTarget,
     priority: slos.true_error_rate.priority,
-    note: metrics.total_requests === 0 ? 'No request data collected' : null
+    note: metrics.total_requests === 0
+      ? 'No request data collected'
+      : !metrics.has_true_errors_metric
+        ? 'true_errors_total not reported; ensure scenarios emit classification counters'
+        : null
   };
 
   // Concurrent Games Capacity

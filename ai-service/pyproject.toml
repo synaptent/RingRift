@@ -129,6 +129,7 @@ select = [
 # Ignore rules that conflict with existing code style
 ignore = [
     "E501",   # Line too long - handled by formatter
+    "E402",   # Module import not at top - intentional lazy imports to prevent OOM
     "B008",   # Function call in default argument - common pattern in FastAPI
     "B904",   # Within except, raise from - too noisy
     "SIM108", # Use ternary operator - reduces readability

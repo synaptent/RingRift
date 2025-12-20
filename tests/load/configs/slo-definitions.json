@@ -10,7 +10,7 @@
       "name": "Service Availability",
       "target": 99.9,
       "unit": "percent",
-      "measurement": "successful_requests / total_requests",
+      "measurement": "1 - (true_errors_total / total_requests) (filtered; excludes auth and rate-limit noise)",
       "window": "monthly",
       "priority": "critical",
       "source": "PROJECT_GOALS.md §4.1"
@@ -89,12 +89,12 @@
     },
 
     "error_rate": {
-      "name": "Error Rate",
+      "name": "Error Rate (Filtered)",
       "target": 1,
       "unit": "percent",
-      "measurement": "http_req_failed rate",
+      "measurement": "true_errors_total / total_requests (filtered; excludes auth and rate-limit noise)",
       "priority": "critical",
-      "source": "baseline.json, thresholds.json"
+      "source": "thresholds.json load_tests.true_errors"
     },
 
     "error_rate_5xx": {
@@ -257,8 +257,7 @@
     "description": "Maps k6 metrics to SLO measurements",
     "mappings": {
       "http_req_duration": ["latency_api_p95", "latency_api_p99"],
-      "http_req_failed": ["error_rate"],
-      "true_errors_total": ["true_error_rate"],
+      "true_errors_total": ["error_rate", "true_error_rate"],
       "ws_connecting": ["latency_websocket_connect"],
       "move_latency": ["latency_move_e2e"],
       "game_creation_time": ["latency_game_creation"],
