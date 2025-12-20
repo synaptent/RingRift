@@ -31,14 +31,13 @@ Output:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -49,7 +48,6 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -59,11 +57,7 @@ from app.ai.ebmo_network import (
     EBMONetwork,
     contrastive_energy_loss,
     outcome_weighted_energy_loss,
-    combined_ebmo_loss,
 )
-from app.training.ebmo_trainer import EBMOTrainer
-from app.training.ebmo_dataset import EBMODataset, EBMOStreamingDataset
-from app.models import BoardType
 
 # Distributed training utilities
 try:
@@ -78,8 +72,6 @@ try:
         wrap_model_ddp,
         get_distributed_sampler,
         scale_learning_rate,
-        reduce_tensor,
-        synchronize,
     )
     HAS_DISTRIBUTED = True
 except ImportError:

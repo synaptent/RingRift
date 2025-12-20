@@ -549,6 +549,12 @@ class TournamentRunner:
                 break
 
             move = ai.get_best_move(state, legal_moves)
+            if move is None:
+                # AI couldn't select a move, pick first legal move
+                if legal_moves:
+                    move = legal_moves[0]
+                else:
+                    break
             state = GameEngine.apply_move(state, move)
             move_count += 1
 
@@ -605,19 +611,21 @@ class TournamentRunner:
             rankings.extend(reversed(remaining))
             return rankings
 
-        # For multiplayer without clear winner, rank by ring count
-        ring_counts = []
+        # For multiplayer without clear winner, rank by territory and rings
+        player_scores = []
         for player_idx in range(num_players):
-            count = sum(
-                1
-                for ring in state.rings
-                if ring.player == player_idx and ring.position is not None
-            )
-            ring_counts.append((player_idx, count))
+            # Score based on territory and rings (higher is better)
+            player = state.players[player_idx] if player_idx < len(state.players) else None
+            if player:
+                # More territory = better, fewer eliminated rings = better
+                score = player.territory_spaces * 10 - player.eliminated_rings
+            else:
+                score = 0
+            player_scores.append((player_idx, score))
 
-        # Sort by ring count descending
-        ring_counts.sort(key=lambda x: x[1], reverse=True)
-        return [agent_ids[player_idx] for player_idx, _ in ring_counts]
+        # Sort by score descending
+        player_scores.sort(key=lambda x: x[1], reverse=True)
+        return [agent_ids[player_idx] for player_idx, _ in player_scores]
 
     def get_leaderboard(self) -> List[Tuple[str, float, Dict]]:
         """Get current leaderboard with ratings and stats.

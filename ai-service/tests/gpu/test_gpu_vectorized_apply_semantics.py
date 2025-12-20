@@ -3,12 +3,12 @@ import torch
 from app.ai.gpu_parallel_games import (
     BatchGameState,
     BatchMoves,
-    MoveType,
-    apply_capture_moves_vectorized,
-    apply_movement_moves_vectorized,
+    apply_capture_moves_batch as apply_capture_moves_vectorized,
+    apply_movement_moves_batch as apply_movement_moves_vectorized,
     apply_single_chain_capture,
     generate_chain_capture_moves_from_position,
 )
+from app.ai.gpu_game_types import MoveType
 
 
 def _single_move_batch(
@@ -47,9 +47,8 @@ def test_movement_leaves_departure_marker_and_pays_landing_cost_on_any_marker(de
 
     moves = _single_move_batch(device, MoveType.MOVEMENT, from_y=0, from_x=0, to_y=0, to_x=2)
     selected = torch.tensor([0], dtype=torch.int64, device=device)
-    active = torch.tensor([True], dtype=torch.bool, device=device)
 
-    apply_movement_moves_vectorized(state, selected, moves, active)
+    apply_movement_moves_vectorized(state, selected, moves)
 
     assert int(state.marker_owner[0, 0, 0].item()) == 1
     assert int(state.stack_owner[0, 0, 0].item()) == 0
@@ -78,9 +77,8 @@ def test_movement_collapses_own_marker_on_path_increments_territory(device):
 
     moves = _single_move_batch(device, MoveType.MOVEMENT, from_y=0, from_x=0, to_y=0, to_x=3)
     selected = torch.tensor([0], dtype=torch.int64, device=device)
-    active = torch.tensor([True], dtype=torch.bool, device=device)
 
-    apply_movement_moves_vectorized(state, selected, moves, active)
+    apply_movement_moves_vectorized(state, selected, moves)
 
     assert int(state.marker_owner[0, 0, 1].item()) == 0
     assert bool(state.is_collapsed[0, 0, 1].item()) is True
@@ -103,9 +101,8 @@ def test_capture_transfers_ring_to_attacker_and_updates_target(device):
 
     moves = _single_move_batch(device, MoveType.CAPTURE, from_y=0, from_x=0, to_y=0, to_x=2)
     selected = torch.tensor([0], dtype=torch.int64, device=device)
-    active = torch.tensor([True], dtype=torch.bool, device=device)
 
-    apply_capture_moves_vectorized(state, selected, moves, active)
+    apply_capture_moves_vectorized(state, selected, moves)
 
     # Departure marker placed
     assert int(state.marker_owner[0, 0, 0].item()) == 1
@@ -144,9 +141,8 @@ def test_capture_landing_marker_cost_eliminates_cap_ring(device):
 
     moves = _single_move_batch(device, MoveType.CAPTURE, from_y=0, from_x=0, to_y=0, to_x=2)
     selected = torch.tensor([0], dtype=torch.int64, device=device)
-    active = torch.tensor([True], dtype=torch.bool, device=device)
 
-    apply_capture_moves_vectorized(state, selected, moves, active)
+    apply_capture_moves_vectorized(state, selected, moves)
 
     assert int(state.marker_owner[0, 0, 2].item()) == 0
 

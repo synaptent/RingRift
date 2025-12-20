@@ -35,7 +35,7 @@ def mock_game_state():
     state.board.board_type = BoardType.SQUARE8
     state.current_player = 1
     state.phase = GamePhase.MOVEMENT
-    state.status = GameStatus.IN_PROGRESS
+    state.status = GameStatus.ACTIVE
     return state
 
 
