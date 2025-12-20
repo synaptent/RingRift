@@ -55,11 +55,10 @@ except ImportError:
 AI_TYPE_CONFIGS_LIGHTWEIGHT = {
     "random": {"ai_type": "random", "difficulty": 1},
     "heuristic": {"ai_type": "heuristic", "difficulty": 5},
-    # Multiplayer search variants (no NN required)
+    # Multiplayer search variants (no NN required, fast on small boards)
     "brs": {"ai_type": "brs", "difficulty": 4, "think_time_ms": 2000},
     "maxn": {"ai_type": "maxn", "difficulty": 5, "think_time_ms": 3000},
-    "minimax": {"ai_type": "minimax", "difficulty": 4, "think_time_ms": 2000},
-    # GPU-accelerated minimax (faster than CPU minimax on GPU nodes, no NN required)
+    # GPU-accelerated minimax (faster than CPU minimax, works on all board sizes)
     "gpu_minimax": {"ai_type": "gpu_minimax", "difficulty": 5, "think_time_ms": 2000},
     # MCTS handles multi-move games well (no fixed depth limit)
     "mcts_100": {"ai_type": "mcts", "difficulty": 5, "use_neural_net": False, "mcts_iterations": 100},
@@ -67,8 +66,10 @@ AI_TYPE_CONFIGS_LIGHTWEIGHT = {
     "mcts_400": {"ai_type": "mcts", "difficulty": 7, "use_neural_net": False, "mcts_iterations": 400},
 }
 
-# Heavyweight types that require neural networks - run on high-memory nodes only
+# Heavyweight types - either require NN or are too slow for large boards
 AI_TYPE_CONFIGS_HEAVYWEIGHT = {
+    # CPU Minimax - feasible on square8 only, too slow for hex/square19
+    "minimax": {"ai_type": "minimax", "difficulty": 4, "think_time_ms": 2000},
     "mcts_neural": {"ai_type": "mcts", "difficulty": 6, "use_neural_net": True, "mcts_iterations": 400},
     "mcts_neural_high": {"ai_type": "mcts", "difficulty": 7, "use_neural_net": True, "mcts_iterations": 800},
     "policy_only": {"ai_type": "policy_only", "difficulty": 3, "policy_temperature": 0.5},
