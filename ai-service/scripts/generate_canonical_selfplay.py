@@ -41,6 +41,7 @@ The summary JSON includes:
   - canonical_ok (boolean)
 """
 
+import argparse
 import json
 import os
 import sqlite3
@@ -49,6 +50,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 # Ensure `app.*` imports resolve when invoked from repo root.
@@ -58,7 +60,20 @@ if str(AI_SERVICE_ROOT) not in sys.path:
 from app.db.game_replay import GameReplayDB
 from app.game_engine import GameEngine
 from app.rules.history_validation import validate_canonical_config_for_game
-from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+
+_skip_selfplay = os.getenv("RINGRIFT_SKIP_SELFPLAY_CONFIG", "").strip().lower()
+if _skip_selfplay in ("1", "true", "yes", "on"):
+    HAS_SELFPLAY_CONFIG = False
+    SelfplayConfig = None  # type: ignore[assignment]
+    create_argument_parser = None  # type: ignore[assignment]
+else:
+    try:
+        from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+        HAS_SELFPLAY_CONFIG = True
+    except BaseException:  # pragma: no cover - optional for minimal envs
+        HAS_SELFPLAY_CONFIG = False
+        SelfplayConfig = None  # type: ignore[assignment]
+        create_argument_parser = None  # type: ignore[assignment]
 
 try:
     from app.utils.resource_guard import can_proceed, wait_for_resources
@@ -761,15 +776,56 @@ def run_anm_invariants(board_type: str) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Use unified argument parser from SelfplayConfig
-    parser = create_argument_parser(
-        description=(
-            "Generate a canonical self-play GameReplayDB for a board type and "
-            "gate it on TS↔Python parity plus canonical history constraints."
-        ),
-        include_gpu=False,
-        include_ramdrive=False,
-    )
+    if HAS_SELFPLAY_CONFIG and create_argument_parser is not None:
+        parser = create_argument_parser(
+            description=(
+                "Generate a canonical self-play GameReplayDB for a board type and "
+                "gate it on TS↔Python parity plus canonical history constraints."
+            ),
+            include_gpu=False,
+            include_ramdrive=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=(
+                "Generate a canonical self-play GameReplayDB for a board type and "
+                "gate it on TS↔Python parity plus canonical history constraints."
+            )
+        )
+        parser.add_argument(
+            "--board",
+            "--board-type",
+            type=str,
+            default=None,
+            choices=["square8", "square19", "hex8", "hex", "hexagonal"],
+            help="Board type (required).",
+        )
+        parser.add_argument(
+            "--num-players",
+            type=int,
+            default=2,
+            choices=[2, 3, 4],
+            help="Number of players (default: 2).",
+        )
+        parser.add_argument(
+            "--num-games",
+            type=int,
+            default=100,
+            help="Number of games to generate (default: 100).",
+        )
+        parser.add_argument(
+            "--difficulty-band",
+            type=str,
+            choices=["canonical", "light", "full"],
+            default="light",
+            help="Difficulty band for self-play (default: light).",
+        )
+        parser.add_argument(
+            "--hosts",
+            type=str,
+            default=None,
+            help="Optional comma-separated list of SSH hosts for distributed self-play.",
+        )
 
     # Add canonical selfplay-specific arguments
     # Note: --board is provided by base parser, but we need it to be required
@@ -849,28 +905,38 @@ def main(argv: list[str] | None = None) -> int:
     if not parsed.board:
         parser.error("--board is required (e.g., --board square8)")
 
-    # Create SelfplayConfig for tracking
-    selfplay_config = SelfplayConfig(
-        board_type=parsed.board,
-        num_players=parsed.num_players,
-        num_games=parsed.num_games,
-        difficulty_band=parsed.difficulty_band,
-        hosts=parsed.hosts,
-        source="generate_canonical_selfplay.py",
-        extra_options={
-            "db": parsed.db,
-            "summary": parsed.summary,
-            "analysis_dir": parsed.analysis_dir,
-            "skip_analyses": parsed.skip_analyses,
-            "parity_limit_games_per_db": parsed.parity_limit_games_per_db,
-            "parity_timeout_seconds": parsed.parity_timeout_seconds,
-            "distributed_job_timeout_seconds": parsed.distributed_job_timeout_seconds,
-            "distributed_fetch_timeout_seconds": parsed.distributed_fetch_timeout_seconds,
-            "reset_db": parsed.reset_db,
-            "min_recorded_games": parsed.min_recorded_games,
-            "max_soak_attempts": parsed.max_soak_attempts,
-        },
-    )
+    extra_options = {
+        "db": parsed.db,
+        "summary": parsed.summary,
+        "analysis_dir": parsed.analysis_dir,
+        "skip_analyses": parsed.skip_analyses,
+        "parity_limit_games_per_db": parsed.parity_limit_games_per_db,
+        "parity_timeout_seconds": parsed.parity_timeout_seconds,
+        "distributed_job_timeout_seconds": parsed.distributed_job_timeout_seconds,
+        "distributed_fetch_timeout_seconds": parsed.distributed_fetch_timeout_seconds,
+        "reset_db": parsed.reset_db,
+        "min_recorded_games": parsed.min_recorded_games,
+        "max_soak_attempts": parsed.max_soak_attempts,
+    }
+    if HAS_SELFPLAY_CONFIG and SelfplayConfig is not None:
+        selfplay_config = SelfplayConfig(
+            board_type=parsed.board,
+            num_players=parsed.num_players,
+            num_games=parsed.num_games,
+            difficulty_band=parsed.difficulty_band,
+            hosts=parsed.hosts,
+            source="generate_canonical_selfplay.py",
+            extra_options=extra_options,
+        )
+    else:
+        selfplay_config = SimpleNamespace(
+            board_type=parsed.board,
+            num_players=parsed.num_players,
+            num_games=parsed.num_games,
+            difficulty_band=parsed.difficulty_band,
+            hosts=parsed.hosts,
+            extra_options=extra_options,
+        )
 
     # Create backward-compatible args object (uses board_type for legacy code)
     args = type("Args", (), {

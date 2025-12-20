@@ -186,6 +186,7 @@ ai-service/data/gh200_sync/
 ai-service/data/ladder_runtime_overrides.json
 ai-service/data/auto_promotion_log.json
 ai-service/data/auto_promotion_state.json
+ai-service/data/ab_test_*.json
 
 # Selfplay debug artifacts (large state bundles and parity summaries)
 ai-service/data/games/*.state_bundles/

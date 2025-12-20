@@ -81,6 +81,7 @@ def _parse_config_from_name(name: str) -> tuple[str, int] | None:
         ('square19', 'square19'),
         ('square8', 'square8'),
         ('hexagonal', 'hexagonal'),
+        ('hex8', 'hex8'),
         ('sq19', 'square19'),
         ('sq8', 'square8'),
         ('hex', 'hexagonal'),
@@ -584,7 +585,6 @@ class UnifiedModelStore:
                 board_type=board_type,
                 num_players=num_players,
                 nn_model_path=str(model_path),
-                initial_elo=elo,
             )
 
             logger.info(

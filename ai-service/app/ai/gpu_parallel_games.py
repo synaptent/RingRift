@@ -1557,8 +1557,19 @@ class ParallelGameRunner:
             # Identify which games have captures (prefer captures per RR-CANON)
             # Per RR-CANON-R103: After executing a capture, if additional legal captures
             # exist from the new landing position, the chain MUST continue.
-            games_with_captures = games_with_stacks & (capture_moves.moves_per_game > 0)
-            games_movement_only = games_with_stacks & (capture_moves.moves_per_game == 0) & (movement_moves.moves_per_game > 0)
+            #
+            # BUG FIX December 2025: If must_move_from is set (after a placement), the player
+            # MUST move first before any captures are allowed. Direct captures are only
+            # permitted when must_move_from is NOT set (meaning we're not constrained to
+            # move from a specific position). After movement, captures from the landing
+            # position are handled separately in the post-movement capture check below.
+            has_must_move_constraint = self.state.must_move_from_y >= 0  # (batch_size,)
+            games_with_captures = (
+                games_with_stacks &
+                (capture_moves.moves_per_game > 0) &
+                ~has_must_move_constraint  # Only allow direct captures if no movement constraint
+            )
+            games_movement_only = games_with_stacks & ~games_with_captures & (movement_moves.moves_per_game > 0)
             games_no_action = games_with_stacks & (capture_moves.moves_per_game == 0) & (movement_moves.moves_per_game == 0)
 
             # Apply capture moves with chain capture support (RR-CANON-R103)

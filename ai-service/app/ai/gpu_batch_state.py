@@ -143,6 +143,12 @@ class BatchGameState:
     # If turn ends with no real action and player has stacks → FORCED_ELIMINATION
     turn_had_real_action: torch.Tensor  # bool (batch_size,)
 
+    # Buried ring position tracking (December 2025 - recovery fix)
+    # Track which board positions contain each player's buried rings.
+    # This enables recovery to correctly decrement stack height when extracting.
+    # Shape: (batch_size, num_players + 1, board_size, board_size)
+    buried_at: torch.Tensor  # bool - True if player has a buried ring at this position
+
     # LPS tracking (RR-CANON-R172): tensor mirrors of GameState fields.
     # We track a full-round cycle over all non-permanently-eliminated players.
     lps_round_index: torch.Tensor  # int32 (batch_size,)
@@ -250,6 +256,9 @@ class BatchGameState:
 
             # Forced elimination detection (December 2025 - RR-CANON-R160)
             turn_had_real_action=torch.zeros(batch_size, dtype=torch.bool, device=device),
+
+            # Buried ring position tracking (December 2025 - recovery fix)
+            buried_at=torch.zeros((batch_size, num_players + 1, board_size, board_size), dtype=torch.bool, device=device),
 
             # LPS tracking tensors (RR-CANON-R172)
             lps_round_index=torch.zeros(batch_size, dtype=torch.int32, device=device),

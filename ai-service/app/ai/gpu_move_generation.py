@@ -761,9 +761,10 @@ def generate_capture_moves_batch_vectorized(
     blocker_cumsum = torch.cumsum(is_blocker.to(torch.int32), dim=2)
     before_blocker = blocker_cumsum == 0  # True for cells before any blocker
 
-    # Find cells with ANY stacks (including own stacks - self-capture/build is valid)
-    # Per RR-CANON and CPU capture_chain.py: target can be any stack, not just opponent
-    has_stack = (ray_owner != 0) & before_blocker
+    # Find cells with ENEMY stacks only - captures cannot target own stacks
+    # Get current player for each stack, expanded to match ray dimensions (N_stacks, 8, max_dist)
+    current_player_exp = state.current_player[stack_game_idx].view(-1, 1, 1).expand(-1, n_dirs, max_dist)
+    has_stack = (ray_owner != 0) & (ray_owner != current_player_exp) & before_blocker
 
     # Find target: first stack along ray where my_cap_height >= target_cap_height
     my_cap_exp = stack_cap_heights_dir.unsqueeze(2).expand(-1, -1, max_dist)

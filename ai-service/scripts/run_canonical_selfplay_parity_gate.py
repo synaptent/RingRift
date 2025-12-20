@@ -31,6 +31,7 @@ The intent is to make it easy to:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -40,6 +41,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 # Ensure `app.*` imports resolve when invoked from repo root.
@@ -49,8 +51,38 @@ if str(AI_SERVICE_ROOT) not in sys.path:
 import contextlib
 
 from app.models import BoardType
-from app.training.env import get_theoretical_max_moves
-from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+
+# Lightweight max-move table to avoid importing training modules (and torch).
+THEORETICAL_MAX_MOVES: dict[BoardType, dict[int, int]] = {
+    BoardType.SQUARE8: {2: 600, 3: 900, 4: 1400},
+    BoardType.SQUARE19: {2: 2400, 3: 3000, 4: 3600},
+    BoardType.HEX8: {2: 600, 3: 900, 4: 1400},
+    BoardType.HEXAGONAL: {2: 3600, 3: 4200, 4: 4800},
+}
+
+
+def get_theoretical_max_moves(board_type: BoardType, num_players: int) -> int:
+    board_limits = THEORETICAL_MAX_MOVES.get(board_type, {})
+    if num_players in board_limits:
+        return board_limits[num_players]
+    base = board_limits.get(2, 200)
+    increment = board_limits.get(3, base + 50) - base
+    return base + increment * (num_players - 2)
+
+
+_skip_selfplay = os.getenv("RINGRIFT_SKIP_SELFPLAY_CONFIG", "").strip().lower()
+if _skip_selfplay in ("1", "true", "yes", "on"):
+    HAS_SELFPLAY_CONFIG = False
+    SelfplayConfig = None  # type: ignore[assignment]
+    create_argument_parser = None  # type: ignore[assignment]
+else:
+    try:
+        from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+        HAS_SELFPLAY_CONFIG = True
+    except BaseException:  # pragma: no cover - optional for minimal envs
+        HAS_SELFPLAY_CONFIG = False
+        SelfplayConfig = None  # type: ignore[assignment]
+        create_argument_parser = None  # type: ignore[assignment]
 
 
 def _run_cmd(
@@ -364,12 +396,56 @@ def run_parity_checks(db_paths: list[Path], *, board_type: str | None = None) ->
 
 
 def main() -> None:
-    # Use unified argument parser from SelfplayConfig
-    parser = create_argument_parser(
-        description="Run canonical Python self-play for a board type and gate the resulting GameReplayDB on TS↔Python parity.",
-        include_gpu=False,
-        include_ramdrive=False,
-    )
+    if HAS_SELFPLAY_CONFIG and create_argument_parser is not None:
+        parser = create_argument_parser(
+            description="Run canonical Python self-play for a board type and gate the resulting GameReplayDB on TS↔Python parity.",
+            include_gpu=False,
+            include_ramdrive=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description="Run canonical Python self-play for a board type and gate the resulting GameReplayDB on TS↔Python parity.",
+        )
+        parser.add_argument(
+            "--board",
+            "--board-type",
+            type=str,
+            default="square8",
+            choices=["square8", "square19", "hex8", "hex", "hexagonal"],
+            help="Board type (default: square8)",
+        )
+        parser.add_argument(
+            "--num-games",
+            type=int,
+            default=20,
+            help="Number of games to generate (default: 20)",
+        )
+        parser.add_argument(
+            "--num-players",
+            type=int,
+            default=2,
+            choices=[2, 3, 4],
+            help="Number of players (default: 2)",
+        )
+        parser.add_argument(
+            "--difficulty-band",
+            type=str,
+            choices=["canonical", "light", "full"],
+            default="light",
+            help="Difficulty band (default: light)",
+        )
+        parser.add_argument(
+            "--hosts",
+            type=str,
+            default=None,
+            help="Optional comma-separated list of SSH hosts for distributed self-play.",
+        )
+        parser.add_argument(
+            "--seed",
+            type=int,
+            default=None,
+            help="Random seed for reproducibility",
+        )
 
     # Add parity gate-specific arguments
     parser.add_argument(
@@ -443,29 +519,40 @@ def main() -> None:
     if not parsed.board:
         parser.error("--board is required (e.g., --board square8)")
 
-    # Create SelfplayConfig for tracking
-    selfplay_config = SelfplayConfig(
-        board_type=parsed.board,
-        num_players=parsed.num_players,
-        num_games=parsed.num_games,
-        seed=parsed.seed,
-        difficulty_band=parsed.difficulty_band,
-        hosts=parsed.hosts,
-        source="run_canonical_selfplay_parity_gate.py",
-        extra_options={
-            "db": parsed.db,
-            "max_moves": parsed.max_moves,
-            "summary": parsed.summary,
-            "include_training_data_jsonl": parsed.include_training_data_jsonl,
-            "parity_progress_every": parsed.parity_progress_every,
-            "soak_timeout_seconds": parsed.soak_timeout_seconds,
-            "distributed_job_timeout_seconds": parsed.distributed_job_timeout_seconds,
-            "distributed_fetch_timeout_seconds": parsed.distributed_fetch_timeout_seconds,
-            "keep_distributed_remote_artifacts": parsed.keep_distributed_remote_artifacts,
-            "parity_timeout_seconds": parsed.parity_timeout_seconds,
-            "heartbeat_seconds": parsed.heartbeat_seconds,
-        },
-    )
+    extra_options = {
+        "db": parsed.db,
+        "max_moves": parsed.max_moves,
+        "summary": parsed.summary,
+        "include_training_data_jsonl": parsed.include_training_data_jsonl,
+        "parity_progress_every": parsed.parity_progress_every,
+        "soak_timeout_seconds": parsed.soak_timeout_seconds,
+        "distributed_job_timeout_seconds": parsed.distributed_job_timeout_seconds,
+        "distributed_fetch_timeout_seconds": parsed.distributed_fetch_timeout_seconds,
+        "keep_distributed_remote_artifacts": parsed.keep_distributed_remote_artifacts,
+        "parity_timeout_seconds": parsed.parity_timeout_seconds,
+        "heartbeat_seconds": parsed.heartbeat_seconds,
+    }
+    if HAS_SELFPLAY_CONFIG and SelfplayConfig is not None:
+        selfplay_config = SelfplayConfig(
+            board_type=parsed.board,
+            num_players=parsed.num_players,
+            num_games=parsed.num_games,
+            seed=parsed.seed,
+            difficulty_band=parsed.difficulty_band,
+            hosts=parsed.hosts,
+            source="run_canonical_selfplay_parity_gate.py",
+            extra_options=extra_options,
+        )
+    else:
+        selfplay_config = SimpleNamespace(
+            board_type=parsed.board,
+            num_players=parsed.num_players,
+            num_games=parsed.num_games,
+            seed=parsed.seed,
+            difficulty_band=parsed.difficulty_band,
+            hosts=parsed.hosts,
+            extra_options=extra_options,
+        )
 
     # Create backward-compatible args object (uses board_type for legacy code)
     args = type("Args", (), {
