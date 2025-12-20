@@ -115,7 +115,7 @@ class TestBuildRankTargetsProperties:
         """Each player's rank distribution should sum to 1."""
         values_mp = torch.randn(batch_size, MAX_PLAYERS)
 
-        rank_targets, active_mask = build_rank_targets(values_mp, num_players=num_players)
+        rank_targets, _active_mask = build_rank_targets(values_mp, num_players=num_players)
 
         for b in range(batch_size):
             for p in range(num_players):
@@ -133,7 +133,7 @@ class TestBuildRankTargetsProperties:
         """Active mask should have correct shape and values."""
         values_mp = torch.randn(batch_size, MAX_PLAYERS)
 
-        rank_targets, active_mask = build_rank_targets(values_mp, num_players=num_players)
+        _rank_targets, active_mask = build_rank_targets(values_mp, num_players=num_players)
 
         assert active_mask.shape == (batch_size, MAX_PLAYERS)
         # First num_players slots should be active

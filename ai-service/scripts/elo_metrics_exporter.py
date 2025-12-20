@@ -339,7 +339,7 @@ def update_metrics():
     config_leaders: dict[str, list] = defaultdict(list)
 
     for row in ratings:
-        participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update, ptype, version = row
+        participant_id, board_type, num_players, rating, games, wins, losses, draws, _last_update, _ptype, _version = row
         config = f"{board_type}_{num_players}p"
 
         # Only include models with sufficient games

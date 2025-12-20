@@ -78,6 +78,8 @@ else:
     emit_error = emit_error_safe
 
 # Import coordination helpers (consolidated imports)
+import contextlib
+
 from app.coordination.helpers import (
     OrchestratorRole,
     TaskCoordinator,
@@ -289,7 +291,7 @@ class AutoPromotionTrigger:
             payload = event.payload
             config_key = payload.get('config', '')
             elo = payload.get('elo', 0)
-            win_rate = payload.get('win_rate', 0)
+            payload.get('win_rate', 0)
 
             # Only check if significant Elo improvement
             if elo < 1520:  # Skip if Elo is not notably above baseline
@@ -321,8 +323,8 @@ class AutoPromotionTrigger:
 
     def check_promotion_candidates(
         self,
-        board_type: str = None,
-        num_players: int = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
     ) -> list[PromotionCandidate]:
         """Check for models that should be promoted.
 
@@ -350,7 +352,6 @@ class AutoPromotionTrigger:
 
     def _check_config(self, board_type: str, num_players: int) -> PromotionCandidate | None:
         """Check a specific configuration for promotion candidates."""
-        config_key = f"{board_type}_{num_players}p"
 
         # Get current best from promoted models
         current_best = self._get_current_best(board_type, num_players)
@@ -655,14 +656,12 @@ def run_auto_promotion_daemon(config: AutoPromotionConfig = None, verbose: bool 
 
             if HAS_EVENT_BUS:
                 import asyncio
-                try:
+                with contextlib.suppress(Exception):
                     asyncio.run(emit_error(
                         component="auto_promotion",
                         error=str(e),
                         source="model_promotion_manager.py",
                     ))
-                except Exception:
-                    pass
 
         # Wait for next check
         if running:
@@ -811,7 +810,6 @@ def check_for_elo_regression(board_type: str, num_players: int) -> RollbackCandi
             history = json.load(f)
 
         # Find recent promotions for this config
-        config_key = f"{board_type}_{num_players}p"
         config_promotions = [
             h for h in history
             if h.get("board_type") == board_type and h.get("num_players") == num_players
@@ -1334,7 +1332,7 @@ def sync_to_cluster_ssh(
 
                 try:
                     mkdir_res = subprocess.run(
-                        ssh_cmd + [mkdir_cmd],
+                        [*ssh_cmd, mkdir_cmd],
                         capture_output=True,
                         timeout=45,
                         text=True,
@@ -1385,7 +1383,7 @@ def sync_to_cluster_ssh(
                                 "fi"
                             )
                             subprocess.run(
-                                ssh_cmd + [restart_cmd],
+                                [*ssh_cmd, restart_cmd],
                                 capture_output=True,
                                 timeout=90,
                                 text=True,
@@ -1462,9 +1460,7 @@ def run_regression_gate(model_path: Path, board_type: str, num_players: int, ver
                     print("  Regression tests: FAILED (set RINGRIFT_REGRESSION_HARD_BLOCK=1 to block)")
 
         # Block promotion if tests failed and hard_block is enabled
-        if not passed and hard_block:
-            return False
-        return True
+        return not (not passed and hard_block)
 
     except subprocess.TimeoutExpired:
         if verbose:

@@ -131,7 +131,7 @@ def collect_all_results() -> list[dict[str, Any]]:
         }
 
         for future in concurrent.futures.as_completed(futures):
-            host, user = futures[future]
+            host, _user = futures[future]
             try:
                 data = future.result()
                 if data and data.get("results"):

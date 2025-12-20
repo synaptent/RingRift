@@ -12,7 +12,6 @@ Migrated from _neural_net_legacy.py as part of Phase 2 modularization.
 
 from __future__ import annotations
 
-
 import numpy as np
 import torch
 import torch.nn as nn

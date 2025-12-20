@@ -432,7 +432,6 @@ def main(argv: list[str] | None = None) -> int:
         train_cfg.warmup_epochs = args.warmup_epochs
 
     # Store value_weight for later use (not in TrainConfig by default)
-    value_weight = args.value_weight if args.value_weight is not None else 1.0
 
     if args.demo:
         # Demo / tiny mode:

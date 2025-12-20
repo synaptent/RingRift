@@ -268,7 +268,6 @@ class TestAdaptiveGradientClipper(unittest.TestCase):
         )
         model = SimpleModel()
 
-        initial_threshold = clipper.current_max_norm
 
         # Generate enough history to trigger adaptation
         for _ in range(15):

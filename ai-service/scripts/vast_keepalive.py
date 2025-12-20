@@ -18,6 +18,7 @@ Designed to be run via cron every 15-30 minutes.
 """
 
 import argparse
+import contextlib
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -47,7 +48,7 @@ def run_vastai_command(args: list[str], timeout: int = 30) -> tuple[bool, str]:
     """Run a vastai CLI command."""
     try:
         result = subprocess.run(
-            [VASTAI_CMD] + args,
+            [VASTAI_CMD, *args],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -204,10 +205,8 @@ print(total)
         timeout=20,
     )
     if success:
-        try:
+        with contextlib.suppress(ValueError):
             health["games_count"] = int(output.strip())
-        except ValueError:
-            pass
 
     return health
 
@@ -410,7 +409,7 @@ def run_auto_cycle():
 
     # 5. Ensure P2P is running
     logger.info("\nEnsuring P2P network...")
-    success, _ = subprocess.run(
+    _success, _ = subprocess.run(
         ["python", str(AI_SERVICE_ROOT / "scripts" / "vast_p2p_setup.py"), "--deploy-to-vast", "--components", "p2p"],
         capture_output=True,
         timeout=180,

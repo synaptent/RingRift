@@ -207,7 +207,7 @@ class TestEloReconcilerIntegration:
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _create_elo_db(self, path: Path, ratings: dict, matches: list = None):
+    def _create_elo_db(self, path: Path, ratings: dict, matches: list | None = None):
         """Create a test Elo database."""
         conn = sqlite3.connect(str(path))
         cursor = conn.cursor()

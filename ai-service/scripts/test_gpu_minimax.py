@@ -72,7 +72,7 @@ class GPUMinimaxTester:
             print(msg)
 
     def _add_result(self, name: str, passed: bool, message: str,
-                    duration: float, metrics: dict = None) -> None:
+                    duration: float, metrics: dict | None = None) -> None:
         result = TestResult(
             name=name,
             passed=passed,
@@ -183,7 +183,7 @@ class GPUMinimaxTester:
             gpu_times.append(time.time() - t0)
 
         gpu_avg = np.mean(gpu_times)
-        gpu_median = np.median(gpu_times)
+        np.median(gpu_times)
 
         # Test CPU AI (with GPU disabled)
         os.environ["RINGRIFT_GPU_MINIMAX_DISABLE"] = "1"
@@ -201,7 +201,7 @@ class GPUMinimaxTester:
         os.environ.pop("RINGRIFT_GPU_MINIMAX_DISABLE", None)
 
         cpu_avg = np.mean(cpu_times)
-        cpu_median = np.median(cpu_times)
+        np.median(cpu_times)
 
         duration = time.time() - start_time
         speedup = cpu_avg / gpu_avg if gpu_avg > 0 else 0
@@ -300,9 +300,11 @@ class GPUMinimaxTester:
     def test_gpu_memory_bounds(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        batch_sizes: list[int] = [32, 64, 128],
+        batch_sizes: list[int] | None = None,
     ) -> bool:
         """Test GPU memory usage stays within bounds."""
+        if batch_sizes is None:
+            batch_sizes = [32, 64, 128]
         self._log("\n=== Test: GPU Memory Bounds ===")
         start_time = time.time()
 

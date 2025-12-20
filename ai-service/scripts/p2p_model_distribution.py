@@ -364,7 +364,7 @@ def download_via_bittorrent(
 
     # Add known seeders for faster initial connection
     if seeders:
-        seeder_str = ",".join(seeders)
+        ",".join(seeders)
         cmd.append(f"--bt-external-ip={get_tailscale_ip() or '0.0.0.0'}")
 
     if not web_seed_fallback:

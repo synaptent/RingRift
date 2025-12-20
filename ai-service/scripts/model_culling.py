@@ -263,7 +263,7 @@ def cull_config(
     keep_count = max(MIN_KEEP_COUNT, int(total * keep_fraction))
 
     # Split into keep and archive
-    to_keep = sorted_models[:keep_count]
+    sorted_models[:keep_count]
     to_archive = sorted_models[keep_count:]
 
     archived_paths = []

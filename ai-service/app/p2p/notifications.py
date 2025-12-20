@@ -146,11 +146,7 @@ class NotificationManager:
             return False
 
         # Check interval (allow critical notifications to bypass)
-        if (now - self._last_notification_time < self.config.min_interval_seconds
-                and severity != "critical"):
-            return False
-
-        return True
+        return not (now - self._last_notification_time < self.config.min_interval_seconds and severity != "critical")
 
     async def send_async(self, event: NotificationEvent) -> bool:
         """Send notification asynchronously."""

@@ -158,7 +158,7 @@ def replay_and_analyze_game(
     # Replay moves
     for move_idx, m_json in enumerate(moves_json):
         move_type_str = m_json.get('type')
-        move_player = m_json.get('player', state.current_player)
+        m_json.get('player', state.current_player)
 
         # Analyze recovery conditions for ALL players at this state
         for player in range(1, num_players + 1):
@@ -211,7 +211,7 @@ def replay_and_analyze_game(
                     'game_index': game_index,
                     'move_index': move_idx,
                     'player': player,
-                    'missing_condition': list(missing)[0] if missing else 'unknown',
+                    'missing_condition': next(iter(missing)) if missing else 'unknown',
                     'rings_in_hand': analysis['rings_in_hand'],
                     'controls_stacks': analysis['controls_stacks'],
                     'has_markers': analysis['has_markers'],
@@ -406,7 +406,8 @@ def main():
 
     print("\nINDIVIDUAL CONDITION FREQUENCIES:")
     if stats.total_states_checked > 0:
-        pct = lambda x: 100.0 * x / stats.total_states_checked
+        def pct(x):
+            return 100.0 * x / stats.total_states_checked
         print(f"  Zero rings in hand:    {stats.zero_rings_in_hand:>8,} ({pct(stats.zero_rings_in_hand):>6.2f}%)")
         print(f"  Zero controlled stacks:{stats.zero_controlled_stacks:>8,} ({pct(stats.zero_controlled_stacks):>6.2f}%)")
         print(f"  Has markers on board:  {stats.has_markers:>8,} ({pct(stats.has_markers):>6.2f}%)")

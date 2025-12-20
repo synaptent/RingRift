@@ -21,9 +21,7 @@ def is_eligible_no_rings_requirement(state: GameState, player: int) -> bool:
         return False
     if not player_has_markers(board, player):
         return False
-    if count_buried_rings(board, player) < 1:
-        return False
-    return True
+    return not count_buried_rings(board, player) < 1
 
 
 def analyze_game(game_data: dict, game_file: str, game_index: int) -> dict:

@@ -137,7 +137,7 @@ def sample_hyperparameter(name: str, current: float | None = None, perturb: bool
             new_val = np.random.uniform(min_val, max_val)
 
     if is_int:
-        new_val = int(round(new_val))
+        new_val = round(new_val)
 
     return new_val
 

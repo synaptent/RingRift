@@ -548,7 +548,7 @@ class TestCMAESAutoTuner:
 
         assert tuner._current_epoch == 1
         # Loss is negated (lower is better)
-        assert list(tuner._metric_history)[0] == -0.5
+        assert next(iter(tuner._metric_history)) == -0.5
 
     def test_step_with_win_rate(self):
         """Test step with win rate metric."""
@@ -558,7 +558,7 @@ class TestCMAESAutoTuner:
         tuner.step(current_win_rate=0.65)
 
         assert tuner._current_epoch == 1
-        assert list(tuner._metric_history)[0] == 0.65
+        assert next(iter(tuner._metric_history)) == 0.65
 
     def test_improvement_resets_counter(self, tuner):
         """Test that improvement resets epochs_without_improvement."""
@@ -620,7 +620,7 @@ class TestCMAESAutoTuner:
         )
 
         # Advance epochs and create plateau
-        for i in range(10):
+        for _i in range(10):
             tuner.step(current_elo=1500)  # No improvement
 
         assert tuner.should_tune()

@@ -116,13 +116,13 @@ def _run(cmd: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
 
 
 def _ssh(host: HostConfig, command: str, *, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    cmd = _ssh_base_args(host) + [command]
+    cmd = [*_ssh_base_args(host), command]
     return _run(cmd, timeout=timeout)
 
 
 def _scp_from(host: HostConfig, remote_path: str, local_path: Path, *, timeout: int = 300) -> None:
     local_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = _scp_base_args(host) + [f"{host.ssh_target}:{remote_path}", str(local_path)]
+    cmd = [*_scp_base_args(host), f"{host.ssh_target}:{remote_path}", str(local_path)]
     proc = _run(cmd, timeout=timeout)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or f"scp failed: {remote_path}")
@@ -319,7 +319,7 @@ def collect_from_host(
         if deploy:
             local_script = AI_SERVICE_ROOT / "scripts" / "analyze_game_statistics.py"
             remote_script = f"{host.ai_service_dir}/scripts/analyze_game_statistics.py"
-            cmd = _scp_base_args(host) + [str(local_script), f"{host.ssh_target}:{remote_script}"]
+            cmd = [*_scp_base_args(host), str(local_script), f"{host.ssh_target}:{remote_script}"]
             proc = _run(cmd, timeout=120)
             if proc.returncode != 0:
                 return HostCollectionResult(

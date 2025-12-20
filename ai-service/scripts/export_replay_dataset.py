@@ -199,7 +199,7 @@ def encode_state_with_history(
     while len(hist) < history_length:
         hist.append(np.zeros_like(features))
 
-    stacked = np.concatenate([features] + hist, axis=0)
+    stacked = np.concatenate([features, *hist], axis=0)
     return stacked.astype(np.float32), globals_vec.astype(np.float32)
 
 

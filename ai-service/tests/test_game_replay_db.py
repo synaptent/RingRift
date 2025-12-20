@@ -143,7 +143,7 @@ class TestGameReplayDBBasic:
 
     def test_create_database(self, db_path):
         """Test database creation."""
-        db = GameReplayDB(str(db_path))
+        GameReplayDB(str(db_path))
         assert db_path.exists()
 
     def test_store_and_retrieve_game(self, db_path):

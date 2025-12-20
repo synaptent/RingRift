@@ -317,7 +317,7 @@ def run_cmaes_iteration(
 
     Returns (run_dir, return_code).
     """
-    run_id = f"iter{iteration:02d}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    f"iter{iteration:02d}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     run_output = os.path.join(output_dir, f"iter{iteration:02d}")
 
     cmd = [

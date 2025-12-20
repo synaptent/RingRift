@@ -362,7 +362,7 @@ class ModelPromoter:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=AI_SERVICE_ROOT,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+            _stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
             success = process.returncode == 0
 
@@ -495,7 +495,7 @@ async def verify_elo_promotion_pipeline() -> dict[str, Any]:
     else:
         try:
             criteria = PromotionCriteria()
-            controller = PromotionController(criteria=criteria)
+            PromotionController(criteria=criteria)
             results["promotion_controller_available"] = True
         except Exception as e:
             results["errors"].append(f"PromotionController error: {e!s}")

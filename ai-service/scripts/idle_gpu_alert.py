@@ -79,7 +79,7 @@ def get_slack_webhook_url() -> str | None:
     return None
 
 
-def send_slack_alert(webhook_url: str, title: str, message: str, severity: str = "warning", details: dict[str, Any] = None) -> bool:
+def send_slack_alert(webhook_url: str, title: str, message: str, severity: str = "warning", details: dict[str, Any] | None = None) -> bool:
     """Send alert to Slack."""
     colors = {
         "info": "#2196F3",

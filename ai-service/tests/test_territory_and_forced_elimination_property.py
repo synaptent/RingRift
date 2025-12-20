@@ -66,7 +66,7 @@ def _build_q23_region_state(
     assert len(heights) == len(region_positions)
 
     expected_internal = 0
-    for pos_, height in zip(region_positions, heights):
+    for pos_, height in zip(region_positions, heights, strict=False):
         board.stacks[pos_.to_key()] = RingStack(
             position=pos_,
             rings=[2] * height,
@@ -156,7 +156,7 @@ def test_territory_processing_q23_region_property(
     initial_territory = p1.territory_spaces
     initial_eliminated = p1.eliminated_rings
     initial_total = state.total_rings_eliminated
-    initial_collapsed = len(board.collapsed_spaces)
+    len(board.collapsed_spaces)
 
     terr_moves = GameEngine._get_territory_processing_moves(state, 1)
     assert terr_moves, "expected territory-processing moves"
@@ -171,7 +171,7 @@ def test_territory_processing_q23_region_property(
 
     for move in option_moves:
         assert move.disconnected_regions
-        region = list(move.disconnected_regions)[0]
+        region = next(iter(move.disconnected_regions))
         region_spaces = list(region.spaces)
         # Region geometry must match the constructed Q23-style region, but the
         # ordering of spaces is not significant.

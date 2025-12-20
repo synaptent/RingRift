@@ -153,7 +153,7 @@ def generate_fixture(
         return None
 
     # Get board type for filename
-    board_type = get_game_board_type(db_path, game_id)
+    get_game_board_type(db_path, game_id)
 
     # Create fixture data
     fixture = {

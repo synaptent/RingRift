@@ -42,7 +42,7 @@ def log(message: str, level: str = "INFO"):
         f.write(log_line + "\n")
 
 
-def run_command(cmd: list[str], timeout: int = 120, env_extra: dict = None) -> tuple[int, str, str]:
+def run_command(cmd: list[str], timeout: int = 120, env_extra: dict | None = None) -> tuple[int, str, str]:
     """Run a command and return (returncode, stdout, stderr)."""
     try:
         env = os.environ.copy()
@@ -197,7 +197,7 @@ def check_vast_instances() -> dict:
     log("Checking Vast.ai instances...")
 
     # Use project's vast_lifecycle.py script for status
-    rc, stdout, stderr = run_command([
+    rc, stdout, _stderr = run_command([
         "python", "scripts/vast_lifecycle.py", "--status"
     ], timeout=60)
 

@@ -265,7 +265,7 @@ TypeScript tools: npx ts-node scripts/selfplay-db-ts-replay.ts --db <path>
 
     dry_run = not args.force
 
-    results, failing = scan_directory(
+    _results, failing = scan_directory(
         args.path,
         check_structure=args.check_structure,
         delete_failing=args.delete,

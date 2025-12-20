@@ -260,7 +260,7 @@ def generate_sweep_configs(
 
     configs = []
     for combo in itertools.product(*values):
-        config_dict = dict(zip(keys, combo))
+        config_dict = dict(zip(keys, combo, strict=False))
         configs.append(SweepConfig(**config_dict))
 
     return configs

@@ -539,7 +539,7 @@ def count_available_positions(db_paths: list[str], board_type: BoardType) -> int
         if not os.path.exists(db_path):
             continue
         try:
-            db = GameReplayDB(db_path)
+            GameReplayDB(db_path)
             # Count completed games
             import sqlite3
             conn = sqlite3.connect(db_path)

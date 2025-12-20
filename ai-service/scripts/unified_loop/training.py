@@ -33,6 +33,8 @@ if TYPE_CHECKING:
     from app.execution.backends import OrchestratorBackend
     from app.integration.pipeline_feedback import PipelineFeedbackController
 
+import contextlib
+
 from app.utils.paths import AI_SERVICE_ROOT
 
 # Feature flag: disable local tasks when running on dedicated hosts
@@ -1100,7 +1102,7 @@ class TrainingScheduler:
             print(f"[Training] Remote training dispatch error: {e}")
             return False
 
-    def _acquire_training_lock(self, config_key: str = None) -> bool:
+    def _acquire_training_lock(self, config_key: str | None = None) -> bool:
         """Acquire per-config training lock using file locking.
 
         Allows up to _max_concurrent_training parallel training runs.
@@ -1134,14 +1136,12 @@ class TrainingScheduler:
             print(f"[Training] Acquired lock for {config_key or 'global'} on {hostname} ({active_locks + 1}/{self._max_concurrent_training} slots used)")
             return True
         except (OSError, BlockingIOError) as e:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
             print(f"[Training] Lock acquisition failed for {config_key}: {e}")
             return False
 
-    def _release_training_lock(self, config_key: str = None):
+    def _release_training_lock(self, config_key: str | None = None):
         """Release the per-config training lock."""
         import fcntl
 
@@ -1160,12 +1160,10 @@ class TrainingScheduler:
                 self._training_locks.pop(key, None)
                 self._training_lock_paths.pop(key, None)
             if lock_path and lock_path.exists():
-                try:
+                with contextlib.suppress(Exception):
                     lock_path.unlink()
-                except Exception:
-                    pass
 
-    def is_training_locked_elsewhere(self, config_key: str = None) -> bool:
+    def is_training_locked_elsewhere(self, config_key: str | None = None) -> bool:
         """Check if training is running on another host for a specific config."""
         import socket
 
@@ -1568,13 +1566,11 @@ class TrainingScheduler:
                         import json
                         new_state = {}
                         for db_path in merge_dbs:
-                            try:
+                            with contextlib.suppress(Exception):
                                 new_state[str(db_path)] = {
                                     'mtime': db_path.stat().st_mtime,
                                     'size': db_path.stat().st_size,
                                 }
-                            except Exception:
-                                pass
                         with open(consolidation_state_file, 'w') as f:
                             json.dump(new_state, f)
                         print(f"[Training] Consolidation state saved for {len(new_state)} DBs")
@@ -2072,7 +2068,7 @@ class TrainingScheduler:
             return None
 
         if self._training_process.returncode is not None:
-            stdout, stderr = await self._training_process.communicate()
+            _stdout, _stderr = await self._training_process.communicate()
 
             success = self._training_process.returncode == 0
             config_key = self.state.training_config
@@ -2291,7 +2287,7 @@ class TrainingScheduler:
     async def _monitor_cmaes_process(self, config_key: str, process) -> None:
         """Monitor CMA-ES process completion."""
         try:
-            stdout, stderr = await process.communicate()
+            _stdout, stderr = await process.communicate()
             if process.returncode == 0:
                 print(f"[CMA-ES] Auto-tuning completed for {config_key}")
                 # Mark auto-tuner as completed
@@ -2369,13 +2365,11 @@ class TrainingScheduler:
 
                 # Update PFSP pool with accurate Elo if available
                 if self._pfsp_pool is not None and best_elo is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._pfsp_pool.update_stats(
                             best_ckpt.stem,
                             elo=best_elo,
                         )
-                    except Exception:
-                        pass
 
             else:
                 print(f"[Elo Selection] No valid checkpoints found for {candidate_id}")
@@ -2625,10 +2619,8 @@ class TrainingScheduler:
     async def stop_streaming_pipelines(self) -> None:
         """Stop all streaming data pipelines."""
         for _config_key, pipeline in self._streaming_pipelines.items():
-            try:
+            with contextlib.suppress(Exception):
                 await pipeline.stop()
-            except Exception:
-                pass
 
     def get_streaming_stats(self, config_key: str | None = None) -> dict[str, Any]:
         """Get streaming pipeline statistics.

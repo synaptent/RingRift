@@ -333,7 +333,7 @@ class TestSnapshotCoordinator:
 
     def test_initialization(self, temp_db_path):
         """Test coordinator initialization creates database."""
-        coord = SnapshotCoordinator(temp_db_path)
+        SnapshotCoordinator(temp_db_path)
 
         assert temp_db_path.exists()
 

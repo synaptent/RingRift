@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -328,27 +329,21 @@ def check_node(name: str, config: NodeConfig) -> NodeStatus:
         status.error = f"parse error: {output}"
 
     _, proc_output = ssh_command(host, "pgrep -c python 2>/dev/null || echo 0")
-    try:
+    with contextlib.suppress(ValueError):
         status.process_count = int(proc_output)
-    except ValueError:
-        pass
 
     _, load_output = ssh_command(host, "cat /proc/loadavg | cut -d' ' -f1")
-    try:
+    with contextlib.suppress(ValueError):
         status.cpu_load = float(load_output)
-    except ValueError:
-        pass
 
     _, disk_output = ssh_command(host, "df / | tail -1 | awk '{print $5}' | tr -d '%'")
-    try:
+    with contextlib.suppress(ValueError):
         status.disk_percent = float(disk_output)
-    except ValueError:
-        pass
 
     status.last_check = datetime.now()
     return status
 
-def check_all_nodes(config: ClusterConfig, nodes: list[str] = None, parallel: bool = True) -> dict[str, NodeStatus]:
+def check_all_nodes(config: ClusterConfig, nodes: list[str] | None = None, parallel: bool = True) -> dict[str, NodeStatus]:
     """Check status of all nodes."""
     if nodes is None:
         nodes = list(config.nodes.keys())
@@ -412,7 +407,7 @@ class JobQueue:
         with open(self.db_path, "w") as f:
             json.dump(data, f, indent=2)
 
-    def submit(self, job_type: str, node: str, params: dict[str, Any] = None) -> Job:
+    def submit(self, job_type: str, node: str, params: dict[str, Any] | None = None) -> Job:
         import uuid
         jid = str(uuid.uuid4())[:8]
         job = Job(
@@ -427,7 +422,7 @@ class JobQueue:
         self._save()
         return job
 
-    def update_status(self, jid: str, status: str, result: dict = None):
+    def update_status(self, jid: str, status: str, result: dict | None = None):
         if jid in self.jobs:
             self.jobs[jid].status = status
             if status == "running":
@@ -438,7 +433,7 @@ class JobQueue:
                     self.jobs[jid].result = result
             self._save()
 
-    def list_jobs(self, status: str = None) -> list[Job]:
+    def list_jobs(self, status: str | None = None) -> list[Job]:
         jobs = list(self.jobs.values())
         if status:
             jobs = [j for j in jobs if j.status == status]
@@ -474,7 +469,7 @@ def cmd_status(args, config: ClusterConfig):
 
     for name in sorted(results.keys()):
         status = results[name]
-        node_cfg = config.nodes.get(name)
+        config.nodes.get(name)
         if status.online:
             gpu_str = "/".join(str(u) for u in status.gpu_util) if status.gpu_util else "-"
             used_gb = sum(status.gpu_memory_used) // 1024 if status.gpu_memory_used else 0

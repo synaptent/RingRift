@@ -76,7 +76,7 @@ def _encode_sparse_policy_from_moves(
 ) -> tuple[np.ndarray, np.ndarray]:
     p_indices: list[int] = []
     p_values: list[float] = []
-    for move, prob in zip(moves, probs):
+    for move, prob in zip(moves, probs, strict=False):
         idx = (
             encode_move_for_board(move, state.board)
             if use_board_aware_encoding

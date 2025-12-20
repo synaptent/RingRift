@@ -86,7 +86,7 @@ class TestWilsonScoreInterval:
 
     def test_wilson_score_asymmetric(self) -> None:
         """Test that Wilson score is asymmetric for extreme values.
-        
+
         Wilson score interval extends more toward 0.5 than away from it.
         For 90% win rate, the distance from 0.9 to lower bound should be
         greater than the distance from 0.9 to upper bound.

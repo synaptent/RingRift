@@ -77,7 +77,7 @@ def _convert_ts_state_to_python(state_dict: dict) -> dict:
     stacks = board.get("stacks", {})
 
     if isinstance(stacks, dict):
-        for key, stack in stacks.items():
+        for _key, stack in stacks.items():
             if isinstance(stack, dict) and "rings" in stack:
                 stack["rings"] = list(reversed(stack["rings"]))
 

@@ -104,7 +104,6 @@ def main():
         """)
         conn_out.commit()
 
-        total_inserted = 0
         total_moves = 0
         errors = 0
         start_time = time.time()

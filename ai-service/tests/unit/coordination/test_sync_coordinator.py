@@ -576,7 +576,7 @@ class TestModuleFunctions:
 
     def test_reset_sync_scheduler(self, reset_scheduler):
         """Should reset scheduler singleton."""
-        scheduler1 = get_sync_scheduler()
+        get_sync_scheduler()
         reset_sync_scheduler()
         # After reset, should be able to get new scheduler
         scheduler2 = get_sync_scheduler()

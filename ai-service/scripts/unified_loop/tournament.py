@@ -133,7 +133,7 @@ class ShadowTournamentService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=900)
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=900)
 
             success = proc.returncode == 0
             if not success:
@@ -158,8 +158,8 @@ class ShadowTournamentService:
     async def run_shadow_tournament(self, config_key: str) -> dict[str, Any]:
         """Run a quick shadow tournament for a configuration on remote hosts."""
         parts = config_key.rsplit("_", 1)
-        board_type = parts[0]
-        num_players = int(parts[1].replace("p", ""))
+        parts[0]
+        int(parts[1].replace("p", ""))
 
         await self.event_bus.publish(DataEvent(
             event_type=DataEventType.EVALUATION_STARTED,
@@ -220,7 +220,7 @@ class ShadowTournamentService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
+            _stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
 
             result = {
                 "type": "full",
@@ -279,7 +279,7 @@ class ShadowTournamentService:
 
         # Process results and handle exceptions
         processed_results = []
-        for config_key, result in zip(config_keys, results):
+        for config_key, result in zip(config_keys, results, strict=False):
             if isinstance(result, Exception):
                 processed_results.append({
                     "config": config_key,
@@ -336,7 +336,7 @@ class ShadowTournamentService:
 
         # Separate high-CPU and standard hosts
         high_cpu_hosts = [h for h in self.TOURNAMENT_HOSTS if h.get("cpus", 0) >= 128]
-        standard_hosts = [h for h in self.TOURNAMENT_HOSTS if h.get("cpus", 0) < 128]
+        [h for h in self.TOURNAMENT_HOSTS if h.get("cpus", 0) < 128]
 
         # Create batches for high-CPU hosts
         batches = []

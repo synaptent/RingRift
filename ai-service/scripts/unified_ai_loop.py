@@ -900,7 +900,7 @@ DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower()
 MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
 
 
-def get_disk_usage_percent(path: str = None) -> float:
+def get_disk_usage_percent(path: str | None = None) -> float:
     """Get disk usage percentage for the given path (defaults to AI_SERVICE_ROOT).
 
     Uses unified resource_guard utilities when available for consistent
@@ -929,7 +929,7 @@ def get_disk_usage_percent(path: str = None) -> float:
         return 100.0  # Assume full on error to be safe
 
 
-def check_disk_has_capacity(threshold: float = None) -> tuple[bool, float]:
+def check_disk_has_capacity(threshold: float | None = None) -> tuple[bool, float]:
     """Check if disk has capacity below threshold for data sync.
 
     Uses unified resource_guard utilities when available for consistent
@@ -2263,7 +2263,7 @@ class PBTIntegration:
 
         # Check if process finished
         if self._pbt_process.returncode is not None:
-            stdout, stderr = await self._pbt_process.communicate()
+            _stdout, _stderr = await self._pbt_process.communicate()
 
             # Load results from state file
             state_file = AI_SERVICE_ROOT / "logs" / "pbt" / self.state.pbt_run_id / "pbt_state.json"
@@ -2372,7 +2372,7 @@ class NASIntegration:
 
         # Check if process finished
         if self._nas_process.returncode is not None:
-            stdout, stderr = await self._nas_process.communicate()
+            _stdout, _stderr = await self._nas_process.communicate()
 
             # Load results
             state_file = AI_SERVICE_ROOT / "logs" / "nas" / self.state.nas_run_id / "nas_state.json"
@@ -2467,7 +2467,7 @@ class PERIntegration:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=AI_SERVICE_ROOT,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)
+            _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)
 
             if process.returncode == 0:
                 self.state.per_buffer_path = str(buffer_path)
@@ -3881,7 +3881,7 @@ class UnifiedAILoop:
         except Exception as e:
             print(f"[P2P] Error in auto-sync: {e}")
 
-    async def _trigger_immediate_evaluation(self, config_key: str, model_id: str = None):
+    async def _trigger_immediate_evaluation(self, config_key: str, model_id: str | None = None):
         """Trigger immediate evaluation for a config after training completes.
 
         Part of the Training→Eval→Promotion pipeline to eliminate wait times.
@@ -3961,7 +3961,7 @@ class UnifiedAILoop:
                 try:
                     optimizer = get_improvement_optimizer()
                     if success and elo_gain > 0:
-                        rec = optimizer.record_promotion_success(
+                        optimizer.record_promotion_success(
                             config_key=config_key,
                             elo_gain=elo_gain,
                             model_id=model_id or "",
@@ -4164,7 +4164,7 @@ class UnifiedAILoop:
             config_key = payload.get('config')
             model_id = payload.get('model_id')
             regression_amount = payload.get('regression_amount', 0)
-            severity = payload.get('severity', 'critical')
+            payload.get('severity', 'critical')
 
             print(f"[REGRESSION CRITICAL] {config_key}: model {model_id} "
                   f"regressed by {regression_amount:.1f} Elo - triggering rollback")
@@ -4234,7 +4234,7 @@ class UnifiedAILoop:
             config_key = payload.get('config_key') or payload.get('config', '')
             model_path = payload.get('model_path')
             train_loss = payload.get('train_loss') or payload.get('final_loss')
-            val_loss = payload.get('val_loss')
+            payload.get('val_loss')
 
             if not model_path or not config_key:
                 return
@@ -4268,7 +4268,7 @@ class UnifiedAILoop:
             model_id = payload.get('model_id')
             elo_gain = payload.get('elo_gain', 0)
             new_elo = payload.get('new_elo', 0)
-            config_key = payload.get('config', '')
+            payload.get('config', '')
 
             if not model_id:
                 return
@@ -4441,7 +4441,7 @@ class UnifiedAILoop:
                 recommendation = get_aggregate_selfplay_recommendation()
                 if recommendation and recommendation.get('recommended_multiplier', 1.0) != 1.0:
                     rec_multiplier = recommendation['recommended_multiplier']
-                    rec_reason = recommendation.get('reason', 'momentum-based adjustment')
+                    recommendation.get('reason', 'momentum-based adjustment')
                     momentum_state = recommendation.get('aggregate_momentum', 'unknown')
 
                     # Only log if momentum suggests a different rate than requested
@@ -4470,8 +4470,8 @@ class UnifiedAILoop:
         try:
             payload = event.payload
             promoted = payload.get('success', True)  # If event fired, promotion succeeded
-            config_key = payload.get('config', '')
-            elo_gain = payload.get('elo_gain', 0)
+            payload.get('config', '')
+            payload.get('elo_gain', 0)
             win_rate = payload.get('win_rate', 0.5)
             games_played = payload.get('games_played', 0)
             eval_games = payload.get('eval_games', 0)
@@ -4693,7 +4693,7 @@ class UnifiedAILoop:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=AI_SERVICE_ROOT,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)
+            _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)
 
             if process.returncode != 0:
                 print(f"[ParityValidation] Validation failed: {stderr.decode()[:200]}")
@@ -4809,7 +4809,7 @@ class UnifiedAILoop:
             )
 
             # Use a generous timeout for CMA-ES
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=7200)
+            _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=7200)
 
             if process.returncode == 0:
                 results["success"] = True
@@ -6048,7 +6048,6 @@ class UnifiedAILoop:
                 OVERFIT_THRESHOLD,
                 evaluate_model_on_holdout,
             )
-            has_holdout = True
         except ImportError:
             print("[HoldoutValidation] holdout_validation module not available - skipping")
             return
@@ -6762,7 +6761,6 @@ class UnifiedAILoop:
         hp_tuning_dir = AI_SERVICE_ROOT / "logs" / "hp_tuning"
         hp_config_path = AI_SERVICE_ROOT / "config" / "hyperparameters.json"
         sync_interval = 3600  # Check every hour
-        min_score_improvement = 0.02  # Require 2% improvement to update
 
         while self._running:
             try:
@@ -6928,7 +6926,7 @@ class UnifiedAILoop:
                     stderr=asyncio.subprocess.PIPE,
                     cwd=AI_SERVICE_ROOT,
                 )
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=1800)
+                _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=1800)
 
                 if process.returncode == 0:
                     print("[ExternalDriveSync] Cycle complete")
@@ -7809,7 +7807,7 @@ class UnifiedAILoop:
         if not lock_dir.exists():
             return
 
-        hostname = socket.gethostname()
+        socket.gethostname()
         stale_threshold = 4 * 3600  # 4 hours
 
         for lock_file in lock_dir.glob("training.*.lock"):

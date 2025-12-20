@@ -196,7 +196,7 @@ def chunked_transfer(
     chunk_size = config.chunk_size_mb * 1024 * 1024
 
     # Compress first if enabled
-    if config.compress and not local_path.suffix == ".gz":
+    if config.compress and local_path.suffix != ".gz":
         compressed_path = local_path.with_suffix(local_path.suffix + ".gz")
         logger.info(f"Compressing {local_path.name}...")
         with open(local_path, "rb") as f_in, gzip.open(compressed_path, "wb") as f_out:
@@ -280,7 +280,6 @@ def chunked_transfer(
 
         # If we compressed, reassemble to .gz file first, then decompress
         if cleanup_compressed:
-            gz_remote_path = f"{remote_path}.gz"
             reassemble_cmd = [
                 "ssh", "-i", config.ssh_key,
                 "-o", "StrictHostKeyChecking=no",
@@ -292,7 +291,6 @@ def chunked_transfer(
                 f"gunzip -f {remote_filename}.gz && "
                 f"rm -f {transfer_path.stem}_chunk_*"
             ]
-            final_remote = remote_path
         else:
             reassemble_cmd = [
                 "ssh", "-i", config.ssh_key,
@@ -304,7 +302,6 @@ def chunked_transfer(
                 f"cat {transfer_path.stem}_chunk_* > {remote_filename} && "
                 f"rm -f {transfer_path.stem}_chunk_*"
             ]
-            final_remote = remote_path
 
         result = subprocess.run(reassemble_cmd, capture_output=True, text=True, timeout=120)
 

@@ -285,7 +285,7 @@ def main():
         run_daemon(args.interval)
     else:
         # Single run
-        should_run, reason = should_run_tournament(DEFAULT_DB, min_hours=0)
+        _should_run, reason = should_run_tournament(DEFAULT_DB, min_hours=0)
         print(f"Tournament status: {reason}")
 
         success, message = run_tournament(

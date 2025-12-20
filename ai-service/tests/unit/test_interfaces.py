@@ -79,7 +79,7 @@ class TestMoveCacheProviderProtocol:
         import inspect
 
         # Get abstract methods
-        methods = [
+        [
             name
             for name, method in inspect.getmembers(MoveCacheProvider)
             if not name.startswith("_") and callable(method)

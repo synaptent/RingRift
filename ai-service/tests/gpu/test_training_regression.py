@@ -261,7 +261,7 @@ class TestGPUTrainingRegression:
         loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
         losses = []
-        for epoch in range(5):
+        for _epoch in range(5):
             epoch_loss = 0.0
             for batch_x, batch_v, batch_p in loader:
                 batch_x = batch_x.cuda()
@@ -457,7 +457,7 @@ class TestGPUvsCPUParity:
             y_policy = torch.from_numpy(policies[:batch_size]).to(device)
 
             losses = []
-            for epoch in range(n_epochs):
+            for _epoch in range(n_epochs):
                 optimizer.zero_grad()
                 policy_pred, value_pred = model(x)
                 value_loss = nn.MSELoss()(value_pred, y_value)
@@ -549,7 +549,7 @@ class TestGPUMemoryBehavior:
 
     def test_batch_size_scaling(self, simple_model, synthetic_training_data):
         """Larger batch sizes should use more memory proportionally."""
-        features, values, policies = synthetic_training_data
+        features, values, _policies = synthetic_training_data
         model = simple_model.cuda()
 
         def get_memory_for_batch(batch_size):
@@ -557,7 +557,7 @@ class TestGPUMemoryBehavior:
             x = torch.from_numpy(features[:batch_size]).cuda()
             y_value = torch.from_numpy(values[:batch_size]).cuda()
 
-            policy_pred, value_pred = model(x)
+            _policy_pred, value_pred = model(x)
             loss = nn.MSELoss()(value_pred, y_value)
             loss.backward()
 

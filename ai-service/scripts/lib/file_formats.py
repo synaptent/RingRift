@@ -408,21 +408,21 @@ def get_uncompressed_size_estimate(filepath: str | Path) -> int:
 
 
 __all__ = [
-    # Gzip detection
-    "is_gzip_file",
-    # JSONL handling
-    "open_jsonl_file",
-    "read_jsonl_lines",
     "count_jsonl_lines",
-    "write_jsonl_lines",
-    # JSON handling
-    "load_json",
-    "load_json_strict",
-    "load_json_if_exists",
-    "save_json",
-    "save_json_compact",
-    "update_json",
     # File info
     "get_file_size_mb",
     "get_uncompressed_size_estimate",
+    # Gzip detection
+    "is_gzip_file",
+    # JSON handling
+    "load_json",
+    "load_json_if_exists",
+    "load_json_strict",
+    # JSONL handling
+    "open_jsonl_file",
+    "read_jsonl_lines",
+    "save_json",
+    "save_json_compact",
+    "update_json",
+    "write_jsonl_lines",
 ]

@@ -363,7 +363,6 @@ def harvest_games_from_node(
     """Harvest high-quality games from a single node."""
     print(f"  Harvesting from {node}...")
 
-    config_key = f"{board_type}_{num_players}p"
 
     # Get list of JSONL files for this config
     success, output = run_ssh_command(

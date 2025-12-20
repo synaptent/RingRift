@@ -600,7 +600,7 @@ class RegressionGate:
         except Exception as e:
             print(f"[RegressionGate] Error saving report: {e}")
 
-    def get_recent_results(self, config: str = None, limit: int = 10) -> list[dict]:
+    def get_recent_results(self, config: str | None = None, limit: int = 10) -> list[dict]:
         """Get recent regression test results."""
         conn = sqlite3.connect(self._results_db)
 

@@ -355,7 +355,7 @@ class TestMultiplayerParity:
             assert state.current_player[0].item() in [1, 2, 3]
 
         # Should have seen all three players
-        assert seen_players == {1, 2, 3}, f"Missing players: {set([1,2,3]) - seen_players}"
+        assert seen_players == {1, 2, 3}, f"Missing players: { {1,2,3} - seen_players}"
 
     def test_four_player_victory_threshold(self, device):
         """Four-player games should use correct victory threshold."""

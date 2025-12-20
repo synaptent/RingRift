@@ -277,7 +277,7 @@ def benchmark_search(
         elapsed = time.perf_counter() - start
 
         # Get memory stats
-        current, peak = tracemalloc.get_traced_memory()
+        _current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
         times.append(elapsed)
@@ -466,7 +466,7 @@ def main():
 
     print("\n  Move Selection Equivalence Test:")
     equiv_result = validate_correctness(depth=2, num_positions=2)
-    equiv_passed, equiv_messages = equiv_result
+    _equiv_passed, equiv_messages = equiv_result
     for msg in equiv_messages:
         print(msg)
 

@@ -131,7 +131,7 @@ def test_recovery_contract_vectors_apply_successfully() -> None:
                 pos.to_key() for pos in (outcome.collapsed_positions or [])
             }
             marker_keys = {
-                key for key in state_after.board.markers.keys() if key not in collapsed_keys
+                key for key in state_after.board.markers if key not in collapsed_keys
             }
             assert marker_keys == set(markers_expected), (
                 f"Markers remaining mismatch for {vector['id']}: "

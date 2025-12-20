@@ -69,6 +69,8 @@ from typing import Any, Optional
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import contextlib
+
 from app.distributed import (
     BOARD_MEMORY_REQUIREMENTS,
     HostConfig,
@@ -403,7 +405,7 @@ def run_remote_training(
     ]
 
     if db_paths:
-        cmd_parts.extend(["--db"] + db_paths)
+        cmd_parts.extend(["--db", *db_paths])
     elif args.demo:
         cmd_parts.append("--demo")
     else:
@@ -451,10 +453,8 @@ def run_remote_training(
                         # Fetch report from remote
                         cat_result = executor.run(f"cat {part}", timeout=30)
                         if cat_result.returncode == 0:
-                            try:
+                            with contextlib.suppress(json.JSONDecodeError):
                                 report = json.loads(cat_result.stdout)
-                            except json.JSONDecodeError:
-                                pass
                         break
 
         return report
@@ -503,7 +503,7 @@ def run_local_training(
     ]
 
     if db_paths:
-        train_args.extend(["--db"] + db_paths)
+        train_args.extend(["--db", *db_paths])
     elif args.demo:
         train_args.append("--demo")
 

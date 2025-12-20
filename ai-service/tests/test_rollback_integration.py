@@ -235,7 +235,7 @@ class TestFullRollbackCycle:
         assert event.rollback_model_id == "model_v1"
 
         # Verify at_risk and rollback_triggered notifications
-        at_risk_events = [e for e in notification_hook.events if e["type"] == "at_risk"]
+        [e for e in notification_hook.events if e["type"] == "at_risk"]
         triggered_events = [e for e in notification_hook.events if e["type"] == "rollback_triggered"]
         assert len(triggered_events) >= 1
 
@@ -350,7 +350,7 @@ class TestFullRollbackCycle:
         )
 
         # Should be blocked by daily limit
-        should_rollback, event = monitor.check_for_regression(
+        should_rollback, _event = monitor.check_for_regression(
             model_id="model_v3",
             board_type="square8",
             num_players=2,

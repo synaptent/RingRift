@@ -127,7 +127,7 @@ class TestQueueMonitor:
 
     def test_init_creates_db(self, temp_db):
         """Should create database on init."""
-        monitor = QueueMonitor(db_path=temp_db)
+        QueueMonitor(db_path=temp_db)
         assert temp_db.exists()
 
     def test_report_depth_returns_backpressure(self, monitor):
@@ -247,7 +247,8 @@ class TestQueueMonitor:
     def test_callback_on_level_change(self, monitor):
         """Callback should be called when level changes."""
         levels_seen = []
-        callback = lambda level: levels_seen.append(level)
+        def callback(level):
+            return levels_seen.append(level)
         monitor.register_callback(QueueType.TRAINING_DATA, callback)
 
         # NONE -> SOFT

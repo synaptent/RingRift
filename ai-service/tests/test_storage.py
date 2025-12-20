@@ -37,7 +37,7 @@ class TestLocalStorage:
         from app.storage import LocalStorage
 
         new_path = tmp_path / "new_directory"
-        storage = LocalStorage(base_path=new_path)
+        LocalStorage(base_path=new_path)
 
         assert new_path.exists()
 
@@ -173,7 +173,7 @@ class TestS3Storage:
 
     def test_s3_storage_creation(self):
         """Test creating S3 storage (mocked)."""
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.client"):
             from app.storage import S3Storage
 
             storage = S3Storage(bucket="test-bucket", prefix="test-prefix")

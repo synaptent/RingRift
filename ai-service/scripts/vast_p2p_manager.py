@@ -105,7 +105,7 @@ python scripts/p2p_orchestrator.py --node-id {node_id} --port 8770 2>&1 | tee /t
 echo "STARTED"
 '''
 
-    ok, output = run_vast_ssh_command(inst.ssh_host, inst.ssh_port, startup_cmd, timeout=30, retries=1)
+    ok, _output = run_vast_ssh_command(inst.ssh_host, inst.ssh_port, startup_cmd, timeout=30, retries=1)
     if not ok:
         return False
 

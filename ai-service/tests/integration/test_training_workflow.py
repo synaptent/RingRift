@@ -128,11 +128,11 @@ class TestTrainingComponents:
 
         # Collect LRs during warmup and after
         lrs = []
-        for epoch in range(5):
+        for _epoch in range(5):
             lrs.append(optimizer.param_groups[0]['lr'])
             # Simulate training step
             x = torch.randn(4, 21, 8, 8)
-            policy, value = model(x)
+            policy, _value = model(x)
             loss = policy.mean()
             optimizer.zero_grad()
             loss.backward()
@@ -325,13 +325,13 @@ class TestModelTrainingLoop:
         model.train()
         losses = []
 
-        for epoch in range(3):
+        for _epoch in range(3):
             epoch_loss = 0
             for _ in range(5):  # 5 batches per epoch
                 x = torch.randn(4, 21, 8, 8)
                 target = torch.randint(0, 2048, (4,))
 
-                policy, value = model(x)
+                policy, _value = model(x)
                 loss = criterion(policy, target)
 
                 optimizer.zero_grad()

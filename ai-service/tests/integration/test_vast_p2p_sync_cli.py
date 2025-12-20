@@ -194,7 +194,7 @@ class TestModuleFunctions:
 
         # Verify preferred GPUs have valid roles
         for pref in PREFERRED_GPUS:
-            gpu_name = pref["name"]
+            pref["name"]
             role = pref["role"]
             # Role should match GPU_ROLES or be a valid role
             assert role in ["gpu_selfplay", "nn_training_primary", "flexible"]

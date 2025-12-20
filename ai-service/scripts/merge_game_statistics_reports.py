@@ -14,6 +14,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -74,14 +75,10 @@ def _merge_breakdown_dict(target: dict[str, Any], source: dict[str, Any] | None)
         if not isinstance(payload, dict):
             continue
         out = target.setdefault(key, {"games": 0, "total_moves": 0, "victory_types": {}})
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             out["games"] = int(out.get("games", 0) or 0) + int(payload.get("games", 0) or 0)
-        except (TypeError, ValueError):
-            pass
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             out["total_moves"] = int(out.get("total_moves", 0) or 0) + int(payload.get("total_moves", 0) or 0)
-        except (TypeError, ValueError):
-            pass
 
         vt_out = out.setdefault("victory_types", {})
         vt_in = payload.get("victory_types", {}) or {}
@@ -106,7 +103,7 @@ def _derive_aggregated_victory_types(cfg: dict[str, Any]) -> dict[str, int]:
     ring_elim = int(victory_types.get("ring_elimination", 0) or 0)
     lps = int(victory_types.get("lps", 0) or 0)
 
-    stalemate_total = int(victory_types.get("stalemate", 0) or 0)
+    int(victory_types.get("stalemate", 0) or 0)
     stalemate_territory = int(stalemate_by_tb.get("territory", 0) or 0)
     stalemate_ring_elim = int(stalemate_by_tb.get("ring_elimination", 0) or 0)
 
@@ -226,10 +223,8 @@ def merge_reports(report_paths: list[Path], *, strict: bool) -> dict[str, Any]:
             )
 
             # Float fields
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 out["total_time_seconds"] += float(cfg.get("total_time_seconds", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                pass
 
             # Counter dicts
             _merge_counter_dict(out["wins_by_player"], cfg.get("wins_by_player"))

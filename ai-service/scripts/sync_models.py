@@ -118,6 +118,8 @@ def request_bandwidth(host: str, mbps: float = 100.0, priority=None):
 def release_bandwidth(host: str) -> None:
     release_bandwidth_safe(host)
 
+import contextlib
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("sync_models")
@@ -144,7 +146,7 @@ except Exception:
 MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
 
 
-def check_disk_usage(path: Path = None) -> tuple[bool, float]:
+def check_disk_usage(path: Path | None = None) -> tuple[bool, float]:
     """Check if disk has capacity for syncing.
 
     Uses unified resource_guard utilities when available for consistent
@@ -959,7 +961,7 @@ def get_canonical_model_for_config(board_type: str, num_players: int, model_type
             return path
 
     # Fallback: discover locally
-    local_nn, local_nnue, local_info = get_local_models()
+    _local_nn, _local_nnue, local_info = get_local_models()
     for _name, info in local_info.items():
         if info.model_type == model_type and info.board_type == board_type and info.num_players == num_players:
             return Path(info.path)
@@ -1143,10 +1145,8 @@ def main():
             import fcntl
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             lock_fd.close()
-            try:
+            with contextlib.suppress(OSError):
                 lock_file.unlink()
-            except OSError:
-                pass
 
 
 def _main_impl(args):

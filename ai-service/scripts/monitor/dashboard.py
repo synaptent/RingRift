@@ -151,7 +151,6 @@ def print_cluster_status(status: ClusterStatus, verbose: bool = False) -> None:
 
     for node in sorted_nodes:
         status_str = "ONLINE" if node.online else "OFFLINE"
-        status_color = "" if node.online else ""
 
         jobs_str = f"{node.selfplay_jobs}sp"
         if node.training_jobs:

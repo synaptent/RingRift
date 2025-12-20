@@ -107,7 +107,7 @@ class TestDiskUsage:
     def test_check_disk_for_write(self, mock_check):
         """check_disk_for_write should add safety margin."""
         mock_check.return_value = True
-        result = check_disk_for_write(estimated_size_mb=1024)  # 1GB
+        check_disk_for_write(estimated_size_mb=1024)  # 1GB
         mock_check.assert_called_once()
         call_args = mock_check.call_args
         assert call_args[1]['required_gb'] == 2.0

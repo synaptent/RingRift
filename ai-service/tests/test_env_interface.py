@@ -28,7 +28,7 @@ class TestRingRiftEnv(unittest.TestCase):
         move = moves[0]
 
         # Apply via env
-        new_state_env, reward, done, info = env.step(move)
+        new_state_env, _reward, _done, _info = env.step(move)
 
         # Apply via engine directly
         new_state_direct = GameEngine.apply_move(state, move)

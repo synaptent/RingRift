@@ -199,7 +199,7 @@ def main():
             db_files = [db_path] if db_path.exists() else []
 
         for db_file in db_files:
-            if not db_file.suffix == ".db":
+            if db_file.suffix != ".db":
                 continue
 
             game_count = get_game_count(db_file)

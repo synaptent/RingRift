@@ -257,7 +257,7 @@ async def run_ssh_command_async(
     Returns:
         Tuple of (success: bool, output: str)
     """
-    full_cmd = ssh_args + [command]
+    full_cmd = [*ssh_args, command]
     try:
         proc = await asyncio.create_subprocess_exec(
             *full_cmd,

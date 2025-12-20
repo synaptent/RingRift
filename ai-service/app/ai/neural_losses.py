@@ -8,7 +8,6 @@ December 2025: Extracted from neural_net.py as part of N7 refactoring.
 
 from __future__ import annotations
 
-
 import torch
 
 # Maximum number of players for multi-player value head

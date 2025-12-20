@@ -136,7 +136,7 @@ class TestRegisterCMAESResult:
     def test_register_multiple_versions(self):
         """Test registering multiple versions of same config."""
         # First version
-        model_id1, v1 = register_cmaes_result(
+        model_id1, _v1 = register_cmaes_result(
             weights_path=self.weights_path,
             board_type="square8",
             num_players=2,

@@ -158,7 +158,7 @@ class TestFSMParityRingPlacement:
         state = _make_game_state(GamePhase.RING_PLACEMENT, current_player=1)
         move = _make_move(MoveType.PLACE_RING, player=1, to=Position(x=3, y=3))
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, legacy_phase, _legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_phase}, Legacy: {legacy_phase}"
         # Empty board: no stacks to move → skip to LINE_PROCESSING
@@ -170,7 +170,7 @@ class TestFSMParityRingPlacement:
         state = _make_game_state(GamePhase.RING_PLACEMENT, current_player=1)
         move = _make_move(MoveType.SKIP_PLACEMENT, player=1)
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, legacy_phase, _legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_phase}, Legacy: {legacy_phase}"
         assert fsm_result.next_phase == GamePhase.MOVEMENT
@@ -181,7 +181,7 @@ class TestFSMParityRingPlacement:
         state = _make_game_state(GamePhase.RING_PLACEMENT, current_player=1)
         move = _make_move(MoveType.NO_PLACEMENT_ACTION, player=1)
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, legacy_phase, _legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_phase}, Legacy: {legacy_phase}"
         assert fsm_result.next_phase == GamePhase.MOVEMENT
@@ -196,7 +196,7 @@ class TestFSMParityMovement:
         state = _make_game_state(GamePhase.MOVEMENT, current_player=1)
         move = _make_move(MoveType.NO_MOVEMENT_ACTION, player=1)
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, legacy_phase, _legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_phase}, Legacy: {legacy_phase}"
         assert fsm_result.next_phase == GamePhase.LINE_PROCESSING
@@ -212,7 +212,7 @@ class TestFSMParityMovement:
             to=Position(x=4, y=4),
         )
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, legacy_phase, _legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_phase}, Legacy: {legacy_phase}"
         assert fsm_result.next_phase == GamePhase.LINE_PROCESSING
@@ -228,7 +228,7 @@ class TestFSMParityMovement:
             to=Position(x=3, y=3),
         )
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, legacy_phase, _legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_phase}, Legacy: {legacy_phase}"
         assert fsm_result.next_phase == GamePhase.LINE_PROCESSING
@@ -337,7 +337,7 @@ class TestFSMParityPlayerRotation:
         )
         move = _make_move(MoveType.NO_TERRITORY_ACTION, player=num_players)
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, _legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
 
         assert parity_ok, f"FSM: {fsm_result.next_player}, Legacy: {legacy_player}"
         # Should wrap to player 1
@@ -354,7 +354,7 @@ class TestFSMParityPlayerRotation:
         )
         move = _make_move(MoveType.NO_TERRITORY_ACTION, player=current_player)
 
-        fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
+        fsm_result, _legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
 
         expected_next = (current_player % 2) + 1
         assert parity_ok, f"FSM: {fsm_result.next_player}, Legacy: {legacy_player}"

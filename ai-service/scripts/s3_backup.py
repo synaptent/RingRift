@@ -127,7 +127,7 @@ def sync_to_s3(
         cmd.append("--dryrun")
 
     print(f"  Syncing {local_path} -> s3://{S3_BUCKET}/{s3_prefix}/")
-    success, output = run_command(cmd)
+    _success, output = run_command(cmd)
 
     # Parse output to count files
     uploaded = output.count("upload:")
@@ -240,7 +240,7 @@ def restore_from_s3(
         cmd.append("--dryrun")
 
     print(f"  Restoring s3://{S3_BUCKET}/{s3_prefix}/ -> {local_path}")
-    success, output = run_command(cmd)
+    _success, output = run_command(cmd)
 
     downloaded = output.count("download:")
     return downloaded, output
@@ -270,7 +270,7 @@ def main():
             # Assume it's a direct prefix
             local_path = AI_SERVICE_ROOT / s3_prefix.replace("/", os.sep)
 
-        downloaded, output = restore_from_s3(s3_prefix, local_path, args.dry_run)
+        downloaded, _output = restore_from_s3(s3_prefix, local_path, args.dry_run)
         print(f"\n  Downloaded: {downloaded} files")
         return 0
 

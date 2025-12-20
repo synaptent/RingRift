@@ -6,6 +6,8 @@ Extracted from p2p_orchestrator.py for better modularity.
 
 from __future__ import annotations
 
+import contextlib
+
 # Systemd watchdog support for service health monitoring
 # When running under systemd with WatchdogSec set, we need to periodically
 # notify systemd that the service is healthy. If we miss the deadline,
@@ -40,7 +42,5 @@ def systemd_notify_ready():
     This is required for services configured with Type=notify.
     """
     if HAS_SYSTEMD and SYSTEMD_NOTIFIER:
-        try:
+        with contextlib.suppress(Exception):
             SYSTEMD_NOTIFIER.notify("READY=1")
-        except Exception:
-            pass

@@ -206,7 +206,7 @@ def main() -> int:
 
     deadline = time.time() + args.timeout
     while time.time() < deadline:
-        state, detail = _get_status(job_id)
+        state, _detail = _get_status(job_id)
         if state:
             normalized = state.split("+")[0].split(":")[0]
             if normalized in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL"):

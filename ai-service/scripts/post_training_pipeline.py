@@ -319,7 +319,7 @@ def run_pipeline(
 
     return PipelineResult(
         training_runs=all_runs,
-        merged_weights_path=list(merged_paths.values())[0] if merged_paths else None,
+        merged_weights_path=next(iter(merged_paths.values())) if merged_paths else None,
         validation_passed=all_passed,
         promoted=promoted,
         promoted_path=promoted_path,

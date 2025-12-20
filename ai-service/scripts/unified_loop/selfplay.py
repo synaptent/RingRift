@@ -760,7 +760,7 @@ class LocalSelfplayGenerator:
             while games_completed < num_games:
                 batch_count = min(batch_size, num_games - games_completed)
                 runner.batch_size = batch_count
-                results = runner.run_games()
+                runner.run_games()
                 games_completed += batch_count
 
             duration = time.time() - start_time

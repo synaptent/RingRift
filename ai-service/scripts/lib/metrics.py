@@ -773,17 +773,17 @@ class MetricsCollection:
 
 
 __all__ = [
-    # Timing
-    "TimingStats",
-    # Rates
-    "RateCalculator",
     # Counters
     "Counter",
-    "WinLossCounter",
-    # Progress
-    "ProgressTracker",
-    # Running statistics
-    "RunningStats",
     # Collection
     "MetricsCollection",
+    # Progress
+    "ProgressTracker",
+    # Rates
+    "RateCalculator",
+    # Running statistics
+    "RunningStats",
+    # Timing
+    "TimingStats",
+    "WinLossCounter",
 ]

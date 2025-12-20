@@ -77,13 +77,19 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    resource_can_proceed = lambda **kwargs: True  # type: ignore
-    check_disk_space = lambda *args, **kwargs: True  # type: ignore
-    check_memory = lambda *args, **kwargs: True  # type: ignore
-    require_resources = lambda *args, **kwargs: True  # type: ignore
+    def resource_can_proceed(**kwargs):
+        return True  # type: ignore
+    def check_disk_space(*args, **kwargs):
+        return True  # type: ignore
+    def check_memory(*args, **kwargs):
+        return True  # type: ignore
+    def require_resources(*args, **kwargs):
+        return True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
 # Unified logging setup
+import contextlib
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("distributed_export")
@@ -529,14 +535,13 @@ class ChunkHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
 def serve_chunks(chunk_dir: Path, port: int):
     """Serve export chunks over HTTP."""
-    handler = lambda *args, **kwargs: ChunkHTTPHandler(*args, chunk_dir=chunk_dir, **kwargs)
+    def handler(*args, **kwargs):
+        return ChunkHTTPHandler(*args, chunk_dir=chunk_dir, **kwargs)
 
     with socketserver.TCPServer(("0.0.0.0", port), handler) as httpd:
         logger.info(f"Serving chunks from {chunk_dir} on port {port}")
-        try:
+        with contextlib.suppress(KeyboardInterrupt):
             httpd.serve_forever()
-        except KeyboardInterrupt:
-            pass
 
 
 # ============================================
@@ -729,7 +734,7 @@ def collect_chunks_with_aria2(
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
 
         # Count successes
         downloaded = sum(1 for _, f in sources if (output_dir / f).exists())
@@ -953,7 +958,7 @@ def cmd_coordinate(args):
     worker_statuses = []
     base_port = 8780
 
-    for i, (worker, game_ids) in enumerate(zip(workers, chunks)):
+    for i, (worker, game_ids) in enumerate(zip(workers, chunks, strict=False)):
         http_port = base_port + i
 
         logger.info(f"  {worker['name']}: {len(game_ids)} games, port {http_port}")

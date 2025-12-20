@@ -53,7 +53,7 @@ class TestFaultToleranceIntegration:
         assert state.can_rollback()
 
         # Simulate 3 rollback attempts
-        for i in range(3):
+        for _i in range(3):
             state.record_rollback()
 
         # After max rollbacks, should not be able to rollback

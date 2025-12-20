@@ -370,7 +370,6 @@ fi
 def start_p2p_on_instance(instance: VastInstance) -> bool:
     """Start P2P orchestrator on a Vast instance with SOCKS proxy support."""
     # Determine RingRift path
-    ringrift_paths = ['/workspace/ringrift', '/root/ringrift']
 
     # Ensure Tailscale SOCKS is running first
     if not ensure_tailscale_socks(instance):

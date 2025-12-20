@@ -328,7 +328,7 @@ def run_evotorch_cmaes(
     )
 
     # Set up logging
-    stdout_logger = StdOutLogger(searcher)
+    StdOutLogger(searcher)
 
     # Track history
     history = []

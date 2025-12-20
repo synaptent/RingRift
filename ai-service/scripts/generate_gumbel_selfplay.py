@@ -154,7 +154,7 @@ def generate_game(
         if hasattr(ai, 'get_visit_distribution') and legal_moves:
             gumbel_moves, probs = ai.get_visit_distribution()
             # Map each Gumbel move to its index in the training-compatible legal_moves list
-            for mv, prob in zip(gumbel_moves, probs):
+            for mv, prob in zip(gumbel_moves, probs, strict=False):
                 if prob > 1e-6:
                     # Find this move's index in the legal_moves list
                     idx = find_move_index(mv, legal_moves)

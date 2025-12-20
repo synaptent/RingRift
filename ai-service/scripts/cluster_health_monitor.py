@@ -106,7 +106,7 @@ def check_tailscale_mesh() -> dict:
     return {"online": online, "offline": offline}
 
 
-def check_node_jobs(host: str, port: int = None) -> dict:
+def check_node_jobs(host: str, port: int | None = None) -> dict:
     """Check jobs running on a specific node."""
     if port:
         ssh_cmd = f"ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -p {port} root@{host}"
@@ -124,7 +124,7 @@ def check_node_jobs(host: str, port: int = None) -> dict:
     return {"python_procs": python_procs, "gpu_util": gpu_util}
 
 
-def check_node_health(node_name: str, host: str = None, port: int = None) -> dict:
+def check_node_health(node_name: str, host: str | None = None, port: int | None = None) -> dict:
     """Check health of a specific node."""
     if host is None:
         host = node_name

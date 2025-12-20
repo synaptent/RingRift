@@ -379,19 +379,19 @@ def test_compute_had_any_action_returns_true_after_place_ring():
 def test_forced_elimination_rotates_player_correctly():
     """
     After FORCED_ELIMINATION, current_player must advance to the next non-eliminated player.
-    
+
     This is a regression test for the TS↔Python parity divergence fixed in RR-PARITY-FIX-2025-12-16.
-    
+
     Root cause:
     - TypeScript uses `computeNextNonEliminatedPlayer(gameState, move.player, numPlayers)` to compute
       the next player after forced_elimination, starting from `move.player`.
     - Python was using `_rotate_to_next_active_player()` which starts from `game_state.current_player`.
     - When `move.player != game_state.current_player` (which can happen in certain edge cases),
       the two engines would disagree on the next player.
-    
+
     Fix:
     - Python now uses `_end_turn()` which properly handles the turn rotation to match TS semantics.
-    
+
     Per RR-CANON-R070: forced_elimination is the 7th and final phase of a turn.
     After FE, the turn ends and rotates to the next player.
     """
@@ -434,10 +434,10 @@ def test_forced_elimination_rotates_player_correctly():
 def test_forced_elimination_skips_eliminated_players():
     """
     FORCED_ELIMINATION rotation must skip players who are permanently eliminated.
-    
+
     Per RR-CANON-R201: Players without ANY rings (controlled, buried, or in hand) are permanently
     eliminated and must be skipped during turn rotation.
-    
+
     This test ensures the rotation after FE properly skips eliminated players.
     """
     state = _make_minimal_state(GamePhase.FORCED_ELIMINATION, current_player=1)

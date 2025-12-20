@@ -505,7 +505,7 @@ def setup_all_local():
     print("\n" + "=" * 70)
 
 
-def deploy_to_all_vast(components: list[str] = None):
+def deploy_to_all_vast(components: list[str] | None = None):
     """Deploy components to all Vast instances."""
     if components is None:
         components = ["tailscale", "aria2", "p2p"]

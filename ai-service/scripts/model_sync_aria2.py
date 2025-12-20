@@ -195,7 +195,7 @@ def get_best_sources(count: int = 3) -> list[dict]:
     with ThreadPoolExecutor(max_workers=len(MODEL_SOURCES)) as executor:
         futures = {executor.submit(probe_source, s): s for s in MODEL_SOURCES}
         for future in as_completed(futures):
-            name, available, latency = future.result()
+            _name, available, latency = future.result()
             if available:
                 source = futures[future]
                 results.append({"source": source, "latency": latency})

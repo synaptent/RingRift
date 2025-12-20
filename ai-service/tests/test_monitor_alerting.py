@@ -63,7 +63,7 @@ class TestLevelMappings:
 
     def test_color_format(self):
         """Test color format is valid hex."""
-        for level, color in LEVEL_COLORS.items():
+        for _level, color in LEVEL_COLORS.items():
             assert len(color) == 7  # #RRGGBB
             assert color[0] == "#"
             # Should be valid hex

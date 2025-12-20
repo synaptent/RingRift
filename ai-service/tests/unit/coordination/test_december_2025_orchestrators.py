@@ -381,7 +381,7 @@ class TestOptimizationCoordinator:
         coord = OptimizationCoordinator()
 
         with patch.object(coord, "_emit_optimization_triggered"):
-            run = coord.trigger_cmaes(reason="test")
+            coord.trigger_cmaes(reason="test")
 
         # Cancel it
         cancelled = coord.cancel_optimization()
@@ -516,7 +516,7 @@ class TestCacheCoordinationOrchestrator:
         orch = CacheCoordinationOrchestrator()
 
         # Register a cache
-        entry = orch.register_cache("node-1", "nnue_weights", "model-v1")
+        orch.register_cache("node-1", "nnue_weights", "model-v1")
 
         # Record hits and misses
         assert orch.record_hit("node-1", "nnue_weights", "model-v1")
@@ -524,7 +524,7 @@ class TestCacheCoordinationOrchestrator:
         assert orch.record_miss("node-1", "nnue_weights", "model-v1")
 
         # Get the entry again to check counts
-        cache_id = list(orch._entries.keys())[0]
+        cache_id = next(iter(orch._entries.keys()))
         updated_entry = orch._entries[cache_id]
         assert updated_entry.hits == 2
         assert updated_entry.misses == 1

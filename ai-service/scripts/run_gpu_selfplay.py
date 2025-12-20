@@ -719,7 +719,6 @@ class GPUSelfPlayGenerator:
 
         start_time = time.time()
         file_handle = None
-        db = None
 
         if output_file:
             os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
@@ -1127,7 +1126,7 @@ def run_gpu_selfplay(
 
     # Generate games - use unique filename per config to avoid lock contention
     games_file = os.path.join(output_dir, f"games_{board_type}_{num_players}p_{os.getpid()}.jsonl")
-    records = generator.generate_games(
+    generator.generate_games(
         num_games=num_games,
         output_file=games_file,
         progress_interval=10,
@@ -1491,7 +1490,6 @@ def main():
 
         # Record task completion for duration learning (safe version handles errors)
         if HAS_COORDINATION and task_id:
-            config = f"{args.board}_{args.num_players}p"
             actual_duration = time.time() - start_time
             if record_task_completion_safe(task_id, "gpu_selfplay", actual_duration):
                 logger.info("Recorded task completion for duration learning")

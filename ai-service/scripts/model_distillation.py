@@ -197,7 +197,7 @@ class EnsembleTeacher(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass averaging outputs from all models."""
         outputs = []
-        for model, weight in zip(self.models, self.weights):
+        for model, weight in zip(self.models, self.weights, strict=False):
             with torch.no_grad():
                 out = model(x)
                 if isinstance(out, tuple):
@@ -229,7 +229,7 @@ class EnsembleTeacher(nn.Module):
 
         metadata = checkpoint["ensemble_metadata"]
         source_models = metadata.get("source_models", [])
-        weights = metadata.get("weights")
+        metadata.get("weights")
 
         logger.info(f"Loading ensemble from {len(source_models)} models")
 
@@ -655,7 +655,7 @@ def main():
     else:
         teacher_path = Path(args.teacher)
 
-    result = run_distillation(
+    run_distillation(
         teacher_path=teacher_path,
         student_config=student_config,
         distillation_config=distillation_config,

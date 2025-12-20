@@ -103,7 +103,7 @@ class MockBatchGameState:
         """Return mask of active (non-finished) games."""
         return ~self.game_over
 
-    def place_stack(self, game_idx: int, y: int, x: int, owner: int, height: int, cap: int = None):
+    def place_stack(self, game_idx: int, y: int, x: int, owner: int, height: int, cap: int | None = None):
         """Helper to place a stack on the board."""
         if cap is None:
             cap = height

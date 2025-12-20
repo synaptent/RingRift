@@ -47,7 +47,7 @@ async def run_gauntlet_for_config(
     culler: ModelCullingController,
     config_key: str,
     distributed: bool = True,
-    p2p_url: str = None,
+    p2p_url: str | None = None,
 ) -> dict:
     """Run gauntlet and culling for a single config.
 

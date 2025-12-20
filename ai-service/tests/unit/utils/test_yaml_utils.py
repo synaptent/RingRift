@@ -298,7 +298,7 @@ class TestValidateYamlSchema:
     def test_non_strict_allows_unknown(self):
         data = {"host": "localhost", "unknown": "value"}
 
-        is_valid, errors = validate_yaml_schema(
+        is_valid, _errors = validate_yaml_schema(
             data,
             required_keys=["host"],
             strict=False,

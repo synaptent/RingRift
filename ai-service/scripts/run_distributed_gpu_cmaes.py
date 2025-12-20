@@ -450,7 +450,7 @@ def run_distributed_cmaes(
             best_fitness = gen_best_fitness
             best_weights = gen_best_weights.copy()
 
-        gen_elapsed = time.time() - gen_start
+        time.time() - gen_start
 
         logger.info(
             f"  Best: {gen_best_fitness:.3f}, Mean: {stats['mean_fitness']:.3f}"

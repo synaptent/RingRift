@@ -374,7 +374,7 @@ class TestVastInstances:
         """Test Vast.ai instances are properly defined."""
         assert len(EloSyncManager.VAST_INSTANCES) > 0
 
-        for name, config in EloSyncManager.VAST_INSTANCES.items():
+        for _name, config in EloSyncManager.VAST_INSTANCES.items():
             assert "host" in config
             assert "port" in config
             assert isinstance(config["port"], int)

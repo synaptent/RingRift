@@ -71,7 +71,7 @@ class GPUDataGenTester:
             print(msg)
 
     def _add_result(self, name: str, passed: bool, message: str,
-                    duration: float, metrics: dict = None) -> None:
+                    duration: float, metrics: dict | None = None) -> None:
         result = TestResult(
             name=name,
             passed=passed,
@@ -112,8 +112,8 @@ class GPUDataGenTester:
                 features = data["features"]
                 globals_arr = data["globals"]
                 values = data["values"]
-                policy_indices = data["policy_indices"]
-                policy_values = data["policy_values"]
+                data["policy_indices"]
+                data["policy_values"]
 
                 issues = []
 
@@ -408,7 +408,7 @@ class GPUDataGenTester:
                     if not isinstance(sample, tuple) or len(sample) != 4:
                         issues.append(f"Sample should be tuple of 4, got {type(sample)}")
                     else:
-                        features, globals_vec, policy, value = sample
+                        features, _globals_vec, _policy, value = sample
 
                         # Convert to tensors for shape check
                         if hasattr(features, 'shape') and len(features.shape) != 3:
@@ -439,9 +439,11 @@ class GPUDataGenTester:
     def test_gpu_memory_usage(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        batch_sizes: list[int] = [10, 20, 50],
+        batch_sizes: list[int] | None = None,
     ) -> bool:
         """Test GPU memory usage at different batch sizes."""
+        if batch_sizes is None:
+            batch_sizes = [10, 20, 50]
         self._log("\n=== Test: GPU Memory Usage ===")
         start_time = time.time()
 

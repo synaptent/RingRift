@@ -76,7 +76,7 @@ class DiverseOpponentDataset(Dataset):
         samples_added = 0
         num_moves = len(moves)
 
-        for i, (state, move) in enumerate(zip(states, moves)):
+        for i, (state, move) in enumerate(zip(states, moves, strict=False)):
             # Only learn from GMO's moves
             if move.player != gmo_player:
                 continue
@@ -123,7 +123,7 @@ class DiverseOpponentDataset(Dataset):
 
 def collate_fn(batch):
     """Custom collate function."""
-    states, moves, outcomes = zip(*batch)
+    states, moves, outcomes = zip(*batch, strict=False)
     return torch.stack(states), torch.stack(moves), torch.stack(outcomes)
 
 

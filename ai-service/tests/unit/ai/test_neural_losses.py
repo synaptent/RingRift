@@ -113,7 +113,6 @@ class TestRankDistributionLoss:
 
     def test_perfect_prediction(self):
         """Test low loss for confident correct predictions."""
-        batch_size = 1
         pred_dist = torch.tensor([
             [[1.0, 0.0, 0.0, 0.0],   # Player 0 predicted rank 0 with 100%
              [0.0, 1.0, 0.0, 0.0],   # Player 1 predicted rank 1 with 100%
@@ -323,7 +322,7 @@ class TestBuildRankTargets:
         # Players 0 and 1 are tied, player 2 is last
         values_mp = torch.tensor([[0.5, 0.5, 0.2, 0.0]])
 
-        rank_targets, active_mask = build_rank_targets(values_mp, num_players=3)
+        rank_targets, _active_mask = build_rank_targets(values_mp, num_players=3)
 
         # Players 0 and 1 should share ranks 0 and 1
         assert rank_targets[0, 0, 0].item() == pytest.approx(0.5)
@@ -342,7 +341,7 @@ class TestBuildRankTargets:
         ])
         num_players = torch.tensor([2, 3])
 
-        rank_targets, active_mask = build_rank_targets(values_mp, num_players)
+        _rank_targets, active_mask = build_rank_targets(values_mp, num_players)
 
         # First sample: 2 players
         assert active_mask[0, :2].all()

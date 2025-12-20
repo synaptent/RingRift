@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fast database consolidation using SQL ATTACH and INSERT OR IGNORE."""
 
+import contextlib
 import sqlite3
 import time
 from pathlib import Path
@@ -89,17 +90,15 @@ def main():
 
         except Exception as e:
             print(f"Error processing {db_path}: {e}")
-            try:
+            with contextlib.suppress(sqlite3.Error):
                 conn_out.execute("DETACH DATABASE src")
-            except sqlite3.Error:
-                pass
 
     # Final stats
     cursor = conn_out.execute("SELECT COUNT(*) FROM games")
     final_count = cursor.fetchone()[0]
 
     cursor = conn_out.execute("""
-        SELECT board_type, num_players, COUNT(*) as count 
+        SELECT board_type, num_players, COUNT(*) as count
         FROM games GROUP BY board_type, num_players ORDER BY count DESC
     """)
 

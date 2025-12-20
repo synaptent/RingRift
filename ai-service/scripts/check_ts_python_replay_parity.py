@@ -81,6 +81,8 @@ from scripts.lib.paths import AI_SERVICE_ROOT, REPO_ROOT
 if str(AI_SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+import contextlib
+
 from app.db.game_replay import GameReplayDB, _compute_state_hash
 from app.game_engine import GameEngine
 from app.models import BoardType
@@ -978,10 +980,8 @@ def dump_state_bundle(
             except Exception:
                 continue
 
-    try:
+    with contextlib.suppress(Exception):
         _dump_ts_states_for_ks(db_path, game_id, ks, state_bundles_dir)
-    except Exception:
-        pass
 
     for ts_k in ks:
         file_name = f"{db_path.name}__{game_id}__k{ts_k}.ts_state.json"

@@ -243,7 +243,7 @@ class TestModelLifecycleManager:
         )
 
         # First run should work
-        result1 = manager.check_config("square8_2p", force=False)
+        manager.check_config("square8_2p", force=False)
 
         # Second run should be skipped due to cooldown
         result2 = manager.check_config("square8_2p", force=False)

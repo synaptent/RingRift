@@ -835,7 +835,7 @@ def main():
         print("BLUNDER ANALYSIS")
         print("=" * 60)
 
-        blunder_stats, blunders = find_blunders(
+        blunder_stats, _blunders = find_blunders(
             db_path,
             threshold=args.blunder_threshold,
             board_type=args.board,

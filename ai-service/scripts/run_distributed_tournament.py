@@ -278,7 +278,7 @@ def _scaled_think_time_ms(think_time_ms: int, scale: float) -> int:
         factor = 1.0
     if factor <= 0.0:
         factor = 0.0
-    return max(0, int(round(think_time_ms * factor)))
+    return max(0, round(think_time_ms * factor))
 
 
 def create_ai_for_tier(

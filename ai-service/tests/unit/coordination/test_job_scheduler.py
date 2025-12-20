@@ -722,7 +722,7 @@ class TestHostDeadJobMigrator:
 
     def test_subscribe_to_events_no_bus(self):
         """Test subscription when event bus not available."""
-        migrator = HostDeadJobMigrator()
+        HostDeadJobMigrator()
 
         with patch("app.coordination.job_scheduler.HostDeadJobMigrator.subscribe_to_host_events") as mock:
             mock.return_value = False
@@ -763,7 +763,7 @@ class TestWireFunctions:
         reset_job_migrator()
 
         with patch.object(HostDeadJobMigrator, "subscribe_to_host_events", return_value=True):
-            migrator1 = wire_host_dead_to_job_migration()
+            wire_host_dead_to_job_migration()
 
         reset_job_migrator()
 

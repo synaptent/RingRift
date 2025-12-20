@@ -210,7 +210,6 @@ def test_evaluate_fitness_uses_board_based_heuristic_mode(
             heuristic_eval_mode=heuristic_eval_mode,
         )
 
-    original_play_from_state = cmaes.play_single_game_from_state
 
     def _short_circuit_play_from_state(
         initial_state,

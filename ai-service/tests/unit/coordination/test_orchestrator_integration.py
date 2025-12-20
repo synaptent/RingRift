@@ -335,7 +335,6 @@ class TestCacheCoordinationOrchestratorEmissions:
 
         # Mock the emit method
         emitted_events = []
-        original_emit = orch._emit_cache_invalidated
 
         def capture_emit(*args, **kwargs):
             emitted_events.append({"args": args, "kwargs": kwargs})

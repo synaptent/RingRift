@@ -439,7 +439,7 @@ class TestTrainingCoordinator:
             mock_lock.return_value = mock_lock_instance
 
             # Create some history
-            for i in range(3):
+            for _i in range(3):
                 job_id = coordinator.start_training("square8", 2)
                 with patch.object(coordinator, '_emit_training_event'):
                     coordinator.complete_training(job_id, status="completed")

@@ -644,7 +644,7 @@ class UnifiedScheduler:
 
         return success
 
-    def _map_slurm_state(self, state: "SlurmJobState") -> JobState:
+    def _map_slurm_state(self, state: SlurmJobState) -> JobState:
         from app.coordination.slurm_backend import SlurmJobState
 
         if state == SlurmJobState.RUNNING:
@@ -661,7 +661,7 @@ class UnifiedScheduler:
 
     def _sync_slurm_job_states(
         self,
-        slurm_jobs: dict[int, "SlurmJobStatus"],
+        slurm_jobs: dict[int, SlurmJobStatus],
         stale_after_seconds: float = 120.0,
     ) -> int:
         """Sync slurm job states into the unified jobs table."""
@@ -724,7 +724,7 @@ class UnifiedScheduler:
 
     async def sync_job_states(
         self,
-        slurm_jobs: dict[int, "SlurmJobStatus"] | None = None,
+        slurm_jobs: dict[int, SlurmJobStatus] | None = None,
     ) -> dict[str, int]:
         """Sync backend job states into the unified jobs table."""
         updates = {"slurm": 0}

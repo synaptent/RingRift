@@ -244,7 +244,6 @@ def sample_positions_key(
     moves = db.get_moves(game_id)
 
     # Track phase transitions
-    prev_phase = None
     for i, move in enumerate(moves):
         move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
 

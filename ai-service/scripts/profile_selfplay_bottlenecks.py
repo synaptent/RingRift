@@ -129,7 +129,7 @@ class SelfPlayProfiler:
         # Sort by total time
         sorted_timings = sorted(self.timings.items(), key=lambda x: x[1].total_time, reverse=True)
 
-        total_measured = sum(t.total_time for _, t in sorted_timings)
+        sum(t.total_time for _, t in sorted_timings)
 
         for name, stats in sorted_timings:
             pct = (stats.total_time / total_time) * 100 if total_time > 0 else 0

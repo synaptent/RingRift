@@ -197,7 +197,7 @@ def merge_weights_average(
 
     for key in all_keys:
         weighted_sum = 0.0
-        for (weights, _, _, _), coef in zip(all_weights, coefficients):
+        for (weights, _, _, _), coef in zip(all_weights, coefficients, strict=False):
             value = weights.get(key, BASE_V1_BALANCED_WEIGHTS.get(key, 0.0))
             weighted_sum += value * coef
         merged[key] = weighted_sum
@@ -258,7 +258,7 @@ def create_player_specific_profiles(
         print("\nMerging 4-player weights:")
         files = expand_glob_patterns(weights_4p)
         if files:
-            merged, num_players, meta = merge_weights_average(files, mode="fitness-weighted", expected_num_players=4)
+            merged, _num_players, meta = merge_weights_average(files, mode="fitness-weighted", expected_num_players=4)
             profiles["heuristic_v1_4p"] = merged
             metadata["profiles"]["heuristic_v1_4p"] = meta
 

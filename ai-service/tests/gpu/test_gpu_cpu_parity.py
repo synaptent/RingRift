@@ -207,7 +207,7 @@ class TestLineLengthParity:
 
         # Detect lines for player 1
         # detect_lines_batch returns (positions_mask, line_count_per_game)
-        positions_mask, line_count = detect_lines_batch(batch_state, player=1)
+        _positions_mask, line_count = detect_lines_batch(batch_state, player=1)
 
         # Should be empty - 3 markers is not enough for 2-player (needs 4)
         assert line_count[0].item() == 0, (
@@ -237,7 +237,7 @@ class TestLineLengthParity:
 
         # Detect lines for player 1
         # detect_lines_batch returns (positions_mask, line_count_per_game)
-        positions_mask, line_count = detect_lines_batch(batch_state, player=1)
+        _positions_mask, line_count = detect_lines_batch(batch_state, player=1)
 
         # Should be empty - 2 markers is not enough for 3-player (needs 3)
         assert line_count[0].item() == 0, (
@@ -497,7 +497,7 @@ class TestVictoryThresholdInGPU:
         batch_state = BatchGameState.from_single_game(state, device)
 
         # The GPU evaluation should use the correct threshold based on player count
-        expected_threshold = get_victory_threshold(board_type, num_players)
+        get_victory_threshold(board_type, num_players)
 
         # Verify the threshold used in evaluation matches
         # This is implicit - we check that evaluation runs without error

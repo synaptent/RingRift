@@ -869,7 +869,7 @@ def process_jsonl_file(
 
                 # Parse moves
                 moves = [parse_move(m) for m in moves_list]
-                total_moves = len(moves)
+                len(moves)
 
                 # Replay game and extract features
                 current_state = initial_state

@@ -110,7 +110,6 @@ def collect_predictions(
                     state_embed = gmo.state_encoder(state).to(gmo.device)
 
                 # Get prediction for best move candidate
-                best_move = None
                 best_score = float('-inf')
                 best_value = 0.0
                 best_var = 0.0
@@ -127,7 +126,6 @@ def collect_predictions(
                         best_score = score
                         best_value = mean_val.item()
                         best_var = var.item()
-                        best_move = move
 
                 game_predictions.append({
                     "value": best_value,
@@ -306,7 +304,7 @@ def create_calibration_plot(metrics: dict, output_path: Path) -> None:
     confidences = [b["confidence"] for b in bin_stats]
     accuracies = [b["accuracy"] for b in bin_stats]
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    _fig, ax = plt.subplots(figsize=(8, 6))
 
     # Perfect calibration line
     ax.plot([0, 1], [0, 1], 'k--', label='Perfect calibration')

@@ -210,6 +210,8 @@ def get_models_for_ai_type(pool: list[ModelPoolEntry], ai_type: str) -> list[Mod
     return [m for m in pool if ai_type in m.ai_types]
 
 
+import contextlib
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("run_distributed_selfplay")
@@ -314,7 +316,7 @@ class Telemetry:
         """Log current progress with detailed metrics."""
         elapsed = time.time() - self.start_time
         games_per_sec = self.games_completed / elapsed if elapsed > 0 else 0
-        samples_per_sec = self.samples_generated / elapsed if elapsed > 0 else 0
+        self.samples_generated / elapsed if elapsed > 0 else 0
 
         # Win rates
         total_decided = sum(self.wins_by_player.values())
@@ -594,10 +596,8 @@ def extract_training_samples(
         # Get the move that was played (if available)
         move_json = None
         if i < len(move_history):
-            try:
+            with contextlib.suppress(Exception):
                 move_json = move_history[i].model_dump_json()
-            except Exception:
-                pass
 
         sample = TrainingSample(
             state_json=state.model_dump_json(),

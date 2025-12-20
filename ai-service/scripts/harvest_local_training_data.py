@@ -173,7 +173,7 @@ def harvest_local_data(
 
     # Initialize scorer and filter
     scorer = GameQualityScorer(config_key=config_key)
-    quality_filter = QualityFilter(
+    QualityFilter(
         min_quality=min_quality,
         max_games=max_games,
         deduplicate=True,

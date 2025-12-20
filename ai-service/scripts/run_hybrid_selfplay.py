@@ -137,7 +137,7 @@ def get_disk_usage_percent(path: str = "/") -> int:
 
     # Fallback to original implementation
     try:
-        total, used, free = shutil.disk_usage(path)
+        total, used, _free = shutil.disk_usage(path)
         return int((used / total) * 100)
     except Exception:
         return 0
@@ -785,7 +785,7 @@ def run_hybrid_selfplay(
                             heuristic_scores = evaluator.evaluate_moves(
                                 game_state, valid_moves, current_player, GameEngine
                             )
-                            heuristic_dict = {m: s for m, s in heuristic_scores} if heuristic_scores else {}
+                            heuristic_dict = dict(heuristic_scores) if heuristic_scores else {}
 
                             # Get NNUE scores for each move (evaluate resulting positions)
                             nnue_scores = {}
@@ -883,7 +883,7 @@ def run_hybrid_selfplay(
                                     # Map moves to indices in valid_moves
                                     move_to_idx = {m: i for i, m in enumerate(valid_moves)}
                                     mcts_policy_dist = {}
-                                    for m, p in zip(dist_moves, dist_probs):
+                                    for m, p in zip(dist_moves, dist_probs, strict=False):
                                         if m in move_to_idx and p > 1e-6:
                                             mcts_policy_dist[move_to_idx[m]] = p
                         except Exception as e:
@@ -1230,7 +1230,7 @@ def run_benchmark(board_type: str = "square8", num_players: int = 2):
     start = time.perf_counter()
     for _ in range(10):
         for move in moves:
-            next_state = GameEngine.apply_move(game_state, move)
+            GameEngine.apply_move(game_state, move)
             # Simple heuristic eval placeholder
     cpu_time = (time.perf_counter() - start) / 10
     logger.info(f"  Pure CPU: {cpu_time*1000:.1f} ms ({num_moves/cpu_time:.0f} moves/sec)")

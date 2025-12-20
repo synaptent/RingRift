@@ -529,7 +529,7 @@ def play_single_game(
                 break
 
             # Apply the move
-            game_state, reward, done, info = env.step(move)
+            game_state, _reward, done, _info = env.step(move)
             move_count += 1
 
             if verbose:

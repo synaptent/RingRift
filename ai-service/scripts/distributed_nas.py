@@ -84,14 +84,21 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    resource_can_proceed = lambda **kwargs: True  # type: ignore
-    check_disk_space = lambda *args, **kwargs: True  # type: ignore
-    check_memory = lambda *args, **kwargs: True  # type: ignore
-    check_gpu_memory = lambda *args, **kwargs: True  # type: ignore
-    require_resources = lambda *args, **kwargs: True  # type: ignore
+    def resource_can_proceed(**kwargs):
+        return True  # type: ignore
+    def check_disk_space(*args, **kwargs):
+        return True  # type: ignore
+    def check_memory(*args, **kwargs):
+        return True  # type: ignore
+    def check_gpu_memory(*args, **kwargs):
+        return True  # type: ignore
+    def require_resources(*args, **kwargs):
+        return True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
 # Unified logging setup
+import contextlib
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("distributed_nas")
@@ -665,10 +672,8 @@ class SharedFSTaskQueue:
             json.dump(task_data, f, indent=2)
 
         # Remove from running
-        try:
+        with contextlib.suppress(FileNotFoundError):
             running_file.unlink()
-        except FileNotFoundError:
-            pass
 
     def get_completed_tasks(self) -> list[dict[str, Any]]:
         """Get all completed tasks."""
@@ -860,7 +865,7 @@ def ssh_cmd(
 
 def check_worker_available(worker: WorkerConfig) -> bool:
     """Check if worker is available and responsive."""
-    code, out, err = ssh_cmd(worker, "echo ok", timeout=15)
+    code, out, _err = ssh_cmd(worker, "echo ok", timeout=15)
     return code == 0 and "ok" in out
 
 
@@ -994,10 +999,8 @@ python3 {remote_script}
 
     finally:
         # Cleanup local temp file
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(local_script)
-        except Exception:
-            pass
 
         # Cleanup remote script
         ssh_cmd(worker, f"rm -f {remote_script}", timeout=10)

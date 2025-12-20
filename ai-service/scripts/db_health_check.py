@@ -123,7 +123,7 @@ class DBHealthChecker:
             conn.close()
 
             # Re-check integrity
-            healthy, msg = self.check_integrity(db_path)
+            healthy, _msg = self.check_integrity(db_path)
             if healthy:
                 backup_path.unlink()  # Remove backup if successful
                 return True, "Repaired via VACUUM"

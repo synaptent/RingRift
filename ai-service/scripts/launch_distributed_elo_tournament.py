@@ -428,7 +428,7 @@ def discover_tailscale_peers() -> dict[str, dict]:
 
         status = json.loads(result.stdout)
         peers = status.get("Peer", {})
-        self_info = status.get("Self", {})
+        status.get("Self", {})
 
         for _peer_id, peer in peers.items():
             if not peer.get("Online"):
@@ -1217,6 +1217,8 @@ def main():
                         help="Board type for resumed selfplay (default: square19)")
     parser.add_argument("--selfplay-players", type=int, default=3,
                         help="Player count for resumed selfplay (default: 3)")
+    parser.add_argument("--players", type=int, default=2,
+                        help="Number of players per game (2, 3, or 4). Extra slots filled with random.")
 
     args = parser.parse_args()
 
@@ -1235,6 +1237,7 @@ def main():
 
     print("\n[Tournament] AI Type Calibration Tournament")
     print(f"[Tournament] Agents: {agents}")
+    print(f"[Tournament] Players per game: {args.players}")
     print(f"[Tournament] Games per pairing: {args.games}")
     print(f"[Tournament] Ramdrive: {'enabled' if args.ramdrive else 'disabled'}")
     print(f"[Tournament] Retry failed: {not args.no_retry}")
@@ -1251,6 +1254,7 @@ def main():
             agents=agents,
             games_per_pairing=args.games,
             board_type=args.board,
+            num_players=args.players,
             use_ramdrive=args.ramdrive,
             max_parallel_per_node=args.max_parallel,
             min_ram_gb=args.min_ram,

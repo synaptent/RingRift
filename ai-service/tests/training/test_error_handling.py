@@ -212,7 +212,7 @@ class TestTrainingErrorHandler:
             batch_reduction_factor=0.5,
         )
 
-        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256) as ctx:
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
             raise RuntimeError("CUDA out of memory")
 
         assert handler.recommended_batch_size == 128

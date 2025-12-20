@@ -123,7 +123,7 @@ def _scaled_think_time_ms(think_time_ms: int, scale: float) -> int:
         factor = 1.0
     if factor <= 0.0:
         factor = 0.0
-    return max(0, int(round(think_time_ms * factor)))
+    return max(0, round(think_time_ms * factor))
 
 
 def estimate_tier_think_time_ms(
@@ -464,12 +464,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not worker_slots:
         raise ValueError("No worker slots available (max_parallel_jobs=0?)")
 
-    cost_fn = lambda m: estimate_matchup_cost(
-        m,
-        board_type=board_type,
-        think_time_scale=args.think_time_scale,
-        games_per_matchup=args.games_per_matchup,
-    )
+    def cost_fn(m):
+        return estimate_matchup_cost(
+            m,
+            board_type=board_type,
+            think_time_scale=args.think_time_scale,
+            games_per_matchup=args.games_per_matchup,
+        )
     assignments = assign_matchups_to_worker_slots(matchups, worker_slots, cost_fn)
 
     run_id = (args.run_id or "").strip() or str(uuid.uuid4())[:8]

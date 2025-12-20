@@ -67,8 +67,8 @@ class TestEngineCorrectness(unittest.TestCase):
 
         # Check if original state is modified
         # Specifically check the stack that might have been modified
-        original_stack = original_state.board.stacks.get("3,3")
-        current_stack_in_original = self.state.board.stacks.get("3,3")
+        original_state.board.stacks.get("3,3")
+        self.state.board.stacks.get("3,3")
 
         # If we placed on 3,3, it would change. If we placed elsewhere, a new stack would appear.
         # Let's check if any stack in original state changed.

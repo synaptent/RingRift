@@ -5,6 +5,7 @@ including mock event buses, temporary databases, and factory functions.
 """
 
 import asyncio
+import contextlib
 import sqlite3
 import tempfile
 import time
@@ -117,20 +118,16 @@ class MockEventBus:
     def unsubscribe(self, event_type: Any, handler: Callable) -> None:
         """Unsubscribe a handler from an event type."""
         if event_type in self.subscribers:
-            try:
+            with contextlib.suppress(ValueError):
                 self.subscribers[event_type].remove(handler)
-            except ValueError:
-                pass
 
     def emit(self, event_type: Any, payload: Any = None) -> None:
         """Emit an event to all subscribers."""
         self.emitted_events.append((event_type, payload))
         if event_type in self.subscribers:
             for handler in self.subscribers[event_type]:
-                try:
+                with contextlib.suppress(Exception):
                     handler(payload)
-                except Exception:
-                    pass
 
     async def emit_async(self, event_type: Any, payload: Any = None) -> None:
         """Async emit for async handlers."""

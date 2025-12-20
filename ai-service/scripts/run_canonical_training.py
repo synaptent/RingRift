@@ -218,16 +218,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    train_kwargs = dict(
-        config=config,
-        data_path=str(dataset_path),
-        save_path=save_path,
-        checkpoint_dir=os.path.dirname(save_path),
-        checkpoint_interval=max(1, config.epochs_per_iter // 2),
-        multi_player=args.num_players > 2,
-        num_players=args.num_players,
-        model_version=model_version,
-    )
+    train_kwargs = {
+        "config": config,
+        "data_path": str(dataset_path),
+        "save_path": save_path,
+        "checkpoint_dir": os.path.dirname(save_path),
+        "checkpoint_interval": max(1, config.epochs_per_iter // 2),
+        "multi_player": args.num_players > 2,
+        "num_players": args.num_players,
+        "model_version": model_version,
+    }
     if args.demo:
         train_kwargs.update(
             early_stopping_patience=0,

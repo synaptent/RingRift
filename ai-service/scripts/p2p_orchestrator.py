@@ -140,10 +140,8 @@ def db_connection(db_path: str | Path, timeout: float = 30.0) -> Generator[sqlit
         yield conn
     finally:
         if conn:
-            try:
+            with contextlib.suppress(Exception):
                 conn.close()
-            except Exception:
-                pass
 
 
 # Centralized ramdrive utilities for auto-detection
@@ -697,7 +695,7 @@ class WebhookNotifier:
         title: str,
         message: str,
         level: str = "warning",
-        fields: dict[str, str] = None,
+        fields: dict[str, str] | None = None,
         node_id: str = "",
     ):
         """Send an alert to configured webhooks.
@@ -791,9 +789,9 @@ class P2POrchestrator:
         node_id: str,
         host: str = "0.0.0.0",
         port: int = DEFAULT_PORT,
-        known_peers: list[str] = None,
-        relay_peers: list[str] = None,
-        ringrift_path: str = None,
+        known_peers: list[str] | None = None,
+        relay_peers: list[str] | None = None,
+        ringrift_path: str | None = None,
         advertise_host: str | None = None,
         advertise_port: int | None = None,
         auth_token: str | None = None,
@@ -1202,10 +1200,8 @@ class P2POrchestrator:
                 # Only force an election when we have no known leader; otherwise we
                 # may already be following a healthy leader and shouldn't flap.
                 if not self.leader_id:
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         asyncio.get_running_loop().create_task(self._start_election())
-                    except RuntimeError:
-                        pass
             return False
         # Consistency: we should never claim leader_id=self while being a follower/candidate.
         if self.role != NodeRole.LEADER:
@@ -1217,10 +1213,8 @@ class P2POrchestrator:
             self.last_lease_renewal = 0.0
             self._release_voter_grant_if_self()
             self._save_state()
-            try:
+            with contextlib.suppress(RuntimeError):
                 asyncio.get_running_loop().create_task(self._start_election())
-            except RuntimeError:
-                pass
             return False
 
         # LEARNED LESSONS - Lease-based leadership prevents split-brain
@@ -1234,10 +1228,8 @@ class P2POrchestrator:
             self.last_lease_renewal = 0.0
             self._release_voter_grant_if_self()
             self._save_state()
-            try:
+            with contextlib.suppress(RuntimeError):
                 asyncio.get_running_loop().create_task(self._start_election())
-            except RuntimeError:
-                pass
             return False
         if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
             logger.info("Leadership without voter quorum, stepping down")
@@ -1248,10 +1240,8 @@ class P2POrchestrator:
             self.last_lease_renewal = 0.0
             self._release_voter_grant_if_self()
             self._save_state()
-            try:
+            with contextlib.suppress(RuntimeError):
                 asyncio.get_running_loop().create_task(self._start_election())
-            except RuntimeError:
-                pass
             return False
         return True
 
@@ -2189,7 +2179,7 @@ class P2POrchestrator:
         with self.peers_lock:
             peers_snapshot = list(self.peers.values())
 
-        conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
 
         leader_id = self.leader_id
         if leader_id and self._is_leader_lease_valid():
@@ -2431,24 +2421,18 @@ class P2POrchestrator:
 
             raw_lease_expires = state_rows.get("leader_lease_expires")
             if raw_lease_expires:
-                try:
+                with contextlib.suppress(Exception):
                     self.leader_lease_expires = float(raw_lease_expires)
-                except Exception:
-                    pass
 
             raw_last_renewal = state_rows.get("last_lease_renewal")
             if raw_last_renewal:
-                try:
+                with contextlib.suppress(Exception):
                     self.last_lease_renewal = float(raw_last_renewal)
-                except Exception:
-                    pass
 
             raw_role = state_rows.get("role")
             if raw_role:
-                try:
+                with contextlib.suppress(Exception):
                     self.role = NodeRole(str(raw_role))
-                except Exception:
-                    pass
 
             raw_grant_leader = state_rows.get("voter_grant_leader_id")
             if raw_grant_leader:
@@ -2458,10 +2442,8 @@ class P2POrchestrator:
                 self.voter_grant_lease_id = str(raw_grant_lease)
             raw_grant_expires = state_rows.get("voter_grant_expires")
             if raw_grant_expires:
-                try:
+                with contextlib.suppress(Exception):
                     self.voter_grant_expires = float(raw_grant_expires)
-                except Exception:
-                    pass
 
             # Optional persisted voter configuration (convergence helper). Only
             # apply when voters are not explicitly configured via env/config.
@@ -2561,9 +2543,9 @@ class P2POrchestrator:
         self,
         metric_type: str,
         value: float,
-        board_type: str = None,
-        num_players: int = None,
-        metadata: dict[str, Any] = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Record a metric to the history table for observability.
 
@@ -2624,8 +2606,8 @@ class P2POrchestrator:
     def get_metrics_history(
         self,
         metric_type: str,
-        board_type: str = None,
-        num_players: int = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
         hours: float = 24,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
@@ -2954,10 +2936,8 @@ class P2POrchestrator:
 
         voter_id = str(getattr(voter, "node_id", "") or "").strip()
         port = 0
-        try:
+        with contextlib.suppress(Exception):
             port = int(getattr(voter, "port", 0) or 0)
-        except Exception:
-            pass
         if port <= 0:
             try:
                 port = int(getattr(voter, "reported_port", DEFAULT_PORT) or DEFAULT_PORT)
@@ -3285,7 +3265,7 @@ class P2POrchestrator:
             return 0
 
         killed_count = 0
-        now = time.time()
+        time.time()
 
         # Map patterns to their max runtimes
         pattern_max_runtime = {
@@ -3670,7 +3650,7 @@ class P2POrchestrator:
         tasks = [self._request_peer_manifest(peer) for peer in peers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for peer, result in zip(peers, results):
+        for peer, result in zip(peers, results, strict=False):
             if isinstance(result, NodeDataManifest):
                 cluster_manifest.node_manifests[peer.node_id] = result
 
@@ -3735,7 +3715,7 @@ class P2POrchestrator:
         for file_path, missing_nodes in self.cluster_data_manifest.missing_from_nodes.items():
             # Find a node that has this file (any node not in missing_nodes)
             source_node = None
-            for node_id in self.cluster_data_manifest.manifests_by_node.keys():
+            for node_id in self.cluster_data_manifest.manifests_by_node:
                 if node_id not in missing_nodes:
                     node_manifest = self.cluster_data_manifest.manifests_by_node[node_id]
                     if file_path in node_manifest.files_by_path:
@@ -4830,10 +4810,8 @@ class P2POrchestrator:
         converted_marker_file = data_dir / ".jsonl_converted"
         converted_files: set = set()
         if converted_marker_file.exists():
-            try:
+            with contextlib.suppress(Exception):
                 converted_files = set(converted_marker_file.read_text().strip().split("\n"))
-            except Exception:
-                pass
 
         total_converted = 0
         newly_converted = []
@@ -5047,10 +5025,8 @@ class P2POrchestrator:
         npz_marker_file = data_dir / ".jsonl_to_npz_converted"
         converted_files: set = set()
         if npz_marker_file.exists():
-            try:
+            with contextlib.suppress(Exception):
                 converted_files = set(npz_marker_file.read_text().strip().split("\n"))
-            except Exception:
-                pass
 
         conversions_done = 0
         newly_converted = []
@@ -5980,7 +5956,7 @@ class P2POrchestrator:
         await asyncio.sleep(2)
 
         # Use exec to replace current process
-        os.execv(sys.executable, [sys.executable, str(script_path)] + args)
+        os.execv(sys.executable, [sys.executable, str(script_path), *args])
 
     async def _git_update_loop(self):
         """Background loop to periodically check for and apply updates."""
@@ -6139,7 +6115,7 @@ class P2POrchestrator:
         async with AsyncLockWrapper(self.peers_lock):
             peers_snapshot = list(self.peers.values())
 
-        conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
         effective_leader = self._get_leader_peer()
 
         peers: dict[str, Any] = {}
@@ -6264,7 +6240,7 @@ class P2POrchestrator:
         misrouted_nodes = []
 
         # Check self
-        self_dict = self.self_info.to_dict()
+        self.self_info.to_dict()
         if self.self_info.has_external_work():
             nodes_with_external.append({
                 'node_id': self.node_id,
@@ -6672,7 +6648,7 @@ class P2POrchestrator:
 
             with self.peers_lock:
                 peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
-            conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+            conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
             eligible = self._is_leader_eligible(self.self_info, conflict_keys, require_alive=False)
             voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
             if eligible and voter_node_ids:
@@ -6851,7 +6827,7 @@ class P2POrchestrator:
                     peer = self.peers.get(new_leader)
                     peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
                 if peer:
-                    conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                    conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                     if not self._is_leader_eligible(peer, conflict_keys, require_alive=False):
                         return web.json_response({"accepted": False, "reason": "leader_ineligible"})
 
@@ -7063,7 +7039,7 @@ class P2POrchestrator:
             num_players = data.get("num_players", 2)
             num_games = data.get("num_games", 500)
             engine_mode = data.get("engine_mode", "gpu")
-            auto_scaled = data.get("auto_scaled", False)
+            data.get("auto_scaled", False)
 
             job_id = f"selfplay-{self.node_id}-{int(time.time())}"
 
@@ -7184,7 +7160,7 @@ class P2POrchestrator:
                     "pid": proc.pid,
                 }
 
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=7200)  # 2 hour max
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=7200)  # 2 hour max
 
             # Update job status
             with self.jobs_lock:
@@ -8299,7 +8275,7 @@ class P2POrchestrator:
 
             batch_results = await asyncio.gather(*batch_coros, return_exceptions=True)
 
-            for task, result in zip(batch, batch_results):
+            for task, result in zip(batch, batch_results, strict=False):
                 if isinstance(result, Exception):
                     results.append({
                         "task_id": task["task_id"],
@@ -9008,7 +8984,7 @@ class P2POrchestrator:
 
                 # Wait for results with timeout
                 wait_start = time.time()
-                expected_results = len(solutions) - len(fitness_results)
+                len(solutions) - len(fitness_results)
                 while len(fitness_results) < len(solutions) and (time.time() - wait_start) < 300:
                     await asyncio.sleep(1)
                     state.last_update = time.time()
@@ -9448,7 +9424,7 @@ print(wins / total)
             # If we can't get the semaphore within 30 seconds, fail fast
             logger.info(f"Acquiring semaphore (current holder: {getattr(self, '_current_match_holder', 'none')})...")
             try:
-                acquired = await asyncio.wait_for(
+                await asyncio.wait_for(
                     self._tournament_match_semaphore.acquire(),
                     timeout=30.0
                 )
@@ -9758,7 +9734,7 @@ print(wins / total)
         # Create filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         game_id = f"tournament_{self.node_id}_{timestamp}_{uuid.uuid4().hex[:8]}"
-        output_file = config_dir / f"{game_id}.jsonl"
+        config_dir / f"{game_id}.jsonl"
 
         # Build game record
         game_record = {
@@ -10850,7 +10826,7 @@ print(json.dumps(result))
                 env=env,
             )
 
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=3600  # 1 hour max
             )
@@ -10943,7 +10919,7 @@ else:
                 env=env,
             )
 
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=600  # 10 minutes max
             )
@@ -11486,7 +11462,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 continue
 
             # DISTRIBUTED TRAINING COORDINATION: Check cluster-wide before starting
-            is_training, training_nodes = self._is_config_being_trained_cluster_wide(config_key)
+            is_training, _training_nodes = self._is_config_being_trained_cluster_wide(config_key)
             if is_training:
                 # Someone else is already training this config
                 continue
@@ -11877,7 +11853,6 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.info(f"Scheduling {len(matchups)} tournament matchups for new model")
 
             # Run evaluation games (simplified - in production would dispatch to workers)
-            total_wins = 0
             total_games = 0
 
             for matchup in matchups:
@@ -12399,7 +12374,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     async def _monitor_training_process(self, job_id: str, proc, output_path: str):
         """Monitor training subprocess and report completion to leader."""
         try:
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=7200  # 2 hour max
             )
@@ -12703,7 +12678,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 env=env,
             )
 
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
+            _stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
 
             if proc.returncode == 0:
                 results_file = results_dir / f"{tournament_id}.json"
@@ -12803,7 +12778,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Check for plateau
             auto_tuner = self.cmaes_auto_tuners[config_key]
-            last_elo = self.last_cmaes_elo.get(config_key, INITIAL_ELO_RATING)
+            self.last_cmaes_elo.get(config_key, INITIAL_ELO_RATING)
 
             # Record Elo history for plateau detection
             should_tune = auto_tuner.check_plateau(best_elo)
@@ -12999,10 +12974,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             import json as json_mod
             existing = {}
             if config_path.exists():
-                try:
+                with contextlib.suppress(Exception):
                     existing = json_mod.loads(config_path.read_text())
-                except Exception:
-                    pass
 
             existing[config_key] = {
                 "weights": weights,
@@ -14441,7 +14414,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.info(f"Starting canonical selfplay job {job_id}: {num_games} games -> {db_file}")
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, env=env)
-            stdout, stderr = await proc.communicate()
+            _stdout, stderr = await proc.communicate()
             if proc.returncode == 0:
                 logger.info(f"Canonical selfplay job {job_id} completed successfully")
             else:
@@ -14481,7 +14454,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.info(f"Starting parity validation job {job_id}: {len(db_paths)} databases")
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, env=env)
-            stdout, stderr = await proc.communicate()
+            _stdout, stderr = await proc.communicate()
             if proc.returncode == 0:
                 logger.info(f"Parity validation job {job_id} completed successfully")
                 self._pipeline_status["status"] = "completed"
@@ -14531,7 +14504,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.info(f"Starting NPZ export job {job_id}: {len(db_paths)} databases -> {output_file}")
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, env=env)
-            stdout, stderr = await proc.communicate()
+            _stdout, stderr = await proc.communicate()
             if proc.returncode == 0:
                 logger.info(f"NPZ export job {job_id} completed successfully")
                 self._pipeline_status["status"] = "completed"
@@ -14566,10 +14539,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     return proxied
 
             # Ensure local resource stats are fresh for dashboard consumers.
-            try:
+            with contextlib.suppress(Exception):
                 self._update_self_info()
-            except Exception:
-                pass
 
             is_leader = self._is_leader()
             effective_leader = self._get_leader_peer()
@@ -14788,9 +14759,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             def should_include_peer(peer: NodeInfo) -> bool:
                 if peer.node_id == self.node_id:
                     return False
-                if not include_offline and not peer.is_alive():
-                    return False
-                return True
+                return not (not include_offline and not peer.is_alive())
 
             if node_ids:
                 for node_id in node_ids:
@@ -15161,7 +15130,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 # Build flat table response
                 table_data = []
                 for rank, row in enumerate(rows, 1):
-                    participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update = row
+                    participant_id, board_type, num_players, rating, games, wins, losses, draws, _last_update = row
 
                     # Extract model name from participant_id
                     model_name = participant_id
@@ -16185,10 +16154,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             rollback_log = ai_root / "logs" / "rollbacks.json"
             if rollback_log.exists():
                 import json
-                try:
+                with contextlib.suppress(Exception):
                     rollback_status["recent_rollbacks"] = json.loads(rollback_log.read_text())[-10:]
-                except Exception:
-                    pass
 
         except Exception:
             pass
@@ -16966,7 +16933,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 board_type = config.get("board_type", "square8")
                 num_players = config.get("num_players", 2)
                 # Queue it for local training
-                job_id = f"pull-{work_id}-{int(time.time())}"
+                f"pull-{work_id}-{int(time.time())}"
                 logger.info(f"Executing training work: {board_type}/{num_players}p")
                 # Simplified: trigger training via existing mechanisms
                 return True
@@ -17150,7 +17117,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         # Check if node is GPU-idle: low GPU utilization, regardless of CPU job count
                         # A node with CPU-bound selfplay jobs but idle GPU should still get GPU work
                         gpu_pct = float(getattr(peer, "gpu_percent", 0) or 0)
-                        selfplay_jobs = int(getattr(peer, "selfplay_jobs", 0) or 0)
+                        int(getattr(peer, "selfplay_jobs", 0) or 0)
                         training_jobs = int(getattr(peer, "training_jobs", 0) or 0)
                         has_external = getattr(peer, "has_external_work", lambda: False)()
                         has_gpu = bool(getattr(peer, "gpu_name", "") or getattr(peer, "has_gpu", False))
@@ -17472,7 +17439,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     logger.info(f"Auto-scaling: scale_up {decision.count} instances ({decision.reason})")
                     try:
                         from scripts.vast_p2p_sync import provision_instances_async
-                        created, instance_ids = await provision_instances_async(
+                        created, _instance_ids = await provision_instances_async(
                             count=decision.count,
                             max_total_hourly=auto_scaler.config.max_hourly_cost,
                         )
@@ -17686,10 +17653,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
                     work_items = []
                     for item_dict in running_items:
-                        try:
+                        with contextlib.suppress(Exception):
                             work_items.append(WorkItem.from_dict(item_dict))
-                        except Exception:
-                            pass
 
                     # Find stuck jobs
                     stuck_jobs = recovery_manager.find_stuck_jobs(work_items)
@@ -19064,7 +19029,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             if not row:
                 return web.json_response({"error": f"Test {test_id} not found"}, status=404)
 
-            board_type, num_players, model_a, model_b, target_games, status = row
+            _board_type, _num_players, _model_a, _model_b, target_games, status = row
             if status != "running":
                 return web.json_response({"error": f"Test is {status}, not running"}, status=400)
 
@@ -19084,7 +19049,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Schedule games via existing tournament infrastructure
             # This creates a mini-tournament between the two models
-            tournament_id = f"abtest_{test_id[:8]}"
+            f"abtest_{test_id[:8]}"
 
             return web.json_response({
                 "test_id": test_id,
@@ -19141,10 +19106,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             overrides_path = ai_root / "data" / "ladder_runtime_overrides.json"
             runtime_overrides = {}
             if overrides_path.exists():
-                try:
+                with contextlib.suppress(json.JSONDecodeError, ValueError, OSError):
                     runtime_overrides = json.loads(overrides_path.read_text())
-                except (json.JSONDecodeError, ValueError, OSError):
-                    pass
 
             # Load auto-promotion log
             promotion_log_path = (
@@ -19930,10 +19893,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             with self.jobs_lock:
                 local_job = self.local_jobs.get(job_id)
             if local_job:
-                try:
+                with contextlib.suppress(Exception):
                     os.kill(local_job.pid, signal.SIGTERM)
-                except Exception:
-                    pass
                 with self.jobs_lock:
                     local_job.status = "stopped"
                     self.local_jobs[job_id] = local_job
@@ -19944,10 +19905,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 ssh_run = self.ssh_tournament_runs.get(job_id)
             if ssh_run:
                 if ssh_run.pid:
-                    try:
+                    with contextlib.suppress(Exception):
                         os.kill(ssh_run.pid, signal.SIGTERM)
-                    except Exception:
-                        pass
                 with self.ssh_tournament_lock:
                     ssh_run.status = "cancelled"
                     ssh_run.completed_at = time.time()
@@ -20036,8 +19995,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         logger.info(f"Running evaluation for job {job_id}, iteration {state.current_iteration}")
 
-        candidate_model = getattr(state, 'candidate_model_path', None)
-        best_model = state.best_model_path
+        getattr(state, 'candidate_model_path', None)
 
         # Number of evaluation games
         eval_games = 100
@@ -20733,7 +20691,7 @@ print(json.dumps({{
                         if info.role == NodeRole.LEADER and info.node_id != self.node_id:
                             async with AsyncLockWrapper(self.peers_lock):
                                 peers_snapshot = list(self.peers.values())
-                            conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                            conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                             if not self._is_leader_eligible(info, conflict_keys, require_alive=False):
                                 continue
                             if self.role == NodeRole.LEADER and info.node_id <= self.node_id:
@@ -20761,7 +20719,7 @@ print(json.dumps({{
                 # Send to discovered peers (skip NAT-blocked peers and ambiguous endpoints).
                 async with AsyncLockWrapper(self.peers_lock):
                     peers_snapshot = list(self.peers.values())
-                conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                 peer_list = [
                     p for p in peers_snapshot
                     if (
@@ -21166,7 +21124,7 @@ print(json.dumps({{
                     if resp.status == 200:
                         # The peer would report our external IP if we had an endpoint for it
                         # For now, just track connectivity
-                        data = await resp.json()
+                        await resp.json()
                         external_ips.add(peer.host)  # Track which peers we can reach
             except Exception:
                 continue
@@ -21466,9 +21424,7 @@ print(json.dumps({{
         if getattr(peer, "nat_blocked", False):
             return False
         key = self._endpoint_key(peer)
-        if key and key in conflict_keys:
-            return False
-        return True
+        return not (key and key in conflict_keys)
 
     def _maybe_adopt_leader_from_peers(self) -> bool:
         """If we can already see a healthy leader, adopt it and avoid elections."""
@@ -21478,7 +21434,7 @@ print(json.dumps({{
         with self.peers_lock:
             peers = [p for p in self.peers.values() if p.node_id != self.node_id]
 
-        conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers)
+        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers])
         leaders = [
             p for p in peers
             if p.role == NodeRole.LEADER and self._is_leader_eligible(p, conflict_keys)
@@ -21564,7 +21520,7 @@ print(json.dumps({{
                 leader = self.peers.get(self.leader_id)
                 peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
             if leader:
-                conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                 if not self._is_leader_eligible(leader, conflict_keys):
                     reason = "dead" if not leader.is_alive() else "ineligible"
                     logger.info(f"Leader {self.leader_id} is {reason}, starting election")
@@ -21649,7 +21605,7 @@ print(json.dumps({{
                 leader = self.peers.get(self.leader_id)
                 peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
             if leader:
-                conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                 if not self._is_leader_eligible(leader, conflict_keys):
                     reason = "dead" if not leader.is_alive() else "ineligible"
                     logger.info(f"Leader {self.leader_id} is {reason}, starting election")
@@ -21689,7 +21645,7 @@ print(json.dumps({{
         with self.peers_lock:
             peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
 
-        conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
 
         if self.leader_id and self.leader_id != self.node_id:
             with self.peers_lock:
@@ -22600,10 +22556,8 @@ print(json.dumps({{
         peer_manifests = response.get("peer_manifests", {})
         for node_id, manifest_data in peer_manifests.items():
             if node_id != self.node_id:
-                try:
+                with contextlib.suppress(Exception):
                     self._gossip_peer_manifests[node_id] = NodeDataManifest.from_dict(manifest_data)
-                except Exception:
-                    pass
 
         # Process tournament gossip for distributed scheduling
         for node_id, state in known_states.items():
@@ -22611,18 +22565,14 @@ print(json.dumps({{
                 continue
             tournament_state = state.get("tournament")
             if tournament_state:
-                try:
+                with contextlib.suppress(Exception):
                     self._process_tournament_gossip(node_id, tournament_state)
-                except Exception:
-                    pass
 
         # Check for tournament consensus after processing gossip
-        try:
+        with contextlib.suppress(Exception):
             self._check_tournament_consensus()
-        except Exception:
-            pass
 
-    def _record_gossip_metrics(self, event: str, peer_id: str = None, latency_ms: float = 0):
+    def _record_gossip_metrics(self, event: str, peer_id: str | None = None, latency_ms: float = 0):
         """Record gossip protocol metrics for monitoring.
 
         GOSSIP METRICS: Track propagation efficiency and protocol health.
@@ -22938,7 +22888,7 @@ print(json.dumps({{
         - If already training, don't start a duplicate
         - Include jitter to handle race conditions
         """
-        is_training, training_nodes = self._is_config_being_trained_cluster_wide(config_key)
+        is_training, _training_nodes = self._is_config_being_trained_cluster_wide(config_key)
 
         if is_training:
             # Config is already being trained somewhere
@@ -22968,10 +22918,7 @@ print(json.dumps({{
         # First candidate always claims, others have decreasing probability
         claim_probability = max(0.1, 1.0 - (my_position * 0.3))
 
-        if random.random() < claim_probability:
-            return True
-
-        return False
+        return random.random() < claim_probability
 
     def _get_distributed_training_summary(self) -> dict:
         """Get summary of distributed training state for /status endpoint."""
@@ -23254,7 +23201,7 @@ print(json.dumps({{
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=45)
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=45)
 
             if proc.returncode == 0:
                 return True
@@ -23915,7 +23862,7 @@ print(json.dumps({{
         self._tournament_coordination_lock = threading.Lock()
 
     def _propose_tournament(self, board_type: str = "square8", num_players: int = 2,
-                           agent_ids: list[str] = None, games_per_pairing: int = 2) -> dict:
+                           agent_ids: list[str] | None = None, games_per_pairing: int = 2) -> dict:
         """Create a tournament proposal for gossip-based coordination.
 
         DISTRIBUTED TOURNAMENT: Instead of requiring leader, any node can propose
@@ -24041,7 +23988,7 @@ print(json.dumps({{
         if not tournament_state or not isinstance(tournament_state, dict):
             return
 
-        now = time.time()
+        time.time()
 
         # Process proposals from gossip
         for proposal in tournament_state.get("proposals", []):
@@ -24367,7 +24314,7 @@ print(json.dumps({{
         with self.peers_lock:
             peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
 
-        conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
 
         # Gather all peers claiming to be leader.
         other_leaders = [peer for peer in peers_snapshot if peer.role == NodeRole.LEADER and peer.is_alive()]
@@ -24438,7 +24385,7 @@ print(json.dumps({{
             eligible_leaders.append(self.self_info)
 
         # If none are eligible, fall back to bully ordering (best-effort).
-        candidates = eligible_leaders or (considered_leaders + [self.self_info])
+        candidates = eligible_leaders or ([*considered_leaders, self.self_info])
         highest_leader = max(candidates, key=lambda p: p.node_id)
 
         if highest_leader.node_id != self.node_id:
@@ -24858,7 +24805,7 @@ print(json.dumps({{
         MIN_IDLE_TIME = 120 if has_leader else 60  # Faster response when leaderless
 
         gpu_percent = float(getattr(self.self_info, "gpu_percent", 0) or 0)
-        selfplay_jobs = int(getattr(self.self_info, "selfplay_jobs", 0) or 0)
+        int(getattr(self.self_info, "selfplay_jobs", 0) or 0)
         gpu_name = (getattr(self.self_info, "gpu_name", "") or "").lower()
 
         # Track GPU idle time
@@ -25470,10 +25417,8 @@ print(json.dumps({{
 
         # Record utilization for adaptive feedback
         if HAS_NEW_COORDINATION:
-            try:
+            with contextlib.suppress(Exception):
                 record_utilization(node.node_id, cpu_percent, gpu_percent, mem_percent, current_jobs)
-            except Exception:
-                pass
 
         # Use unified resource targets if available
         if HAS_NEW_COORDINATION:
@@ -25676,7 +25621,7 @@ print(json.dumps({{
             with self.peers_lock:
                 alive_peers = [p for p in self.peers.values() if p.is_alive()]
 
-            all_nodes = alive_peers + [self.self_info]
+            all_nodes = [*alive_peers, self.self_info]
             healthy_nodes = [n for n in all_nodes if n.is_healthy()]
 
             if len(healthy_nodes) < 2:
@@ -25802,7 +25747,7 @@ print(json.dumps({{
 
         # Add self
         self._update_self_info()
-        all_nodes = alive_peers + [self.self_info]
+        all_nodes = [*alive_peers, self.self_info]
 
         # Phase 1: Handle resource warnings and cleanup
         for node in all_nodes:
@@ -27362,7 +27307,7 @@ print(json.dumps({{
                 # Listen for responses
                 try:
                     while True:
-                        data, addr = sock.recvfrom(1024)
+                        data, _addr = sock.recvfrom(1024)
                         msg = json.loads(data.decode())
                         if msg.get("type") == "p2p_discovery" and msg.get("node_id") != self.node_id:
                             # Found a peer!
@@ -27666,10 +27611,8 @@ print(json.dumps({{
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.
-        try:
+        with contextlib.suppress(Exception):
             await self._bootstrap_from_known_peers()
-        except Exception:
-            pass
 
         # If no leader known, start election after short delay
         await asyncio.sleep(5)

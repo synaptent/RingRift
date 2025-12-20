@@ -233,7 +233,7 @@ class VastaiTerminationGuard:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await asyncio.wait_for(
+                _stdout, _stderr = await asyncio.wait_for(
                     process.communicate(),
                     timeout=120,
                 )

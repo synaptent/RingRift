@@ -348,7 +348,7 @@ def monitoring_loop():
         iteration += 1
 
         try:
-            summary = monitoring_iteration(iteration)
+            monitoring_iteration(iteration)
         except Exception as e:
             logger.error(f"Error in monitoring iteration: {e}")
 

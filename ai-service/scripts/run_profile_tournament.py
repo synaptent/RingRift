@@ -303,7 +303,7 @@ def main():
 
         config_results[config] = {"a_wins": config_a_wins, "b_wins": config_b_wins, "draws": config_draws}
 
-        games_so_far = (config_idx + 1) * args.games_per_config
+        (config_idx + 1) * args.games_per_config
         print(
             f"Config {config_idx+1}/{len(configs)} {config}: "
             f"A={config_a_wins}, B={config_b_wins}, Draws={config_draws} "

@@ -37,7 +37,7 @@ def validate_nnue_policy_priors():
 
     # Create game engine and initial state
     print("Creating game engine and initial state...")
-    engine = GameEngine()
+    GameEngine()
     game_state = create_initial_state()
 
     # Create MCTSAI with NNUE policy priors enabled and NO neural net

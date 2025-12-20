@@ -73,7 +73,7 @@ class TestFlattenHeuristicWeights:
         profile = dict.fromkeys(HEURISTIC_WEIGHT_KEYS, 1.0)
         profile["EXTRA_KEY_NOT_IN_SPEC"] = 999.0
 
-        keys, values = _flatten_heuristic_weights(profile)
+        keys, _values = _flatten_heuristic_weights(profile)
 
         # Extra key should not appear in output
         assert "EXTRA_KEY_NOT_IN_SPEC" not in keys
@@ -322,7 +322,7 @@ class TestHeuristicWeightProfilesIntegrity:
         for profile_id, profile in HEURISTIC_WEIGHT_PROFILES.items():
             # Should be able to flatten without error
             try:
-                keys, values = _flatten_heuristic_weights(profile)
+                keys, _values = _flatten_heuristic_weights(profile)
                 assert len(keys) == len(HEURISTIC_WEIGHT_KEYS)
             except KeyError as e:
                 pytest.fail(
@@ -381,24 +381,22 @@ class TestTierSpecIntegrity:
         import warnings
 
         for spec in HEURISTIC_TIER_SPECS:
-            if spec.candidate_profile_id:
-                if spec.candidate_profile_id not in HEURISTIC_WEIGHT_PROFILES:
-                    if not spec.candidate_profile_id.startswith("cmaes_"):
-                        # Warn about missing profile (may be registered at runtime)
-                        warnings.warn(
-                            f"Tier '{spec.id}' references candidate_profile_id "
-                            f"'{spec.candidate_profile_id}' which is not currently "
-                            f"registered. This may be intentional for runtime "
-                            f"registration."
-                        )
-            if spec.baseline_profile_id:
-                if spec.baseline_profile_id not in HEURISTIC_WEIGHT_PROFILES:
-                    # Warn about missing profile
+            if spec.candidate_profile_id and spec.candidate_profile_id not in HEURISTIC_WEIGHT_PROFILES:
+                if not spec.candidate_profile_id.startswith("cmaes_"):
+                    # Warn about missing profile (may be registered at runtime)
                     warnings.warn(
-                        f"Tier '{spec.id}' references baseline_profile_id "
-                        f"'{spec.baseline_profile_id}' which is not currently "
-                        f"registered."
+                        f"Tier '{spec.id}' references candidate_profile_id "
+                        f"'{spec.candidate_profile_id}' which is not currently "
+                        f"registered. This may be intentional for runtime "
+                        f"registration.", stacklevel=2
                     )
+            if spec.baseline_profile_id and spec.baseline_profile_id not in HEURISTIC_WEIGHT_PROFILES:
+                # Warn about missing profile
+                warnings.warn(
+                    f"Tier '{spec.id}' references baseline_profile_id "
+                    f"'{spec.baseline_profile_id}' which is not currently "
+                    f"registered.", stacklevel=2
+                )
 
 
 class TestEvaluateHeuristicCandidate:

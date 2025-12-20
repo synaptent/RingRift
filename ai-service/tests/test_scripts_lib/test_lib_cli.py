@@ -384,7 +384,7 @@ class TestCreateSubparserWithCommonArgs:
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers()
 
-        sub = create_subparser_with_common_args(
+        create_subparser_with_common_args(
             subparsers, "test", "Test command", verbose=True, dry_run=True
         )
 

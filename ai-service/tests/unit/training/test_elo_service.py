@@ -654,7 +654,7 @@ class TestEdgeCases:
 
     def test_check_write_permission_no_coordinator(self, service):
         """Test check_write_permission without coordinator."""
-        can_write, reason = service.check_write_permission()
+        can_write, _reason = service.check_write_permission()
         assert can_write is True
 
     def test_different_configs_independent(self, service):

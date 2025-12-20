@@ -56,17 +56,17 @@ from tests.factories.mocks import (
 )
 
 __all__ = [
+    "MockAsyncContext",
+    "create_board_config",
+    "create_evaluation_config",
+    "create_game_record",
     # Game factories
     "create_game_state",
-    "create_board_config",
+    "create_mock_coordinator",
+    # Mocks
+    "create_mock_model",
     "create_move",
-    "create_game_record",
     # Config factories
     "create_training_config",
     "create_unified_config",
-    "create_evaluation_config",
-    # Mocks
-    "create_mock_model",
-    "create_mock_coordinator",
-    "MockAsyncContext",
 ]

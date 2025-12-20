@@ -199,7 +199,7 @@ class TestDataManifest:
         """Test manifest database initialization."""
         from app.distributed.unified_data_sync import DataManifest
 
-        manifest = DataManifest(self.db_path)
+        DataManifest(self.db_path)
         assert self.db_path.exists()
 
         # Check tables exist

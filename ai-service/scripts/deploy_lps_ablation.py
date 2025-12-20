@@ -95,7 +95,7 @@ class HostConfig:
 
 def run_ssh(host: HostConfig, cmd: str, timeout: int = 300) -> tuple[int, str, str]:
     """Run SSH command and return (returncode, stdout, stderr)."""
-    full_cmd = ["ssh"] + host.ssh_args + [host.ssh_target, cmd]
+    full_cmd = ["ssh", *host.ssh_args, host.ssh_target, cmd]
     try:
         result = subprocess.run(
             full_cmd,
@@ -224,7 +224,7 @@ def deploy_to_host(host: HostConfig) -> tuple[str, bool, str]:
 
     # Rsync the ai-service directory
     local_path = str(LOCAL_AI_SERVICE) + "/"
-    rc, stdout, stderr = run_rsync(host, local_path, REMOTE_AI_SERVICE)
+    rc, _stdout, stderr = run_rsync(host, local_path, REMOTE_AI_SERVICE)
     if rc != 0:
         return host.ssh_target, False, f"rsync failed: {stderr}"
 

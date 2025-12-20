@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
     from app.training.hot_data_buffer import HotDataBuffer
 
+import contextlib
+
 from app.utils.paths import AI_SERVICE_ROOT
 
 # Resource checking
@@ -339,10 +341,8 @@ class StreamingDataCollector:
             finally:
                 # Ensure bandwidth is released even on error
                 if bandwidth_alloc and bandwidth_alloc.granted:
-                    try:
+                    with contextlib.suppress(Exception):
                         release_bandwidth(bandwidth_alloc.allocation_id)
-                    except Exception:
-                        pass
         else:
             # Fallback: no coordination - unlimited bandwidth
             cmd = f'{base_cmd} {ssh_target}:~/ringrift/ai-service/data/games/*.db {local_dir}/'
@@ -688,7 +688,7 @@ class StreamingDataCollector:
                     db_name = db_path.stem.lower()
                     # Parse config from filename patterns like "selfplay_square8_2p.db"
                     config_key = None
-                    for ck in self.state.configs.keys():
+                    for ck in self.state.configs:
                         if ck.replace("_", "") in db_name.replace("_", "") or ck in db_name:
                             config_key = ck
                             break

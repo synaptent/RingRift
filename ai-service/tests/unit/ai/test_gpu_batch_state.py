@@ -167,7 +167,7 @@ class TestCreateBatch:
 
         assert (state.lps_round_index == 0).all()
         assert (state.lps_current_round_first_player == 0).all()
-        assert (state.lps_current_round_seen_mask == False).all()
+        assert (not state.lps_current_round_seen_mask).all()
         assert (state.lps_consecutive_exclusive_rounds == 0).all()
 
     def test_move_history_initialized(self, device):
@@ -194,13 +194,13 @@ class TestCreateBatch:
         )
 
         # Corner cells should be collapsed
-        assert state.is_collapsed[0, 0, 0].item() == True
-        assert state.is_collapsed[0, 24, 24].item() == True
-        assert state.is_collapsed[0, 0, 24].item() == True
-        assert state.is_collapsed[0, 24, 0].item() == True
+        assert state.is_collapsed[0, 0, 0].item()
+        assert state.is_collapsed[0, 24, 24].item()
+        assert state.is_collapsed[0, 0, 24].item()
+        assert state.is_collapsed[0, 24, 0].item()
 
         # Center should not be collapsed
-        assert state.is_collapsed[0, 12, 12].item() == False
+        assert not state.is_collapsed[0, 12, 12].item()
 
     def test_four_player_game(self, device):
         """Should correctly initialize 4-player games."""
@@ -273,11 +273,11 @@ class TestActiveMask:
         state.game_status[7] = GameStatus.COMPLETED
 
         mask = state.get_active_mask()
-        assert mask[0].item() == False
-        assert mask[1].item() == True
-        assert mask[2].item() == True
-        assert mask[3].item() == False
-        assert mask[7].item() == False
+        assert not mask[0].item()
+        assert mask[1].item()
+        assert mask[2].item()
+        assert not mask[3].item()
+        assert not mask[7].item()
 
         assert state.count_active() == 5
 

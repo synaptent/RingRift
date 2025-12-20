@@ -345,7 +345,7 @@ def benchmark_gpu_batch_evaluation(
 
         for batch_state in batch_states:
             # Evaluate using GPU batch function
-            scores = evaluate_positions_batch(
+            evaluate_positions_batch(
                 batch_state,
                 weights=default_weights,
             )

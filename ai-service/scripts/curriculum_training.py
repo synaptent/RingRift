@@ -54,11 +54,16 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    resource_can_proceed = lambda **kwargs: True  # type: ignore
-    check_disk_space = lambda *args, **kwargs: True  # type: ignore
-    check_memory = lambda *args, **kwargs: True  # type: ignore
-    check_gpu_memory = lambda *args, **kwargs: True  # type: ignore
-    wait_for_resources = lambda *args, **kwargs: True  # type: ignore
+    def resource_can_proceed(**kwargs):
+        return True  # type: ignore
+    def check_disk_space(*args, **kwargs):
+        return True  # type: ignore
+    def check_memory(*args, **kwargs):
+        return True  # type: ignore
+    def check_gpu_memory(*args, **kwargs):
+        return True  # type: ignore
+    def wait_for_resources(*args, **kwargs):
+        return True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
 # Model hygiene: validation at startup
@@ -307,7 +312,7 @@ def apply_adaptive_weights_to_samples(
 
     for sample in samples:
         # Determine config from sample
-        game_id = sample.get("game_id", "")
+        sample.get("game_id", "")
         # Try to extract board type and num_players from game metadata
         # For now, just pass through all samples (weights applied at batch level)
         weighted_samples.append(sample)
@@ -756,7 +761,7 @@ def main():
             print(f"Error: Elo database not found: {elo_db}")
             return 1
 
-        weight_config = AdaptiveWeightConfig(
+        AdaptiveWeightConfig(
             max_weight_multiplier=args.max_weight,
             min_weight_multiplier=args.min_weight,
         )
@@ -776,7 +781,7 @@ def main():
         # Show Elo trends
         print("\n\nElo Trends (recent performance):")
         print("-" * 40)
-        for config_key in weights.keys():
+        for config_key in weights:
             trend = get_elo_trend(elo_db, config_key)
             arrow = "↑" if trend > 5 else "↓" if trend < -5 else "→"
             print(f"{config_key:<20} {arrow} {trend:+.0f} Elo")

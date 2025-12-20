@@ -321,7 +321,7 @@ def test_get_valid_moves_line_processing_surfaces_only_line_decisions(
     # full line or required-length segments as collapsed_markers.
     for m in reward_moves:
         assert m.formed_lines
-        line = list(m.formed_lines)[0]
+        line = next(iter(m.formed_lines))
         actual_positions = list(line.positions)
 
         # All positions must lie on the synthetic overlength line.
@@ -429,7 +429,7 @@ def test_get_valid_moves_territory_processing_pre_elimination(
         if m.type == MoveType.SKIP_TERRITORY_PROCESSING:
             continue  # Skip moves don't have disconnected_regions
         assert m.disconnected_regions
-        region = list(m.disconnected_regions)[0]
+        region = next(iter(m.disconnected_regions))
         assert list(region.spaces) == list(region_territory.spaces)
         assert m.to in region.spaces
 

@@ -467,7 +467,7 @@ def sync_data_from_instance(instance: dict) -> int:
     # Merge all DBs into Lambda
     if local_dbs:
         try:
-            db_args = " ".join([f"--db {db}" for db in local_dbs])
+            " ".join([f"--db {db}" for db in local_dbs])
             # First copy DBs to Lambda (using Tailscale IP for reliability)
             lambda_dest = f"{LAMBDA_SSH_USER}@{LAMBDA_HOST}"
             for local_db in local_dbs:

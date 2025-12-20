@@ -246,7 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         python_version = ""
         try:
-            v_rc, v_out, v_err = _run_remote(host, "python -V", timeout=15)
+            _v_rc, v_out, v_err = _run_remote(host, "python -V", timeout=15)
             python_version = (v_out or v_err).strip().splitlines()[-1] if (v_out or v_err) else ""
         except Exception:
             python_version = ""

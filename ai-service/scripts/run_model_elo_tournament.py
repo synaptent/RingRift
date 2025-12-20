@@ -786,6 +786,8 @@ ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 LEGACY_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"  # Legacy, merged into unified
 
 # Import unified Elo database module
+import contextlib
+
 from app.tournament.unified_elo_db import (
     EloDatabase,
 )
@@ -964,8 +966,8 @@ def register_models(db: EloDatabase, models: list[dict[str, Any]]):
 
 def get_leaderboard(
     db: EloDatabase,
-    board_type: str = None,
-    num_players: int = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Get current Elo leaderboard."""
@@ -1005,7 +1007,7 @@ def update_elo_after_match(
     winner: str,  # model_a, model_b, or "draw"
     board_type: str,
     num_players: int,
-    tournament_id: str = None,
+    tournament_id: str | None = None,
     k_factor: float = 32.0,
     game_length: int = 0,
     duration_sec: float = 0.0,
@@ -1403,14 +1405,12 @@ def run_continuous_tournament(args):
             traceback.print_exc()
 
             if emit_events:
-                try:
+                with contextlib.suppress(Exception):
                     asyncio.run(emit_error(
                         component="continuous_tournament",
                         error=str(e),
                         source=GAME_SOURCE_TAG,
                     ))
-                except Exception:
-                    pass
 
         # Wait for next iteration
         if running:

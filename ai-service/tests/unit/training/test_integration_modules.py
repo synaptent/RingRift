@@ -12,6 +12,7 @@ Tests:
 """
 
 import asyncio
+import contextlib
 import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -212,7 +213,7 @@ class TestThreadIntegration:
         def eval_loop():
             completed.set()
 
-        thread = spawn_eval_thread(
+        spawn_eval_thread(
             target=eval_loop,
             name="test_eval_thread",
         )
@@ -629,7 +630,7 @@ class TestThreadSpawnerCore:
                 raise ValueError("Transient error")
             success.set()
 
-        thread = spawner.spawn(
+        spawner.spawn(
             target=flaky_task,
             name="flaky_thread",
             restart_policy=RestartPolicy.ON_FAILURE,
@@ -1334,10 +1335,8 @@ class TestCheckpointUtils:
                 p.write_text('partial')
                 raise ValueError("Simulated failure")
 
-            try:
+            with contextlib.suppress(RuntimeError):
                 atomic_save(save_func=failing_save, file_path=test_file)
-            except RuntimeError:
-                pass
 
             # Temp file should be cleaned up
             assert not temp_file.exists()

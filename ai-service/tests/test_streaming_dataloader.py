@@ -39,7 +39,7 @@ def create_test_npz(
     rng = np.random.default_rng(seed)
 
     features = rng.random(
-        (num_samples,) + feature_shape, dtype=np.float64
+        (num_samples, *feature_shape), dtype=np.float64
     ).astype(np.float32)
     globals_arr = rng.random(
         (num_samples, global_features), dtype=np.float64
@@ -203,7 +203,7 @@ class TestStreamingDataLoader:
         assert len(batches) == 7  # ceil(100/16)
 
         # First 6 batches should be full
-        for i, ((features, globals_tensor), (values, policies)) in enumerate(
+        for _i, ((features, globals_tensor), (values, policies)) in enumerate(
             batches[:-1]
         ):
             assert features.shape[0] == 16
@@ -336,7 +336,7 @@ class TestStreamingDataset:
         assert dataset.total_samples == 100
 
         batch_count = 0
-        for batch in dataset:
+        for _batch in dataset:
             batch_count += 1
 
         assert batch_count == 7
@@ -453,7 +453,7 @@ class TestMemoryUsage:
         batches2 = list(loader2)
 
         # All batches should match
-        for b1, b2 in zip(batches1, batches2):
+        for b1, b2 in zip(batches1, batches2, strict=False):
             (f1, g1), (v1, p1) = b1
             (f2, g2), (v2, p2) = b2
 

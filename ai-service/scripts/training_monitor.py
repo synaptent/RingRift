@@ -42,6 +42,8 @@ from typing import Any, Optional
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import contextlib
+
 from app.config.thresholds import get_threshold
 from app.utils.paths import AI_SERVICE_ROOT
 
@@ -144,10 +146,8 @@ def check_db_health(db_path: Path) -> tuple[bool, str, int, int, int]:
         trainable_count = 0
         with_moves_count = 0
 
-        try:
+        with contextlib.suppress(sqlite3.Error):
             total_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-        except sqlite3.Error:
-            pass
 
         # Check columns
         try:

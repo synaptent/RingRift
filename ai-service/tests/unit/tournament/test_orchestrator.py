@@ -347,7 +347,7 @@ class TestTournamentOrchestratorMocked:
             "baseline2": {"win_rate": 0.4},
         }
 
-        summary, eval_results = orchestrator.run_evaluation(
+        _summary, eval_results = orchestrator.run_evaluation(
             candidate_model="candidate",
             baseline_models=["baseline1", "baseline2"],
             games_per_pairing=30,
@@ -371,7 +371,7 @@ class TestTournamentOrchestratorMocked:
             "baseline": {"win_rate": 0.6},
         }
 
-        summary, eval_results = orchestrator.run_evaluation(
+        _summary, eval_results = orchestrator.run_evaluation(
             candidate_model="candidate",
             baseline_models=["baseline"],
             games_per_pairing=20,

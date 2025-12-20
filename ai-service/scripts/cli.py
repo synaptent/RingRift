@@ -84,7 +84,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         level="DEBUG" if args.verbose else "INFO",
         json_logs=args.json_logs,
     )
-    logger = get_logger(__name__)
+    get_logger(__name__)
 
     monitor = EloMonitor(
         history_file=Path(args.history_file),
@@ -172,7 +172,7 @@ def cmd_health(args: argparse.Namespace) -> int:
         level="DEBUG" if args.verbose else "INFO",
         json_logs=args.json_logs,
     )
-    logger = get_logger(__name__)
+    get_logger(__name__)
 
     manager = ClusterManager()
     healthy_nodes = manager.get_healthy_nodes(force_check=True)

@@ -220,10 +220,7 @@ class TestFSMValidationVectors:
             return False
 
         # Skip if no move type mapping
-        if _EVENT_TO_MOVE_TYPE.get(event_type) is None:
-            return False
-
-        return True
+        return _EVENT_TO_MOVE_TYPE.get(event_type) is not None
 
     def _get_testable_vectors(self, vectors: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter vectors to only those testable with Python FSM."""
@@ -319,7 +316,7 @@ class TestFSMValidationVectors:
             pytest.skip(f"Cannot test vector {vector['id']}: unmapped phase or event")
 
         # Create game state (minimal, for validation)
-        state = _make_game_state(
+        _make_game_state(
             phase=phase,
             current_player=player,
             num_players=num_players,
@@ -364,7 +361,7 @@ class TestFSMValidationParity:
 
     def test_place_ring_allowed_in_ring_placement(self):
         """PLACE_RING should be allowed in ring_placement phase."""
-        state = _make_game_state(GamePhase.RING_PLACEMENT)
+        _make_game_state(GamePhase.RING_PLACEMENT)
         move = _make_move(MoveType.PLACE_RING, player=1, to={"x": 3, "y": 3})
 
         result = validate_move_for_phase(GamePhase.RING_PLACEMENT, move)
@@ -372,7 +369,7 @@ class TestFSMValidationParity:
 
     def test_move_stack_not_allowed_in_ring_placement(self):
         """MOVE_STACK should not be allowed in ring_placement phase."""
-        state = _make_game_state(GamePhase.RING_PLACEMENT)
+        _make_game_state(GamePhase.RING_PLACEMENT)
         move = _make_move(
             MoveType.MOVE_STACK,
             player=1,
@@ -386,7 +383,7 @@ class TestFSMValidationParity:
 
     def test_forced_elimination_allowed_in_forced_elimination(self):
         """FORCED_ELIMINATION should be allowed in forced_elimination phase."""
-        state = _make_game_state(GamePhase.FORCED_ELIMINATION)
+        _make_game_state(GamePhase.FORCED_ELIMINATION)
         move = _make_move(MoveType.FORCED_ELIMINATION, player=1, to={"x": 3, "y": 3})
 
         result = validate_move_for_phase(GamePhase.FORCED_ELIMINATION, move)
@@ -394,7 +391,7 @@ class TestFSMValidationParity:
 
     def test_no_territory_action_allowed_in_territory_processing(self):
         """NO_TERRITORY_ACTION should be allowed in territory_processing phase (without context)."""
-        state = _make_game_state(GamePhase.TERRITORY_PROCESSING)
+        _make_game_state(GamePhase.TERRITORY_PROCESSING)
         move = _make_move(MoveType.NO_TERRITORY_ACTION, player=1)
 
         # Without game state context, the guard is skipped
@@ -403,7 +400,7 @@ class TestFSMValidationParity:
 
     def test_process_line_allowed_in_line_processing(self):
         """PROCESS_LINE should be allowed in line_processing phase."""
-        state = _make_game_state(GamePhase.LINE_PROCESSING)
+        _make_game_state(GamePhase.LINE_PROCESSING)
         move = _make_move(MoveType.PROCESS_LINE, player=1)
 
         result = validate_move_for_phase(GamePhase.LINE_PROCESSING, move)

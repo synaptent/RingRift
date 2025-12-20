@@ -103,7 +103,7 @@ _move_counter = 0
 
 def make_test_move(
     player: int = 1,
-    position: dict = None,
+    position: dict | None = None,
     move_type: MoveType = MoveType.PLACE_RING,
 ) -> Move:
     """Create a minimal Move for testing."""

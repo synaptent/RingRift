@@ -229,7 +229,7 @@ def generate_html(stats: list[dict[str, Any]]) -> str:
 <body>
     <h1>🎮 RingRift AI Training Dashboard</h1>
     <p>Last updated: """ + datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC") + """</p>
-    
+
     <div class="grid">
         <div class="card">
             <div class="metric">""" + str(sum(s["models"] for s in stats)) + """</div>
@@ -244,7 +244,7 @@ def generate_html(stats: list[dict[str, Any]]) -> str:
             <div>Best ELO</div>
         </div>
     </div>
-    
+
     <h2>Per-Config Status</h2>
     <table>
         <tr><th>Config</th><th>Models</th><th>ELO Best</th><th>ELO Avg</th><th>ELO Games</th><th>Holdout</th><th>Promoted</th></tr>

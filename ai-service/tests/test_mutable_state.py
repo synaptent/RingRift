@@ -1015,7 +1015,7 @@ class TestMakeUnmakeEliminate:
         mutable = MutableGameState.from_immutable(state)
 
         pos = Position(x=2, y=2)
-        original_height = mutable.stacks["2,2"].stack_height
+        mutable.stacks["2,2"].stack_height
         original_eliminated = mutable.players[1].eliminated_rings
 
         move = create_eliminate_move(player=1, to_pos=pos)
@@ -1083,7 +1083,7 @@ class TestMakeUnmakeProcessLine:
         mutable = MutableGameState.from_immutable(state)
 
         original_hash = mutable.zobrist_hash
-        original_markers = {k: v.copy() for k, v in mutable.markers.items()}
+        {k: v.copy() for k, v in mutable.markers.items()}
 
         line_positions = [Position(x=x, y=3) for x in range(3, 6)]
         move = create_process_line_move(

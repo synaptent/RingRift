@@ -73,7 +73,7 @@ def _print_stats(db: GameReplayDB) -> None:
 
 
 def _format_row(cols: list[str], widths: list[int]) -> str:
-    return "  ".join(col.ljust(w) for col, w in zip(cols, widths))
+    return "  ".join(col.ljust(w) for col, w in zip(cols, widths, strict=False))
 
 
 def _print_games_table(games: list[dict[str, Any]]) -> None:

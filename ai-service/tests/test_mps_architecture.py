@@ -157,7 +157,7 @@ class TestV2DeviceCompatibility:
         globals_vec = torch.randn(batch_size, 20)
 
         with torch.no_grad():
-            value, policy = model(x, globals_vec)
+            value, _policy = model(x, globals_vec)
 
         assert value.device.type == 'cpu'
         assert value.shape == (batch_size, 4)

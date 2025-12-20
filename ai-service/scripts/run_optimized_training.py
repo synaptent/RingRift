@@ -382,7 +382,7 @@ def run_all_optimized(configs: list[str], run_elo: bool = True) -> dict[str, boo
             )
 
         # Run training
-        success, log_path = run_training_job(job, initial_model)
+        success, _log_path = run_training_job(job, initial_model)
         results[config_name] = success
 
         # Run Elo tournament if requested and training succeeded
@@ -478,7 +478,7 @@ def main():
                 job.num_players,
             )
 
-        success, log_path = run_training_job(job, initial_model)
+        success, _log_path = run_training_job(job, initial_model)
 
         if success and args.run_elo:
             run_elo_tournament(job.board_type, job.num_players)

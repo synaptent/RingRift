@@ -104,12 +104,17 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    check_disk_space = lambda *args, **kwargs: True
-    check_memory = lambda *args, **kwargs: True
-    get_degradation_level = lambda: 0
-    should_proceed_with_priority = lambda p: True
+    def check_disk_space(*args, **kwargs):
+        return True
+    def check_memory(*args, **kwargs):
+        return True
+    def get_degradation_level():
+        return 0
+    def should_proceed_with_priority(p):
+        return True
     OperationPriority = type('OperationPriority', (), {'HIGH': 3})()
-    get_resource_status = lambda: {'can_proceed': True}
+    def get_resource_status():
+        return {'can_proceed': True}
 
 # Training Coordination - cluster-wide training lock
 try:
@@ -123,11 +128,16 @@ try:
     HAS_TRAINING_COORDINATOR = True
 except ImportError:
     HAS_TRAINING_COORDINATOR = False
-    can_train = lambda *args: True
-    request_training_slot = lambda *args, **kwargs: "local_training"
-    release_training_slot = lambda *args, **kwargs: True
-    update_training_progress = lambda *args, **kwargs: True
-    get_training_coordinator = lambda: None
+    def can_train(*args):
+        return True
+    def request_training_slot(*args, **kwargs):
+        return "local_training"
+    def release_training_slot(*args, **kwargs):
+        return True
+    def update_training_progress(*args, **kwargs):
+        return True
+    def get_training_coordinator():
+        return None
 
 # Global training job ID for cleanup on unexpected exit
 _active_training_job_id: str | None = None
@@ -1338,7 +1348,7 @@ def compute_curriculum_weights(
     progress = epoch / max(total_epochs - 1, 1)
     return tuple(
         s + (e - s) * progress
-        for s, e in zip(start_weights, end_weights)
+        for s, e in zip(start_weights, end_weights, strict=False)
     )
 
 
@@ -2298,7 +2308,7 @@ class LAMBOptimizer(optim.Optimizer):
         weight_decay: float = 0.01,
         adam: bool = False,
     ):
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, adam=adam)
+        defaults = {'lr': lr, 'betas': betas, 'eps': eps, 'weight_decay': weight_decay, 'adam': adam}
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -2487,7 +2497,7 @@ class AsyncGradientCompressor:
 
         # Top-k sparsification
         k = max(1, int(gradient.numel() * self.compression_ratio))
-        values, indices = torch.topk(gradient.abs().flatten(), k)
+        _values, indices = torch.topk(gradient.abs().flatten(), k)
         mask = torch.zeros_like(gradient.flatten())
         mask[indices] = 1
         mask = mask.view_as(gradient)
@@ -2520,10 +2530,10 @@ class LARS(optim.Optimizer):
         trust_coef: float = 0.001,
         eps: float = 1e-8,
     ):
-        defaults = dict(
-            lr=lr, momentum=momentum, weight_decay=weight_decay,
-            trust_coef=trust_coef, eps=eps
-        )
+        defaults = {
+            'lr': lr, 'momentum': momentum, 'weight_decay': weight_decay,
+            'trust_coef': trust_coef, 'eps': eps
+        }
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -2691,7 +2701,7 @@ class PrioritizedReplayBuffer:
 
     def update_priorities(self, indices: list[int], priorities: np.ndarray):
         """Update priorities based on TD errors."""
-        for idx, priority in zip(indices, priorities):
+        for idx, priority in zip(indices, priorities, strict=False):
             self.priorities[idx] = (abs(priority) + 1e-6) ** self.alpha
 
     def sample(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor, list[int], torch.Tensor]:
@@ -2730,7 +2740,7 @@ class SAMOptimizer(optim.Optimizer):
     """
 
     def __init__(self, params, base_optimizer: optim.Optimizer, rho: float = 0.05):
-        defaults = dict(rho=rho)
+        defaults = {'rho': rho}
         super().__init__(params, defaults)
         self.base_optimizer = base_optimizer
         self.param_groups = self.base_optimizer.param_groups
@@ -2925,10 +2935,7 @@ class DynamicBatchSizer:
             return False
 
         noise_scale = self.compute_gradient_noise_scale()
-        if noise_scale < self.noise_threshold:
-            return True
-
-        return False
+        return noise_scale < self.noise_threshold
 
     def increase_batch_size(self) -> int:
         """Increase batch size and return new value."""
@@ -3014,7 +3021,7 @@ class StructuredPruning:
                     continue
 
                 original_size = module.out_features
-                new_layer, kept_indices = self.prune_layer(module, self.importance_scores[name])
+                new_layer, _kept_indices = self.prune_layer(module, self.importance_scores[name])
 
                 # Replace module
                 parent_name = '.'.join(name.split('.')[:-1])
@@ -4079,18 +4086,16 @@ def train_nnue(
     # =============================================================================
 
     # Add attention layer to model if enabled
-    attention_layer = None
     if use_attention:
-        attention_layer = PositionalAttention(
+        PositionalAttention(
             hidden_dim=model.hidden_dim if hasattr(model, 'hidden_dim') else hidden_dim,
             num_heads=attention_heads,
         ).to(device)
         logger.info(f"Positional attention enabled ({attention_heads} heads)")
 
     # Add MoE layer if enabled
-    moe_layer = None
     if use_moe:
-        moe_layer = MixtureOfExperts(
+        MixtureOfExperts(
             hidden_dim=model.hidden_dim if hasattr(model, 'hidden_dim') else hidden_dim,
             num_experts=moe_experts,
             top_k=moe_top_k,
@@ -4098,17 +4103,15 @@ def train_nnue(
         logger.info(f"Mixture of Experts enabled ({moe_experts} experts, top-{moe_top_k})")
 
     # Add multi-task heads if enabled
-    multitask_heads = None
     if use_multitask:
-        multitask_heads = MultiTaskHead(
+        MultiTaskHead(
             hidden_dim=model.hidden_dim if hasattr(model, 'hidden_dim') else hidden_dim,
         ).to(device)
         logger.info(f"Multi-task learning enabled (weight={multitask_weight})")
 
     # Set up difficulty curriculum if enabled
-    curriculum = None
     if difficulty_curriculum:
-        curriculum = DifficultyAwareCurriculum(
+        DifficultyAwareCurriculum(
             initial_threshold=curriculum_initial_threshold,
             final_threshold=curriculum_final_threshold,
             warmup_epochs=warmup_epochs,
@@ -4116,15 +4119,13 @@ def train_nnue(
         logger.info(f"Difficulty curriculum enabled (threshold: {curriculum_initial_threshold} -> {curriculum_final_threshold})")
 
     # Set up contrastive loss if enabled
-    contrastive_loss_fn = None
     if contrastive_pretrain:
-        contrastive_loss_fn = ContrastiveLoss(temperature=0.1).to(device)
+        ContrastiveLoss(temperature=0.1).to(device)
         logger.info(f"Contrastive representation learning enabled (weight={contrastive_weight})")
 
     # Set up gradient compression if enabled
-    gradient_compressor = None
     if gradient_compression and distributed:
-        gradient_compressor = AsyncGradientCompressor(compression_ratio=compression_ratio)
+        AsyncGradientCompressor(compression_ratio=compression_ratio)
         logger.info(f"Gradient compression enabled (ratio={compression_ratio})")
 
     # Set up quantized inference if enabled
@@ -4216,7 +4217,7 @@ def train_nnue(
                     streaming_dataset,
                     batch_size=actual_batch_size,
                     num_workers=num_workers,
-                    pin_memory=True if device.type != "cpu" else False,
+                    pin_memory=device.type != "cpu",
                 )
             else:
                 train_loader = DataLoader(
@@ -4225,14 +4226,14 @@ def train_nnue(
                     shuffle=(train_sampler is None),
                     sampler=train_sampler,
                     num_workers=num_workers,
-                    pin_memory=True if device.type != "cpu" else False,
+                    pin_memory=device.type != "cpu",
                 )
             val_loader = DataLoader(
                 val_dataset,
                 batch_size=actual_batch_size,
                 shuffle=False,
                 num_workers=0,
-                pin_memory=True if device.type != "cpu" else False,
+                pin_memory=device.type != "cpu",
             )
 
     # Distributed training setup
@@ -4380,9 +4381,8 @@ def train_nnue(
             trainer.warmup_epochs = warmup_epochs
 
     # Online bootstrapping setup
-    bootstrapper = None
     if online_bootstrap:
-        bootstrapper = OnlineBootstrapper(
+        OnlineBootstrapper(
             model=model,
             temperature=bootstrap_temperature,
             start_epoch=bootstrap_start_epoch,
@@ -4450,9 +4450,8 @@ def train_nnue(
     # =============================================================================
 
     # SAM optimizer wrapper for better generalization
-    sam_optimizer = None
     if use_sam:
-        sam_optimizer = SAMOptimizer(
+        SAMOptimizer(
             model.parameters(),
             trainer.optimizer,
             rho=sam_rho,
@@ -4460,15 +4459,13 @@ def train_nnue(
         logger.info(f"SAM optimizer enabled (rho={sam_rho})")
 
     # TD(lambda) value estimator
-    td_estimator = None
     if td_lambda:
-        td_estimator = TDLambdaValueEstimator(lambda_=td_lambda_value)
+        TDLambdaValueEstimator(lambda_=td_lambda_value)
         logger.info(f"TD(lambda) enabled (lambda={td_lambda_value})")
 
     # Dynamic batch sizing based on gradient noise
-    dynamic_batcher = None
     if dynamic_batch_gradient:
-        dynamic_batcher = DynamicBatchSizer(
+        DynamicBatchSizer(
             initial_batch_size=actual_batch_size,
             max_batch_size=dynamic_batch_max,
         )
@@ -4481,13 +4478,11 @@ def train_nnue(
         logger.info("Grokking detection enabled")
 
     # Auxiliary value targets
-    aux_heads = None
     if auxiliary_targets:
-        aux_heads = AuxiliaryValueTargets(hidden_dim=hidden_dim).to(device)
+        AuxiliaryValueTargets(hidden_dim=hidden_dim).to(device)
         logger.info(f"Auxiliary value targets enabled (weight={auxiliary_weight})")
 
     # Knowledge distillation with Phase 3 parameters
-    distiller = None
     if distillation and teacher_path:
         try:
             teacher = RingRiftNNUE(
@@ -4496,7 +4491,7 @@ def train_nnue(
                 num_hidden_layers=num_hidden_layers + 1,
             ).to(device)
             teacher.load_state_dict(torch.load(teacher_path, map_location=device))
-            distiller = KnowledgeDistillation(
+            KnowledgeDistillation(
                 teacher_model=teacher,
                 temperature=distill_temp,
                 alpha=distill_alpha_phase3,
@@ -5060,7 +5055,7 @@ def main(argv: list[str] | None = None) -> int:
                         'lr_schedule', 'warmup_epochs', 'val_split', 'sample_every_n',
                         'min_game_length', 'balanced_sampling']:
                 if key in board_config:
-                    config_key = key.replace('_', '-')
+                    key.replace('_', '-')
                     # Check if user explicitly provided this arg (it's at default value)
                     # For simplicity, always apply board config values
                     setattr(args, key.replace('-', '_'), board_config[key])

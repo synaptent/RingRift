@@ -254,7 +254,7 @@ def replay_game(game: dict[str, Any], verbose: bool = False) -> ReplayResult:
 
             # Try to apply the move
             try:
-                result = engine.apply_move(converted)
+                engine.apply_move(converted)
                 moves_replayed += 1
 
                 # Check if game ended

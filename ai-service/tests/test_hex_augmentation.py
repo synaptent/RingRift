@@ -21,7 +21,7 @@ from app.training.hex_augmentation import (
 def create_hex_mask(board_size: int = HEX_BOARD_SIZE) -> np.ndarray:
     """
     Create a boolean mask of valid hex cells within the bounding box.
-    
+
     A hex cell at grid position (cx, cy) is valid if the corresponding
     axial coords (q, r) satisfy: max(|q|, |r|, |q+r|) <= radius.
     """
@@ -45,7 +45,7 @@ def create_hex_board_with_zeros_outside(
 ) -> np.ndarray:
     """
     Create a random board with zeros outside the valid hex region.
-    
+
     This ensures clamping behavior doesn't affect composition tests.
     """
     mask = create_hex_mask(board_size)
@@ -319,7 +319,7 @@ class TestSparsePolicy:
         values = np.array([0.1, 0.3, 0.4, 0.2], dtype=np.float32)
 
         for t_id in range(12):
-            new_indices, new_values = transform.transform_sparse_policy(
+            _new_indices, new_values = transform.transform_sparse_policy(
                 indices, values, transform_id=t_id
             )
             # Sum should be approximately preserved (some may be filtered)

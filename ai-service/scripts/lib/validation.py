@@ -85,7 +85,7 @@ def validate_npz_file(file_path: Path) -> ValidationResult:
         result.add_error(f"File not found: {file_path}")
         return result
 
-    if not file_path.suffix == ".npz":
+    if file_path.suffix != ".npz":
         result.add_warning(f"Unexpected extension: {file_path.suffix}")
 
     try:

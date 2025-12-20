@@ -150,7 +150,7 @@ class DaemonState:
 class ModelWatcher:
     """Watch for new model files."""
 
-    def __init__(self, models_dir: Path, patterns: list[str] = None):
+    def __init__(self, models_dir: Path, patterns: list[str] | None = None):
         self.models_dir = models_dir
         self.patterns = patterns or ["*.pth"]
 

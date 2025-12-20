@@ -69,7 +69,7 @@ class TestSearchModeEquivalence:
 
     def test_both_modes_produce_valid_moves(self):
         """Verify both search modes produce valid results."""
-        passed, messages = validate_correctness(depth=2, num_positions=2)
+        _passed, messages = validate_correctness(depth=2, num_positions=2)
 
         # Print messages for debugging
         for msg in messages:

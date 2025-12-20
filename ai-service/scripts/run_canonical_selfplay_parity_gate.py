@@ -46,6 +46,8 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(AI_SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+import contextlib
+
 from app.models import BoardType
 from app.training.env import get_theoretical_max_moves
 from app.training.selfplay_config import SelfplayConfig, create_argument_parser
@@ -137,10 +139,8 @@ def _start_heartbeat(
                 "ts_unix": time.time(),
             }
             if db_path is not None:
-                try:
+                with contextlib.suppress(OSError):
                     payload["heartbeat"]["db_size_bytes"] = db_path.stat().st_size
-                except OSError:
-                    pass
                 payload["heartbeat"].update(_try_read_db_counts(db_path))
             _write_json(summary_path, payload)
             print(

@@ -157,7 +157,7 @@ def create_grid_board(scenario: GridScenario, board_size: int = 19) -> BoardStat
     # Build vertical lines (excluding intersection points)
     for y in range(board_size):
         # Skip intersection y-coordinates
-        if y == h_line_1 or y == h_line_2:
+        if y in (h_line_1, h_line_2):
             continue
         # Left vertical line at x=v_line_1
         add_line_cell(
@@ -175,7 +175,7 @@ def create_grid_board(scenario: GridScenario, board_size: int = 19) -> BoardStat
     # Build horizontal lines (excluding intersection points)
     for x in range(board_size):
         # Skip intersection x-coordinates
-        if x == v_line_1 or x == v_line_2:
+        if x in (v_line_1, v_line_2):
             continue
         # Top horizontal line at y=h_line_1
         add_line_cell(
@@ -312,7 +312,7 @@ class TestGridTerritoryScenarios:
 
         # Print region details
         for i, region in enumerate(regions):
-            space_keys = [pos.to_key() for pos in region.spaces]
+            [pos.to_key() for pos in region.spaces]
             represented = set()
             for pos in region.spaces:
                 stack = board.stacks.get(pos.to_key())

@@ -83,7 +83,7 @@ def sync_code_to_instance(inst: VastInstance, dry_run: bool = False) -> bool:
     ssh_opts = ["-o", "StrictHostKeyChecking=no", "-p", str(inst.ssh_port)]
 
     # Check if RingRift directory exists
-    check_cmd = ["ssh"] + ssh_opts + [ssh_target, "test -d /root/RingRift && echo exists"]
+    check_cmd = ["ssh", *ssh_opts, ssh_target, "test -d /root/RingRift && echo exists"]
     if dry_run:
         print(f"  Would check: {' '.join(check_cmd)}")
         return True
@@ -151,7 +151,7 @@ nohup python scripts/neural_architecture_search.py \
 echo $!
 """
 
-    full_cmd = ["ssh"] + ssh_opts + [ssh_target, worker_cmd]
+    full_cmd = ["ssh", *ssh_opts, ssh_target, worker_cmd]
 
     if dry_run:
         print(f"  Would launch on {inst.instance_id} ({inst.gpu_count}x {inst.gpu_model}):")
@@ -177,7 +177,7 @@ def check_worker_status(inst: VastInstance, pid: int) -> str:
     ssh_target = f"root@{inst.ssh_host}"
     ssh_opts = ["-o", "StrictHostKeyChecking=no", "-p", str(inst.ssh_port)]
 
-    check_cmd = ["ssh"] + ssh_opts + [ssh_target, f"ps -p {pid} > /dev/null 2>&1 && echo running || echo stopped"]
+    check_cmd = ["ssh", *ssh_opts, ssh_target, f"ps -p {pid} > /dev/null 2>&1 && echo running || echo stopped"]
 
     try:
         result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=15)

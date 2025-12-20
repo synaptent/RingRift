@@ -78,10 +78,6 @@ def main():
     model_path = "models/ebmo/ebmo_square8_best.pt"
 
     # Hyperparameter grid
-    skip_penalties = [2.0, 5.0, 10.0]
-    optim_steps_list = [50, 100, 150]
-    num_restarts_list = [4, 8]
-    use_manifold = [True, False]  # False = direct_eval
 
     print("EBMO Hyperparameter Tuning")
     print("=" * 70)

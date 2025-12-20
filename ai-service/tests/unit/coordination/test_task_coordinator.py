@@ -1494,7 +1494,7 @@ class TestTaskCoordinatorIntegration:
         task_id = "lifecycle-test"
 
         # Check spawn allowed
-        allowed, reason = coordinator.can_spawn_task(
+        allowed, _reason = coordinator.can_spawn_task(
             TaskType.SELFPLAY,
             "node-1",
             check_resources=False,

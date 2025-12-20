@@ -152,7 +152,7 @@ def test_weight_application():
         randomness=0.0,
         heuristic_profile_id=None,
     ))
-    for k in BASE_V1_BALANCED_WEIGHTS.keys():
+    for k in BASE_V1_BALANCED_WEIGHTS:
         setattr(zero_ai, k, 0.0)
 
     zero_eval = zero_ai.evaluate_position(test_state)
@@ -253,10 +253,10 @@ def test_weight_application():
         print(f"  Zero:     {zero_val:.2f} (expected: 0.00)")
 
         if scaled_val != BASE_V1_BALANCED_WEIGHTS[weight_name] * 2.0:
-            print(f"  ⚠️  Scaled value mismatch!")
+            print("  ⚠️  Scaled value mismatch!")
             success = False
         if zero_val != 0.0:
-            print(f"  ⚠️  Zero value mismatch!")
+            print("  ⚠️  Zero value mismatch!")
             success = False
         print()
 

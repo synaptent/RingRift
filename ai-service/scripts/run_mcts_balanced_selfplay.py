@@ -55,7 +55,7 @@ def play_mcts_game(
     board_type: BoardType,
     num_players: int,
     mcts_iterations: int = 400,
-    seed: int = None,
+    seed: int | None = None,
     max_moves: int = 10000,
     randomness: float = 0.15,
 ) -> dict[str, Any]:
@@ -120,7 +120,7 @@ def play_mcts_game(
         moves_record.append(_serialize_move(move))
 
         # Apply move using env.step (handles phase transitions properly)
-        state, reward, done, info = env.step(move)
+        state, _reward, done, info = env.step(move)
         move_count += 1
 
         # Record any auto-generated bookkeeping moves per RR-CANON-R075/R076

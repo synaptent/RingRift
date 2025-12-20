@@ -35,6 +35,8 @@ REPO_ROOT = AI_SERVICE_ROOT.parent
 if str(AI_SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+import contextlib
+
 from app.db.game_replay import GameReplayDB
 from app.rules.history_validation import (
     validate_canonical_config_for_game,
@@ -520,10 +522,8 @@ def _copy_game_rows(
             )
             cur = dest_conn.execute(sql, batch)
             # sqlite3 cursor rowcount is best-effort; OK for reporting.
-            try:
+            with contextlib.suppress(Exception):
                 total += int(cur.rowcount or 0)
-            except Exception:
-                pass
 
         inserted[table] = total
 

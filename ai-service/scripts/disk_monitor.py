@@ -581,7 +581,7 @@ def cleanup_deprecated_data(ringrift_path: str, dry_run: bool = False) -> list[C
     return results
 
 
-def run_cleanup(ringrift_path: str, threshold: int = None, force: bool = False,
+def run_cleanup(ringrift_path: str, threshold: int | None = None, force: bool = False,
                 dry_run: bool = False, aggressive: bool = False) -> dict:
     """Run full disk cleanup if needed.
 

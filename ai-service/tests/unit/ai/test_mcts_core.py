@@ -129,9 +129,9 @@ class TestMCTSNode:
         ]
         root_node.untried_moves = moves.copy()
 
-        child1 = root_node.add_child(moves[0], mock_game_state, prior=0.1)
+        root_node.add_child(moves[0], mock_game_state, prior=0.1)
         child2 = root_node.add_child(moves[1], mock_game_state, prior=0.8)
-        child3 = root_node.add_child(moves[2], mock_game_state, prior=0.1)
+        root_node.add_child(moves[2], mock_game_state, prior=0.1)
 
         root_node.visits = 1  # Parent needs visits for UCT
 

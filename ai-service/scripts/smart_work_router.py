@@ -374,7 +374,7 @@ def kill_cmaes_on_node(host: str) -> bool:
         return False
 
 
-def kill_cpu_work_on_node(host: str, work_types: list[str] = None) -> dict:
+def kill_cpu_work_on_node(host: str, work_types: list[str] | None = None) -> dict:
     """Stop CPU-bound work on a node to free it for GPU work.
 
     Args:
@@ -426,7 +426,7 @@ def kill_cpu_work_on_node(host: str, work_types: list[str] = None) -> dict:
         return {'success': False, 'host': host, 'error': str(e)}
 
 
-def kill_cpu_work_parallel(nodes: list[NodeCapabilities], work_types: list[str] = None) -> int:
+def kill_cpu_work_parallel(nodes: list[NodeCapabilities], work_types: list[str] | None = None) -> int:
     """Kill CPU-bound work on multiple nodes in parallel.
 
     Returns number of successful kills.
@@ -532,7 +532,7 @@ def rebalance_cluster(nodes: list[NodeCapabilities], dry_run: bool = False) -> i
 
     # Categorize nodes
     gpu_heavy = [n for n in nodes if n.gpu_tier == 'heavy']
-    gpu_medium = [n for n in nodes if n.gpu_tier in ('medium', 'light')]
+    [n for n in nodes if n.gpu_tier in ('medium', 'light')]
     cpu_only = [n for n in nodes if n.gpu_tier == 'none']
 
     # Find misrouted nodes (GPU-heavy but running CPU-only work)

@@ -403,7 +403,7 @@ class TestMinimaxAIIncrementalSearch(unittest.TestCase):
 
 class TestMinimaxAISearchEquivalence(unittest.TestCase):
     """Tests verifying incremental and legacy search produce similar results.
-    
+
     These tests compare the behavior of both search paths to ensure the
     incremental search implementation is functionally equivalent.
     """

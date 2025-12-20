@@ -268,7 +268,7 @@ class TestHexStateEncoder:
     def test_encode_with_history(self, encoder, hex_state):
         """Test encoding with history frames."""
         # Create current frame
-        current_features, globals_vec = encoder.encode(hex_state)
+        _current_features, _globals_vec = encoder.encode(hex_state)
 
         # Create dummy history
         history = [
@@ -718,7 +718,7 @@ class TestHexDataAugmentation:
             features, globals_vec, policy_indices, policy_values
         )
 
-        for i, (aug_feat, aug_glob, aug_idx, aug_val) in enumerate(results):
+        for i, (aug_feat, aug_glob, _aug_idx, _aug_val) in enumerate(results):
             assert aug_feat.shape == features.shape, f"Sample {i}"
             assert aug_glob.shape == globals_vec.shape, f"Sample {i}"
 
@@ -730,7 +730,7 @@ class TestHexDataAugmentation:
             features, globals_vec, policy_indices, policy_values
         )
 
-        aug_feat, aug_glob, aug_idx, aug_val = results[0]
+        aug_feat, aug_glob, _aug_idx, _aug_val = results[0]
 
         np.testing.assert_array_almost_equal(aug_feat, features)
         np.testing.assert_array_almost_equal(aug_glob, globals_vec)
@@ -855,7 +855,7 @@ class TestHexTrainingIntegration:
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
         # Train on augmented samples
-        for aug_feat, aug_glob, aug_idx, aug_val in augmented:
+        for aug_feat, aug_glob, _aug_idx, _aug_val in augmented:
             x = torch.from_numpy(aug_feat).unsqueeze(0)
             g = torch.from_numpy(aug_glob).unsqueeze(0)
 

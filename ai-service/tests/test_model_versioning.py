@@ -333,7 +333,7 @@ class TestModelVersionManager:
         manager.save_checkpoint(simple_model, metadata, temp_checkpoint_path)
 
         # Should succeed with warning
-        state_dict, loaded_meta = manager.load_checkpoint(
+        _state_dict, loaded_meta = manager.load_checkpoint(
             temp_checkpoint_path,
             strict=False,
             expected_version="v2.0.0",
@@ -532,7 +532,7 @@ class TestLegacyCheckpointMigration:
             assert "migrated_from" in metadata.training_info
 
             # Verify the migrated checkpoint can be loaded normally
-            state_dict, loaded_meta = manager.load_checkpoint(
+            _state_dict, loaded_meta = manager.load_checkpoint(
                 output_path, strict=True
             )
             assert loaded_meta.architecture_version == "v1.0.0"

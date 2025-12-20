@@ -98,10 +98,14 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    resource_can_proceed = lambda **kwargs: True  # type: ignore
-    check_disk_space = lambda *args, **kwargs: True  # type: ignore
-    check_memory = lambda *args, **kwargs: True  # type: ignore
-    require_resources = lambda *args, **kwargs: True  # type: ignore
+    def resource_can_proceed(**kwargs):
+        return True  # type: ignore
+    def check_disk_space(*args, **kwargs):
+        return True  # type: ignore
+    def check_memory(*args, **kwargs):
+        return True  # type: ignore
+    def require_resources(*args, **kwargs):
+        return True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
 # Unified selfplay configuration
@@ -407,10 +411,7 @@ def get_remote_memory_gb(host_name: str, host_config: dict) -> tuple[int, int]:
         if config_total:
             total_gb = config_total
         else:
-            ssh_cmd = ssh_cmd_base + [
-                ssh_target,
-                "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'",
-            ]
+            ssh_cmd = [*ssh_cmd_base, ssh_target, "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'"]
             result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
             if result.returncode == 0 and result.stdout.strip():
                 bytes_total = int(result.stdout.strip())
@@ -430,7 +431,7 @@ else
     echo 4
 fi
 """
-        ssh_cmd = ssh_cmd_base + [ssh_target, vm_stat_script]
+        ssh_cmd = [*ssh_cmd_base, ssh_target, vm_stat_script]
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
         if result.returncode == 0 and result.stdout.strip():
             available_gb = int(result.stdout.strip())
@@ -543,7 +544,7 @@ def get_remote_disk_gb(host_name: str, host_config: dict) -> tuple[int, int]:
             f"cd {_quote_remote_path(ai_service_dir)}; "
             "df -Pk . | tail -n 1 | awk '{print $2\" \"$4}'"
         )
-        ssh_cmd = ssh_cmd_base + [ssh_target, f"bash -lc {shlex.quote(df_script)}"]
+        ssh_cmd = [*ssh_cmd_base, ssh_target, f"bash -lc {shlex.quote(df_script)}"]
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
         # Vast.ai nodes often print a login banner on stderr/stdout; extract the
         # final numeric payload line instead of hard-failing on extra output.
@@ -878,7 +879,7 @@ def run_remote_job(job: JobConfig, host_config: dict, *, timeout_seconds: int) -
     )
 
     try:
-        run_args = dict(capture_output=True, text=True)
+        run_args = {"capture_output": True, "text": True}
         if timeout_seconds and timeout_seconds > 0:
             run_args["timeout"] = int(timeout_seconds)
         result = subprocess.run(ssh_cmd, **run_args)
@@ -1342,7 +1343,7 @@ def main():
 
     # Create SelfplayConfig if available (for tracking/logging)
     if HAS_SELFPLAY_CONFIG and SelfplayConfig is not None:
-        selfplay_config = SelfplayConfig(
+        SelfplayConfig(
             board_type=getattr(parsed, "board", "square8"),
             num_players=2,  # Will vary per job
             num_games=parsed.games_per_config,
@@ -1407,7 +1408,7 @@ def main():
     # Validate hosts
     for host in hosts:
         if host != "local" and host not in REMOTE_HOSTS:
-            available = ["local"] + list(REMOTE_HOSTS.keys())
+            available = ["local", *list(REMOTE_HOSTS.keys())]
             print(f"Error: Unknown host '{host}'.")
             print(f"Available hosts: {', '.join(available)}")
             if not REMOTE_HOSTS:

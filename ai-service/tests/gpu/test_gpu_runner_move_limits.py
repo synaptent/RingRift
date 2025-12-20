@@ -38,7 +38,7 @@ def test_gpu_run_games_max_moves_is_move_count_limit() -> None:
     # At least one game should hit the move limit at this small threshold.
     assert any(status == GameStatus.MAX_MOVES for status in results["status"])
 
-    for status, move_count in zip(results["status"], results["move_counts"]):
+    for status, move_count in zip(results["status"], results["move_counts"], strict=False):
         if status == GameStatus.MAX_MOVES:
             assert move_count >= max_moves
 

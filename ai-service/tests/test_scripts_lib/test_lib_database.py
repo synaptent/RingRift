@@ -184,7 +184,7 @@ class TestDbSizeMb:
         with safe_transaction(db_path) as conn:
             conn.execute("CREATE TABLE test (data TEXT)")
             # Insert some data to make file have measurable size
-            for i in range(100):
+            for _i in range(100):
                 conn.execute("INSERT INTO test VALUES (?)", ("x" * 1000,))
 
         size = get_db_size_mb(db_path)

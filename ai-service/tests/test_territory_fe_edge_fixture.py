@@ -209,10 +209,10 @@ class TestTerritoryFeEdgeFixture:
     ) -> None:
         """
         Internal eliminations + crediting on the k89 territory/FE edge fixture.
- 
+
         Mirrors the TS test that uses applyTerritoryRegion over the curated
         region:
- 
+
         - The tall mixed stack at (6,1) is fully eliminated.
         - All region spaces are collapsed to player 1.
         - All internal rings from the eliminated stack are credited to
@@ -313,10 +313,10 @@ class TestTerritoryFeEdgeFixture:
     ) -> None:
         """
         Self-elimination prerequisite for the SQ8-A mini-region.
- 
+
         Mirrors the TS test that uses canProcessTerritoryRegion over the
         SQ8-A mini-region on the k89 board:
- 
+
         - With the original board, player 1 has stacks both inside and
           outside the mini-region, so the region is processable.
         - After removing all player-1 stacks outside the mini-region,
@@ -386,10 +386,10 @@ class TestTerritoryFeEdgeFixture:
     ) -> None:
         """
         Internal eliminations + crediting on the SQ8-A mini-region fixture.
- 
+
         Mirrors the TS test that uses applyTerritoryRegion over the SQ8-A
         mini-region:
- 
+
         - All stacks on (0,7), (1,7), and (1,6) are eliminated.
         - All mini-region spaces are collapsed to player 1.
         - The total internal ring count across the mini-region is fully

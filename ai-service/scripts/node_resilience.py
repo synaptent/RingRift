@@ -248,7 +248,7 @@ class NodeResilience:
         except Exception:
             return False
 
-    def start_autossh_tunnel(self, relay_host: str = None) -> bool:
+    def start_autossh_tunnel(self, relay_host: str | None = None) -> bool:
         """Start autossh reverse tunnel when P2P connectivity fails.
 
         This is useful for Vast instances behind carrier NAT where Tailscale
@@ -454,9 +454,7 @@ class NodeResilience:
         effective_leader_id = str(status.get("effective_leader_id") or "").strip()
         if alive_peers > 0:
             return True
-        if effective_leader_id and effective_leader_id != self.config.node_id:
-            return True
-        return False
+        return bool(effective_leader_id and effective_leader_id != self.config.node_id)
 
     def register_with_coordinator(self) -> bool:
         """Register this node with the coordinator."""

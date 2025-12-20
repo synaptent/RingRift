@@ -37,6 +37,8 @@ from typing import Optional
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import contextlib
+
 import torch
 
 from app.ai.gmo_ai import GMOAI, GMOConfig
@@ -378,10 +380,8 @@ def train_on_selfplay(
         )
     finally:
         if tmp_path and tmp_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 tmp_path.unlink()
-            except OSError:
-                pass
 
     results = {
         "trained": True,

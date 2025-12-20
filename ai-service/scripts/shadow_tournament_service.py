@@ -482,7 +482,7 @@ class ShadowTournamentService:
                 cwd=AI_SERVICE_ROOT,
             )
 
-            stdout, stderr = await asyncio.wait_for(
+            _stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=self.config.timeout_seconds * len(configs)
             )

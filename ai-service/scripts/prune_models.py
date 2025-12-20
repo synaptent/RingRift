@@ -96,7 +96,7 @@ def get_model_elo_stats(db_path: Path) -> dict[str, ModelStats]:
         """)
 
         for row in cursor.fetchall():
-            model_id, board_type, num_players, elo, games, wins, losses, draws, last_played = row
+            model_id, board_type, num_players, elo, games, wins, losses, draws, _last_played = row
 
             # Extract model filename from model_id
             # Format is typically: nn:path/to/model.pth or just model_name

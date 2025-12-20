@@ -207,7 +207,7 @@ class TestFileHandle:
         indices = np.array([0, 1, 2])
 
         result = handle.get_batch_with_mp(indices)
-        features, globals_, values, pol_indices, pol_values, values_mp, num_players = result
+        features, globals_, _values, _pol_indices, _pol_values, values_mp, num_players = result
 
         assert features.shape[0] == 3
         assert values_mp is not None
@@ -465,7 +465,7 @@ class TestPrefetchIterator:
     def test_nested_structure_preserved(self):
         """Should preserve nested tuple structure."""
         def source():
-            for i in range(3):
+            for _i in range(3):
                 features = torch.randn(4, 8)
                 globals_ = torch.randn(4, 4)
                 values = torch.randn(4, 1)
@@ -532,7 +532,7 @@ class TestPrefetchIterator:
     def test_pin_memory_parameter(self):
         """Should accept pin_memory parameter."""
         def source():
-            for i in range(2):
+            for _i in range(2):
                 yield torch.randn(4, 8)
 
         # Should not raise
@@ -545,7 +545,7 @@ class TestPrefetchIterator:
     def test_device_transfer_parameter(self):
         """Should accept transfer_to_device parameter."""
         def source():
-            for i in range(2):
+            for _i in range(2):
                 yield torch.randn(4, 8)
 
         device = torch.device('cpu')
@@ -718,7 +718,7 @@ class TestMultiPlayerIteration:
         assert loader.max_players == 4
 
         batch_count = 0
-        for (features, globals_), (values, policies), values_mp, num_players in loader.iter_with_mp():
+        for (features, globals_), (_values, _policies), values_mp, num_players in loader.iter_with_mp():
             assert isinstance(features, torch.Tensor)
             assert isinstance(values_mp, torch.Tensor)
             assert isinstance(num_players, torch.Tensor)

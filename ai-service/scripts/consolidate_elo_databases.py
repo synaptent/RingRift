@@ -117,7 +117,7 @@ def import_from_old_db(db: EloDatabase, old_db_path: Path) -> int:
     return imported
 
 
-def import_from_jsonl(db: EloDatabase, jsonl_path: Path, tournament_id: str = None) -> int:
+def import_from_jsonl(db: EloDatabase, jsonl_path: Path, tournament_id: str | None = None) -> int:
     """Import matches from tournament JSONL file."""
     if not jsonl_path.exists():
         return 0

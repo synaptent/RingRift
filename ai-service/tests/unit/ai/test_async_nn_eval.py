@@ -592,7 +592,7 @@ class TestEdgeCases:
         with patch.dict(os.environ, {"RINGRIFT_NN_EVAL_QUEUE": "0"}):
             batcher = AsyncNeuralBatcher(mock_nn)
 
-        values, policies = batcher.evaluate([])
+        values, _policies = batcher.evaluate([])
         assert values == []
         batcher.shutdown()
 

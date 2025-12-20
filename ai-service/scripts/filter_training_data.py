@@ -101,7 +101,7 @@ def get_elo_ratings() -> dict[str, float]:
         """)
 
         for row in cursor.fetchall():
-            participant_id, rating, games = row
+            participant_id, rating, _games = row
             ratings[participant_id] = rating
 
             # Also add without prefix

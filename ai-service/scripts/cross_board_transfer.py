@@ -100,7 +100,7 @@ def transfer_and_finetune(
     print(f"Target data: {target_data_path}")
 
     # Load source model
-    source_checkpoint = torch.load(source_model_path, map_location="cpu")
+    torch.load(source_model_path, map_location="cpu")
 
     # Create output path
     timestamp = time.strftime("%Y%m%d_%H%M%S")

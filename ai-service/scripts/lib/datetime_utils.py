@@ -477,25 +477,25 @@ def timestamp_age(value: str | int | float | datetime) -> timedelta:
 
 
 __all__ = [
-    # File age operations
-    "get_file_age",
-    "get_file_age_hours",
-    "get_file_age_days",
-    "is_file_older_than",
+    "ElapsedTimer",
     "find_files_older_than",
-    "iter_files_by_age",
     # Elapsed time operations
     "format_elapsed_time",
     "format_elapsed_time_short",
-    "ElapsedTimer",
-    # Timestamp generation
-    "timestamp_id",
-    "timestamp_id_ms",
-    "timestamp_for_log",
-    "timestamp_iso",
-    "timestamp_iso_utc",
+    # File age operations
+    "get_file_age",
+    "get_file_age_days",
+    "get_file_age_hours",
+    "is_file_older_than",
+    "iter_files_by_age",
     # Timestamp parsing
     "parse_timestamp",
     "parse_timestamp_safe",
     "timestamp_age",
+    "timestamp_for_log",
+    # Timestamp generation
+    "timestamp_id",
+    "timestamp_id_ms",
+    "timestamp_iso",
+    "timestamp_iso_utc",
 ]

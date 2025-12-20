@@ -49,10 +49,14 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    resource_can_proceed = lambda **kwargs: True  # type: ignore
-    check_disk_space = lambda *args, **kwargs: True  # type: ignore
-    check_memory = lambda *args, **kwargs: True  # type: ignore
-    wait_for_resources = lambda *args, **kwargs: True  # type: ignore
+    def resource_can_proceed(**kwargs):
+        return True  # type: ignore
+    def check_disk_space(*args, **kwargs):
+        return True  # type: ignore
+    def check_memory(*args, **kwargs):
+        return True  # type: ignore
+    def wait_for_resources(*args, **kwargs):
+        return True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
 from scripts.lib.logging_config import setup_script_logging

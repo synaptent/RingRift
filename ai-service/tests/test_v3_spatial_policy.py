@@ -152,7 +152,6 @@ class TestV3PolicyIndexing:
     def test_movement_index_formula(self):
         """Verify movement indices follow the canonical formula."""
         model = HexNeuralNet_v3()
-        W = HEX_BOARD_SIZE
 
         # Test: y=0, x=0, dir=0, dist=1 → first movement index
         expected = HEX_MOVEMENT_BASE + 0
@@ -267,7 +266,7 @@ class TestV3GradientFlow:
         x = torch.randn(2, 64, 25, 25, requires_grad=True)
         globals_in = torch.randn(2, 20, requires_grad=True)
 
-        value, policy = model(x, globals_in)
+        _value, policy = model(x, globals_in)
 
         # Compute loss on a specific policy index
         center_idx = 12 * 25 * 3 + 12 * 3 + 0  # Center cell, ring_count=0

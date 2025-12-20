@@ -572,7 +572,7 @@ def main():
             matches = glob.glob(pattern)
             db_paths.extend(Path(m) for m in matches)
 
-    result = run_transfer_learning(
+    run_transfer_learning(
         source_path=source_path,
         source_config=source_config,
         target_config=target_config,

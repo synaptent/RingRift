@@ -200,7 +200,7 @@ class TestLineDetectionProperties:
         )
 
         for player in [1, 2]:
-            positions_mask, line_count = detect_lines_vectorized(state, player=player)
+            _positions_mask, line_count = detect_lines_vectorized(state, player=player)
             assert (line_count == 0).all(), f"Empty board reported lines for player {player}"
 
     @given(st.integers(min_value=1, max_value=4))
@@ -218,7 +218,7 @@ class TestLineDetectionProperties:
         for x in range(4):
             state.marker_owner[:, 3, x] = 1
 
-        positions_mask, line_count = detect_lines_vectorized(state, player=1)
+        _positions_mask, line_count = detect_lines_vectorized(state, player=1)
 
         # Each game should have at least one line
         assert (line_count >= 1).all(), "Failed to detect line of 4 markers"
@@ -241,7 +241,7 @@ class TestLineDetectionProperties:
         for x in range(4):
             state.marker_owner[:, row, x] = 1
 
-        positions_mask, line_count = detect_lines_vectorized(state, player=1)
+        _positions_mask, line_count = detect_lines_vectorized(state, player=1)
 
         assert (line_count >= 1).all(), f"Failed to detect horizontal line at row {row}"
 

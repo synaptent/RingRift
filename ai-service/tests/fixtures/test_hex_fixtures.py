@@ -64,7 +64,7 @@ class TestHexCoord:
         """Origin should convert to center of offset grid."""
         size = 11
         origin = HexCoord(0, 0)
-        x, y = origin.to_offset(size)
+        _x, y = origin.to_offset(size)
         # With size 11, origin should be near center
         assert y == size  # r + size = 0 + 11
 
@@ -162,7 +162,7 @@ class TestHexCoordReflections:
     def test_reflect_q_formula(self):
         """Reflection should swap r and s in cube coords."""
         coord = HexCoord(2, -1)  # cube: (2, -1, -1)
-        reflected = coord.reflect_q()
+        coord.reflect_q()
         # Swap y and z: (2, -1, -1) -> (2, -1, -1) - in this case same
         # Let's use a different example
         coord2 = HexCoord(3, -2)  # cube: (3, -2, -1)
@@ -232,7 +232,8 @@ class TestApplySymmetryToBoard:
             ),
         }
 
-        identity = lambda c: c
+        def identity(c):
+            return c
         result = apply_symmetry_to_board(stacks, identity, size=11)
 
         assert set(result.keys()) == set(stacks.keys())

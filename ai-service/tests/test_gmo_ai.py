@@ -467,21 +467,21 @@ class TestGradientOptimization:
     def test_optimize_move_is_deterministic_given_seed(self, gmo_config):
         """Test reproducibility with fixed seed."""
         torch.manual_seed(42)
-        value_net1 = GMOValueNetWithUncertainty(
+        GMOValueNetWithUncertainty(
             state_dim=gmo_config.state_dim,
             move_dim=gmo_config.move_dim,
             hidden_dim=gmo_config.hidden_dim,
         )
 
         torch.manual_seed(42)
-        value_net2 = GMOValueNetWithUncertainty(
+        GMOValueNetWithUncertainty(
             state_dim=gmo_config.state_dim,
             move_dim=gmo_config.move_dim,
             hidden_dim=gmo_config.hidden_dim,
         )
 
-        state_embed = torch.randn(gmo_config.state_dim)
-        initial_embed = torch.randn(gmo_config.move_dim)
+        torch.randn(gmo_config.state_dim)
+        torch.randn(gmo_config.move_dim)
 
         # Both should produce same result with same seed
         # (Note: MC dropout introduces randomness, so this is approximate)

@@ -243,7 +243,7 @@ def run_eval_tournament(args: argparse.Namespace, config: Any) -> int:
         "--games", str(args.games),
     ]
     if args.ai_specs:
-        sys_argv.extend(["--ai-specs"] + args.ai_specs)
+        sys_argv.extend(["--ai-specs", *args.ai_specs])
     if args.demo:
         sys_argv.append("--demo")
 

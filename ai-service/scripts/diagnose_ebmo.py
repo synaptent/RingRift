@@ -161,7 +161,7 @@ def compare_models(model1_path: str, model2_path: str):
     print("Model Comparison")
     print(f"{'='*60}\n")
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     ai_config = AIConfig(difficulty=5)
 
     ai1 = EBMO_AI(player_number=1, config=ai_config, model_path=model1_path)

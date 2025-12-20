@@ -27,7 +27,7 @@ class MockPlayer:
 
 class MockGameState:
     """Mock GameState for testing."""
-    def __init__(self, winner: int = None, players: list = None):
+    def __init__(self, winner: int | None = None, players: list | None = None):
         self.winner = winner
         self.players = players or []
 

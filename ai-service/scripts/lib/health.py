@@ -28,6 +28,7 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -330,10 +331,8 @@ def check_memory() -> MemoryHealth:
                     parts = line.split(":")
                     key = parts[0].strip()
                     value = parts[1].strip().rstrip(".")
-                    try:
+                    with contextlib.suppress(ValueError):
                         stats[key] = int(value)
-                    except ValueError:
-                        pass
 
             # Get physical memory size
             sysctl = subprocess.run(

@@ -312,7 +312,7 @@ class TestSchedulerStateSaveRestore:
             )
 
             # Load checkpoint
-            epoch, loss = load_checkpoint(
+            epoch, _loss = load_checkpoint(
                 checkpoint_path,
                 new_model, new_optimizer,
                 scheduler=new_scheduler

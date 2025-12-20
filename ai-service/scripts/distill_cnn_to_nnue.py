@@ -38,6 +38,8 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import contextlib
+
 from app.ai.neural_net import NeuralNetAI, get_policy_size_for_board
 from app.ai.nnue import get_board_size
 from app.game_engine import GameEngine
@@ -155,7 +157,7 @@ class CNNDistiller:
         self.nn_ai.player_number = player
         try:
             # Get policy from the model
-            values, policy_probs = self.nn_ai.evaluate_batch([state])
+            _values, policy_probs = self.nn_ai.evaluate_batch([state])
             if policy_probs is None or len(policy_probs) == 0:
                 return {}
 
@@ -192,7 +194,7 @@ class CNNDistiller:
     ) -> dict[str, Any]:
         """Add CNN policy distributions to a game record."""
         # Parse initial state
-        board_type_str = game.get("board_type", "square8")
+        game.get("board_type", "square8")
         num_players = game.get("num_players", 2)
 
         initial_state_dict = game.get("initial_state")
@@ -314,10 +316,8 @@ def extract_games_from_db(
                     initial_json = None
 
             if initial_json:
-                try:
+                with contextlib.suppress(Exception):
                     initial_state = json.loads(initial_json)
-                except Exception:
-                    pass
 
         # Get moves - schema stores moves as JSON in move_json column
         cursor.execute(

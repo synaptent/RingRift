@@ -34,8 +34,8 @@ def _make_formatted(
             "board": board,
         },
         "results": {
-            "player1_wins": int(round(win_rate * games)),
-            "player2_wins": games - int(round(win_rate * games)),
+            "player1_wins": round(win_rate * games),
+            "player2_wins": games - round(win_rate * games),
             "draws": 0,
             "player1_win_rate": win_rate,
             "player1_win_rate_ci95": [ci[0], ci[1]],

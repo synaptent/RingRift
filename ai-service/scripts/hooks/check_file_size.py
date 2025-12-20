@@ -49,7 +49,7 @@ def main() -> int:
 
     for filepath in sys.argv[1:]:
         path = Path(filepath)
-        if not path.exists() or not path.suffix == ".py":
+        if not path.exists() or path.suffix != ".py":
             continue
 
         line_count = count_lines(path)

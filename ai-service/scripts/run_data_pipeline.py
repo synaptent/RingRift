@@ -58,6 +58,8 @@ from typing import Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Unified logging setup
+import contextlib
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("run_data_pipeline")
@@ -403,7 +405,7 @@ class DataPipeline:
         ]
 
         if sources:
-            cmd.extend(["--sources"] + sources)
+            cmd.extend(["--sources", *sources])
         if board_type:
             cmd.extend(["--board-type", board_type])
         if num_players:
@@ -425,15 +427,11 @@ class DataPipeline:
             # Extract stats from output
             for line in result.stdout.split("\n"):
                 if "Successfully imported:" in line:
-                    try:
+                    with contextlib.suppress(ValueError):
                         stats["imported"] = int(line.split(":")[-1].strip())
-                    except ValueError:
-                        pass
                 elif "Skipped (duplicate):" in line:
-                    try:
+                    with contextlib.suppress(ValueError):
                         stats["skipped_duplicate"] = int(line.split(":")[-1].strip())
-                    except ValueError:
-                        pass
 
             if result.returncode == 0:
                 logger.info("Aggregation completed successfully")

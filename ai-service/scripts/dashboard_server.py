@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import json
 import os
 import sqlite3
@@ -228,8 +229,8 @@ def training_dashboard():
 @app.route("/api/training/loss-curves")
 def api_loss_curves():
     """Get training loss curves."""
-    model_id = request.args.get("model_id", "")
-    hours = request.args.get("hours", "24", type=int)
+    request.args.get("model_id", "")
+    request.args.get("hours", "24", type=int)
 
     # Try to read from training reports
     reports_dir = AI_SERVICE_ROOT / "data" / "training_runs"
@@ -607,10 +608,8 @@ def api_replay_game_moves(game_id):
         for row in cursor:
             move_data = {}
             if row["move_json"]:
-                try:
+                with contextlib.suppress(Exception):
                     move_data = json.loads(row["move_json"])
-                except Exception:
-                    pass
             move_data["moveNumber"] = row["move_number"]
             move_data["player"] = row["player_number"]
             moves.append(move_data)
@@ -652,10 +651,8 @@ def api_replay_game_eval(game_id):
         eval_data = None
 
         if row and row["eval_json"]:
-            try:
+            with contextlib.suppress(Exception):
                 eval_data = json.loads(row["eval_json"])
-            except Exception:
-                pass
 
         conn.close()
 

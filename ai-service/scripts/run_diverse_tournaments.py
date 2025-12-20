@@ -45,6 +45,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Unified logging setup
+import contextlib
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("run_diverse_tournaments")
@@ -185,7 +187,7 @@ def load_cluster_hosts(config_path: str | None = None) -> list[ClusterHost]:
 
 async def check_host_available(host: ClusterHost, timeout: int = 10) -> bool:
     """Check if a host is reachable and ready."""
-    cmd = host.ssh_cmd_prefix() + ["echo ok"]
+    cmd = [*host.ssh_cmd_prefix(), "echo ok"]
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -206,7 +208,7 @@ async def filter_available_hosts(hosts: list[ClusterHost]) -> list[ClusterHost]:
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     available = []
-    for host, result in zip(hosts, results):
+    for host, result in zip(hosts, results, strict=False):
         if result is True:
             available.append(host)
             logger.info(f"  {host.name}: available")
@@ -329,7 +331,7 @@ async def run_tournament_remote(host: ClusterHost, config: TournamentConfig) -> 
 
     remote_cmd = f"cd {ai_service_path} && {venv_cmd}mkdir -p data/tournaments && {selfplay_cmd}"
 
-    ssh_cmd = host.ssh_cmd_prefix() + [remote_cmd]
+    ssh_cmd = [*host.ssh_cmd_prefix(), remote_cmd]
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -392,15 +394,11 @@ def parse_selfplay_output(output: str) -> tuple[int, int]:
 
     for line in output.split("\n"):
         if "Games completed:" in line:
-            try:
+            with contextlib.suppress(ValueError):
                 games_completed = int(line.split(":")[-1].strip())
-            except ValueError:
-                pass
         elif "Samples generated:" in line:
-            try:
+            with contextlib.suppress(ValueError):
                 samples_generated = int(line.split(":")[-1].strip())
-            except ValueError:
-                pass
 
     return games_completed, samples_generated
 

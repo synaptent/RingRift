@@ -706,7 +706,7 @@ class TestCrossCoordinatorHealthProtocol:
         result = protocol.check_all_coordinators()
 
         assert len(result) == 1
-        health = list(result.values())[0]
+        health = next(iter(result.values()))
         assert health.is_healthy is True
         assert health.role == "cluster_orchestrator"
 

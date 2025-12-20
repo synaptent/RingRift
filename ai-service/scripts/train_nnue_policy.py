@@ -541,7 +541,7 @@ def split_by_game_id(
     # Split games
     num_val_games = int(len(game_ids) * val_split)
     val_game_ids = set(game_ids[:num_val_games])
-    train_game_ids = set(game_ids[num_val_games:])
+    set(game_ids[num_val_games:])
 
     # Collect indices
     train_indices = []

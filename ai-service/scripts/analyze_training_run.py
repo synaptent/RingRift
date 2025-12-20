@@ -97,7 +97,7 @@ def parse_training_log(log_path: Path) -> TrainingRunSummary:
             epoch_match = epoch_pattern.search(line)
             if epoch_match:
                 epoch = int(epoch_match.group(1))
-                total = int(epoch_match.group(2))
+                int(epoch_match.group(2))
                 train_loss = float(epoch_match.group(3))
                 val_loss = float(epoch_match.group(4))
 
@@ -311,7 +311,7 @@ def analyze_checkpoint(checkpoint_path: Path) -> None:
     print(f"\n{'Checkpoint Contents':^60}")
     print("-" * 60)
 
-    for key in checkpoint.keys():
+    for key in checkpoint:
         if key == "model_state_dict":
             param_count = sum(
                 p.numel() for p in checkpoint[key].values()

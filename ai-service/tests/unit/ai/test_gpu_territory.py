@@ -119,7 +119,7 @@ class TestFindEligibleTerritoryCap:
                                                excluded_positions={(3, 3)})
 
         assert result is not None
-        y, x, height = result
+        y, x, _height = result
         assert (y, x) != (3, 3)
 
     def test_ignores_other_players_stacks(self, device, board_size, num_players):
@@ -239,10 +239,10 @@ class TestIsPhysicallyDisconnected:
         # Use a small region in the corner
         region = {(0, 0), (0, 1), (1, 0)}
 
-        is_disconnected, border_player = _is_physically_disconnected(state, 0, region)
+        is_disconnected, _border_player = _is_physically_disconnected(state, 0, region)
 
         # Corner region is connected to rest of board
-        assert is_disconnected == False
+        assert not is_disconnected
 
     def test_disconnected_by_single_color_markers(self, device, board_size, num_players):
         """Region surrounded by single-color markers should be disconnected."""
@@ -254,9 +254,8 @@ class TestIsPhysicallyDisconnected:
         # Surround with player 1's markers
         for y in range(2, 6):
             for x in range(2, 6):
-                if (y, x) not in region:
-                    if y == 2 or y == 5 or x == 2 or x == 5:
-                        place_marker(state, 0, y, x, owner=1)
+                if (y, x) not in region and (y == 2 or y == 5 or x == 2 or x == 5):
+                    place_marker(state, 0, y, x, owner=1)
 
         # Collapse everything outside the marker ring
         for y in range(board_size):
@@ -267,7 +266,7 @@ class TestIsPhysicallyDisconnected:
         is_disconnected, border_player = _is_physically_disconnected(state, 0, region)
 
         # Region should be disconnected by player 1's markers
-        assert is_disconnected == True
+        assert is_disconnected
         assert border_player == 1
 
     def test_not_disconnected_by_multiple_colors(self, device, board_size, num_players):
@@ -283,10 +282,10 @@ class TestIsPhysicallyDisconnected:
         place_marker(state, 0, 3, 2, owner=1)
         place_marker(state, 0, 4, 2, owner=2)
 
-        is_disconnected, border_player = _is_physically_disconnected(state, 0, region)
+        is_disconnected, _border_player = _is_physically_disconnected(state, 0, region)
 
         # Multiple colors means not physically disconnected
-        assert is_disconnected == False
+        assert not is_disconnected
 
 
 # =============================================================================
@@ -310,7 +309,7 @@ class TestIsColorDisconnected:
 
         is_disconnected = _is_color_disconnected(state, 0, region)
 
-        assert is_disconnected == True
+        assert is_disconnected
 
     def test_region_with_all_colors_not_disconnected(self, device, board_size, num_players):
         """Region with all active colors should not be color-disconnected."""
@@ -323,7 +322,7 @@ class TestIsColorDisconnected:
 
         is_disconnected = _is_color_disconnected(state, 0, region)
 
-        assert is_disconnected == False
+        assert not is_disconnected
 
     def test_region_with_subset_colors_is_disconnected(self, device, board_size, num_players):
         """Region with only some colors should be color-disconnected."""
@@ -340,7 +339,7 @@ class TestIsColorDisconnected:
         is_disconnected = _is_color_disconnected(state, 0, region)
 
         # Region has {1}, active colors are {1, 2}, so it's a strict subset
-        assert is_disconnected == True
+        assert is_disconnected
 
     def test_no_active_colors_not_disconnected(self, device, board_size, num_players):
         """Empty board (no active colors) should not be color-disconnected."""
@@ -351,7 +350,7 @@ class TestIsColorDisconnected:
         is_disconnected = _is_color_disconnected(state, 0, region)
 
         # No active colors, so no territory processing possible
-        assert is_disconnected == False
+        assert not is_disconnected
 
 
 # =============================================================================
@@ -450,7 +449,7 @@ class TestComputeTerritoryBatch:
         # Active colors = {1, 2}, region colors = {1}
         # So right region is color-disconnected
 
-        initial_stack_height = state.stack_height[0, 3, 6].item()
+        state.stack_height[0, 3, 6].item()
 
         compute_territory_batch(state)
 

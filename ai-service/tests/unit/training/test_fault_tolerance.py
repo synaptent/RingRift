@@ -200,7 +200,7 @@ class TestTrainingErrorHandler:
         """Test safe_training_step handles OOM."""
         handler = TrainingErrorHandler(min_batch_size=8, batch_reduction_factor=0.5)
 
-        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256) as ctx:
+        with pytest.raises(RecoverableError), handler.safe_training_step(batch_size=256):
             raise RuntimeError("CUDA out of memory")
 
         assert handler.recommended_batch_size == 128
@@ -352,7 +352,7 @@ class TestCheckpointManager:
         assert not ckpt_dir.exists()
 
         config = UnifiedCheckpointConfig(checkpoint_dir=str(ckpt_dir))
-        manager = CheckpointManager(config)
+        CheckpointManager(config)
         assert ckpt_dir.exists()
 
     @pytest.mark.skipif(

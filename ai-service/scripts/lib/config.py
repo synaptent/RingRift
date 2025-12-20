@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import asdict, dataclass, field
@@ -218,10 +219,8 @@ class ConfigManager:
         for env_name, (config_key, type_fn) in env_mappings.items():
             env_value = os.environ.get(f"{self.ENV_PREFIX}{env_name}")
             if env_value:
-                try:
+                with contextlib.suppress(ValueError):
                     result[config_key] = type_fn(env_value)
-                except ValueError:
-                    pass
 
         return result
 

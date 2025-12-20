@@ -229,7 +229,7 @@ class TestSetupGracefulShutdown:
         """Test handler setup on main process."""
         # This test just verifies the function runs without error
         # Actual handler functionality depends on imports
-        handler = setup_graceful_shutdown(
+        setup_graceful_shutdown(
             checkpoint_callback=lambda: None,
             distributed=False,
         )

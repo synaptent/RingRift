@@ -880,15 +880,15 @@ class TestStreamingDataLoaderSharding:
 
         # Get batches from epoch 0
         loader.set_epoch(0)
-        batches_epoch0 = [b for b in loader]
+        batches_epoch0 = list(loader)
 
         # Get batches from epoch 1
         loader.set_epoch(1)
-        _ = [b for b in loader]  # Different order expected
+        _ = list(loader)  # Different order expected
 
         # Reset to epoch 0 - should get same order
         loader.set_epoch(0)
-        batches_epoch0_again = [b for b in loader]
+        batches_epoch0_again = list(loader)
 
         # Epoch 0 and epoch 0 again should be identical
         assert len(batches_epoch0) == len(batches_epoch0_again)

@@ -335,15 +335,7 @@ def test_swap_sides_cache_key_accounts_for_p2_non_swap_move_presence() -> None:
     not_swap_eligible = base.model_copy(
         update={
             "current_player": 2,
-            "move_history": p1_only_history[:6]
-            + [
-                _dummy_move(
-                    move_type=MoveType.SKIP_PLACEMENT,
-                    player=2,
-                    move_number=7,
-                    ts=ts,
-                )
-            ],
+            "move_history": [*p1_only_history[:6], _dummy_move(move_type=MoveType.SKIP_PLACEMENT, player=2, move_number=7, ts=ts)],
         }
     )
     moves_not_swap_eligible = GameEngine.get_valid_moves(not_swap_eligible, 2)

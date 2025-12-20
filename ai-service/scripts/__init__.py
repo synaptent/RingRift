@@ -46,30 +46,30 @@ from .unified_loop.data_collection import StreamingDataCollector
 from .unified_loop.training import TrainingScheduler
 
 __all__ = [
-    # Configuration
-    'DataIngestionConfig',
-    'TrainingConfig',
-    'EvaluationConfig',
-    'PromotionConfig',
+    'AdaptiveCurriculum',
+    'ConfigState',
     'CurriculumConfig',
-    'PBTConfig',
-    'NASConfig',
-    'PERConfig',
-    'FeedbackConfig',
-    'P2PClusterConfig',
-    'ModelPruningConfig',
-    'UnifiedLoopConfig',
+    'DataEvent',
     # Events
     'DataEventType',
-    'DataEvent',
+    # Configuration
+    'DataIngestionConfig',
+    'EvaluationConfig',
+    'FeedbackConfig',
     # State
     'HostState',
-    'ConfigState',
+    'ModelPromoter',
+    'ModelPruningConfig',
     # Services (Phase 2)
     'ModelPruningService',
-    'AdaptiveCurriculum',
-    'ModelPromoter',
+    'NASConfig',
+    'P2PClusterConfig',
+    'PBTConfig',
+    'PERConfig',
+    'PromotionConfig',
     'ShadowTournamentService',
     'StreamingDataCollector',
+    'TrainingConfig',
     'TrainingScheduler',
+    'UnifiedLoopConfig',
 ]

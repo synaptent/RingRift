@@ -155,20 +155,20 @@ class TestNeuralNetBenchmarks:
 
         # Warmup
         for _ in range(5):
-            policy, value = model(x)
+            policy, _value = model(x)
             loss = criterion(policy, target)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
         def training_step():
-            policy, value = model(x)
+            policy, _value = model(x)
             loss = criterion(policy, target)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        min_t, avg_t, max_t = simple_benchmark(training_step, iterations=50)
+        _min_t, avg_t, _max_t = simple_benchmark(training_step, iterations=50)
         throughput = (batch_size / avg_t) * 1000
 
         print(f"\n=== Training Step Benchmark (batch={batch_size}) ===")
@@ -206,7 +206,7 @@ class TestMoveEncodingBenchmarks:
             for move in moves:
                 _encode_move_for_policy(move, 8)
 
-        min_t, avg_t, max_t = simple_benchmark(encode_batch, iterations=100)
+        _min_t, avg_t, _max_t = simple_benchmark(encode_batch, iterations=100)
         throughput = (len(moves) / avg_t) * 1000
 
         print("\n=== Move Encoding Benchmark ===")
@@ -243,7 +243,7 @@ class TestCheckpointBenchmarks:
         # Warmup
         save_checkpoint()
 
-        min_t, avg_t, max_t = simple_benchmark(save_checkpoint, iterations=20)
+        _min_t, avg_t, _max_t = simple_benchmark(save_checkpoint, iterations=20)
 
         # Get file size
         file_size_mb = checkpoint_path.stat().st_size / (1024 * 1024)
@@ -274,7 +274,7 @@ class TestCheckpointBenchmarks:
         # Warmup
         load_checkpoint()
 
-        min_t, avg_t, max_t = simple_benchmark(load_checkpoint, iterations=20)
+        _min_t, avg_t, _max_t = simple_benchmark(load_checkpoint, iterations=20)
 
         print("\n=== Checkpoint Load Benchmark ===")
         print(f"Latency: {avg_t:.2f}ms avg")
@@ -308,7 +308,7 @@ class TestHeuristicWeightBenchmarks:
             keys, values = _flatten_heuristic_weights(profile)
             _reconstruct_heuristic_profile(keys, values)
 
-        min_t, avg_t, max_t = simple_benchmark(flatten_reconstruct, iterations=1000)
+        _min_t, avg_t, _max_t = simple_benchmark(flatten_reconstruct, iterations=1000)
         throughput = (1 / avg_t) * 1000  # ops/sec
 
         print("\n=== Heuristic Weight Flatten/Reconstruct Benchmark ===")
@@ -343,7 +343,7 @@ class TestAdvancedTrainingBenchmarks:
         def sample_opponent():
             pool.sample_opponent(current_elo=1600, strategy="pfsp")
 
-        min_t, avg_t, max_t = simple_benchmark(sample_opponent, iterations=1000)
+        _min_t, avg_t, _max_t = simple_benchmark(sample_opponent, iterations=1000)
         throughput = (1 / avg_t) * 1000
 
         print("\n=== PFSP Sampling Benchmark (50 opponents) ===")
@@ -372,7 +372,7 @@ class TestAdvancedTrainingBenchmarks:
         def analyze():
             finder._analyze_results(lrs, losses, 1e-7, 10.0)
 
-        min_t, avg_t, max_t = simple_benchmark(analyze, iterations=100)
+        _min_t, avg_t, _max_t = simple_benchmark(analyze, iterations=100)
         throughput = (1 / avg_t) * 1000
 
         print("\n=== LR Finder Analysis Benchmark (200 points) ===")
@@ -414,7 +414,7 @@ class TestDataLoadingBenchmarks:
             _ = data["features"]
             _ = data["values"]
 
-        min_t, avg_t, max_t = simple_benchmark(load_data, iterations=20)
+        _min_t, avg_t, _max_t = simple_benchmark(load_data, iterations=20)
 
         # Get file size
         file_size_mb = data_path.stat().st_size / (1024 * 1024)

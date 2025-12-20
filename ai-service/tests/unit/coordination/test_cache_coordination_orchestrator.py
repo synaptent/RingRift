@@ -399,7 +399,7 @@ class TestCacheCoordinationOrchestrator:
         result = orchestrator.record_hit("node1", "nnue_weights", "model")
         assert result is True
 
-        entry = list(orchestrator._entries.values())[0]
+        entry = next(iter(orchestrator._entries.values()))
         assert entry.hits == 1
 
     def test_record_hit_not_found(self, orchestrator):
@@ -418,7 +418,7 @@ class TestCacheCoordinationOrchestrator:
         result = orchestrator.record_miss("node1", "nnue_weights", "model")
         assert result is True
 
-        entry = list(orchestrator._entries.values())[0]
+        entry = next(iter(orchestrator._entries.values()))
         assert entry.misses == 1
 
     def test_record_miss_not_found(self, orchestrator):

@@ -248,7 +248,7 @@ def extract_critical_positions(
 
     total_moves = len(trajectory.moves)
 
-    for i, (state_dict, move_dict) in enumerate(zip(trajectory.states, trajectory.moves)):
+    for i, (state_dict, move_dict) in enumerate(zip(trajectory.states, trajectory.moves, strict=False)):
         moves_until_end = total_moves - i
         player_to_move = state_dict.get("current_player", 1)
 
@@ -347,7 +347,7 @@ def run_mining(
             )
             all_critical.extend(critical)
 
-        game_elapsed = time.time() - game_start
+        time.time() - game_start
 
         if verbose and (i + 1) % 10 == 0:
             elapsed = time.time() - start_time

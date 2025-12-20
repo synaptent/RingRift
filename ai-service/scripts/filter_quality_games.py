@@ -46,10 +46,7 @@ def is_high_quality_game(game: dict[str, Any]) -> bool:
         return False
 
     # Must have moves
-    if "moves" not in game or len(game.get("moves", [])) == 0:
-        return False
-
-    return True
+    return not ("moves" not in game or len(game.get("moves", [])) == 0)
 
 
 def get_board_type(game: dict[str, Any]) -> str:

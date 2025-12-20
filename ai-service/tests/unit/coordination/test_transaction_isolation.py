@@ -302,7 +302,7 @@ class TestTransactionIsolation:
         original_content = test_file.read_text()
 
         txn_id = isolation.begin_transaction("host-a", "host-b", "games")
-        op_id = isolation.add_operation(txn_id, "update", str(test_file))
+        isolation.add_operation(txn_id, "update", str(test_file))
 
         # Modify the file
         test_file.write_text("modified content")
@@ -348,7 +348,7 @@ class TestTransactionIsolation:
         dest_path = tmp_path / "file.txt"
 
         with pytest.raises(RuntimeError), isolation.transaction("host-a", "host-b", "games") as ctx:
-            op_id = ctx.add_operation("add", str(dest_path))
+            ctx.add_operation("add", str(dest_path))
             dest_path.write_text("content")
             # Don't complete operation - will fail validation
             raise RuntimeError("Test error")
@@ -379,7 +379,7 @@ class TestTransactionIsolation:
 
     def test_get_transaction_stats(self, isolation):
         """Test getting transaction statistics."""
-        txn_id = isolation.begin_transaction("host-a", "host-b", "games")
+        isolation.begin_transaction("host-a", "host-b", "games")
 
         stats = isolation.get_transaction_stats()
 
@@ -448,7 +448,7 @@ class TestRecovery:
         )
 
         # Transaction should be rolled back
-        stats = isolation.get_transaction_stats()
+        isolation.get_transaction_stats()
         # Should have rolled_back or failed state for the recovered transaction
 
 

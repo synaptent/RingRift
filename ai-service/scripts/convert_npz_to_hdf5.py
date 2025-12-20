@@ -224,7 +224,7 @@ def convert_npz_to_hdf5(
                 if len(arr_np.shape) == 1:
                     chunks = (min(chunk_size, num_samples),)
                 else:
-                    chunks = (min(chunk_size, num_samples),) + arr_np.shape[1:]
+                    chunks = (min(chunk_size, num_samples), *arr_np.shape[1:])
 
                 ds = hf.create_dataset(
                     key,

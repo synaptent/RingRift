@@ -4,6 +4,7 @@ Trace what changes between when a player is eligible for recovery (e.g., in line
 and their next MOVEMENT phase turn, causing them to lose eligibility.
 """
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -25,9 +26,7 @@ def is_eligible_no_rings_requirement(state: GameState, player: int) -> bool:
         return False
     if not player_has_markers(board, player):
         return False
-    if count_buried_rings(board, player) < 1:
-        return False
-    return True
+    return not count_buried_rings(board, player) < 1
 
 
 def get_eligibility_details(state: GameState, player: int) -> dict:
@@ -68,10 +67,8 @@ def trace_game(game_file: str, game_index: int, eligible_move_idx: int, eligible
         for line in f:
             line = line.strip()
             if line:
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     games.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
 
     game = games[game_index]
     moves_json = game.get('moves', [])

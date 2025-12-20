@@ -396,7 +396,7 @@ print(f"FILTER_RESULT:{{db_removed}}:{{jsonl_removed}}:{{files_processed}}")
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=1800)  # 30 min timeout
+        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout=1800)  # 30 min timeout
 
         output = stdout.decode()
 

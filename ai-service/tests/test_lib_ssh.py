@@ -191,7 +191,7 @@ class TestRunSSHCommand:
             stderr="Connection refused",
         )
 
-        success, output = run_ssh_command("example.com", "echo test")
+        success, _output = run_ssh_command("example.com", "echo test")
 
         assert success is False
 

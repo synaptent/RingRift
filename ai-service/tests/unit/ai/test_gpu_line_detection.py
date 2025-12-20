@@ -106,7 +106,7 @@ class TestDetectLinesVectorized:
 
         # Check that correct positions are marked
         for i in range(required_length):
-            assert in_line_mask[0, 3, 1 + i].item() == True
+            assert in_line_mask[0, 3, 1 + i].item()
 
     def test_detects_vertical_line(self, device, board_size, num_players):
         """Should detect a vertical line of markers."""
@@ -123,7 +123,7 @@ class TestDetectLinesVectorized:
 
         # Check positions
         for i in range(required_length):
-            assert in_line_mask[0, 1 + i, 4].item() == True
+            assert in_line_mask[0, 1 + i, 4].item()
 
     def test_detects_diagonal_line(self, device, board_size, num_players):
         """Should detect a diagonal line (dy=1, dx=1)."""
@@ -134,7 +134,7 @@ class TestDetectLinesVectorized:
         place_marker_line(state, 0, player=1, start_y=0, start_x=0,
                          length=required_length, direction=(1, 1))
 
-        in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
+        _in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
 
         assert line_counts[0].item() >= required_length
 
@@ -148,7 +148,7 @@ class TestDetectLinesVectorized:
         place_marker_line(state, 0, player=1, start_y=0, start_x=start_x,
                          length=required_length, direction=(1, -1))
 
-        in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
+        _in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
 
         assert line_counts[0].item() >= required_length
 
@@ -161,7 +161,7 @@ class TestDetectLinesVectorized:
         place_marker_line(state, 0, player=1, start_y=3, start_x=1,
                          length=required_length - 1, direction=(0, 1))
 
-        in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
+        _in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
 
         # Should not count as a line
         assert line_counts[0].item() == 0
@@ -180,7 +180,7 @@ class TestDetectLinesVectorized:
         state.stack_owner[0, 3, middle] = 1
         state.stack_height[0, 3, middle] = 2
 
-        in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
+        _in_line_mask, line_counts = detect_lines_vectorized(state, player=1)
 
         # The stack breaks the line
         assert line_counts[0].item() < required_length
@@ -199,7 +199,7 @@ class TestDetectLinesVectorized:
         # Only check games 1 and 3
         game_mask = torch.tensor([False, True, False, True], dtype=torch.bool, device=device)
 
-        in_line_mask, line_counts = detect_lines_vectorized(state, player=1, game_mask=game_mask)
+        _in_line_mask, line_counts = detect_lines_vectorized(state, player=1, game_mask=game_mask)
 
         # Games 0 and 2 should show 0 (masked out)
         assert line_counts[0].item() == 0
@@ -253,10 +253,10 @@ class TestHasLinesBatchVectorized:
 
         result = has_lines_batch_vectorized(state, player=1)
 
-        assert result[0].item() == False
-        assert result[1].item() == True
-        assert result[2].item() == False
-        assert result[3].item() == False
+        assert not result[0].item()
+        assert result[1].item()
+        assert not result[2].item()
+        assert not result[3].item()
 
 
 # =============================================================================
@@ -302,7 +302,7 @@ class TestDetectLinesWithMetadata:
 
         assert len(lines[0]) >= 1
         line = lines[0][0]
-        assert line.is_overlength == True
+        assert line.is_overlength
         assert line.length >= required_length + 1
 
     def test_exact_length_not_overlength(self, device, board_size, num_players):
@@ -320,7 +320,7 @@ class TestDetectLinesWithMetadata:
         # Find the line we placed
         for line in lines[0]:
             if line.length == required_length:
-                assert line.is_overlength == False
+                assert not line.is_overlength
                 break
 
     def test_includes_direction(self, device, board_size, num_players):
@@ -400,7 +400,7 @@ class TestProcessLinesBatch:
 
         # Markers should be collapsed
         for i in range(required_length):
-            assert state.is_collapsed[0, 3, i].item() == True
+            assert state.is_collapsed[0, 3, i].item()
             assert state.territory_owner[0, 3, i].item() == 1
             assert state.marker_owner[0, 3, i].item() == 0
 
@@ -480,9 +480,9 @@ class TestProcessLinesBatch:
         process_lines_batch(state, game_mask=game_mask)
 
         # Game 0 should be processed
-        assert state.is_collapsed[0, 3, 0].item() == True
+        assert state.is_collapsed[0, 3, 0].item()
         # Game 2 should NOT be processed
-        assert state.is_collapsed[2, 3, 0].item() == False
+        assert not state.is_collapsed[2, 3, 0].item()
 
 
 # =============================================================================

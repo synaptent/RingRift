@@ -321,7 +321,7 @@ class TestDescentAIIncrementalSearch(unittest.TestCase):
     @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
     def test_incremental_search_produces_valid_move(self) -> None:
         """Test that incremental search produces a valid move.
-        
+
         Mocks the internal descent iteration to return immediately,
         allowing the search to complete and return a move from the
         transposition table.
@@ -374,7 +374,7 @@ class TestDescentAIIncrementalSearch(unittest.TestCase):
     @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
     def test_legacy_search_produces_valid_move(self) -> None:
         """Test that legacy search produces a valid move.
-        
+
         Mocks the internal descent iteration to return immediately,
         allowing the search to complete and return a move from the
         transposition table.
@@ -467,7 +467,7 @@ class TestDescentAIIncrementalSearch(unittest.TestCase):
     @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
     def test_incremental_search_uses_mutable_state(self) -> None:
         """Verify incremental search creates MutableGameState.
-        
+
         This test verifies that when incremental search is enabled,
         MutableGameState.from_immutable is called to convert the
         game state for make/unmake pattern.

@@ -143,10 +143,9 @@ def export_positions_from_db(
 
         positions = []
         values = []
-        policies = []
 
         for row in cursor.fetchall():
-            game_id, move_number, state_json, winner = row
+            _game_id, move_number, state_json, winner = row
 
             # Sample every N positions
             if move_number % sample_every != 0:

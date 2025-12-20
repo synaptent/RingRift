@@ -44,7 +44,7 @@ def run_experiment(
     output_dir: str = "experiments/descent_vs_mcts",
     seed: int = 42,
     think_time: int = 500,
-    max_moves: int = None,  # Auto-calculated if not specified
+    max_moves: int | None = None,  # Auto-calculated if not specified
 ) -> dict:
     """
     Run the full Descent vs MCTS experiment.

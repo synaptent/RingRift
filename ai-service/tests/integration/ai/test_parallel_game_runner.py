@@ -174,7 +174,7 @@ class TestPhaseTransitions:
         small_runner.reset_games()
 
         # Run a few moves to potentially transition
-        results = small_runner.run_games(max_moves=100)
+        small_runner.run_games(max_moves=100)
         state = small_runner.state
 
         # At least some games should have transitioned or completed

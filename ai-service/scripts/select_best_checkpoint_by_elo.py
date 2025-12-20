@@ -147,7 +147,7 @@ def validate_checkpoint_loadable(
             policy_temperature=0.5,
         )
         # Try to create the AI - this will fail if architecture mismatches
-        ai = PolicyOnlyAI(1, config, board_type=board_type)
+        PolicyOnlyAI(1, config, board_type=board_type)
         # Try to get a move to ensure model is fully loaded
         return True
     except RuntimeError as e:

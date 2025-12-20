@@ -32,7 +32,7 @@ except ImportError:
     get_cpu_usage = None
 
 
-def get_disk_usage_percent(path: str = None) -> float:
+def get_disk_usage_percent(path: str | None = None) -> float:
     """Get disk usage percentage for the given path.
 
     Uses unified resource_guard utilities when available for consistent
@@ -61,7 +61,7 @@ def get_disk_usage_percent(path: str = None) -> float:
         return 100.0  # Assume full on error to be safe
 
 
-def check_disk_has_capacity(threshold: float = None) -> tuple[bool, float]:
+def check_disk_has_capacity(threshold: float | None = None) -> tuple[bool, float]:
     """Check if disk has capacity below threshold for data sync.
 
     Uses unified resource_guard utilities when available for consistent

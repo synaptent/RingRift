@@ -173,7 +173,7 @@ def compute_pareto_frontier(metrics: list[TrainingMetrics]) -> list[ParetoPoint]
         if m.config not in config_best:
             config_best[m.config] = (m.elo_end, m.gpu_hours)
         else:
-            prev_elo, prev_gpu = config_best[m.config]
+            prev_elo, _prev_gpu = config_best[m.config]
             # Update if this run achieved higher Elo
             if m.elo_end > prev_elo:
                 config_best[m.config] = (m.elo_end, m.gpu_hours)

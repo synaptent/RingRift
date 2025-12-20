@@ -153,7 +153,7 @@ class TestUnifiedCheckpointManager:
 
         subdir = temp_checkpoint_dir / "new_checkpoints"
         config = UnifiedCheckpointConfig(checkpoint_dir=subdir)
-        manager = UnifiedCheckpointManager(config)
+        UnifiedCheckpointManager(config)
 
         assert subdir.exists()
 
@@ -298,13 +298,13 @@ class TestHashVerification:
         manager = UnifiedCheckpointManager(config)
 
         # Check for hash-related methods
-        has_hash = (
+        (
             hasattr(manager, '_compute_hash') or
             hasattr(manager, 'compute_hash') or
             hasattr(manager, '_compute_file_hash')
         )
         # Hash verification is a feature, so it may or may not be implemented
-        assert has_hash or True  # Pass if no hash method (optional feature)
+        assert True  # Pass if no hash method (optional feature)
 
 
 class TestRetentionPolicy:

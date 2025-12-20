@@ -114,13 +114,20 @@ try:
     HAS_RESOURCE_GUARD = True
 except ImportError:
     HAS_RESOURCE_GUARD = False
-    resource_can_proceed = lambda **kwargs: True  # type: ignore
-    check_disk_space = lambda *args, **kwargs: True  # type: ignore
-    check_memory = lambda *args, **kwargs: True  # type: ignore
-    check_cpu = lambda *args, **kwargs: True  # type: ignore
-    check_gpu_memory = lambda *args, **kwargs: True  # type: ignore
-    wait_for_resources = lambda *args, **kwargs: True  # type: ignore
-    get_resource_status = lambda: {}  # type: ignore
+    def resource_can_proceed(**kwargs):
+        return True  # type: ignore
+    def check_disk_space(*args, **kwargs):
+        return True  # type: ignore
+    def check_memory(*args, **kwargs):
+        return True  # type: ignore
+    def check_cpu(*args, **kwargs):
+        return True  # type: ignore
+    def check_gpu_memory(*args, **kwargs):
+        return True  # type: ignore
+    def wait_for_resources(*args, **kwargs):
+        return True  # type: ignore
+    def get_resource_status():
+        return {}  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
 # Model hygiene: validation at startup
@@ -167,7 +174,7 @@ def is_system_overloaded(verbose: bool = False) -> bool:
 
     Returns True if load average exceeds thresholds.
     """
-    load_1min, load_5min, _ = get_system_load()
+    _load_1min, load_5min, _ = get_system_load()
     cpu_count = get_cpu_count()
 
     relative_threshold = MAX_LOAD_FACTOR * cpu_count
@@ -869,7 +876,7 @@ def ingest_training_pool(
         cmd += ["--input-db", str(path)]
 
     print(f"\n--- Training Pool Ingest ({len(inputs)} DBs) ---")
-    code, stdout, stderr = run_command(
+    code, _stdout, stderr = run_command(
         cmd,
         dry_run=dry_run,
         capture=True,

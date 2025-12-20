@@ -117,7 +117,7 @@ def generate_data(
     while games_completed < num_games:
         # Alternate who plays first
         ebmo_player = 1 if games_completed % 2 == 0 else 2
-        heuristic_player = 2 if games_completed % 2 == 0 else 1
+        2 if games_completed % 2 == 0 else 1
 
         ai1 = EBMO_AI(1, config, model_path)
         ai2 = HeuristicAI(2, config)

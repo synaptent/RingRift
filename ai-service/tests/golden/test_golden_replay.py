@@ -77,7 +77,7 @@ def check_board_consistency(state: dict[str, Any], move_index: int) -> list[Inva
     """INV-BOARD-CONSISTENCY: All positions in board state are valid."""
     violations: list[InvariantViolation] = []
     board = state.get("board", {})
-    board_type = state.get("boardType", "square8")
+    state.get("boardType", "square8")
 
     # Check stacks have valid positions and heights
     stacks = board.get("stacks", {})
@@ -309,7 +309,7 @@ class TestGoldenReplayInvariants:
         if not self.golden_games:
             pytest.skip("No golden game fixtures loaded")
 
-        for info, record in self.golden_games:
+        for _info, record in self.golden_games:
             # For now, just verify the record structure is valid
             assert "boardType" in record or record.get("board") is not None
             assert "moves" in record

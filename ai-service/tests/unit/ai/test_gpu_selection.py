@@ -640,7 +640,7 @@ class TestSelectionEdgeCases:
             (0, 0, 0),
         ]
         moves = MockBatchMoves.create_with_positions(batch_size, positions, device)
-        state = MockBatchGameState.create(batch_size, board_size, device)
+        MockBatchGameState.create(batch_size, board_size, device)
         active_mask = torch.ones(batch_size, dtype=torch.bool, device=device)
 
         # With very low temperature, should almost always pick best move
@@ -662,7 +662,7 @@ class TestSelectionEdgeCases:
             (0, 4, 5),
         ]
         moves = MockBatchMoves.create_with_positions(batch_size, positions, device)
-        state = MockBatchGameState.create(batch_size, board_size, device)
+        MockBatchGameState.create(batch_size, board_size, device)
         active_mask = torch.ones(batch_size, dtype=torch.bool, device=device)
 
         first_count = 0

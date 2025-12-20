@@ -537,7 +537,7 @@ def should_scale_down(
     # We need to match Vast instances to P2P status
     idle_candidates = []
     for inst in vast_running:
-        inst_id = str(inst.get("id", ""))
+        str(inst.get("id", ""))
         cost = inst.get("dph_total", 0) or 0
         idle_candidates.append({"instance": inst, "cost": cost})
 

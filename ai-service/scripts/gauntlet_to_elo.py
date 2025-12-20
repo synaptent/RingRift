@@ -99,7 +99,7 @@ def calibrate_elo_from_gauntlet(
 
     # Weighted average
     total_weight = sum(weights)
-    calibrated_elo = sum(e * w for e, w in zip(estimates, weights)) / total_weight
+    calibrated_elo = sum(e * w for e, w in zip(estimates, weights, strict=False)) / total_weight
 
     # Clamp to reasonable range
     return max(200, min(2400, calibrated_elo))

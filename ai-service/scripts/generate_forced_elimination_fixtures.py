@@ -177,7 +177,7 @@ def generate_synthetic_fixture(
     num_players: int,
     stack_configs: list[dict[str, Any]],
     player_rings_in_hand: dict[int, int],
-    player_eliminated: dict[int, int] = None,
+    player_eliminated: dict[int, int] | None = None,
     current_phase: GamePhase = GamePhase.MOVEMENT,
 ) -> dict[str, Any]:
     """Generate a synthetic FE fixture."""

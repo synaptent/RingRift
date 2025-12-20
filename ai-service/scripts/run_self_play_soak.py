@@ -1262,7 +1262,7 @@ def _build_mixed_ai_pool(
                         pool_size=pool_size,
                         exclude_ids={best_model_id},
                     )
-                    candidates = [best_model_id] + list(pool_ids)
+                    candidates = [best_model_id, *list(pool_ids)]
                     # Use the per-game RNG so selection is deterministic for a given seed.
                     nn_model_id = game_rng.choice(candidates) if candidates else best_model_id
 
@@ -1850,7 +1850,7 @@ def run_self_play_soak(
                             # Semi-intelligent: sample from top-K AI moves
                             if profile_timing:
                                 t_sel_start = time.time()
-                            ai_move = ai.select_move(state)
+                            ai.select_move(state)
                             if profile_timing:
                                 timing_totals["move_select"] += time.time() - t_sel_start
 

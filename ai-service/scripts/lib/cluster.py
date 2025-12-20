@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -296,10 +297,8 @@ class ClusterNode:
             lines = sys_result.stdout.strip().split("\n")
             if len(lines) >= 1:
                 load_parts = lines[0].split()[:3]
-                try:
+                with contextlib.suppress(ValueError):
                     health.load_average = tuple(float(x) for x in load_parts)
-                except ValueError:
-                    pass
 
             if len(lines) >= 2:
                 mem_parts = lines[1].split()
@@ -311,10 +310,8 @@ class ClusterNode:
 
             if len(lines) >= 3:
                 disk_parts = lines[2].split()
-                try:
+                with contextlib.suppress(ValueError, IndexError):
                     health.disk_free_gb = float(disk_parts[3].rstrip("G"))
-                except (ValueError, IndexError):
-                    pass
 
         # Determine overall status
         if health.gpus:

@@ -118,7 +118,7 @@ def quality_weighted_loss(
         neg_scores: (batch, num_neg) relative quality scores of negatives
         margin: Base margin for worst moves (score=0)
     """
-    batch_size, num_neg = neg_energies.shape
+    _batch_size, num_neg = neg_energies.shape
 
     # Expand positive energy
     pos_expanded = pos_energy.unsqueeze(1).expand(-1, num_neg)
@@ -229,7 +229,7 @@ def evaluate(
 
     with torch.no_grad():
         for batch in dataloader:
-            boards, globals_vec, pos_actions, neg_actions, neg_scores = batch
+            boards, globals_vec, pos_actions, neg_actions, _neg_scores = batch
 
             boards = boards.to(device)
             globals_vec = globals_vec.to(device)

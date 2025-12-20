@@ -141,7 +141,7 @@ def compare_replays(
         ts = ts_steps[i]
 
         ts_phase = ts.get("summary", {}).get("currentPhase", "")
-        ts_player = ts.get("summary", {}).get("currentPlayer", 0)
+        ts.get("summary", {}).get("currentPlayer", 0)
         ts_hash = ts.get("summary", {}).get("stateHash", "")
 
         # Check phase mismatch

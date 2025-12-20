@@ -217,7 +217,7 @@ def _validate_remote_ladder_health(
         f"docker compose -f {shlex.quote(compose_file)} exec -T ai-service "
         f"python -c {shlex.quote(python_code)}"
     )
-    result = _run(_ssh_base_args(args) + [remote_cmd], check=False)
+    result = _run([*_ssh_base_args(args), remote_cmd], check=False)
     ok = result.returncode == 0
     return ok, result.stdout
 
@@ -305,10 +305,7 @@ def main(argv: list[str]) -> int:
         if args.verbose:
             print(f"[sync] Packaging {len(files)} files -> {tar_path}")
 
-        scp_cmd = _scp_base_args(args) + [
-            str(tar_path),
-            f"{args.user + '@' if args.user else ''}{args.host}:{remote_tar}",
-        ]
+        scp_cmd = [*_scp_base_args(args), str(tar_path), f"{args.user + '@' if args.user else ''}{args.host}:{remote_tar}"]
         result = _run(scp_cmd, check=False)
         if result.returncode != 0:
             print(result.stdout, file=sys.stderr)
@@ -319,7 +316,7 @@ def main(argv: list[str]) -> int:
             f"tar -xzf {shlex.quote(remote_tar)} -C {_shell_quote_path(remote_root)} && "
             f"rm -f {shlex.quote(remote_tar)}"
         )
-        ssh_cmd = _ssh_base_args(args) + [extract_cmd]
+        ssh_cmd = [*_ssh_base_args(args), extract_cmd]
         result = _run(ssh_cmd, check=False)
         if result.returncode != 0:
             print(result.stdout, file=sys.stderr)
@@ -334,7 +331,7 @@ def main(argv: list[str]) -> int:
                     f"docker compose -f {shlex.quote(compose_file)} up -d --force-recreate "
                     + shlex.join(services)
                 )
-                ssh_cmd = _ssh_base_args(args) + [restart_cmd]
+                ssh_cmd = [*_ssh_base_args(args), restart_cmd]
                 result = _run(ssh_cmd, check=False)
                 if result.returncode != 0:
                     print(result.stdout, file=sys.stderr)

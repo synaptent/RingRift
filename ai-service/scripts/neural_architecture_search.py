@@ -178,7 +178,7 @@ def mutate_architecture(
                 # Gaussian mutation with clipping
                 current = new_params.get(name, spec["default"])
                 delta = random.gauss(0, (spec["max"] - spec["min"]) / 6)
-                new_val = int(round(current + delta))
+                new_val = round(current + delta)
                 new_params[name] = max(spec["min"], min(spec["max"], new_val))
             elif param_type == "float":
                 current = new_params.get(name, spec["default"])
@@ -274,7 +274,7 @@ def estimate_architecture_cost(arch: Architecture) -> tuple[int, int]:
     # Attention layers
     if p.get("use_attention", False):
         attention_layers = p.get("attention_layers", 0)
-        heads = p.get("attention_heads", 4)
+        p.get("attention_heads", 4)
         # Self-attention: Q, K, V projections + attention + output projection
         attn_flops = attention_layers * 4 * board_size * channels * channels
         attn_params = attention_layers * 4 * channels * channels
@@ -312,7 +312,6 @@ def evaluate_architecture(arch: Architecture, quick_eval: bool = True) -> float:
     import os
     use_real_training = os.environ.get("RINGRIFT_NAS_REAL_TRAINING", "0") == "1"
 
-    p = arch.params
 
     # Estimate cost
     flops, param_count = estimate_architecture_cost(arch)
@@ -336,7 +335,6 @@ def _evaluate_architecture_real(arch: Architecture, quick_eval: bool = True) -> 
     board_type = os.environ.get("RINGRIFT_NAS_BOARD", "square8")
     num_players = int(os.environ.get("RINGRIFT_NAS_PLAYERS", "2"))
     epochs = 3 if quick_eval else 10
-    max_samples = 10000 if quick_eval else 50000
 
     # Create temp directory for this evaluation
     with tempfile.TemporaryDirectory(prefix=f"nas_{arch.arch_id}_") as tmpdir:

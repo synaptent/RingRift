@@ -216,7 +216,7 @@ class PrioritizedReplayBuffer:
 
     def update_priorities(self, indices: list[int], td_errors: np.ndarray):
         """Update priorities based on TD errors."""
-        for idx, error in zip(indices, td_errors):
+        for idx, error in zip(indices, td_errors, strict=False):
             priority = (abs(error) + self.epsilon) ** self.alpha
             self.tree.update(idx, priority)
             self.max_priority = max(self.max_priority, priority)

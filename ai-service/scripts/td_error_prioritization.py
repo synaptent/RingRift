@@ -127,7 +127,7 @@ class PrioritizedReplayBuffer:
 
         # Importance sampling weights
         probs = priorities / self.tree[0]
-        min_prob = np.min(probs)
+        np.min(probs)
         weights = (self.size * probs) ** (-self.beta)
         weights /= weights.max()  # Normalize
 
@@ -170,7 +170,7 @@ def compute_td_errors(
 
     # Load model
     checkpoint = torch.load(model_path, map_location="cpu")
-    board_type = checkpoint.get("board_type", "square8")
+    checkpoint.get("board_type", "square8")
 
     # Determine input dimensions
     feature_dim = features.shape[1] if len(features.shape) > 1 else features[0].shape[0]

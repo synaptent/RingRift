@@ -409,7 +409,8 @@ class DataHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
 def run_data_server(port: int = DEFAULT_DATA_PORT):
     """Run HTTP server to serve data files."""
-    handler = lambda *args, **kwargs: DataHTTPHandler(*args, data_root=ROOT, **kwargs)
+    def handler(*args, **kwargs):
+        return DataHTTPHandler(*args, data_root=ROOT, **kwargs)
 
     with socketserver.TCPServer(("0.0.0.0", port), handler) as httpd:
         logger.info(f"Data server running on port {port}")

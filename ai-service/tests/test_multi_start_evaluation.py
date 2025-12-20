@@ -26,6 +26,8 @@ import pytest
 # Ensure app.* imports resolve when running tests directly under ai-service/
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
+import contextlib
+
 from app.ai.heuristic_weights import (  # type: ignore
     BASE_V1_BALANCED_WEIGHTS,
 )
@@ -118,7 +120,5 @@ def test_multi_start_baseline_vs_baseline_square8(games_per_eval: int) -> None:
         # Restore the original mapping and remove the temp file.
         eval_pools.POOL_PATHS.clear()
         eval_pools.POOL_PATHS.update(old_mapping)
-        try:
+        with contextlib.suppress(OSError):
             os.remove(pool_path)
-        except OSError:
-            pass

@@ -144,7 +144,7 @@ def deduplicate_matches(db_path: Path, dry_run: bool = False) -> int:
     # Group by signature
     signatures = defaultdict(list)
     for match in matches:
-        match_id, p_a, p_b, winner, board, players, ts, game_id = match
+        match_id, p_a, p_b, winner, board, players, ts, _game_id = match
         # Round timestamp to nearest second for grouping
         # Handle both Unix timestamp (float) and ISO format (string)
         if ts:

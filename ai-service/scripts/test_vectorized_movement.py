@@ -55,22 +55,22 @@ def test_parity_single_state(state, round_num=0, move_type="movement") -> bool:
         # Run vectorized version
         t0 = time.perf_counter()
         moves_vec = generate_movement_moves_batch_vectorized(state, active_mask)
-        t_vec = time.perf_counter() - t0
+        time.perf_counter() - t0
 
         # Run legacy version
         t0 = time.perf_counter()
         moves_leg = _generate_movement_moves_batch_legacy(state, active_mask)
-        t_leg = time.perf_counter() - t0
+        time.perf_counter() - t0
     else:  # capture
         # Run vectorized version
         t0 = time.perf_counter()
         moves_vec = generate_capture_moves_batch_vectorized(state, active_mask)
-        t_vec = time.perf_counter() - t0
+        time.perf_counter() - t0
 
         # Run legacy version
         t0 = time.perf_counter()
         moves_leg = _generate_capture_moves_batch_legacy(state, active_mask)
-        t_leg = time.perf_counter() - t0
+        time.perf_counter() - t0
 
     # Convert to sets for comparison
     set_vec = moves_to_set(moves_vec)

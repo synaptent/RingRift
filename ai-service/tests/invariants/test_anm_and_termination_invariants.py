@@ -85,7 +85,7 @@ def test_end_turn_skips_fully_eliminated_player() -> None:
     state = _make_base_game_state()
     state.game_status = GameStatus.ACTIVE
 
-    p1, p2 = state.players
+    p1, _p2 = state.players
     state.players.append(
         Player(
             id="p3",

@@ -853,9 +853,9 @@ def print_cluster_status(status: dict[str, Any]):
         for h, nodes in hash_groups.items():
             print(f"  Hash {h[:8]}...: {', '.join(nodes)}")
     elif hash_groups:
-        h = list(hash_groups.keys())[0]
+        h = next(iter(hash_groups.keys()))
         print(f"All nodes in sync (hash: {h[:8]}...)")
-        print(f"  Nodes: {', '.join(list(hash_groups.values())[0])}")
+        print(f"  Nodes: {', '.join(next(iter(hash_groups.values())))}")
     else:
         print("No reachable nodes found")
 

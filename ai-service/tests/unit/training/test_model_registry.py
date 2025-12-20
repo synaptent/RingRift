@@ -537,7 +537,7 @@ class TestAutoPromoter:
         )
 
         promoter = AutoPromoter(registry, min_games=50)
-        should_promote, reason = promoter.evaluate_for_staging(model_id, version)
+        should_promote, _reason = promoter.evaluate_for_staging(model_id, version)
 
         assert should_promote is True
 

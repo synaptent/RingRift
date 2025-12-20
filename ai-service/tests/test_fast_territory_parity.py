@@ -32,7 +32,7 @@ def create_board(
     size: int,
     stacks: dict,
     markers: dict,
-    collapsed: dict = None,
+    collapsed: dict | None = None,
 ) -> BoardState:
     """Helper to create a BoardState."""
     return BoardState(

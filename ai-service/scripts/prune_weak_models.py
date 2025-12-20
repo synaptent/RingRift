@@ -52,10 +52,7 @@ def load_gauntlet_results() -> dict[str, float]:
 
 def is_protected(model_name: str) -> bool:
     """Check if a model is protected from pruning."""
-    for pattern in PROTECTED_PATTERNS:
-        if pattern in model_name:
-            return True
-    return False
+    return any(pattern in model_name for pattern in PROTECTED_PATTERNS)
 
 
 def find_models_to_prune(scores: dict[str, float], threshold: float) -> list[Path]:

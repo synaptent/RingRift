@@ -444,7 +444,7 @@ class TestMCTSIncrementalSearch(unittest.TestCase):
     @pytest.mark.timeout(MCTS_TEST_TIMEOUT)
     def test_both_paths_can_be_configured(self):
         """Test that both incremental and legacy paths can be configured.
-        
+
         This test verifies the configuration options work correctly.
         Actual move selection is tested in separate tests with proper mocks.
         """

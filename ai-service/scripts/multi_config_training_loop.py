@@ -1449,7 +1449,7 @@ def run_training(board_type: str, num_players: int, db_paths: list[str],
     # 2025-12 Integrated Enhancements - Apply curriculum and ELO weighting
     if HAS_INTEGRATED_ENHANCEMENTS:
         try:
-            enhancement_config = IntegratedEnhancementsConfig(
+            IntegratedEnhancementsConfig(
                 elo_weighting_enabled=True,
                 curriculum_learning_enabled=True,
                 augmentation_enabled=True,
@@ -1556,7 +1556,6 @@ def run_policy_training(board_type: str, num_players: int, db_paths: list[str],
     if not ENABLE_POLICY_TRAINING:
         return False
 
-    key = (board_type, num_players)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     short = short_name(board_type, num_players)
 
@@ -1570,7 +1569,7 @@ def run_policy_training(board_type: str, num_players: int, db_paths: list[str],
     env["PYTHONPATH"] = BASE_DIR
 
     # Build policy training command
-    run_dir = os.path.join(BASE_DIR, f"data/training/runs/policy_{short}_{ts}")
+    os.path.join(BASE_DIR, f"data/training/runs/policy_{short}_{ts}")
 
     train_cmd = [
         sys.executable, os.path.join(BASE_DIR, "scripts/train_nnue_policy.py"),

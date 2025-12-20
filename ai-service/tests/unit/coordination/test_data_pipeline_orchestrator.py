@@ -508,7 +508,7 @@ class TestDataPipelineOrchestratorIntegration:
     def test_full_iteration_lifecycle(self, orchestrator):
         """Should track complete iteration lifecycle."""
         # Start iteration
-        record = orchestrator.start_iteration(1)
+        orchestrator.start_iteration(1)
         assert orchestrator.get_current_stage() == PipelineStage.SELFPLAY
 
         # Simulate stage progression

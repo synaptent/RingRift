@@ -32,10 +32,7 @@ class BoardState:
 
     def player_controls_any_stack(self, player: int) -> bool:
         """Check if player controls at least one stack."""
-        for stack in self.stacks.values():
-            if stack.get("controller") == player:
-                return True
-        return False
+        return any(stack.get("controller") == player for stack in self.stacks.values())
 
     def count_controlled_stacks(self, player: int) -> int:
         """Count stacks controlled by player."""
@@ -67,10 +64,7 @@ class BoardState:
             return False
 
         # Condition 3: Has at least one buried ring
-        if self.count_buried_rings(player) < 1:
-            return False
-
-        return True
+        return not self.count_buried_rings(player) < 1
 
     def has_turn_material(self, player: int) -> bool:
         """Check if player has material to take a turn (old logic)."""

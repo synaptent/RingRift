@@ -48,7 +48,7 @@ class TestFullGameSimulation:
         weights = [runner._default_weights()]
         max_steps = 1000
 
-        for step in range(max_steps):
+        for _step in range(max_steps):
             runner._step_games(weights)
             runner._check_victory_conditions()
 
@@ -80,7 +80,7 @@ class TestFullGameSimulation:
         weights = [runner._default_weights() for _ in range(batch_size)]
         max_steps = 1000
 
-        for step in range(max_steps):
+        for _step in range(max_steps):
             runner._step_games(weights)
             runner._check_victory_conditions()
 
@@ -108,7 +108,7 @@ class TestFullGameSimulation:
         weights = [runner._default_weights() for _ in range(batch_size)]
         max_steps = 1000
 
-        for step in range(max_steps):
+        for _step in range(max_steps):
             runner._step_games(weights)
             runner._check_victory_conditions()
 
@@ -139,7 +139,7 @@ class TestFullGameSimulation:
         weights = [runner._default_weights() for _ in range(batch_size)]
         max_steps = 1000
 
-        for step in range(max_steps):
+        for _step in range(max_steps):
             runner._step_games(weights)
             runner._check_victory_conditions()
 
@@ -150,7 +150,7 @@ class TestFullGameSimulation:
         valid_victory_types = {"elimination", "territory", "lps", "draw", "move_limit"}
         for g in range(batch_size):
             if runner.state.game_status[g].item() == GameStatus.COMPLETED:
-                victory_type, details = runner.state.derive_victory_type(g, max_moves=500)
+                victory_type, _details = runner.state.derive_victory_type(g, max_moves=500)
                 assert (
                     victory_type in valid_victory_types
                 ), f"Game {g} has invalid victory type: {victory_type}"
@@ -171,7 +171,7 @@ class TestFullGameSimulation:
         weights = [runner._default_weights() for _ in range(batch_size)]
         max_steps = 1000
 
-        for step in range(max_steps):
+        for _step in range(max_steps):
             runner._step_games(weights)
             runner._check_victory_conditions()
 
@@ -226,7 +226,7 @@ class TestDeterministicGameplay:
             weights = [runner._default_weights()]
             max_steps = 500
 
-            for step in range(max_steps):
+            for _step in range(max_steps):
                 runner._step_games(weights)
                 runner._check_victory_conditions()
 
@@ -261,7 +261,7 @@ class TestDeterministicGameplay:
             weights = [runner._default_weights()]
             max_steps = 500
 
-            for step in range(max_steps):
+            for _step in range(max_steps):
                 runner._step_games(weights)
                 runner._check_victory_conditions()
 

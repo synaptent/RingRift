@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import gc
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -195,10 +195,8 @@ class MemoryProfiler:
         if self._is_cuda:
             torch.cuda.empty_cache()
         elif self._is_mps:
-            try:
+            with suppress(AttributeError):
                 torch.mps.empty_cache()
-            except AttributeError:
-                pass
 
     def report(self) -> str:
         """Generate a human-readable report of all snapshots.

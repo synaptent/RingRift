@@ -82,7 +82,7 @@ def create_test_npz(
     rng = np.random.default_rng(seed)
 
     features = rng.random(
-        (num_samples,) + feature_shape, dtype=np.float64
+        (num_samples, *feature_shape), dtype=np.float64
     ).astype(np.float32)
     globals_arr = rng.random(
         (num_samples, global_features), dtype=np.float64
@@ -325,7 +325,7 @@ class TestTrainingPipelineIntegration:
         checkpoint_dir,
     ):
         """
-        Full pipeline test: data generation → stream load → train → save 
+        Full pipeline test: data generation → stream load → train → save
         versioned → register in tournament.
 
         Steps:
@@ -531,7 +531,7 @@ class TestTrainingPipelineIntegration:
         results_dir,
     ):
         """
-        Model upgrade flow: Train v1 → Train v2 → Evaluate challenger → 
+        Model upgrade flow: Train v1 → Train v2 → Evaluate challenger →
         Promote if better.
 
         Steps:
@@ -688,7 +688,7 @@ class TestTrainingPipelineIntegration:
 
         model.train()
         batches_before_save = 0
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, _policies) in loader:
             optimizer.zero_grad()
             value_pred, policy_pred = model(features, globals_tensor)
             loss = value_pred.sum()  # Dummy loss
@@ -739,7 +739,7 @@ class TestTrainingPipelineIntegration:
         assert loss == 0.5
 
         # Verify model weights are restored
-        for p1, p2 in zip(model.parameters(), new_model.parameters()):
+        for p1, p2 in zip(model.parameters(), new_model.parameters(), strict=False):
             assert torch.allclose(p1, p2)
 
         # Continue training
@@ -747,9 +747,9 @@ class TestTrainingPipelineIntegration:
         new_model.train()
         batches_after_resume = 0
 
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, _policies) in loader:
             new_optimizer.zero_grad()
-            value_pred, policy_pred = new_model(features, globals_tensor)
+            value_pred, _policy_pred = new_model(features, globals_tensor)
             loss = value_pred.sum()
             loss.backward()
             new_optimizer.step()
@@ -801,8 +801,8 @@ class TestComponentInteractions:
 
         # Train briefly
         model.train()
-        for (features, globals_tensor), (values, policies) in loader:
-            _, policy_pred = model(features, globals_tensor)
+        for (features, globals_tensor), (_values, _policies) in loader:
+            _, _policy_pred = model(features, globals_tensor)
             break  # Single batch
 
         # Save with versioning
@@ -912,7 +912,7 @@ class TestComponentInteractions:
         assert len(rankings) == 2
 
         # Higher Elo should be first
-        top_model_id, top_elo = rankings[0]
+        _top_model_id, top_elo = rankings[0]
         assert top_elo > 1500
 
     def test_hex_and_square_mixed(
@@ -969,7 +969,7 @@ class TestComponentInteractions:
             policy_size=P_HEX,
         )
 
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, policies) in loader:
             # Verify feature shapes match encoder expectations
             # 40 channels = 10 base channels * 4 (history_length + 1)
             # 25x25 grid for hex boards (radius=12)
@@ -1164,7 +1164,7 @@ class TestErrorRecovery:
 
         # Should iterate successfully
         batch_count = 0
-        for batch in loader:
+        for _batch in loader:
             batch_count += 1
 
         assert batch_count > 0
@@ -1260,7 +1260,7 @@ class TestPerformanceBaseline:
         model.train()
 
         # Warmup
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, _policies) in loader:
             optimizer.zero_grad()
             value_pred, policy_pred = model(features, globals_tensor)
             loss = value_pred.sum()
@@ -1275,9 +1275,9 @@ class TestPerformanceBaseline:
         batch_count = 0
         samples_processed = 0
 
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, _policies) in loader:
             optimizer.zero_grad()
-            value_pred, policy_pred = model(features, globals_tensor)
+            value_pred, _policy_pred = model(features, globals_tensor)
             loss = value_pred.sum()
             loss.backward()
             optimizer.step()
@@ -1332,12 +1332,12 @@ class TestPerformanceBaseline:
 
         # Iterate through all data
         batch_count = 0
-        for (features, globals_tensor), (values, policies) in loader:
+        for (_features, _globals_tensor), (_values, _policies) in loader:
             batch_count += 1
 
             # Periodic memory check
             if batch_count % 10 == 0:
-                current, peak = tracemalloc.get_traced_memory()
+                _current, peak = tracemalloc.get_traced_memory()
                 # Peak memory should stay reasonable
                 # Allow up to 500MB (generous for CI)
                 assert peak < 500 * 1024 * 1024, (
@@ -1368,7 +1368,7 @@ class TestPerformanceBaseline:
         # Get first few samples
         traditional_samples = []
         for i in range(min(5, len(dataset))):
-            features, globals_vec, values, policies = dataset[i]
+            features, _globals_vec, _values, _policies = dataset[i]
             traditional_samples.append(features.numpy())
 
         # Use StreamingDataLoader
@@ -1558,7 +1558,7 @@ class TestRealModelIntegration:
         model.train()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, _policies) in loader:
             optimizer.zero_grad()
             value_pred, policy_pred = model(features, globals_tensor)
 
@@ -1621,7 +1621,7 @@ class TestRealModelIntegration:
         model.train()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-        for (features, globals_tensor), (values, policies) in loader:
+        for (features, globals_tensor), (_values, _policies) in loader:
             optimizer.zero_grad()
             value_pred, policy_pred = model(features, globals_tensor)
 

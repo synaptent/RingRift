@@ -69,8 +69,10 @@ def benchmark_ai(
 
 if __name__ == "__main__":
     config = AIConfig(difficulty=5)
-    heuristic_factory = lambda player: HeuristicAI(player, config)
-    random_factory = lambda player: RandomAI(player, config)
+    def heuristic_factory(player):
+        return HeuristicAI(player, config)
+    def random_factory(player):
+        return RandomAI(player, config)
 
     print("\n=== Square8 3-Player Baseline Benchmark ===")
     benchmark_ai(heuristic_factory, "Heuristic", random_factory, "Random", BoardType.SQUARE8, 3, games=5)

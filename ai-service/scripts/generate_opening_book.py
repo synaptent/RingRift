@@ -130,7 +130,7 @@ class OpeningBook:
             node = child
             current_player = (current_player + 1) % self.num_players
 
-    def prune(self, min_count: int = None):
+    def prune(self, min_count: int | None = None):
         """Remove moves played fewer than min_count times."""
         min_count = min_count or self.min_games
 

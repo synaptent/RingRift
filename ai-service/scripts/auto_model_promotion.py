@@ -176,7 +176,7 @@ def promote_model(model_id: str, board_config: str, elo: float) -> bool:
     return True
 
 
-def check_and_promote(board_configs: list[str] = None) -> list[dict]:
+def check_and_promote(board_configs: list[str] | None = None) -> list[dict]:
     """Check all board configs and promote worthy candidates."""
     if board_configs is None:
         board_configs = [

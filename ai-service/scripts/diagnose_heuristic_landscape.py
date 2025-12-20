@@ -47,7 +47,7 @@ def _make_scaled_weights(scale: float) -> HeuristicWeights:
 
 def _make_random_weights(seed: int, low: float = -10.0, high: float = 30.0) -> HeuristicWeights:
     rng = random.Random(seed)
-    return {k: rng.uniform(low, high) for k in BASE_V1_BALANCED_WEIGHTS.keys()}
+    return {k: rng.uniform(low, high) for k in BASE_V1_BALANCED_WEIGHTS}
 
 
 def _evaluate_profiles(

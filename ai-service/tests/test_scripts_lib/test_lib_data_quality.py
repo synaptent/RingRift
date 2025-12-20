@@ -449,7 +449,7 @@ class TestQualityStats:
         score: float,
         victory_type: VictoryType = VictoryType.RING,
         move_count: int = 50,
-        source_node: str = None,
+        source_node: str | None = None,
     ) -> GameQuality:
         """Helper to create GameQuality."""
         return GameQuality(

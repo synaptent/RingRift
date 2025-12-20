@@ -23,6 +23,8 @@ from typing import Optional
 # Add ai-service to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import contextlib
+
 from app.models.core import GamePhase
 
 # Canonical phases per RR-CANON-R070
@@ -212,10 +214,8 @@ def validate_database(db_path: Path) -> tuple[int, int, list[PhaseViolation]]:
                     move_data = dict(row)
                     # Parse JSON fields if present
                     if move_data.get("move_json"):
-                        try:
+                        with contextlib.suppress(json.JSONDecodeError, TypeError):
                             move_data.update(json.loads(move_data["move_json"]))
-                        except (json.JSONDecodeError, TypeError):
-                            pass
                     moves.append(move_data)
             except sqlite3.OperationalError:
                 # Try old schema
@@ -223,10 +223,8 @@ def validate_database(db_path: Path) -> tuple[int, int, list[PhaseViolation]]:
                 for row in move_cursor:
                     move_data = dict(row)
                     if move_data.get("move_data"):
-                        try:
+                        with contextlib.suppress(json.JSONDecodeError, TypeError):
                             move_data.update(json.loads(move_data["move_data"]))
-                        except (json.JSONDecodeError, TypeError):
-                            pass
                     moves.append(move_data)
 
             # Validate

@@ -38,6 +38,8 @@ PROJECT_ROOT = AI_SERVICE_ROOT.parent
 if str(AI_SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+import contextlib
+
 from app.config.ladder_config import get_effective_ladder_config, list_ladder_tiers
 from app.models import AIType, BoardType
 
@@ -144,10 +146,8 @@ def _ensure_mps_copy(*, cpu_path: Path, mps_path: Path) -> None:
         return
     if not _is_nonempty_file(cpu_path):
         return
-    try:
+    with contextlib.suppress(Exception):
         mps_path.write_bytes(cpu_path.read_bytes())
-    except Exception:
-        pass
 
 
 def main(argv: list[str]) -> int:
@@ -291,10 +291,8 @@ def main(argv: list[str]) -> int:
                 if not args.apply:
                     continue
 
-                try:
+                with contextlib.suppress(Exception):
                     stable_cpu.write_bytes(chosen.read_bytes())
-                except Exception:
-                    pass
 
                 if _is_nonempty_file(stable_cpu):
                     _ensure_mps_copy(cpu_path=stable_cpu, mps_path=stable_mps)

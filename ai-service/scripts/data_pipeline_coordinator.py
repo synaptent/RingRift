@@ -271,7 +271,7 @@ def is_aligned_data_file(filepath: Path) -> bool:
             policy = data['moves'][0].get('mcts_policy', {})
             if not policy:
                 return False
-            keys = sorted([int(k) for k in policy.keys()])
+            keys = sorted([int(k) for k in policy])
             if len(keys) < 2:
                 return False
             # Check if keys are sequential (broken) or scattered (aligned)
@@ -588,7 +588,7 @@ def run_daemon(interval: int, min_games_for_training: int):
 
             for status in node_statuses:
                 if status.is_reachable and status.games_completed > 0:
-                    games, files = collect_data_from_node(
+                    games, _files = collect_data_from_node(
                         status.instance_id,
                         status.host,
                         status.port,
@@ -769,7 +769,7 @@ def main():
 
         # Step 2-4: Train + A/B Test + Promote
         logger.info(f"\n[Step 2-4] Training with {state.total_games_collected} games...")
-        promoted, result = train_and_evaluate(
+        _promoted, result = train_and_evaluate(
             DATA_DIR,
             MODELS_DIR,
             min_games=args.min_games,

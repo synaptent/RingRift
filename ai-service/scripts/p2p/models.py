@@ -93,9 +93,7 @@ class NodeInfo:
             return False
         if self.memory_percent >= MEMORY_WARNING_THRESHOLD:
             return False
-        if self.get_load_score() >= LOAD_MAX_FOR_NEW_JOBS:
-            return False
-        return True
+        return not self.get_load_score() >= LOAD_MAX_FOR_NEW_JOBS
 
     def get_load_score(self) -> float:
         """Calculate a load score for load balancing (lower = less loaded).
@@ -231,7 +229,7 @@ class NodeInfo:
             (is_safe, reason) - True if safe to spawn, with explanation
         """
         try:
-            load_1, load_5, load_15 = os.getloadavg()
+            load_1, load_5, _load_15 = os.getloadavg()
             cpu_count = os.cpu_count() or 1
             max_load = cpu_count * LOAD_AVERAGE_MAX_MULTIPLIER
 

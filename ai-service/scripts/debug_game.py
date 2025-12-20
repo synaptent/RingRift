@@ -58,7 +58,7 @@ def debug_game(model_path: str):
 
             # Group by move type
             by_type = {}
-            for move, energy_val in zip(valid_moves, energies.values()):
+            for move, energy_val in zip(valid_moves, energies.values(), strict=False):
                 mtype = move.type.value
                 if mtype not in by_type:
                     by_type[mtype] = []

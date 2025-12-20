@@ -166,7 +166,8 @@ class TestEventBus:
     async def test_unsubscribe(self, event_bus):
         """Test unsubscribe functionality."""
         received = []
-        handler = lambda e: received.append(e)
+        def handler(e):
+            return received.append(e)
 
         event_bus.subscribe(DataEventType.MODEL_PROMOTED, handler)
 

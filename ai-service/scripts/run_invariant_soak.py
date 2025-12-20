@@ -104,11 +104,6 @@ def run_ts_invariant_soak() -> bool:
     """
     _log("TS soak: scripts/run-orchestrator-soak.ts --profile=ci-short")
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "node",
-    ]
 
     # Prefer invoking via npx ts-node if available; fall back to node if the
     # script is compiled. We do not attempt to detect this dynamically here;

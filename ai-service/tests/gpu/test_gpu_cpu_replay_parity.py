@@ -254,7 +254,7 @@ class TestReplayEvaluationParity:
             if initial_state is None:
                 continue
 
-            passed, msg, details = compare_evaluations(initial_state, device)
+            passed, msg, _details = compare_evaluations(initial_state, device)
             assert passed, f"Game {game_id} initial state: {msg}"
 
     def test_mid_game_state_parity(self, available_databases, device):
@@ -293,7 +293,7 @@ class TestReplayEvaluationParity:
                 if state is None:
                     continue
 
-                passed, msg, details = compare_evaluations(state, device)
+                passed, msg, _details = compare_evaluations(state, device)
                 assert passed, (
                     f"Game {game_id} at move {move_num}/{total_moves}: {msg}"
                 )
@@ -378,7 +378,7 @@ class TestReplayEvaluationParity:
                     if state is None:
                         continue
 
-                    passed, msg, details = compare_evaluations(state, device)
+                    passed, msg, _details = compare_evaluations(state, device)
                     assert passed, (
                         f"{board_type.value} game {game_id} move {move_num}: {msg}"
                     )
@@ -483,7 +483,7 @@ class TestReplayStress:
             if state is None:
                 continue
 
-            passed, msg, details = compare_evaluations(state, device)
+            passed, msg, _details = compare_evaluations(state, device)
             assert passed, f"Move {move_num}/{longest_moves}: {msg}"
 
     def test_complex_board_states(self, available_databases, device):
@@ -519,7 +519,7 @@ class TestReplayStress:
                 if num_stacks + num_territories < 10:
                     continue  # Not complex enough
 
-                passed, msg, details = compare_evaluations(state, device)
+                passed, msg, _details = compare_evaluations(state, device)
                 assert passed, (
                     f"Complex state ({num_stacks} stacks, {num_territories} territories): {msg}"
                 )

@@ -471,7 +471,7 @@ def main():
         for future in as_completed(futures):
             filepath = futures[future]
             try:
-                path_str, added, dups, invalid = future.result()
+                _path_str, added, dups, invalid = future.result()
 
                 stats.files_processed += 1
                 stats.games_added += added

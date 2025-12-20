@@ -55,7 +55,7 @@ def detect_gpu_and_batch_size() -> tuple:
         return "Unknown", 64
 
 
-def run_benchmark(num_games: int, batch_size: int, output_file: str = None) -> dict:
+def run_benchmark(num_games: int, batch_size: int, output_file: str | None = None) -> dict:
     """Run GPU self-play benchmark."""
     import torch
 
@@ -160,7 +160,7 @@ def main():
                         help="Output file for training data (optional)")
     args = parser.parse_args()
 
-    results = run_benchmark(args.num_games, args.batch_size, args.output)
+    run_benchmark(args.num_games, args.batch_size, args.output)
 
     print(f"\n{'='*60}")
     print("Benchmark Complete")

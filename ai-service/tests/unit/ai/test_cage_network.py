@@ -273,7 +273,7 @@ class TestBoardToGraph:
 
     def test_node_count(self, game_state, config):
         """Should have correct number of nodes for board size."""
-        node_feat, edge_index, edge_attr = board_to_graph(
+        node_feat, _edge_index, _edge_attr = board_to_graph(
             game_state, player_number=1, board_size=config.board_size
         )
 
@@ -282,7 +282,7 @@ class TestBoardToGraph:
 
     def test_edge_index_shape(self, game_state, config):
         """Edge index should have 2 rows (source, target)."""
-        node_feat, edge_index, edge_attr = board_to_graph(
+        _node_feat, edge_index, _edge_attr = board_to_graph(
             game_state, player_number=1, board_size=config.board_size
         )
 
@@ -291,7 +291,7 @@ class TestBoardToGraph:
 
     def test_edge_attr_matches_edges(self, game_state, config):
         """Edge attributes should match edge count."""
-        node_feat, edge_index, edge_attr = board_to_graph(
+        _node_feat, edge_index, edge_attr = board_to_graph(
             game_state, player_number=1, board_size=config.board_size
         )
 

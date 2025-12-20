@@ -869,7 +869,7 @@ class PreflightChecker:
             net.train()
             optimizer.zero_grad()
             # Network returns (value, policy)
-            value, policy = net(dummy_spatial, dummy_global)
+            value, _policy = net(dummy_spatial, dummy_global)
 
             # Compute loss (value head only for simplicity)
             loss = loss_fn(value, target_value)

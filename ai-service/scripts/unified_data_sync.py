@@ -64,7 +64,7 @@ def run_with_watchdog(service_args: list, check_interval: int = 30, max_restarts
 
     def start_service():
         nonlocal process
-        cmd = [sys.executable, str(SCRIPT_DIR / "unified_data_sync.py")] + service_args
+        cmd = [sys.executable, str(SCRIPT_DIR / "unified_data_sync.py"), *service_args]
         logger.info(f"Starting service: {' '.join(cmd)}")
         process = subprocess.Popen(
             cmd,
