@@ -93,16 +93,27 @@ def play_random_game(
             # No moves available
             break
 
-        # Record move
-        move_dict = {
-            'type': move.type.value,
-            'player': move.player,
+        # Record move (skip bookkeeping moves that import script auto-generates)
+        # These are automatically synthesized during import, so saving them causes
+        # double-application and player alternation mismatch.
+        BOOKKEEPING_MOVES = {
+            MoveType.NO_LINE_ACTION,
+            MoveType.NO_TERRITORY_ACTION,
+            MoveType.SKIP_TERRITORY_PROCESSING,
+            MoveType.LINE_FORMATION,
+            MoveType.TERRITORY_CLAIM,
+            MoveType.SKIP_RECOVERY,
         }
-        if move.to:
-            move_dict['to'] = {'x': move.to.x, 'y': move.to.y}
-        if hasattr(move, 'from_pos') and move.from_pos:
-            move_dict['from'] = {'x': move.from_pos.x, 'y': move.from_pos.y}
-        moves_played.append(move_dict)
+        if move.type not in BOOKKEEPING_MOVES:
+            move_dict = {
+                'type': move.type.value,
+                'player': move.player,
+            }
+            if move.to:
+                move_dict['to'] = {'x': move.to.x, 'y': move.to.y}
+            if hasattr(move, 'from_pos') and move.from_pos:
+                move_dict['from'] = {'x': move.from_pos.x, 'y': move.from_pos.y}
+            moves_played.append(move_dict)
 
         # Apply move
         try:

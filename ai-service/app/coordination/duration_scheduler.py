@@ -427,9 +427,9 @@ class DurationScheduler:
             end_hour = datetime.fromtimestamp(expected_end).hour
 
             # Don't start long tasks that would complete in the middle of the night
-            if expected_duration > 6 * 3600:  # > 6 hours
-                if end_hour >= 2 and end_hour <= 6:  # Would end 2-6 AM
-                    return False, f"Task would complete at {end_hour}:00 (monitoring gap)"
+            if (expected_duration > 6 * 3600  # > 6 hours
+                    and end_hour >= 2 and end_hour <= 6):  # Would end 2-6 AM
+                return False, f"Task would complete at {end_hour}:00 (monitoring gap)"
 
         return True, "OK"
 

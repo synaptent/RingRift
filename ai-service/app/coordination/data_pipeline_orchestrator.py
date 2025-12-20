@@ -642,9 +642,9 @@ class DataPipelineOrchestrator:
         logger.info(f"[DataPipelineOrchestrator] Backpressure released: source={source}")
 
         # Auto-resume if paused due to backpressure and no other constraints
-        if self._paused and "Backpressure" in (self._pause_reason or ""):
-            if not self._has_critical_constraints():
-                await self._resume_pipeline()
+        if (self._paused and "Backpressure" in (self._pause_reason or "")
+                and not self._has_critical_constraints()):
+            await self._resume_pipeline()
 
     async def _pause_pipeline(self, reason: str) -> None:
         """Pause the pipeline due to resource constraints."""

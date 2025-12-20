@@ -59,6 +59,8 @@ AI_TYPE_CONFIGS_LIGHTWEIGHT = {
     "brs": {"ai_type": "brs", "difficulty": 4, "think_time_ms": 2000},
     "maxn": {"ai_type": "maxn", "difficulty": 5, "think_time_ms": 3000},
     "minimax": {"ai_type": "minimax", "difficulty": 4, "think_time_ms": 2000},
+    # GPU-accelerated minimax (faster than CPU minimax on GPU nodes, no NN required)
+    "gpu_minimax": {"ai_type": "gpu_minimax", "difficulty": 5, "think_time_ms": 2000},
     # MCTS handles multi-move games well (no fixed depth limit)
     "mcts_100": {"ai_type": "mcts", "difficulty": 5, "use_neural_net": False, "mcts_iterations": 100},
     "mcts_200": {"ai_type": "mcts", "difficulty": 6, "use_neural_net": False, "mcts_iterations": 200},
@@ -76,8 +78,6 @@ AI_TYPE_CONFIGS_HEAVYWEIGHT = {
     "ebmo": {"ai_type": "ebmo", "difficulty": 12, "think_time_ms": 3000},
     "gmo": {"ai_type": "gmo", "difficulty": 13, "think_time_ms": 3000},
     "ig_gmo": {"ai_type": "ig_gmo", "difficulty": 14, "think_time_ms": 3000},
-    # GPU-accelerated variants
-    "gpu_minimax": {"ai_type": "gpu_minimax", "difficulty": 15, "think_time_ms": 3000},
 }
 
 # Combined for reference

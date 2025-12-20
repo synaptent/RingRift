@@ -331,16 +331,17 @@ class UnifiedLoopExtensions:
             try:
                 now = time.time()
 
-                if now - self.state.last_calibration_time >= interval:
-                    if self.calibrator and self.state.calibration_samples >= self.config.calibration_min_samples:
-                        report = self.calibrator.compute_calibration()
-                        optimal_temp = self.calibrator.find_optimal_temperature()
+                if (now - self.state.last_calibration_time >= interval
+                        and self.calibrator
+                        and self.state.calibration_samples >= self.config.calibration_min_samples):
+                    report = self.calibrator.compute_calibration()
+                    optimal_temp = self.calibrator.find_optimal_temperature()
 
-                        self.state.calibration_temperature = optimal_temp
-                        self.state.calibration_ece = report.ece
-                        self.state.last_calibration_time = now
+                    self.state.calibration_temperature = optimal_temp
+                    self.state.calibration_ece = report.ece
+                    self.state.last_calibration_time = now
 
-                        logger.info(f"Calibration: ECE={report.ece:.4f}, temp={optimal_temp:.3f}")
+                    logger.info(f"Calibration: ECE={report.ece:.4f}, temp={optimal_temp:.3f}")
 
                 await asyncio.sleep(60)
 

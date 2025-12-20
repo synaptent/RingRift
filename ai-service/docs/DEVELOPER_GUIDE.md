@@ -375,7 +375,7 @@ print(f"AI type: {profile['ai_type']}, simulations: {profile.get('simulations', 
 | 12    | EBMO          | Energy-based move optimization               |
 | 13    | GMO           | Gradient move optimization                   |
 | 14    | IG-GMO        | Information-gain GMO (experimental)          |
-| 15    | GPU Minimax   | GPU-accelerated minimax (CUDA/MPS)           |
+| 5-alt | GPU Minimax   | GPU-accelerated minimax (faster than CPU)    |
 | 16    | CAGE          | Constraint-aware graph energy (experimental) |
 
 **Multiplayer Search Variants:**
