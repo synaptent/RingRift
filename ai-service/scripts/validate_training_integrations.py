@@ -14,11 +14,7 @@ Usage:
     python scripts/validate_training_integrations.py
 """
 
-import os
 import sys
-import signal
-import tempfile
-import time
 from pathlib import Path
 
 # Add project root to path
@@ -27,14 +23,13 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 def test_circuit_breaker():
     """Test circuit breaker integration."""
     print("\n=== Testing Circuit Breaker ===")
     try:
-        from app.distributed.circuit_breaker import get_training_breaker, CircuitState
+        from app.distributed.circuit_breaker import get_training_breaker
 
         breaker = get_training_breaker()
         print(f"  ✓ Circuit breaker initialized")

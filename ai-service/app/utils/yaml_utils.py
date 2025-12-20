@@ -55,7 +55,6 @@ except ImportError:
 
 class YAMLLoadError(Exception):
     """Raised when YAML loading fails."""
-    pass
 
 
 def _ensure_yaml_available() -> None:

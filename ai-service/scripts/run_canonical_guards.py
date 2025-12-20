@@ -19,7 +19,6 @@ Usage (from ai-service/):
 """
 
 import argparse
-import json
 import os
 import random
 import subprocess

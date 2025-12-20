@@ -68,7 +68,6 @@ class InitializationStatus(Enum):
 
 class InitializationError(Exception):
     """Base exception for initialization errors."""
-    pass
 
 
 class DependencyError(InitializationError):
@@ -134,7 +133,6 @@ class Initializable(ABC):
     @abstractmethod
     def name(self) -> str:
         """Unique name for this component."""
-        pass
 
     @property
     def dependencies(self) -> list[str]:
@@ -169,14 +167,12 @@ class Initializable(ABC):
         Raises:
             InitializationError: If initialization fails
         """
-        pass
 
     async def shutdown(self) -> None:
         """Shutdown the component and release resources.
 
         Override to implement cleanup. Default does nothing.
         """
-        pass
 
     def _set_dependency(self, name: str, instance: Any) -> None:
         """Set a resolved dependency (called by registry)."""

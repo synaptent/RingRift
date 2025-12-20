@@ -11,8 +11,7 @@ from __future__ import annotations
 import json
 import statistics
 import time
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from .config import CurriculumConfig, DataEvent, DataEventType
 from app.utils.paths import AI_SERVICE_ROOT

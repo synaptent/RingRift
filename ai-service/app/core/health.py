@@ -154,7 +154,6 @@ class HealthCheck(ABC):
         Returns:
             HealthStatus indicating component health
         """
-        pass
 
     async def check_liveness(self) -> HealthStatus:
         """Check if component is alive.

@@ -52,7 +52,6 @@ class TemperatureSchedule(ABC):
     def get_temperature(self, move_number: int, game_state: Any | None = None,
                         training_progress: float | None = None) -> float:
         """Get temperature for a given move."""
-        pass
 
     def clip_temperature(self, temp: float, min_temp: float = 0.01,
                          max_temp: float = 2.0) -> float:

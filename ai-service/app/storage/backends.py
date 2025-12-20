@@ -57,7 +57,6 @@ class StorageBackend(ABC):
             local_path: Path to local file
             remote_key: Remote key/path for the file
         """
-        pass
 
     @abstractmethod
     def download(self, remote_key: str, local_path: str | Path) -> None:
@@ -67,7 +66,6 @@ class StorageBackend(ABC):
             remote_key: Remote key/path of the file
             local_path: Local path to save the file
         """
-        pass
 
     @abstractmethod
     def list(self, prefix: str = "") -> builtins.list[str]:
@@ -79,7 +77,6 @@ class StorageBackend(ABC):
         Returns:
             List of file keys matching the prefix
         """
-        pass
 
     @abstractmethod
     def exists(self, remote_key: str) -> bool:
@@ -91,7 +88,6 @@ class StorageBackend(ABC):
         Returns:
             True if file exists
         """
-        pass
 
     @abstractmethod
     def delete(self, remote_key: str) -> None:
@@ -100,7 +96,6 @@ class StorageBackend(ABC):
         Args:
             remote_key: Remote key/path to delete
         """
-        pass
 
     def download_if_newer(
         self, remote_key: str, local_path: str | Path

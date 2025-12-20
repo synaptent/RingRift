@@ -51,7 +51,6 @@ U = TypeVar("U")  # Mapped type
 class ResultError(Exception):
     """Raised when unwrapping a failed Result."""
 
-    pass
 
 
 @dataclass(frozen=True, slots=True)

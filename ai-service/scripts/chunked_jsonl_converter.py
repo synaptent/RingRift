@@ -32,18 +32,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
 import logging
-import os
 import sqlite3
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from queue import Queue
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 # Ensure ai-service root on path for scripts/lib imports
@@ -51,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Unified logging and file format utilities
 from scripts.lib.logging_config import setup_script_logging
-from scripts.lib.file_formats import is_gzip_file, open_jsonl_file
+from scripts.lib.file_formats import open_jsonl_file
 
 logger = setup_script_logging("chunked_jsonl_converter")
 

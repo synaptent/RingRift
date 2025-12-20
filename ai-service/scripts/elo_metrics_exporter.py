@@ -24,14 +24,13 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import time
-from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 # Prometheus client
 try:
-    from prometheus_client import Gauge, Counter, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import Gauge, generate_latest, CONTENT_TYPE_LATEST
     HAS_PROMETHEUS = True
 except ImportError:
     HAS_PROMETHEUS = False

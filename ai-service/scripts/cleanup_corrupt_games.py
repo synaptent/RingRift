@@ -22,7 +22,7 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 
 # Add ai-service to path
 ROOT = Path(__file__).resolve().parent.parent

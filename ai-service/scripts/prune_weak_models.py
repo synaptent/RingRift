@@ -15,7 +15,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List
 from datetime import datetime
 
 AI_SERVICE_ROOT = Path(__file__).parent.parent

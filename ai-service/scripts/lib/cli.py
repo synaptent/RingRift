@@ -27,9 +27,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
 
 from scripts.lib.logging_config import setup_script_logging
 

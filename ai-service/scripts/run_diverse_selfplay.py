@@ -36,7 +36,6 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import os
 import random
@@ -53,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models import BoardType
 from app.training.env import get_theoretical_max_moves
 from app.training.selfplay_config import SelfplayConfig, create_argument_parser
-from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
+from app.utils.ramdrive import get_config_from_args, get_games_directory, RamdriveSyncer
 
 from scripts.lib.logging_config import setup_script_logging
 

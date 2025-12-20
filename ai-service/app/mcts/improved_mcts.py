@@ -54,32 +54,26 @@ class GameState(ABC):
     @abstractmethod
     def get_legal_moves(self) -> list[int]:
         """Get list of legal moves."""
-        pass
 
     @abstractmethod
     def apply_move(self, move: int) -> 'GameState':
         """Apply move and return new state."""
-        pass
 
     @abstractmethod
     def is_terminal(self) -> bool:
         """Check if state is terminal."""
-        pass
 
     @abstractmethod
     def get_outcome(self, player: int) -> float:
         """Get outcome for player (-1, 0, or 1)."""
-        pass
 
     @abstractmethod
     def current_player(self) -> int:
         """Get current player."""
-        pass
 
     @abstractmethod
     def hash(self) -> str:
         """Get unique hash for state."""
-        pass
 
 
 class NeuralNetworkInterface(ABC):
@@ -93,7 +87,6 @@ class NeuralNetworkInterface(ABC):
         Returns:
             (policy, value) where policy is list of move probabilities
         """
-        pass
 
 
 @dataclass

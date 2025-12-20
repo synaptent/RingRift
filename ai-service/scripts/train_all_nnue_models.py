@@ -41,7 +41,6 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from app.models import BoardType
 
 # Unified logging setup
 from scripts.lib.logging_config import setup_script_logging

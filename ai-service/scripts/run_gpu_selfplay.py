@@ -36,7 +36,6 @@ Output:
 
 from __future__ import annotations
 
-import argparse
 import fcntl
 import json
 import os
@@ -52,22 +51,20 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Ramdrive utilities for high-speed I/O
-from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
+from app.utils.ramdrive import get_config_from_args, get_games_directory, RamdriveSyncer
 from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
 import torch
 
-from app.ai.gpu_batch import get_device, clear_gpu_memory
+from app.ai.gpu_batch import get_device
 from app.ai.nnue import BatchNNUEEvaluator
 from app.ai.gpu_parallel_games import (
     ParallelGameRunner,
-    BatchGameState,
     benchmark_parallel_games,
 )
 from app.models.core import BoardType
 from app.models import Move, MoveType, Position, GameState
 from app.training.generate_data import create_initial_state
-from app.db.game_replay import GameReplayDB
 from app.game_engine import GameEngine
 
 # Import coordination helpers for task limits and duration tracking

@@ -27,11 +27,9 @@ See docs/CONSOLIDATION_ROADMAP.md for consolidation status.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from app.training.integrated_enhancements import IntegratedTrainingManager
@@ -726,7 +724,6 @@ class UnifiedLoopConfig:
 # DataEventType and DataEvent are now imported from the canonical module
 # app.distributed.data_events for consolidation and consistency.
 
-from app.distributed.data_events import DataEventType, DataEvent
 
 
 # =============================================================================

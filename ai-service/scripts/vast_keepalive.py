@@ -19,9 +19,7 @@ Designed to be run via cron every 15-30 minutes.
 
 import argparse
 import json
-import os
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple

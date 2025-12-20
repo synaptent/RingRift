@@ -6,11 +6,8 @@ Usage:
     watch -n 60 python scripts/pipeline_dashboard.py  # Auto-refresh
 """
 
-import json
-import os
 import sqlite3
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 

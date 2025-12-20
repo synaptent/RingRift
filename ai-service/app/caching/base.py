@@ -131,7 +131,6 @@ class Cache(ABC, Generic[K, V]):
         Returns:
             Cached value or default
         """
-        pass
 
     @abstractmethod
     def set(
@@ -147,7 +146,6 @@ class Cache(ABC, Generic[K, V]):
             value: Value to cache
             ttl_seconds: Optional TTL override (uses config default if None)
         """
-        pass
 
     @abstractmethod
     def delete(self, key: K) -> bool:
@@ -159,12 +157,10 @@ class Cache(ABC, Generic[K, V]):
         Returns:
             True if key was found and deleted
         """
-        pass
 
     @abstractmethod
     def clear(self) -> None:
         """Clear all entries from the cache."""
-        pass
 
     @abstractmethod
     def has(self, key: K) -> bool:
@@ -176,7 +172,6 @@ class Cache(ABC, Generic[K, V]):
         Returns:
             True if key exists and is not expired
         """
-        pass
 
     def get_or_set(
         self,

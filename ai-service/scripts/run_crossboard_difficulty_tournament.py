@@ -20,7 +20,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

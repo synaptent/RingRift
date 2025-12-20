@@ -22,7 +22,6 @@ import argparse
 import itertools
 import json
 import logging
-import os
 import sys
 import time
 from dataclasses import asdict, dataclass

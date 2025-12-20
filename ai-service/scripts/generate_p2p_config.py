@@ -21,7 +21,6 @@ Usage:
 """
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -33,7 +32,7 @@ except ImportError:
     print("Error: PyYAML not installed. Run: pip install pyyaml", file=sys.stderr)
     sys.exit(1)
 
-from scripts.lib.paths import AI_SERVICE_ROOT, CONFIG_DIR
+from scripts.lib.paths import CONFIG_DIR
 
 
 def load_distributed_hosts(config_path: Optional[Path] = None) -> Dict:

@@ -35,10 +35,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Setup path
 AI_SERVICE_ROOT = Path(__file__).resolve().parent.parent

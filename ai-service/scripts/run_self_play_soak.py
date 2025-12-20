@@ -219,7 +219,6 @@ from app.ai.neural_net import clear_model_cache  # noqa: E402
 try:
     from app.distributed.data_events import (
         emit_new_games,
-        get_event_bus,
     )
     HAS_EVENT_BUS = True
 except ImportError:
@@ -2992,7 +2991,6 @@ def run_gpu_self_play_soak(
         GPU mode does not perform invariant checking, so invariant_samples is [].
     """
     import time
-    from datetime import datetime
 
     # Lazy load GPU imports
     if not _load_gpu_imports():
@@ -3603,7 +3601,7 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
     # Resource guard: Check disk/memory before starting (80% limits)
     try:
         from app.utils.resource_guard import (
-            check_disk_space, check_memory, get_resource_status, LIMITS
+            check_disk_space, check_memory, LIMITS
         )
         # Estimate output size: soak tests can generate lots of data
         num_games = getattr(args, "num_games", 1000)

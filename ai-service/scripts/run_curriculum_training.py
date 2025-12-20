@@ -21,7 +21,6 @@ Usage:
 
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
 # Ensure app package is importable

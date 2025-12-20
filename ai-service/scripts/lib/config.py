@@ -20,7 +20,7 @@ import json
 import os
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 
 @dataclass

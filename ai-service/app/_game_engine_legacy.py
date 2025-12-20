@@ -1435,7 +1435,9 @@ class GameEngine:
             skips += 1
 
         # All players exhausted (no one has any rings); keep current_player
-        # and set phase to allow _check_victory to resolve the global stalemate.
+        # and set phase to RING_PLACEMENT to allow _check_victory to resolve
+        # the global stalemate via canonical no-action moves.
+        game_state.current_phase = GamePhase.RING_PLACEMENT
         game_state.must_move_from_stack_key = None
 
     @staticmethod

@@ -22,20 +22,19 @@ Usage:
 """
 
 import argparse
-import json
 import shutil
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Add project root
 SCRIPT_DIR = Path(__file__).parent
 AI_SERVICE_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
-from app.tournament.unified_elo_db import EloDatabase, get_elo_database
+from app.tournament.unified_elo_db import EloDatabase
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("model_culling")

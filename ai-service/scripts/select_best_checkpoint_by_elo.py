@@ -126,7 +126,6 @@ def find_checkpoints(
 
 class CheckpointLoadError(Exception):
     """Raised when a checkpoint cannot be loaded due to architecture mismatch."""
-    pass
 
 
 def validate_checkpoint_loadable(

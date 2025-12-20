@@ -48,10 +48,10 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -62,11 +62,8 @@ import numpy as np
 from neural_architecture_search import (
     SEARCH_SPACE,
     Architecture,
-    NASState,
     bayesian_acquisition,
     crossover_architectures,
-    estimate_architecture_cost,
-    is_pareto_dominated,
     mutate_architecture,
     sample_architecture,
     tournament_selection,

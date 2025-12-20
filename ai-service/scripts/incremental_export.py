@@ -28,7 +28,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 import numpy as np
 
@@ -43,7 +43,6 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("incremental_export")
 
 from app.training.incremental_export import (
-    IncrementalExporter,
     ExportStats,
     get_incremental_exporter,
 )
@@ -51,7 +50,6 @@ from app.training.incremental_export import (
 # Import conversion functions from jsonl_to_npz
 from scripts.jsonl_to_npz import (
     build_encoder,
-    process_jsonl_file,
     BOARD_TYPE_MAP,
 )
 from app.models import BoardType

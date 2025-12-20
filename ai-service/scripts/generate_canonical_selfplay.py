@@ -41,7 +41,6 @@ The summary JSON includes:
   - canonical_ok (boolean)
 """
 
-import argparse
 import json
 import os
 import sqlite3

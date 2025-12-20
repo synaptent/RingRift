@@ -23,7 +23,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from app.models import BoardType, AIConfig
+from app.models import AIConfig
 from app.training.initial_state import create_initial_state
 from app.rules.default_engine import DefaultRulesEngine
 from scripts.lib.logging_config import setup_script_logging

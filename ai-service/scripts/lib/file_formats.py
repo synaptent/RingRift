@@ -38,7 +38,7 @@ import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterator, List, Optional, TextIO, Union
+from typing import Any, Dict, Generator, Iterator, Optional, TextIO, Union
 
 from scripts.lib.logging_config import get_logger
 

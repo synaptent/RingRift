@@ -39,10 +39,9 @@ import random
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Tuple
 
 # Add project root to path
 SCRIPT_DIR = Path(__file__).parent
@@ -55,7 +54,6 @@ from scripts.lib.data_quality import (
     QualityFilter,
     GameQuality,
     QualityStats,
-    VictoryType,
     compute_quality_stats,
 )
 

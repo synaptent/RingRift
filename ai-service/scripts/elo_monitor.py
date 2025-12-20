@@ -21,7 +21,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, asdict, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,12 +35,10 @@ from scripts.lib.logging_config import (
     get_logger,
     get_metrics_logger,
 )
-from scripts.lib.config import BoardConfig
 from scripts.lib.alerts import (
     Alert,
     AlertSeverity,
     AlertType,
-    AlertManager,
     create_alert,
 )
 

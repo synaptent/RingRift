@@ -26,19 +26,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
-import json
 import os
-import shutil
 import signal
 import sqlite3
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 # Ensure ai-service root on path for scripts/lib imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

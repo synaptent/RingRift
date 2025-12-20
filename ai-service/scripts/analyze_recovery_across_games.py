@@ -21,10 +21,10 @@ import argparse
 from pathlib import Path
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import traceback
 
-from app.models import GameState, MoveType, GamePhase, Position
+from app.models import GameState, MoveType
 from app.game_engine import GameEngine
 from app.rules.core import (
     is_eligible_for_recovery,

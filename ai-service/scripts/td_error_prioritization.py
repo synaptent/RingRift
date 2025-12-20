@@ -13,10 +13,9 @@ Usage:
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 

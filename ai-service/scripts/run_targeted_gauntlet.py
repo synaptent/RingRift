@@ -10,7 +10,6 @@ Usage:
 
 import argparse
 import asyncio
-import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -19,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.tournament.distributed_gauntlet import (
     DistributedNNGauntlet,
-    GauntletConfig,
     get_gauntlet,
 )
 

@@ -11,12 +11,11 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -44,8 +43,6 @@ def play_game(
     model_a_player: int = 0,
 ) -> GameResult:
     """Play a single game between two NNUE evaluators."""
-    from app.ai.heuristic_ai import HeuristicAI
-    from app.rules import apply_action
 
     state = create_game_state(board_type=board_type, num_players=num_players)
     mutable = MutableGameState.from_game_state(state)

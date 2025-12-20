@@ -8,7 +8,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging
 logging.disable(logging.INFO)
 
-from itertools import product
 from app.ai.ebmo_ai import EBMO_AI
 from app.ai.ebmo_network import EBMOConfig
 from app.ai.random_ai import RandomAI

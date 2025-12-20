@@ -94,27 +94,22 @@ class StorageBackend(ABC):
     @abstractmethod
     def write_line(self, data: str) -> None:
         """Write a single line of data (JSONL format)."""
-        pass
 
     @abstractmethod
     def write_training_sample(self, sample: TrainingSample) -> None:
         """Write a training sample."""
-        pass
 
     @abstractmethod
     def flush(self) -> None:
         """Flush any buffered data."""
-        pass
 
     @abstractmethod
     def close(self) -> None:
         """Close the storage backend and release resources."""
-        pass
 
     @abstractmethod
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about written data."""
-        pass
 
 
 class LocalFileStorage(StorageBackend):

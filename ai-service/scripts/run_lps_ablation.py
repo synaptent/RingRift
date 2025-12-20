@@ -59,11 +59,10 @@ os.environ.setdefault("RINGRIFT_FSM_VALIDATION_MODE", "off")
 import argparse
 import json
 import os
-import random
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -78,11 +77,8 @@ from app.models import (
     AIConfig,
     AIType,
     BoardType,
-    GamePhase,
     GameState,
     GameStatus,
-    Move,
-    MoveType,
 )
 from app.training.env import (
     TrainingEnvConfig,

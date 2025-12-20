@@ -15,7 +15,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.db import (
     validate_game_parity,
     ParityValidationError,
-    ParityDivergence,
 )
 from app.db.game_replay import GameReplayDB
 

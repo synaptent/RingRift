@@ -30,7 +30,6 @@ import argparse
 import asyncio
 import contextlib
 import gzip
-import hashlib
 import ipaddress
 import json
 import os
@@ -45,15 +44,13 @@ import threading
 import time
 import uuid
 from urllib.parse import urlparse
-from dataclasses import dataclass, field, asdict, fields as dataclass_fields
-from datetime import datetime, timedelta
-from enum import Enum
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Generator, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.coordination.queue_populator import QueuePopulator
-import yaml
 
 # Work queue for centralized work distribution (lazy import to avoid circular deps)
 _work_queue = None
@@ -79,7 +76,7 @@ def get_auto_scaler():
     global _auto_scaler
     if _auto_scaler is None:
         try:
-            from app.coordination.auto_scaler import AutoScaler, load_scaling_config_from_yaml
+            from app.coordination.auto_scaler import AutoScaler
             _auto_scaler = AutoScaler()
         except ImportError:
             _auto_scaler = None
@@ -122,7 +119,7 @@ def get_tier_calibrator():
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.lib.logging_config import setup_script_logging
-from scripts.lib.file_formats import is_gzip_file, open_jsonl_file
+from scripts.lib.file_formats import open_jsonl_file
 
 logger = setup_script_logging("p2p_orchestrator")
 
@@ -152,7 +149,6 @@ def db_connection(db_path: str | Path, timeout: float = 30.0) -> Generator[sqlit
 from app.utils.ramdrive import (
     get_system_resources,
     should_use_ramdrive,
-    get_auto_storage_path,
     log_storage_recommendation,
     RamdriveSyncer,
 )
@@ -321,17 +317,11 @@ from scripts.p2p.constants import (
 
 # Import refactored utilities (Phase 2 refactoring)
 from scripts.p2p.resource import (
-    get_disk_usage_percent,
     check_disk_has_capacity,
-    check_all_resources,
 )
 from scripts.p2p.network import (
     AsyncLockWrapper,
     get_client_session,
-    check_peer_circuit,
-    record_peer_success,
-    record_peer_failure,
-    peer_request,
 )
 from scripts.p2p.utils import (
     systemd_notify_watchdog,
@@ -340,12 +330,10 @@ from scripts.p2p.utils import (
 from scripts.p2p.cluster_config import (
     get_cluster_config,
     get_webhook_urls,
-    ClusterConfig,
 )
 
 # Shared database integrity utilities
 from app.db.integrity import (
-    check_database_integrity,
     check_and_repair_databases,
 )
 
@@ -356,10 +344,6 @@ try:
         check_disk_space as unified_check_disk,
         check_memory as unified_check_memory,
         check_cpu as unified_check_cpu,
-        get_disk_usage,
-        get_memory_usage,
-        get_cpu_usage,
-        can_proceed as resources_can_proceed,
         LIMITS as RESOURCE_LIMITS,
         should_proceed_with_priority,
         OperationPriority,
@@ -472,7 +456,6 @@ except ImportError:
 # Dynamic host registry for IP auto-update
 try:
     from app.distributed.dynamic_registry import (
-        DynamicHostRegistry,
         get_registry,
         NodeState,
     )
@@ -8300,9 +8283,7 @@ class P2POrchestrator:
 
         # Import game execution modules
         try:
-            from app.tournament.agents import AIAgentRegistry
-            from app.game.board import create_board
-            from app.game.engine import GameEngine
+            pass
         except ImportError as e:
             logger.info(f"Gauntlet: Import error: {e}")
             # Return simulated results if modules not available
@@ -9966,7 +9947,6 @@ print(wins / total)
     async def _play_tournament_match(self, job_id: str, match_info: dict):
         """Play a tournament match locally using subprocess selfplay."""
         try:
-            import subprocess
             import sys
             import json as json_module
 
@@ -10665,8 +10645,6 @@ print(json.dumps(result))
         Each worker runs selfplay using the current best model and reports
         progress back to the coordinator.
         """
-        import sys
-        import json as json_module
 
         state = self.improvement_loop_state.get(job_id)
         if not state:
@@ -10886,7 +10864,6 @@ else:
         Finds a GPU worker and delegates training to it, or runs locally
         if this node has a GPU.
         """
-        import sys
 
         state = self.improvement_loop_state.get(job_id)
         if not state:
@@ -17618,7 +17595,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     running_items = status.get("running", [])
 
                     # Convert to WorkItem objects for stuck job detection
-                    from app.coordination.work_queue import WorkItem, WorkStatus, WorkType
+                    from app.coordination.work_queue import WorkItem
 
                     work_items = []
                     for item_dict in running_items:
@@ -23194,7 +23171,7 @@ print(json.dumps({{
             return False
 
         try:
-            import asyncio.subprocess as subprocess
+            pass
 
             # Try to restart the service via SSH
             cmd = f"timeout 30 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no {host} 'sudo systemctl restart ringrift-p2p'"

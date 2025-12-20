@@ -45,7 +45,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.lib.paths import REPO_ROOT
 from app.db.game_replay import GameReplayDB, _compute_state_hash
-from app.models import GamePhase, MoveType
 
 
 @dataclass

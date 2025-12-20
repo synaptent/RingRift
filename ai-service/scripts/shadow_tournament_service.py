@@ -29,18 +29,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
-import os
-import sqlite3
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-import yaml
 
 # Allow imports from app/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -53,8 +47,6 @@ from app.distributed.event_helpers import (
     get_event_bus_safe,
     emit_evaluation_completed_safe,
     emit_error_safe,
-    DataEventType,
-    DataEvent,
 )
 HAS_EVENT_BUS = has_event_bus()
 
@@ -112,7 +104,7 @@ except ImportError:
 
 # Try to import HealthRegistry for distributed health awareness
 try:
-    from app.distributed.health_registry import HealthRegistry, register_health
+    from app.distributed.health_registry import register_health
     HAS_HEALTH_REGISTRY = True
 except ImportError:
     HAS_HEALTH_REGISTRY = False

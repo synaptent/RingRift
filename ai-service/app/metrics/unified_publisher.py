@@ -84,17 +84,14 @@ class MetricsBackend(ABC):
     @abstractmethod
     def counter(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Increment a counter."""
-        pass
 
     @abstractmethod
     def gauge(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Set a gauge value."""
-        pass
 
     @abstractmethod
     def histogram(self, name: str, value: float, labels: dict[str, str]) -> None:
         """Record a histogram observation."""
-        pass
 
 
 class PrometheusBackend(MetricsBackend):

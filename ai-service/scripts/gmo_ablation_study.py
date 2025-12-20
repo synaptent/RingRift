@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -35,7 +35,7 @@ import numpy as np
 from app.ai.gmo_ai import GMOAI, GMOConfig
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.random_ai import RandomAI
-from app.game_engine import GameEngine, PhaseRequirement
+from app.game_engine import GameEngine
 from app.models import AIConfig, BoardType, GameStatus
 
 logging.basicConfig(

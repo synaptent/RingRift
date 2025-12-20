@@ -27,11 +27,10 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-import numpy as np
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

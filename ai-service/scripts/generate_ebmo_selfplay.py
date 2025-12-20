@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
-import torch
 
 from app.ai.ebmo_ai import EBMO_AI
 from app.ai.ebmo_network import ActionFeatureExtractor

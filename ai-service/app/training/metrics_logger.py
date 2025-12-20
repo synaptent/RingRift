@@ -42,27 +42,22 @@ class MetricsBackend(ABC):
     @abstractmethod
     def log_scalar(self, tag: str, value: float, step: int) -> None:
         """Log a single scalar value."""
-        pass
 
     @abstractmethod
     def log_scalars(self, main_tag: str, tag_scalar_dict: dict[str, float], step: int) -> None:
         """Log multiple related scalar values."""
-        pass
 
     @abstractmethod
     def log_histogram(self, tag: str, values: Any, step: int) -> None:
         """Log a histogram of values."""
-        pass
 
     @abstractmethod
     def log_text(self, tag: str, text: str, step: int) -> None:
         """Log text content."""
-        pass
 
     @abstractmethod
     def finish(self) -> None:
         """Finalize logging and clean up resources."""
-        pass
 
 
 class TensorBoardBackend(MetricsBackend):

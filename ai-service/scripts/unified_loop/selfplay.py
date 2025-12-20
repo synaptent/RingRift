@@ -15,9 +15,8 @@ import asyncio
 import logging
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from scripts.unified_ai_loop import EventBus, UnifiedLoopState
@@ -45,8 +44,6 @@ logger = logging.getLogger(__name__)
 try:
     from app.training.parallel_selfplay import (
         generate_dataset_parallel,
-        SelfplayConfig,
-        GameResult,
     )
     HAS_PARALLEL_SELFPLAY = True
 except ImportError:
@@ -55,7 +52,7 @@ except ImportError:
 
 # Prometheus metrics - avoid duplicate registration
 try:
-    from prometheus_client import Counter, Gauge, Histogram, REGISTRY
+    from prometheus_client import Counter, Histogram, REGISTRY
     HAS_PROMETHEUS = True
 
     if 'ringrift_local_selfplay_games_total' in REGISTRY._names_to_collectors:

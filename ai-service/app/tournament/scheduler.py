@@ -92,22 +92,18 @@ class TournamentScheduler(ABC):
         **kwargs,
     ) -> list[Match]:
         """Generate all matches for the tournament."""
-        pass
 
     @abstractmethod
     def get_pending_matches(self) -> list[Match]:
         """Get matches that haven't been played yet."""
-        pass
 
     @abstractmethod
     def mark_match_started(self, match_id: str, worker_id: str | None = None) -> None:
         """Mark a match as in progress."""
-        pass
 
     @abstractmethod
     def mark_match_completed(self, match_id: str, result: dict) -> None:
         """Mark a match as completed with results."""
-        pass
 
 
 class RoundRobinScheduler(TournamentScheduler):

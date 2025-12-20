@@ -85,19 +85,16 @@ class StorageProvider(ABC):
     @abstractmethod
     def provider_type(self) -> StorageProviderType:
         """Get the provider type."""
-        pass
 
     @property
     @abstractmethod
     def capabilities(self) -> StorageCapabilities:
         """Get storage capabilities."""
-        pass
 
     @property
     @abstractmethod
     def paths(self) -> StoragePaths:
         """Get storage paths."""
-        pass
 
     @property
     def selfplay_dir(self) -> Path:

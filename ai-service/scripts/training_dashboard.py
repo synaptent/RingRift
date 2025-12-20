@@ -20,11 +20,10 @@ import argparse
 import json
 import os
 import sqlite3
-import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 # Add project root to path
 SCRIPT_DIR = Path(__file__).parent

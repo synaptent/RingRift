@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Unified thresholds from monitoring module (December 2025)
 try:
-    from app.config.thresholds import THRESHOLDS, get_threshold
+    from app.config.thresholds import get_threshold
     DISK_WARNING = get_threshold("disk", "warning", 70)
     DISK_CRITICAL = get_threshold("disk", "critical", 85)
     DISK_FATAL = get_threshold("disk", "fatal", 95)

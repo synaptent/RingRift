@@ -149,7 +149,6 @@ class HealthMonitor(ABC):
         Returns:
             MonitoringResult with status, metrics, and any alerts
         """
-        pass
 
     def should_alert(self) -> Alert | None:
         """Determine if an alert should be sent based on last check.

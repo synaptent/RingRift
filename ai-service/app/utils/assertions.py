@@ -50,17 +50,14 @@ class AssertionError(Exception):
 
 class PreconditionError(AssertionError):
     """Raised when a precondition (require) fails."""
-    pass
 
 
 class PostconditionError(AssertionError):
     """Raised when a postcondition (ensure) fails."""
-    pass
 
 
 class InvariantError(AssertionError):
     """Raised when an invariant (check) fails."""
-    pass
 
 
 def require(

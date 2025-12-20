@@ -30,13 +30,12 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Add project root to path
 SCRIPT_DIR = Path(__file__).parent

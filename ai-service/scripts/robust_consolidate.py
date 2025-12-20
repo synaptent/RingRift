@@ -5,7 +5,6 @@ Creates a fully-compatible GameReplayDB with games, game_moves, and game_choices
 """
 
 import sqlite3
-import sys
 from pathlib import Path
 import time
 import fcntl

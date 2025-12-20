@@ -111,7 +111,6 @@ class Benchmark(ABC):
     @abstractmethod
     def run(self, model: Any, **kwargs) -> BenchmarkResult:
         """Run the benchmark and return results."""
-        pass
 
 
 class InferenceBenchmark(Benchmark):

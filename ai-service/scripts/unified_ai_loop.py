@@ -32,13 +32,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import signal
-import sqlite3
-import statistics
-import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -47,24 +43,16 @@ from enum import Enum
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from threading import Thread
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
 # Import refactored configuration and event types
 # These were extracted from this file for modularity (Phase 1 refactoring)
 from scripts.unified_loop.config import (
-    DataIngestionConfig,
-    TrainingConfig,
-    EvaluationConfig,
-    PromotionConfig,
-    CurriculumConfig,
     PBTConfig,
     NASConfig,
     PERConfig,
-    FeedbackConfig,
-    P2PClusterConfig,
-    ModelPruningConfig,
     UnifiedLoopConfig,
     DataEventType,
     DataEvent,
@@ -97,9 +85,7 @@ except ImportError:
 
 # Shared database integrity utilities
 from app.db.integrity import (
-    check_database_integrity,
     check_and_repair_databases,
-    recover_corrupted_database,
 )
 
 # Unified resource checking utilities (80% max utilization)
@@ -224,8 +210,6 @@ try:
     from app.distributed.health_checks import (
         HealthChecker,
         HealthSummary,
-        get_health_summary,
-        format_health_report,
     )
     HAS_HEALTH_CHECKS = True
 except ImportError:
@@ -238,8 +222,6 @@ try:
     from app.coordination.task_coordinator import (
         TaskCoordinator,
         TaskType,
-        TaskLimits,
-        CoordinatorState,
     )
     HAS_TASK_COORDINATOR = True
 except ImportError:
@@ -320,8 +302,6 @@ try:
         StageEvent,
         StageCompletionResult,
         get_stage_event_bus,
-        reset_stage_event_bus,
-        register_standard_callbacks,
     )
     HAS_STAGE_EVENTS = True
 except ImportError:
@@ -335,10 +315,8 @@ except ImportError:
 try:
     from app.coordination import (
         P2PBackend,
-        P2PNodeInfo,
         discover_p2p_leader_url,
         get_p2p_backend,
-        HAS_AIOHTTP as P2P_HAS_AIOHTTP,
     )
     HAS_P2P_BACKEND = True
 except ImportError:
@@ -353,7 +331,6 @@ try:
         PromotionController,
         PromotionType,
         PromotionCriteria,
-        PromotionDecision,
         get_promotion_controller,
     )
     HAS_PROMOTION_CONTROLLER = True
@@ -406,7 +383,6 @@ try:
         FeedbackAccelerator,
         MomentumState,
         TrainingIntensity,
-        TrainingDecision,
         get_feedback_accelerator,
         should_trigger_training as accelerator_should_trigger,
         get_training_intensity,
@@ -488,7 +464,6 @@ try:
         SSHExecutor,
         ExecutorPool,
         ExecutionResult,
-        SSHConfig as ExecutorSSHConfig,
         run_command,
     )
     HAS_EXECUTOR = True
@@ -756,8 +731,6 @@ try:
         UnifiedWAL,
         WALEntry,
         WALEntryType,
-        WALEntryStatus,
-        WALStats,
         get_unified_wal,
     )
     HAS_UNIFIED_WAL = True
@@ -773,9 +746,6 @@ try:
     from app.distributed.unified_manifest import (
         DataManifest,
         HostSyncState,
-        SyncHistoryEntry,
-        DeadLetterEntry,
-        ManifestStats,
         create_manifest,
     )
     HAS_UNIFIED_MANIFEST = True
@@ -792,10 +762,8 @@ try:
         HostTier,
         HostSyncProfile,
         classify_host_storage,
-        classify_host_tier,
         get_ephemeral_hosts,
         create_sync_profile,
-        create_sync_profiles,
     )
     HAS_HOST_CLASSIFICATION = True
 except ImportError:
@@ -5212,7 +5180,6 @@ class UnifiedAILoop:
         4. Database lock cleanup
         """
         import asyncio
-        import glob
 
         print("[HealthRecovery] Running periodic health check and recovery...")
         issues_fixed = 0
@@ -6082,7 +6049,6 @@ class UnifiedAILoop:
         try:
             from scripts.holdout_validation import (
                 evaluate_model_on_holdout,
-                EvaluationResult,
                 OVERFIT_THRESHOLD,
             )
             has_holdout = True

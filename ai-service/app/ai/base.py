@@ -115,7 +115,6 @@ class BaseAI(ABC):
         Returns:
             Selected move or None if no valid moves
         """
-        pass
 
     @abstractmethod
     def evaluate_position(self, game_state: GameState) -> float:
@@ -128,7 +127,6 @@ class BaseAI(ABC):
         Returns:
             Evaluation score (positive = good for this AI, negative = bad)
         """
-        pass
 
     def get_evaluation_breakdown(self, game_state: GameState) -> dict[str, float]:
         """Return a structured breakdown of the evaluation for ``game_state``.

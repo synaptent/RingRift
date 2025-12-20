@@ -41,10 +41,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import http.server
 import json
-import logging
 import multiprocessing as mp
 import os
 import random
@@ -52,16 +50,10 @@ import shutil
 import socketserver
 import subprocess
 import sys
-import tempfile
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.error import URLError
-from urllib.parse import urljoin
 from urllib.request import urlopen
 
 import numpy as np
@@ -223,7 +215,6 @@ def run_worker_export(
 ) -> int:
     """Run export for specific game IDs (worker mode)."""
     from app.db import GameReplayDB
-    from app.models import BoardType
 
     # Import the export function components
     from scripts.export_replay_dataset import (

@@ -1871,7 +1871,6 @@ class PrefetchIterator:
     def __del__(self):
         """Cleanup: ensure worker thread terminates."""
         # Worker is daemon thread, so it will terminate with the main process
-        pass
 
 
 def prefetch_loader(

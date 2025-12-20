@@ -28,14 +28,12 @@ from __future__ import annotations
 
 import argparse
 import gc
-import json
-import os
 import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Add ai-service to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -45,13 +43,11 @@ from app.distributed.memory import (
     MemoryTracker,
     format_memory_profile,
     get_current_rss_mb,
-    get_peak_rss_mb,
     write_memory_report,
 )
 from app.distributed.hosts import (
     detect_host_memory,
     get_ssh_executor,
-    load_remote_hosts,
 )
 
 # Unified logging setup
@@ -414,7 +410,7 @@ def benchmark_nnue_inference(
         MemoryProfile
     """
     from app.models import BoardType
-    from app.ai.nnue import load_nnue_model, RingRiftNNUE, get_feature_dim
+    from app.ai.nnue import load_nnue_model, get_feature_dim
     import numpy as np
 
     logger.info(f"Benchmarking NNUE inference: {board_type}, {num_iterations} iterations")

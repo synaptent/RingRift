@@ -75,10 +75,10 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 from app.db import GameReplayDB
-from app.models import AIConfig, BoardType, GameState, Move
+from app.models import AIConfig, BoardType, GameState
 from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
-from app.training.encoding import HexStateEncoder, HexStateEncoderV3, get_encoder_for_board_type
-from app.training.export_cache import get_export_cache, ExportCache
+from app.training.encoding import get_encoder_for_board_type
+from app.training.export_cache import get_export_cache
 
 
 BOARD_TYPE_MAP: Dict[str, BoardType] = {

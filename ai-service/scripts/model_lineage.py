@@ -20,7 +20,7 @@ import hashlib
 import json
 import sqlite3
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional

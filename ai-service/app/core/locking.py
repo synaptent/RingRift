@@ -84,7 +84,6 @@ T = TypeVar("T")
 
 class LockError(Exception):
     """Base exception for lock errors."""
-    pass
 
 
 class LockOrderViolation(LockError):

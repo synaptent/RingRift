@@ -337,7 +337,6 @@ def rate_limit_async(
 
 class RateLimitExceeded(Exception):
     """Raised when rate limit is exceeded and wait=False."""
-    pass
 
 
 __all__ = [

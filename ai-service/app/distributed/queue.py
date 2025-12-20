@@ -152,7 +152,6 @@ class TaskQueue(ABC):
     @abstractmethod
     def publish_task(self, task: EvalTask) -> None:
         """Publish an evaluation task to the queue."""
-        pass
 
     @abstractmethod
     def consume_task(self, timeout: float = 30.0) -> EvalTask | None:
@@ -164,22 +163,18 @@ class TaskQueue(ABC):
         Returns:
             EvalTask or None if timeout
         """
-        pass
 
     @abstractmethod
     def ack_task(self, task_id: str) -> None:
         """Acknowledge task completion (for at-least-once delivery)."""
-        pass
 
     @abstractmethod
     def publish_result(self, result: EvalResult) -> None:
         """Publish an evaluation result."""
-        pass
 
     @abstractmethod
     def consume_result(self, timeout: float = 5.0) -> EvalResult | None:
         """Consume a result from the queue."""
-        pass
 
     def consume_results(
         self,
@@ -213,7 +208,6 @@ class TaskQueue(ABC):
     @abstractmethod
     def close(self) -> None:
         """Close the queue connection."""
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +505,6 @@ class SQSQueue(TaskQueue):
 
     def close(self) -> None:
         """Close SQS client (no-op for boto3)."""
-        pass
 
 
 # ---------------------------------------------------------------------------

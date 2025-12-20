@@ -30,15 +30,12 @@ Usage:
 import argparse
 import hashlib
 import json
-import os
-import random
-import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from scripts.lib.ssh import run_ssh_command
 

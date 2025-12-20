@@ -1022,19 +1022,15 @@ class NotificationHook:
 
     def on_regression_detected(self, model_id: str, status: dict[str, Any]) -> None:
         """Called when regression is detected but rollback not yet triggered."""
-        pass
 
     def on_at_risk(self, model_id: str, status: dict[str, Any]) -> None:
         """Called when model enters at-risk state."""
-        pass
 
     def on_rollback_triggered(self, event: RollbackEvent) -> None:
         """Called when rollback is triggered (before execution)."""
-        pass
 
     def on_rollback_completed(self, event: RollbackEvent, success: bool) -> None:
         """Called after rollback execution."""
-        pass
 
 
 class LoggingNotificationHook(NotificationHook):

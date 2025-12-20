@@ -149,7 +149,6 @@ class OrchestratorBackend(ABC):
     @abstractmethod
     async def get_available_workers(self) -> list[WorkerStatus]:
         """Get list of available workers."""
-        pass
 
     @abstractmethod
     async def run_selfplay(
@@ -172,7 +171,6 @@ class OrchestratorBackend(ABC):
         Returns:
             List of job results
         """
-        pass
 
     @abstractmethod
     async def run_tournament(
@@ -195,7 +193,6 @@ class OrchestratorBackend(ABC):
         Returns:
             Job result with tournament results
         """
-        pass
 
     @abstractmethod
     async def run_training(
@@ -216,7 +213,6 @@ class OrchestratorBackend(ABC):
         Returns:
             Job result
         """
-        pass
 
     @abstractmethod
     async def sync_models(
@@ -233,7 +229,6 @@ class OrchestratorBackend(ABC):
         Returns:
             Dict of worker -> success status
         """
-        pass
 
     @abstractmethod
     async def sync_data(
@@ -250,7 +245,6 @@ class OrchestratorBackend(ABC):
         Returns:
             Dict of worker -> games synced count
         """
-        pass
 
 
 class LocalBackend(OrchestratorBackend):

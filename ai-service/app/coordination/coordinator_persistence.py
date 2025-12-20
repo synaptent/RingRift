@@ -670,7 +670,6 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
         Args:
             state: State dictionary from persistence
         """
-        pass
 
 
 # =============================================================================

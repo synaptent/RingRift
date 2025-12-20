@@ -14,12 +14,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.tournament.elo import EloRating, EloCalculator
-from app.training.significance import wilson_score_interval, wilson_lower_bound
+from app.training.significance import wilson_score_interval
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 

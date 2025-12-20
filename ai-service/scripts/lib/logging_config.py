@@ -19,11 +19,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 import time
 from datetime import datetime
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 

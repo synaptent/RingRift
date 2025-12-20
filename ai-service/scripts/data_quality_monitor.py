@@ -597,7 +597,6 @@ class MetricsHTTPHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Suppress default HTTP logging."""
-        pass
 
 
 def run_server(

@@ -20,14 +20,12 @@ import argparse
 import logging
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)

@@ -167,18 +167,15 @@ class BaseExecutor(ABC):
         Returns:
             ExecutionResult with command output
         """
-        pass
 
     @abstractmethod
     async def check_available(self) -> bool:
         """Check if this executor is available (e.g., SSH host reachable)."""
-        pass
 
     @property
     @abstractmethod
     def name(self) -> str:
         """Human-readable name for this executor."""
-        pass
 
 
 class LocalExecutor(BaseExecutor):

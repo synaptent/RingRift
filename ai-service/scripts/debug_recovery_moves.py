@@ -10,7 +10,7 @@ This script loads a specific recovery-eligible state and checks:
 
 import json
 from pathlib import Path
-from app.models import GameState, MoveType, GamePhase
+from app.models import MoveType, GamePhase
 from app.game_engine import GameEngine
 from app.rules.core import (
     is_eligible_for_recovery,

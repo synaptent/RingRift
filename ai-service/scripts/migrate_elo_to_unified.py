@@ -20,8 +20,6 @@ import argparse
 import json
 import sqlite3
 import sys
-import time
-import uuid
 from pathlib import Path
 
 # Setup paths

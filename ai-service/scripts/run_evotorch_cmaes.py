@@ -34,7 +34,6 @@ import os
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add app/ to path
@@ -54,7 +53,7 @@ try:
     import evotorch
     from evotorch import Problem
     from evotorch.algorithms import CMAES
-    from evotorch.logging import StdOutLogger, PandasLogger
+    from evotorch.logging import StdOutLogger
     EVOTORCH_AVAILABLE = True
 except ImportError:
     EVOTORCH_AVAILABLE = False
@@ -175,7 +174,7 @@ class HeuristicOptimizationProblem(Problem):
     def _init_game_runner(self):
         """Initialize GPU parallel game runner if available."""
         try:
-            from app.ai.gpu_parallel_games import ParallelGameRunner, evaluate_candidate_fitness_gpu
+            from app.ai.gpu_parallel_games import evaluate_candidate_fitness_gpu
             self.gpu_runner_available = True
             self.evaluate_fitness_gpu = evaluate_candidate_fitness_gpu
 

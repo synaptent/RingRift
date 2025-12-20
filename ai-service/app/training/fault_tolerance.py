@@ -363,31 +363,24 @@ except ImportError:
 
     class RecoverableError(TrainingError):
         """Exception that indicates a recoverable error (can retry)."""
-        pass
 
     class NonRecoverableError(TrainingError):
         """Exception that indicates a non-recoverable error (skip retry)."""
-        pass
 
     class ValidationError(TrainingError):
         """Exception for configuration or data validation failures."""
-        pass
 
     class DataQualityError(TrainingError):
         """Exception for data quality issues."""
-        pass
 
     class LifecycleError(TrainingError):
         """Exception for model lifecycle errors."""
-        pass
 
     class ResourceError(TrainingError):
         """Exception for resource-related failures."""
-        pass
 
     class CheckpointError(TrainingError):
         """Exception for checkpoint-related failures."""
-        pass
 
 
 def handle_gpu_error(

@@ -25,12 +25,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Add ai-service to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

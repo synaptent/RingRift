@@ -39,7 +39,7 @@ from typing import Dict, List, Optional, Tuple
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS, HEURISTIC_WEIGHT_KEYS
+from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
 
 
 HeuristicWeights = Dict[str, float]

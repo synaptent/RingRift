@@ -181,7 +181,6 @@ class SyncManagerBase(ABC):
         Returns:
             True if sync succeeded, False otherwise
         """
-        pass
 
     @abstractmethod
     def _get_nodes(self) -> list[str]:
@@ -190,7 +189,6 @@ class SyncManagerBase(ABC):
         Returns:
             List of node identifiers
         """
-        pass
 
     async def sync_with_node(self, node: str) -> bool:
         """Sync with a specific node, respecting circuit breaker.

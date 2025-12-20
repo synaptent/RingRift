@@ -185,7 +185,7 @@ class TournamentState:
 
 # Import unified Elo database for persistent tracking
 try:
-    from app.tournament import get_elo_database, EloDatabase
+    from app.tournament import get_elo_database
     UNIFIED_ELO_AVAILABLE = True
 except ImportError:
     UNIFIED_ELO_AVAILABLE = False

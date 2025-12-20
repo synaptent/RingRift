@@ -62,8 +62,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -80,9 +78,7 @@ from app.distributed import (
     detect_host_memory,
     get_eligible_hosts_for_board,
     get_high_memory_hosts,
-    get_ssh_executor,
     format_memory_profile,
-    write_memory_report,
     BOARD_MEMORY_REQUIREMENTS,
 )
 

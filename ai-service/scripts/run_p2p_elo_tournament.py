@@ -29,8 +29,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import aiohttp
-import json
-import os
 import random
 import sqlite3
 import sys
@@ -46,9 +44,8 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
-from app.tournament.elo import EloCalculator, EloRating
-from app.models import AIType, BoardType
-from app.models.discovery import discover_models, ModelInfo
+from app.models import BoardType
+from app.models.discovery import discover_models
 from app.config.thresholds import INITIAL_ELO_RATING, ELO_K_FACTOR
 
 

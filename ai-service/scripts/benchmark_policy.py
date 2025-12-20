@@ -30,7 +30,7 @@ import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -48,7 +48,7 @@ from app.ai.nnue_policy import (
     RingRiftNNUEWithPolicy,
     pos_to_flat_index,
 )
-from app.models import BoardType, GameState, Move, GamePhase
+from app.models import BoardType, GameState, Move
 from app.rules.default_engine import DefaultRulesEngine
 
 # Unified logging setup

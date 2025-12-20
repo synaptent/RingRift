@@ -73,13 +73,11 @@ if TORCH_AVAILABLE:
         @abstractmethod
         def forward(self, features: torch.Tensor) -> torch.Tensor:
             """Forward pass through the head."""
-            pass
 
         @abstractmethod
         def compute_loss(self, predictions: torch.Tensor,
                          targets: torch.Tensor) -> torch.Tensor:
             """Compute task-specific loss."""
-            pass
 
 
     class MoveCountHead(AuxiliaryHead):

@@ -6,7 +6,6 @@ Python-loop implementation to ensure identical results.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -19,12 +18,10 @@ import numpy as np
 
 from app.ai.gpu_parallel_games import (
     BatchGameState,
-    generate_movement_moves_batch,
     generate_movement_moves_batch_vectorized,
     _generate_movement_moves_batch_legacy,
     generate_capture_moves_batch_vectorized,
     _generate_capture_moves_batch_legacy,
-    generate_placement_moves_batch,
 )
 from app.ai.gpu_batch import get_device
 

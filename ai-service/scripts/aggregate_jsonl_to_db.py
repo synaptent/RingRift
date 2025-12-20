@@ -78,7 +78,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import (
     BoardType, BoardState, GamePhase, GameState, GameStatus,
-    Move, MoveType, Position, Player, TimeControl
+    Move, Player, TimeControl
 )
 
 # Unified logging setup

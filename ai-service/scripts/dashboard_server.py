@@ -14,13 +14,12 @@ Usage:
 import argparse
 import json
 import os
-import signal
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from flask import Flask, jsonify, redirect, request, send_from_directory
 from flask_cors import CORS

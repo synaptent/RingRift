@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.ai.mcts_ai import MCTSAI
 from app.game_engine import GameEngine
-from app.models import AIConfig, BoardType
+from app.models import AIConfig
 from app.training.initial_state import create_initial_state
 
 

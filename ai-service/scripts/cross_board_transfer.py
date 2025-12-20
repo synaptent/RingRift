@@ -70,7 +70,6 @@ def transfer_and_finetune(
         Training results dict
     """
     import torch
-    import torch.nn as nn
     from app.training.train import train_from_file
     from app.training.config import TrainConfig
     from app.models import BoardType

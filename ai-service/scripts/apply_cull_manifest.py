@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Apply cull manifest to archive low-performing models."""
 import json
-import os
 import shutil
 from pathlib import Path
 

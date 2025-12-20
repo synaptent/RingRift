@@ -20,7 +20,7 @@ import pstats
 import sys
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

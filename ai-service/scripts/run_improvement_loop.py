@@ -69,9 +69,7 @@ try:
         load_cluster_hosts,
         filter_available_hosts,
         build_tournament_configs,
-        TournamentConfig,
         TournamentResult,
-        DEFAULT_GAMES_PER_CONFIG,
     )
     HAS_DIVERSE_TOURNAMENTS = True
 except ImportError:

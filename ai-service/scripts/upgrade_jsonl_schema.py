@@ -18,10 +18,9 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from collections import Counter
 
 

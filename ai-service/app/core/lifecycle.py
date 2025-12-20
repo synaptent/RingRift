@@ -86,7 +86,6 @@ class LifecycleListener(ABC):
     @abstractmethod
     async def on_lifecycle_event(self, event: LifecycleEvent) -> None:
         """Handle a lifecycle event."""
-        pass
 
 
 class Service(HealthCheck, ABC):
@@ -129,7 +128,6 @@ class Service(HealthCheck, ABC):
     @abstractmethod
     def name(self) -> str:
         """Unique service name."""
-        pass
 
     @property
     def dependencies(self) -> list[str]:
@@ -165,7 +163,6 @@ class Service(HealthCheck, ABC):
         Initialize resources and start processing.
         Dependencies are available via _get_dependency().
         """
-        pass
 
     @abstractmethod
     async def on_stop(self) -> None:
@@ -173,12 +170,10 @@ class Service(HealthCheck, ABC):
 
         Clean up resources and stop processing.
         """
-        pass
 
     @abstractmethod
     async def check_health(self) -> HealthStatus:
         """Check service health."""
-        pass
 
     def _get_dependency(self, name: str) -> Service:
         """Get a resolved dependency."""

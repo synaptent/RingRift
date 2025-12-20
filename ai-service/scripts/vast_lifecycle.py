@@ -20,12 +20,10 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
-from scripts.lib.paths import AI_SERVICE_ROOT, LOGS_DIR
+from scripts.lib.paths import LOGS_DIR
 from scripts.lib.ssh import run_vast_ssh_command
 
 LOG_FILE = LOGS_DIR / "vast_lifecycle.log"

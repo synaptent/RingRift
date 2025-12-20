@@ -30,7 +30,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import socket
 import time
 import urllib.request
 import urllib.error
@@ -118,7 +117,6 @@ class ClusterStatus:
 
 class P2PClientError(Exception):
     """Error from P2P client operations."""
-    pass
 
 
 class P2PClient:

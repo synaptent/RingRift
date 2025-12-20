@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
-from app.models import GameState, Move, MoveType, GamePhase, GameStatus
+from app.models import MoveType, GameStatus
 from app.game_engine import GameEngine
 from app.training.generate_data import create_initial_state
 from app.utils.victory_type import derive_victory_type

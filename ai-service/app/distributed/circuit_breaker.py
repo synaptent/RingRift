@@ -597,7 +597,6 @@ class CircuitBreaker:
 
 class CircuitOpenError(Exception):
     """Raised when attempting to execute through an open circuit."""
-    pass
 
 
 # Global circuit breaker instance for hosts

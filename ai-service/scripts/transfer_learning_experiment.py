@@ -18,10 +18,9 @@ import argparse
 import logging
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -36,9 +35,6 @@ from app.ai.neural_net import (
     get_policy_size_for_board,
     get_spatial_size_for_board,
     HexNeuralNet_v3,
-    HexNeuralNet_v2,
-    RingRiftCNN_v2,
-    SEResidualBlock,
     P_HEX,
     HEX_BOARD_SIZE,
 )

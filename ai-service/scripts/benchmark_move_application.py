@@ -2,7 +2,6 @@
 """Benchmark vectorized vs legacy move application functions."""
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -14,7 +13,6 @@ import numpy as np
 
 from app.ai.gpu_parallel_games import (
     BatchGameState,
-    BatchMoves,
     generate_placement_moves_batch,
     generate_movement_moves_batch,
     generate_capture_moves_batch_vectorized,

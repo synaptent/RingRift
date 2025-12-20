@@ -16,7 +16,6 @@ import os
 import json
 import sqlite3
 import glob
-import sys
 from datetime import datetime
 
 DATA_DIR = os.environ.get("DATA_DIR", "data/games")

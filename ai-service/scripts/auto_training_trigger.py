@@ -18,7 +18,7 @@ import random
 import sys
 import time
 import urllib.request
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 logging.basicConfig(
     level=logging.INFO,

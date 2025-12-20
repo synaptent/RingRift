@@ -30,14 +30,11 @@ import argparse
 import json
 import os
 import subprocess
-import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 # Add parent directory to path for imports
-from scripts.lib.paths import AI_SERVICE_ROOT
 from scripts.lib.ssh import run_vast_ssh_command
 
 # P2P Configuration

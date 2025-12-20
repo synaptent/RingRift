@@ -30,7 +30,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = AI_SERVICE_ROOT.parent

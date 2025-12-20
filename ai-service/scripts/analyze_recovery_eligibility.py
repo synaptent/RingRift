@@ -9,7 +9,7 @@ per RR-CANON-R110 (3 conditions; eligibility is independent of rings in hand).
 
 import json
 from pathlib import Path
-from app.models import GameState, MoveType, GamePhase, Position
+from app.models import GameState, MoveType
 from app.game_engine import GameEngine
 from app.rules.core import is_eligible_for_recovery, count_buried_rings, player_has_markers, player_controls_any_stack
 from app.training.generate_data import create_initial_state

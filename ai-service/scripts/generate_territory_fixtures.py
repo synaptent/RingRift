@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sqlite3
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple

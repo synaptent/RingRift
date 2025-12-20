@@ -23,7 +23,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import torch
@@ -35,7 +35,6 @@ from app.models import BoardType
 from app.training.generate_data import (
     generate_dataset,
     generate_dataset_gpu_parallel,
-    create_initial_state,
 )
 
 

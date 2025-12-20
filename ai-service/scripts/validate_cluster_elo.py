@@ -14,10 +14,8 @@ Usage:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
-from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
@@ -28,7 +26,7 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 # Import unified hosts module
 try:
-    from scripts.lib.hosts import get_active_hosts, HostConfig
+    from scripts.lib.hosts import get_active_hosts
     USE_LIB_HOSTS = True
 except ImportError:
     USE_LIB_HOSTS = False
@@ -39,7 +37,6 @@ try:
         get_active_nodes,
         get_coordinator_node,
         get_elo_sync_config,
-        ClusterNode,
     )
     USE_SHARED_CONFIG = True
 except ImportError:

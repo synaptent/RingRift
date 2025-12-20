@@ -25,7 +25,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))

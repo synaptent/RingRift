@@ -73,7 +73,6 @@ T = TypeVar("T")
 
 class ConfigLoadError(Exception):
     """Raised when configuration loading fails."""
-    pass
 
 
 class ConfigSource:

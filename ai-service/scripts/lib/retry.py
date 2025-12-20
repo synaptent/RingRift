@@ -33,7 +33,7 @@ import functools
 import logging
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -256,7 +256,6 @@ def with_timeout(
         def slow_operation():
             ...
     """
-    import threading
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
     def decorator(func: Callable[..., T]) -> Callable[..., Optional[T]]:

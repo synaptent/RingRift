@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from .config import DataEvent, DataEventType, DataIngestionConfig, HostState

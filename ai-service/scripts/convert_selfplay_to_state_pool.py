@@ -20,7 +20,6 @@ import glob
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

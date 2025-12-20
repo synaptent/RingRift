@@ -73,7 +73,6 @@ T = TypeVar("T")
 
 class SchemaError(Exception):
     """Error in schema definition."""
-    pass
 
 
 @dataclass

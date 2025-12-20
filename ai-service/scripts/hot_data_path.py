@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sqlite3
 import subprocess
 import sys
@@ -39,7 +38,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.models import BoardType
 
 from scripts.lib.logging_config import setup_script_logging
 

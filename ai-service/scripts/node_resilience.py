@@ -22,7 +22,6 @@ import json
 import os
 import random
 import signal
-import socket
 import subprocess
 import sys
 import time

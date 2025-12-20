@@ -28,7 +28,6 @@ Output:
 
 from __future__ import annotations
 
-import argparse
 import fcntl
 import json
 import logging
@@ -39,7 +38,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -47,7 +46,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Ramdrive utilities for high-speed I/O
-from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
+from app.utils.ramdrive import get_config_from_args, get_games_directory, RamdriveSyncer
 
 # Unified resource checking utilities (80% max utilization)
 try:
@@ -256,10 +255,7 @@ def run_hybrid_selfplay(
     Returns:
         Statistics dictionary
     """
-    import torch
     from app.ai.hybrid_gpu import (
-        HybridGPUEvaluator,
-        HybridSelfPlayRunner,
         create_hybrid_evaluator,
     )
     from app.ai.gpu_batch import get_device
@@ -1153,16 +1149,13 @@ def run_hybrid_selfplay(
 
 def run_benchmark(board_type: str = "square8", num_players: int = 2):
     """Run benchmark comparing pure CPU vs hybrid evaluation."""
-    import torch
     from app.ai.hybrid_gpu import (
-        HybridGPUEvaluator,
         create_hybrid_evaluator,
         benchmark_hybrid_evaluation,
     )
     from app.ai.numba_rules import (
         NUMBA_AVAILABLE,
         benchmark_numba_functions,
-        BoardArrays,
     )
     from app.ai.gpu_batch import get_device
     from app.game_engine import GameEngine
@@ -1453,8 +1446,8 @@ def main():
         try:
             from app.utils.resource_guard import (
                 check_disk_space, check_memory, check_gpu_memory,
-                get_resource_status, LIMITS,
-                should_proceed_with_priority, OperationPriority, get_degradation_level,
+                LIMITS, should_proceed_with_priority,
+                OperationPriority, get_degradation_level,
             )
             # Estimate output size: ~2KB per game for JSONL/DB
             estimated_output_mb = (args.num_games * 0.002) + 50

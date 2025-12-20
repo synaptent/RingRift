@@ -40,7 +40,6 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import threading
 import time
 
 # Try to import bencodepy, fall back to simple implementation

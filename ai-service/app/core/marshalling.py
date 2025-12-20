@@ -57,7 +57,6 @@ T = TypeVar("T")
 
 class SerializationError(Exception):
     """Error during serialization or deserialization."""
-    pass
 
 
 # =============================================================================
@@ -71,23 +70,19 @@ class Codec(ABC, Generic[T]):
     @abstractmethod
     def type_name(self) -> str:
         """Unique name for this type in serialized form."""
-        pass
 
     @property
     @abstractmethod
     def python_type(self) -> type[T]:
         """The Python type this codec handles."""
-        pass
 
     @abstractmethod
     def encode(self, value: T) -> Any:
         """Encode value to JSON-serializable form."""
-        pass
 
     @abstractmethod
     def decode(self, data: Any) -> T:
         """Decode value from JSON-serializable form."""
-        pass
 
 
 class CodecRegistry:

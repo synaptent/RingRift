@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 
 # Add project root to path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -14,14 +14,13 @@ Usage:
 import argparse
 import asyncio
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 # Ensure ai-service root on path for scripts/lib imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

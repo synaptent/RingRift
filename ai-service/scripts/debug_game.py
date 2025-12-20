@@ -12,7 +12,7 @@ if PROJECT_ROOT not in sys.path:
 from app.ai.ebmo_ai import EBMO_AI
 from app.ai.ebmo_network import EBMOConfig
 from app.ai.factory import AIFactory
-from app.models.core import AIType, AIConfig, BoardType, MoveType
+from app.models.core import AIType, AIConfig, BoardType
 from app.game_engine import GameEngine
 from app.training.generate_data import create_initial_state
 

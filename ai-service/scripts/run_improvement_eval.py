@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Add ai-service to path
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -66,9 +65,8 @@ def run_improvement_evaluation(
 
     try:
         from app.ai.factory import create_ai
-        from app.ai.descent_ai import DescentAI
-        from app.models import AIConfig, AIType, BoardType, GamePhase, GameStatus
-        from app.rules import MutableGameState, create_game_state
+        from app.models import AIConfig, AIType, BoardType, GameStatus
+        from app.rules import MutableGameState
         from app.training.generate_data import create_initial_state
 
         # Map board type string to enum

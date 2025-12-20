@@ -30,12 +30,9 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import time
-import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List
 from enum import Enum
 
 try:
@@ -44,7 +41,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from scripts.lib.paths import AI_SERVICE_ROOT, CONFIG_DIR
+from scripts.lib.paths import CONFIG_DIR
 
 logging.basicConfig(
     level=logging.INFO,

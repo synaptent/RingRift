@@ -25,12 +25,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import random
 import sqlite3
 import sys
 import time
-from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -42,10 +39,8 @@ if TYPE_CHECKING:
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
-from app.tournament.elo import EloCalculator, EloRating
 from app.models import (
-    AIConfig, AIType, BoardType, GamePhase, GameStatus,
-    BoardState, GameState, Player, TimeControl,
+    AIConfig, AIType, BoardType, GameStatus, GameState,
 )
 from app.rules.default_engine import DefaultRulesEngine
 from app.utils.victory_type import derive_victory_type
@@ -73,7 +68,6 @@ from app.coordination.helpers import (
     get_registry_safe,
     can_spawn_safe,
     OrchestratorRole,
-    TaskType,
 )
 HAS_COORDINATION = has_coordination()
 
@@ -119,11 +113,9 @@ def create_ai_from_model(
     Supports neural network models (model_path to .pth file), NNUE models (.pt files),
     and baseline players (model_path starting with __BASELINE_).
     """
-    from app.ai.base import BaseAI
     from app.ai.random_ai import RandomAI
     from app.ai.heuristic_ai import HeuristicAI
     from app.ai.mcts_ai import MCTSAI
-    from app.ai.neural_net import NeuralNetAI
     from app.ai.minimax_ai import MinimaxAI
 
     model_path = model_def.get("model_path", "")
@@ -788,8 +780,6 @@ LEGACY_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"  # Legacy, 
 # Import unified Elo database module
 from app.tournament.unified_elo_db import (
     EloDatabase,
-    get_elo_database,
-    UnifiedEloRating,
 )
 UNIFIED_DB_AVAILABLE = True
 
@@ -842,7 +832,6 @@ def discover_models(
         # Only read checkpoint metadata for specific models where we need to confirm version
         # Skip for performance - reading 2000+ checkpoints is too slow
         # The actual model architecture is detected when loaded for play
-        pass
 
         # Add matching model
         models.append({
@@ -1244,7 +1233,6 @@ def run_continuous_tournament(args):
             from app.distributed.data_events import (
                 emit_evaluation_completed,
                 emit_error,
-                get_event_bus,
             )
             import asyncio
         except ImportError:

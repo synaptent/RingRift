@@ -32,7 +32,6 @@ Usage:
 """
 
 import argparse
-import asyncio
 import gzip
 import hashlib
 import os

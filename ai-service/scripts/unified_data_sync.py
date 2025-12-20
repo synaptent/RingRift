@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import signal
 import subprocess
 import sys
@@ -220,9 +219,6 @@ Examples:
     try:
         from app.distributed.unified_data_sync import (
             UnifiedDataSyncService,
-            load_hosts_from_yaml,
-            SyncConfig,
-            DataManifest,
         )
     except ImportError as e:
         logger.error(f"Failed to import unified_data_sync module: {e}")

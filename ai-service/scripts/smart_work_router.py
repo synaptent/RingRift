@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Try to import node policies (graceful fallback if not available)
 try:
-    from app.coordination.node_policies import get_policy_manager, is_work_allowed, get_best_work_type
+    from app.coordination.node_policies import is_work_allowed, get_best_work_type
     HAS_POLICIES = True
 except ImportError:
     HAS_POLICIES = False

@@ -186,7 +186,6 @@ class UnifiedRegistryBase(ABC, Generic[T]):
 
         Subclasses must implement this to create their tables.
         """
-        pass
 
     @abstractmethod
     def _get_item_count(self) -> int:
@@ -195,7 +194,6 @@ class UnifiedRegistryBase(ABC, Generic[T]):
         Returns:
             Number of items in the registry
         """
-        pass
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get database connection, initializing if needed.

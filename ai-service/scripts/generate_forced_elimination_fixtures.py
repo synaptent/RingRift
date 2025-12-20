@@ -14,11 +14,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Add ai-service to path for imports
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,8 +37,6 @@ from app.models import (
     RingStack,
     TimeControl,
 )
-from app.game_engine import GameEngine
-from app.rules import global_actions as ga
 
 
 def compute_simple_hash(state: GameState) -> str:

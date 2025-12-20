@@ -40,7 +40,6 @@ from scripts.lib.logging_config import (
     get_logger,
     get_metrics_logger,
 )
-from scripts.lib.config import BoardConfig
 
 logger = get_logger(__name__)
 

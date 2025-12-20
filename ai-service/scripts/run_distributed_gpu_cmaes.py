@@ -29,7 +29,6 @@ Workers can also be started via SSH from coordinator using --auto-start.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import sys
@@ -37,21 +36,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import socket
-import threading
 
 import numpy as np
 
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import torch
 
 from app.ai.gpu_batch import get_device
 from app.ai.gpu_parallel_games import (
-    ParallelGameRunner,
     evaluate_candidate_fitness_gpu,
     benchmark_parallel_games,
 )

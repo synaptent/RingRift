@@ -2,7 +2,6 @@
 """Fast database consolidation using SQL ATTACH and INSERT OR IGNORE."""
 
 import sqlite3
-import sys
 from pathlib import Path
 import time
 

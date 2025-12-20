@@ -9,7 +9,7 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from app.models import AIConfig, GameState
+from app.models import AIConfig
 from app.ai.ebmo_ai import EBMO_AI
 from app.ai.ebmo_network import EBMOConfig, load_ebmo_model
 from app.game.game import Game

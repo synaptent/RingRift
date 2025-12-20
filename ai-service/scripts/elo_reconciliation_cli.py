@@ -25,7 +25,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Add parent directory to path
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -34,10 +33,7 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 from app.training.elo_reconciliation import (
     EloDrift,
     EloReconciler,
-    ReconciliationReport,
     SyncResult,
-    check_elo_drift,
-    sync_elo_from_remote,
 )
 
 try:
@@ -421,7 +417,6 @@ def cmd_backfill_history(args: argparse.Namespace) -> int:
     Reads historical match data and populates the drift history
     file by simulating reconciliation across time intervals.
     """
-    from datetime import datetime, timedelta
 
     reconciler = EloReconciler(
         local_db_path=Path(args.local_db) if args.local_db else None,

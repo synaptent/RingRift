@@ -30,7 +30,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -201,7 +201,6 @@ class GauntletRunner:
             # Import gauntlet functions
             from scripts.baseline_gauntlet import (
                 run_gauntlet_for_model,
-                GauntletResult,
             )
             from app.models import BoardType
 

@@ -38,10 +38,10 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Add ai-service to path
 SCRIPT_DIR = Path(__file__).parent

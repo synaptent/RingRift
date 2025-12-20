@@ -21,7 +21,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -40,7 +39,7 @@ except ImportError:
 
 # Try to use unified modules
 try:
-    from scripts.lib.hosts import get_hosts, get_active_hosts, get_hosts_by_group, HostConfig
+    from scripts.lib.hosts import get_hosts, get_hosts_by_group
     USE_UNIFIED_HOSTS = True
 except ImportError:
     USE_UNIFIED_HOSTS = False

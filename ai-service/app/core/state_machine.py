@@ -57,7 +57,6 @@ __all__ = [
 
 class StateMachineError(Exception):
     """Base exception for state machine errors."""
-    pass
 
 
 class InvalidTransitionError(StateMachineError):

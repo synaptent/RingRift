@@ -29,10 +29,10 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
     from app.ai.base import BaseAI
@@ -46,7 +46,7 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 from app.models import (
-    AIConfig, AIType, BoardType, GameState,
+    AIConfig, AIType, BoardType,
 )
 from app.rules.default_engine import DefaultRulesEngine
 from app.training.generate_data import create_initial_state
@@ -123,7 +123,6 @@ def create_ai_for_algorithm(
     Returns:
         Configured AI instance
     """
-    from app.ai.base import BaseAI
     from app.ai.descent_ai import DescentAI
     from app.ai.mcts_ai import MCTSAI
     from app.ai.gumbel_mcts_ai import GumbelMCTSAI

@@ -7,9 +7,8 @@ Usage:
 
 import argparse
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
 import sys
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]

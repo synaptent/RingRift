@@ -32,17 +32,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-import torch
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Import event bus for pipeline integration
 try:
-    from app.distributed.data_events import (
-        DataEventType,
-        get_event_bus,
-    )
     HAS_EVENT_BUS = True
 except ImportError:
     HAS_EVENT_BUS = False

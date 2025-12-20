@@ -47,13 +47,11 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models import BoardType
 from app.training.env import get_theoretical_max_moves
 
 

@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from .config import DataEvent, DataEventType, PromotionConfig
 

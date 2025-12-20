@@ -25,7 +25,6 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)

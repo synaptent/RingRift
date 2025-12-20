@@ -23,7 +23,7 @@ from dataclasses import dataclass
 # Add ai-service to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.models.core import GamePhase, MoveType
+from app.models.core import GamePhase
 
 # Canonical phases per RR-CANON-R070
 CANONICAL_PHASES = [

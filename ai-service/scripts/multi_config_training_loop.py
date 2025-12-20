@@ -38,7 +38,6 @@ import numpy as np
 try:
     from app.training.feedback_accelerator import (
         get_feedback_accelerator,
-        FeedbackAccelerator,
     )
     HAS_FEEDBACK_ACCELERATOR = True
 except ImportError:
@@ -51,13 +50,11 @@ except ImportError:
     HAS_DYNAMIC_EXPORT = False
 
 try:
-    from app.coordination.distributed_lock import DistributedLock
     HAS_DISTRIBUTED_LOCK = True
 except ImportError:
     HAS_DISTRIBUTED_LOCK = False
 
 try:
-    from app.training.training_registry import register_trained_model
     HAS_MODEL_REGISTRY = True
 except ImportError:
     HAS_MODEL_REGISTRY = False
@@ -65,7 +62,6 @@ except ImportError:
 try:
     from app.config.hyperparameters import (
         get_hyperparameters,
-        is_optimized,
         needs_tuning,
         get_hyperparameter_info,
         get_all_configs as get_all_hp_configs,
@@ -102,7 +98,6 @@ except ImportError:
 try:
     from app.training.incremental_export import (
         IncrementalExporter,
-        get_incremental_exporter,
     )
     HAS_INCREMENTAL_EXPORT = True
 except ImportError:

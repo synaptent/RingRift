@@ -31,7 +31,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.tournament.unified_elo_db import (
-    get_elo_database,
     EloDatabase,
     DEFAULT_DB_PATH as UNIFIED_ELO_DB_PATH,
 )

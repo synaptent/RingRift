@@ -17,21 +17,15 @@ Usage:
 """
 
 import argparse
-import asyncio
-import json
 import os
 import subprocess
 import sys
-import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.models import BoardType
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 

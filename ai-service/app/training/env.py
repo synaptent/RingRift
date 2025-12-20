@@ -768,6 +768,22 @@ class RingRiftEnv:
                 requirement,
                 self._state,
             )
+            # Defensive assertion: verify synthesized move is valid for the
+            # current phase BEFORE applying. This catches phase transition timing
+            # bugs early (e.g., AI-02c bug where _end_turn didn't set phase).
+            try:
+                GameEngine._assert_phase_move_invariant(self._state, auto_move)
+            except RuntimeError as e:
+                logger.error(
+                    "Phase/move invariant violation in bookkeeping loop: %s. "
+                    "State: phase=%s, player=%s, requirement=%s, move_type=%s",
+                    str(e),
+                    self._state.current_phase.value,
+                    self._state.current_player,
+                    requirement.type.value,
+                    auto_move.type.value,
+                )
+                raise
             # FSM validation for auto-generated bookkeeping moves.
             if self._fsm is not None:
                 self._fsm.validate_and_send(

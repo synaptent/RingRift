@@ -39,7 +39,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from datetime import datetime
@@ -53,7 +52,6 @@ from app.training.model_registry import (
     ModelRegistry,
     ModelStage,
     ModelType,
-    ModelMetrics,
 )
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]

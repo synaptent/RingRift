@@ -56,7 +56,7 @@ logger = setup_script_logging("health_alerting", log_dir=str(LOG_DIR))
 
 # Try to use unified hosts module
 try:
-    from scripts.lib.hosts import get_p2p_voters, get_active_hosts
+    from scripts.lib.hosts import get_p2p_voters
     USE_UNIFIED_HOSTS = True
 except ImportError:
     USE_UNIFIED_HOSTS = False
