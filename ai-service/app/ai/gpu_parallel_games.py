@@ -65,6 +65,8 @@ from .gpu_move_application import (
     apply_placement_moves_batch,
     apply_movement_moves_batch,
     apply_capture_moves_batch,
+    apply_capture_moves_vectorized,
+    apply_movement_moves_vectorized,
 )
 from .shadow_validation import (
     ShadowValidator, create_shadow_validator,
