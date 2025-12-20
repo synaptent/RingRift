@@ -31,18 +31,30 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-import re
-import subprocess
-import tempfile
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Callable, Optional
+
+__all__ = [
+    # Enums
+    "SlurmJobState",
+    "SlurmPartition",
+    # Dataclasses
+    "SlurmJob",
+    "SlurmJobStatus",
+    "SlurmNode",
+    # Backend
+    "SlurmBackend",
+    "get_slurm_backend",
+    # Convenience functions
+    "submit_gpu_selfplay_job",
+    "submit_selfplay_job",
+    "submit_training_job",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -442,8 +454,7 @@ class SlurmBackend:
         script_name = f"{name}.{timestamp:x}.sh"
         script_path = f"{self.nfs_base}/data/slurm/jobs/{script_name}"
 
-        # Create script via SSH
-        escaped = content.replace("'", "'\"'\"'")
+        # Create script via SSH using heredoc (no escaping needed)
         cmd = f"mkdir -p {self.nfs_base}/data/slurm/jobs && cat > {script_path} << 'SLURM_SCRIPT_EOF'\n{content}SLURM_SCRIPT_EOF\nchmod +x {script_path}"
 
         rc, stdout, stderr = await self._ssh_command(cmd)
