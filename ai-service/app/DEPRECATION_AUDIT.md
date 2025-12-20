@@ -12,11 +12,11 @@ This document tracks deprecated modules and their replacements as part of the co
 
 ### Data Sync Layer
 
-| Module                                     | Status     | Replacement                                          | Notes                               |
-| ------------------------------------------ | ---------- | ---------------------------------------------------- | ----------------------------------- |
-| `app/distributed/data_sync.py`             | DEPRECATED | `UnifiedDataSyncService` from `unified_data_sync.py` | Emits deprecation warning on import |
-| `app/distributed/data_sync_robust.py`      | DEPRECATED | `UnifiedDataSyncService` from `unified_data_sync.py` | Emits deprecation warning on import |
-| `app/training/data_pipeline_controller.py` | DEPRECATED | Direct use of data loading APIs                      | Emits deprecation warning on import |
+| Module                                     | Status      | Replacement                                          | Notes                               |
+| ------------------------------------------ | ----------- | ---------------------------------------------------- | ----------------------------------- |
+| `app/distributed/data_sync.py`             | **REMOVED** | `UnifiedDataSyncService` from `unified_data_sync.py` | Deleted December 2025               |
+| `app/distributed/data_sync_robust.py`      | **REMOVED** | `UnifiedDataSyncService` from `unified_data_sync.py` | Deleted December 2025               |
+| `app/training/data_pipeline_controller.py` | DEPRECATED  | Direct use of data loading APIs                      | Emits deprecation warning on import |
 
 ### Cluster Coordination
 
@@ -53,10 +53,10 @@ This document tracks deprecated modules and their replacements as part of the co
 
 ### Neural Network
 
-| Module                         | Status     | Replacement            | Notes                                |
-| ------------------------------ | ---------- | ---------------------- | ------------------------------------ |
+| Module                         | Status     | Replacement                 | Notes                                     |
+| ------------------------------ | ---------- | --------------------------- | ----------------------------------------- |
 | `app/ai/_neural_net_legacy.py` | DEPRECATED | `nnue.py`, `nnue_policy.py` | CNN policy net, being phased out for NNUE |
-| `app/ai/neural_net/` (package) | DEPRECATED | `nnue_policy.py`       | Re-exports from legacy module        |
+| `app/ai/neural_net/` (package) | DEPRECATED | `nnue_policy.py`            | Re-exports from legacy module             |
 
 ### Tournament/Elo
 
@@ -79,10 +79,11 @@ These new facades consolidate multiple older modules:
 
 ## Migration Guide
 
-### Before (Deprecated)
+### Before (Deprecated - REMOVED December 2025)
 
 ```python
-from app.training.game_quality_scorer import GameQualityScorer
+# This module has been DELETED - use unified_quality directly
+from app.training.game_quality_scorer import GameQualityScorer  # No longer exists
 scorer = GameQualityScorer()
 quality = scorer.compute_game_quality(game)
 ```
@@ -95,10 +96,11 @@ scorer = get_quality_scorer()
 quality = scorer.compute_game_quality(game_data)
 ```
 
-### Before (Deprecated)
+### Before (Deprecated - REMOVED December 2025)
 
 ```python
-from app.distributed.data_sync import RobustDataSync
+# This module has been DELETED - use unified_data_sync directly
+from app.distributed.data_sync import RobustDataSync  # No longer exists
 sync = RobustDataSync()
 ```
 

@@ -133,9 +133,7 @@ GMO is best described as:
 - A **demonstration** that gradient-based action inference can work in board games
 - A **reference implementation** combining these techniques
 
-### Honest Framing for Any Publication
-
-If publishing or presenting GMO, use framing like:
+### Honest Framing
 
 > "We apply gradient-based inference over action embeddings to board game move selection, combining established techniques from structured prediction (SPENs), action embeddings (Dulac-Arnold et al.), and uncertainty-driven exploration (MC Dropout, UCB). We demonstrate this synthesis on RingRift."
 
@@ -537,7 +535,7 @@ GMO is available via `AIFactory.create_for_tournament("gmo", player_number)` but
 
 ## Potential Novel Extensions
 
-If you want GMO to have genuinely novel contributions, consider:
+Consider:
 
 ### 1. Learned Projection
 
