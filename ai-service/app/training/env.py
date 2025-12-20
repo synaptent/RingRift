@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 #
 # - Square19: 361 cells, 72 rings/player (2p) = 144 total rings
 #   Much larger board, longer games expected
-#   Conservative estimate: 400 moves for 2p, +100 per additional player
+#   Conservative estimate: 800 moves for 2p, +200 per additional player
 #
 # - Hexagonal: 469 cells (radius 12), 96 rings/player (2p) = 192 total rings
 #   Similar to Square19 scale
-#   Conservative estimate: 400 moves for 2p, +100 per additional player
+#   Conservative estimate: 1000 moves for 2p, +300 per additional player
 #
 # NOTE: With canonical recording (RR-CANON-R075), each turn generates multiple
 # moves: RING_PLACEMENT/NO_PLACEMENT_ACTION, MOVEMENT/NO_MOVEMENT_ACTION,
@@ -48,13 +48,9 @@ logger = logging.getLogger(__name__)
 #   - SQUARE8 2p: avg ~75, max ~100, all complete
 #   - SQUARE8 3p: avg ~90, max ~120, ~95% complete (5% hit stable equilibrium)
 #   - SQUARE8 4p: avg ~110, max ~150, similar stable equilibrium rate
+
 #
-# IMPORTANT: Games with 3+ players using random/weak play can reach "stable
-# equilibrium" states where all players have material but no one achieves LPS
-# dominance. This is NOT a bug - it's a game design characteristic. These games
-# will hit max_moves without a winner. Strong AI play typically avoids this.
-#
-# Limits below provide 3-4x headroom above observed maximums for completed games.
+# Limits below provide 2x - 3x headroom above observed maximums for completed games.
 # Games reaching these limits may indicate bugs OR stable equilibria (3+ players).
 # -----------------------------------------------------------------------------
 
@@ -82,9 +78,9 @@ THEORETICAL_MAX_MOVES: dict[BoardType, dict[int, int]] = {
         4: 1200,  # extrapolated with additional headroom
     },
     BoardType.SQUARE19: {
-        2: 1200,  # larger board, more phases
-        3: 1600,  # additional headroom for multiplayer
-        4: 2000,
+        2: 2400,  # larger board, more phases
+        3: 3000,  # additional headroom for multiplayer
+        4: 3600,
     },
     BoardType.HEX8: {
         2: 500,   # similar to Square8 (61 cells vs 64)
@@ -92,9 +88,9 @@ THEORETICAL_MAX_MOVES: dict[BoardType, dict[int, int]] = {
         4: 1200,  # extrapolated
     },
     BoardType.HEXAGONAL: {
-        2: 1200,  # similar to Square19 scale
-        3: 1600,
-        4: 2000,
+        2: 3600,  # similar to Square19 scale
+        3: 4200,
+        4: 4800,
     },
 }
 

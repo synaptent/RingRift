@@ -216,6 +216,8 @@ def run_selfplay_soak(
     # Enable strict invariant by default so soak respects ANM constraints.
     env_overrides = {
         "RINGRIFT_STRICT_NO_MOVE_INVARIANT": "1",
+        # Ensure phase/move invariant checks remain enabled for canonical gates.
+        "RINGRIFT_SKIP_PHASE_INVARIANT": "0",
         # Enforce TS↔Python parity during recording; abort early on any divergence.
         # This prevents non-canonical games (e.g., actor mismatches) from entering
         # the canonical DB in the first place.
@@ -230,6 +232,10 @@ def run_selfplay_soak(
         "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1"),
         "MKL_NUM_THREADS": os.environ.get("MKL_NUM_THREADS", "1"),
     }
+    # Large-board parity debugging: disable fast territory detection to
+    # avoid masking territory-processing divergence during canonical gates.
+    if board_type in {"square19", "hexagonal"}:
+        env_overrides.setdefault("RINGRIFT_USE_FAST_TERRITORY", "false")
 
     print(
         f"[parity-gate] self-play soak: board={board_type} players={num_players} "

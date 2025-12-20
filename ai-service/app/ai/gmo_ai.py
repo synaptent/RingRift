@@ -572,7 +572,12 @@ class GMOAI(BaseAI):
         self.gmo_config = gmo_config or GMOConfig()
         self.device = torch.device(self.gmo_config.device)
 
-        # Initialize networks
+        # Use deterministic weight initialization if rng_seed is provided
+        # This ensures two GMOAI instances with the same seed have identical weights
+        if config.rng_seed is not None:
+            torch.manual_seed(config.rng_seed)
+
+        # Initialize networks (weights are deterministic if seed was set above)
         board_size = 8  # Default to square8
         self.state_encoder = StateEncoder(
             embed_dim=self.gmo_config.state_dim,
@@ -645,7 +650,16 @@ class GMOAI(BaseAI):
         2. Initial ranking with UCB-style scores
         3. Optimize top-k candidates with gradient ascent
         4. Project to legal moves and select best
+
+        For deterministic behavior, restores saved RNG state before processing.
         """
+        # Restore RNG state for deterministic behavior
+        if self._torch_rng_state is not None:
+            torch.set_rng_state(self._torch_rng_state)
+            if self._cuda_rng_states is not None:
+                for i, state in enumerate(self._cuda_rng_states):
+                    torch.cuda.set_rng_state(state, i)
+
         # Get legal moves
         legal_moves = self.get_valid_moves(game_state)
         if not legal_moves:
@@ -820,8 +834,9 @@ class GMOAI(BaseAI):
     def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset state for new game.
 
-        If rng_seed is provided, also sets torch random seed for deterministic
-        behavior in MC Dropout and gradient optimization.
+        If rng_seed is provided, sets torch random seed and saves the RNG state.
+        Each call to select_move will restore this state before processing,
+        ensuring deterministic behavior across multiple AI instances.
         """
         super().reset_for_new_game(rng_seed=rng_seed)
         self.novelty_tracker.reset()
@@ -829,11 +844,21 @@ class GMOAI(BaseAI):
         self._last_move = None
         self._last_value = 0.0
 
-        # Set torch seed for deterministic MC Dropout and optimization
+        # Set and save torch RNG state for deterministic behavior
         if rng_seed is not None:
             torch.manual_seed(rng_seed)
+            self._torch_rng_state = torch.get_rng_state()
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(rng_seed)
+                self._cuda_rng_states = [
+                    torch.cuda.get_rng_state(i)
+                    for i in range(torch.cuda.device_count())
+                ]
+            else:
+                self._cuda_rng_states = None
+        else:
+            self._torch_rng_state = None
+            self._cuda_rng_states = None
 
     # =========================================================================
     # Online Learning Methods

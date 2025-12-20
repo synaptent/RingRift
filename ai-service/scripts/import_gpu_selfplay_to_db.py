@@ -293,6 +293,14 @@ def expand_gpu_jsonl_moves_to_canonical(
                     apply(skip_moves[0], ts)
                     continue
 
+            if phase == GamePhase.FORCED_ELIMINATION and gpu_move.type != MoveType.FORCED_ELIMINATION:
+                # FORCED_ELIMINATION phase - player had no actions this turn but controls stacks
+                # Must apply explicit forced_elimination move (RR-CANON-R070/R072)
+                fe_moves = GameEngine._get_forced_elimination_moves(state, player)
+                if fe_moves:
+                    apply(fe_moves[0], ts)
+                    continue
+
             requirement = GameEngine.get_phase_requirement(state, player)
             if requirement is not None:
                 synthesized = GameEngine.synthesize_bookkeeping_move(requirement, state)
@@ -363,6 +371,13 @@ def expand_gpu_jsonl_moves_to_canonical(
         if phase == GamePhase.TERRITORY_PROCESSING:
             auto_territory(ts)
             continue
+        if phase == GamePhase.FORCED_ELIMINATION:
+            # FORCED_ELIMINATION phase - player had no actions this turn but controls stacks
+            # Must apply explicit forced_elimination move (RR-CANON-R070/R072)
+            fe_moves = GameEngine._get_forced_elimination_moves(state, player)
+            if fe_moves:
+                apply(fe_moves[0], ts)
+                continue
 
         requirement = GameEngine.get_phase_requirement(state, player)
         if requirement is not None:

@@ -361,6 +361,34 @@ def _expand_gpu_moves_to_canonical(
                     current_state = GameEngine.apply_move(current_state, phase_move)
                     continue
 
+            elif phase == GamePhase.FORCED_ELIMINATION:
+                # FORCED_ELIMINATION phase - player had no actions this turn but controls stacks
+                # Must generate explicit forced_elimination move (RR-CANON-R070/R072)
+                if gpu_move.type != MoveType.FORCED_ELIMINATION:
+                    # Get available forced elimination moves
+                    fe_moves = GameEngine._get_forced_elimination_moves(current_state, player)
+
+                    if fe_moves:
+                        # Apply the forced elimination move (typically only one valid target)
+                        fe_move = fe_moves[0]
+                        move_num += 1
+                        phase_move = Move(
+                            id=f"move-{move_num}",
+                            type=MoveType.FORCED_ELIMINATION,
+                            player=player,
+                            to=fe_move.to,
+                            timestamp=gpu_move.timestamp,
+                            think_time=0,
+                            move_number=move_num,
+                        )
+                        expanded_moves.append(phase_move)
+                        current_state = GameEngine.apply_move(current_state, phase_move)
+                        continue
+                    else:
+                        # No forced elimination possible (player lost all stacks) - skip
+                        logger.warning(f"FORCED_ELIMINATION phase but no FE moves for player {player}")
+                        break
+
             # No phase move needed, break the while loop
             break
 
