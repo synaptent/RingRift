@@ -228,36 +228,51 @@ def should_run_tournament(db_path: Path, min_hours: float = 2) -> tuple[bool, st
     return True, f"Last tournament was {hours_since:.1f}h ago"
 
 
-def run_daemon(interval_seconds: int = 14400):
-    """Run tournament daemon (default: every 4 hours)."""
-    print(f"Starting ELO tournament daemon (interval: {interval_seconds}s)")
+def run_daemon(interval_seconds: int = 14400, rotate_configs: bool = True):
+    """Run tournament daemon (default: every 4 hours).
+
+    If rotate_configs=True, cycles through all 12 board/player combinations evenly:
+    - 4 boards: square8, square19, hex8, hexagonal
+    - 3 player counts: 2, 3, 4
+    """
+    # All 12 configurations to cycle through
+    ALL_CONFIGS = [
+        ("square8", 2), ("square8", 3), ("square8", 4),
+        ("square19", 2), ("square19", 3), ("square19", 4),
+        ("hex8", 2), ("hex8", 3), ("hex8", 4),
+        ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+    ]
+
+    config_index = 0
+
+    print(f"Starting ELO tournament daemon (interval: {interval_seconds}s, rotate: {rotate_configs})")
+    print(f"Cycling through {len(ALL_CONFIGS)} configurations")
     send_slack_message(
-        f"ELO tournament daemon started (interval: {interval_seconds/3600:.1f}h)",
+        f"ELO tournament daemon started (interval: {interval_seconds/3600:.1f}h, {len(ALL_CONFIGS)} configs)",
         "info"
     )
 
     while True:
         try:
-            # Check if we should run
-            should_run, reason = should_run_tournament(
-                DEFAULT_DB,
-                min_hours=MIN_HOURS_BETWEEN_TOURNAMENTS
+            # Get current config
+            if rotate_configs:
+                board_type, num_players = ALL_CONFIGS[config_index]
+                config_index = (config_index + 1) % len(ALL_CONFIGS)
+            else:
+                board_type, num_players = "square8", 2
+
+            config_str = f"{board_type}/{num_players}p"
+            print(f"[{datetime.now().strftime('%H:%M')}] Running tournament: {config_str}")
+
+            success, message = run_tournament(
+                board_type=board_type,
+                num_players=num_players,
+                top_n=TOP_N_MODELS,
+                games=GAMES_PER_MATCHUP,
             )
 
-            if should_run:
-                print(f"[{datetime.now().strftime('%H:%M')}] Running tournament: {reason}")
-
-                success, message = run_tournament(
-                    board_type="square8",
-                    num_players=2,
-                    top_n=TOP_N_MODELS,
-                    games=GAMES_PER_MATCHUP,
-                )
-
-                alert_type = "success" if success else "error"
-                send_slack_message(message, alert_type)
-            else:
-                print(f"[{datetime.now().strftime('%H:%M')}] Skipping: {reason}")
+            alert_type = "success" if success else "error"
+            send_slack_message(f"[{config_str}] {message}", alert_type)
 
         except Exception as e:
             print(f"Daemon error: {e}")
@@ -271,6 +286,10 @@ def main():
     parser.add_argument("--daemon", action="store_true", help="Run as daemon")
     parser.add_argument("--interval", type=int, default=14400,
                         help="Daemon interval in seconds (default: 4 hours)")
+    parser.add_argument("--rotate", action="store_true", default=True,
+                        help="Rotate through all 12 board/player configs (default: True)")
+    parser.add_argument("--no-rotate", dest="rotate", action="store_false",
+                        help="Only run single board/player config")
     parser.add_argument("--dry-run", action="store_true", help="Show what would happen")
     parser.add_argument("--board", type=str, default="square8", help="Board type")
     parser.add_argument("--players", type=int, default=2, help="Number of players")
@@ -282,7 +301,7 @@ def main():
     args = parser.parse_args()
 
     if args.daemon:
-        run_daemon(args.interval)
+        run_daemon(args.interval, rotate_configs=args.rotate)
     else:
         # Single run
         _should_run, reason = should_run_tournament(DEFAULT_DB, min_hours=0)
