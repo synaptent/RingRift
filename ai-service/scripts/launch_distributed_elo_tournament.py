@@ -691,10 +691,10 @@ fi
 def run_match_via_p2p(
     node_id: str,
     node_ip: str,
-    agent_a: str,
-    agent_b: str,
+    agents: list[str],
     match_id: str,
     board_type: str = "square8",
+    num_players: int = 2,
     use_ramdrive: bool = False,
     max_retries: int = 2,
 ) -> tuple[MatchResult | None, str | None]:
@@ -702,6 +702,17 @@ def run_match_via_p2p(
 
     Uses the /tournament/play_elo_match endpoint on port 8770 which supports
     all AI types including MCTS, Descent, Policy-Only, and Gumbel MCTS.
+    Supports 2-4 player games.
+
+    Args:
+        node_id: Node identifier
+        node_ip: Node IP address
+        agents: List of agent identifiers for all players
+        match_id: Unique match identifier
+        board_type: Board type (square8, square19, hexagonal)
+        num_players: Number of players (2, 3, or 4)
+        use_ramdrive: Use ramdrive for faster execution
+        max_retries: Number of retry attempts
 
     Returns:
         Tuple of (MatchResult or None, error_message or None)
@@ -712,16 +723,20 @@ def run_match_via_p2p(
     url = f"http://{node_ip}:8770/tournament/play_elo_match"
 
     # Get full config for each agent
-    agent_a_config = AI_TYPE_CONFIGS.get(agent_a, {"ai_type": agent_a})
-    agent_b_config = AI_TYPE_CONFIGS.get(agent_b, {"ai_type": agent_b})
+    agent_configs = [AI_TYPE_CONFIGS.get(a, {"ai_type": a}) for a in agents]
 
+    # Build payload with multiplayer support
     payload = {
-        "agent_a": agent_a,
-        "agent_b": agent_b,
-        "agent_a_config": agent_a_config,
-        "agent_b_config": agent_b_config,
+        "agents": agents,
+        "agent_configs": agent_configs,
         "board_type": board_type,
+        "num_players": num_players,
         "use_ramdrive": use_ramdrive,
+        # Legacy fields for backward compatibility
+        "agent_a": agents[0] if agents else "random",
+        "agent_b": agents[1] if len(agents) > 1 else "random",
+        "agent_a_config": agent_configs[0] if agent_configs else {"ai_type": "random"},
+        "agent_b_config": agent_configs[1] if len(agent_configs) > 1 else {"ai_type": "random"},
     }
 
     last_error = None
@@ -743,12 +758,13 @@ def run_match_via_p2p(
                 if result.get("success"):
                     return MatchResult(
                         match_id=result.get("match_id", match_id),
-                        agent_a=agent_a,
-                        agent_b=agent_b,
+                        agents=result.get("agents", agents),
                         winner=result.get("winner", "draw"),
+                        winner_player=result.get("winner_player", 0),
                         game_length=result.get("game_length", 0),
                         duration_sec=result.get("duration_sec", 0),
                         worker_node=result.get("worker_node", node_id),
+                        num_players=num_players,
                     ), None
                 else:
                     last_error = f"Match failed: {result.get('error', 'unknown')}"
@@ -779,40 +795,56 @@ def run_match_via_p2p(
 def run_match_on_node(
     node_id: str,
     config: dict,
-    agent_a: str,
-    agent_b: str,
+    agents: list[str],
     match_id: str,
     board_type: str = "square8",
+    num_players: int = 2,
     use_ramdrive: bool = False,
 ) -> tuple[MatchResult | None, str | None]:
     """Run a single match on a remote node.
 
     First tries the P2P orchestrator endpoint (fast, supports all AI types),
-    falls back to SSH if P2P is unavailable.
+    falls back to SSH if P2P is unavailable (2-player only).
+
+    Args:
+        node_id: Node identifier
+        config: Node configuration dict
+        agents: List of agent identifiers for all players
+        match_id: Unique match identifier
+        board_type: Board type
+        num_players: Number of players (2, 3, or 4)
+        use_ramdrive: Use ramdrive for faster execution
 
     Returns:
         Tuple of (MatchResult or None, error_message or None)
     """
     ip = config["ip"]
 
-    # Try P2P endpoint first (preferred - supports all AI types)
+    # Try P2P endpoint first (preferred - supports all AI types and multiplayer)
     result, p2p_error = run_match_via_p2p(
         node_id=node_id,
         node_ip=ip,
-        agent_a=agent_a,
-        agent_b=agent_b,
+        agents=agents,
         match_id=match_id,
         board_type=board_type,
+        num_players=num_players,
         use_ramdrive=use_ramdrive,
     )
 
     if result:
         return result, None
 
+    # SSH fallback only works for 2-player games with simple AI types
+    if num_players != 2:
+        return None, p2p_error or f"P2P failed and SSH fallback only supports 2-player games"
+
     # Fallback to SSH for nodes without P2P (limited AI type support)
     user = config["user"]
     port = config.get("ssh_port", 22)
     path = config.get("path", "~/ringrift/ai-service")
+
+    agent_a = agents[0] if agents else "random"
+    agent_b = agents[1] if len(agents) > 1 else "random"
 
     # SSH fallback only supports simple AI types
     ai_type_map = {
@@ -888,14 +920,17 @@ print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - 
                     if line.startswith("{"):
                         data = json.loads(line)
                         if "winner" in data:
+                            winner_str = data.get("winner", "draw")
+                            winner_player = 1 if winner_str == "agent_a" else (2 if winner_str == "agent_b" else 0)
                             return MatchResult(
                                 match_id=match_id,
-                                agent_a=agent_a,
-                                agent_b=agent_b,
-                                winner=data.get("winner", "draw"),
+                                agents=agents,
+                                winner=winner_str,
+                                winner_player=winner_player,
                                 game_length=data.get("moves", 0),
                                 duration_sec=data.get("dur", 0),
                                 worker_node=node_id,
+                                num_players=2,
                             ), None
             except json.JSONDecodeError as e:
                 ssh_error = f"SSH JSON decode: {e}"
@@ -955,6 +990,7 @@ def run_distributed_tournament(
     agents: list[str],
     games_per_pairing: int = 4,
     board_type: str = "square8",
+    num_players: int = 2,
     use_ramdrive: bool = False,
     max_parallel_per_node: int = 2,
     min_ram_gb: int = 0,
@@ -967,6 +1003,7 @@ def run_distributed_tournament(
         agents: List of agent names to include in tournament
         games_per_pairing: Number of games per agent pairing
         board_type: Board type (square8, square19, hexagonal)
+        num_players: Number of players per game (2, 3, or 4)
         use_ramdrive: Use ramdrive for faster execution
         max_parallel_per_node: Max parallel matches per node
         min_ram_gb: Minimum RAM in GB required for node (for heavyweight agents)
@@ -1016,18 +1053,23 @@ def run_distributed_tournament(
                 except Exception:
                     pass
 
-    # Generate matchups
+    # Generate matchups - for multiplayer, fill extra slots with random
     matchups = []
     for i, a in enumerate(agents):
         for b in agents[i + 1:]:
             for _ in range(games_per_pairing):
-                matchups.append((a, b))
+                # Create agents list, filling extra slots with random
+                match_agents = [a, b]
+                while len(match_agents) < num_players:
+                    match_agents.append("random")
+                matchups.append(match_agents)
 
     import random
     random.shuffle(matchups)
 
     print("\n[Tournament] Starting tournament:")
     print(f"  Agents: {len(agents)}")
+    print(f"  Players per game: {num_players}")
     print(f"  Matchups: {len(matchups)}")
     print(f"  Nodes: {len(nodes)}")
     print(f"  Est. matches/node: {len(matchups) // len(nodes)}")
@@ -1054,7 +1096,7 @@ def run_distributed_tournament(
         return [n for n in nodes if n.node_id not in disabled_nodes]
 
     def process_match(args):
-        idx, (agent_a, agent_b), node = args
+        idx, match_agents, node = args
         match_id = f"{tournament_id}_{idx}"
 
         # Check if node is still available
@@ -1064,7 +1106,10 @@ def run_distributed_tournament(
         config = all_hosts.get(node.node_id, {})
         if not config:
             return None, "No config for node"
-        return run_match_on_node(node.node_id, config, agent_a, agent_b, match_id, board_type, use_ramdrive)
+        return run_match_on_node(
+            node.node_id, config, match_agents, match_id,
+            board_type, num_players, use_ramdrive
+        )
 
     # Distribute work across nodes
     max_workers = len(nodes) * max_parallel_per_node
@@ -1083,7 +1128,7 @@ def run_distributed_tournament(
 
         for future in as_completed(futures):
             item = futures[future]
-            idx, (agent_a, agent_b), node = item
+            idx, match_agents, node = item
 
             try:
                 result, error = future.result()
@@ -1097,8 +1142,9 @@ def run_distributed_tournament(
                     error_counts[error_key] += 1
                     node_failures[node.node_id] += 1
                     # Debug: print first few failures and all unique error types
+                    agents_desc = " vs ".join(match_agents[:2])  # Show first two for brevity
                     if failed <= 5 or error_key not in list(error_counts.keys())[:10]:
-                        print(f"  [FAIL] {node.node_id}: {agent_a} vs {agent_b} - {error[:100] if error else 'Unknown'}")
+                        print(f"  [FAIL] {node.node_id}: {agents_desc} - {error[:100] if error else 'Unknown'}")
 
                     # Disable node if too many failures
                     if node_failures[node.node_id] >= max_node_failures and node.node_id not in disabled_nodes:
