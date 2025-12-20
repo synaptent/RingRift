@@ -159,6 +159,22 @@ class PolicyOnlyAI(BaseAI):
             return np.ones(len(valid_moves))
 
         try:
+            # Update history for the current game state (critical for model accuracy)
+            # The neural network was trained with history, so we need to track it
+            current_features, _ = self.neural_net._extract_features(game_state)
+            game_id = game_state.id
+
+            if game_id not in self.neural_net.game_history:
+                self.neural_net.game_history[game_id] = []
+
+            # Append current state to history
+            self.neural_net.game_history[game_id].append(current_features)
+
+            # Keep only needed history (history_length + 1 for current)
+            max_hist = self.neural_net.history_length + 1
+            if len(self.neural_net.game_history[game_id]) > max_hist:
+                self.neural_net.game_history[game_id] = self.neural_net.game_history[game_id][-max_hist:]
+
             # Single forward pass
             _, policy = self.neural_net.evaluate_batch([game_state])
 
