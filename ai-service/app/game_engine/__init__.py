@@ -20,10 +20,12 @@ from .phase_requirements import (
 # Re-export from legacy module for backwards compatibility
 from app._game_engine_legacy import (
     GameEngine,
+    STRICT_NO_MOVE_INVARIANT,
 )
 
 __all__ = [
     "GameEngine",
     "PhaseRequirement",
     "PhaseRequirementType",
+    "STRICT_NO_MOVE_INVARIANT",
 ]

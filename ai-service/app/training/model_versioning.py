@@ -733,11 +733,11 @@ class ModelVersionManager:
 
         checkpoint_config = metadata.config
 
-        # Critical keys that affect tensor shapes
+        # Critical keys that affect tensor shapes and feature compatibility
         critical_keys = {
             'board_size', 'total_in_channels', 'in_channels',
             'num_filters', 'num_res_blocks', 'policy_size',
-            'global_features',
+            'global_features', 'feature_version',  # feature_version affects encoding
         }
 
         keys_to_check = (

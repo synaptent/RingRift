@@ -82,7 +82,8 @@ if str(AI_SERVICE_ROOT) not in sys.path:
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
 from app.training.generate_data import create_initial_state
-from app.game_engine import BoardType, GameEngine
+from app.game_engine import GameEngine
+from app.models import BoardType
 from app.rules.serialization import serialize_game_state
 from app.rules.history_validation import validate_canonical_history_for_game
 from app.rules import global_actions as ga
