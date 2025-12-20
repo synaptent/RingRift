@@ -1653,10 +1653,13 @@ def get_coordinator() -> TaskCoordinator:
     return TaskCoordinator.get_instance()
 
 
-def can_spawn(task_type: TaskType, node_id: str) -> bool:
-    """Quick check if spawning is allowed."""
-    allowed, _ = get_coordinator().can_spawn_task(task_type, node_id)
-    return allowed
+def can_spawn(task_type: TaskType, node_id: str) -> tuple:
+    """Quick check if spawning is allowed.
+
+    Returns:
+        tuple: (allowed: bool, reason: str) - whether spawning is allowed and why not if blocked
+    """
+    return get_coordinator().can_spawn_task(task_type, node_id)
 
 
 def emergency_stop_all() -> None:

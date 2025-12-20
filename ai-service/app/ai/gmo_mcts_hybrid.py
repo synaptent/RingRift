@@ -337,7 +337,7 @@ class GMOMCTSHybrid(BaseAI):
     def evaluate_position(self, game_state: GameState) -> float:
         """Evaluate the current position from this AI's perspective.
 
-        Uses GMO value estimation or simulation if GMO not available.
+        Uses GMO value estimation.
 
         Args:
             game_state: Current game state
@@ -345,16 +345,28 @@ class GMOMCTSHybrid(BaseAI):
         Returns:
             Position evaluation from -1.0 (losing) to 1.0 (winning)
         """
-        if self._gmo_trained:
-            # Use GMO value network
-            with torch.no_grad():
-                state_embed = self.gmo_state_encoder(game_state).to(self.device)
-                null_move = torch.zeros(self.hybrid_config.gmo_embed_dim, device=self.device)
-                value, _ = self.gmo_value_net(state_embed.unsqueeze(0), null_move.unsqueeze(0))
-                return value.item()
-        else:
-            # Fallback to simulation
-            return self._simulate(game_state)
+        # Use GMO for evaluation
+        with torch.no_grad():
+            state_embed = self.gmo.state_encoder.encode_state(game_state)
+
+            # Get legal moves and evaluate best one
+            legal_moves = self.get_valid_moves(game_state)
+            if not legal_moves:
+                return 0.0
+
+            best_value = float('-inf')
+            for move in legal_moves[:5]:  # Check top 5 moves for speed
+                move_embed = self.gmo.move_encoder.encode_move(move)
+                mean_val, _, _ = estimate_uncertainty(
+                    state_embed,
+                    move_embed,
+                    self.gmo.value_net,
+                    self.gmo.gmo_config.mc_samples,
+                )
+                if mean_val.item() > best_value:
+                    best_value = mean_val.item()
+
+            return best_value
 
 
 def create_gmo_mcts_hybrid(

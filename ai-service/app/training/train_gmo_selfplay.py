@@ -372,7 +372,7 @@ def generate_selfplay_games(
                     {
                         "type": m.type.value,
                         "player": m.player,
-                        "from": {"x": m.from_.x, "y": m.from_.y} if m.from_ else None,
+                        "from": {"x": m.from_pos.x, "y": m.from_pos.y} if m.from_pos else None,
                         "to": {"x": m.to.x, "y": m.to.y} if m.to else None,
                     }
                     for m in moves
