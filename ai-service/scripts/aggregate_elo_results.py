@@ -94,12 +94,19 @@ def collect_from_node(host: str, user: str) -> Dict[str, Any]:
     """Collect gauntlet results from a single node."""
     try:
         # Try multiple possible result file locations
-        cmd = f"""ssh -o ConnectTimeout=10 -o BatchMode=yes {user}@{host} '
-            cat ~/ringrift/ai-service/data/baseline_gauntlet_results.json 2>/dev/null || \
-            cat ~/ringrift/ai-service/data/gauntlet_results.json 2>/dev/null || \
-            echo "{{}}"
-        '"""
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        # Use list-form command to avoid shell injection
+        remote_cmd = (
+            'cat ~/ringrift/ai-service/data/baseline_gauntlet_results.json 2>/dev/null || '
+            'cat ~/ringrift/ai-service/data/gauntlet_results.json 2>/dev/null || '
+            'echo "{}"'
+        )
+        result = subprocess.run(
+            [
+                "ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
+                f"{user}@{host}", remote_cmd
+            ],
+            capture_output=True, text=True, timeout=30
+        )
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout.strip())
             if data:

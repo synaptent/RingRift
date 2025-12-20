@@ -1419,6 +1419,7 @@ __all__ = [
     "MIN_MEMORY_GB_FOR_TASKS",
     "P2P_DEFAULT_PORT",
     "P2P_HTTP_TIMEOUT",
+    "TASK_RESOURCE_MAP",
     "TARGET_CPU_UTILIZATION_MAX",
     "TARGET_CPU_UTILIZATION_MIN",
     "TARGET_GPU_UTILIZATION_MAX",
@@ -1445,11 +1446,16 @@ __all__ = [
     "CacheType",
     "CallbackMixin",
     "CallbackRegistry",
+    "CheckpointInfo",
     "CircuitBreaker",
     "CircuitState",
     "ClusterDataStatus",
     "ClusterHealth",
     "ClusterState",
+    # Distributed layer sync exports (optional)
+    "ClusterSyncStats",
+    # Cluster Transport
+    "ClusterTransport",
     "CoordinatedTask",
     # Backward-compatible names
     "CoordinationSyncCoordinator",  # Renamed to avoid collision
@@ -1475,6 +1481,8 @@ __all__ = [
     "DaemonType",
     # DataPipelineOrchestrator
     "DataPipelineOrchestrator",
+    # Distributed layer sync exports (optional)
+    "DistributedSyncCoordinator",
     # Distributed Locking
     "DistributedLock",
     # Duration Scheduler
@@ -1507,7 +1515,15 @@ __all__ = [
     # MetricsAnalysisOrchestrator
     "MetricsAnalysisOrchestrator",
     "MetricsConfig",
+    # Model Lifecycle Coordinator (December 2025)
+    "ModelCacheEntry",
+    "ModelLifecycleCoordinator",
+    "ModelLifecycleStats",
+    "ModelRecord",
+    "ModelState",
     "NodeCacheState",
+    # Cluster Transport
+    "NodeConfig",
     "NodeResourceState",
     "NodeResources",
     "OptimizationConfig",
@@ -1580,6 +1596,8 @@ __all__ = [
     # Coordinator Persistence Layer (December 2025)
     "StateSerializer",
     "StateSnapshot",
+    # Distributed layer sync exports (optional)
+    "SyncCategory",
     "SyncAction",
     "SyncLockInfo",
     # Sync Mutex
@@ -1589,6 +1607,8 @@ __all__ = [
     # Sync SCHEDULER (unified data sync SCHEDULING - December 2025)
     # Preferred names (avoids collision with distributed.sync_coordinator.SyncCoordinator)
     "SyncScheduler",
+    # Distributed layer sync exports (optional)
+    "SyncStats",
     # Task Decorators (December 2025)
     "TaskContext",
     # Task Coordinator (canonical)
@@ -1619,6 +1639,8 @@ __all__ = [
     "TransactionState",
     "TransferPriority",
     "TransferRecord",
+    # Cluster Transport
+    "TransportResult",
     # Transfer Verification (checksum verification for data integrity)
     "TransferVerifier",
     # Unified Event Coordinator (bridges all event systems)
@@ -1716,14 +1738,15 @@ __all__ = [
     "get_config",
     "get_config_game_counts",
     "get_coordinator",
-    "get_coordinator",
     "get_coordinator_safe",
     "get_cpu_rich_hosts",
+    "get_cluster_transport",
     "get_cross_coordinator_health",
     "get_current_node_id",
     "get_current_pipeline_stage",
     "get_current_task_context",
     "get_daemon_manager",
+    "get_elo_lookup",
     "get_ephemeral_guard",
     "get_evacuation_candidates",
     "get_event_coordinator",
@@ -1739,6 +1762,7 @@ __all__ = [
     "get_host_targets_safe",
     "get_job_scheduler",
     "get_metrics_orchestrator",
+    "get_model_coordinator",
     "get_next_sync_target",
     "get_optimal_concurrency",
     "get_optimal_transfer_time",
@@ -1748,9 +1772,13 @@ __all__ = [
     "get_p2p_backend",
     "get_pipeline_orchestrator",
     "get_pipeline_status",
+    "get_production_elo",
+    "get_production_model_id",
+    "get_quality_lookup",
     "get_queue_monitor",
     "get_queue_stats",
     "get_queue_types",
+    "get_registered_coordinator",
     "get_registered_coordinators",
     "get_registry",
     "get_registry_safe",
@@ -1778,6 +1806,7 @@ __all__ = [
     "get_system_health",
     "get_target_job_count",
     "get_task_lifecycle_coordinator",
+    "get_task_resource_type",
     "get_task_stats",
     "get_task_types",
     "get_threshold_manager",
@@ -1796,6 +1825,7 @@ __all__ = [
     "get_underserved_configs",
     "get_unified_registry",
     "get_utilization_score",
+    "full_cluster_sync",
     "has_bandwidth_manager",
     # Coordination helpers (safe wrappers)
     "has_coordination",
@@ -1811,6 +1841,8 @@ __all__ = [
     "inject_trace_into_headers",
     "invalidate_model_caches",
     "is_coordinator",
+    "is_cpu_task",
+    "is_gpu_task",
     "is_heartbeat_running",
     "is_host_ephemeral",
     "is_host_healthy",
@@ -1825,10 +1857,10 @@ __all__ = [
     "poll_events_safe",
     "pre_spawn_check",
     "publish_event",
-    "publish_event",
     # Cross-process events helpers
     "publish_event_safe",
     "publish_event_sync",
+    "router_publish_event",
     "quarantine_file",
     "queue_critical_game",
     "record_games_generated",
@@ -1900,7 +1932,7 @@ __all__ = [
     # Queue backpressure helpers
     "should_throttle_safe",
     "shutdown_all_coordinators",
-    "shutdown_all_coordinators",
+    "shutdown_registered_coordinators",
     "span",
     # Coordinator Heartbeats (December 2025)
     "start_coordinator_heartbeats",
@@ -1910,8 +1942,12 @@ __all__ = [
     "subscribe_event",
     "subscribe_process",
     "subscribe_process_safe",
+    "sync_games",
+    "sync_high_quality_games",
     "sync_lock",
     "sync_lock_required",
+    "sync_models",
+    "sync_training_data",
     "task_context",
     "traced",
     "training_lock",
@@ -1930,6 +1966,7 @@ __all__ = [
     "warn_if_orchestrator_running",
     "wire_cache_events",
     "wire_metrics_events",
+    "wire_model_events",
     "wire_optimization_events",
     "wire_pipeline_events",
     "wire_resource_events",

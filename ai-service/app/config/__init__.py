@@ -19,6 +19,44 @@ Usage:
     from app.config.thresholds import TRAINING_TRIGGER_GAMES, ELO_DROP_ROLLBACK
 """
 
+__all__ = [
+    "CMAESConfig",
+    "ConfigLoadError",
+    "ConfigLoader",
+    "ConfigSource",
+    "ConfigValidator",
+    "DataLoadingConfig",
+    "ELO_DROP_ROLLBACK",
+    "ELO_IMPROVEMENT_PROMOTE",
+    "ELO_K_FACTOR",
+    "HAS_UNIFIED_CONFIG",
+    "INITIAL_ELO_RATING",
+    "IntegratedEnhancementsConfig",
+    "MIN_GAMES_FOR_ELO",
+    "MIN_GAMES_PROMOTE",
+    "MIN_GAMES_REGRESSION",
+    "NeuralNetConfig",
+    "QualityConfig",
+    "SelfPlayConfig",
+    "TRAINING_MAX_CONCURRENT",
+    "TRAINING_MIN_INTERVAL_SECONDS",
+    "TRAINING_STALENESS_HOURS",
+    "TRAINING_TRIGGER_GAMES",
+    "UnifiedConfig",
+    "ValidationResult",
+    "WIN_RATE_DROP_ROLLBACK",
+    "create_training_manager",
+    "env_override",
+    "get_config",
+    "get_training_threshold",
+    "load_config",
+    "merge_configs",
+    "save_config",
+    "validate_all_configs",
+    "validate_config",
+    "validate_startup",
+]
+
 from app.config.config_validator import (
     ConfigValidator,
     ValidationResult,
@@ -60,39 +98,6 @@ except ImportError:
     DataLoadingConfig = None
     QualityConfig = None
 
-__all__ = [
-    "HAS_UNIFIED_CONFIG",
-    # Training configs
-    "CMAESConfig",
-    "ConfigLoadError",
-    "ConfigLoader",
-    "ConfigSource",
-    # Validation
-    "ConfigValidator",
-    "NeuralNetConfig",
-    "SelfPlayConfig",
-    "ValidationResult",
-    "env_override",
-    # Config loader (December 2025)
-    "load_config",
-    "merge_configs",
-    "save_config",
-    "validate_all_configs",
-    "validate_config",
-    "validate_startup",
-]
-
-if HAS_UNIFIED_CONFIG:
-    __all__.extend([
-        "DataLoadingConfig",
-        "IntegratedEnhancementsConfig",
-        "QualityConfig",
-        "UnifiedConfig",
-        "create_training_manager",
-        "get_config",
-        "get_training_threshold",
-    ])
-
 # Re-export key threshold constants for convenience
 from app.config.thresholds import (
     # Rollback thresholds
@@ -112,19 +117,3 @@ from app.config.thresholds import (
     TRAINING_TRIGGER_GAMES,
     WIN_RATE_DROP_ROLLBACK,
 )
-
-__all__.extend([
-    "ELO_DROP_ROLLBACK",
-    "ELO_IMPROVEMENT_PROMOTE",
-    "ELO_K_FACTOR",
-    "INITIAL_ELO_RATING",
-    "MIN_GAMES_FOR_ELO",
-    "MIN_GAMES_PROMOTE",
-    "MIN_GAMES_REGRESSION",
-    "TRAINING_MAX_CONCURRENT",
-    "TRAINING_MIN_INTERVAL_SECONDS",
-    "TRAINING_STALENESS_HOURS",
-    # Threshold constants
-    "TRAINING_TRIGGER_GAMES",
-    "WIN_RATE_DROP_ROLLBACK",
-])
