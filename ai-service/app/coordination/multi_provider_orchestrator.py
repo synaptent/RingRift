@@ -214,13 +214,6 @@ class MultiProviderOrchestrator:
                 ssh_port = inst.get("ssh_port", 22)
                 label = inst.get("label") or f"vast-{inst_id}"
 
-                # Try to find matching Tailscale node
-                _matching_ts = None
-                for ts_name, ts_node in self.nodes.items():
-                    if "vast" in ts_name.lower() and ts_node.is_tailscale_connected:
-                        # Could match by checking SSH
-                        pass
-
                 name = label or f"vast-{gpu_name.replace(' ', '-')}-{inst_id}"
 
                 node = ClusterNode(
@@ -276,7 +269,6 @@ class MultiProviderOrchestrator:
                 for inst in reservation:
                     inst_id = inst.get("InstanceId", "")
                     state = inst.get("State", {}).get("Name", "unknown")
-                    _inst_type = inst.get("InstanceType", "unknown")
                     public_ip = inst.get("PublicIpAddress")
 
                     # Get name from tags
@@ -329,15 +321,10 @@ class MultiProviderOrchestrator:
                 server_id = str(server.get("id", ""))
                 name = server.get("name", f"hetzner-{server_id}")
                 status = server.get("status", "unknown")
-                _server_type = server.get("server_type", {}).get("name", "unknown")
 
                 # Get IPs
                 public_net = server.get("public_net", {})
                 ipv4 = public_net.get("ipv4", {}).get("ip")
-                _ipv6 = public_net.get("ipv6", {}).get("ip")
-
-                # Get datacenter
-                _datacenter = server.get("datacenter", {}).get("name", "unknown")
 
                 # CPU-only instances don't have GPUs
                 cpu_cores = server.get("server_type", {}).get("cores", 0)

@@ -1308,7 +1308,6 @@ def _process_game_batch(
     # Reconstruct config from dict
     board_type = BoardType(config_dict['board_type'])
     sample_every_n = config_dict['sample_every_n_moves']
-    _min_game_length = config_dict['min_game_length']
     max_moves = config_dict['max_moves_per_position']
     include_draws = config_dict['include_draws']
     distill_from_winners = config_dict['distill_from_winners']

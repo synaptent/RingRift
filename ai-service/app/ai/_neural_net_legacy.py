@@ -55,6 +55,14 @@ from .model_cache import (
     strip_module_prefix as _strip_module_prefix,
 )
 
+# Re-export loss functions for backwards compatibility
+# These are imported by app.ai.neural_net.__init__ and external code
+from .neural_losses import (
+    multi_player_value_loss,
+    rank_distribution_loss,
+    ranks_from_game_result,
+)
+
 logger = logging.getLogger(__name__)
 
 # Reference to the shared model cache (for direct access in this module)
@@ -5470,7 +5478,6 @@ class NeuralNetAI(BaseAI):
 
         if territory_choice_base <= index < territory_choice_base + territory_choice_span:
             offset = index - territory_choice_base
-            _player_idx = offset % TERRITORY_MAX_PLAYERS
             offset //= TERRITORY_MAX_PLAYERS
             size_bucket = offset % TERRITORY_SIZE_BUCKETS
             pos_idx = offset // TERRITORY_SIZE_BUCKETS

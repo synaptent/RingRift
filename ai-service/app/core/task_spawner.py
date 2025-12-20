@@ -356,7 +356,6 @@ class TaskSpawner:
             spawned.state = TaskState.RUNNING
 
             restarts = 0
-            _last_error: Exception | None = None
 
             while True:
                 try:

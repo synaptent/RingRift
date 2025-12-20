@@ -897,7 +897,6 @@ def wire_training_events() -> TrainingCoordinator:
             job_id = payload.get("job_id")
             board_type = payload.get("board_type")
             num_players = payload.get("num_players")
-            _host = payload.get("host") or payload.get("node_id")
             if job_id and board_type and num_players:
                 # Training already registered - just log
                 logger.info(f"[TrainingCoordinator] Training started: {job_id}")

@@ -17,6 +17,7 @@
 
 ## Table of Contents
 
+- [Infrastructure Overview](#infrastructure-overview)
 - [Executive Summary and Clean-Signal Runbook](#executive-summary-and-clean-signal-runbook)
 - [1. Current State Assessment](#1-current-state-assessment)
 - [2. Problem Analysis](#2-problem-analysis)
@@ -25,6 +26,52 @@
 - [5. Priority Ordering](#5-priority-ordering)
 - [6. Success Criteria](#6-success-criteria)
 - [Revision History](#revision-history)
+
+---
+
+## Infrastructure Overview
+
+### Environments
+
+| Environment   | URL                     | Deployment Method             | Purpose                                   |
+| ------------- | ----------------------- | ----------------------------- | ----------------------------------------- |
+| Local Staging | `http://localhost:3000` | `./scripts/deploy-staging.sh` | Load test development, feature validation |
+| Production    | `https://ringrift.ai`   | SSH + PM2                     | Production validation gates               |
+
+### Architecture
+
+**Production (ringrift.ai)**:
+
+- EC2 r5.4xlarge (128GB RAM, 16 vCPU)
+- nginx → Node.js (:3001) → AI Service (:8765)
+- PM2 process management
+- Let's Encrypt SSL
+
+**Local Staging (Docker Compose)**:
+
+- `docker-compose.staging.yml`
+- nginx → app (:3000/:3001) → ai-service (:8001) → postgres, redis
+- Prometheus + Grafana monitoring stack
+
+### Load Test Environment Variables
+
+**For Local Staging:**
+
+```bash
+export BASE_URL=http://localhost:3000
+export WS_URL=ws://localhost:3001
+export AI_SERVICE_URL=http://localhost:8001
+```
+
+**For Production (ringrift.ai):**
+
+```bash
+export BASE_URL=https://ringrift.ai
+export WS_URL=wss://ringrift.ai
+export AI_SERVICE_URL=https://ringrift.ai:8765
+```
+
+---
 
 ## Executive Summary and Clean-Signal Runbook
 
@@ -355,6 +402,10 @@ At 300 VUs with 2-5s polling intervals:
 
 ### PV-03: Rate Limit Bypass for Load Test Users
 
+> ⚠️ **CRITICAL**: `RATE_LIMIT_BYPASS_ENABLED` must be `false` in production.
+> Only enable for local staging load tests. Any bypass attempt in production
+> will be logged and should trigger security alerts.
+
 | Attribute               | Value                                                                                                                                                                                                                                                                                    |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Task ID**             | PV-03                                                                                                                                                                                                                                                                                    |
@@ -399,14 +450,57 @@ At 300 VUs with 2-5s polling intervals:
 
 ### PV-07: Execute Clean Baseline Run
 
-| Attribute               | Value                                                                                                                                                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task ID**             | PV-07                                                                                                                                                                                                            |
-| **Title**               | Run baseline scenario with clean auth and rate limit handling                                                                                                                                                    |
-| **Description**         | Execute the `BCAP_STAGING_BASELINE_20G_60P` scenario with PV-01 through PV-04 fixes applied. Capture clean SLO signal and update `BASELINE_CAPACITY.md` with new baseline metrics.                               |
-| **Acceptance Criteria** | <ul><li>Baseline run completes with <1% error rate</li><li>All SLOs pass with `--env staging`</li><li>Results documented in `BASELINE_CAPACITY.md`</li><li>Artifacts archived in `tests/load/results/`</li></ul> |
-| **Dependencies**        | PV-01, PV-02, PV-03, PV-04, PV-05                                                                                                                                                                                |
-| **Recommended Mode**    | code                                                                                                                                                                                                             |
+| Attribute               | Value                                                                                                                                                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Task ID**             | PV-07                                                                                                                                                                                                                                                |
+| **Title**               | Run baseline scenario with clean auth and rate limit handling                                                                                                                                                                                        |
+| **Description**         | Execute the `BCAP_STAGING_BASELINE_20G_60P` scenario with PV-01 through PV-04 fixes applied. Capture clean SLO signal and update `BASELINE_CAPACITY.md` with new baseline metrics. Run on local staging first, then production after staging passes. |
+| **Acceptance Criteria** | <ul><li>Baseline run completes with <1% error rate</li><li>All SLOs pass with `--env staging`</li><li>Results documented in `BASELINE_CAPACITY.md`</li><li>Artifacts archived in `tests/load/results/`</li></ul>                                     |
+| **Dependencies**        | PV-01, PV-02, PV-03, PV-04, PV-05                                                                                                                                                                                                                    |
+| **Recommended Mode**    | code                                                                                                                                                                                                                                                 |
+
+#### Local Staging Deployment
+
+```bash
+# 1. Configure staging environment
+cp .env.staging.example .env.staging
+# Edit .env.staging - replace all <STAGING_*> placeholders with real values
+
+# 2. Deploy staging stack
+./scripts/deploy-staging.sh --build
+
+# 3. Verify health
+npm run load:preflight
+
+# 4. Run load test (rate limit bypass enabled for staging)
+BASE_URL=http://localhost:3000 npm run load:test -- --scenario=baseline
+```
+
+#### Production Validation
+
+```bash
+# 1. Deploy code changes to production
+npm run build
+rsync -avz --delete dist/ ubuntu@ringrift.ai:/home/ubuntu/ringrift/dist/
+ssh ubuntu@ringrift.ai "pm2 restart ringrift-server"
+
+# 2. Verify health
+BASE_URL=https://ringrift.ai npm run load:preflight
+
+# 3. Run production load test (NO rate limit bypass!)
+BASE_URL=https://ringrift.ai npm run load:test -- --scenario=baseline
+```
+
+#### Success Criteria
+
+- [ ] Local staging passes all preflight checks
+- [ ] Baseline load test passes on local staging with error rate < 1%
+- [ ] Production preflight passes
+- [ ] Production baseline passes with:
+  - HTTP p95 < 800ms
+  - AI p95 < 1500ms
+  - True error rate < 1%
+  - No auth token exhaustion
 
 ### PV-08: Execute Clean Target-Scale Run
 
@@ -414,21 +508,85 @@ At 300 VUs with 2-5s polling intervals:
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Task ID**             | PV-08                                                                                                                                                                                                                                                  |
 | **Title**               | Run target-scale scenario with clean auth and rate limit handling                                                                                                                                                                                      |
-| **Description**         | Execute the `BCAP_SQ8_3P_TARGET_100G_300P` scenario with all fixes applied. This is the primary production validation gate. Capture clean SLO signal and update documentation.                                                                         |
+| **Description**         | Execute the `BCAP_SQ8_3P_TARGET_100G_300P` scenario with all fixes applied. This is the primary production validation gate. Capture clean SLO signal and update documentation. Run on local staging first, then production after staging passes.       |
 | **Acceptance Criteria** | <ul><li>Target-scale run (300 VUs, 30 min) completes</li><li>True error rate <0.5% (excluding auth/rate-limit)</li><li>All SLOs pass with `--env production`</li><li>Results documented in `BASELINE_CAPACITY.md`</li><li>Artifacts archived</li></ul> |
 | **Dependencies**        | PV-07                                                                                                                                                                                                                                                  |
 | **Recommended Mode**    | code                                                                                                                                                                                                                                                   |
 
+#### Local Staging Deployment
+
+```bash
+# 1. Configure staging environment (if not already done)
+cp .env.staging.example .env.staging
+# Edit .env.staging - replace all <STAGING_*> placeholders with real values
+
+# 2. Deploy staging stack
+./scripts/deploy-staging.sh --build
+
+# 3. Verify health
+npm run load:preflight
+
+# 4. Run target-scale load test (rate limit bypass enabled for staging)
+BASE_URL=http://localhost:3000 npm run load:test -- --scenario=target-scale
+```
+
+#### Production Validation
+
+```bash
+# 1. Deploy code changes to production
+npm run build
+rsync -avz --delete dist/ ubuntu@ringrift.ai:/home/ubuntu/ringrift/dist/
+ssh ubuntu@ringrift.ai "pm2 restart ringrift-server"
+
+# 2. Verify health
+BASE_URL=https://ringrift.ai npm run load:preflight
+
+# 3. Run production target-scale test (NO rate limit bypass!)
+BASE_URL=https://ringrift.ai npm run load:test -- --scenario=target-scale
+```
+
 ### PV-09: Execute Clean AI-Heavy Run
 
-| Attribute               | Value                                                                                                                                                                                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task ID**             | PV-09                                                                                                                                                                                                                              |
-| **Title**               | Run AI-heavy scenario for AI SLO validation                                                                                                                                                                                        |
-| **Description**         | Execute the `BCAP_SQ8_4P_AI_HEAVY_75G_300P` scenario with 3 AI seats per game. Validate AI response p95 <1000ms, AI fallback rate ≤1%, and move stall rate ≤0.5%.                                                                  |
-| **Acceptance Criteria** | <ul><li>AI-heavy run (75 VUs, AI-heavy profile) completes</li><li>AI response p95 <1000ms</li><li>AI fallback rate ≤1%</li><li>Results documented in `BASELINE_CAPACITY.md`</li><li>AI SLOs added to verification report</li></ul> |
-| **Dependencies**        | PV-08                                                                                                                                                                                                                              |
-| **Recommended Mode**    | code                                                                                                                                                                                                                               |
+| Attribute               | Value                                                                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Task ID**             | PV-09                                                                                                                                                                                                                               |
+| **Title**               | Run AI-heavy scenario for AI SLO validation                                                                                                                                                                                         |
+| **Description**         | Execute the `BCAP_SQ8_4P_AI_HEAVY_75G_300P` scenario with 3 AI seats per game. Validate AI response p95 <1000ms, AI fallback rate ≤1%, and move stall rate ≤0.5%. Run on local staging first, then production after staging passes. |
+| **Acceptance Criteria** | <ul><li>AI-heavy run (75 VUs, AI-heavy profile) completes</li><li>AI response p95 <1000ms</li><li>AI fallback rate ≤1%</li><li>Results documented in `BASELINE_CAPACITY.md`</li><li>AI SLOs added to verification report</li></ul>  |
+| **Dependencies**        | PV-08                                                                                                                                                                                                                               |
+| **Recommended Mode**    | code                                                                                                                                                                                                                                |
+
+#### Local Staging Deployment
+
+```bash
+# 1. Configure staging environment (if not already done)
+cp .env.staging.example .env.staging
+# Edit .env.staging - replace all <STAGING_*> placeholders with real values
+
+# 2. Deploy staging stack
+./scripts/deploy-staging.sh --build
+
+# 3. Verify health
+npm run load:preflight
+
+# 4. Run AI-heavy load test (rate limit bypass enabled for staging)
+BASE_URL=http://localhost:3000 npm run load:test -- --scenario=ai-heavy
+```
+
+#### Production Validation
+
+```bash
+# 1. Deploy code changes to production
+npm run build
+rsync -avz --delete dist/ ubuntu@ringrift.ai:/home/ubuntu/ringrift/dist/
+ssh ubuntu@ringrift.ai "pm2 restart ringrift-server"
+
+# 2. Verify health
+BASE_URL=https://ringrift.ai npm run load:preflight
+
+# 3. Run production AI-heavy test (NO rate limit bypass!)
+BASE_URL=https://ringrift.ai npm run load:test -- --scenario=ai-heavy
+```
 
 ### PV-10: Rehearse AI Service Degradation Drill
 
@@ -673,6 +831,7 @@ This remediation plan is complete when:
 
 ## Revision History
 
-| Version | Date       | Changes                  |
-| ------- | ---------- | ------------------------ |
-| 1.0     | 2025-12-20 | Initial remediation plan |
+| Version | Date       | Changes                                                                                                                                                                                                                                                                                        |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2025-12-20 | Initial remediation plan                                                                                                                                                                                                                                                                       |
+| 1.1     | 2025-12-20 | Added Infrastructure Overview section with ringrift.ai production and local staging details. Added deployment steps for PV-07, PV-08, PV-09 with staging-first → production workflow. Added rate limit bypass security warning to PV-03. Updated PV-07 with dual-environment success criteria. |

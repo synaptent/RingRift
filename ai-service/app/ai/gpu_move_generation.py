@@ -1018,7 +1018,7 @@ def _generate_capture_moves_batch_legacy(
                     if cell_owner != 0:
                         target_cap = state.cap_height[g, check_y, check_x].item()
                         if my_cap_height >= target_cap:
-                            target_y, _target_x = check_y, check_x
+                            target_y = check_y
                             target_dist = step
                         break
 

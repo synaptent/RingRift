@@ -988,9 +988,6 @@ class P2PIntegrationManager:
         while self._running:
             try:
                 if self._cluster_healthy and self.config.data_sync_enabled:
-                    # Check if sync is needed
-                    _sync_status = await self.client.get_sync_status()
-
                     # Trigger sync if needed
                     # This would implement sync logic based on data manifest
 

@@ -271,13 +271,6 @@ class ReanalysisEngine:
         games_processed = 0
         output_paths = []
 
-        # Batch accumulator (unused - kept for future batch processing)
-        _all_features = []
-        _all_globals = []
-        _all_values = []
-        _all_policy_idx = []
-        _all_policy_val = []
-
         logger.info(f"[Reanalysis] Processing games from {jsonl_path}")
 
         with open(jsonl_path) as f:

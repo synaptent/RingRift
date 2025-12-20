@@ -52,9 +52,6 @@ def apply_capture_moves_vectorized(
         moves: BatchMoves containing capture moves
         active_mask: (batch_size,) bool tensor of games with captures to apply
     """
-    _device = state.device
-    _batch_size = state.batch_size
-
     # Identify games that have moves to apply
     has_selection = (selected_local_idx >= 0) & active_mask & (moves.moves_per_game > 0)
 
@@ -222,9 +219,6 @@ def apply_movement_moves_vectorized(
     Similar to capture moves but without defender elimination.
     Still requires iteration for path marker processing.
     """
-    _device = state.device
-    _batch_size = state.batch_size
-
     has_selection = (selected_local_idx >= 0) & active_mask & (moves.moves_per_game > 0)
 
     if not has_selection.any():
@@ -350,7 +344,6 @@ def apply_recovery_moves_vectorized(
         return
 
     game_indices = torch.where(has_selection)[0]
-    _n_games = game_indices.shape[0]
 
     global_idx = moves.move_offsets[game_indices] + selected_local_idx[game_indices]
     global_idx = torch.clamp(global_idx, 0, max(0, moves.total_moves - 1))
@@ -497,7 +490,6 @@ def apply_placement_moves_batch_vectorized(
         moves: BatchMoves containing all candidate moves
     """
     device = state.device
-    _batch_size = state.batch_size
     active_mask = state.get_active_mask()
 
     # Filter to games with valid moves
@@ -688,7 +680,6 @@ def apply_movement_moves_batch_vectorized(
         moves: BatchMoves containing all candidate moves
     """
     device = state.device
-    _batch_size = state.batch_size
     board_size = state.board_size
     active_mask = state.get_active_mask()
 
@@ -958,7 +949,6 @@ def apply_capture_moves_batch_vectorized(
         moves: BatchMoves containing all candidate moves
     """
     device = state.device
-    _batch_size = state.batch_size
     board_size = state.board_size
     active_mask = state.get_active_mask()
 
@@ -1043,7 +1033,6 @@ def apply_capture_moves_batch_vectorized(
         # Fallback: no distance, treat to as target
         target_y = to_y
         target_x = to_x
-        _has_any_target = torch.ones(n_games, dtype=torch.bool, device=device)
 
     # Get defender info from TARGET position (not landing)
     defender_owner = state.stack_owner[game_indices, target_y, target_x]

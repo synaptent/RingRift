@@ -1451,7 +1451,7 @@ def discover_and_register_orchestrators() -> dict[str, Any]:
             module = getattr(package, module_parts[1])
 
             # Verify class or getter function exists
-            _target = getattr(module, orch_def["class_or_getter"])
+            getattr(module, orch_def["class_or_getter"])
 
             # Record discovery (don't instantiate unless needed)
             results[name] = {

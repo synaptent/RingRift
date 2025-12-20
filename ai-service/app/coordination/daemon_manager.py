@@ -518,12 +518,12 @@ class DaemonManager:
         try:
             from app.distributed.sync_coordinator import wire_all_quality_events_to_sync
 
-            _watcher = wire_all_quality_events_to_sync(
+            wire_all_quality_events_to_sync(
                 sync_cooldown_seconds=60.0,
                 min_quality_score=0.7,
                 max_games_per_sync=500,
             )
-            # Keep alive
+            # Keep daemon alive
             while True:
                 await asyncio.sleep(3600)
         except ImportError:

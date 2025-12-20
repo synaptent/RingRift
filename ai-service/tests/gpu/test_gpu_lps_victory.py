@@ -76,3 +76,115 @@ def test_gpu_lps_victory_requires_exclusive_rounds() -> None:
     assert victory_type == "lps"
     assert state.lps_consecutive_exclusive_player[g].item() == p1
     assert state.lps_consecutive_exclusive_rounds[g].item() >= 2
+
+
+def test_check_real_actions_batch_rings_in_hand() -> None:
+    """Test _check_real_actions_batch: rings in hand counts as real action."""
+    device = torch.device("cpu")
+    runner = ParallelGameRunner(
+        batch_size=4,
+        board_size=8,
+        num_players=2,
+        device=device,
+        shadow_validation=False,
+        state_validation=False,
+        swap_enabled=False,
+    )
+    state = runner.state
+
+    # Game 0: P1 has rings -> has action
+    state.rings_in_hand[0, 1] = 5
+    state.rings_in_hand[0, 2] = 0
+
+    # Game 1: P1 has no rings but has stacks
+    state.rings_in_hand[1, 1] = 0
+    state.stack_owner[1, 2, 2] = 1
+    state.stack_height[1, 2, 2] = 3
+
+    # Game 2: P1 has neither -> no action
+    state.rings_in_hand[2, 1] = 0
+
+    # Game 3: P1 has rings -> has action
+    state.rings_in_hand[3, 1] = 2
+
+    mask = torch.ones(4, dtype=torch.bool, device=device)
+    result = runner._check_real_actions_batch(mask, player=1)
+
+    # Games 0 and 3 have rings
+    assert result[0].item() is True
+    assert result[3].item() is True
+    # Game 2 has nothing
+    assert result[2].item() is False
+
+
+def test_check_real_actions_batch_empty_mask() -> None:
+    """Test _check_real_actions_batch with empty mask returns zeros."""
+    device = torch.device("cpu")
+    runner = ParallelGameRunner(
+        batch_size=4,
+        board_size=8,
+        num_players=2,
+        device=device,
+        shadow_validation=False,
+        state_validation=False,
+        swap_enabled=False,
+    )
+
+    # Even with rings, empty mask should return all False
+    runner.state.rings_in_hand[:, 1] = 5
+    mask = torch.zeros(4, dtype=torch.bool, device=device)
+    result = runner._check_real_actions_batch(mask, player=1)
+
+    assert not result.any()
+
+
+def test_check_real_actions_batch_partial_mask() -> None:
+    """Test _check_real_actions_batch only checks masked games."""
+    device = torch.device("cpu")
+    runner = ParallelGameRunner(
+        batch_size=4,
+        board_size=8,
+        num_players=2,
+        device=device,
+        shadow_validation=False,
+        state_validation=False,
+        swap_enabled=False,
+    )
+
+    # All games have rings
+    runner.state.rings_in_hand[:, 1] = 5
+
+    # But only mask games 1 and 2
+    mask = torch.tensor([False, True, True, False], device=device)
+    result = runner._check_real_actions_batch(mask, player=1)
+
+    # Only masked games should report real actions
+    assert result[0].item() is False
+    assert result[1].item() is True
+    assert result[2].item() is True
+    assert result[3].item() is False
+
+
+def test_check_real_actions_batch_no_stacks() -> None:
+    """Test _check_real_actions_batch: no rings + no stacks = no action."""
+    device = torch.device("cpu")
+    runner = ParallelGameRunner(
+        batch_size=2,
+        board_size=8,
+        num_players=2,
+        device=device,
+        shadow_validation=False,
+        state_validation=False,
+        swap_enabled=False,
+    )
+    state = runner.state
+
+    # No rings, no stacks for P1
+    state.rings_in_hand[0, 1] = 0
+    state.rings_in_hand[1, 1] = 0
+
+    mask = torch.ones(2, dtype=torch.bool, device=device)
+    result = runner._check_real_actions_batch(mask, player=1)
+
+    assert not result[0].item()
+    assert not result[1].item()

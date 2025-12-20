@@ -908,7 +908,6 @@ class HostDeadJobMigrator:
             logger.debug(f"[HostDeadJobMigrator] No running jobs on host {host_name}")
             return 0
 
-        _job = running_jobs[host_name]  # Access to confirm key exists
         migrated = 0
 
         try:

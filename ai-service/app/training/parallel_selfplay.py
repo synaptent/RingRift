@@ -102,9 +102,6 @@ def _worker_init(config_dict: dict) -> None:
     if ai_service_root and ai_service_root not in sys.path:
         sys.path.insert(0, ai_service_root)
 
-    _worker_config = config_dict
-
-
 def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
     """
     Generate a single selfplay game in a worker process.
