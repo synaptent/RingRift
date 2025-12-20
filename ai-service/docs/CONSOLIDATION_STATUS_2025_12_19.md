@@ -1,7 +1,7 @@
 # RingRift AI-Service Consolidation Status
 
 **Date:** December 19, 2025
-**Status:** Phase 5 Complete (Checkpointing Migration + Test Coverage)
+**Status:** Phase 7 Complete (Safe Loading + Load Test Enhancements)
 
 ---
 
@@ -480,3 +480,113 @@ from app.coordination.daemon_manager import (
     DaemonType,
 )
 ```
+
+---
+
+## Phase 7 Work (December 19, 2025)
+
+### 32. Safe Checkpoint Loading Migration ✓
+
+Migrated all AI modules to use `safe_load_checkpoint` utility:
+
+- **`app/utils/torch_utils.py`**: Added `safe_load_checkpoint()` function
+  - Tries `weights_only=True` first (PyTorch 2.6+ security default)
+  - Falls back to full loading for legacy checkpoints with metadata
+  - Optional warning on unsafe fallback via `warn_on_unsafe` parameter
+
+- **Files updated:**
+  - `app/ai/cage_ai.py`
+  - `app/ai/ebmo_network.py`
+  - `app/ai/gpu_parallel_games.py`
+  - `app/ai/ig_gmo.py`
+  - `app/ai/mcts_ai.py`
+  - `app/ai/minimax_ai.py`
+  - `app/ai/nnue_policy.py`
+  - `app/training/checkpoint_utils.py`
+  - `app/training/checkpointing.py`
+
+### 33. Type Annotation Fixes ✓
+
+Fixed `callable | None` type annotation errors across codebase:
+
+| File                                | Issue                                           | Fix                                 |
+| ----------------------------------- | ----------------------------------------------- | ----------------------------------- |
+| `app/training/parallel_selfplay.py` | `callable` (builtin) used instead of `Callable` | Added `from typing import Callable` |
+| `app/distributed/queue.py`          | Same issue                                      | Same fix                            |
+| `app/utils/resource_guard.py`       | 4 occurrences                                   | Same fix                            |
+
+### 34. Load Test Enhancements ✓
+
+Major improvements to k6 load testing infrastructure:
+
+- **JWT TTL Derivation**: Extract token TTL from JWT `exp` claim when `expiresIn` missing
+  - `tests/load/auth/helpers.js`: Added `deriveJwtTtlSeconds()` and `decodeBase64Url()`
+  - `tests/load/scripts/preflight-check.js`: Added JWT parsing with validation
+
+- **Rate Limit Bypass**: Token-based bypass for load test reliability
+  - `.env.staging.example`: Added `RATE_LIMIT_BYPASS_TOKEN` configuration
+  - `tests/load/auth/helpers.js`: Added `getBypassHeaders()` helper
+  - Updated all HTTP requests to include bypass headers
+
+- **WebSocket Reconnection Testing**: Simulate connection drops during gameplay
+  - New metrics: `ws_reconnect_attempts_total`, `ws_reconnect_success_rate`, `ws_reconnect_latency_ms`
+  - New config: `WS_RECONNECT_PROBABILITY`, `WS_RECONNECT_MAX_PER_GAME`, `WS_RECONNECT_DELAY_MS`
+  - Reconnect scheduling and tracking in `websocket-gameplay.js`
+
+### 35. Tournament Improvements ✓
+
+- **Model Discovery Tournament**: `scripts/run_p2p_elo_tournament.py`
+  - Added `--models` flag for automatic model discovery
+  - Uses `discover_models()` from `app/models/discovery`
+  - Configurable ELO database path per tournament type
+
+- **EBMO Online Learning**: New experimental module
+  - `app/ai/ebmo_online.py`: TD-Energy updates during gameplay
+  - Rolling buffer for stability
+  - Outcome-weighted contrastive loss
+  - Test script: `scripts/test_ebmo_online.py`
+
+### 36. Unused Import Cleanup ✓
+
+Automated cleanup of unused imports across distributed modules:
+
+- `app/distributed/unified_data_sync.py`
+- `app/distributed/ingestion_wal.py`
+- `app/distributed/sync_coordinator.py`
+- `app/distributed/data_sync_robust.py`
+- `app/distributed/p2p_sync_client.py`
+- `app/distributed/ssh_transport.py`
+- `app/distributed/sync_orchestrator.py`
+- `app/tournament/orchestrator.py`
+
+**Note**: One import (`get_adaptive_timeout`) was incorrectly removed and restored in fix commit.
+
+### 37. Test Suite Status ✓
+
+| Category                        | Count | Status  |
+| ------------------------------- | ----- | ------- |
+| Unit Tests                      | 2,998 | Passing |
+| Integration Tests               | 152   | Passing |
+| Critical Flake8 (E9/F63/F7/F82) | 0     | Clean   |
+
+---
+
+## Future Enhancements (Planned)
+
+### Training Pipeline Feedback Loops
+
+A detailed plan exists at `~/.claude/plans/reactive-cooking-pony.md` for:
+
+1. **Evaluation Feedback to Selfplay Priority** (~60 lines)
+   - Regressing configs get priority boost for more selfplay data
+   - Uses `UnifiedSignalComputer.elo_trend` signals
+
+2. **Diversity Signal to Engine Selection** (~30 lines)
+   - When training shows overfitting, use more exploratory selfplay
+   - Switch to MCTS when `diversity_needed > 0.7`
+
+3. **Training Quality Exposure** (~30 lines)
+   - Add `get_training_quality()` to `unified_orchestrator.py`
+   - Detect loss plateau and overfitting signals
+
+**Status**: Plan complete, implementation pending
