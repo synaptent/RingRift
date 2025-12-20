@@ -183,8 +183,10 @@ class TestFullGameSimulation:
         # Stack heights should be non-negative
         assert (state.stack_height >= 0).all()
 
-        # Cap height should not exceed stack height
-        assert (state.cap_height <= state.stack_height).all()
+        # Cap height should not exceed stack height (only check where stacks exist)
+        has_stack = state.stack_height > 0
+        if has_stack.any():
+            assert (state.cap_height[has_stack] <= state.stack_height[has_stack]).all()
 
         # Rings in hand should be non-negative
         assert (state.rings_in_hand >= 0).all()

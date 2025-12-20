@@ -2117,48 +2117,84 @@ class ParallelGameRunner:
         if not active_mask.any():
             return
 
-        for g in range(self.batch_size):
-            if not active_mask[g]:
-                continue
+        state = self.state
+        device = self.device
+        batch_size = self.batch_size
 
-            player = self.state.current_player[g].item()
+        # === BATCHED STALEMATE CHECK ===
+        # Get current players for all games (batch_size,)
+        current_players = state.current_player
 
-            # Check if player has any stacks
-            has_stacks = (self.state.stack_owner[g] == player).any().item()
+        # Check if current player has any stacks (vectorized)
+        # Create player mask for each game: (batch_size, H, W)
+        player_mask = (
+            state.stack_owner
+            == current_players.unsqueeze(-1).unsqueeze(-1)
+        )
+        has_stacks = player_mask.any(dim=(1, 2))
 
-            # Check if player has rings in hand
-            has_rings_in_hand = self.state.rings_in_hand[g, player].item() > 0
+        # Check if player has rings in hand (vectorized using gather)
+        player_indices = current_players.unsqueeze(-1)  # (batch_size, 1)
+        has_rings_in_hand = (
+            torch.gather(state.rings_in_hand, 1, player_indices).squeeze(-1) > 0
+        )
 
-            # Check if player has markers and buried rings (recovery eligible)
-            # Note: buried_rings uses 1-indexed players (shape is batch_size x num_players+1)
-            has_markers = (self.state.marker_owner[g] == player).any().item()
-            has_buried = self.state.buried_rings[g, player].item() > 0
+        # Check markers (vectorized)
+        marker_mask = (
+            state.marker_owner
+            == current_players.unsqueeze(-1).unsqueeze(-1)
+        )
+        has_markers = marker_mask.any(dim=(1, 2))
 
-            # If player has no possible actions, it's a stalemate
-            if not has_stacks and not has_rings_in_hand and not (has_markers and has_buried):
-                # Determine winner by stack height (stalemate tiebreaker)
-                best_player = 0
-                best_total_height = -1
-                is_tie = False
+        # Check buried rings (vectorized)
+        has_buried = (
+            torch.gather(state.buried_rings, 1, player_indices).squeeze(-1) > 0
+        )
 
-                for p in range(1, self.num_players + 1):
-                    p_stacks = (self.state.stack_owner[g] == p)
-                    p_total_height = (self.state.stack_height[g] * p_stacks.float()).sum().item()
+        # Can recover if has both markers and buried rings
+        can_recover = has_markers & has_buried
 
-                    if p_total_height > best_total_height:
-                        best_total_height = p_total_height
-                        best_player = p
-                        is_tie = False
-                    elif p_total_height == best_total_height and p_total_height > 0:
-                        is_tie = True
+        # Stalemate: no stacks, no rings in hand, can't recover
+        is_stalemate = active_mask & ~has_stacks & ~has_rings_in_hand & ~can_recover
 
-                # Set winner (0 = draw if tied)
-                if is_tie or best_total_height == 0:
-                    self.state.winner[g] = 0  # Draw
-                else:
-                    self.state.winner[g] = best_player
+        if not is_stalemate.any():
+            return
 
-                self.state.game_status[g] = GameStatus.COMPLETED
+        # === TIEBREAKER RESOLUTION ===
+        # For stalemate games, determine winner by stack height
+        # Compute total height per player across all games at once
+
+        # Stack heights per player: (batch_size, num_players)
+        player_heights = torch.zeros(
+            batch_size, self.num_players + 1, dtype=torch.float32, device=device
+        )
+
+        for p in range(1, self.num_players + 1):
+            p_mask = state.stack_owner == p
+            player_heights[:, p] = (
+                state.stack_height.float() * p_mask.float()
+            ).sum(dim=(1, 2))
+
+        # Find max height per game (excluding player 0)
+        heights_to_compare = player_heights[:, 1 : self.num_players + 1]
+        max_heights, best_players = heights_to_compare.max(dim=1)
+        best_players = best_players + 1  # Adjust for 1-indexed players
+
+        # Check for ties (more than one player at max height)
+        is_at_max = heights_to_compare == max_heights.unsqueeze(-1)
+        num_at_max = is_at_max.sum(dim=1)
+        is_tie = num_at_max > 1
+
+        # Set winners
+        winners = torch.where(
+            is_tie | (max_heights == 0),
+            torch.zeros_like(best_players),  # Draw
+            best_players,
+        )
+
+        # Apply only to stalemate games
+        state.winner[is_stalemate] = winners[is_stalemate]
+        state.game_status[is_stalemate] = GameStatus.COMPLETED
 
     def _default_weights(self) -> dict[str, float]:
         """Default heuristic weights."""
