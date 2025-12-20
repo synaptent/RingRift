@@ -941,7 +941,9 @@ class TestTaskRegistry:
         task = registry.get_task(sample_task.task_id)
         heartbeat = task.metadata.get("last_heartbeat")
         assert heartbeat is not None
-        assert before <= heartbeat <= after
+        # Use epsilon tolerance for floating-point clock precision (1ms)
+        epsilon = 1e-3
+        assert before - epsilon <= heartbeat <= after + epsilon
 
     def test_get_orphaned_tasks(self, registry):
         """Should find orphaned tasks."""

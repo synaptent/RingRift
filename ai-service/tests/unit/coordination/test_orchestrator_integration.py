@@ -215,7 +215,8 @@ class TestDataPipelineOrchestratorSubscriptions:
 class TestTaskLifecycleCoordinatorSubscriptions:
     """Tests for TaskLifecycleCoordinator event subscriptions."""
 
-    def test_host_offline_orphans_tasks(self):
+    @pytest.mark.asyncio
+    async def test_host_offline_orphans_tasks(self):
         """Test that HOST_OFFLINE marks node tasks as orphaned."""
         from app.coordination.task_lifecycle_coordinator import (
             TaskLifecycleCoordinator,
@@ -249,9 +250,7 @@ class TestTaskLifecycleCoordinatorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            coord._on_host_offline(event)
-        )
+        await coord._on_host_offline(event)
 
         # Verify tasks orphaned
         assert "task1" not in coord._active_tasks
@@ -262,7 +261,8 @@ class TestTaskLifecycleCoordinatorSubscriptions:
         assert "task2" in coord._orphaned_tasks
         assert coord._orphaned_tasks["task1"].status == TaskStatus.ORPHANED
 
-    def test_node_recovered_restores_tasks(self):
+    @pytest.mark.asyncio
+    async def test_node_recovered_restores_tasks(self):
         """Test that NODE_RECOVERED restores orphaned tasks."""
         from app.coordination.task_lifecycle_coordinator import (
             TaskLifecycleCoordinator,
@@ -289,16 +289,15 @@ class TestTaskLifecycleCoordinatorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            coord._on_node_recovered(event)
-        )
+        await coord._on_node_recovered(event)
 
         # Verify task restored
         assert "task1" not in coord._orphaned_tasks
         assert "task1" in coord._active_tasks
         assert coord._active_tasks["task1"].status == TaskStatus.RUNNING
 
-    def test_host_online_tracks_node(self):
+    @pytest.mark.asyncio
+    async def test_host_online_tracks_node(self):
         """Test that HOST_ONLINE adds node to online set."""
         from app.coordination.task_lifecycle_coordinator import TaskLifecycleCoordinator
 
@@ -311,9 +310,7 @@ class TestTaskLifecycleCoordinatorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            coord._on_host_online(event)
-        )
+        await coord._on_host_online(event)
 
         # Verify tracked
         assert coord.is_node_online("gh200-new")
