@@ -247,6 +247,7 @@ def apply_movement_moves_vectorized(
         state.must_move_from_x[g] = -1
 
         # Record in history (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
+        # CANONICAL: Always use MOVEMENT phase for movement moves
         if mc < state.max_history_moves:
             state.move_history[g, mc, 0] = MoveType.MOVEMENT
             state.move_history[g, mc, 1] = player
@@ -254,7 +255,7 @@ def apply_movement_moves_vectorized(
             state.move_history[g, mc, 3] = from_x
             state.move_history[g, mc, 4] = to_y
             state.move_history[g, mc, 5] = to_x
-            state.move_history[g, mc, 6] = int(state.current_phase[g].item())
+            state.move_history[g, mc, 6] = GamePhase.MOVEMENT
         state.move_count[g] += 1
 
         moving_height = state.stack_height[g, from_y, from_x].item()
@@ -358,6 +359,7 @@ def apply_recovery_moves_vectorized(
     players = state.current_player[game_indices]
 
     # Record in history (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
+    # CANONICAL: Recovery slide is always in MOVEMENT phase (RR-CANON-R110-R115)
     move_idx = state.move_count[game_indices]
     history_mask = move_idx < state.max_history_moves
     if history_mask.any():
@@ -370,7 +372,8 @@ def apply_recovery_moves_vectorized(
         state.move_history[hist_games, hist_move_idx, 3] = from_x[history_mask].to(hist_dtype)
         state.move_history[hist_games, hist_move_idx, 4] = to_y[history_mask].to(hist_dtype)
         state.move_history[hist_games, hist_move_idx, 5] = to_x[history_mask].to(hist_dtype)
-        state.move_history[hist_games, hist_move_idx, 6] = state.current_phase[hist_games].to(hist_dtype)
+        # Always use MOVEMENT phase for recovery slides (canonical contract)
+        state.move_history[hist_games, hist_move_idx, 6] = GamePhase.MOVEMENT
 
     state.move_count[game_indices] += 1
 
@@ -881,6 +884,8 @@ def apply_movement_moves_batch_vectorized(
     players = state.current_player[game_indices]
 
     # Record move history (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
+    # CANONICAL: Movements are always recorded with MOVEMENT phase, regardless of
+    # current state phase. This ensures phase/move contract compliance.
     move_idx = state.move_count[game_indices]
     history_mask = move_idx < state.max_history_moves
     if history_mask.any():
@@ -893,7 +898,8 @@ def apply_movement_moves_batch_vectorized(
         state.move_history[hist_games, hist_move_idx, 3] = from_x[history_mask].to(hist_dtype)
         state.move_history[hist_games, hist_move_idx, 4] = to_y[history_mask].to(hist_dtype)
         state.move_history[hist_games, hist_move_idx, 5] = to_x[history_mask].to(hist_dtype)
-        state.move_history[hist_games, hist_move_idx, 6] = state.current_phase[hist_games].to(hist_dtype)
+        # Always use MOVEMENT phase for movement moves (canonical contract compliance)
+        state.move_history[hist_games, hist_move_idx, 6] = GamePhase.MOVEMENT
 
     # Get moving stack info
     moving_height = state.stack_height[game_indices, from_y, from_x]
