@@ -36,8 +36,6 @@ logger = logging.getLogger(__name__)
 # Import circuit breaker for fault tolerance
 try:
     from app.distributed.circuit_breaker import (
-        CircuitOpenError,
-        get_adaptive_timeout,
         get_operation_breaker,
     )
     HAS_CIRCUIT_BREAKER = True

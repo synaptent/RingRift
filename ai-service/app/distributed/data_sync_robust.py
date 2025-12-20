@@ -64,12 +64,7 @@ logger = logging.getLogger(__name__)
 try:
     from app.distributed.unified_wal import (
         UnifiedWAL,
-        WALEntry,
-        WALEntryStatus,
-        WALEntryType,
-        WALStats,
         WriteAheadLog as UnifiedWriteAheadLog,  # Compatibility alias
-        get_unified_wal,
     )
     HAS_UNIFIED_WAL = True
 except ImportError:
@@ -93,15 +88,9 @@ except ImportError:
 try:
     from app.distributed.host_classification import (
         HostSyncProfile,
-        HostTier,
         StorageType,
         classify_host_storage,
-        classify_host_tier,
-        create_sync_profile,
-        create_sync_profiles,
         get_ephemeral_hosts,
-        get_hosts_by_storage_type,
-        get_hosts_by_tier,
     )
     HAS_HOST_CLASSIFICATION = True
 except ImportError:
