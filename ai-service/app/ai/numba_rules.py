@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 # Try to import numba, fall back gracefully if not available
 try:
-    from numba import njit, prange, types
-    from numba.typed import List as NumbaList
+    from numba import njit, prange, types  # noqa: F401 (types reserved for future use)
+    from numba.typed import List as NumbaList  # noqa: F401 (reserved for typed list optimizations)
     NUMBA_AVAILABLE = True
     logger.info("Numba JIT compilation available")
 except ImportError:

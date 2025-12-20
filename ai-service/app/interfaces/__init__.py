@@ -23,8 +23,8 @@ from .protocols import (
 )
 
 __all__ = [
-    "HashProvider",
-    "MoveCacheProvider",
-    "ModelProvider",
     "EncodingProvider",
+    "HashProvider",
+    "ModelProvider",
+    "MoveCacheProvider",
 ]

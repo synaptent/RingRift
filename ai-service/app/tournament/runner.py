@@ -86,9 +86,7 @@ def extract_model_metadata(model_path: str) -> dict[str, Any]:
                 keys = set(state_dict.keys())
                 if "accumulator.weight" in keys:
                     result["model_type"] = "nnue"
-                elif "conv1.weight" in keys or any("res_blocks" in k for k in keys):
-                    result["model_type"] = "cnn"
-                elif "hex_mask" in keys:
+                elif "conv1.weight" in keys or any("res_blocks" in k for k in keys) or "hex_mask" in keys:
                     result["model_type"] = "cnn"
 
         # Infer board_type from filename if not in metadata

@@ -413,6 +413,17 @@ from app.metrics.catalog import (
     register_metric,
 )
 
+# Import parity metrics (December 2025)
+from app.metrics.parity import (
+    PARITY_HEALTHCHECK_CASES_TOTAL,
+    PARITY_HEALTHCHECK_PASS_RATE,
+    PARITY_MISMATCHES_TOTAL,
+    emit_parity_summary_metrics,
+    record_parity_case,
+    record_parity_mismatch,
+    update_parity_pass_rate,
+)
+
 # Import registry (December 2025: Consolidated _safe_metric pattern)
 from app.metrics.registry import (
     get_metric,
@@ -423,15 +434,4 @@ from app.metrics.registry import (
     safe_histogram,
     safe_metric,
     safe_summary,
-)
-
-# Import parity metrics (December 2025)
-from app.metrics.parity import (
-    PARITY_HEALTHCHECK_CASES_TOTAL,
-    PARITY_HEALTHCHECK_PASS_RATE,
-    PARITY_MISMATCHES_TOTAL,
-    emit_parity_summary_metrics,
-    record_parity_case,
-    record_parity_mismatch,
-    update_parity_pass_rate,
 )

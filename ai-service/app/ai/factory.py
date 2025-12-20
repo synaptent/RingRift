@@ -168,6 +168,49 @@ CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
         "profile_id": "v2-gumbel-11-ultimate",
         "use_neural_net": True,
     },
+    # -------------------------------------------------------------------------
+    # Experimental/Research AI Slots (12-15)
+    # These are novel approaches not yet proven superior to production ladder
+    # -------------------------------------------------------------------------
+    12: {
+        # EBMO: Energy-Based Move Optimization
+        # Uses gradient descent on action embeddings - novel energy-based approach
+        # Trained on MCTS-labeled data, optimizes action manifold at inference time
+        "ai_type": AIType.EBMO,
+        "randomness": 0.1,
+        "think_time_ms": 1000,
+        "profile_id": "v3-ebmo-12-experimental",
+        "use_neural_net": True,
+    },
+    13: {
+        # GMO: Gradient Move Optimization
+        # Entropy-guided gradient ascent in move embedding space
+        # Explores action space via information-theoretic optimization
+        "ai_type": AIType.GMO,
+        "randomness": 0.1,
+        "think_time_ms": 1500,
+        "profile_id": "v3-gmo-13-experimental",
+        "use_neural_net": True,
+    },
+    14: {
+        # IG-GMO: Information-Gain GMO
+        # Mutual information-based exploration with GNN state encoding
+        # Most experimental of the gradient-based approaches
+        "ai_type": AIType.IG_GMO,
+        "randomness": 0.1,
+        "think_time_ms": 2000,
+        "profile_id": "v3-iggmo-14-experimental",
+        "use_neural_net": True,
+    },
+    15: {
+        # GPU Minimax: GPU-accelerated minimax with batched evaluation
+        # Same algorithm as D5 but optimized for CUDA/MPS hardware
+        "ai_type": AIType.GPU_MINIMAX,
+        "randomness": 0.05,
+        "think_time_ms": 3000,
+        "profile_id": "v3-gpuminimax-15-experimental",
+        "use_neural_net": True,
+    },
 }
 
 # Overrides for 3-4 player games where MaxN/BRS outperform Minimax
@@ -225,6 +268,11 @@ DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     9: "Master - Gumbel MCTS (strongest algorithm)",
     10: "Grandmaster - Gumbel MCTS with extended search",
     11: "Ultimate - Gumbel MCTS with 60s think time (nearly unbeatable)",
+    # Experimental AI slots (not shown in standard UI)
+    12: "Experimental - EBMO (Energy-Based Move Optimization)",
+    13: "Experimental - GMO (Gradient Move Optimization)",
+    14: "Experimental - IG-GMO (Information-Gain GMO)",
+    15: "Experimental - GPU Minimax (GPU-accelerated)",
 }
 
 # Board types considered "large" (Minimax too slow)

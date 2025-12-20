@@ -54,6 +54,7 @@ from .model_cache import (
     get_cached_model_count,
     strip_module_prefix as _strip_module_prefix,
 )
+from ..utils.torch_utils import safe_load_checkpoint
 
 # Re-export loss functions for backwards compatibility
 # These are imported by app.ai.neural_net.__init__ and external code
@@ -3544,7 +3545,7 @@ class NeuralNetAI(BaseAI):
             )
 
             def _is_loadable_checkpoint(path: str) -> bool:
-                """Return True iff we can torch.load the checkpoint.
+                """Return True iff we can load the checkpoint safely.
 
                 Some long-running training jobs may leave behind truncated
                 checkpoints (EOFError) even though the file exists and has a
@@ -3553,17 +3554,9 @@ class NeuralNetAI(BaseAI):
                 to heuristic rollouts.
                 """
                 try:
-                    try:
-                        checkpoint_obj = torch.load(
-                            path,
-                            map_location="cpu",
-                            weights_only=False,
-                        )
-                    except TypeError:
-                        checkpoint_obj = torch.load(
-                            path,
-                            map_location="cpu",
-                        )
+                    checkpoint_obj = safe_load_checkpoint(
+                        path, map_location="cpu", warn_on_unsafe=False
+                    )
                 except Exception:
                     return False
 
@@ -3686,20 +3679,10 @@ class NeuralNetAI(BaseAI):
 
         if chosen_path is not None:
             try:
-                # NOTE: PyTorch 2.6+ supports the `weights_only` kwarg; older
-                # versions do not. Prefer weights_only=False so we can read
-                # versioning metadata when present, but fall back gracefully.
-                try:
-                    checkpoint = torch.load(
-                        chosen_path,
-                        map_location="cpu",
-                        weights_only=False,
-                    )
-                except TypeError:
-                    checkpoint = torch.load(
-                        chosen_path,
-                        map_location="cpu",
-                    )
+                # Use safe_load_checkpoint for secure loading with fallback.
+                checkpoint = safe_load_checkpoint(
+                    chosen_path, map_location="cpu", warn_on_unsafe=False
+                )
                 if isinstance(checkpoint, dict):
                     meta = checkpoint.get("_versioning_metadata") or {}
                     if isinstance(meta, dict):
@@ -4665,10 +4648,10 @@ class NeuralNetAI(BaseAI):
         for backwards compatibility with existing code paths.
         """
         try:
-            checkpoint = torch.load(
+            checkpoint = safe_load_checkpoint(
                 model_path,
                 map_location=self.device,
-                weights_only=False,
+                warn_on_unsafe=False,
             )
 
             # Handle different checkpoint formats

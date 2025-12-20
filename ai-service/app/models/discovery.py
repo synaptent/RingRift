@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import torch
+from app.utils.torch_utils import safe_load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -167,11 +167,11 @@ def write_model_sidecar(
 def extract_metadata_from_checkpoint(model_path: Path) -> dict[str, Any] | None:
     """Extract metadata from a .pth checkpoint without fully loading the model.
 
-    This uses torch.load with weights_only=False to access metadata.
+    This uses safe_load_checkpoint to access metadata securely.
     """
     try:
         # Load only the checkpoint structure, not the weights
-        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
 
         metadata = {}
 

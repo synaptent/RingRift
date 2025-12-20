@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-import torch.nn as nn
 
 from ..models import GameState, Move
 from .ebmo_network import ActionFeatureExtractor, EBMONetwork
@@ -614,9 +613,9 @@ class EBMOOnlineAI:
 
 
 __all__ = [
+    "EBMOOnlineAI",
     "EBMOOnlineConfig",
     "EBMOOnlineLearner",
-    "EBMOOnlineAI",
-    "Transition",
     "GameRecord",
+    "Transition",
 ]

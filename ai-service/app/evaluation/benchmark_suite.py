@@ -632,7 +632,7 @@ class RobustnessBenchmark(Benchmark):
     def run(self, model: Any, **kwargs) -> BenchmarkResult:
         """Run robustness benchmark."""
         try:
-            import torch  # noqa: F401 - check availability
+            import torch
             del torch  # Actual usage is in helper methods
         except ImportError:
             return BenchmarkResult(

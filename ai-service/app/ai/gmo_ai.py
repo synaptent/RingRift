@@ -1026,12 +1026,16 @@ class OnlineLearner:
         # Get current value prediction
         current_value, current_log_var = self.value_net(state_embed, move_embed)
 
-        # Get next state value (max over legal moves)
+        # Get next state value
         with torch.no_grad():
-            # Simplified: use state value as average over random moves
-            # For full accuracy, would need to evaluate all legal moves
-            # TODO: Use self.state_encoder.encode_state(next_state) for proper TD
-            next_value = torch.tensor([0.0], device=device)  # Placeholder
+            if reward != 0.0:
+                # Terminal state - no future value to bootstrap
+                next_value = torch.tensor([0.0], device=device)
+            else:
+                # Encode next state and estimate its value
+                # Use the same move embedding as a proxy (state is more important)
+                next_state_embed = self.state_encoder.encode_state(next_state)
+                next_value, _ = self.value_net(next_state_embed, move_embed)
 
         # TD target
         target = reward + self.discount * next_value
