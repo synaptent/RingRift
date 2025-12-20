@@ -4,25 +4,27 @@
 
 ## Summary
 
-**Overall Health Status: ⚠️ PENDING (Data Missing)**
+**Overall Health Status: ⚠️ LOW VOLUME (Scale-Up Needed)**
 
-Radius-10 assets remain deprecated and the HexNeuralNet alias/import fix landed, but we have no gated radius-12 data on disk. All `selfplay_hexagonal_*.db` and `selfplay_hex_mps_smoke.db` files are empty, so parity needs to be re-run after regenerating fresh radius-12 self-play.
+Radius-10 assets remain deprecated and the HexNeuralNet alias/import fix landed.
+Canonical radius-12 data now exists and passes gates at low volume, but it
+remains far below training targets. Scale-up runs and fixture refreshes are
+still required before relying on hex data for training or parity coverage.
 
-**Addendum (2025-12-19):** A large `canonical_hexagonal.db` now exists under
-`ai-service/data/games/` with 25,203 games, but it lacks the `game_moves` table.
-Both parity and canonical-history gates fail with `OperationalError: no such table: game_moves`.
-Regenerate a gateable canonical DB (with `game_moves`) before treating hex data as canonical.
+**Addendum (2025-12-20):** `canonical_hexagonal.db` was regenerated with
+`game_moves` present and passes parity + canonical history gates at low volume.
+Continue scaling via canonical selfplay and re-run fixtures once volume grows.
 
 ## 1. Database Status
 
-| Database                  | Exists | Games  | Status                                                           |
-| ------------------------- | ------ | ------ | ---------------------------------------------------------------- |
-| canonical_hex.db          | **No** | -      | Deleted (deprecated radius-10)                                   |
-| canonical_hexagonal.db    | Yes    | 25,203 | Missing `game_moves`; parity/history gates fail (regenerate)     |
-| selfplay_hexagonal_2p.db  | Yes    | 0      | Empty radius-12 placeholder; needs fresh self-play before gating |
-| selfplay_hexagonal_3p.db  | Yes    | 0      | Empty radius-12 placeholder; needs fresh self-play before gating |
-| selfplay_hexagonal_4p.db  | Yes    | 0      | Empty radius-12 placeholder; needs fresh self-play before gating |
-| selfplay_hex_mps_smoke.db | Yes    | 0      | Empty smoke DB; regenerate after alias/import fixes              |
+| Database                  | Exists | Games        | Status                                                           |
+| ------------------------- | ------ | ------------ | ---------------------------------------------------------------- |
+| canonical_hex.db          | **No** | -            | Deleted (deprecated radius-10)                                   |
+| canonical_hexagonal.db    | Yes    | See registry | Canonical (low volume); scale-up required                        |
+| selfplay_hexagonal_2p.db  | Yes    | 0            | Empty radius-12 placeholder; needs fresh self-play before gating |
+| selfplay_hexagonal_3p.db  | Yes    | 0            | Empty radius-12 placeholder; needs fresh self-play before gating |
+| selfplay_hexagonal_4p.db  | Yes    | 0            | Empty radius-12 placeholder; needs fresh self-play before gating |
+| selfplay_hex_mps_smoke.db | Yes    | 0            | Empty smoke DB; regenerate after alias/import fixes              |
 
 **Note:** Historic parity fixtures still exist under `ai-service/parity_fixtures/*hex*`, but they pre-date the current alias/import fixes and should be treated as legacy until new games are generated.
 
@@ -110,20 +112,24 @@ BoardType.HEXAGONAL: BoardConfig(
 
 ## 5. Known Issues
 
-### 5.1 Canonical Hex Database Does Not Exist
+### 5.1 Canonical Hex Database Scale-Up
 
-`canonical_hex.db` remains deleted, and the current `canonical_hexagonal.db` lacks `game_moves`.
-A new canonical database needs to be generated and gated after the HexNeuralNet alias/import fix.
+`canonical_hexagonal.db` exists and passes parity at low volume, but the
+dataset remains far below target counts. After any hex engine or encoder
+changes, regenerate or extend the DB and re-run the canonical gate.
 
-**Recommendation:** Generate a canonical hex database using:
+**Recommendation:** Scale canonical hex data using:
 
 ```bash
 cd ai-service
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
-  --board-type hexagonal \
+  --board hexagonal \
   --num-players 2 \
   --num-games 100 \
-  --db data/games/canonical_hex_r12.db
+  --min-recorded-games 500 \
+  --max-soak-attempts 5 \
+  --db data/games/canonical_hexagonal.db \
+  --summary data/games/db_health.canonical_hexagonal.json
 ```
 
 ### 5.2 Replay Parity Tests Skipped

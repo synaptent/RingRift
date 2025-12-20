@@ -711,7 +711,7 @@ The AI Training Pipeline Remediation is complete when:
 
 1. ✅ Removed 0-byte placeholder file at `ai-service/data/canonical_hexagonal.db`
 2. ✅ Archived malformed DB to `ai-service/data/games/canonical_hexagonal.db.malformed.bak`
-3. ✅ Ran `generate_canonical_selfplay.py --board-type hexagonal --num-games 50`
+3. ✅ Ran `generate_canonical_selfplay.py --board hexagonal --num-games 50`
 4. ✅ New DB created with correct schema v9 (all 9 tables present)
 5. ⚠️ Only 1 game recorded due to parity divergence on first game
 
@@ -778,7 +778,7 @@ Re-ran with the trace-mode fix in place; parity gate now passes for hexagonal. R
 **Actions Recorded (db_health.canonical_square19.json):**
 
 1. ✅ Archived prior DB to `ai-service/data/games/canonical_square19.db.archived_20251220_052509`
-2. ✅ Ran `generate_canonical_selfplay.py --board-type square19 --num-games 200`
+2. ✅ Ran `generate_canonical_selfplay.py --board square19 --num-games 200`
 3. ✅ New DB created with schema v9 (all 9 tables present)
 4. ⚠️ Only 1 game recorded due to parity divergence on first game
 
@@ -1085,7 +1085,7 @@ Cannot generate new selfplay games due to disk at 99.7% capacity (only 2.6GB fre
 2. **Re-run scale-up:**
    ```bash
    cd ai-service && PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
-     --board-type hexagonal --num-games 300 \
+     --board hexagonal --num-games 300 \
      --db data/games/canonical_hexagonal.db \
      --summary data/games/db_health.canonical_hexagonal.json
    ```
@@ -1096,7 +1096,7 @@ Cannot generate new selfplay games due to disk at 99.7% capacity (only 2.6GB fre
 ```bash
 ssh ubuntu@<cluster-ip> 'cd ~/ringrift/ai-service && source venv/bin/activate && \
   PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
-  --board-type hexagonal --num-games 300 \
+    --board hexagonal --num-games 300 \
   --db data/games/canonical_hexagonal.db \
   --summary data/games/db_health.canonical_hexagonal.json'
 ```

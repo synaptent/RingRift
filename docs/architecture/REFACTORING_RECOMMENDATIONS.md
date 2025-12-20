@@ -252,8 +252,9 @@ After refactoring, the following must pass:
 1. **Self-Play Recording Test:**
 
    ```bash
-   PYTHONPATH=ai-service python scripts/generate_canonical_selfplay.py \
-     --board-type square8 --num-games 10 --db /tmp/test.db
+   cd ai-service
+   PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+     --board square8 --num-games 10 --db /tmp/test.db
    # Must produce 10 games with passed_canonical_parity_gate=true
    ```
 
