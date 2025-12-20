@@ -81,7 +81,6 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 - 2025-12-12: `canonical_square8_3p.db` has initial gated games; scale up before training.
 - 2025-12-12: `canonical_square8_4p.db` is now canonical (`canonical_ok=true`); scale up before training.
 - 2025-12-20: `canonical_square19.db` re-gated with direct soak (light band) and `RINGRIFT_USE_MAKE_UNMAKE=true`; parity + history gates passed (`canonical_ok=true`). Scale volume toward targets.
-- 2025-12-20: `canonical_hexagonal.db` re-gated with direct soak (light band) and `RINGRIFT_USE_MAKE_UNMAKE=true`; parity + history gates passed (`canonical_ok=true`). Scale volume toward targets.
 - Historical: the sandboxed environment can fail OpenMP shared-memory allocation (`OMP: Error #179: Function Can't open SHM2 failed`); run canonical self-play on a host/container with SHM permissions.
 - (Historical) 2025-12-09 re-gate of `canonical_square8.db` found TS replay structural errors; resolved on 2025-12-12 by aligning TS territory-control victory to collapsed-territory counts.
 

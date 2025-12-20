@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import torch
 
-from app.ai.gpu_game_types import MoveType
+from app.ai.gpu_game_types import GamePhase, MoveType
 from app.ai.gpu_move_application import (
     _apply_capture_moves_batch_legacy,
     _apply_movement_moves_batch_legacy,
@@ -62,10 +62,19 @@ class MockBatchGameState:
     game_over: torch.Tensor = None
     winner: torch.Tensor = None
     move_count: torch.Tensor = None
+    current_phase: torch.Tensor = None
+    game_status: torch.Tensor = None
+
+    # Buried ring tracking (December 2025)
+    buried_at: torch.Tensor = None
 
     # Constraints
     must_move_from_y: torch.Tensor = None
     must_move_from_x: torch.Tensor = None
+
+    # Capture chain tracking (December 2025)
+    in_capture_chain: torch.Tensor = None
+    capture_chain_depth: torch.Tensor = None
 
     # History
     move_history: torch.Tensor = None
@@ -109,14 +118,27 @@ class MockBatchGameState:
             self.winner = torch.zeros(bs, dtype=torch.int8, device=self.device)
         if self.move_count is None:
             self.move_count = torch.zeros(bs, dtype=torch.int32, device=self.device)
+        if self.current_phase is None:
+            self.current_phase = torch.full((bs,), GamePhase.RING_PLACEMENT, dtype=torch.int8, device=self.device)
+        if self.game_status is None:
+            self.game_status = torch.zeros(bs, dtype=torch.int8, device=self.device)
+
+        if self.buried_at is None:
+            self.buried_at = torch.zeros((bs, self.num_players + 1, bz, bz), dtype=torch.bool, device=self.device)
 
         if self.must_move_from_y is None:
             self.must_move_from_y = torch.full((bs,), -1, dtype=torch.int32, device=self.device)
         if self.must_move_from_x is None:
             self.must_move_from_x = torch.full((bs,), -1, dtype=torch.int32, device=self.device)
 
+        if self.in_capture_chain is None:
+            self.in_capture_chain = torch.zeros(bs, dtype=torch.bool, device=self.device)
+        if self.capture_chain_depth is None:
+            self.capture_chain_depth = torch.zeros(bs, dtype=torch.int16, device=self.device)
+
         if self.move_history is None:
-            self.move_history = torch.zeros((bs, self.max_history_moves, 6), dtype=torch.int16, device=self.device)
+            # 9 columns: move_type, player, from_y, from_x, to_y, to_x, phase, capture_target_y, capture_target_x
+            self.move_history = torch.full((bs, self.max_history_moves, 9), -1, dtype=torch.int16, device=self.device)
 
     def get_active_mask(self) -> torch.Tensor:
         """Return mask of active (non-finished) games."""
@@ -575,7 +597,8 @@ class TestApplyCaptureMovesBatch:
 
         apply_capture_moves_batch(state, move_indices, moves)
 
-        assert state.move_history[0, 0, 0].item() == MoveType.CAPTURE
+        # December 2025: Canonical phases record initial captures as OVERTAKING_CAPTURE
+        assert state.move_history[0, 0, 0].item() == MoveType.OVERTAKING_CAPTURE
         assert state.move_history[0, 0, 1].item() == 1
         assert state.move_history[0, 0, 2].item() == 2  # from_y
         assert state.move_history[0, 0, 3].item() == 2  # from_x
