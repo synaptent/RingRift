@@ -15,7 +15,14 @@ import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';
 import { Trend, Rate, Counter, Gauge } from 'k6/metrics';
-import { getValidToken, loginAndGetToken, getBypassHeaders } from '../auth/helpers.js';
+import {
+  getValidToken,
+  getValidTokenForUser,
+  getVUCredentials,
+  getUserPoolSize,
+  loginAndGetToken,
+  getBypassHeaders,
+} from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
 const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
@@ -51,6 +58,16 @@ const wsHandshakeSuccess = new Rate('ws_handshake_success_rate');
 const wsReconnectAttempts = new Counter('ws_reconnect_attempts_total');
 const wsReconnectSuccess = new Rate('ws_reconnect_success_rate');
 const wsReconnectLatency = new Trend('ws_reconnect_latency_ms');
+
+const wsSpectatorJoinSuccess = new Rate('ws_spectator_join_success_rate');
+const wsSpectatorJoinAttempts = new Counter('ws_spectator_join_attempts_total');
+const wsSpectatorSessionMs = new Trend('ws_spectator_session_ms');
+const wsSpectatorSessions = new Counter('ws_spectator_sessions_total');
+
+const wsDecisionTimeoutSkipped = new Counter('ws_decision_timeout_skipped_total');
+const wsDecisionTimeoutAutoResolved = new Counter('ws_decision_timeout_auto_resolved_total');
+const wsDecisionTimeoutFailed = new Counter('ws_decision_timeout_failed_total');
+const wsDecisionTimeoutLatency = new Trend('ws_decision_timeout_latency_ms');
 
 const wsErrorMoveRejected = new Counter('ws_error_move_rejected_total');
 const wsErrorAccessDenied = new Counter('ws_error_access_denied_total');
@@ -125,6 +142,15 @@ const MOVE_RTT_TIMEOUT_MS = Number(__ENV.WS_MOVE_RTT_TIMEOUT_MS || 10000);
 const WS_RECONNECT_PROBABILITY = Number(__ENV.WS_RECONNECT_PROBABILITY || 0);
 const WS_RECONNECT_MAX_PER_GAME = Number(__ENV.WS_RECONNECT_MAX_PER_GAME || 1);
 const WS_RECONNECT_DELAY_MS = Number(__ENV.WS_RECONNECT_DELAY_MS || 1000);
+const USER_POOL_SIZE = getUserPoolSize();
+const WS_SPECTATOR_PROBABILITY = Number(__ENV.WS_SPECTATOR_PROBABILITY || 0);
+const WS_SPECTATOR_MAX_PER_GAME = Number(__ENV.WS_SPECTATOR_MAX_PER_GAME || 1);
+const WS_SPECTATOR_SESSION_MS = Number(__ENV.WS_SPECTATOR_SESSION_MS || 15000);
+const WS_SPECTATOR_JOIN_DELAY_MS = Number(__ENV.WS_SPECTATOR_JOIN_DELAY_MS || 0);
+
+const WS_DECISION_TIMEOUT_PROBABILITY = Number(__ENV.WS_DECISION_TIMEOUT_PROBABILITY || 0);
+const WS_DECISION_TIMEOUT_MAX_PER_GAME = Number(__ENV.WS_DECISION_TIMEOUT_MAX_PER_GAME || 1);
+const WS_DECISION_TIMEOUT_MAX_WAIT_MS = Number(__ENV.WS_DECISION_TIMEOUT_MAX_WAIT_MS || 45000);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // k6 options (scenarios + thresholds)
@@ -387,6 +413,11 @@ let reconnectsForGame = 0;
 let pendingReconnect = false;
 let reconnectStartAtMs = 0;
 let reconnectDeadlineAtMs = 0;
+let spectatorsForGame = 0;
+let pendingDecisionTimeout = false;
+let decisionTimeoutStartedAt = 0;
+let decisionTimeoutBaselineMoves = 0;
+let decisionTimeoutsForGame = 0;
 
 function markGameActive() {
   if (!hasActiveGame) {
@@ -402,6 +433,109 @@ function markGameInactive() {
   }
 }
 
+function runSpectatorSession({ wsUrl, gameId, token }) {
+  wsSpectatorJoinAttempts.add(1);
+
+  const wsEndpoint = buildSocketIoEndpoint(wsUrl, token, __VU);
+  const sessionStart = Date.now();
+  let connectionOpened = false;
+  let handshakeComplete = false;
+  let joinRecorded = false;
+
+  const res = ws.connect(
+    wsEndpoint,
+    {
+      headers: getBypassHeaders({
+        'User-Agent': 'k6-websocket-spectator',
+      }),
+      tags: {
+        scenario: 'websocket-spectator',
+        gameId: String(gameId),
+      },
+    },
+    function (socket) {
+      socket.on('open', () => {
+        connectionOpened = true;
+      });
+
+      socket.on('message', (message) => {
+        const parsed = parseSocketIOMessage(message);
+
+        if (parsed.error) {
+          return;
+        }
+
+        if (parsed.eioType === EIO_OPEN) {
+          const connectMsg = buildSocketIOConnect({ token });
+          socket.send(connectMsg);
+          return;
+        }
+
+        if (parsed.eioType === EIO_PING) {
+          const pong = buildEnginePong(parsed.data);
+          socket.send(pong);
+          return;
+        }
+
+        if (parsed.eioType === EIO_MESSAGE && parsed.sioType === SIO_CONNECT) {
+          handshakeComplete = true;
+          if (WS_SPECTATOR_JOIN_DELAY_MS > 0) {
+            socket.setTimeout(() => {
+              const joinMsg = buildSocketIOEvent('join_game', { gameId });
+              socket.send(joinMsg);
+            }, WS_SPECTATOR_JOIN_DELAY_MS);
+          } else {
+            const joinMsg = buildSocketIOEvent('join_game', { gameId });
+            socket.send(joinMsg);
+          }
+          return;
+        }
+
+        if (parsed.eioType === EIO_MESSAGE && parsed.sioType === SIO_EVENT) {
+          const eventName = parsed.event;
+          const eventArgs = parsed.data || [];
+          const payload = eventArgs[0];
+
+          if (eventName === 'game_state' && payload && payload.data) {
+            const stateGameId = payload.data.gameId;
+            if (stateGameId === gameId && !joinRecorded) {
+              wsSpectatorJoinSuccess.add(1);
+              wsSpectatorSessions.add(1);
+              joinRecorded = true;
+            }
+          }
+
+          if (eventName === 'error' && !joinRecorded) {
+            wsSpectatorJoinSuccess.add(0);
+            joinRecorded = true;
+          }
+        }
+      });
+
+      socket.on('close', () => {
+        const durationMs = Date.now() - sessionStart;
+        if (connectionOpened || handshakeComplete) {
+          wsSpectatorSessionMs.add(durationMs);
+        }
+
+        if (!joinRecorded) {
+          wsSpectatorJoinSuccess.add(0);
+          joinRecorded = true;
+        }
+      });
+
+      socket.setTimeout(() => {
+        socket.close();
+      }, WS_SPECTATOR_SESSION_MS);
+    }
+  );
+
+  if (!res || res.status !== 101) {
+    wsSpectatorJoinSuccess.add(0);
+    return;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main VU function
 // ─────────────────────────────────────────────────────────────────────────────
@@ -411,6 +545,10 @@ export default function (data) {
   const wsUrl = data.wsUrl;
   let token = data.token;
   const userId = data.userId;
+  const currentUser = getVUCredentials();
+  const currentUserIndex = currentUser.userIndex;
+  const spectatorIndex =
+    USER_POOL_SIZE > 1 ? (currentUserIndex % USER_POOL_SIZE) + 1 : currentUserIndex;
 
   if (gamesCompletedByVu >= VU_MAX_GAMES) {
     // VU has finished its allotted games; idle with light think time.
@@ -520,7 +658,37 @@ export default function (data) {
       pendingReconnect = false;
       reconnectStartAtMs = 0;
       reconnectDeadlineAtMs = 0;
+      spectatorsForGame = 0;
+      pendingDecisionTimeout = false;
+      decisionTimeoutStartedAt = 0;
+      decisionTimeoutBaselineMoves = 0;
+      decisionTimeoutsForGame = 0;
       console.log(`VU ${__VU}: Created AI game ${myGameId} for WebSocket gameplay`);
+
+      if (
+        WS_SPECTATOR_PROBABILITY > 0 &&
+        USER_POOL_SIZE > 1 &&
+        WS_SPECTATOR_MAX_PER_GAME > 0 &&
+        spectatorsForGame < WS_SPECTATOR_MAX_PER_GAME &&
+        spectatorIndex !== currentUserIndex
+      ) {
+        const roll = Math.random();
+        if (roll <= WS_SPECTATOR_PROBABILITY) {
+          const spectatorAuth = getValidTokenForUser(baseUrl, {
+            apiPrefix: API_PREFIX,
+            tags: { name: 'auth-login-websocket-spectator' },
+            userIndex: spectatorIndex,
+          });
+          if (spectatorAuth && spectatorAuth.token) {
+            runSpectatorSession({
+              wsUrl,
+              gameId: myGameId,
+              token: spectatorAuth.token,
+            });
+            spectatorsForGame += 1;
+          }
+        }
+      }
     } else {
       // Record as true error only if not already classified as auth/rate-limit
       if (createRes.status !== 401 && createRes.status !== 429) {
@@ -650,6 +818,10 @@ export default function (data) {
               pendingMoveId,
               myPlayerNumberInGame,
               currentMoveCount: myMovesInCurrentGame,
+              pendingDecisionTimeout,
+              decisionTimeoutStartedAt,
+              decisionTimeoutBaselineMoves,
+              decisionTimeoutsForGame,
             });
             awaitingRttForMove = updated.awaitingRttForMove;
             lastSentAt = updated.lastSentAt;
@@ -657,6 +829,10 @@ export default function (data) {
             myPlayerNumberInGame = updated.myPlayerNumberInGame;
             myMovesInCurrentGame = updated.currentMoveCount;
             shouldRetireGame = updated.shouldRetireGame;
+            pendingDecisionTimeout = updated.pendingDecisionTimeout;
+            decisionTimeoutStartedAt = updated.decisionTimeoutStartedAt;
+            decisionTimeoutBaselineMoves = updated.decisionTimeoutBaselineMoves;
+            decisionTimeoutsForGame = updated.decisionTimeoutsForGame;
             return;
           }
 
@@ -803,6 +979,11 @@ export default function (data) {
     pendingReconnect = false;
     reconnectStartAtMs = 0;
     reconnectDeadlineAtMs = 0;
+    spectatorsForGame = 0;
+    pendingDecisionTimeout = false;
+    decisionTimeoutStartedAt = 0;
+    decisionTimeoutBaselineMoves = 0;
+    decisionTimeoutsForGame = 0;
     gamesCompletedByVu += 1;
     sleep(1 + Math.random() * 2);
     return;
@@ -825,6 +1006,10 @@ function handleGameStateMessage({
   pendingMoveId,
   myPlayerNumberInGame,
   currentMoveCount,
+  pendingDecisionTimeout,
+  decisionTimeoutStartedAt,
+  decisionTimeoutBaselineMoves,
+  decisionTimeoutsForGame,
 }) {
   if (!payload || typeof payload !== 'object') {
     return {
@@ -834,6 +1019,10 @@ function handleGameStateMessage({
       myPlayerNumberInGame,
       currentMoveCount,
       shouldRetireGame: false,
+      pendingDecisionTimeout,
+      decisionTimeoutStartedAt,
+      decisionTimeoutBaselineMoves,
+      decisionTimeoutsForGame,
     };
   }
 
@@ -851,6 +1040,10 @@ function handleGameStateMessage({
       myPlayerNumberInGame,
       currentMoveCount,
       shouldRetireGame: false,
+      pendingDecisionTimeout,
+      decisionTimeoutStartedAt,
+      decisionTimeoutBaselineMoves,
+      decisionTimeoutsForGame,
     };
   }
 
@@ -858,6 +1051,27 @@ function handleGameStateMessage({
   const status = gameState.gameStatus;
   const isTerminal = TERMINAL_GAME_STATUSES.indexOf(status) !== -1;
   const now = Date.now();
+  const moveHistoryCount = Array.isArray(gameState.moveHistory) ? gameState.moveHistory.length : 0;
+
+  if (pendingDecisionTimeout) {
+    if (moveHistoryCount > decisionTimeoutBaselineMoves) {
+      wsDecisionTimeoutAutoResolved.add(1);
+      if (decisionTimeoutStartedAt > 0) {
+        wsDecisionTimeoutLatency.add(now - decisionTimeoutStartedAt);
+      }
+      pendingDecisionTimeout = false;
+      decisionTimeoutStartedAt = 0;
+      decisionTimeoutBaselineMoves = 0;
+    } else if (
+      decisionTimeoutStartedAt > 0 &&
+      now - decisionTimeoutStartedAt >= WS_DECISION_TIMEOUT_MAX_WAIT_MS
+    ) {
+      wsDecisionTimeoutFailed.add(1);
+      pendingDecisionTimeout = false;
+      decisionTimeoutStartedAt = 0;
+      decisionTimeoutBaselineMoves = 0;
+    }
+  }
 
   if (!isTerminal) {
     markGameActive();
@@ -881,8 +1095,7 @@ function handleGameStateMessage({
     }
   }
 
-  const hasMoveHistory =
-    Array.isArray(gameState.moveHistory) && gameState.moveHistory.length > 0;
+  const hasMoveHistory = moveHistoryCount > 0;
 
   // When not actively timing a move, keep a baseline of the last observed move
   // number for this player so we can later detect new moves as RTT completions.
@@ -952,6 +1165,10 @@ function handleGameStateMessage({
       myPlayerNumberInGame,
       currentMoveCount,
       shouldRetireGame,
+      pendingDecisionTimeout: false,
+      decisionTimeoutStartedAt: 0,
+      decisionTimeoutBaselineMoves: 0,
+      decisionTimeoutsForGame,
     };
   }
 

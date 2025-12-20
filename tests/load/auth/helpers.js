@@ -122,42 +122,39 @@ export function getVUCredentials(vuOverride) {
  * k6 executes each VU in its own JS runtime, so this state is per-VU.
  */
 let cachedAuthState = null;
+const cachedAuthStatesByUser = new Map();
 
-/**
- * Shared login helper for all RingRift k6 scenarios.
- *
- * This helper:
- * - Calls POST /api/auth/login with the canonical payload shape:
- *     { email, password }
- * - Allows overriding credentials via LOADTEST_EMAIL / LOADTEST_PASSWORD
- * - Returns { token, userId } on success
- *
- * It also optionally records classification metrics when provided via
- * options.metrics:
- *   - contractFailures (Counter: contract_failures_total)
- *   - capacityFailures (Counter: capacity_failures_total)
- *
- * Any scenario using this helper will fail fast if login cannot be
- * established, since meaningful load testing depends on authenticated
- * requests.
- *
- * @param {string} baseUrl - Base HTTP origin, e.g. http://localhost:3001
- * @param {Object} [options]
- * @param {string} [options.apiPrefix='/api'] - API prefix to use
- * @param {Object} [options.tags] - Optional k6 tags to attach to the login request
- * @param {{ contractFailures?: any, capacityFailures?: any }} [options.metrics] - Optional
- *   classification counters to record failures against.
- * @returns {{ token: string, userId: string | null }}
- */
-export function loginAndGetToken(baseUrl, options) {
+function buildAuthState(baseUrl, token, userId, expiresInSeconds) {
+  const obtainedAtMs = Date.now();
+  const derivedTtlSeconds =
+    typeof expiresInSeconds === 'number' && expiresInSeconds > 0
+      ? null
+      : deriveJwtTtlSeconds(token);
+
+  const ttlSeconds =
+    typeof expiresInSeconds === 'number' && expiresInSeconds > 0
+      ? expiresInSeconds
+      : typeof derivedTtlSeconds === 'number' && derivedTtlSeconds > 0
+        ? derivedTtlSeconds
+        : DEFAULT_TOKEN_TTL_SECONDS;
+
+  return {
+    baseUrl,
+    token,
+    userId,
+    obtainedAtMs,
+    expiresAtMs: obtainedAtMs + ttlSeconds * 1000,
+    ttlSeconds,
+  };
+}
+
+function loginWithCredentials(baseUrl, credentials, options) {
   const apiPrefix = (options && options.apiPrefix) || '/api';
   const tags = (options && options.tags) || { name: 'auth-login' };
   const metrics = (options && options.metrics) || {};
   const contractFailures = metrics.contractFailures;
   const capacityFailures = metrics.capacityFailures;
 
-  // Use multi-user pool when configured, otherwise fall back to single user
-  const credentials = getVUCredentials();
   const email = credentials.email;
   const password = credentials.password;
 
@@ -228,31 +225,65 @@ export function loginAndGetToken(baseUrl, options) {
     throw new Error(`loginAndGetToken failed: status=${res.status} body=${res.body}`);
   }
 
-  // Update the per-VU auth cache so scenarios that call getValidToken(...)
-  // can reuse this login and refresh it when nearing expiry.
-  const obtainedAtMs = Date.now();
-  const derivedTtlSeconds =
-    typeof expiresInSeconds === 'number' && expiresInSeconds > 0
-      ? null
-      : deriveJwtTtlSeconds(accessToken);
-
-  const ttlSeconds =
-    typeof expiresInSeconds === 'number' && expiresInSeconds > 0
-      ? expiresInSeconds
-      : typeof derivedTtlSeconds === 'number' && derivedTtlSeconds > 0
-        ? derivedTtlSeconds
-        : DEFAULT_TOKEN_TTL_SECONDS;
-
-  cachedAuthState = {
-    baseUrl,
-    token: accessToken,
-    userId,
-    obtainedAtMs,
-    expiresAtMs: obtainedAtMs + ttlSeconds * 1000,
-    ttlSeconds,
-  };
-
   return { token: accessToken, userId, expiresInSeconds };
+}
+
+/**
+ * Shared login helper for all RingRift k6 scenarios.
+ *
+ * This helper:
+ * - Calls POST /api/auth/login with the canonical payload shape:
+ *     { email, password }
+ * - Allows overriding credentials via LOADTEST_EMAIL / LOADTEST_PASSWORD
+ * - Returns { token, userId } on success
+ *
+ * It also optionally records classification metrics when provided via
+ * options.metrics:
+ *   - contractFailures (Counter: contract_failures_total)
+ *   - capacityFailures (Counter: capacity_failures_total)
+ *
+ * Any scenario using this helper will fail fast if login cannot be
+ * established, since meaningful load testing depends on authenticated
+ * requests.
+ *
+ * @param {string} baseUrl - Base HTTP origin, e.g. http://localhost:3001
+ * @param {Object} [options]
+ * @param {string} [options.apiPrefix='/api'] - API prefix to use
+ * @param {Object} [options.tags] - Optional k6 tags to attach to the login request
+ * @param {{ contractFailures?: any, capacityFailures?: any }} [options.metrics] - Optional
+ *   classification counters to record failures against.
+ * @returns {{ token: string, userId: string | null }}
+ */
+export function loginAndGetToken(baseUrl, options) {
+  // Use multi-user pool when configured, otherwise fall back to single user.
+  const credentials = getVUCredentials();
+  const result = loginWithCredentials(baseUrl, credentials, options);
+
+  cachedAuthState = buildAuthState(
+    baseUrl,
+    result.token,
+    result.userId,
+    result.expiresInSeconds
+  );
+
+  return result;
+}
+
+export function loginAndGetTokenForUser(baseUrl, options) {
+  const userIndex = options && options.userIndex;
+  if (!userIndex) {
+    return loginAndGetToken(baseUrl, options);
+  }
+
+  const credentials = getVUCredentials(userIndex);
+  const result = loginWithCredentials(baseUrl, credentials, options);
+  const cacheKey = `${baseUrl}:${userIndex}`;
+  cachedAuthStatesByUser.set(
+    cacheKey,
+    buildAuthState(baseUrl, result.token, result.userId, result.expiresInSeconds)
+  );
+
+  return result;
 }
 
 /**
@@ -307,4 +338,44 @@ export function getValidToken(baseUrl, options) {
   }
 
   return { token: cachedAuthState.token, userId: cachedAuthState.userId };
+}
+
+export function getValidTokenForUser(baseUrl, options) {
+  const userIndex = options && options.userIndex;
+  if (!userIndex) {
+    return getValidToken(baseUrl, options);
+  }
+
+  const forceRefresh = options && options.forceRefresh;
+  const apiPrefix = (options && options.apiPrefix) || '/api';
+  const tags = (options && options.tags) || { name: 'auth-login' };
+  const metrics = (options && options.metrics) || {};
+
+  const cacheKey = `${baseUrl}:${userIndex}`;
+  const cached = cachedAuthStatesByUser.get(cacheKey);
+  const now = Date.now();
+  const jitterMs = Math.random() * TOKEN_REFRESH_JITTER_MAX_SECONDS * 1000;
+
+  const shouldLogin =
+    forceRefresh ||
+    !cached ||
+    cached.baseUrl !== baseUrl ||
+    now >= cached.expiresAtMs - TOKEN_REFRESH_SAFETY_WINDOW_SECONDS * 1000 - jitterMs;
+
+  if (shouldLogin) {
+    const result = loginAndGetTokenForUser(baseUrl, {
+      apiPrefix,
+      tags,
+      metrics,
+      userIndex,
+    });
+
+    return { token: result.token, userId: result.userId };
+  }
+
+  return { token: cached.token, userId: cached.userId };
+}
+
+export function getUserPoolSize() {
+  return USER_POOL_SIZE;
 }
