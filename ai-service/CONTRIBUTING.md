@@ -207,6 +207,37 @@ ruff format .
 - Prefer composition over inheritance
 - Use meaningful variable names
 
+### Unused Variables and Parameters
+
+When a function parameter is intentionally unused (e.g., for API compatibility or future use), use one of these patterns:
+
+```python
+# Option 1: Prefix with underscore (preferred for parameters)
+def my_function(used_param: int, _unused_param: str = "default") -> None:
+    print(used_param)
+
+# Option 2: Assign to _ inside function (preferred by linter)
+def my_function(used_param: int, unused_param: str = "default") -> None:
+    _ = unused_param  # Explicitly mark as intentionally unused
+    print(used_param)
+```
+
+The linter prefers Option 2, but both are acceptable. Never remove documented parameters as they may be part of the public API.
+
+### Dead Code Detection
+
+We use [vulture](https://github.com/jendrikseipp/vulture) to detect dead code:
+
+```bash
+# Check for dead code with 100% confidence
+vulture app/ scripts/ --min-confidence 100
+```
+
+This runs automatically in CI. To mark code as intentionally unused:
+
+- Prefix unused parameters with `_`
+- Use `_ = variable` for unused locals
+
 ```python
 def train_model(
     config: TrainConfig,

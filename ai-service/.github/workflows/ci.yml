@@ -39,6 +39,33 @@ jobs:
       - name: Run Ruff formatter check
         run: ruff format --check .
 
+  dead-code-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install vulture
+        run: pip install vulture
+
+      - name: Check for dead code (100% confidence)
+        run: |
+          # Run vulture with 100% confidence to catch definite dead code
+          # Excludes the intentional return-before-yield pattern in generators
+          vulture app/ scripts/ --min-confidence 100 \
+            --exclude "game_record_loader.py" \
+            2>&1 | tee vulture_output.txt
+          # Fail if any dead code found (excluding the known generator pattern)
+          if grep -q "unused" vulture_output.txt; then
+            echo "Dead code detected! Please remove unused code or prefix with underscore."
+            exit 1
+          fi
+          echo "No dead code found."
+
   type-check:
     runs-on: ubuntu-latest
     steps:

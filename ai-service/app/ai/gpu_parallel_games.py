@@ -35,6 +35,7 @@ from .gpu_game_types import (
     GameStatus,
     MoveType,
     GamePhase,
+    get_required_line_length,  # Backwards-compatible re-export
 )
 from .gpu_line_detection import (
     detect_lines_vectorized,
@@ -45,6 +46,7 @@ from .gpu_territory import (
 )
 from .gpu_move_generation import (
     BatchMoves,
+    _empty_batch_moves,  # Backwards-compatible re-export
     generate_placement_moves_batch,
     generate_movement_moves_batch,
     generate_capture_moves_batch,
@@ -52,6 +54,7 @@ from .gpu_move_generation import (
     apply_single_chain_capture,
     generate_recovery_moves_batch,
 )
+from .gpu_heuristic import evaluate_positions_batch  # Backwards-compatible re-export
 from .gpu_move_application import (
     apply_recovery_moves_vectorized,
     apply_no_action_moves_batch,
