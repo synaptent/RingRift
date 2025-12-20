@@ -92,3 +92,26 @@ def test_sync_slurm_marks_stale_unknown_with_finished_at(tmp_path):
     assert updates == 1
     assert row["state"] == JobState.UNKNOWN.value
     assert row["finished_at"] is not None
+
+
+def test_sync_vast_updates_running(tmp_path):
+    scheduler = _make_scheduler(tmp_path)
+    db_path = scheduler.db_path
+
+    job = UnifiedJob(name="test-vast-running", job_type=JobType.SELFPLAY)
+    scheduler._record_job(job, Backend.VAST)
+    scheduler._update_job(job.id, backend_job_id="vast-555-1700000000", state=JobState.QUEUED)
+
+    instances = [
+        {
+            "id": 555,
+            "cur_state": "running",
+        }
+    ]
+
+    updates = scheduler._sync_vast_job_states(instances)
+    row = _load_job_row(db_path, job.id)
+
+    assert updates == 1
+    assert row["state"] == JobState.RUNNING.value
+    assert row["started_at"] is not None

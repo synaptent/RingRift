@@ -165,6 +165,12 @@ async def cmd_status(args) -> int:
     slurm = status.get("slurm", {})
     if slurm.get("enabled"):
         print(f"║ SLURM:  {slurm.get('nodes', 0):3} nodes, {slurm.get('idle_nodes', 0):3} idle, {slurm.get('jobs', 0):3} jobs     ║")
+        if "jobs_running" in slurm or "jobs_pending" in slurm:
+            print(
+                "║        "
+                f"{slurm.get('jobs_running', 0):3} running, "
+                f"{slurm.get('jobs_pending', 0):3} pending                        ║"
+            )
     else:
         print("║ SLURM:  Disabled                                              ║")
 
@@ -172,6 +178,8 @@ async def cmd_status(args) -> int:
     vast = status.get("vast", {})
     if vast.get("enabled"):
         print(f"║ VAST:   {vast.get('instances', 0):3} instances, {vast.get('running', 0):3} running                   ║")
+        if "jobs_running" in vast:
+            print(f"║        {vast.get('jobs_running', 0):3} jobs running                                    ║")
     else:
         print("║ VAST:   Disabled                                              ║")
 
@@ -179,6 +187,12 @@ async def cmd_status(args) -> int:
     p2p = status.get("p2p", {})
     if p2p.get("enabled"):
         print(f"║ P2P:    {p2p.get('nodes', 0):3} nodes                                          ║")
+        if "selfplay_running" in p2p or "training_running" in p2p:
+            print(
+                "║        "
+                f"{p2p.get('selfplay_running', 0):3} selfplay, "
+                f"{p2p.get('training_running', 0):3} training                    ║"
+            )
     else:
         print("║ P2P:    Disabled                                              ║")
 

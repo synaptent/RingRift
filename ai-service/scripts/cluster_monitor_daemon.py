@@ -65,6 +65,20 @@ def run_command(cmd: list[str], timeout: int = 120, env_extra: dict | None = Non
         return -1, "", str(e)
 
 
+def sync_job_states() -> dict:
+    """Sync unified job states before status checks."""
+    rc, stdout, stderr = run_command([
+        "python", "scripts/cluster_submit.py", "sync-jobs", "--once"
+    ], timeout=60)
+
+    if rc != 0:
+        log(f"Job state sync failed: {stderr}", "WARN")
+        return {"success": False, "error": stderr}
+
+    log(f"Job state sync: {stdout.strip()[:200]}")
+    return {"success": True, "output": stdout.strip()[:200]}
+
+
 # Key cluster nodes to check via SSH
 CLUSTER_NODES = [
     {"name": "lambda-gh200-e", "host": "ubuntu@lambda-gh200-e", "check": "squeue"},
@@ -110,34 +124,41 @@ def check_slurm_status() -> dict:
     log("Checking Slurm cluster status...")
 
     rc, stdout, stderr = run_command([
-        "python", "scripts/cluster_submit.py", "status"
+        "python", "scripts/cluster_submit.py", "status", "--json"
     ])
 
     if rc != 0:
         log(f"Slurm status check failed: {stderr}", "ERROR")
         return {"healthy": False, "error": stderr}
 
-    # Parse output to count idle/busy nodes
-    lines = stdout.strip().split("\n")
-    idle_count = 0
-    busy_count = 0
-    total_count = 0
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        log("Failed to parse Slurm status JSON output", "WARN")
+        return {"healthy": False, "error": "JSON parse error"}
 
-    for line in lines:
-        if "idle" in line.lower():
-            idle_count += 1
-            total_count += 1
-        elif "running" in line.lower() or "busy" in line.lower() or "allocated" in line.lower():
-            busy_count += 1
-            total_count += 1
+    slurm = data.get("slurm", {})
+    jobs = data.get("jobs", {})
+    idle_count = int(slurm.get("idle_nodes", 0) or 0)
+    running_jobs = int(slurm.get("jobs_running", 0) or 0)
+    pending_jobs = int(slurm.get("jobs_pending", 0) or 0)
+    total_nodes = int(slurm.get("nodes", 0) or 0)
 
-    log(f"Slurm: {busy_count} busy, {idle_count} idle, {total_count} total")
+    log(
+        "Slurm: "
+        f"{running_jobs} running, {pending_jobs} pending, "
+        f"{idle_count} idle, {total_nodes} nodes "
+        f"(db_running={jobs.get('running', 0)}, db_pending={jobs.get('pending', 0)})"
+    )
 
     return {
         "healthy": True,
         "idle": idle_count,
-        "busy": busy_count,
-        "total": total_count,
+        "running_jobs": running_jobs,
+        "pending_jobs": pending_jobs,
+        "total": total_nodes,
+        "db_running": jobs.get("running", 0),
+        "db_pending": jobs.get("pending", 0),
         "raw_output": stdout[:1000]  # Truncate for state file
     }
 
@@ -270,6 +291,9 @@ def run_monitoring_cycle() -> dict:
         "checks": {},
         "actions": {},
     }
+
+    # 0. Sync job states for accurate status
+    results["actions"]["sync_jobs"] = sync_job_states()
 
     # 1. Check Slurm status
     slurm_status = check_slurm_status()
