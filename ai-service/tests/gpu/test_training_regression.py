@@ -433,6 +433,72 @@ class TestGPUvsCPUParity:
             f"Loss mismatch: CPU={loss_cpu:.6f}, GPU={loss_gpu:.6f}"
         )
 
+    def test_training_convergence_parity(self, simple_model, synthetic_training_data, fixed_seed):
+        """GPU and CPU training should converge to similar loss after multiple epochs.
+
+        This is the A/B training comparison test that verifies model quality
+        is equivalent between GPU and CPU training pipelines.
+        """
+        features, values, policies = synthetic_training_data
+        n_epochs = 10
+        batch_size = 16
+        lr = 0.01
+
+        def train_model(model, device, seed):
+            """Train a model for n_epochs and return final loss."""
+            torch.manual_seed(seed)
+            if device == 'cuda':
+                torch.cuda.manual_seed_all(seed)
+
+            model = model.to(device)
+            optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+
+            x = torch.from_numpy(features[:batch_size]).to(device)
+            y_value = torch.from_numpy(values[:batch_size]).to(device)
+            y_policy = torch.from_numpy(policies[:batch_size]).to(device)
+
+            losses = []
+            for epoch in range(n_epochs):
+                optimizer.zero_grad()
+                policy_pred, value_pred = model(x)
+                value_loss = nn.MSELoss()(value_pred, y_value)
+                policy_loss = -torch.mean(
+                    torch.sum(y_policy * torch.log(policy_pred + 1e-8), dim=1)
+                )
+                loss = value_loss + policy_loss
+                loss.backward()
+                optimizer.step()
+                losses.append(loss.item())
+
+            return losses[-1], losses
+
+        # Train on CPU
+        model_cpu = simple_model.__class__()
+        model_cpu.load_state_dict(simple_model.state_dict())
+        final_loss_cpu, losses_cpu = train_model(model_cpu, 'cpu', fixed_seed)
+
+        # Train on GPU with same initial weights and seed
+        model_gpu = simple_model.__class__()
+        model_gpu.load_state_dict(simple_model.state_dict())
+        final_loss_gpu, losses_gpu = train_model(model_gpu, 'cuda', fixed_seed)
+
+        # Final losses should be very close (within 5%)
+        loss_diff_pct = abs(final_loss_cpu - final_loss_gpu) / max(final_loss_cpu, 1e-6) * 100
+        assert loss_diff_pct < 5.0, (
+            f"Training convergence mismatch: CPU={final_loss_cpu:.6f}, GPU={final_loss_gpu:.6f} "
+            f"({loss_diff_pct:.1f}% difference)"
+        )
+
+        # Both should show learning (loss decreased)
+        assert losses_cpu[-1] < losses_cpu[0], "CPU model did not learn"
+        assert losses_gpu[-1] < losses_gpu[0], "GPU model did not learn"
+
+        # Learning curves should be similar (correlation > 0.9)
+        correlation = np.corrcoef(losses_cpu, losses_gpu)[0, 1]
+        assert correlation > 0.9, (
+            f"Training curves diverged: correlation={correlation:.3f}"
+        )
+
 
 @skipif_no_gpu
 @gpu

@@ -83,14 +83,19 @@ class TestBenchmarkPerformance:
     """Performance sanity checks."""
 
     @pytest.mark.slow
-    @pytest.mark.skip(
-        reason="Incremental search optimization pending - performance varies by environment"
+    @pytest.mark.skipif(
+        not os.environ.get("RUN_PERF_BENCHMARKS"),
+        reason="Performance benchmark skipped by default (varies by environment). "
+        "Set RUN_PERF_BENCHMARKS=1 to run.",
     )
     def test_incremental_faster_than_legacy(self):
         """Verify incremental search is faster than legacy.
 
         This is a sanity check that the make/unmake pattern provides
         at least 2x speedup compared to legacy immutable state copying.
+
+        To run this benchmark:
+            RUN_PERF_BENCHMARKS=1 pytest tests/test_benchmark_make_unmake.py -v -k test_incremental
         """
         depth = 2
         num_runs = 2
