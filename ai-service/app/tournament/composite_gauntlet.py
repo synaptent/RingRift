@@ -537,10 +537,18 @@ class CompositeGauntlet:
         self._ensure_game_modules()
 
         board_type_enum = self._get_board_type_enum()
+
+        # Extract model ID from path for config
+        model_id = None
+        if nn_path:
+            model_id = Path(nn_path).stem
+
         config = self._AIConfig(
-            ai_type=self._AIType.NEURAL,
+            ai_type=self._AIType.POLICY_ONLY,
             board_type=board_type_enum,
             difficulty=5,
+            nn_model_id=model_id,
+            allow_fresh_weights=False,
         )
 
         if ai_type == "policy_only":
@@ -548,7 +556,7 @@ class CompositeGauntlet:
                 return self._PolicyOnlyAI(
                     player_number=player_number,
                     config=config,
-                    model_path=Path(nn_path),
+                    board_type=board_type_enum,
                 )
             return None
 
@@ -560,7 +568,7 @@ class CompositeGauntlet:
                 return self._PolicyOnlyAI(
                     player_number=player_number,
                     config=config,
-                    model_path=Path(nn_path),
+                    board_type=board_type_enum,
                 )
             except Exception as e:
                 logger.warning(f"Failed to create AI: {e}")

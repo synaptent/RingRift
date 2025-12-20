@@ -455,7 +455,9 @@ def apply_recovery_moves_vectorized(
 
         # Update stack
         new_height = torch.clamp(ss_dest_height - 1, min=0)
-        new_cap = torch.clamp(ss_old_cap - 1, min=1)
+        # December 2025 BUG FIX: Change min=1 to min=0 to allow cap to reach 0
+        # When cap reaches 0 but stack still has height, ownership needs recalculation
+        new_cap = torch.clamp(ss_old_cap - 1, min=0)
         new_cap = torch.minimum(new_cap, new_height)
         new_cap = torch.where(new_height > 0, new_cap, torch.zeros_like(new_cap))
 
@@ -463,6 +465,33 @@ def apply_recovery_moves_vectorized(
         is_cleared = new_height == 0
         state.stack_owner[ss_games[is_cleared], ss_to_y[is_cleared], ss_to_x[is_cleared]] = 0
         state.cap_height[ss_games, ss_to_y, ss_to_x] = new_cap.to(state.cap_height.dtype)
+
+        # December 2025 BUG FIX: When cap becomes 0 but height > 0, the entire
+        # cap was eliminated and a buried ring is now on top. Recalculate ownership
+        # by finding who has buried rings at this position.
+        needs_ownership_recalc = (new_cap == 0) & (new_height > 0)
+        if needs_ownership_recalc.any():
+            for i in torch.where(needs_ownership_recalc)[0]:
+                g = ss_games[i].item()
+                y_pos = ss_to_y[i].item()
+                x_pos = ss_to_x[i].item()
+
+                # Find new owner: check buried_at for each player
+                new_owner = 0
+                new_owner_cap = 0
+                for p in range(1, state.num_players + 1):
+                    if state.buried_at[g, p, y_pos, x_pos]:
+                        new_owner = p
+                        # Conservative cap estimate: at least 1 ring
+                        new_owner_cap = 1
+                        break
+
+                if new_owner > 0:
+                    state.stack_owner[g, y_pos, x_pos] = new_owner
+                    state.cap_height[g, y_pos, x_pos] = new_owner_cap
+                    # Clear old owner's buried_at since they now control the stack
+                    # (top ring is no longer buried)
+                    # Note: We don't know exact cap, so we leave buried_at for now
 
     # Handle normal recovery slide
     is_normal = ~is_stack_strike

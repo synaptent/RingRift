@@ -1524,6 +1524,12 @@ class ParallelGameRunner:
                 apply_recovery_moves_vectorized(
                     self.state, selected_recovery, recovery_moves, games_with_recovery
                 )
+                # December 2025 BUG FIX: Players who did recovery were NOT blocked -
+                # they successfully took an action. Mark as "real action" to prevent
+                # incorrect forced_elimination after stack_strike gains stacks.
+                # Per RR-CANON-R112, recovery is a valid action for recovery-eligible
+                # players, not a blocked state.
+                mark_real_action_batch(self.state, games_with_recovery)
 
             # No movement/capture/recovery action is available for the current player.
             # Do not treat this as an immediate stalemate (RR-CANON-R173 is global and

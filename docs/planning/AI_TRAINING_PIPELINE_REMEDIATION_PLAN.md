@@ -71,7 +71,7 @@ Cannot train production-quality neural models until canonical datasets reach vol
 | `canonical_square19.db`   | square19   | 3     | ✅ Present         | ✅ PASS     | **canonical** (light-band, low volume) |
 | `canonical_hexagonal.db`  | hexagonal  | 1     | ✅ Present         | ✅ PASS     | **canonical** (light-band, low volume) |
 
-**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete and parity gates now pass after the phase-invariant fixes (including RR-CANON-R145 eligibility alignment). The remaining blocker is scale: large-board self-play is still slow, so square19/hex datasets remain far below target volumes.
+**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete and canonical gates now pass after the phase-invariant fixes (including RR-CANON-R145 eligibility alignment). The remaining blocker is scale: large-board self-play is still slow, so square19/hex datasets remain far below target volumes.
 
 ### 1.2 Training Data Volume
 
@@ -254,8 +254,8 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Task ID**             | AI-04                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **Title**               | Scale self-play to 500 games per board type                                                                                                                                                                                                                                                                                                                                                                  |
-| **Description**         | After the parity gate passes, scale up canonical self-play generation to produce at least 500 games per board type (square8_2p, square8_3p, square8_4p, square19, hexagonal). Use distributed self-play across SSH hosts if available. Run parity gates on the scaled DBs. Use `--min-recorded-games` with `--max-soak-attempts` to retry soaks until the target count is met.                               |
-| **Acceptance Criteria** | <ul><li>≥500 games per board type in canonical DBs</li><li>All DBs pass parity + canonical history gate</li><li>NPZ datasets exported for training</li><li>Training samples count documented per board</li></ul>                                                                                                                                                                                             |
+| **Description**         | After the canonical gate passes, scale up canonical self-play generation to produce at least 500 games per board type (square8_2p, square8_3p, square8_4p, square19, hexagonal). Use distributed self-play across SSH hosts if available. Run canonical gates on the scaled DBs. Use `--min-recorded-games` with `--max-soak-attempts` to retry soaks until the target count is met.                         |
+| **Acceptance Criteria** | <ul><li>≥500 games per board type in canonical DBs</li><li>All DBs pass canonical gate (parity + history + FE/ANM)</li><li>NPZ datasets exported for training</li><li>Training samples count documented per board</li></ul>                                                                                                                                                                                  |
 | **Key Files**           | <ul><li>`ai-service/scripts/generate_canonical_selfplay.py`</li><li>`ai-service/data/training/*.npz`</li></ul>                                                                                                                                                                                                                                                                                               |
 | **Volume Targets**      | <table><tr><th>Board Type</th><th>Target Games</th><th>Est. Samples</th></tr><tr><td>square8_2p</td><td>500</td><td>~30,000</td></tr><tr><td>square8_3p</td><td>500</td><td>~35,000</td></tr><tr><td>square8_4p</td><td>500</td><td>~40,000</td></tr><tr><td>square19</td><td>500</td><td>~100,000</td></tr><tr><td>hexagonal</td><td>500</td><td>~120,000</td></tr></table>                                 |
 | **Commands**            | `bash<br>cd ai-service<br># Use distributed self-play for large-board types<br>PYTHONPATH=. python scripts/generate_canonical_selfplay.py \<br>  --board square19 \<br>  --num-games 100 \<br>  --min-recorded-games 500 \<br>  --max-soak-attempts 5 \<br>  --db data/games/canonical_square19.db \<br>  --summary data/games/db_health.canonical_square19.json \<br>  --hosts lambda1,lambda2,lambda3<br>` |
@@ -268,7 +268,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Task ID**             | AI-05                                                                                                                                                                                                                                  |
 | **Title**               | Update TRAINING_DATA_REGISTRY.md with gate summaries                                                                                                                                                                                   |
-| **Description**         | After scaling, update the training data registry with the new game counts, gate summary references, and status changes. Ensure all canonical DBs are documented with their provenance and parity gate results.                         |
+| **Description**         | After scaling, update the training data registry with the new game counts, gate summary references, and status changes. Ensure all canonical DBs are documented with their provenance and canonical gate results.                      |
 | **Acceptance Criteria** | <ul><li>All canonical DBs listed with correct game counts</li><li>Gate summary JSON paths documented</li><li>Status = canonical for all passing DBs</li><li>Volume targets table updated</li><li>NPZ export paths documented</li></ul> |
 | **Key Files**           | <ul><li>`ai-service/TRAINING_DATA_REGISTRY.md`</li><li>`ai-service/data/games/db_health.*.json`</li></ul>                                                                                                                              |
 | **Dependencies**        | AI-04                                                                                                                                                                                                                                  |
@@ -480,7 +480,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 | Order | Task  | Rationale                            |
 | ----- | ----- | ------------------------------------ |
 | 1     | AI-01 | Must diagnose before fixing          |
-| 2     | AI-02 | Unblocks parity gate                 |
+| 2     | AI-02 | Unblocks canonical gate              |
 | 3     | AI-03 | Validates fix, enables data pipeline |
 
 ### Phase 2: Data Scaling
@@ -541,7 +541,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 - [x] AI-01: Parity/phase invariant issues diagnosed and documented
 - [x] AI-02: Both large-board DBs regenerated with schema-complete tables and no phase invariant violations
-- [x] AI-03: Both DBs pass parity gate (hexagonal: 1 game, square19: 3 games, light-band runs)
+- [x] AI-03: Both DBs pass canonical gate (hexagonal: 1 game, square19: 3 games, light-band runs)
 
 ### Phase 2 Exit Criteria
 
@@ -564,7 +564,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 The AI Training Pipeline Remediation is complete when:
 
-1. ✅ All canonical DBs (square8, square19, hexagonal) pass parity gates
+1. ✅ All canonical DBs (square8, square19, hexagonal) pass canonical gates
 2. ⏳ ≥500 canonical games exist per board type
 3. ⏳ Neural network achieves ≥85% win rate vs random
 4. ⏳ Production difficulty ladder includes search-based AI (Minimax/MCTS)
@@ -733,7 +733,7 @@ game_initial_state    game_players          schema_metadata
 - Health summary: `ai-service/data/games/db_health.canonical_hexagonal.json`
 
 **Historical Issue (resolved):**
-The parity gate previously failed with a **TS↔Python phase/move invariant violation**:
+The canonical gate previously failed with a **TS↔Python phase/move invariant violation**:
 
 ```
 Phase/move invariant violated: cannot apply move type no_placement_action in phase territory_processing
@@ -763,7 +763,7 @@ Phase/move invariant violated: cannot apply move type no_placement_action in pha
 ```
 
 **Resolution:**
-Re-ran with the trace-mode fix in place; parity gate now passes for hexagonal. Remaining work is scale-up toward volume targets.
+Re-ran with the trace-mode fix in place; canonical gate now passes for hexagonal. Remaining work is scale-up toward volume targets.
 
 **Files Modified/Created:**
 
@@ -790,7 +790,7 @@ Re-ran with the trace-mode fix in place; parity gate now passes for hexagonal. R
 - Health summary: `ai-service/data/games/db_health.canonical_square19.json`
 
 **Historical Issue (resolved):**
-The parity gate previously failed with a **TS↔Python phase/move invariant violation**:
+The canonical gate previously failed with a **TS↔Python phase/move invariant violation**:
 
 ```
 [PHASE_MOVE_INVARIANT] Cannot apply move type 'forced_elimination' in phase 'territory_processing'
@@ -799,7 +799,7 @@ The parity gate previously failed with a **TS↔Python phase/move invariant viol
 **Root Cause (likely):** Implicit ANM resolution applied forced elimination without entering `forced_elimination`. Trace-mode now keeps forced elimination explicit; re-run to confirm.
 
 **Resolution:**
-Re-ran with the trace-mode fix in place; parity gate now passes for square19. Remaining work is scale-up toward volume targets.
+Re-ran with the trace-mode fix in place; canonical gate now passes for square19. Remaining work is scale-up toward volume targets.
 
 ### AI-02c: Fix Python Phase Transition Timing Bug (2025-12-20)
 
@@ -894,7 +894,7 @@ See `ai-service/data/games/db_health.canonical_square19.json` and
 
 **Conclusion:**
 
-The primary goal of AI-03 was achieved: **the parity gate passes for all recorded games**. The phase parity fix from AI-02c is confirmed working for both hexagonal and square19 board types. Volume scaling to >=200 games per board type is deferred to AI-04, with distributed soaks as the preferred path.
+The primary goal of AI-03 was achieved: **the canonical gate passes for all recorded games**. The phase parity fix from AI-02c is confirmed working for both hexagonal and square19 board types. Volume scaling to >=200 games per board type is deferred to AI-04, with distributed soaks as the preferred path.
 
 ### AI-04: Diagnose trace_replay_failure Blocking Volume Scale (2025-12-20)
 
@@ -1186,37 +1186,43 @@ cd ai-service && PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 python scripts/gene
 - `ai-service/data/games/canonical_hexagonal.db` - Cleaned up 1 bad game
 - `ai-service/data/games/canonical_square19.db` - Cleaned up 1 bad game
 
-**Parity Verification Results (After Cleanup):**
+**Canonical Gate Results (After Cleanup):**
 
-Both databases now pass parity validation with 0 semantic divergences:
+Both databases now pass the canonical gate with 0 semantic divergences:
 
-| Database            | Games | Semantic Divergences | Structural Issues | Parity Gate |
-| ------------------- | ----- | -------------------- | ----------------- | ----------- |
-| canonical_hexagonal | 14    | 0                    | 0                 | ✅ PASS     |
-| canonical_square19  | 26    | 0                    | 0                 | ✅ PASS     |
+| Database            | Games | Semantic Divergences | Structural Issues | Canonical Gate |
+| ------------------- | ----- | -------------------- | ----------------- | -------------- |
+| canonical_hexagonal | 14    | 0                    | 0                 | ✅ PASS        |
+| canonical_square19  | 26    | 0                    | 0                 | ✅ PASS        |
 
 ```json
-// canonical_hexagonal.db parity summary
+// db_health.canonical_hexagonal.json (parity_gate excerpt)
 {
-  "games_with_semantic_divergence": 0,
-  "games_with_structural_issues": 0,
-  "passed_canonical_parity_gate": true,
-  "total_games_checked": 14
+  "canonical_ok": true,
+  "parity_gate": {
+    "games_with_semantic_divergence": 0,
+    "games_with_structural_issues": 0,
+    "passed_canonical_parity_gate": true,
+    "total_games_checked": 14
+  }
 }
 
-// canonical_square19.db parity summary
+// db_health.canonical_square19.json (parity_gate excerpt)
 {
-  "games_with_semantic_divergence": 0,
-  "games_with_structural_issues": 0,
-  "passed_canonical_parity_gate": true,
-  "total_games_checked": 26
+  "canonical_ok": true,
+  "parity_gate": {
+    "games_with_semantic_divergence": 0,
+    "games_with_structural_issues": 0,
+    "passed_canonical_parity_gate": true,
+    "total_games_checked": 26
+  }
 }
 ```
 
 **Next Steps:**
 
 1. Run generation scripts for longer duration (overnight)
-2. After completion, verify parity gates with standalone parity check
+2. After completion, re-run the canonical gate (generate_canonical_selfplay.py --num-games 0)
 3. Update TRAINING_DATA_REGISTRY.md with final counts
 4. If 400+ games achieved, proceed to AI-08 (neural training)
 
