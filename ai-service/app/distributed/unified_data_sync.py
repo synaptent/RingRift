@@ -59,7 +59,6 @@ from app.utils.paths import AI_SERVICE_ROOT
 try:
     from app.distributed.manifest_replication import (
         ManifestReplicator,
-        ReplicaHost,
         create_replicator_from_config,
     )
     HAS_MANIFEST_REPLICATION = True
@@ -70,7 +69,6 @@ except ImportError:
 try:
     from app.distributed.p2p_sync_client import (
         P2PFallbackSync,
-        P2PSyncClient,
     )
     HAS_P2P_FALLBACK = True
 except ImportError:
@@ -91,7 +89,6 @@ except ImportError:
 try:
     from app.distributed.quality_extractor import (
         QualityExtractorConfig,
-        compute_priority_score,
         extract_batch_quality,
         extract_quality_from_synced_db,
         get_elo_lookup_from_service,
@@ -106,7 +103,6 @@ except ImportError:
 # Storage provider for NFS detection and provider-specific paths
 try:
     from app.distributed.storage_provider import (
-        StorageProvider,
         get_storage_provider,
         is_nfs_available,
         should_sync_to_node,
@@ -133,10 +129,7 @@ except ImportError:
 
 try:
     from app.distributed.data_events import (
-        DataEvent,
-        DataEventType,
         emit_new_games,
-        get_event_bus,
     )
     HAS_EVENT_BUS = True
 except ImportError:
@@ -190,10 +183,7 @@ def publish_cross_process_event(event_type: str, payload: dict | None = None):
 # Circuit breaker still has its own import (not in helpers)
 try:
     from app.distributed.circuit_breaker import (
-        CircuitOpenError,
-        CircuitState,
         FallbackChain,
-        get_circuit_registry,
         get_host_breaker,
     )
     HAS_CIRCUIT_BREAKER = True
