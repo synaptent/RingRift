@@ -253,7 +253,6 @@ def validate_canonical_move_sequence(
         },
         "capture": {"overtaking_capture", "continue_capture_segment", "skip_capture"},
         "chain_capture": {"continue_capture_segment"},
-        "recovery": {"recovery_slide", "skip_recovery"},  # Legacy GPU phase
         "line_processing": {"process_line", "choose_line_option", "no_line_action"},
         "territory_processing": {
             "process_territory_region",

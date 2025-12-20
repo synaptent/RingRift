@@ -103,7 +103,7 @@ Updated locations:
 | **Territory Processing**   | 2025-12-12 | Full flood-fill with region finding, disconnection, cap eligibility (`compute_territory_batch`)  |
 | **Overlength Line Choice** | 2025-12-12 | Probabilistic Option 1/2 selection (30% Option 2) per RR-CANON-R122                              |
 | **Cap Eligibility**        | 2025-12-12 | Context-aware: line vs territory vs forced elimination (`_find_eligible_territory_cap`)          |
-| **Recovery Cascade**       | 2025-12-12 | Territory processing after line formation in recovery phase                                      |
+| **Recovery Cascade**       | 2025-12-12 | Territory processing after line formation from recovery in movement phase                        |
 | **LPS Victory (full)**     | 2025-12-14 | Full round-based tracking per RR-CANON-R172 with configurable threshold                          |
 | **Marker Landing (full)**  | 2025-12-14 | Landing on ANY marker (own or opponent) now removes marker + costs 1 ring per RR-CANON-R091/R092 |
 

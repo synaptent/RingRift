@@ -809,7 +809,8 @@ class GPUSelfPlayGenerator:
                             "END_TURN": "movement",
                             "CAPTURE": "capture",
                             "CHAIN_CAPTURE": "chain_capture",
-                            "RECOVERY": "recovery",
+                            # Recovery moves are recorded in the movement phase.
+                            "RECOVERY": "movement",
                             "FORCED_ELIMINATION": "forced_elimination",
                             "GAME_OVER": "game_over",
                         }

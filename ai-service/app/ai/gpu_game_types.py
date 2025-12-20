@@ -121,7 +121,8 @@ class GamePhase(IntEnum):
     # Canonical phases (5-9) - December 2025
     CAPTURE = 5              # First capture opportunity
     CHAIN_CAPTURE = 6        # Continuation capture after first capture
-    RECOVERY = 7             # Recovery slide phase (after no movement)
+    # GPU-internal recovery phase; exported as movement per canonical rules.
+    RECOVERY = 7
     FORCED_ELIMINATION = 8   # Player had no real actions this turn
     GAME_OVER = 9            # Game has ended
 

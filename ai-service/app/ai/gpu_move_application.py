@@ -627,7 +627,7 @@ def apply_no_action_moves_batch(
     # CAPTURE/CHAIN_CAPTURE phases use SKIP_CAPTURE
     move_types[phases == GamePhase.CAPTURE] = MoveType.SKIP_CAPTURE
     move_types[phases == GamePhase.CHAIN_CAPTURE] = MoveType.SKIP_CAPTURE
-    # RECOVERY phase uses SKIP_RECOVERY
+    # GPU internal recovery phase uses SKIP_RECOVERY (exported as movement).
     move_types[phases == GamePhase.RECOVERY] = MoveType.SKIP_RECOVERY
 
     # Record in history for games with space (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)

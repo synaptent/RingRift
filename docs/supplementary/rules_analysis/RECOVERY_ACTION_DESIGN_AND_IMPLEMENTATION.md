@@ -26,9 +26,9 @@ The Recovery Action **has been designed and partially implemented** on the `sand
 
 ### Current State (Without Recovery)
 
-When a player loses all their stacks and has no rings in hand, they become **temporarily inactive**:
+When a player loses all their stacks and has no legal placements, they become **temporarily inactive**:
 
-- They cannot place (no rings in hand)
+- They cannot place (no legal placements; often no rings in hand)
 - They cannot move (no stacks)
 - They cannot capture (no stacks)
 - Their only path back is **passive recovery**: waiting for opponents to expose their buried rings
@@ -399,7 +399,7 @@ git cherry-pick c0b66e2e
 1. **Extract recovery files** from commit `c0b66e2e`
 2. **Review FSM changes** in `TurnStateMachine.ts` and `FSMAdapter.ts`
 3. **Add `recovery_slide` to MoveType** in `src/shared/types/game.ts`
-4. **Update turn orchestrator** to handle recovery phase
+4. **Update turn orchestrator** to handle recovery within movement (no separate phase)
 5. **Add recovery eligibility check** to turn rotation logic
 6. **Update LPS evaluation** to check for valid recovery moves
 7. **Add canonical rules** (R110–R115) to `RULES_CANONICAL_SPEC.md`
@@ -413,21 +413,21 @@ git cherry-pick c0b66e2e
 
 ### 10.1 Key Differences
 
-| Aspect                  | Branch Implementation              | Discussion Proposal                | Resolution               |
-| ----------------------- | ---------------------------------- | ---------------------------------- | ------------------------ |
-| **Eligibility**         | NO stacks, NO rings in hand        | No legal placements/moves/captures | **Use branch** (simpler) |
-| **Payment source**      | Buried rings only                  | Buried rings OR cap rings          | **Use branch** (simpler) |
-| **Overlength handling** | Entire line collapses, cost scales | Entire line collapses, cost scales | **Same**                 |
-| **LPS status**          | IS a real action                   | IS a real action                   | **Same**                 |
-| **Territory cascade**   | Yes, with buried ring self-elim    | Yes, with buried ring self-elim    | **Same**                 |
+| Aspect                  | Branch Implementation                                    | Discussion Proposal                | Resolution               |
+| ----------------------- | -------------------------------------------------------- | ---------------------------------- | ------------------------ |
+| **Eligibility**         | No stacks + marker + buried ring (rings in hand allowed) | No legal placements/moves/captures | **Use canonical**        |
+| **Payment source**      | Buried rings only                                        | Buried rings OR cap rings          | **Use branch** (simpler) |
+| **Overlength handling** | Entire line collapses, cost scales                       | Entire line collapses, cost scales | **Same**                 |
+| **LPS status**          | NOT a real action                                        | NOT a real action                  | **Same**                 |
+| **Territory cascade**   | Yes, with buried ring self-elim                          | Yes, with buried ring self-elim    | **Same**                 |
 
 ### 10.2 Analysis: Eligibility Scope
 
-**Branch (Stricter):** Recovery only for players with:
+**Canonical:** Recovery only for players with:
 
 - Zero controlled stacks
-- Zero rings in hand
 - Has markers + buried rings
+- Rings in hand allowed (skip_placement to reach movement)
 
 **Discussion (Broader):** Recovery for players with:
 
@@ -435,7 +435,7 @@ git cherry-pick c0b66e2e
 - Could include players with trapped/immobile stacks
 - Cap rings could pay for recovery
 
-**Recommendation: Use Branch (Stricter) Approach**
+**Recommendation: Use canonical eligibility approach**
 
 Rationale:
 
@@ -464,9 +464,10 @@ Rationale:
 A player P is eligible for recovery if ALL hold:
 
 1. P controls **zero stacks** on the board
-2. P has **zero rings in hand**
-3. P owns at least one **marker** on the board
-4. P has at least one **buried ring** (P's color inside any stack, not as top ring)
+2. P owns at least one **marker** on the board
+3. P has at least one **buried ring** (P's color inside any stack, not as top ring)
+
+**Note:** Rings in hand do **NOT** prevent recovery eligibility. A player with rings in hand but no stacks may still use recovery if the above conditions are met.
 
 **RR-CANON-R111: Marker Slide**
 Slide one marker to an adjacent empty cell (Moore for square, hex-adjacent for hex).
@@ -483,7 +484,7 @@ For line formation: collapse line → extract buried ring(s) → territory casca
 **RR-CANON-R115: Recording & LPS**
 
 - Move type: `recovery_slide`
-- Recovery **IS a real action** for LPS purposes
+- Recovery **is NOT a real action** for LPS purposes
 
 ### 10.5 Simplifications Over Initial Discussion
 

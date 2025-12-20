@@ -369,20 +369,20 @@ The debugging session revealed process improvements for future architectural iss
 
 ## 8. Appendix: Debugging Session Timeline
 
-| Iteration | Attempted Fix                                | Result                    |
-| --------- | -------------------------------------------- | ------------------------- |
-| 1         | Fix recovery NameError                       | Passed                    |
-| 2         | Add recovery phase handling in phase_machine | Partial                   |
-| 3         | Run focused parity tests                     | Passed                    |
-| 4         | Check replay fixtures                        | Skipped (empty DBs)       |
-| 5         | Generate parity fixtures                     | Empty fixtures (no games) |
-| 6         | Generate self-play DB                        | Structural issue          |
-| 7         | Add NO_TERRITORY_ACTION to legal moves       | Still fails               |
-| 8         | Defensive synthesis in DefaultRulesEngine    | Still fails               |
-| 9         | Explicit phase setting after NO_LINE_ACTION  | Still fails               |
-| 10        | Check self-play soak bookkeeping             | Not invoked               |
-| 11        | Verify PYTHONPATH in gate script             | Still fails               |
-| 12        | Architecture analysis requested              | → This document           |
+| Iteration | Attempted Fix                                                          | Result                    |
+| --------- | ---------------------------------------------------------------------- | ------------------------- |
+| 1         | Fix recovery NameError                                                 | Passed                    |
+| 2         | Add recovery handling in movement (no separate phase) in phase_machine | Partial                   |
+| 3         | Run focused parity tests                                               | Passed                    |
+| 4         | Check replay fixtures                                                  | Skipped (empty DBs)       |
+| 5         | Generate parity fixtures                                               | Empty fixtures (no games) |
+| 6         | Generate self-play DB                                                  | Structural issue          |
+| 7         | Add NO_TERRITORY_ACTION to legal moves                                 | Still fails               |
+| 8         | Defensive synthesis in DefaultRulesEngine                              | Still fails               |
+| 9         | Explicit phase setting after NO_LINE_ACTION                            | Still fails               |
+| 10        | Check self-play soak bookkeeping                                       | Not invoked               |
+| 11        | Verify PYTHONPATH in gate script                                       | Still fails               |
+| 12        | Architecture analysis requested                                        | → This document           |
 
 **Conclusion:** The repeated failures despite targeted fixes indicate a systemic issue requiring architectural refactoring, not point fixes.
 
