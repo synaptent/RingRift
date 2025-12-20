@@ -340,11 +340,15 @@ class TrainingTaskTracker:
 
             if success:
                 try:
-                    asyncio.get_running_loop()
-                    asyncio.create_task(emit_task_completed(
+                    loop = asyncio.get_running_loop()
+                    task = loop.create_task(emit_task_completed(
                         task_id=task_id,
                         result=result or {},
                     ))
+                    task.add_done_callback(
+                        lambda t: logger.debug(f"Task complete event error: {t.exception()}")
+                        if t.exception() else None
+                    )
                 except RuntimeError:
                     asyncio.run(emit_task_completed(
                         task_id=task_id,
@@ -353,11 +357,15 @@ class TrainingTaskTracker:
             else:
                 error = result.get("error", "Unknown error") if result else "Unknown error"
                 try:
-                    asyncio.get_running_loop()
-                    asyncio.create_task(emit_task_failed(
+                    loop = asyncio.get_running_loop()
+                    task = loop.create_task(emit_task_failed(
                         task_id=task_id,
                         error=error,
                     ))
+                    task.add_done_callback(
+                        lambda t: logger.debug(f"Task failed event error: {t.exception()}")
+                        if t.exception() else None
+                    )
                 except RuntimeError:
                     asyncio.run(emit_task_failed(
                         task_id=task_id,

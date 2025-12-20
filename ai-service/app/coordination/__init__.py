@@ -1770,17 +1770,13 @@ __all__ = [
     "get_underserved_configs",
     "get_unified_registry",
     "get_utilization_score",
-    "full_cluster_sync",
     "has_bandwidth_manager",
-    # Coordination helpers (safe wrappers)
     "has_coordination",
     "has_cross_process_events",
     "has_duration_scheduler",
     "has_resource_targets",
     "has_role",
-    # Additional availability checks
     "has_sync_lock",
-    # Unified Initialization (December 2025)
     "initialize_all_coordinators",
     "inject_trace_into_event",
     "inject_trace_into_headers",
@@ -1802,7 +1798,6 @@ __all__ = [
     "poll_events_safe",
     "pre_spawn_check",
     "publish_event",
-    # Cross-process events helpers
     "publish_event_safe",
     "publish_event_sync",
     "router_publish_event",
