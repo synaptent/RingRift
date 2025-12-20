@@ -71,7 +71,7 @@ Cannot train production-quality neural models until the canonical data pipeline 
 | `canonical_square19.db`   | square19   | 1     | ✅ Present         | ❌ FAIL     | **pending_gate** |
 | `canonical_hexagonal.db`  | hexagonal  | 1     | ✅ Present         | ❌ FAIL     | **pending_gate** |
 
-**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete, but parity gating fails due to phase invariant violations in generated move histories (for example forced elimination moves recorded while still in `territory_processing`).
+**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete, but parity gating fails due to phase invariant violations in generated move histories (for example forced elimination moves recorded while still in `territory_processing`). A suspected contributor was Python territory-processing eligibility rejecting height-1 stacks outside a region (RR-CANON-R145), which has now been aligned to the canonical elimination rules.
 
 ### 1.2 Training Data Volume
 
@@ -163,9 +163,10 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 **Root Cause Analysis (Hypothesis):**
 
-1. Self-play generator/engine emits forced elimination without entering the `forced_elimination` phase.
-2. Phase transitions may be skipped or recorded out of order under long-running large-board games.
-3. The generator does not fail fast on invalid phase/move sequences, allowing invalid games into the DB.
+1. Python territory-processing eligibility rejected height-1 stacks outside a region (RR-CANON-R145), leading to no_territory_action → forced_elimination sequences without the canonical phase transition; fixed by delegating eligibility to the elimination helper.
+2. Self-play generator/engine emits forced elimination without entering the `forced_elimination` phase.
+3. Phase transitions may be skipped or recorded out of order under long-running large-board games.
+4. The generator does not fail fast on invalid phase/move sequences, allowing invalid games into the DB.
 
 ### 2.2 Insufficient Training Data
 
@@ -577,10 +578,26 @@ The AI Training Pipeline Remediation is complete when:
 | 1.0     | 2025-12-20 | Initial remediation plan created                                                     |
 | 1.1     | 2025-12-20 | AI-02 (hexagonal): Schema regenerated, parity blocker identified                     |
 | 1.2     | 2025-12-20 | Updated large-board status: schema complete, parity failures due to phase invariants |
+| 1.3     | 2025-12-20 | Aligned Python territory eligibility with canonical elimination rules (height-1 ok)  |
 
 ---
 
 ## Task Execution Log
+
+### AI-02: Align territory eligibility to canonical elimination rules (2025-12-20)
+
+**Status:** ✅ CODE FIXED (awaiting regeneration + gate re-run)
+
+**Context:** Parity failures showed `forced_elimination` moves recorded while still in `territory_processing`. A likely contributor was Python rejecting height-1 outside stacks as valid territory self-elimination targets (RR-CANON-R145), which would cause `no_territory_action` to be recorded instead of processing a region.
+
+**Actions Completed:**
+
+1. ✅ Updated `GameEngine._can_process_disconnected_region` to delegate to `is_stack_eligible_for_elimination` for both recovery and territory contexts.
+2. ✅ Removed singleton-stack height gating and aligned eligibility with canonical rules (height-1 controlled stacks are valid).
+
+**Files Modified:**
+
+- `ai-service/app/_game_engine_legacy.py`
 
 ### AI-02: Regenerate canonical_hexagonal.db (2025-12-20)
 

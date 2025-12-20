@@ -1,26 +1,61 @@
 # Next Areas Execution Plan (Remote)
 
 **Created:** 2025-12-20
-**Status:** Lane 1 in_progress; others pending
+**Updated:** 2025-12-20
+**Status:** Lane 1 BLOCKED by parity bug; Lane 3 elevated to HIGH priority
 
 ---
 
 ## Lane 1: Canonical Data Pipeline (cluster)
 
-- [ ] Confirm selfplay jobs are canonical pipeline or raw
+- [x] Confirm selfplay jobs are canonical pipeline or raw
 - [ ] For each board (square19, hex), run canonical gate:
-  - [ ] Parity check (TS vs Python)
-  - [ ] Canonical phase-history validation
+  - [x] Parity check (TS vs Python) - **FAILED**
+  - [x] Canonical phase-history validation - **FAILED**
 - [ ] Write `db_health.canonical_<board>.json` for each DB
 - [ ] Update `TRAINING_DATA_REGISTRY.md` with `canonical_ok` status and provenance
+- [ ] **NEW: Fix phase transition parity bug before data can be canonical**
 
-**Status:** In Progress
+**Status:** BLOCKED - Critical parity bug found
 
 ### Lane 1 Progress Log
 
-| Date | Board | Parity | Phase-History | DB Health JSON | Notes |
-| ---- | ----- | ------ | ------------- | -------------- | ----- |
-|      |       |        |               |                |       |
+| Date       | Board                    | Parity                          | Phase-History         | DB Health JSON | Notes                                                          |
+| ---------- | ------------------------ | ------------------------------- | --------------------- | -------------- | -------------------------------------------------------------- |
+| 2025-12-20 | square8_2p               | FAIL (4/10 semantic divergence) | FAIL (19+ violations) | -              | Phase mismatch: Python=ring_placement, TS=territory_processing |
+| 2025-12-20 | jsonl_aggregated (mixed) | FAIL (5/20 semantic divergence) | -                     | -              | Same phase transition bug                                      |
+
+### Critical Finding: Phase Transition Parity Bug
+
+**Symptom:** Python and TypeScript engines disagree on phase transitions:
+
+- Python reports phase: `ring_placement`
+- TypeScript reports phase: `territory_processing`
+- Divergence occurs mid-game (moves 50-125 typically)
+
+**Impact:**
+
+- All current DBs with this bug are **non-canonical**
+- Training on this data will produce models with incorrect phase understanding
+- Canonical history validation also fails: `place_ring` moves applied during `territory_processing` phase
+
+**Affected DBs (sampled):**
+
+- `square8_2p.db`: 591MB, mostly affected
+- `jsonl_aggregated.db`: 15GB, affected
+- `selfplay.db`: 335GB, likely affected
+
+**Root cause investigation needed in Lane 3 (Parity Hardening)**
+
+### Selfplay Configuration Verified
+
+Current selfplay on lambda-gh200-e uses canonical pipeline:
+
+```
+--difficulty-band canonical --fail-on-anomaly --streaming-record
+```
+
+DB path: `data/games/distributed_soak_runs/distributed_soak_square19_3p_20251220_045423/`
 
 ---
 
@@ -36,10 +71,16 @@
 
 ## Lane 3: Parity Hardening
 
+**Priority: HIGH** - Blocking Lane 1 canonical data validation
+
+- [ ] **CRITICAL: Fix phase transition parity bug (ring_placement vs territory_processing)**
+  - Investigate why Python and TS disagree on phase at moves 50-125
+  - Check territory detection and empty region semantics
+  - Check phase transition conditions in both engines
 - [ ] Add unit tests for territory detection (empty region semantics)
 - [ ] Add replay contract tests for `forced_elimination` and `no_territory_action` sequencing
 
-**Status:** Pending
+**Status:** Elevated priority - must fix before Lane 1 can complete
 
 ---
 
