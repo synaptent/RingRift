@@ -42,7 +42,8 @@ class MockDataEventType:
 class TestSelfplayOrchestratorSubscriptions:
     """Tests for SelfplayOrchestrator event subscriptions."""
 
-    def test_backpressure_activated_updates_state(self):
+    @pytest.mark.asyncio
+    async def test_backpressure_activated_updates_state(self):
         """Test that BACKPRESSURE_ACTIVATED updates node backpressure state."""
         from app.coordination.selfplay_orchestrator import SelfplayOrchestrator
 
@@ -59,15 +60,14 @@ class TestSelfplayOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_backpressure_activated(event)
-        )
+        await orch._on_backpressure_activated(event)
 
         # Verify state updated
         assert orch.is_node_under_backpressure("gh200-a")
         assert orch.get_node_backpressure_level("gh200-a") == "high"
 
-    def test_backpressure_released_clears_state(self):
+    @pytest.mark.asyncio
+    async def test_backpressure_released_clears_state(self):
         """Test that BACKPRESSURE_RELEASED clears node backpressure state."""
         from app.coordination.selfplay_orchestrator import SelfplayOrchestrator
 
@@ -83,15 +83,14 @@ class TestSelfplayOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_backpressure_released(event)
-        )
+        await orch._on_backpressure_released(event)
 
         # Verify state cleared
         assert not orch.is_node_under_backpressure("gh200-a")
         assert orch.get_node_backpressure_level("gh200-a") is None
 
-    def test_regression_detected_pauses_for_severe(self):
+    @pytest.mark.asyncio
+    async def test_regression_detected_pauses_for_severe(self):
         """Test that severe regression pauses selfplay."""
         from app.coordination.selfplay_orchestrator import SelfplayOrchestrator
 
@@ -107,14 +106,13 @@ class TestSelfplayOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_regression_detected(event)
-        )
+        await orch._on_regression_detected(event)
 
         # Verify paused
         assert orch.is_paused_for_regression()
 
-    def test_regression_detected_ignores_minor(self):
+    @pytest.mark.asyncio
+    async def test_regression_detected_ignores_minor(self):
         """Test that minor regression does not pause selfplay."""
         from app.coordination.selfplay_orchestrator import SelfplayOrchestrator
 
@@ -130,9 +128,7 @@ class TestSelfplayOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_regression_detected(event)
-        )
+        await orch._on_regression_detected(event)
 
         # Verify not paused
         assert not orch.is_paused_for_regression()
@@ -141,7 +137,8 @@ class TestSelfplayOrchestratorSubscriptions:
 class TestDataPipelineOrchestratorSubscriptions:
     """Tests for DataPipelineOrchestrator event subscriptions."""
 
-    def test_cache_invalidated_sets_refresh_flag(self):
+    @pytest.mark.asyncio
+    async def test_cache_invalidated_sets_refresh_flag(self):
         """Test that model cache invalidation sets pending refresh flag."""
         from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
@@ -158,15 +155,14 @@ class TestDataPipelineOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_cache_invalidated(event)
-        )
+        await orch._on_cache_invalidated(event)
 
         # Verify flag set
         assert orch.needs_cache_refresh()
         assert orch._cache_invalidation_count == 10
 
-    def test_optimization_triggered_tracks_state(self):
+    @pytest.mark.asyncio
+    async def test_optimization_triggered_tracks_state(self):
         """Test that CMAES_TRIGGERED updates optimization tracking."""
         from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
@@ -182,15 +178,14 @@ class TestDataPipelineOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_optimization_triggered(event)
-        )
+        await orch._on_optimization_triggered(event)
 
         # Verify state tracked
         assert orch.is_optimization_active()
         assert orch.get_active_optimization() == "cmaes"
 
-    def test_quality_distribution_changed_updates_state(self):
+    @pytest.mark.asyncio
+    async def test_quality_distribution_changed_updates_state(self):
         """Test that quality distribution updates are tracked."""
         from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
@@ -209,9 +204,7 @@ class TestDataPipelineOrchestratorSubscriptions:
         )
 
         # Call handler directly
-        asyncio.get_event_loop().run_until_complete(
-            orch._on_quality_distribution_changed(event)
-        )
+        await orch._on_quality_distribution_changed(event)
 
         # Verify distribution updated
         dist = orch.get_quality_distribution()
