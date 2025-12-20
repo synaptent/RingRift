@@ -48,7 +48,13 @@ try:
         TRAINING_TRIGGER_GAMES,
     )
 except ImportError:
+    # Fallback defaults if thresholds module not available
     INITIAL_ELO_RATING = 1500.0
+    ELO_K_FACTOR = 32
+    ELO_DROP_ROLLBACK = 50.0
+    MIN_GAMES_FOR_ELO = 30
+    TRAINING_TRIGGER_GAMES = 500
+    TRAINING_MIN_INTERVAL_SECONDS = 1200
 
 # Import centralized path utilities
 try:
@@ -61,11 +67,6 @@ except ImportError:
     def ensure_parent_dir(path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
-    ELO_K_FACTOR = 32
-    ELO_DROP_ROLLBACK = 50.0
-    MIN_GAMES_FOR_ELO = 30
-    TRAINING_TRIGGER_GAMES = 500
-    TRAINING_MIN_INTERVAL_SECONDS = 1200
 
 logger = logging.getLogger(__name__)
 

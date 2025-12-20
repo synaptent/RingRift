@@ -380,16 +380,14 @@ def PathField(
     description: str = "",
 ) -> Field[Path]:
     """Create a path field."""
-    validator = None
-    if must_exist:
-        def validator(p: Path) -> bool:
-            return p.exists()
+    def _exists_validator(p: Path) -> bool:
+        return p.exists()
 
     return Field(
         type_=Path,
         required=required,
         default=default,
-        validator=validator,
+        validator=_exists_validator if must_exist else None,
         env_var=env_var,
         description=description,
     )

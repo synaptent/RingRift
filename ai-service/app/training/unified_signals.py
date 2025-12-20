@@ -57,7 +57,7 @@ except ImportError:
 
 # Import quality config for quality-aware training decisions
 try:
-    from app.config.unified_config import QualityConfig, get_config
+    from app.config.unified_config import QualityConfig
     HAS_QUALITY_CONFIG = True
 except ImportError:
     HAS_QUALITY_CONFIG = False

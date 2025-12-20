@@ -29,20 +29,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
-# Type hints for lazy-loaded modules
-if TYPE_CHECKING:
-    from app.ai.heuristic_ai import HeuristicAI
-    from app.ai.policy_only_ai import PolicyOnlyAI
-    from app.ai.random_ai import RandomAI
-    from app.models import AIConfig, AIType, BoardType, GameStatus
-    from app.rules.default_engine import DefaultRulesEngine
-    from app.training.generate_data import create_initial_state
-
 # Lazy imports to avoid circular dependencies and heavy imports at module load
+# Note: TYPE_CHECKING imports removed - using Any for lazy-loaded modules
 _torch_loaded = False
 _game_modules_loaded = False
 

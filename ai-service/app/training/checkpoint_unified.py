@@ -328,8 +328,7 @@ class UnifiedCheckpointManager:
         metrics = metrics or {}
 
         def _do_save():
-            nonlocal metrics
-
+            # metrics is read from enclosing scope, no nonlocal needed
             with self._save_lock:
                 checkpoint_id = self._generate_checkpoint_id(
                     progress.epoch, progress.global_step, checkpoint_type
