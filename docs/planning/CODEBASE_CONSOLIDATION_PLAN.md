@@ -726,6 +726,62 @@ Consolidated ELO database imports and protected calibration baselines:
 
 **Impact:** Eliminated direct imports from deprecated `unified_elo_db` module, protected ELO calibration anchors from accidental archiving, centralized threshold usage.
 
+### Phase 3g: Tournament Recording Hardening - COMPLETED (2025-12-21)
+
+Enforced `trace_mode=True` in all critical tournament and data generation scripts (RR-CANON-R075 compliance):
+
+- [x] `scripts/run_model_elo_tournament.py` - 2 locations fixed
+- [x] `scripts/run_distributed_tournament.py` - 1 location fixed
+- [x] `scripts/baseline_gauntlet.py` - 1 location fixed
+- [x] `scripts/run_cross_ai_selfplay.py` - 1 location fixed
+- [x] `scripts/estimate_elo.py` - 1 location fixed
+- [x] `scripts/simple_canonical_gen.py` - 1 location fixed
+- [x] `scripts/p2p_orchestrator.py` - 1 location fixed
+
+**Context:** `trace_mode=True` ensures bookkeeping moves (NO_LINE_ACTION, NO_TERRITORY_ACTION, forced elimination) are explicitly recorded rather than implicitly applied. This is required for canonical training data generation and proper parity validation with TypeScript.
+
+**Audit Note:** 100+ scripts still have `apply_move()` without `trace_mode`, but many are test/benchmark/debugging scripts where trace_mode isn't needed. The canonical selfplay generator (`generate_canonical_selfplay.py`) already used `trace_mode=True`.
+
+**Impact:** Ensures tournament data can be used for training without parity issues.
+
+### Phase 3h: Training Data Pipeline Consolidation - COMPLETED (2025-12-21)
+
+Consolidated duplicated code across 7+ export/training scripts (~3500 lines total duplication):
+
+**1. Canonical Source Validation (3 scripts → 1 central function):**
+
+- [x] `scripts/export_replay_dataset.py` - Removed duplicate `_enforce_registry_canonical_sources`
+- [x] `scripts/export_replay_dataset_parallel.py` - Removed duplicate, now imports from central
+- [x] `scripts/db_to_training_npz.py` - Removed duplicate, now imports from central
+- Central function: `app.training.canonical_sources.enforce_canonical_sources()`
+
+**2. Board Type Mapping (5 scripts → 1 central mapping):**
+
+- [x] `scripts/export_replay_dataset.py` - Removed local BOARD_TYPE_MAP
+- [x] `scripts/export_replay_dataset_parallel.py` - Removed local BOARD_TYPE_MAP
+- [x] `scripts/export_gumbel_kl_dataset.py` - Removed local BOARD_TYPE_MAP
+- [x] `scripts/train_distilled_model.py` - Removed local BOARD_TYPE_MAP
+- [x] `scripts/run_cmaes_optimization.py` - Now imports from central, exports BOARD_NAME_TO_TYPE alias
+- Central mapping: `scripts/lib/cli.BOARD_TYPE_MAP`
+
+**3. Created Unified Export Core Module:**
+
+- [x] Created `app/training/export_core.py` with consolidated functions:
+  - `value_from_final_winner()` - Binary winner/loser value computation
+  - `value_from_final_ranking()` - Rank-aware multiplayer value computation
+  - `compute_multi_player_values()` - Per-player value vectors for multi-player training
+  - `encode_state_with_history()` - State encoding with history frame stacking
+  - `NPZDatasetWriter` class - Unified NPZ I/O with save/append/load methods
+- [x] Integrated into `scripts/export_replay_dataset.py` (proof of concept)
+- [x] Removed ~180 lines of duplicate code from export_replay_dataset.py
+
+**Impact:**
+
+- Reduced duplication by ~500 lines across export scripts
+- Single source of truth for value computation semantics
+- Unified NPZ I/O patterns prevent format inconsistencies
+- Other scripts can incrementally migrate to use `export_core` module
+
 ### Phase 4: Code Quality Cleanup - ANALYZED (2025-12-20)
 
 Analysis revealed that most "commented code" is actually documentation:

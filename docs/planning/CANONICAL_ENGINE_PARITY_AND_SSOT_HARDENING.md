@@ -33,7 +33,7 @@ Status legend: `TODO` → `IN_PROGRESS` → `DONE` (or `DEFERRED` with rationale
 | ------- | ------------------- | --------------------------------------------------------------- | ------ |
 | ENG-01  | TS engine/types     | Add canonical `skip_recovery` support end‑to‑end                | DONE   |
 | ENG-02  | Python engine/types | Implement canonical `skip_capture` support end‑to‑end           | TODO   |
-| ENG-03  | TS engine API       | Remove/align duplicate `phaseValidation.ts` contract            | TODO   |
+| ENG-03  | TS engine API       | Remove/align duplicate `phaseValidation.ts` contract            | DONE   |
 | DOC-01  | Docs                | Refresh `CANONICAL_ENGINE_API.md` MoveType/phase surfaces       | TODO   |
 | DOC-02  | Docs                | Update `RULES_IMPLEMENTATION_MAPPING.md` rule references        | TODO   |
 | TOOL-01 | Tooling             | Fix `npm run ssot-check` doc path drift                         | TODO   |

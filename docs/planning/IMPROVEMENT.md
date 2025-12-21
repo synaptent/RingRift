@@ -327,7 +327,7 @@ The project is approaching production readiness but has key gaps that need addre
 
 - [ ] Perform broader Python dependency modernization
 - [ ] Tighten Jest coverage thresholds
-- [ ] Promote TS Parity and TS Integration lanes to required checks
+- [x] Promote TS Parity and TS Integration lanes to required checks (documented in CONTRIBUTING.md and SUPPLY_CHAIN_AND_CI_SECURITY.md, Dec 2025)
 
 ---
 

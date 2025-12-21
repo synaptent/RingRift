@@ -104,6 +104,13 @@ In addition, two separate scheduled workflows define nightly jobs:
 - [`orchestrator-soak-nightly.yml`](../.github/workflows/orchestrator-soak-nightly.yml:1) – **Orchestrator Invariant Soak (nightly)**
 - [`ai-healthcheck-nightly.yml`](../.github/workflows/ai-healthcheck-nightly.yml:1) – **AI Self-Play Healthcheck (Nightly)**
 
+The [`parity-ci.yml`](../.github/workflows/parity-ci.yml:1) workflow defines **TS↔Python replay parity** jobs that run on PRs touching engine code paths:
+
+- `replay-parity-check` (**"TS↔Python Replay Parity" job**) – Generates fresh 2P canonical games and runs TS↔Python replay parity validation via `scripts/check_ts_python_replay_parity.py --fail-on-divergence`. **Required for engine-touching PRs.**
+- `replay-parity-check-3p` (**"TS↔Python Replay Parity (3-player)" job**) – Same as above for 3-player games. **Required for engine-touching PRs.**
+- `replay-parity-check-4p` (**"TS↔Python Replay Parity (4-player)" job**) – Same as above for 4-player games. **Required for engine-touching PRs.**
+- `extended-parity-check` (**"Extended Parity Check (Non-Blocking)" job**) – Runs parity check on all available DBs (scan mode). Non-blocking, only runs for PRs to `main`.
+
 - **Lint & type safety**
   - `lint-and-typecheck` (**"Lint and Type Check" job**) – ESLint plus TypeScript compilation for root, server, and client (`npx tsc`, `npx tsc -p tsconfig.server.json`, `npx tsc -p tsconfig.client.json`).
 - **General Jest tests & coverage**
