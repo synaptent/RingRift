@@ -1377,6 +1377,8 @@ def main():
             "sync_target": getattr(parsed, "sync_target", None),
             "skip_resource_check": getattr(parsed, "skip_resource_check", False),
             "canonical_export": getattr(parsed, "canonical_export", False),
+            "snapshot_interval": getattr(parsed, "snapshot_interval", 0),
+            "snapshot_db": getattr(parsed, "snapshot_db", None),
         },
     )
 
@@ -1413,6 +1415,8 @@ def main():
         "sync_interval": selfplay_config.sync_interval,
         "skip_resource_check": selfplay_config.extra_options["skip_resource_check"],
         "canonical_export": selfplay_config.extra_options["canonical_export"],
+        "snapshot_interval": selfplay_config.extra_options["snapshot_interval"],
+        "snapshot_db": selfplay_config.extra_options["snapshot_db"],
     })()
 
     if args.benchmark_only:
@@ -1552,6 +1556,7 @@ def main():
             random_opening_moves=args.random_opening_moves,
             temperature_mix=args.temperature_mix,
             canonical_export=args.canonical_export,
+            snapshot_interval=args.snapshot_interval,
         )
     finally:
         # Stop ramdrive syncer and perform final sync
