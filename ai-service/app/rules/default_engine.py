@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-# Import from legacy module directly to avoid circular import
-from app._game_engine_legacy import PhaseRequirementType
+# Import from canonical SSoT module for phase requirements
+from app.game_engine.phase_requirements import PhaseRequirementType
 from app.models import GamePhase, GameState, GameStatus, Move, MoveType
 
 from .interfaces import Mutator, RulesEngine, Validator
