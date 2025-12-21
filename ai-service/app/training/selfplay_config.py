@@ -636,3 +636,206 @@ def get_production_config(board_type: str, num_players: int) -> SelfplayConfig:
         cache_nnue_features=True,
         checkpoint_interval=500,
     )
+
+
+# =============================================================================
+# Curriculum Config Templates
+# =============================================================================
+#
+# Templates for generating diverse training data across the strength spectrum.
+# Use these to create curriculum learning pipelines where:
+# - Early training uses high-temperature exploration data
+# - Mid training uses moderate-strength games
+# - Late training uses strong-play trajectories
+#
+# Reference: NN_STRENGTHENING_PLAN.md section A) Data quality and selfplay
+# =============================================================================
+
+
+@dataclass
+class CurriculumStage:
+    """A single stage in a curriculum learning schedule."""
+
+    name: str
+    engine_mode: EngineMode
+    temperature: float
+    mcts_simulations: int
+    search_depth: int
+    games_per_config: int
+    random_opening_moves: int = 0
+    description: str = ""
+
+
+# Pre-defined curriculum stages from weak exploration to strong play
+CURRICULUM_STAGES: dict[str, CurriculumStage] = {
+    # Stage 1: High-temperature exploration (early training)
+    "explore_random": CurriculumStage(
+        name="explore_random",
+        engine_mode=EngineMode.RANDOM,
+        temperature=2.0,
+        mcts_simulations=0,
+        search_depth=0,
+        games_per_config=100,
+        random_opening_moves=4,
+        description="Pure random for game diversity and opening exploration",
+    ),
+    "explore_weak": CurriculumStage(
+        name="explore_weak",
+        engine_mode=EngineMode.HEURISTIC,
+        temperature=1.5,
+        mcts_simulations=0,
+        search_depth=1,
+        games_per_config=200,
+        random_opening_moves=2,
+        description="Weak heuristic with exploration noise",
+    ),
+    # Stage 2: Moderate strength (mid training)
+    "moderate_mcts": CurriculumStage(
+        name="moderate_mcts",
+        engine_mode=EngineMode.MCTS,
+        temperature=1.0,
+        mcts_simulations=400,
+        search_depth=2,
+        games_per_config=500,
+        description="Moderate MCTS for tactical learning",
+    ),
+    "moderate_nnue": CurriculumStage(
+        name="moderate_nnue",
+        engine_mode=EngineMode.NNUE_GUIDED,
+        temperature=1.0,
+        mcts_simulations=400,
+        search_depth=3,
+        games_per_config=500,
+        description="NNUE-guided play for position evaluation learning",
+    ),
+    # Stage 3: Strong play (late training)
+    "strong_gumbel": CurriculumStage(
+        name="strong_gumbel",
+        engine_mode=EngineMode.GUMBEL_MCTS,
+        temperature=0.5,
+        mcts_simulations=800,
+        search_depth=4,
+        games_per_config=800,
+        description="Gumbel MCTS for strong policy targets",
+    ),
+    "strong_full": CurriculumStage(
+        name="strong_full",
+        engine_mode=EngineMode.GUMBEL_MCTS,
+        temperature=0.3,
+        mcts_simulations=1600,
+        search_depth=4,
+        games_per_config=1000,
+        description="Full strength for championship-quality trajectories",
+    ),
+    # Experimental modes (use with caution)
+    "experimental_gmo": CurriculumStage(
+        name="experimental_gmo",
+        engine_mode=EngineMode.GMO,
+        temperature=0.8,
+        mcts_simulations=200,
+        search_depth=3,
+        games_per_config=200,
+        description="Gradient Move Optimization (experimental)",
+    ),
+}
+
+
+def get_curriculum_config(
+    stage: str | CurriculumStage,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> SelfplayConfig:
+    """Get a SelfplayConfig for a specific curriculum stage.
+
+    Args:
+        stage: Curriculum stage name or CurriculumStage object
+        board_type: Board type (square8, square19, hexagonal)
+        num_players: Number of players (2, 3, 4)
+
+    Returns:
+        Configured SelfplayConfig for the curriculum stage
+    """
+    if isinstance(stage, str):
+        if stage not in CURRICULUM_STAGES:
+            raise ValueError(
+                f"Unknown curriculum stage: {stage}. "
+                f"Available: {list(CURRICULUM_STAGES.keys())}"
+            )
+        stage = CURRICULUM_STAGES[stage]
+
+    return SelfplayConfig(
+        board_type=board_type,
+        num_players=num_players,
+        num_games=stage.games_per_config,
+        engine_mode=stage.engine_mode,
+        temperature=stage.temperature,
+        mcts_simulations=stage.mcts_simulations,
+        search_depth=stage.search_depth,
+        random_opening_moves=stage.random_opening_moves,
+        store_history_entries=True,
+        cache_nnue_features=True,
+        source=f"curriculum_{stage.name}",
+    )
+
+
+def get_full_curriculum(
+    board_type: str = "square8",
+    num_players: int = 2,
+    stages: list[str] | None = None,
+) -> list[SelfplayConfig]:
+    """Get a complete curriculum of SelfplayConfigs for training.
+
+    Args:
+        board_type: Board type
+        num_players: Number of players
+        stages: Optional list of stage names (default: all stages in order)
+
+    Returns:
+        List of SelfplayConfigs progressing from exploration to strong play
+    """
+    if stages is None:
+        # Default progression order
+        stages = [
+            "explore_random",
+            "explore_weak",
+            "moderate_mcts",
+            "moderate_nnue",
+            "strong_gumbel",
+            "strong_full",
+        ]
+
+    return [
+        get_curriculum_config(stage, board_type, num_players)
+        for stage in stages
+    ]
+
+
+def get_all_configs_curriculum(
+    stages: list[str] | None = None,
+) -> list[SelfplayConfig]:
+    """Get curriculum configs for all 12 board/player combinations.
+
+    This produces a comprehensive training curriculum covering:
+    - 3 board types: square8, square19, hexagonal
+    - 4 player counts: 2, 3, 4 players
+
+    Args:
+        stages: Optional list of stage names to include
+
+    Returns:
+        List of SelfplayConfigs for all combinations and stages
+    """
+    configs = []
+    board_types = ["square8", "square19", "hexagonal"]
+    player_counts = [2, 3, 4]
+
+    for board_type in board_types:
+        for num_players in player_counts:
+            configs.extend(get_full_curriculum(board_type, num_players, stages))
+
+    return configs
+
+
+def list_curriculum_stages() -> dict[str, str]:
+    """Get a mapping of stage names to descriptions."""
+    return {name: stage.description for name, stage in CURRICULUM_STAGES.items()}
