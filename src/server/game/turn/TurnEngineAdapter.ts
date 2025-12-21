@@ -137,7 +137,9 @@ export class TurnEngineAdapter {
   async processMove(move: Move): Promise<AdapterMoveResult> {
     const { stateAccessor, decisionHandler, eventEmitter, debugHook, replayMode } = this.deps;
     const beforeState = stateAccessor.getGameState();
-    const moveToApply = replayMode ? normalizeLegacyMove(move) : move;
+    // Always normalize legacy move types at entry point (RR-CANON-R075)
+    // This ensures aggregates only see canonical types regardless of source
+    const moveToApply = normalizeLegacyMove(move);
 
     // Debug checkpoint before processing
     debugHook?.('before-processMove', beforeState);
