@@ -110,6 +110,18 @@ except ImportError:
     wire_elo_to_curriculum = None
     wire_plateau_to_curriculum = None
 
+# Quality bridge for quality-weighted sampling (December 2025)
+try:
+    from app.training.quality_bridge import (
+        QualityBridge,
+        get_quality_bridge,
+    )
+    _HAS_QUALITY_BRIDGE = True
+except ImportError:
+    _HAS_QUALITY_BRIDGE = False
+    QualityBridge = None
+    get_quality_bridge = None
+
 
 # =============================================================================
 # Configuration
@@ -148,14 +160,20 @@ class OrchestratorConfig:
     hot_buffer_size: int = 10000
     hot_buffer_priority_alpha: float = 0.6
 
+    # Quality bridge for quality-weighted sampling
+    enable_quality_bridge: bool = True  # Use quality scores for sampling priority
+    quality_weight_in_sampling: float = 0.4  # Weight for quality in combined sampling
+
     # Integrated enhancements
     enable_enhancements: bool = True
-    enable_auxiliary_tasks: bool = False
+    enable_auxiliary_tasks: bool = True  # Aux heads: game length, outcome (+5-15 Elo)
     enable_gradient_surgery: bool = False
     enable_batch_scheduling: bool = False
     enable_elo_weighting: bool = True
     enable_curriculum: bool = True
     enable_augmentation: bool = True
+    enable_reanalysis: bool = True  # Reanalyze historical games with current model (+20-40 Elo)
+    reanalysis_blend_ratio: float = 0.7  # Blend: 0.7*new + 0.3*old values
 
     # Background evaluation (enabled by default for continuous Elo tracking)
     enable_background_eval: bool = True
@@ -253,6 +271,8 @@ class EnhancementsWrapper:
                 elo_weighting_enabled=self.config.enable_elo_weighting,
                 curriculum_learning_enabled=self.config.enable_curriculum,
                 augmentation_enabled=self.config.enable_augmentation,
+                reanalysis_enabled=self.config.enable_reanalysis,
+                reanalysis_blend_ratio=self.config.reanalysis_blend_ratio,
             )
 
             self._manager = IntegratedTrainingManager(
@@ -362,6 +382,81 @@ class DistributedWrapper:
     @property
     def available(self) -> bool:
         return self._trainer is not None
+
+
+class QualityBridgeWrapper:
+    """Wrapper for quality-weighted sampling integration."""
+
+    def __init__(self, config: OrchestratorConfig):
+        self.config = config
+        self._bridge = None
+
+    def initialize(self):
+        """Initialize quality bridge if enabled."""
+        if not self.config.enable_quality_bridge:
+            return
+
+        if not _HAS_QUALITY_BRIDGE:
+            logger.debug("[Orchestrator] QualityBridge not available")
+            return
+
+        try:
+            from app.training.quality_bridge import QualityBridgeConfig
+
+            bridge_config = QualityBridgeConfig(
+                enable_quality_scoring=True,
+                quality_weight_in_sampling=self.config.quality_weight_in_sampling,
+            )
+            self._bridge = get_quality_bridge(bridge_config)
+            # Force initial refresh
+            game_count = self._bridge.refresh(force=True)
+            logger.info(
+                f"[Orchestrator] QualityBridge initialized ({game_count} games, "
+                f"weight={self.config.quality_weight_in_sampling})"
+            )
+        except Exception as e:
+            logger.warning(f"[Orchestrator] QualityBridge initialization failed: {e}")
+
+    def configure_hot_buffer(self, buffer_wrapper: HotBufferWrapper) -> int:
+        """Configure HotDataBuffer with quality lookups.
+
+        Args:
+            buffer_wrapper: HotBufferWrapper with initialized buffer
+
+        Returns:
+            Number of games configured with quality scores
+        """
+        if self._bridge is None or buffer_wrapper._buffer is None:
+            return 0
+
+        try:
+            count = self._bridge.configure_hot_data_buffer(buffer_wrapper._buffer)
+            logger.info(f"[Orchestrator] Configured HotDataBuffer with {count} quality scores")
+            return count
+        except Exception as e:
+            logger.warning(f"[Orchestrator] Failed to configure HotDataBuffer quality: {e}")
+            return 0
+
+    def get_quality_lookup(self) -> dict[str, float]:
+        """Get quality score lookup dictionary."""
+        if self._bridge is None:
+            return {}
+        return self._bridge.get_quality_lookup(auto_refresh=False)
+
+    def get_stats(self) -> dict:
+        """Get quality bridge statistics."""
+        if self._bridge is None:
+            return {}
+        stats = self._bridge.get_stats()
+        return {
+            "quality_lookup_size": stats.quality_lookup_size,
+            "avg_quality_score": stats.avg_quality_score,
+            "high_quality_count": stats.high_quality_count,
+        }
+
+    @property
+    def available(self) -> bool:
+        return self._bridge is not None
 
 
 class BackgroundEvalWrapper:
@@ -577,6 +672,7 @@ class UnifiedTrainingOrchestrator:
 
         # Component wrappers
         self._hot_buffer = HotBufferWrapper(self.config)
+        self._quality_bridge = QualityBridgeWrapper(self.config)
         self._enhancements = EnhancementsWrapper(self.config)
         self._distributed = DistributedWrapper(self.config)
         self._background_eval = BackgroundEvalWrapper(self.config)
@@ -643,6 +739,17 @@ class UnifiedTrainingOrchestrator:
 
         _init_component("Checkpoint", self._checkpoint.initialize)
         _init_component("HotBuffer", self._hot_buffer.initialize)
+        _init_component("QualityBridge", self._quality_bridge.initialize)
+
+        # Configure HotBuffer with quality lookups (must happen after both are initialized)
+        if self._hot_buffer.available and self._quality_bridge.available:
+            try:
+                quality_count = self._quality_bridge.configure_hot_buffer(self._hot_buffer)
+                if quality_count > 0:
+                    logger.debug(f"[Orchestrator] HotBuffer quality configured: {quality_count} games")
+            except Exception as e:
+                logger.debug(f"[Orchestrator] HotBuffer quality configuration skipped: {e}")
+
         _init_component("Enhancements", self._enhancements.initialize, self._model)
         _init_component("Distributed", self._distributed.initialize, self._model, self._optimizer)
         _init_component("BackgroundEval", self._background_eval.initialize, lambda: self._model)
@@ -1398,6 +1505,15 @@ class UnifiedTrainingOrchestrator:
                     if "curriculum_feedback" not in metrics:
                         metrics["curriculum_feedback"] = {}
                     metrics["curriculum_feedback"]["weight"] = weights[config_key]
+            except Exception:
+                pass  # Metrics are optional
+
+        # Add quality bridge metrics
+        if self._quality_bridge.available:
+            try:
+                quality_stats = self._quality_bridge.get_stats()
+                if quality_stats:
+                    metrics["quality_bridge"] = quality_stats
             except Exception:
                 pass  # Metrics are optional
 

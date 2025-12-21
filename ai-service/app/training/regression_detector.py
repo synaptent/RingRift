@@ -459,9 +459,10 @@ class RegressionDetector:
 
             # Use synchronous publish if no event loop, async otherwise
             try:
+                from app.utils.async_utils import fire_and_forget
                 asyncio.get_running_loop()
-                asyncio.create_task(self._event_bus.publish(general_event))
-                asyncio.create_task(self._event_bus.publish(specific_event))
+                fire_and_forget(self._event_bus.publish(general_event), name="regression_general")
+                fire_and_forget(self._event_bus.publish(specific_event), name="regression_specific")
             except RuntimeError:
                 # No running event loop - use sync version if available
                 if hasattr(self._event_bus, 'publish_sync'):
@@ -489,8 +490,9 @@ class RegressionDetector:
             )
 
             try:
+                from app.utils.async_utils import fire_and_forget
                 asyncio.get_running_loop()
-                asyncio.create_task(self._event_bus.publish(event))
+                fire_and_forget(self._event_bus.publish(event), name="regression_cleared")
             except RuntimeError:
                 if hasattr(self._event_bus, 'publish_sync'):
                     self._event_bus.publish_sync(event)

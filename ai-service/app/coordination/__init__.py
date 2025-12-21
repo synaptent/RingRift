@@ -171,27 +171,27 @@ from app.coordination.sync_coordinator import (
     HostDataState,
     HostType,
     SyncAction,
-    # Backward-compatible names (use SyncScheduler for new code)
-    SyncCoordinator as CoordinationSyncCoordinator,  # Alias to avoid collision
     SyncPriority,
     SyncRecommendation,
-    # Preferred names (December 2025)
+    # Canonical class name (December 2025)
     SyncScheduler,
     execute_priority_sync,  # Bridge to distributed layer execution
     # Functions
     get_cluster_data_status,
     get_next_sync_target,
-    get_sync_coordinator,
+    get_sync_coordinator,  # Deprecated: use get_sync_scheduler
     get_sync_recommendations,
     get_sync_scheduler,
     record_games_generated,
     record_sync_complete,
     record_sync_start,
     register_host,
-    reset_sync_coordinator,
+    reset_sync_coordinator,  # Deprecated: use reset_sync_scheduler
     reset_sync_scheduler,
     update_host_state,
 )
+# Backward-compatible alias for code that imported SyncCoordinator from coordination
+CoordinationSyncCoordinator = SyncScheduler
 
 # Sync mutex exports
 from app.coordination.sync_mutex import (

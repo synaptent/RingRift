@@ -221,6 +221,15 @@ class TrainingOrchestrator:
                 logger.warning(f"[TrainingOrchestrator] Could not load curriculum_feedback: {e}")
                 self.state.errors.append(f"curriculum_feedback: {e}")
 
+        # Load EloService (SSoT for Elo ratings in training pipeline)
+        try:
+            from app.training.elo_service import get_elo_service
+            self._elo_service = get_elo_service()
+            managers_loaded.append("elo_service")
+        except ImportError as e:
+            logger.debug(f"[TrainingOrchestrator] Could not load elo_service: {e}")
+            # EloService is optional, don't add to errors
+
         self.state.managers_loaded = managers_loaded
         self.state.initialized = True
 

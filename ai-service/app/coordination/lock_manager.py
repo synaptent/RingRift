@@ -232,11 +232,12 @@ class LockManager:
                     # Emit deadlock event
                     if self._emit_deadlock:
                         with suppress(RuntimeError):
-                            asyncio.create_task(self._emit_deadlock(
+                            from app.utils.async_utils import fire_and_forget
+                            fire_and_forget(self._emit_deadlock(
                                 resources=[resource_id],
                                 holders=cycle,
                                 source="lock_manager",
-                            ))
+                            ), name=f"deadlock_{resource_id}")
 
                     raise DeadlockError(cycle)
 
@@ -279,13 +280,14 @@ class LockManager:
             # Emit event
             if self._emit_acquired:
                 with suppress(RuntimeError):
-                    asyncio.create_task(self._emit_acquired(
+                    from app.utils.async_utils import fire_and_forget
+                    fire_and_forget(self._emit_acquired(
                         resource_id=resource_id,
                         holder=holder_id,
                         lock_type=lock_type.value,
                         timeout_seconds=timeout_seconds,
                         source="lock_manager",
-                    ))
+                    ), name=f"lock_acquired_{resource_id}")
 
             logger.debug(f"[LockManager] Acquired lock: {resource_id} by {holder_id}")
             return lock_info
@@ -323,12 +325,13 @@ class LockManager:
         # Emit event
         if self._emit_released:
             with suppress(RuntimeError):
-                asyncio.create_task(self._emit_released(
+                from app.utils.async_utils import fire_and_forget
+                fire_and_forget(self._emit_released(
                     resource_id=resource_id,
                     holder=holder_id,
                     held_duration_seconds=held_duration,
                     source="lock_manager",
-                ))
+                ), name=f"lock_released_{resource_id}")
 
         logger.debug(f"[LockManager] Released lock: {resource_id} (held {held_duration:.2f}s)")
 

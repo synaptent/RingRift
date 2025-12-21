@@ -1216,8 +1216,24 @@ def reset_sync_coordinator() -> None:
 #   from app.distributed.sync_coordinator import SyncCoordinator
 #
 
-# Backwards-compatible alias (deprecated - use SyncScheduler)
-SyncCoordinator = SyncScheduler
+# =============================================================================
+# DEPRECATED ALIAS (December 2025)
+# =============================================================================
+# SyncCoordinator is a deprecated alias for SyncScheduler.
+# This alias exists for backwards compatibility but should not be used in new code.
+#
+# The naming was changed to avoid collision with:
+#   app.distributed.sync_coordinator.SyncCoordinator (execution layer)
+#
+# New code should use:
+#   from app.coordination.sync_coordinator import SyncScheduler
+#   or: from app.coordination import SyncScheduler
+#
+# For execution layer:
+#   from app.distributed.sync_coordinator import SyncCoordinator
+#   or: from app.coordination import DistributedSyncCoordinator
+# =============================================================================
+SyncCoordinator = SyncScheduler  # DEPRECATED: Use SyncScheduler
 
 
 def get_sync_scheduler(db_path: Path | None = None) -> SyncScheduler:

@@ -1954,3 +1954,22 @@ def wire_all_quality_events_to_sync(
 def get_high_quality_sync_watcher() -> HighQualityDataSyncWatcher | None:
     """Get the global high-quality sync watcher if configured."""
     return _hq_sync_watcher
+
+
+# =============================================================================
+# NAMING CLARITY (December 2025)
+# =============================================================================
+# This module provides the EXECUTION layer for data synchronization.
+# The class is named SyncCoordinator but can be imported as DistributedSyncCoordinator
+# to distinguish it from the SCHEDULING layer in app.coordination.sync_coordinator.
+#
+# Recommended imports:
+#   # For execution (this module)
+#   from app.distributed.sync_coordinator import SyncCoordinator
+#   # or with explicit name:
+#   from app.distributed.sync_coordinator import DistributedSyncCoordinator
+#
+#   # For scheduling (coordination module)
+#   from app.coordination.sync_coordinator import SyncScheduler
+# =============================================================================
+DistributedSyncCoordinator = SyncCoordinator  # Alias for clarity

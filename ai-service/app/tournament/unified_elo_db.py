@@ -964,32 +964,34 @@ class EloDatabase:
 
             conn.execute("COMMIT")
 
-            # Bridge to canonical EloService for unified tracking
-            # This keeps the training pipeline's EloService in sync with tournament results
-            if HAS_ELO_SERVICE and get_elo_service is not None:
-                try:
-                    elo_svc = get_elo_service()
-                    # For 2-player matches, record in EloService for event emission
-                    if len(participant_ids) == 2:
-                        winner = None
-                        if rankings[0] < rankings[1]:
-                            winner = participant_ids[0]
-                        elif rankings[1] < rankings[0]:
-                            winner = participant_ids[1]
-                        # Record match (this also emits ELO_UPDATED events)
-                        elo_svc.record_match(
-                            participant_a=participant_ids[0],
-                            participant_b=participant_ids[1],
-                            winner=winner,
-                            board_type=board_type,
-                            num_players=num_players,
-                            game_length=game_length,
-                            duration_sec=duration_sec,
-                            tournament_id=tournament_id,
-                        )
-                except Exception as e:
-                    # Don't let EloService sync failure break tournament recording
-                    logger.debug(f"EloService sync failed (non-fatal): {e}")
+            # Emit ELO_UPDATED events for training pipeline integration
+            # NOTE: We do NOT call EloService.record_match() here as that would cause
+            # dual-write and double rating updates. Instead, we emit events directly.
+            # The EloDatabase is the SSoT for tournament ratings; EloService is for
+            # training pipeline integration and event emission only.
+            try:
+                from app.distributed.data_events import emit_elo_updated
+                import asyncio
+
+                config_key = f"{board_type}_{num_players}p"
+                for pid in participant_ids:
+                    old_rating = ratings[pid].rating
+                    try:
+                        asyncio.get_running_loop()
+                        asyncio.ensure_future(emit_elo_updated(
+                            config=config_key,
+                            model_id=pid,
+                            new_elo=new_ratings[pid],
+                            old_elo=old_rating,
+                            games_played=1,
+                            source="unified_elo_db",
+                        ))
+                    except RuntimeError:
+                        pass  # No event loop - skip event emission in sync context
+            except ImportError:
+                pass  # Event system not available
+            except Exception as e:
+                logger.debug(f"Event emission failed (non-fatal): {e}")
 
             return match_id, new_ratings
 

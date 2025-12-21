@@ -204,8 +204,9 @@ class BackgroundSelfplayManager:
             task_id = f"background_selfplay_{task.iteration}_{int(task.start_time)}"
 
             try:
+                from app.utils.async_utils import fire_and_forget
                 asyncio.get_running_loop()
-                asyncio.create_task(emit_selfplay_completion(
+                fire_and_forget(emit_selfplay_completion(
                     task_id=task_id,
                     board_type=task.board_type,
                     num_players=task.num_players,
@@ -214,7 +215,7 @@ class BackgroundSelfplayManager:
                     node_id=node_id,
                     selfplay_type="background",
                     iteration=task.iteration,
-                ))
+                ), name=f"selfplay_complete_{task_id}")
             except RuntimeError:
                 # No event loop, run synchronously
                 asyncio.run(emit_selfplay_completion(

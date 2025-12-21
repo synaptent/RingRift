@@ -139,13 +139,14 @@ def _emit_task_started(
         if ctx.task_type == "training":
             import asyncio
             try:
+                from app.utils.async_utils import fire_and_forget
                 asyncio.get_running_loop()
-                asyncio.create_task(emit_training_started(
+                fire_and_forget(emit_training_started(
                     job_id=ctx.task_id,
                     board_type=ctx.board_type or "",
                     num_players=ctx.num_players or 0,
                     **ctx.metadata,
-                ))
+                ), name=f"training_started_{ctx.task_id}")
             except RuntimeError:
                 # No running event loop, skip event emission
                 pass
@@ -210,8 +211,9 @@ def _emit_task_complete_sync(
         # Try to schedule async emission
         import asyncio
         try:
+            from app.utils.async_utils import fire_and_forget
             asyncio.get_running_loop()
-            asyncio.create_task(_emit_task_complete_async(ctx, result, emit_events))
+            fire_and_forget(_emit_task_complete_async(ctx, result, emit_events), name=f"task_complete_{ctx.task_id}")
         except RuntimeError:
             # No event loop, use sync fallback
             from app.coordination.event_emitters import emit_training_complete_sync
@@ -278,8 +280,9 @@ def _emit_task_failed_sync(
     try:
         import asyncio
         try:
+            from app.utils.async_utils import fire_and_forget
             asyncio.get_running_loop()
-            asyncio.create_task(_emit_task_failed_async(ctx, error, emit_events))
+            fire_and_forget(_emit_task_failed_async(ctx, error, emit_events), name=f"task_failed_{ctx.task_id}")
         except RuntimeError:
             from app.coordination.event_emitters import emit_training_complete_sync
 

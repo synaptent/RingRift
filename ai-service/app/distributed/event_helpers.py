@@ -711,9 +711,10 @@ def emit_sync(
         True if emitted successfully, False otherwise.
     """
     try:
+        from app.utils.async_utils import fire_and_forget
         asyncio.get_running_loop()
         # Already in async context - schedule as task
-        asyncio.create_task(emit_event_safe(event_type, payload, source))
+        fire_and_forget(emit_event_safe(event_type, payload, source), name=f"emit_{event_type}")
         return True
     except RuntimeError:
         # No running loop - create one

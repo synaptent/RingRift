@@ -267,9 +267,11 @@ def retry_checkpoint_load(func: F) -> F:
     """Decorator for retrying checkpoint load operations.
 
     Example:
+        from app.utils.torch_utils import safe_load_checkpoint
+
         @retry_checkpoint_load
         def load_checkpoint(path):
-            return torch.load(path)
+            return safe_load_checkpoint(path)  # Use safe_load_checkpoint, not torch.load
     """
     return TrainingRetryPolicies.checkpoint_load()(func)
 

@@ -246,8 +246,9 @@ def _emit_stage_event_sync(
 
         # Try async emit first
         try:
+            from app.utils.async_utils import fire_and_forget
             asyncio.get_running_loop()
-            asyncio.create_task(bus.emit(result))
+            fire_and_forget(bus.emit(result), name=f"emit_{event}")
             return True
         except RuntimeError:
             # No event loop - try sync emit if available
