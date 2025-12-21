@@ -335,25 +335,26 @@ class UnifiedHealthManager(CoordinatorBase):
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType  # Types still needed
 
-            bus = get_event_bus()
+            router = get_router()
 
             # Error events (from ErrorRecoveryCoordinator)
-            bus.subscribe(DataEventType.ERROR, self._on_error)
-            bus.subscribe(DataEventType.RECOVERY_INITIATED, self._on_recovery_initiated)
-            bus.subscribe(DataEventType.RECOVERY_COMPLETED, self._on_recovery_completed)
-            bus.subscribe(DataEventType.RECOVERY_FAILED, self._on_recovery_failed)
-            bus.subscribe(DataEventType.TRAINING_FAILED, self._on_training_failed)
-            bus.subscribe(DataEventType.TASK_FAILED, self._on_task_failed)
-            bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            router.subscribe(DataEventType.ERROR.value, self._on_error)
+            router.subscribe(DataEventType.RECOVERY_INITIATED.value, self._on_recovery_initiated)
+            router.subscribe(DataEventType.RECOVERY_COMPLETED.value, self._on_recovery_completed)
+            router.subscribe(DataEventType.RECOVERY_FAILED.value, self._on_recovery_failed)
+            router.subscribe(DataEventType.TRAINING_FAILED.value, self._on_training_failed)
+            router.subscribe(DataEventType.TASK_FAILED.value, self._on_task_failed)
+            router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
 
             # Node events (from RecoveryManager)
-            bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-            bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
+            router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
+            router.subscribe(DataEventType.NODE_RECOVERED.value, self._on_node_recovered)
 
             self._subscribed = True
-            logger.info("[UnifiedHealthManager] Subscribed to health events")
+            logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
             return True
 
         except ImportError:

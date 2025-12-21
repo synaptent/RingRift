@@ -221,41 +221,42 @@ class DataPipelineOrchestrator:
             True if successfully subscribed
         """
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
             # Subscribe to quality and cache events
-            bus.subscribe(
-                DataEventType.QUALITY_DISTRIBUTION_CHANGED,
+            router.subscribe(
+                DataEventType.QUALITY_DISTRIBUTION_CHANGED.value,
                 self._on_quality_distribution_changed,
             )
-            bus.subscribe(
-                DataEventType.CACHE_INVALIDATED,
+            router.subscribe(
+                DataEventType.CACHE_INVALIDATED.value,
                 self._on_cache_invalidated,
             )
 
             # Subscribe to optimization events (December 2025)
-            bus.subscribe(
-                DataEventType.CMAES_TRIGGERED,
+            router.subscribe(
+                DataEventType.CMAES_TRIGGERED.value,
                 self._on_optimization_triggered,
             )
-            bus.subscribe(
-                DataEventType.NAS_TRIGGERED,
+            router.subscribe(
+                DataEventType.NAS_TRIGGERED.value,
                 self._on_optimization_triggered,
             )
 
             # Subscribe to resource constraint events (December 2025)
-            bus.subscribe(
-                DataEventType.RESOURCE_CONSTRAINT_DETECTED,
+            router.subscribe(
+                DataEventType.RESOURCE_CONSTRAINT_DETECTED.value,
                 self._on_resource_constraint_detected,
             )
-            bus.subscribe(
-                DataEventType.BACKPRESSURE_ACTIVATED,
+            router.subscribe(
+                DataEventType.BACKPRESSURE_ACTIVATED.value,
                 self._on_backpressure_activated,
             )
-            bus.subscribe(
-                DataEventType.BACKPRESSURE_RELEASED,
+            router.subscribe(
+                DataEventType.BACKPRESSURE_RELEASED.value,
                 self._on_backpressure_released,
             )
 

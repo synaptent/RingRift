@@ -44,6 +44,13 @@ from typing import Any
 # Default database location
 DEFAULT_SCHEDULER_DB = Path("/tmp/ringrift_coordination/duration_scheduler.db")
 
+# Import centralized timeout thresholds
+try:
+    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT
+except ImportError:
+    SQLITE_BUSY_TIMEOUT_MS = 10000
+    SQLITE_TIMEOUT = 30
+
 # Import centralized defaults (December 2025)
 try:
     from app.config.coordination_defaults import DurationDefaults
@@ -142,10 +149,10 @@ class DurationScheduler:
     def _get_connection(self) -> sqlite3.Connection:
         """Get thread-local database connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+            self._local.conn = sqlite3.connect(str(self.db_path), timeout=float(SQLITE_TIMEOUT))
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute('PRAGMA journal_mode=WAL')
-            self._local.conn.execute('PRAGMA busy_timeout=10000')
+            self._local.conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
             self._local.conn.execute('PRAGMA synchronous=NORMAL')
         return self._local.conn
 

@@ -66,6 +66,15 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Use centralized event emitters (December 2025)
+# Note: event_emitters.py handles all routing to stage_events and data_events
+try:
+    from app.coordination.event_emitters import emit_task_complete
+    HAS_CENTRALIZED_EMITTERS = True
+except ImportError:
+    HAS_CENTRALIZED_EMITTERS = False
+    emit_task_complete = None
+
 # Import queue monitor for backpressure checks
 try:
     from app.coordination.queue_monitor import (
@@ -1334,72 +1343,48 @@ class TaskCoordinator:
         success: bool,
         result_data: dict[str, Any],
     ) -> None:
-        """Emit StageEvent for task completion.
+        """Emit StageEvent for task completion via centralized emitters.
 
-        Maps TaskType to appropriate StageEvent:
-        - SELFPLAY → SELFPLAY_COMPLETE
-        - TRAINING → TRAINING_COMPLETE/TRAINING_FAILED
-        - EVALUATION → EVALUATION_COMPLETE
-        - DATA_SYNC → SYNC_COMPLETE
+        Uses event_emitters.py which handles mapping TaskType to StageEvent:
+        - selfplay → SELFPLAY_COMPLETE
+        - training → TRAINING_COMPLETE/TRAINING_FAILED
+        - evaluation → EVALUATION_COMPLETE
+        - sync → SYNC_COMPLETE
         """
+        if not HAS_CENTRALIZED_EMITTERS or emit_task_complete is None:
+            logger.debug("Centralized emitters not available for task events")
+            return
+
+        import asyncio
+
+        duration_seconds = time.time() - task.started_at
+
         try:
-            import asyncio
-            from datetime import datetime
-
-            from app.coordination.stage_events import (
-                StageCompletionResult,
-                StageEvent,
-                get_event_bus,
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(
+                emit_task_complete(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    success=success,
+                    node_id=task.node_id,
+                    duration_seconds=duration_seconds,
+                    result_data=result_data,
+                )
+            )
+        except RuntimeError:
+            # No event loop - run synchronously
+            asyncio.run(
+                emit_task_complete(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    success=success,
+                    node_id=task.node_id,
+                    duration_seconds=duration_seconds,
+                    result_data=result_data,
+                )
             )
 
-            # Map TaskType to StageEvent
-            event_map = {
-                TaskType.SELFPLAY: StageEvent.SELFPLAY_COMPLETE,
-                TaskType.GPU_SELFPLAY: StageEvent.GPU_SELFPLAY_COMPLETE,
-                TaskType.TRAINING: StageEvent.TRAINING_COMPLETE if success else StageEvent.TRAINING_FAILED,
-                TaskType.EVALUATION: StageEvent.EVALUATION_COMPLETE,
-                TaskType.DATA_SYNC: StageEvent.SYNC_COMPLETE,
-                TaskType.NPZ_EXPORT: StageEvent.NPZ_EXPORT_COMPLETE,
-            }
-
-            stage_event = event_map.get(task.task_type)
-            if not stage_event:
-                logger.debug(f"No StageEvent mapping for {task.task_type.value}")
-                return
-
-            result = StageCompletionResult(
-                event=stage_event,
-                success=success,
-                iteration=0,
-                timestamp=datetime.now().isoformat(),
-                games_generated=result_data.get("games_generated", 0),
-                model_path=result_data.get("model_path"),
-                elo_delta=result_data.get("elo_delta"),
-                win_rate=result_data.get("win_rate"),
-                metadata={
-                    "task_id": task.task_id,
-                    "task_type": task.task_type.value,
-                    "node_id": task.node_id,
-                    "duration_seconds": time.time() - task.started_at,
-                    **result_data,
-                },
-            )
-
-            bus = get_event_bus()
-
-            # Try async emit, fall back to sync
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(bus.emit(result))
-            except RuntimeError:
-                asyncio.run(bus.emit(result))
-
-            logger.debug(f"Emitted {stage_event.value} for task {task.task_id}")
-
-        except ImportError:
-            logger.debug("StageEventBus not available for task events")
-        except Exception as e:
-            logger.debug(f"Failed to emit task event: {e}")
+        logger.debug(f"Emitted task event for {task.task_id} via centralized emitter")
 
     def _emit_task_spawned(self, task: TaskInfo) -> None:
         """Emit TASK_SPAWNED event via data_events (December 2025).

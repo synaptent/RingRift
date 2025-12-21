@@ -54,12 +54,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Use centralized event emitters (December 2025)
-try:
-    from app.coordination.event_emitters import emit_selfplay_complete as _emit_selfplay_event
-    HAS_CENTRALIZED_EMITTERS = True
-except ImportError:
-    HAS_CENTRALIZED_EMITTERS = False
-    _emit_selfplay_event = None
+# Note: event_emitters.py handles all routing to data_events, stage_events, and cross-process
+from app.coordination.event_emitters import emit_selfplay_complete as _emit_selfplay_event
 
 
 class SelfplayType(Enum):
@@ -163,7 +159,7 @@ class SelfplayOrchestrator:
         self._resource_constrained_nodes: dict[str, float] = {}  # node_id -> timestamp
 
     def subscribe_to_events(self) -> bool:
-        """Subscribe to selfplay-related events from the event bus.
+        """Subscribe to selfplay-related events from the event router.
 
         Returns:
             True if successfully subscribed
@@ -172,27 +168,28 @@ class SelfplayOrchestrator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType  # Types still needed
 
-            bus = get_event_bus()
+            router = get_router()
 
             # Subscribe to task lifecycle events
-            bus.subscribe(DataEventType.TASK_SPAWNED, self._on_task_spawned)
-            bus.subscribe(DataEventType.TASK_COMPLETED, self._on_task_completed)
-            bus.subscribe(DataEventType.TASK_FAILED, self._on_task_failed)
+            router.subscribe(DataEventType.TASK_SPAWNED.value, self._on_task_spawned)
+            router.subscribe(DataEventType.TASK_COMPLETED.value, self._on_task_completed)
+            router.subscribe(DataEventType.TASK_FAILED.value, self._on_task_failed)
 
             # Subscribe to task cleanup events (December 2025)
-            bus.subscribe(DataEventType.TASK_ORPHANED, self._on_task_orphaned)
-            bus.subscribe(DataEventType.TASK_ABANDONED, self._on_task_abandoned)
+            router.subscribe(DataEventType.TASK_ORPHANED.value, self._on_task_orphaned)
+            router.subscribe(DataEventType.TASK_ABANDONED.value, self._on_task_abandoned)
 
             # Subscribe to resource/backpressure events (December 2025)
-            bus.subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated)
-            bus.subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released)
-            bus.subscribe(DataEventType.RESOURCE_CONSTRAINT, self._on_resource_constraint)
-            bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, self._on_backpressure_activated)
+            router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
+            router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, self._on_resource_constraint)
+            router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
 
             self._subscribed = True
-            logger.info("[SelfplayOrchestrator] Subscribed to task lifecycle and resource events")
+            logger.info("[SelfplayOrchestrator] Subscribed to task lifecycle and resource events via event router")
             return True
 
         except ImportError:
@@ -427,83 +424,39 @@ class SelfplayOrchestrator:
         )
 
     async def _emit_selfplay_complete(self, task: SelfplayTaskInfo) -> bool:
-        """Emit SELFPLAY_COMPLETE stage event using centralized emitter."""
-        # Use centralized event emitter (December 2025)
-        if HAS_CENTRALIZED_EMITTERS and _emit_selfplay_event is not None:
-            try:
-                # Map selfplay type to string for centralized emitter
-                selfplay_type_str = {
-                    SelfplayType.GPU_ACCELERATED: "gpu_accelerated",
-                    SelfplayType.CANONICAL: "canonical",
-                }.get(task.selfplay_type, "standard")
+        """Emit SELFPLAY_COMPLETE event using centralized emitter.
 
-                result = await _emit_selfplay_event(
-                    task_id=task.task_id,
-                    board_type=task.board_type,
-                    num_players=task.num_players,
-                    games_generated=task.games_generated,
-                    success=task.success,
-                    node_id=task.node_id,
-                    duration_seconds=task.duration,
-                    selfplay_type=selfplay_type_str,
-                    iteration=task.iteration,
-                    error=task.error if not task.success else None,
-                    games_per_second=task.games_per_second,
-                )
-                if result:
-                    logger.debug("[SelfplayOrchestrator] Emitted via centralized emitter")
-                return result
-
-            except Exception as e:
-                logger.debug(f"[SelfplayOrchestrator] Centralized emit failed: {e}")
-                # Fall through to legacy emit
-
-        # Legacy fallback
+        Note: event_emitters.py handles routing to all event systems
+        (data_events, stage_events, cross-process) internally.
+        """
         try:
-            from datetime import datetime
+            # Map selfplay type to string for centralized emitter
+            selfplay_type_str = {
+                SelfplayType.GPU_ACCELERATED: "gpu_accelerated",
+                SelfplayType.CANONICAL: "canonical",
+                SelfplayType.HYBRID: "hybrid",
+                SelfplayType.BACKGROUND: "background",
+            }.get(task.selfplay_type, "standard")
 
-            from app.coordination.stage_events import (
-                StageCompletionResult,
-                StageEvent,
-                get_event_bus,
-            )
-
-            if task.selfplay_type == SelfplayType.GPU_ACCELERATED:
-                event_type = StageEvent.GPU_SELFPLAY_COMPLETE
-            elif task.selfplay_type == SelfplayType.CANONICAL:
-                event_type = StageEvent.CANONICAL_SELFPLAY_COMPLETE
-            else:
-                event_type = StageEvent.SELFPLAY_COMPLETE
-
-            result = StageCompletionResult(
-                event=event_type,
-                success=task.success,
-                iteration=task.iteration,
-                timestamp=datetime.now().isoformat(),
+            result = await _emit_selfplay_event(
+                task_id=task.task_id,
                 board_type=task.board_type,
                 num_players=task.num_players,
                 games_generated=task.games_generated,
+                success=task.success,
+                node_id=task.node_id,
+                duration_seconds=task.duration,
+                selfplay_type=selfplay_type_str,
+                iteration=task.iteration,
                 error=task.error if not task.success else None,
-                metadata={
-                    "task_id": task.task_id,
-                    "node_id": task.node_id,
-                    "duration_seconds": task.duration,
-                    "games_per_second": task.games_per_second,
-                    "selfplay_type": task.selfplay_type.value,
-                },
+                games_per_second=task.games_per_second,
             )
+            if result:
+                logger.debug("[SelfplayOrchestrator] Emitted selfplay complete event")
+            return result
 
-            bus = get_event_bus()
-            await bus.emit(result)
-
-            logger.debug(f"[SelfplayOrchestrator] Emitted {event_type.value}")
-            return True
-
-        except ImportError:
-            logger.debug("[SelfplayOrchestrator] stage_events not available")
-            return False
         except Exception as e:
-            logger.error(f"[SelfplayOrchestrator] Failed to emit stage event: {e}")
+            logger.warning(f"[SelfplayOrchestrator] Failed to emit selfplay event: {e}")
             return False
 
     async def _on_selfplay_stage_complete(self, result) -> None:

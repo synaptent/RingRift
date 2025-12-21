@@ -363,16 +363,17 @@ class MetricsAnalysisOrchestrator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
-            bus.subscribe(DataEventType.METRICS_UPDATED, self._on_metrics_updated)
-            bus.subscribe(DataEventType.ELO_UPDATED, self._on_elo_updated)
-            bus.subscribe(DataEventType.TRAINING_PROGRESS, self._on_training_progress)
+            router.subscribe(DataEventType.METRICS_UPDATED.value, self._on_metrics_updated)
+            router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
+            router.subscribe(DataEventType.TRAINING_PROGRESS.value, self._on_training_progress)
 
             # Subscribe to cache events for window reset (December 2025)
-            bus.subscribe(DataEventType.CACHE_INVALIDATED, self._on_cache_invalidated)
+            router.subscribe(DataEventType.CACHE_INVALIDATED.value, self._on_cache_invalidated)
 
             self._subscribed = True
             logger.info("[MetricsAnalysisOrchestrator] Subscribed to metrics events")

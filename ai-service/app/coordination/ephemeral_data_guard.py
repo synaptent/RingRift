@@ -566,9 +566,10 @@ def wire_ephemeral_guard_events() -> EphemeralDataGuard:
     guard = get_ephemeral_guard()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
 
-        bus = get_event_bus()
+        router = get_router()
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -604,9 +605,9 @@ def wire_ephemeral_guard_events() -> EphemeralDataGuard:
             if host:
                 guard.heartbeat(host)
 
-        bus.subscribe(DataEventType.HOST_OFFLINE, _on_host_offline)
-        bus.subscribe(DataEventType.HOST_ONLINE, _on_host_online)
-        bus.subscribe(DataEventType.TASK_HEARTBEAT, _on_task_heartbeat)
+        router.subscribe(DataEventType.HOST_OFFLINE.value, _on_host_offline)
+        router.subscribe(DataEventType.HOST_ONLINE.value, _on_host_online)
+        router.subscribe(DataEventType.TASK_HEARTBEAT.value, _on_task_heartbeat)
 
         logger.info("[EphemeralGuard] Wired to event bus (HOST_OFFLINE, HOST_ONLINE, TASK_HEARTBEAT)")
 

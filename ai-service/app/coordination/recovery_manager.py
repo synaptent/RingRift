@@ -630,9 +630,10 @@ def wire_recovery_events() -> RecoveryManager:
     manager = get_recovery_manager()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType  # Types still needed
 
-        bus = get_event_bus()
+        router = get_router()
 
         async def _on_task_failed(event):
             """Handle TASK_FAILED event."""
@@ -664,11 +665,11 @@ def wire_recovery_events() -> RecoveryManager:
                 state.is_unhealthy = False
                 logger.debug(f"[RecoveryManager] Node recovered: {node_id}")
 
-        bus.subscribe(DataEventType.TASK_FAILED, _on_task_failed)
-        bus.subscribe(DataEventType.HOST_OFFLINE, _on_host_offline)
-        bus.subscribe(DataEventType.NODE_RECOVERED, _on_node_recovered)
+        router.subscribe(DataEventType.TASK_FAILED.value, _on_task_failed)
+        router.subscribe(DataEventType.HOST_OFFLINE.value, _on_host_offline)
+        router.subscribe(DataEventType.NODE_RECOVERED.value, _on_node_recovered)
 
-        logger.info("[RecoveryManager] Subscribed to recovery events")
+        logger.info("[RecoveryManager] Subscribed to recovery events via event router")
 
     except ImportError:
         logger.warning("[RecoveryManager] data_events not available")

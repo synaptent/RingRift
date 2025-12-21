@@ -950,8 +950,16 @@ describe('Game creation quotas', () => {
 
     // First quota is per-user, second is per-IP.
     // Third argument is the request object (passed for context/logging).
-    expect(mockConsumeRateLimit).toHaveBeenCalledWith('gameCreateUser', 'user-1', expect.anything());
-    expect(mockConsumeRateLimit).toHaveBeenCalledWith('gameCreateIp', '203.0.113.1', expect.anything());
+    expect(mockConsumeRateLimit).toHaveBeenCalledWith(
+      'gameCreateUser',
+      'user-1',
+      expect.anything()
+    );
+    expect(mockConsumeRateLimit).toHaveBeenCalledWith(
+      'gameCreateIp',
+      '203.0.113.1',
+      expect.anything()
+    );
   });
 
   it('returns 429 GAME_CREATE_RATE_LIMITED when per-user quota is exceeded', async () => {

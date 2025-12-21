@@ -196,15 +196,16 @@ class ResourceMonitoringCoordinator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
-            bus.subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
-            bus.subscribe(DataEventType.NODE_CAPACITY_UPDATED, self._on_node_capacity_updated)
-            bus.subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated)
-            bus.subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released)
-            bus.subscribe(DataEventType.RESOURCE_CONSTRAINT, self._on_resource_constraint)
+            router.subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED.value, self._on_cluster_capacity_changed)
+            router.subscribe(DataEventType.NODE_CAPACITY_UPDATED.value, self._on_node_capacity_updated)
+            router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, self._on_backpressure_activated)
+            router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
+            router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, self._on_resource_constraint)
 
             self._subscribed = True
             logger.info("[ResourceMonitoringCoordinator] Subscribed to resource events")

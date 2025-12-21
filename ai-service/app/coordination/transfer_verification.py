@@ -588,9 +588,10 @@ def wire_transfer_verifier_events() -> TransferVerifier:
     verifier = get_transfer_verifier()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
 
-        bus = get_event_bus()
+        router = get_router()
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -611,7 +612,7 @@ def wire_transfer_verifier_events() -> TransferVerifier:
                         f"[TransferVerifier] Verification failed for {dest_path}"
                     )
 
-        bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, _on_sync_completed)
+        router.subscribe(DataEventType.DATA_SYNC_COMPLETED.value, _on_sync_completed)
 
         logger.info("[TransferVerifier] Wired to event bus (DATA_SYNC_COMPLETED)")
 

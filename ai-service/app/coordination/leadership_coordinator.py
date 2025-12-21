@@ -188,15 +188,16 @@ class LeadershipCoordinator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
-            bus.subscribe(DataEventType.LEADER_ELECTED, self._on_leader_elected)
-            bus.subscribe(DataEventType.LEADER_LOST, self._on_leader_lost)
-            bus.subscribe(DataEventType.LEADER_STEPDOWN, self._on_leader_stepdown)
-            bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
-            bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+            router.subscribe(DataEventType.LEADER_ELECTED.value, self._on_leader_elected)
+            router.subscribe(DataEventType.LEADER_LOST.value, self._on_leader_lost)
+            router.subscribe(DataEventType.LEADER_STEPDOWN.value, self._on_leader_stepdown)
+            router.subscribe(DataEventType.HOST_ONLINE.value, self._on_host_online)
+            router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
 
             self._subscribed = True
             logger.info("[LeadershipCoordinator] Subscribed to leadership events")

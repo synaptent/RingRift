@@ -702,9 +702,10 @@ def wire_queue_populator_events() -> QueuePopulator:
     populator = get_queue_populator()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
 
-        bus = get_event_bus()
+        router = get_router()
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -739,9 +740,9 @@ def wire_queue_populator_events() -> QueuePopulator:
             if board_type and num_players:
                 populator.increment_games(board_type, num_players, count)
 
-        bus.subscribe(DataEventType.ELO_UPDATED, _on_elo_updated)
-        bus.subscribe(DataEventType.TRAINING_COMPLETED, _on_training_completed)
-        bus.subscribe(DataEventType.NEW_GAMES_AVAILABLE, _on_new_games)
+        router.subscribe(DataEventType.ELO_UPDATED.value, _on_elo_updated)
+        router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
+        router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
 
         logger.info("[QueuePopulator] Wired to event bus (ELO_UPDATED, TRAINING_COMPLETED, NEW_GAMES_AVAILABLE)")
 

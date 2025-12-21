@@ -64,6 +64,13 @@ from typing import Any
 from app.coordination.distributed_lock import DistributedLock
 from app.utils.paths import DATA_DIR
 
+# Use centralized event emitters (December 2025)
+# Note: event_emitters.py handles all routing to stage_events and cross-process buses
+from app.coordination.event_emitters import (
+    emit_training_complete_sync,
+    emit_training_started,
+)
+
 logger = logging.getLogger(__name__)
 
 # Coordinator registration (December 2025)
@@ -77,6 +84,13 @@ except ImportError:
 # NFS path for cluster-wide coordination (Lambda GH200 nodes)
 NFS_COORDINATION_PATH = Path("/lambda/nfs/RingRift/coordination")
 LOCAL_COORDINATION_PATH = DATA_DIR / "coordination"
+
+# Import centralized timeout thresholds
+try:
+    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT
+except ImportError:
+    SQLITE_BUSY_TIMEOUT_MS = 10000
+    SQLITE_TIMEOUT = 30
 
 # Training configuration - use centralized defaults (December 2025)
 try:
@@ -211,12 +225,12 @@ class TrainingCoordinator:
         if not hasattr(self._local, "conn") or self._local.conn is None:
             self._local.conn = sqlite3.connect(
                 str(self._db_path),
-                timeout=30.0,
+                timeout=float(SQLITE_TIMEOUT),
                 check_same_thread=False
             )
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute('PRAGMA journal_mode=WAL')
-            self._local.conn.execute('PRAGMA busy_timeout=10000')
+            self._local.conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
             self._local.conn.execute('PRAGMA synchronous=NORMAL')
         return self._local.conn
 
@@ -525,7 +539,10 @@ class TrainingCoordinator:
         num_players: int,
         **kwargs,
     ) -> None:
-        """Emit training-related StageEvent.
+        """Emit training-related event via centralized emitters.
+
+        Uses event_emitters.py which handles all routing to stage_events
+        and cross-process buses.
 
         Args:
             event_type: One of "started", "complete", "failed"
@@ -534,58 +551,51 @@ class TrainingCoordinator:
             num_players: Number of players
             **kwargs: Additional event data
         """
-        try:
-            import asyncio
-            from datetime import datetime
+        import asyncio
 
-            from app.coordination.stage_events import (
-                StageCompletionResult,
-                StageEvent,
-                get_event_bus,
-            )
-
-            # Map event type to StageEvent
-            event_map = {
-                "started": StageEvent.TRAINING_STARTED,
-                "complete": StageEvent.TRAINING_COMPLETE,
-                "failed": StageEvent.TRAINING_FAILED,
-            }
-            stage_event = event_map.get(event_type)
-            if not stage_event:
-                return
-
-            result = StageCompletionResult(
-                event=stage_event,
-                success=(event_type != "failed"),
-                iteration=0,
-                timestamp=datetime.now().isoformat(),
-                model_path=kwargs.get("model_path"),
-                elo_delta=kwargs.get("final_elo", 0) - 1500.0 if kwargs.get("final_elo") else None,
-                metadata={
-                    "job_id": job_id,
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "node_name": self._node_name,
-                    **kwargs,
-                },
-            )
-
-            bus = get_event_bus()
-
-            # Try async emit, fall back to sync
+        if event_type == "started":
+            # emit_training_started is async, try to run it
             try:
-                asyncio.get_running_loop()
-                asyncio.create_task(bus.emit(result))
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(
+                    emit_training_started(
+                        job_id=job_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        model_version=kwargs.get("model_version", ""),
+                        node_name=self._node_name,
+                    )
+                )
             except RuntimeError:
-                # No event loop running - run emit synchronously
-                asyncio.run(bus.emit(result))
+                # No event loop - run synchronously
+                asyncio.run(
+                    emit_training_started(
+                        job_id=job_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        model_version=kwargs.get("model_version", ""),
+                        node_name=self._node_name,
+                    )
+                )
+            logger.debug(f"Emitted TRAINING_STARTED for job {job_id}")
 
-            logger.debug(f"Emitted {stage_event.value} for job {job_id}")
-
-        except ImportError:
-            logger.debug("StageEventBus not available for training events")
-        except Exception as e:
-            logger.debug(f"Failed to emit training event: {e}")
+        elif event_type in ("complete", "failed"):
+            # Use sync version since we're in sync context
+            success = (event_type == "complete")
+            emit_training_complete_sync(
+                job_id=job_id,
+                board_type=board_type,
+                num_players=num_players,
+                success=success,
+                final_loss=kwargs.get("final_val_loss"),
+                final_elo=kwargs.get("final_elo"),
+                model_path=kwargs.get("model_path"),
+                epochs_completed=kwargs.get("epochs_completed", 0),
+                node_name=self._node_name,
+                status=kwargs.get("status", "completed" if success else "failed"),
+            )
+            event_name = "TRAINING_COMPLETE" if success else "TRAINING_FAILED"
+            logger.debug(f"Emitted {event_name} for job {job_id}")
 
     def get_active_jobs(self) -> list[TrainingJob]:
         """Get all active training jobs."""

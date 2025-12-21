@@ -1250,7 +1250,7 @@ def reset_sync_scheduler() -> None:
 
 
 def wire_sync_events() -> SyncScheduler:
-    """Wire sync coordinator to the event bus for automatic updates.
+    """Wire sync coordinator to the event router for automatic updates.
 
     Subscribes to:
     - DATA_SYNC_COMPLETED: Update host state after successful sync
@@ -1263,9 +1263,10 @@ def wire_sync_events() -> SyncScheduler:
     scheduler = get_sync_scheduler()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType  # Types still needed
 
-        bus = get_event_bus()
+        router = get_router()
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -1297,14 +1298,14 @@ def wire_sync_events() -> SyncScheduler:
             if host:
                 scheduler.record_games_generated(host, count)
 
-        bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, _on_sync_completed)
-        bus.subscribe(DataEventType.DATA_SYNC_FAILED, _on_sync_failed)
-        bus.subscribe(DataEventType.NEW_GAMES_AVAILABLE, _on_new_games)
+        router.subscribe(DataEventType.DATA_SYNC_COMPLETED.value, _on_sync_completed)
+        router.subscribe(DataEventType.DATA_SYNC_FAILED.value, _on_sync_failed)
+        router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
 
-        logger.info("[SyncScheduler] Wired to event bus (DATA_SYNC_COMPLETED, DATA_SYNC_FAILED, NEW_GAMES_AVAILABLE)")
+        logger.info("[SyncScheduler] Wired to event router (DATA_SYNC_COMPLETED, DATA_SYNC_FAILED, NEW_GAMES_AVAILABLE)")
 
     except ImportError:
-        logger.warning("[SyncScheduler] data_events not available, running without event bus")
+        logger.warning("[SyncScheduler] data_events not available, running without event router")
 
     return scheduler
 

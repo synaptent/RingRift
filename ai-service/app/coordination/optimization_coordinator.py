@@ -206,17 +206,18 @@ class OptimizationCoordinator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
-            bus.subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
-            bus.subscribe(DataEventType.CMAES_TRIGGERED, self._on_cmaes_triggered)
-            bus.subscribe(DataEventType.CMAES_COMPLETED, self._on_cmaes_completed)
-            bus.subscribe(DataEventType.NAS_TRIGGERED, self._on_nas_triggered)
-            bus.subscribe(DataEventType.NAS_COMPLETED, self._on_nas_completed)
-            bus.subscribe(DataEventType.TRAINING_PROGRESS, self._on_training_progress)
-            bus.subscribe(DataEventType.HYPERPARAMETER_UPDATED, self._on_hyperparameter_updated)
+            router.subscribe(DataEventType.PLATEAU_DETECTED.value, self._on_plateau_detected)
+            router.subscribe(DataEventType.CMAES_TRIGGERED.value, self._on_cmaes_triggered)
+            router.subscribe(DataEventType.CMAES_COMPLETED.value, self._on_cmaes_completed)
+            router.subscribe(DataEventType.NAS_TRIGGERED.value, self._on_nas_triggered)
+            router.subscribe(DataEventType.NAS_COMPLETED.value, self._on_nas_completed)
+            router.subscribe(DataEventType.TRAINING_PROGRESS.value, self._on_training_progress)
+            router.subscribe(DataEventType.HYPERPARAMETER_UPDATED.value, self._on_hyperparameter_updated)
 
             self._subscribed = True
             logger.info("[OptimizationCoordinator] Subscribed to optimization events")

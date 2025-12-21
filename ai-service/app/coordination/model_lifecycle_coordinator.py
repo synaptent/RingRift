@@ -189,16 +189,17 @@ class ModelLifecycleCoordinator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
-            bus.subscribe(DataEventType.CHECKPOINT_SAVED, self._on_checkpoint_saved)
-            bus.subscribe(DataEventType.CHECKPOINT_LOADED, self._on_checkpoint_loaded)
-            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
-            bus.subscribe(DataEventType.PROMOTION_ROLLED_BACK, self._on_promotion_rolled_back)
-            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
-            bus.subscribe(DataEventType.ELO_UPDATED, self._on_elo_updated)
+            router.subscribe(DataEventType.CHECKPOINT_SAVED.value, self._on_checkpoint_saved)
+            router.subscribe(DataEventType.CHECKPOINT_LOADED.value, self._on_checkpoint_loaded)
+            router.subscribe(DataEventType.MODEL_PROMOTED.value, self._on_model_promoted)
+            router.subscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
+            router.subscribe(DataEventType.TRAINING_COMPLETED.value, self._on_training_completed)
+            router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
 
             self._subscribed = True
             logger.info("[ModelLifecycleCoordinator] Subscribed to model events")

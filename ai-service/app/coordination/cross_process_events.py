@@ -59,6 +59,13 @@ from typing import Any
 # Default database location
 DEFAULT_EVENT_DB = Path("/tmp/ringrift_coordination/events.db")
 
+# Import centralized timeout thresholds
+try:
+    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_LONG_MS, SQLITE_TIMEOUT
+except ImportError:
+    SQLITE_BUSY_TIMEOUT_LONG_MS = 30000
+    SQLITE_TIMEOUT = 30
+
 # Event retention period (default: 24 hours)
 DEFAULT_RETENTION_HOURS = 24
 
@@ -122,13 +129,13 @@ class CrossProcessEventQueue:
         if not hasattr(self._local, "conn") or self._local.conn is None:
             self._local.conn = sqlite3.connect(
                 str(self.db_path),
-                timeout=60.0,  # Increased from 30s
+                timeout=float(SQLITE_TIMEOUT * 2),  # 60s for cross-process events
                 isolation_level=None,  # Autocommit for better concurrency
             )
             self._local.conn.row_factory = sqlite3.Row
             # WAL mode for concurrent access
             self._local.conn.execute('PRAGMA journal_mode=WAL')
-            self._local.conn.execute('PRAGMA busy_timeout=30000')  # Increased from 10s
+            self._local.conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_LONG_MS}')
             self._local.conn.execute('PRAGMA synchronous=NORMAL')
             self._local.conn.execute('PRAGMA wal_autocheckpoint=100')  # Checkpoint every 100 pages
             self._local.conn.execute('PRAGMA cache_size=-2000')  # 2MB cache

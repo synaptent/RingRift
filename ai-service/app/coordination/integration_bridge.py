@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 
 from app.coordination.event_router import (
     RouterEvent,
-    get_router,
     publish_sync,
     subscribe,
 )

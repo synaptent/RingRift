@@ -175,21 +175,22 @@ class TaskLifecycleCoordinator:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
+            router = get_router()
 
-            bus.subscribe(DataEventType.TASK_SPAWNED, self._on_task_spawned)
-            bus.subscribe(DataEventType.TASK_COMPLETED, self._on_task_completed)
-            bus.subscribe(DataEventType.TASK_FAILED, self._on_task_failed)
-            bus.subscribe(DataEventType.TASK_HEARTBEAT, self._on_task_heartbeat)
-            bus.subscribe(DataEventType.TASK_ORPHANED, self._on_task_orphaned)
-            bus.subscribe(DataEventType.TASK_CANCELLED, self._on_task_cancelled)
+            router.subscribe(DataEventType.TASK_SPAWNED.value, self._on_task_spawned)
+            router.subscribe(DataEventType.TASK_COMPLETED.value, self._on_task_completed)
+            router.subscribe(DataEventType.TASK_FAILED.value, self._on_task_failed)
+            router.subscribe(DataEventType.TASK_HEARTBEAT.value, self._on_task_heartbeat)
+            router.subscribe(DataEventType.TASK_ORPHANED.value, self._on_task_orphaned)
+            router.subscribe(DataEventType.TASK_CANCELLED.value, self._on_task_cancelled)
 
             # Subscribe to host/node events (December 2025)
-            bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
-            bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-            bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
+            router.subscribe(DataEventType.HOST_ONLINE.value, self._on_host_online)
+            router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
+            router.subscribe(DataEventType.NODE_RECOVERED.value, self._on_node_recovered)
 
             self._subscribed = True
             logger.info("[TaskLifecycleCoordinator] Subscribed to task and host events")

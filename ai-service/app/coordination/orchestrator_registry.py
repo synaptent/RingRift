@@ -90,6 +90,16 @@ try:
 except ImportError:
     MIN_QUALITY_FOR_TRAINING = 0.3
 
+# Import centralized timeout thresholds
+try:
+    from app.config.thresholds import (
+        SQLITE_BUSY_TIMEOUT_SHORT_MS,
+        SQLITE_SHORT_TIMEOUT,
+    )
+except ImportError:
+    SQLITE_BUSY_TIMEOUT_SHORT_MS = 5000
+    SQLITE_SHORT_TIMEOUT = 10
+
 
 # ============================================
 # Configuration
@@ -206,9 +216,9 @@ class OrchestratorRegistry:
         """Initialize the SQLite database with schema."""
         REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(str(self._db_path), timeout=10.0)
+        conn = sqlite3.connect(str(self._db_path), timeout=float(SQLITE_SHORT_TIMEOUT))
         conn.execute('PRAGMA journal_mode=WAL')  # Enable WAL for better concurrency
-        conn.execute('PRAGMA busy_timeout=5000')  # 5s busy timeout
+        conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SHORT_MS}')
 
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS orchestrators (
@@ -250,9 +260,9 @@ class OrchestratorRegistry:
     @contextmanager
     def _get_conn(self):
         """Get a database connection with proper settings."""
-        conn = sqlite3.connect(str(self._db_path), timeout=10.0)
+        conn = sqlite3.connect(str(self._db_path), timeout=float(SQLITE_SHORT_TIMEOUT))
         conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA busy_timeout=5000')
+        conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SHORT_MS}')
         try:
             yield conn
         finally:
