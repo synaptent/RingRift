@@ -30,6 +30,7 @@ if ROOT not in sys.path:
 os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
 
 from app.training.canonical_sources import enforce_canonical_sources
+from app.training.export_core import compute_value
 from scripts.lib.cli import BOARD_TYPE_MAP
 from scripts.lib.logging_config import setup_script_logging
 
@@ -150,14 +151,8 @@ def export_db_to_npz(
 
                 features, global_features = encoded
 
-                # Compute value target
-                current_player = state.current_player
-                if winner == current_player:
-                    value = 1.0
-                elif winner == 0:  # Draw
-                    value = 0.0
-                else:
-                    value = -1.0
+                # Compute value target using consolidated function
+                value = compute_value(winner, state.current_player)
 
                 all_features.append(features)
                 all_globals.append(global_features)

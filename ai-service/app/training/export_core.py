@@ -8,8 +8,9 @@ This module consolidates common patterns across the 7+ export scripts:
 
 Usage:
     from app.training.export_core import (
-        value_from_final_winner,
-        value_from_final_ranking,
+        compute_value,  # Simple (winner, perspective) → float
+        value_from_final_winner,  # GameState-based
+        value_from_final_ranking,  # Rank-aware for multiplayer
         compute_multi_player_values,
         encode_state_with_history,
         NPZDatasetWriter,
@@ -37,10 +38,31 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+def compute_value(winner: int | None, perspective: int) -> float:
+    """Compute scalar value from winner and perspective player.
+
+    This is the fundamental value computation used across all export scripts.
+    For GameState-based computation, use value_from_final_winner instead.
+
+    Args:
+        winner: Player number who won (1-indexed), 0 for draw, None for incomplete
+        perspective: Player number (1-indexed) to compute value for
+
+    Returns:
+        +1.0 if perspective player won, -1.0 if lost, 0.0 if draw/incomplete
+    """
+    if winner is None or winner == 0:
+        return 0.0
+    if winner == perspective:
+        return 1.0
+    return -1.0
+
+
 def value_from_final_winner(final_state: GameState, perspective: int) -> float:
     """Map final winner to a scalar value from the perspective of `perspective`.
 
-    This is the simple binary version for 2-player games.
+    This is a convenience wrapper around compute_value() that extracts
+    the winner from a GameState. For 2-player games.
     For multiplayer support, use value_from_final_ranking.
 
     Args:
@@ -51,11 +73,7 @@ def value_from_final_winner(final_state: GameState, perspective: int) -> float:
         +1.0 if perspective player won, -1.0 if lost, 0.0 if no winner
     """
     winner = getattr(final_state, "winner", None)
-    if winner is None:
-        return 0.0
-    if winner == perspective:
-        return 1.0
-    return -1.0
+    return compute_value(winner, perspective)
 
 
 def value_from_final_ranking(
