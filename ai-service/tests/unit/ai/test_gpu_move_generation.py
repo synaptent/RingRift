@@ -301,19 +301,24 @@ class TestGenerateCaptureMovesBatch:
 
         assert moves.moves_per_game[0].item() == 0
 
-    def test_cannot_capture_own_stacks(self, device, board_size, num_players):
-        """Should not generate captures to own stacks."""
+    def test_self_capture_is_legal(self, device, board_size, num_players):
+        """Self-capture IS legal per RR-CANON-R101.
+
+        Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+        This means a player can overtake their own stacks if cap_height allows.
+        """
         state = create_test_state(2, board_size, num_players, device)
         state.current_phase[:] = GamePhase.MOVEMENT
 
         # Place two adjacent stacks for same player
+        # Both have same cap_height, so capture is valid
         place_stack(state, 0, 3, 3, owner=1, height=2)
         place_stack(state, 0, 3, 4, owner=1, height=2)
 
         moves = generate_capture_moves_batch_vectorized(state)
 
-        # No capture moves to own stacks
-        assert moves.moves_per_game[0].item() == 0
+        # Self-capture moves SHOULD be generated (per RR-CANON-R101)
+        assert moves.moves_per_game[0].item() > 0
 
 
 # =============================================================================

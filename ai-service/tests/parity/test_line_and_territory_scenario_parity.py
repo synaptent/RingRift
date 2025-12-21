@@ -18,6 +18,7 @@ from app.models import (
     GameState,
     GameStatus,
     LineInfo,
+    MarkerInfo,
     MoveType,
     Player,
     Position,
@@ -434,6 +435,110 @@ def test_get_valid_moves_territory_processing_pre_elimination(
         assert m.to in region.spaces
 
 
+def test_region_order_choice_enumeration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RR-CANON-R140-R145: Multiple regions enumerate distinct CHOOSE_TERRITORY_OPTION moves.
+
+    When multiple disconnected regions exist, the player must be able to choose
+    which region to process first (region_order choice). This test verifies:
+    1. Multiple regions generate multiple CHOOSE_TERRITORY_OPTION moves
+    2. Each move has region_id or distinct target position
+    3. The RegionOrderChoice endpoint receives proper enumeration data
+    """
+    state = create_base_state(BoardType.SQUARE8)
+    board = state.board
+
+    # Create two disconnected regions at different positions
+    region1_pos = Position(x=1, y=1)
+    region2_pos = Position(x=6, y=6)
+
+    # Region 1: smaller region (1 space)
+    region1_territory = Territory(
+        spaces=[region1_pos],
+        controllingPlayer=1,
+        isDisconnected=True,
+    )
+
+    # Region 2: larger region (2 spaces)
+    region2_pos2 = Position(x=6, y=7)
+    region2_territory = Territory(
+        spaces=[region2_pos, region2_pos2],
+        controllingPlayer=1,
+        isDisconnected=True,
+    )
+
+    # Place stacks to make regions valid
+    p2_stack1 = RingStack(
+        position=region1_pos,
+        rings=[2],
+        stackHeight=1,
+        capHeight=1,
+        controllingPlayer=2,
+    )
+    board.stacks[region1_pos.to_key()] = p2_stack1
+
+    p2_stack2 = RingStack(
+        position=region2_pos,
+        rings=[2],
+        stackHeight=1,
+        capHeight=1,
+        controllingPlayer=2,
+    )
+    board.stacks[region2_pos.to_key()] = p2_stack2
+
+    # P1 stack for self-elimination prerequisite
+    p1_outside = Position(x=3, y=3)
+    p1_stack = RingStack(
+        position=p1_outside,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+    board.stacks[p1_outside.to_key()] = p1_stack
+
+    def mock_find_disconnected_regions(board, player_number):
+        return [region1_territory, region2_territory]
+
+    monkeypatch.setattr(
+        BoardManager, "find_disconnected_regions", staticmethod(mock_find_disconnected_regions)
+    )
+
+    state.current_phase = GamePhase.TERRITORY_PROCESSING
+    state.current_player = 1
+
+    moves = GameEngine.get_valid_moves(state, 1)
+
+    # Filter to territory choice moves only (not SKIP)
+    territory_moves = [
+        m for m in moves
+        if m.type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION)
+    ]
+
+    # Should have moves for both regions
+    assert len(territory_moves) >= 2, (
+        f"Expected at least 2 territory moves for 2 regions, got {len(territory_moves)}"
+    )
+
+    # Collect unique region targets (positions the moves point to)
+    target_positions = set()
+    for m in territory_moves:
+        if m.to:
+            target_positions.add(f"{m.to.x},{m.to.y}")
+
+    # Should see targets from both regions
+    region1_targets = {"1,1"}  # Region 1 spaces
+    region2_targets = {"6,6", "6,7"}  # Region 2 spaces
+
+    # At least one target from each region should be present
+    has_region1 = any(t in region1_targets for t in target_positions)
+    has_region2 = any(t in region2_targets for t in target_positions)
+
+    assert has_region1, f"Expected moves targeting region 1 (1,1), got {target_positions}"
+    assert has_region2, f"Expected moves targeting region 2 (6,6 or 6,7), got {target_positions}"
+
+
 def _multi_phase_vectors_path() -> Path:
     """Return the path to the TS multi_phase_turn v2 vectors bundle."""
     # Repo root is three levels up from this file:
@@ -681,3 +786,120 @@ def test_overlength_line_option2_segments_exhaustive(
     # Full parity: Python's Option-2 choices must equal the TS-legal set of
     # contiguous required-length windows of the overlength line.
     assert actual_segments == expected_segments
+
+
+@pytest.mark.parametrize(
+    "board_type",
+    [BoardType.SQUARE8, BoardType.SQUARE19, BoardType.HEXAGONAL],
+)
+def test_exact_length_line_option1_only(
+    board_type: BoardType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RR-CANON-R120-R123: Exact-length line ONLY offers Option 1 (full collapse + elimination).
+
+    For a line where length == requiredLength (exact-length), the player:
+    - Collapses ALL markers in the line
+    - MUST eliminate 1 ring from a stack they control
+
+    There is NO Option 2 for exact-length lines (Option 2 is only for overlength lines
+    where the player can choose a subset of markers to collapse).
+
+    This test verifies:
+    1. Only CHOOSE_LINE_OPTION/CHOOSE_LINE_REWARD moves are surfaced for the line
+    2. All moves are collapse-all (Option 1) - no Option 2 minimum-collapse segments
+    3. After line choice, elimination is required (explicit eliminate_rings_from_stack)
+    """
+    # Clear move cache to ensure our mocked find_all_lines is used
+    GameEngine.clear_cache()
+    state = create_base_state(board_type)
+    board = state.board
+    required_length = REQUIRED_LENGTH_BY_BOARD[board_type]
+
+    # Create exact-length line (length == required_length)
+    line_positions = [Position(x=i, y=0) for i in range(required_length)]
+    for pos in line_positions:
+        board.markers[pos.to_key()] = MarkerInfo(
+            player=1,
+            position=pos,
+            type="regular",
+        )
+
+    synthetic_line = LineInfo(
+        positions=line_positions,
+        player=1,
+        length=required_length,
+        direction=Position(x=1, y=0),
+    )
+
+    # P1 needs a stack for elimination after line processing
+    p1_stack_pos = Position(x=5, y=5)
+    board.stacks[p1_stack_pos.to_key()] = RingStack(
+        position=p1_stack_pos,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+
+    # Make frozen copy for mock
+    frozen_line = LineInfo(
+        positions=[Position(x=p.x, y=p.y) for p in synthetic_line.positions],
+        player=synthetic_line.player,
+        length=synthetic_line.length,
+        direction=Position(x=synthetic_line.direction.x, y=synthetic_line.direction.y),
+    )
+
+    def mock_find_all_lines(board, num_players=3):
+        return [frozen_line]
+
+    monkeypatch.setattr(BoardManager, "find_all_lines", staticmethod(mock_find_all_lines))
+
+    state.current_phase = GamePhase.LINE_PROCESSING
+    state.current_player = 1
+
+    moves = GameEngine.get_valid_moves(state, 1)
+    assert moves, "Expected line-processing moves"
+
+    reward_moves = [
+        m for m in moves
+        if m.type in (MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD)
+    ]
+    assert reward_moves, "Expected line reward moves for exact-length line"
+
+    # For exact-length lines: ONLY Option 1 (collapse-all) should be offered
+    # Option 2 segments are NOT offered because there's no subset to choose
+
+    # Option 1 moves have collapsed_markers == all line positions (full line length)
+    option1_moves = [
+        m for m in reward_moves
+        if m.collapsed_markers is not None
+        and len(m.collapsed_markers) == required_length
+    ]
+
+    # Option 2 moves would have collapsed_markers < full length (for overlength)
+    # For exact-length, there should be NO Option 2 moves
+    option2_moves = [
+        m for m in reward_moves
+        if m.collapsed_markers is not None
+        and len(m.collapsed_markers) < required_length
+    ]
+
+    assert len(option1_moves) >= 1, (
+        f"Expected at least 1 Option 1 (collapse-all) move for exact-length line, "
+        f"got {len(option1_moves)}"
+    )
+    assert len(option2_moves) == 0, (
+        f"Expected 0 Option 2 moves for exact-length line (no subset choice), "
+        f"got {len(option2_moves)}"
+    )
+
+    # Verify the Option 1 move collapses all markers in the line
+    option1_move = option1_moves[0]
+    collapsed_set = {
+        (p.x, p.y) for p in (option1_move.collapsed_markers or [])
+    }
+    expected_set = {(p.x, p.y) for p in line_positions}
+    assert collapsed_set == expected_set, (
+        f"Option 1 should collapse all line markers. "
+        f"Expected {expected_set}, got {collapsed_set}"
+    )

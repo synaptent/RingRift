@@ -9,6 +9,7 @@ import torch
 from app.ai.gpu_batch_state import BatchGameState
 from app.ai.gpu_game_types import get_required_line_length
 from app.ai.gpu_line_detection import (
+    apply_line_elimination_batch,
     detect_lines_batch,
     detect_lines_vectorized,
     detect_lines_with_metadata,
@@ -405,7 +406,12 @@ class TestProcessLinesBatch:
             assert state.marker_owner[0, 3, i].item() == 0
 
     def test_elimination_cost_for_exact_length(self, device, board_size, num_players):
-        """Exact-length lines should cost one ring elimination."""
+        """Exact-length lines should cost one ring elimination.
+
+        Per RR-CANON-R123: Line elimination is a two-step process:
+        1. process_lines_batch sets pending_line_elimination flag
+        2. apply_line_elimination_batch performs the actual elimination
+        """
         state = create_test_state(2, board_size, num_players, device)
         required_length = get_required_line_length(board_size, num_players)
 
@@ -419,6 +425,12 @@ class TestProcessLinesBatch:
         initial_height = state.stack_height[0, 0, 0].item()
 
         process_lines_batch(state, option2_probability=0.0)  # Force option 1
+
+        # After process_lines_batch, elimination is pending (RR-CANON-R123)
+        assert state.pending_line_elimination[0].item()
+
+        # Apply the elimination
+        apply_line_elimination_batch(state)
 
         # One ring should be eliminated
         assert state.stack_height[0, 0, 0].item() == initial_height - 1

@@ -220,8 +220,8 @@ class TestSelectMovesVectorized:
         assert 0 <= selected[0].item() < moves_per_game[0]
         assert 0 <= selected[2].item() < moves_per_game[2]
 
-    def test_games_with_no_moves_get_zero(self, device, board_size):
-        """Games with no moves should get index 0 (clamped from -1)."""
+    def test_games_with_no_moves_get_sentinel(self, device, board_size):
+        """Games with no moves should get -1 as a sentinel value."""
         batch_size = 4
         # Game 1 has no moves
         moves_per_game = [5, 0, 7, 2]
@@ -230,8 +230,12 @@ class TestSelectMovesVectorized:
 
         selected = select_moves_vectorized(moves, active_mask, board_size)
 
-        # Game 1 should have clamped value (0)
-        assert selected[1].item() == 0
+        # Game 1 should have sentinel value (-1) indicating no valid moves
+        assert selected[1].item() == -1
+        # Other games should have valid indices
+        assert 0 <= selected[0].item() < moves_per_game[0]
+        assert 0 <= selected[2].item() < moves_per_game[2]
+        assert 0 <= selected[3].item() < moves_per_game[3]
 
     def test_center_bias_statistical(self, device, board_size):
         """Moves closer to center should be selected more often (statistical test)."""
@@ -627,9 +631,9 @@ class TestSelectionEdgeCases:
         assert 0 <= selected_h[0].item() < 5
         assert 0 <= selected_h[2].item() < 3
 
-        # Games without moves should have clamped value
-        assert selected_v[1].item() == 0
-        assert selected_v[3].item() == 0
+        # Games without moves should have sentinel value (-1)
+        assert selected_v[1].item() == -1
+        assert selected_v[3].item() == -1
 
     def test_very_low_temperature(self, device, board_size):
         """Very low temperature should be nearly deterministic."""
