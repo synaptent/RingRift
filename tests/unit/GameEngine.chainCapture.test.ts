@@ -84,14 +84,6 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       const currentPlayer = getGameState().currentPlayer;
       const moves = engine.getValidMoves(currentPlayer);
 
-      // Debug: log the actual moves returned
-      console.log('[resolveChainIfPresent] moves returned:', {
-        count: moves.length,
-        types: moves.map((m: any) => m.type),
-        phase: getGameState().currentPhase,
-        currentPlayer,
-      });
-
       const chainMoves = moves.filter((m: any) => m.type === 'continue_capture_segment');
 
       expect(chainMoves.length).toBeGreaterThan(0);
