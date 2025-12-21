@@ -228,7 +228,19 @@ def encode_move_for_board(
 
     board_type = board.type
 
-    # Dispatch to board-specific encoder
+    # Prefer canonical encoding (uses legacy alias normalization internally).
+    try:
+        from app.ai.canonical_move_encoding import (
+            encode_move_for_board as canonical_encode_move_for_board,
+        )
+        idx = canonical_encode_move_for_board(move, board)
+        if idx != INVALID_MOVE_INDEX:
+            return idx
+    except Exception:
+        # Fall back to legacy encoding path below.
+        pass
+
+    # Legacy fallback: dispatch to board-specific encoder.
     if board_type == BoardType.SQUARE8:
         return _encode_move_square8(move, board)
     elif board_type == BoardType.SQUARE19:

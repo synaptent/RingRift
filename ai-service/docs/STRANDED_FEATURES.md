@@ -131,7 +131,7 @@ Last updated: 2025-12-21
 
 ### 3.6 Canonical Action-Space Migration (Correctness + Strength)
 
-- **Status**: Not Integrated
+- **Status**: Partially Integrated
 - **Files**:
   - `app/ai/neural_net/square_encoding.py`
   - `app/ai/neural_net/square_architectures.py`
@@ -143,6 +143,11 @@ Last updated: 2025-12-21
 - **Next Step**: Introduce a canonical action-space adapter that maps
   legacy aliases to canonical move types at model I/O, then refactor
   encoders and policy heads to use only canonical action indices.
+- **Update (2025-12-21)**: `app/ai/_neural_net_legacy.py` now routes
+  board-specific encoding through `app/ai/canonical_move_encoding.py`
+  (legacy fallback preserved). Remaining gaps: legacy MAX_N policy head
+  path still uses legacy move names, and hex policy space still compresses
+  multiple special actions into a single index.
 - **Expected Impact**: Higher policy consistency, fewer off-policy errors,
   and cleaner training data (quality + Elo).
 
