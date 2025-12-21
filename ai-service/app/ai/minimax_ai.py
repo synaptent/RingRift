@@ -536,6 +536,11 @@ class MinimaxAI(HeuristicAI):
         else:
             return 2
 
+    def _canonical_move_type(self, move: Move) -> str:
+        """Normalize legacy aliases to canonical move type strings."""
+        raw_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+        return convert_legacy_move_type(raw_type, warn=False)
+
     def _score_and_sort_moves(
         self, game_state: GameState, valid_moves: list[Move]
     ) -> list[tuple]:
@@ -547,15 +552,16 @@ class MinimaxAI(HeuristicAI):
         for move in valid_moves:
             # Priority bonus for "noisy" moves
             priority_bonus = 0.0
-            if move.type == "territory_claim":
+            move_type = self._canonical_move_type(move)
+            if move_type in ("choose_territory_option", "eliminate_rings_from_stack"):
                 priority_bonus = 10000.0
-            elif move.type == "line_formation":
+            elif move_type in ("process_line", "choose_line_option"):
                 priority_bonus = 5000.0
-            elif move.type == "chain_capture":
+            elif move_type == "continue_capture_segment":
                 priority_bonus = 2000.0
-            elif move.type == "overtaking_capture":
+            elif move_type == "overtaking_capture":
                 priority_bonus = 1000.0
-            elif move.type == "recovery_slide":
+            elif move_type == "recovery_slide":
                 # RR-CANON-R110–R115: Recovery is tactical (frees buried rings)
                 priority_bonus = 800.0
 
@@ -683,13 +689,17 @@ class MinimaxAI(HeuristicAI):
 
         # Sort others by priority (captures first)
         others.sort(
-            key=lambda m: 1 if m.type in [
+            key=lambda m: 1
+            if self._canonical_move_type(m) in {
                 "overtaking_capture",
-                "chain_capture",
-                "line_formation",
-                "territory_claim"
-            ] else 0,
-            reverse=True
+                "continue_capture_segment",
+                "process_line",
+                "choose_line_option",
+                "choose_territory_option",
+                "eliminate_rings_from_stack",
+            }
+            else 0,
+            reverse=True,
         )
 
         ordered_moves = killers + others
@@ -1007,12 +1017,14 @@ class MinimaxAI(HeuristicAI):
         )
         noisy_moves = [
             m for m in all_moves
-            if m.type in [
+            if self._canonical_move_type(m) in {
                 "overtaking_capture",
-                "chain_capture",
-                "line_formation",
-                "territory_claim"
-            ]
+                "continue_capture_segment",
+                "process_line",
+                "choose_line_option",
+                "choose_territory_option",
+                "eliminate_rings_from_stack",
+            }
         ]
 
         if not noisy_moves:
