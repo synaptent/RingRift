@@ -226,20 +226,22 @@ class UnifiedHealthOrchestrator:
                     message=str(e),
                 )
 
-        # Event bus health
+        # Event router health
         def check_event_bus() -> HealthCheckResult:
             try:
-                from app.distributed.data_events import get_event_bus
-                bus = get_event_bus()
-                stats = bus.get_subscription_stats()
+                from app.coordination.event_router import get_router
+                router = get_router()
+                stats = router.get_stats()
 
-                unsubscribed = stats.get("unsubscribed_published", [])
-                if len(unsubscribed) > 3:
+                total_subs = stats.get("total_subscriptions", 0)
+                total_events = stats.get("total_events_published", 0)
+
+                if total_subs == 0:
                     status = HealthStatus.DEGRADED
-                    message = f"{len(unsubscribed)} event types have no subscribers"
+                    message = "No event subscribers registered"
                 else:
                     status = HealthStatus.HEALTHY
-                    message = f"{stats.get('total_events_published', 0)} events published"
+                    message = f"{total_events} events published, {total_subs} subscriptions"
 
                 return HealthCheckResult(
                     component="event_bus",

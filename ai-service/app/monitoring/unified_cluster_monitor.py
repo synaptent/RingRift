@@ -61,26 +61,16 @@ except ImportError:
     HAS_CLUSTER_CONFIG = False
     get_cluster_config = None
 
-# Event bus for status change notifications (Phase 10 consolidation)
-# Prefer unified router for cross-system event routing (December 2025)
+# Event router for status change notifications (Phase 10 consolidation)
+# Using unified router for cross-system event routing (December 2025)
 try:
-    from app.coordination.event_router import (
-        get_router as get_event_router,
-        publish as router_publish,
-    )
+    from app.coordination.event_router import get_router
+    from app.distributed.data_events import DataEventType
     HAS_EVENT_ROUTER = True
 except ImportError:
     HAS_EVENT_ROUTER = False
-    get_event_router = None
-    router_publish = None
-
-# Legacy event bus (fallback if router unavailable)
-try:
-    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
-    HAS_EVENT_BUS = True
-except ImportError:
-    HAS_EVENT_BUS = False
-    get_event_bus = None
+    get_router = None
+    DataEventType = None
 
 
 @dataclass
@@ -784,38 +774,28 @@ class UnifiedClusterMonitor:
         event_type: DataEventType,
         payload: dict,
     ) -> None:
-        """Emit an event via unified router or fallback to direct bus.
+        """Emit an event via unified router.
 
-        Uses unified router if available, falls back to direct EventBus.
+        Uses unified router for event routing.
         """
+        if not HAS_EVENT_ROUTER:
+            return
+
         source = "unified_cluster_monitor"
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
 
-        # Try unified router first (recommended path)
-        if HAS_EVENT_ROUTER and router_publish is not None:
-            try:
-                await router_publish(event_type_str, payload, source)
-                return
-            except Exception as e:
-                logger.debug(f"Router emit failed, falling back to direct bus: {e}")
-
-        # Fallback to direct EventBus
-        if not HAS_EVENT_BUS:
-            return
-
-        event_bus = get_event_bus()
-        await event_bus.publish(DataEvent(
-            event_type=event_type,
-            payload=payload,
-            source=source,
-        ))
+        try:
+            router = get_router()
+            await router.publish(event_type_str, payload, source)
+        except Exception as e:
+            logger.debug(f"Router emit failed: {e}")
 
     async def _emit_status_events(self, status: ClusterStatus) -> None:
         """Emit events based on cluster status changes.
 
-        Uses unified router if available, falls back to direct EventBus.
+        Uses unified router for event routing.
         """
-        if not HAS_EVENT_ROUTER and not HAS_EVENT_BUS:
+        if not HAS_EVENT_ROUTER:
             return
 
         # Detect overall health state change

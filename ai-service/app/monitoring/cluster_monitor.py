@@ -44,13 +44,13 @@ from app.monitoring.base import (
 try:
     import asyncio
 
-    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
+    from app.coordination.event_router import get_router
+    from app.distributed.data_events import DataEventType
     HAS_CLUSTER_EVENTS = True
 except ImportError:
     HAS_CLUSTER_EVENTS = False
-    DataEvent = None
     DataEventType = None
-    get_event_bus = None
+    get_router = None
 
 logger = logging.getLogger(__name__)
 
@@ -496,12 +496,12 @@ class ClusterHealthMonitor(CompositeMonitor):
             # Schedule event emission
             try:
                 asyncio.get_running_loop()
-                event_bus = get_event_bus()
-                asyncio.ensure_future(event_bus.publish(DataEvent(
-                    event_type=event_type,
-                    payload=payload,
+                router = get_router()
+                asyncio.ensure_future(router.publish(
+                    event_type.value,
+                    payload,
                     source="cluster_monitor",
-                )))
+                ))
                 logger.info(f"Emitted {event_type.value}: cluster is now {current_status}")
             except RuntimeError:
                 # No running loop - skip event emission in sync context

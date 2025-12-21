@@ -492,24 +492,24 @@ class MonitorRegistry:
     ) -> None:
         """Emit event on overall status change."""
         try:
-            from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
-            event = DataEvent(
-                event_type=DataEventType.HEALTH_ALERT if new_status != HealthStatus.HEALTHY else DataEventType.CLUSTER_STATUS_CHANGED,
-                payload={
-                    "old_status": old_status.value if old_status else None,
-                    "new_status": new_status.value,
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
-                source="monitor_registry",
-            )
+            router = get_router()
+            event_type = DataEventType.HEALTH_ALERT if new_status != HealthStatus.HEALTHY else DataEventType.CLUSTER_STATUS_CHANGED
+
+            payload = {
+                "old_status": old_status.value if old_status else None,
+                "new_status": new_status.value,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
             # Fire and forget
             import asyncio
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    loop.create_task(bus.publish(event))
+                    loop.create_task(router.publish(event_type.value, payload, source="monitor_registry"))
             except RuntimeError:
                 pass
 
