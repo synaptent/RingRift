@@ -1,7 +1,8 @@
 # Hexagonal Board Parity Bug
 
-**Status:** OPEN - Blocking canonical hex training
-**Priority:** CRITICAL
+**Status:** FIXED - Commit 7f43c368
+**Resolution:** 2025-12-21 - Wrong attribute name in FSM
+**Priority:** RESOLVED
 **Discovered:** December 2025
 
 ---
@@ -171,4 +172,119 @@ python scripts/generate_gumbel_selfplay.py \
 
 ---
 
+## Investigation Notes (2025-12-21)
+
+### Code Analysis
+
+The phase transition logic was analyzed and appears correct:
+
+**Python (`app/rules/phase_machine.py`)**:
+
+- `NO_TERRITORY_ACTION` case (lines 502-511) calls `_on_territory_processing_complete()`
+- `_on_territory_processing_complete()` (lines 187-214) checks `had_any_action` and `has_stacks`
+- If `not had_any_action and has_stacks`, sets phase to `FORCED_ELIMINATION`
+- Otherwise calls `_end_turn()` which sets phase to `RING_PLACEMENT`
+
+**TypeScript (`src/shared/engine/orchestration/turnOrchestrator.ts`)**:
+
+- After territory processing, calls `onTerritoryProcessingComplete()` (line 2929)
+- If returns `'forced_elimination'`, calls `stateMachine.transitionTo('forced_elimination')` (line 2939)
+- The logic mirrors Python exactly
+
+### Mystery
+
+The symptom (Python in `territory_processing`, TS in `forced_elimination`) should be impossible:
+
+- If `_on_territory_processing_complete` runs, Python would be in either `FORCED_ELIMINATION` or `RING_PLACEMENT`
+- Neither branch leaves Python in `territory_processing`
+
+### Next Steps Required
+
+1. **Reproduce locally**: Need to replay the specific game that failed at k=989
+2. **Add tracing**: Insert debug logging in `_on_territory_processing_complete`
+3. **Check compute_had_any_action_this_turn**: Verify it returns same value as TS
+4. **Check player_has_stacks_on_board**: Verify hex-specific stack counting is correct
+
+### Hypothesis
+
+The divergence may be caused by:
+
+- An exception being thrown silently before phase is updated
+- A different code path being taken for hex (not yet identified)
+- A race condition or state mutation issue in the parity checker itself
+
+---
+
 **Last Updated:** December 21, 2025
+**Status:** FIXED - Commit 7f43c368
+
+---
+
+## Resolution (2025-12-21)
+
+### Root Cause Found
+
+The bug was in `app/rules/fsm.py:_did_process_territory_region()`:
+
+```python
+# BUG: Was checking for wrong attribute
+if hasattr(region, "positions"):  # ❌ Wrong!
+    for pos in region.positions:
+
+# FIX: Territory class uses 'spaces' not 'positions'
+if hasattr(region, "spaces"):     # ✅ Correct!
+    for pos in region.spaces:
+```
+
+The `Territory` class (in `app/models/core.py`) uses `spaces: list[Position]`, not `positions`. This caused `_did_process_territory_region()` to always skip the disconnected_regions check and return `False`.
+
+### Impact
+
+When a CHOOSE_TERRITORY_OPTION move was processed:
+
+1. FSM checked if territory was actually collapsed
+2. Due to wrong attribute name, check always failed
+3. Python stayed in `territory_processing` phase
+4. TypeScript correctly advanced to `forced_elimination`
+
+### Fix Applied
+
+Commit `7f43c368` corrects the attribute name from `.positions` to `.spaces`.
+
+### Validation Required
+
+```bash
+# Run hex parity tests
+pytest tests/parity/test_fsm_parity.py -k hex -v
+
+# Generate hex games with parity validation
+python scripts/generate_gumbel_selfplay.py \
+  --board hexagonal \
+  --games 100 \
+  --validate-parity \
+  --fail-fast
+```
+
+---
+
+## Code Review Notes (2025-12-21)
+
+### Phase Transition Logic Audit
+
+Reviewed `app/rules/phase_machine.py` for NO_TERRITORY_ACTION handling:
+
+1. **Line 502-511**: `NO_TERRITORY_ACTION` correctly delegates to `_on_territory_processing_complete()`
+2. **Line 187-214**: `_on_territory_processing_complete()` logic is correct:
+   - Computes `had_any_action` via `compute_had_any_action_this_turn()`
+   - Computes `has_stacks` via `player_has_stacks_on_board()`
+   - If `not had_any_action and has_stacks` → sets phase to `FORCED_ELIMINATION`
+   - Otherwise → calls `GameEngine._end_turn()`
+
+3. **Line 66-96**: `compute_had_any_action_this_turn()` walks move history correctly
+4. **Line 99-109**: `player_has_stacks_on_board()` iterates stacks correctly
+
+**Conclusion**: The Python code logic appears correct and board-agnostic. The bug likely requires:
+
+- Live reproduction with tracing enabled
+- Comparison of actual game state values between Python and TypeScript at divergence point
+- Possible issues: silent exception, state mutation, or parity checker artifact
