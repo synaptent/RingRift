@@ -18,6 +18,7 @@ Example:
 """
 
 import argparse
+import random
 import logging
 import sys
 import time
@@ -185,9 +186,14 @@ def play_single_game(
         # Select and apply move
         move = ai.select_move(state)
         if move is None:
-            termination_reason = "ai_returned_no_move"
-            logger.warning(f"Seed {seed}: AI returned no move for player " f"{current_player} at move {move_count}")
-            break
+            logger.warning(
+                "Seed %s: AI returned no move for player %s at move %s; "
+                "falling back to random legal move",
+                seed,
+                current_player,
+                move_count,
+            )
+            move = random.choice(legal_moves)
 
         try:
             state, _reward, done, _info = env.step(move)

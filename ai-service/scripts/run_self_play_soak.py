@@ -1734,6 +1734,7 @@ def run_self_play_soak(
             prev_S = prev_snapshot["S"]
             prev_eliminated = prev_snapshot["eliminated"]
 
+            ai_fallback_used = False
             while True:
                 if state.game_status != GameStatus.ACTIVE:
                     termination_reason = f"status:{state.game_status.value}"
@@ -1880,9 +1881,17 @@ def run_self_play_soak(
                             timing_totals["move_select"] += time.time() - t_sel_start
 
                     if not move:
-                        termination_reason = "ai_returned_no_move"
-                        skipped = True
-                        break
+                        if not ai_fallback_used:
+                            logger.warning(
+                                "AI returned no move; falling back to random legal move "
+                                "(game=%s move=%s player=%s phase=%s)",
+                                game_idx,
+                                move_count,
+                                current_player,
+                                state.current_phase.value,
+                            )
+                            ai_fallback_used = True
+                        move = game_rng.choice(legal_moves)
 
                     # Validate that the AI-selected move is in the legal moves list.
                     # This guards against AI bugs where the AI returns a move that
