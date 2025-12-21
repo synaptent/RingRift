@@ -713,6 +713,25 @@ class AIConfig(BaseModel):
         ),
     )
 
+    # Hybrid NN + Heuristic Evaluation (RR-CANON-HYBRID-001)
+    heuristic_blend_alpha: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "When set, GumbelMCTSAI uses hybrid evaluation blending NN value with "
+            "normalized heuristic score. Formula: alpha * nn_value + (1-alpha) * heuristic. "
+            "Recommended value: 0.6 (60% NN, 40% heuristic). When None, uses pure NN."
+        ),
+    )
+    heuristic_fallback_enabled: bool = Field(
+        default=True,
+        description=(
+            "When True, GumbelMCTSAI uses heuristic evaluation as fallback when NN "
+            "evaluation fails. When False, returns 0.0 on NN failure (legacy behavior)."
+        ),
+    )
+
 
 class LineRewardChoiceOption(str, Enum):
     """Line reward choice options, mirroring TypeScript LineRewardChoice."""

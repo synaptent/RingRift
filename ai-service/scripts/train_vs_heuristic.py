@@ -91,6 +91,7 @@ def play_game(
     board_type: BoardType,
     simulations: int,
     seed: int,
+    hybrid_alpha: float | None = None,
 ) -> dict[str, Any] | None:
     """Play a game between neural net and heuristic."""
     random.seed(seed)
@@ -103,6 +104,7 @@ def play_game(
         think_time=500,
         gumbel_simulation_budget=simulations,
         rngSeed=seed,
+        heuristic_blend_alpha=hybrid_alpha,
     )
     nn_ai = GumbelMCTSAI(player_number=nn_player, config=nn_config, board_type=board_type)
 
@@ -185,7 +187,8 @@ def main():
     parser.add_argument("--num-games", type=int, default=500, help="Number of games")
     parser.add_argument("--model-id", type=str, default="distilled_sq8_2p_v3", help="Neural net model")
     parser.add_argument("--board", type=str, default="square8", help="Board type")
-    parser.add_argument("--simulations", type=int, default=100, help="MCTS simulations")
+    parser.add_argument("--simulations", type=int, default=400, help="MCTS simulations (higher = stronger, slower)")
+    parser.add_argument("--hybrid-alpha", type=float, default=None, help="Hybrid NN+Heuristic blend alpha (0.6 recommended)")
     parser.add_argument("--output", type=str, required=True, help="Output JSONL file")
     args = parser.parse_args()
 
@@ -200,6 +203,8 @@ def main():
     logger.info(f"Model: {args.model_id}")
     logger.info(f"Games: {args.num_games}")
     logger.info(f"Simulations: {args.simulations}")
+    if args.hybrid_alpha is not None:
+        logger.info(f"Hybrid Mode: alpha={args.hybrid_alpha} (NN={args.hybrid_alpha:.0%}, Heuristic={1-args.hybrid_alpha:.0%})")
     logger.info(f"Output: {output_path}")
     logger.info("=" * 60)
 
@@ -221,6 +226,7 @@ def main():
                     board_type=board_type,
                     simulations=args.simulations,
                     seed=seed,
+                    hybrid_alpha=args.hybrid_alpha,
                 )
 
                 if game:

@@ -40,6 +40,7 @@ import numpy as np
 from ..models import AIConfig, BoardType, GameState, Move
 from ..rules.mutable_state import MoveUndo, MutableGameState
 from .base import BaseAI
+from .heuristic_ai import HeuristicAI
 from .neural_net import INVALID_MOVE_INDEX, NeuralNetAI
 
 if TYPE_CHECKING:
@@ -54,6 +55,11 @@ _GPU_GUMBEL_DISABLE = os.environ.get("RINGRIFT_GPU_GUMBEL_DISABLE", "").lower() 
 _GPU_GUMBEL_SHADOW_VALIDATE = os.environ.get("RINGRIFT_GPU_GUMBEL_SHADOW_VALIDATE", "").lower() in (
     "1", "true", "yes", "on"
 )
+
+# Normalization scale for heuristic scores to [-1, 1]
+# HeuristicAI returns scores in range [-100000, 100000] for terminal states
+# and typically [-1000, 1000] for non-terminal positions
+_HEURISTIC_NORMALIZATION_SCALE = 1000.0
 
 
 @dataclass
@@ -193,6 +199,16 @@ class GumbelMCTSAI(BaseAI):
         # Batch size for GPU evaluation (tune based on GPU memory)
         self._gpu_batch_size: int = getattr(config, 'gpu_batch_size', 128)
 
+        # Hybrid NN + Heuristic evaluation configuration (RR-CANON-HYBRID-001)
+        self._heuristic_blend_alpha: float | None = getattr(
+            config, 'heuristic_blend_alpha', None
+        )
+        self._heuristic_fallback_enabled: bool = getattr(
+            config, 'heuristic_fallback_enabled', True
+        )
+        # Lazy-initialized heuristic evaluator (only created when needed)
+        self._heuristic_ai: HeuristicAI | None = None
+
         # Load neural network (required for Gumbel MCTS)
         self.neural_net: NeuralNetAI | None = None
         try:
@@ -209,6 +225,118 @@ class GumbelMCTSAI(BaseAI):
                 ) from e
             logger.warning(f"GumbelMCTSAI: failed to load neural net ({e})")
             self.neural_net = None
+
+    def _ensure_heuristic_evaluator(self) -> HeuristicAI | None:
+        """Lazily initialize heuristic evaluator if needed.
+
+        Returns:
+            HeuristicAI instance if hybrid evaluation or fallback is enabled,
+            None otherwise.
+        """
+        if self._heuristic_ai is not None:
+            return self._heuristic_ai
+
+        # Only create if blending or fallback is enabled
+        if self._heuristic_blend_alpha is not None or self._heuristic_fallback_enabled:
+            try:
+                # Use light mode for faster heuristic evaluation in hybrid mode
+                from copy import copy
+                heuristic_config = copy(self.config)
+                heuristic_config.heuristic_eval_mode = "light"
+                self._heuristic_ai = HeuristicAI(self.player_number, heuristic_config)
+                logger.debug(
+                    f"GumbelMCTSAI: initialized heuristic evaluator for hybrid eval "
+                    f"(blend_alpha={self._heuristic_blend_alpha})"
+                )
+            except Exception as e:
+                logger.warning(f"GumbelMCTSAI: failed to create heuristic evaluator: {e}")
+                return None
+
+        return self._heuristic_ai
+
+    def _normalize_heuristic_score(self, raw_score: float) -> float:
+        """Normalize heuristic score to [-1, 1] range using tanh.
+
+        Args:
+            raw_score: Raw heuristic score (typically in range [-1000, 1000],
+                      or ±100000 for terminal states).
+
+        Returns:
+            Normalized score in [-1, 1] range.
+        """
+        return math.tanh(raw_score / _HEURISTIC_NORMALIZATION_SCALE)
+
+    def _evaluate_leaf_hybrid(
+        self,
+        mstate: MutableGameState,
+        is_opponent_perspective: bool,
+    ) -> float:
+        """Evaluate a leaf node using hybrid NN + heuristic blending.
+
+        When heuristic_blend_alpha is set, combines NN value with normalized
+        heuristic score. Otherwise uses pure NN with optional heuristic fallback.
+
+        Args:
+            mstate: Mutable game state at the leaf node.
+            is_opponent_perspective: True if state's current player is opponent.
+
+        Returns:
+            Value estimate in [-1, 1] from the root player's perspective.
+        """
+        sim_state = mstate.to_immutable()
+
+        # Try NN evaluation first
+        nn_value: float | None = None
+        if self.neural_net is not None:
+            try:
+                values, _ = self.neural_net.evaluate_batch([sim_state])
+                if values:
+                    nn_value = float(values[0])
+            except Exception as e:
+                logger.debug(f"GumbelMCTSAI: NN evaluation failed: {e}")
+
+        # Compute heuristic value if needed for blending or fallback
+        heuristic_value: float | None = None
+        need_heuristic = (
+            self._heuristic_blend_alpha is not None or
+            (nn_value is None and self._heuristic_fallback_enabled)
+        )
+
+        if need_heuristic:
+            heuristic_ai = self._ensure_heuristic_evaluator()
+            if heuristic_ai is not None:
+                try:
+                    # Evaluate from the current player's perspective, then flip if needed.
+                    heuristic_ai.player_number = sim_state.current_player
+                    raw_score = heuristic_ai.evaluate_position(sim_state)
+                    heuristic_value = self._normalize_heuristic_score(raw_score)
+                except Exception as e:
+                    logger.debug(f"GumbelMCTSAI: heuristic evaluation failed: {e}")
+
+        # Compute final value
+        if nn_value is not None and heuristic_value is not None:
+            # Blend NN and heuristic
+            alpha = (
+                self._heuristic_blend_alpha
+                if self._heuristic_blend_alpha is not None
+                else 1.0
+            )
+            value = alpha * nn_value + (1.0 - alpha) * heuristic_value
+        elif nn_value is not None:
+            # Pure NN
+            value = nn_value
+        elif heuristic_value is not None:
+            # Pure heuristic fallback
+            value = heuristic_value
+        else:
+            # No evaluation available
+            value = 0.0
+
+        # Flip for opponent perspective
+        if is_opponent_perspective:
+            value = -value
+
+        return value
 
     def select_move(self, game_state: GameState) -> Move | None:
         """Select best move using Gumbel MCTS with Sequential Halving.
@@ -863,6 +991,7 @@ class GumbelMCTSAI(BaseAI):
 
         # Evaluation phase
         if mstate.is_game_over():
+            # Terminal state evaluation (exact values)
             winner = mstate.winner
             if winner == self.player_number:
                 value = 1.0
@@ -870,18 +999,10 @@ class GumbelMCTSAI(BaseAI):
                 value = 0.0
             else:
                 value = -1.0
-        elif self.neural_net is not None:
-            try:
-                sim_state = mstate.to_immutable()
-                values, _ = self.neural_net.evaluate_batch([sim_state])
-                value = values[0] if values else 0.0
-
-                if sim_state.current_player != self.player_number:
-                    value = -value
-            except Exception:
-                value = 0.0
         else:
-            value = 0.0
+            # Non-terminal: use hybrid NN + heuristic evaluation
+            is_opponent = mstate.current_player != self.player_number
+            value = self._evaluate_leaf_hybrid(mstate, is_opponent)
 
         # Backpropagation - update all nodes in path
         current_value = value
@@ -935,22 +1056,61 @@ class GumbelMCTSAI(BaseAI):
         return max(valid_moves, key=puct_score)
 
     def evaluate_position(self, game_state: GameState) -> float:
-        """Evaluate position using neural network.
+        """Evaluate position using hybrid NN + heuristic blending.
 
         Args:
             game_state: Current game state.
 
         Returns:
-            Value estimate from neural network.
+            Value estimate (blended NN + heuristic if configured, or pure NN/heuristic).
         """
-        if self.neural_net is None:
+        # Terminal state check
+        if game_state.game_status == "completed":
+            if game_state.winner == self.player_number:
+                return 1.0
+            elif game_state.winner is not None:
+                return -1.0
             return 0.0
 
-        try:
-            values, _ = self.neural_net.evaluate_batch([game_state])
-            return values[0] if values else 0.0
-        except Exception:
-            return 0.0
+        # Try NN evaluation first
+        nn_value: float | None = None
+        if self.neural_net is not None:
+            try:
+                values, _ = self.neural_net.evaluate_batch([game_state])
+                nn_value = values[0] if values else None
+            except Exception:
+                pass
+
+        # Compute heuristic value if needed
+        heuristic_value: float | None = None
+        need_heuristic = (
+            self._heuristic_blend_alpha is not None or
+            (nn_value is None and self._heuristic_fallback_enabled)
+        )
+
+        if need_heuristic:
+            heuristic_ai = self._ensure_heuristic_evaluator()
+            if heuristic_ai is not None:
+                try:
+                    heuristic_ai.player_number = self.player_number
+                    raw_score = heuristic_ai.evaluate_position(game_state)
+                    heuristic_value = self._normalize_heuristic_score(raw_score)
+                except Exception:
+                    pass
+
+        # Compute final value
+        if nn_value is not None and heuristic_value is not None:
+            alpha = (
+                self._heuristic_blend_alpha
+                if self._heuristic_blend_alpha is not None
+                else 1.0
+            )
+            return alpha * nn_value + (1.0 - alpha) * heuristic_value
+        elif nn_value is not None:
+            return nn_value
+        elif heuristic_value is not None:
+            return heuristic_value
+        return 0.0
 
     def reset_for_new_game(self, *, rng_seed: int | None = None) -> None:
         """Reset state for a new game.
