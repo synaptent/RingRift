@@ -103,6 +103,43 @@ logger = setup_script_logging("run_distributed_tournament")
 
 
 # ============================================================================
+# Device Detection
+# ============================================================================
+
+def get_compute_device() -> str:
+    """Detect available compute device: cuda, mps, or cpu."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except ImportError:
+        pass
+    return "cpu"
+
+
+def get_safe_max_workers(requested_workers: int) -> tuple[int, str | None]:
+    """Get safe number of workers based on device.
+
+    MPS (Apple Silicon) has threading issues with PyTorch - multiple threads
+    accessing the MPS context can cause deadlocks. CUDA handles threading fine.
+
+    Returns:
+        Tuple of (safe_worker_count, warning_message_or_none)
+    """
+    device = get_compute_device()
+
+    if device == "mps" and requested_workers > 1:
+        return 1, (
+            f"MPS device detected - limiting workers to 1 (requested: {requested_workers}). "
+            "MPS has threading limitations with PyTorch. Use CUDA for parallel execution."
+        )
+
+    return requested_workers, None
+
+
+# ============================================================================
 # Data Classes
 # ============================================================================
 
@@ -741,7 +778,13 @@ class DistributedTournament:
         self.tiers = sorted(tiers, key=lambda t: int(t[1:]))
         self.games_per_matchup = games_per_matchup
         self.board_type = board_type
-        self.max_workers = max_workers
+
+        # Check device and limit workers if needed (MPS has threading issues)
+        safe_workers, worker_warning = get_safe_max_workers(max_workers)
+        if worker_warning:
+            logger.warning(worker_warning)
+        self.max_workers = safe_workers
+
         self.output_dir = Path(output_dir)
         self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
         self.nn_model_id = nn_model_id
