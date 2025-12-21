@@ -3442,6 +3442,28 @@ def train_model(
                         version_path,
                     )
 
+            # Knowledge distillation check (2025-12)
+            # Distills ensemble knowledge from best checkpoints into current model
+            if enhancements_manager is not None:
+                # Set checkpoint directory so distillation can find teacher models
+                enhancements_manager.set_checkpoint_dir(checkpoint_dir)
+
+                if enhancements_manager.should_distill(epoch + 1):
+                    if not distributed or is_main_process():
+                        logger.info(
+                            f"[Distillation] Triggering ensemble distillation at epoch {epoch+1}"
+                        )
+                        # Use the training dataloader for distillation
+                        distillation_success = enhancements_manager.run_distillation(
+                            current_epoch=epoch + 1,
+                            dataloader=train_loader,
+                        )
+                        if distillation_success:
+                            logger.info(
+                                f"[Distillation] Epoch {epoch+1}: Successfully distilled "
+                                "ensemble knowledge into model"
+                            )
+
             # Beat heartbeat at end of each epoch to signal health
             if heartbeat_monitor is not None:
                 heartbeat_monitor.beat()
