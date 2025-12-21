@@ -253,6 +253,7 @@ def extract_mcts_visit_distribution(
 # Re-export create_initial_state from the lightweight module for backwards compatibility
 # Using this module directly loads torch; for torch-free imports, use:
 #   from app.training.initial_state import create_initial_state
+from app.training.initial_state import create_initial_state
 
 
 def calculate_outcome(state, player_number, depth):
