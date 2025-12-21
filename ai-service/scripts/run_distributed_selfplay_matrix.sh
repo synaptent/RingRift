@@ -108,8 +108,14 @@ done
 echo
 
 # Build job list (board x players combinations)
-# NOTE: hexagonal excluded due to MPS crash
-BOARD_TYPES=(square8 square19)
+# NOTE: hexagonal has MPS adaptive pooling crash on Apple Silicon.
+# This is NOT an issue on cluster (GH200/H100 Linux nodes).
+# To exclude hex boards locally on macOS, set SKIP_HEX_BOARDS=true
+if [[ "${SKIP_HEX_BOARDS:-false}" == "true" ]]; then
+  BOARD_TYPES=(square8 square19)
+else
+  BOARD_TYPES=(square8 square19 hex8 hexagonal)
+fi
 PLAYER_COUNTS=(2 3 4)
 
 declare -a JOBS=()
@@ -135,6 +141,16 @@ SQUARE8_MAX_MOVES_4P="${SQUARE8_MAX_MOVES_4P:-250}"
 SQUARE19_MAX_MOVES_2P="${SQUARE19_MAX_MOVES_2P:-350}"
 SQUARE19_MAX_MOVES_3P="${SQUARE19_MAX_MOVES_3P:-450}"
 SQUARE19_MAX_MOVES_4P="${SQUARE19_MAX_MOVES_4P:-550}"
+
+# Hex8 (radius 8 hexagonal) - similar complexity to square8
+HEX8_MAX_MOVES_2P="${HEX8_MAX_MOVES_2P:-200}"
+HEX8_MAX_MOVES_3P="${HEX8_MAX_MOVES_3P:-250}"
+HEX8_MAX_MOVES_4P="${HEX8_MAX_MOVES_4P:-300}"
+
+# Hexagonal (standard 469-space board) - long games, needs high limits
+HEXAGONAL_MAX_MOVES_2P="${HEXAGONAL_MAX_MOVES_2P:-800}"
+HEXAGONAL_MAX_MOVES_3P="${HEXAGONAL_MAX_MOVES_3P:-1000}"
+HEXAGONAL_MAX_MOVES_4P="${HEXAGONAL_MAX_MOVES_4P:-1200}"
 
 BASE_SEED="${BASE_SEED:-1764142864}"
 

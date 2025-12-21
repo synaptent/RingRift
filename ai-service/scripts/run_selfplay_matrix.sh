@@ -2,8 +2,8 @@
 #
 # Sequential self-play soak matrix runner.
 #
-# Runs mixed-engine self-play soaks for all combinations of:
-#   - board_type ∈ {square8, square19, hexagonal}
+# Runs mixed-engine self-play soaks for all 12 combinations of:
+#   - board_type ∈ {square8, square19, hex8, hexagonal}
 #   - num_players ∈ {2, 3, 4}
 # using the "light" difficulty band (Random/Heuristic/low-depth Minimax),
 # and records:
@@ -13,14 +13,21 @@
 # All runs are sequential (no background jobs) to keep memory usage bounded.
 #
 # Tunable via environment variables:
-#   GAMES_2P / GAMES_3P / GAMES_4P      – games per config (defaults 10/6/4)
-#   MAX_MOVES_2P / _3P / _4P            – max moves per game (200/250/300)
-#   BASE_SEED                           – base RNG seed (default 1764142864)
-#   RINGRIFT_SKIP_SHADOW_CONTRACTS      – forwarded as-is (default true)
+#   GAMES_2P / GAMES_3P / GAMES_4P                – games per config (defaults 5/3/2)
+#   <BOARD>_MAX_MOVES_<N>P                        – board-specific max moves
+#   BASE_SEED                                     – base RNG seed (default 1764142864)
+#   RINGRIFT_SKIP_SHADOW_CONTRACTS                – forwarded as-is (default true)
+#   SKIP_HEX_BOARDS                               – set true to skip hex boards on macOS
 #
 # Usage (from ai-service/):
 #   chmod +x scripts/run_selfplay_matrix.sh
 #   PYTHONPATH=. scripts/run_selfplay_matrix.sh
+#
+# For cluster (GH200/H100):
+#   PYTHONPATH=. scripts/run_selfplay_matrix.sh
+#
+# For local macOS (skip hex due to MPS issues):
+#   SKIP_HEX_BOARDS=true PYTHONPATH=. scripts/run_selfplay_matrix.sh
 
 set -euo pipefail
 
@@ -32,9 +39,14 @@ export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
-# NOTE: hexagonal is excluded due to PyTorch MPS adaptive pooling crash
-# on Apple Silicon. Re-add once neural_net.py architecture is fixed.
-BOARD_TYPES=(square8 square19)
+# NOTE: hexagonal had MPS adaptive pooling crash on Apple Silicon.
+# This is NOT an issue on cluster (GH200/H100 Linux nodes).
+# To exclude hex boards locally on macOS, set SKIP_HEX_BOARDS=true
+if [[ "${SKIP_HEX_BOARDS:-false}" == "true" ]]; then
+  BOARD_TYPES=(square8 square19)
+else
+  BOARD_TYPES=(square8 square19 hex8 hexagonal)
+fi
 PLAYER_COUNTS=(2 3 4)
 
 # Conservative defaults to avoid memory exhaustion
@@ -52,6 +64,16 @@ SQUARE19_MAX_MOVES_2P="${SQUARE19_MAX_MOVES_2P:-350}"
 SQUARE19_MAX_MOVES_3P="${SQUARE19_MAX_MOVES_3P:-450}"
 SQUARE19_MAX_MOVES_4P="${SQUARE19_MAX_MOVES_4P:-550}"
 
+# Hex8 (radius 8 hexagonal) - similar complexity to square8
+HEX8_MAX_MOVES_2P="${HEX8_MAX_MOVES_2P:-200}"
+HEX8_MAX_MOVES_3P="${HEX8_MAX_MOVES_3P:-250}"
+HEX8_MAX_MOVES_4P="${HEX8_MAX_MOVES_4P:-300}"
+
+# Hexagonal (standard 469-space board) - long games, needs high limits
+HEXAGONAL_MAX_MOVES_2P="${HEXAGONAL_MAX_MOVES_2P:-800}"
+HEXAGONAL_MAX_MOVES_3P="${HEXAGONAL_MAX_MOVES_3P:-1000}"
+HEXAGONAL_MAX_MOVES_4P="${HEXAGONAL_MAX_MOVES_4P:-1200}"
+
 BASE_SEED="${BASE_SEED:-1764142864}"
 
 LOG_DIR="logs/selfplay_matrix"
@@ -62,10 +84,13 @@ echo "Starting self-play soak matrix..."
 echo "  Boards:    ${BOARD_TYPES[*]}"
 echo "  Players:   ${PLAYER_COUNTS[*]}"
 echo "  Games:     2p=${GAMES_2P}, 3p=${GAMES_3P}, 4p=${GAMES_4P}"
-echo "  Max moves: square8  2p=${SQUARE8_MAX_MOVES_2P} 3p=${SQUARE8_MAX_MOVES_3P} 4p=${SQUARE8_MAX_MOVES_4P}"
-echo "             square19 2p=${SQUARE19_MAX_MOVES_2P} 3p=${SQUARE19_MAX_MOVES_3P} 4p=${SQUARE19_MAX_MOVES_4P}"
+echo "  Max moves:"
+echo "    square8:    2p=${SQUARE8_MAX_MOVES_2P} 3p=${SQUARE8_MAX_MOVES_3P} 4p=${SQUARE8_MAX_MOVES_4P}"
+echo "    square19:   2p=${SQUARE19_MAX_MOVES_2P} 3p=${SQUARE19_MAX_MOVES_3P} 4p=${SQUARE19_MAX_MOVES_4P}"
+echo "    hex8:       2p=${HEX8_MAX_MOVES_2P} 3p=${HEX8_MAX_MOVES_3P} 4p=${HEX8_MAX_MOVES_4P}"
+echo "    hexagonal:  2p=${HEXAGONAL_MAX_MOVES_2P} 3p=${HEXAGONAL_MAX_MOVES_3P} 4p=${HEXAGONAL_MAX_MOVES_4P}"
 echo
-echo "NOTE: Mixed engine (HeuristicAI) is slow on square19. Expect ~5-10 min/game."
+echo "NOTE: hexagonal games are long (~800+ moves). Expect slow runs on large boards."
 echo
 
 idx=0

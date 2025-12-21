@@ -137,6 +137,13 @@ from app.ai.neural_net.model_factory import (
     get_model_config_for_board,
 )
 
+# Canonical move encoding (migrated from _neural_net_legacy.py)
+from app.ai.canonical_move_encoding import (
+    decode_move_for_board,
+    encode_move_for_board,
+    get_encoder_for_board,
+)
+
 # Classes and functions still in legacy module (to be migrated in later phases)
 from app.ai._neural_net_legacy import (
     _MODEL_CACHE,
@@ -145,8 +152,6 @@ from app.ai._neural_net_legacy import (
     # Cache functions
     clear_model_cache,
     create_hex_mask,
-    decode_move_for_board,
-    encode_move_for_board,
     get_cached_model_count,
 )
 
@@ -229,6 +234,7 @@ __all__ = [
     "encode_move_for_board",
     "get_action_encoder",
     "get_cached_model_count",
+    "get_encoder_for_board",
     "get_memory_tier",
     "get_model_config_for_board",
     "get_policy_size_for_board",

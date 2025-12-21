@@ -27,40 +27,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("generate_mcts_56ch")
 
 
-def extract_mcts_quality(mcts_ai: GumbelMCTSAI, valid_moves: list) -> list[tuple[int, float]]:
-    """Extract move quality labels from MCTS search results."""
-    if mcts_ai._last_search_actions is None:
-        return []
-
-    total_visits = sum(a.visit_count for a in mcts_ai._last_search_actions)
-    if total_visits == 0:
-        return []
-
-    # Build move key mapping
-    move_to_idx = {}
-    for i, move in enumerate(valid_moves):
-        key = f"{move.type.value}"
-        if hasattr(move, 'from_pos') and move.from_pos:
-            key += f"_{move.from_pos.x},{move.from_pos.y}"
-        if hasattr(move, 'to') and move.to:
-            key += f"_{move.to.x},{move.to.y}"
-        move_to_idx[key] = i
-
-    results = []
-    for action in mcts_ai._last_search_actions:
-        key = f"{action.move.type.value}"
-        if hasattr(action.move, 'from_pos') and action.move.from_pos:
-            key += f"_{action.move.from_pos.x},{action.move.from_pos.y}"
-        if hasattr(action.move, 'to') and action.move.to:
-            key += f"_{action.move.to.x},{action.move.to.y}"
-
-        if key in move_to_idx:
-            idx = move_to_idx[key]
-            visit_fraction = action.visit_count / total_visits
-            results.append((idx, visit_fraction))
-
-    results.sort(key=lambda x: -x[1])
-    return results
+# Use canonical MCTS labeling module - see app/training/mcts_labeling.py
+from app.training.mcts_labeling import extract_mcts_quality
 
 
 def generate_data(

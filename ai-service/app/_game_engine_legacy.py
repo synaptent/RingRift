@@ -85,12 +85,17 @@ __all__ = [
 from .core.zobrist import ZobristHash
 from .rules.capture_chain import enumerate_capture_moves_py
 from .rules.core import count_rings_in_play_for_player, get_effective_line_length
+from .rules.generators import LineGenerator, TerritoryGenerator
 from .rules.geometry import BoardGeometry
 from .rules.recovery import (
     apply_recovery_slide,
     get_expanded_recovery_moves,
     has_any_recovery_move,
 )
+
+# SSoT generators for move enumeration (Phase 3 consolidation)
+_line_generator = LineGenerator()
+_territory_generator = TerritoryGenerator()
 
 DEBUG_ENGINE = os.environ.get("RINGRIFT_DEBUG_ENGINE") == "1"
 STRICT_NO_MOVE_INVARIANT = os.environ.get(

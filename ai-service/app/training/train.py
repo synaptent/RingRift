@@ -1504,8 +1504,8 @@ def train_model(
                 f"blocks={v4_blocks}, filters={v4_filters}, attention_heads=4"
             )
     elif multi_player:
-        # Multi-player mode: use RingRiftCNN_v2 with multi-player value loss
-        # (dedicated RingRiftCNN_MultiPlayer not yet implemented)
+        # Multi-player mode: RingRiftCNN_v2 with per-player value head + multi_player_value_loss
+        # The model outputs [B, num_players] values; loss masks inactive player slots
         model = RingRiftCNN_v2(
             board_size=board_size,
             in_channels=14,  # 14 spatial feature channels per frame
@@ -1514,11 +1514,11 @@ def train_model(
             policy_size=policy_size,
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
+            num_players=MAX_PLAYERS,  # Explicitly set for per-player value head
         )
         if not distributed or is_main_process():
-            logger.warning(
-                "Multi-player value head not yet implemented for RingRiftCNN. "
-                f"Using standard RingRiftCNN_v2 with multi_player_value_loss for {MAX_PLAYERS} players."
+            logger.info(
+                f"Multi-player mode: RingRiftCNN_v2 with {MAX_PLAYERS}-player value head."
             )
     else:
         # RingRiftCNN_v2 for square boards

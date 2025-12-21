@@ -1068,7 +1068,9 @@ def _apply_placement_moves_batch_legacy(
                 state.cap_height[g, y, x] = 1
 
             if dest_owner not in (0, player):
-                state.buried_rings[g, dest_owner] += 1
+                # December 2025: All capped rings become buried when opponent places on top
+                # dest_cap represents how many of dest_owner's rings are at the top
+                state.buried_rings[g, dest_owner] += dest_cap
                 # Track buried ring position (December 2025 - recovery fix)
                 state.buried_at[g, dest_owner, y, x] = True
         state.rings_in_hand[g, player] -= 1

@@ -29,6 +29,19 @@ class Mutator(Protocol):
         ...
 
 
+class Generator(Protocol):
+    """
+    Interface for move generators.
+    Mirrors the TS move generation patterns.
+
+    Generators enumerate legal moves for a specific phase/context.
+    They use BoardManager (SSoT) for detection and create Move objects.
+    """
+    def generate(self, state: GameState, player: int) -> list[Move]:
+        """Return all legal moves for `player` in the given `state`."""
+        ...
+
+
 class RulesEngine(Protocol):
     """Abstract rules engine interface.
 

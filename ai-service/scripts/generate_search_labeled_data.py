@@ -45,6 +45,10 @@ logging.basicConfig(
 logger = logging.getLogger("generate_search_labeled")
 
 
+# Use canonical MCTS labeling utilities - see app/training/mcts_labeling.py
+from app.training.mcts_labeling import build_move_key, build_move_to_index_map
+
+
 def extract_mcts_quality_labels(
     mcts_ai: GumbelMCTSAI,
     valid_moves: list,
@@ -53,22 +57,15 @@ def extract_mcts_quality_labels(
 
     Returns:
         List of (move_index, visit_fraction, q_value) tuples, sorted by visits descending
+
+    Note: Uses completed_q() for q_value calculation which differs from
+    the simple value_sum/visit_count ratio in the base labeling module.
     """
     if mcts_ai._last_search_actions is None:
         return []
 
-    # Build move to index mapping
-    move_to_idx = {}
-    for i, move in enumerate(valid_moves):
-        # Create a unique key for the move
-        key = f"{move.type.value}"
-        if hasattr(move, 'from_pos') and move.from_pos:
-            key += f"_{move.from_pos.x},{move.from_pos.y}"
-        if hasattr(move, 'to') and move.to:
-            key += f"_{move.to.x},{move.to.y}"
-        move_to_idx[key] = i
+    move_to_idx = build_move_to_index_map(valid_moves)
 
-    # Get search results
     total_visits = sum(a.visit_count for a in mcts_ai._last_search_actions)
     if total_visits == 0:
         return []
@@ -77,12 +74,7 @@ def extract_mcts_quality_labels(
 
     results = []
     for action in mcts_ai._last_search_actions:
-        # Find matching move index
-        key = f"{action.move.type.value}"
-        if hasattr(action.move, 'from_pos') and action.move.from_pos:
-            key += f"_{action.move.from_pos.x},{action.move.from_pos.y}"
-        if hasattr(action.move, 'to') and action.move.to:
-            key += f"_{action.move.to.x},{action.move.to.y}"
+        key = build_move_key(action.move)
 
         if key in move_to_idx:
             idx = move_to_idx[key]
@@ -90,7 +82,6 @@ def extract_mcts_quality_labels(
             q_value = action.completed_q(max_visits)
             results.append((idx, visit_fraction, q_value))
 
-    # Sort by visit fraction descending
     results.sort(key=lambda x: -x[1])
     return results
 
