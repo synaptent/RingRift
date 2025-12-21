@@ -688,9 +688,9 @@ class TaskHeartbeatMonitor:
         self._running = False
         self._thread: threading.Thread | None = None
 
-        # Event emission
+        # Event emission - use consolidated event_emitters
         try:
-            from app.distributed.data_events import emit_task_orphaned
+            from app.coordination.event_emitters import emit_task_orphaned
             self._emit_orphaned = emit_task_orphaned
         except ImportError:
             self._emit_orphaned = None
@@ -1744,9 +1744,11 @@ def wire_task_coordinator_events() -> TaskCoordinator:
     coordinator = get_coordinator()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        # Use unified event router (consolidated from data_events)
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType  # Types still needed
 
-        bus = get_event_bus()
+        router = get_router()
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -1797,13 +1799,13 @@ def wire_task_coordinator_events() -> TaskCoordinator:
             if task_id:
                 coordinator.unregister_task(task_id)
 
-        bus.subscribe(DataEventType.TASK_SPAWNED, _on_task_spawned)
-        bus.subscribe(DataEventType.TASK_HEARTBEAT, _on_task_heartbeat)
-        bus.subscribe(DataEventType.TASK_COMPLETED, _on_task_completed)
-        bus.subscribe(DataEventType.TASK_FAILED, _on_task_failed)
-        bus.subscribe(DataEventType.TASK_CANCELLED, _on_task_cancelled)
+        router.subscribe(DataEventType.TASK_SPAWNED.value, _on_task_spawned)
+        router.subscribe(DataEventType.TASK_HEARTBEAT.value, _on_task_heartbeat)
+        router.subscribe(DataEventType.TASK_COMPLETED.value, _on_task_completed)
+        router.subscribe(DataEventType.TASK_FAILED.value, _on_task_failed)
+        router.subscribe(DataEventType.TASK_CANCELLED.value, _on_task_cancelled)
 
-        logger.info("[TaskCoordinator] Wired to event bus (TASK_SPAWNED, TASK_HEARTBEAT, TASK_COMPLETED, TASK_FAILED, TASK_CANCELLED)")
+        logger.info("[TaskCoordinator] Wired to event router (TASK_SPAWNED, TASK_HEARTBEAT, TASK_COMPLETED, TASK_FAILED, TASK_CANCELLED)")
 
     except ImportError:
         logger.warning("[TaskCoordinator] data_events not available, running without event bus")
