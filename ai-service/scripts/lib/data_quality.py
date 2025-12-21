@@ -40,11 +40,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
+
+# Emit runtime deprecation warning on import
+warnings.warn(
+    "scripts.lib.data_quality is deprecated. "
+    "Use app.quality.UnifiedQualityScorer for new code. "
+    "This module will be removed in Q1 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 
