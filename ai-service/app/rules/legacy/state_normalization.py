@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.rules.legacy._deprecation import deprecated_legacy
+
 logger = logging.getLogger(__name__)
 
 # Legacy status values and their canonical equivalents
@@ -70,6 +72,7 @@ LEGACY_PHASE_MAPPING: dict[str, str] = {
 }
 
 
+@deprecated_legacy()
 def normalize_legacy_status(status: str) -> str:
     """Normalize a legacy game status to canonical form.
 
@@ -92,6 +95,7 @@ def normalize_legacy_status(status: str) -> str:
     return status.lower()
 
 
+@deprecated_legacy()
 def normalize_legacy_phase(phase: str) -> str:
     """Normalize a legacy game phase to canonical form.
 
@@ -121,6 +125,7 @@ def normalize_legacy_phase(phase: str) -> str:
     return raw.lower()
 
 
+@deprecated_legacy()
 def normalize_legacy_state(state_dict: dict[str, Any]) -> dict[str, Any]:
     """Normalize a legacy game state dictionary to canonical form.
 
@@ -173,6 +178,7 @@ def normalize_legacy_state(state_dict: dict[str, Any]) -> dict[str, Any]:
     return state_dict
 
 
+@deprecated_legacy()
 def infer_phase_from_moves(moves: list[dict[str, Any]]) -> str | None:
     """Infer the current game phase from move history.
 

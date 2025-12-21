@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Final
 
+from app.rules.legacy._deprecation import deprecated_legacy
+
 logger = logging.getLogger(__name__)
 
 # Mapping from legacy move type names to canonical equivalents
@@ -65,6 +67,7 @@ LEGACY_TO_CANONICAL_MOVE_TYPE: Final[dict[str, str]] = {
 _LEGACY_MOVE_TYPES: Final[frozenset[str]] = frozenset(LEGACY_TO_CANONICAL_MOVE_TYPE.keys())
 
 
+@deprecated_legacy()
 def is_legacy_move_type(move_type: str) -> bool:
     """Check if a move type string is a legacy name.
 
@@ -77,6 +80,7 @@ def is_legacy_move_type(move_type: str) -> bool:
     return move_type.upper() in _LEGACY_MOVE_TYPES
 
 
+@deprecated_legacy()
 def convert_legacy_move_type(move_type: str, warn: bool = True) -> str:
     """Convert a legacy move type to its canonical equivalent.
 

@@ -23,6 +23,8 @@ import logging
 import warnings
 from typing import TYPE_CHECKING
 
+from app.rules.legacy._deprecation import deprecated_legacy
+
 if TYPE_CHECKING:
     from app.models import GameState
 
