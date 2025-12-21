@@ -106,7 +106,7 @@ def has_coordination() -> bool:
     return _HAS_COORDINATION
 
 
-def get_task_types():
+def get_task_types() -> type | None:
     """Get the TaskType enum if available.
 
     Returns:
@@ -115,7 +115,7 @@ def get_task_types():
     return _TaskType
 
 
-def get_orchestrator_roles():
+def get_orchestrator_roles() -> type | None:
     """Get the OrchestratorRole enum if available.
 
     Returns:
@@ -476,7 +476,7 @@ except ImportError:
     pass
 
 
-def get_queue_types():
+def get_queue_types() -> type | None:
     """Get the QueueType enum if available."""
     return _QueueType
 
@@ -566,7 +566,7 @@ def has_sync_lock() -> bool:
     return _sync_lock is not None
 
 
-def get_sync_lock_context():
+def get_sync_lock_context() -> Any | None:
     """Get the sync_lock context manager if available.
 
     Returns:
@@ -633,7 +633,7 @@ def has_bandwidth_manager() -> bool:
     return _request_bandwidth is not None
 
 
-def get_transfer_priorities():
+def get_transfer_priorities() -> type | None:
     """Get the TransferPriority enum if available."""
     return _TransferPriority
 
@@ -674,7 +674,7 @@ def release_bandwidth_safe(host: str) -> None:
         logger.warning(f"Bandwidth release failed for {host}: {e}")
 
 
-def get_bandwidth_context():
+def get_bandwidth_context() -> Any | None:
     """Get the bandwidth_allocation context manager if available."""
     return _bandwidth_allocation
 
@@ -871,7 +871,7 @@ def subscribe_process_safe(process_name: str | None = None) -> bool:
         return False
 
 
-def get_event_poller_class():
+def get_event_poller_class() -> type | None:
     """Get the CrossProcessEventPoller class if available."""
     return _CrossProcessEventPoller
 
@@ -911,7 +911,7 @@ def has_resource_targets() -> bool:
     return _get_resource_targets is not None
 
 
-def get_resource_targets_safe():
+def get_resource_targets_safe() -> Any | None:
     """Safely get the resource target manager."""
     if _get_resource_targets is None:
         return None
@@ -921,7 +921,7 @@ def get_resource_targets_safe():
         return None
 
 
-def get_host_targets_safe(host: str):
+def get_host_targets_safe(host: str) -> Any | None:
     """Safely get targets for a specific host."""
     if _get_host_targets is None:
         return None
