@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 """Cross-board candidate-vs-baseline parity gate for AI models.
 
+.. deprecated:: 2025-12-20
+    This script is now consolidated into unified_promotion_daemon.py.
+    Use the parity-gate subcommand instead:
+        python scripts/unified_promotion_daemon.py parity-gate --player1 nn --player2 heuristic
+
+    This standalone script remains for backward compatibility but will emit
+    a deprecation warning when run directly.
+
 This script is a lightweight wrapper around ``evaluate_ai_models.py`` that:
 
 - Runs a small evaluation matrix of candidate vs baseline AIs across boards.
@@ -15,6 +23,9 @@ clearly worse than the current baseline on the boards we care about.
 The implementation focuses on core decision logic and JSON shape so that unit
 tests can exercise the gate without running expensive tournaments. The CLI
 path can be used in ad-hoc workflows and CI once wired into the pipeline.
+
+Preferred usage:
+    python scripts/unified_promotion_daemon.py parity-gate --player1 nn --player2 heuristic
 """
 
 from __future__ import annotations
@@ -270,6 +281,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    # Only show deprecation warning when run directly (not when imported)
+    if argv is None:
+        import warnings
+        warnings.warn(
+            "run_parity_promotion_gate.py is deprecated. "
+            "Use 'unified_promotion_daemon.py parity-gate' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        print("WARNING: This script is deprecated. Use 'unified_promotion_daemon.py parity-gate' instead.\n")
+
     args = parse_args(argv)
 
     # Build matrix specs from requested boards.
