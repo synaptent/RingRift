@@ -135,6 +135,7 @@ def replay_with_legacy_fallback(
         from app.rules import replay_game_canonical
 
         final_state = replay_game_canonical(game_record)
+        _record_replay_result(used_legacy=False, success=True)
         return ReplayResult(
             success=True,
             final_state=final_state,
@@ -190,6 +191,12 @@ def replay_with_legacy_fallback(
             f"Game ID: {game_record.get('game_id', 'unknown')}"
         )
 
+        # Determine reason for legacy fallback
+        reason = "fallback"
+        if schema_version is not None and schema_version in LEGACY_SCHEMA_VERSIONS:
+            reason = f"schema_v{schema_version}"
+        _record_replay_result(used_legacy=True, success=True, reason=reason)
+
         return ReplayResult(
             success=True,
             final_state=final_state,
@@ -201,6 +208,8 @@ def replay_with_legacy_fallback(
         error_msg = f"Legacy replay also failed: {legacy_error}"
         warnings.append(error_msg)
         logger.error(f"LEGACY_FALLBACK_FAILED: {error_msg}")
+
+        _record_replay_result(used_legacy=True, success=False)
 
         if strict:
             raise ValueError(
@@ -292,16 +301,112 @@ def _replay_with_legacy_engine(game_record: dict[str, Any]) -> GameState:
     return state
 
 
+# =============================================================================
+# Legacy Replay Metrics Tracking
+# =============================================================================
+
+# Thread-safe counters for replay metrics
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime
+
+
+@dataclass
+class LegacyReplayMetrics:
+    """Thread-safe metrics for legacy replay tracking."""
+
+    legacy_replays: int = 0
+    canonical_replays: int = 0
+    fallback_replays: int = 0  # Started canonical, fell back to legacy
+    failed_replays: int = 0
+    legacy_by_reason: dict[str, int] = field(default_factory=dict)
+    last_reset: str = field(default_factory=lambda: datetime.now().isoformat())
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def record_canonical(self) -> None:
+        """Record a successful canonical replay."""
+        with self._lock:
+            self.canonical_replays += 1
+
+    def record_legacy(self, reason: str = "unknown") -> None:
+        """Record a legacy replay with reason."""
+        with self._lock:
+            self.legacy_replays += 1
+            self.legacy_by_reason[reason] = self.legacy_by_reason.get(reason, 0) + 1
+
+    def record_fallback(self) -> None:
+        """Record a fallback from canonical to legacy."""
+        with self._lock:
+            self.fallback_replays += 1
+            self.legacy_replays += 1
+
+    def record_failure(self) -> None:
+        """Record a failed replay attempt."""
+        with self._lock:
+            self.failed_replays += 1
+
+    def to_dict(self) -> dict[str, Any]:
+        """Export metrics as dictionary."""
+        with self._lock:
+            total = self.canonical_replays + self.legacy_replays
+            return {
+                "legacy_replays_total": self.legacy_replays,
+                "canonical_replays_total": self.canonical_replays,
+                "fallback_replays": self.fallback_replays,
+                "failed_replays": self.failed_replays,
+                "legacy_fallback_rate": (
+                    self.legacy_replays / total if total > 0 else 0.0
+                ),
+                "legacy_by_reason": dict(self.legacy_by_reason),
+                "last_reset": self.last_reset,
+                "total_replays": total,
+            }
+
+    def reset(self) -> None:
+        """Reset all counters."""
+        with self._lock:
+            self.legacy_replays = 0
+            self.canonical_replays = 0
+            self.fallback_replays = 0
+            self.failed_replays = 0
+            self.legacy_by_reason.clear()
+            self.last_reset = datetime.now().isoformat()
+
+
+# Global metrics instance
+_replay_metrics = LegacyReplayMetrics()
+
+
 def get_legacy_replay_stats() -> dict[str, Any]:
     """Get statistics about legacy replay usage.
 
     Returns:
-        Dictionary with legacy replay statistics (placeholder for metrics)
+        Dictionary with legacy replay statistics
     """
-    # TODO: Implement metrics collection for legacy replay usage
-    return {
-        "legacy_replays_total": 0,
-        "canonical_replays_total": 0,
-        "legacy_fallback_rate": 0.0,
-        "note": "Metrics collection not yet implemented",
-    }
+    return _replay_metrics.to_dict()
+
+
+def reset_legacy_replay_stats() -> None:
+    """Reset legacy replay statistics."""
+    _replay_metrics.reset()
+    logger.info("LEGACY_REPLAY_STATS: Metrics reset")
+
+
+def _record_replay_result(
+    used_legacy: bool,
+    success: bool,
+    reason: str | None = None,
+) -> None:
+    """Internal helper to record replay results.
+
+    Args:
+        used_legacy: Whether legacy replay was used
+        success: Whether the replay succeeded
+        reason: Reason for legacy usage (e.g., "old_schema", "hex_geometry")
+    """
+    if not success:
+        _replay_metrics.record_failure()
+    elif used_legacy:
+        _replay_metrics.record_legacy(reason or "fallback")
+    else:
+        _replay_metrics.record_canonical()

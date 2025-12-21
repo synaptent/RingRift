@@ -8,6 +8,23 @@ that:
 2. **Legacy code paths** are isolated and clearly marked for future deprecation
 3. **Old game replays** can still be executed without breaking changes
 
+Version Compatibility Table:
+    | Schema Version | Status      | Notes                                         |
+    |----------------|-------------|-----------------------------------------------|
+    | v1-v7          | LEGACY      | Requires legacy replay; may have move bugs    |
+    | v8             | TRANSITIONAL| Hex geometry changed (radius 10 → 12)         |
+    | v9+            | CANONICAL   | Full canonical rules; use for all new games   |
+
+Board-Specific Legacy Considerations:
+    - **square8/square19**: Legacy games (v1-v7) may have incorrect phase transitions
+    - **hexagonal**: Games before v8 used old hex geometry (radius 10 = 331 cells)
+    - **hex8**: Only available in v8+; always canonical
+
+Training Data Implications:
+    - Canonical training requires v9+ schema OR validated v8 games
+    - Legacy games can be used with `replay_with_legacy_fallback()` but may have issues
+    - See TRAINING_DATA_REGISTRY.md for canonical database requirements
+
 Usage:
     # For replaying games that may use legacy rules
     from app.rules.legacy import (
