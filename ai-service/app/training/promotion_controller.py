@@ -68,12 +68,13 @@ except ImportError:
 
 # Event bus integration for auto-promotion on Elo changes (December 2025)
 try:
-    from app.distributed.data_events import DataEventType, get_event_bus
+    from app.coordination.event_router import get_router
+    from app.distributed.data_events import DataEventType
     HAS_EVENT_BUS = True
 except ImportError:
     HAS_EVENT_BUS = False
     DataEventType = None
-    get_event_bus = None
+    get_router = None
 
 # Distributed locking for cross-node coordination (December 2025)
 try:
@@ -251,7 +252,7 @@ class PromotionController:
             return True
 
         try:
-            bus = get_event_bus()
+            router = get_router()
 
             async def on_elo_significant_change(event):
                 """Handle significant Elo changes for auto-promotion evaluation."""
@@ -269,7 +270,7 @@ class PromotionController:
                     )
                     self._pending_promotion_checks[model_id] = elo_delta
 
-            bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, on_elo_significant_change)
+            router.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE.value, on_elo_significant_change)
             self._event_subscribed = True
             logger.info("[PromotionController] Subscribed to ELO_SIGNIFICANT_CHANGE events")
             return True
@@ -754,10 +755,10 @@ class PromotionController:
     def _notify_event_bus(self, payload: dict[str, Any]) -> None:
         """Publish promotion event to the data event bus."""
         try:
+            from app.coordination.event_router import get_router
             from app.distributed.data_events import (
                 DataEvent,
                 DataEventType,
-                get_event_bus,
             )
 
             event = DataEvent(
@@ -766,14 +767,14 @@ class PromotionController:
                 source="promotion_controller",
             )
 
-            bus = get_event_bus()
+            router = get_router()
             import asyncio
             try:
                 asyncio.get_running_loop()  # Verify we're in async context
-                asyncio.create_task(bus.publish(event))
+                asyncio.create_task(router.publish(event))
             except RuntimeError:
-                if hasattr(bus, 'publish_sync'):
-                    bus.publish_sync(event)
+                if hasattr(router, 'publish_sync'):
+                    router.publish_sync(event)
 
             logger.debug("Published MODEL_PROMOTED event to event bus")
         except Exception as e:

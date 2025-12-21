@@ -1056,10 +1056,11 @@ def wire_evaluation_to_feedback() -> bool:
         return True
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
 
-        bus = get_event_bus()
-        bus.subscribe(DataEventType.EVALUATION_COMPLETED, _on_evaluation_completed)
+        router = get_router()
+        router.subscribe(DataEventType.EVALUATION_COMPLETED.value, _on_evaluation_completed)
         _evaluation_watcher_active = True
         logger.info("[FeedbackAccelerator] Subscribed to EVALUATION_COMPLETED events")
         return True
@@ -1076,10 +1077,11 @@ def unwire_evaluation_from_feedback() -> None:
         return
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
 
-        bus = get_event_bus()
-        bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, _on_evaluation_completed)
+        router = get_router()
+        router.unsubscribe(DataEventType.EVALUATION_COMPLETED.value, _on_evaluation_completed)
         _evaluation_watcher_active = False
         logger.info("[FeedbackAccelerator] Unsubscribed from EVALUATION_COMPLETED events")
     except Exception:

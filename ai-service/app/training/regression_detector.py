@@ -568,8 +568,8 @@ def get_regression_detector(
     # Connect to event bus if requested and not already connected
     if connect_event_bus and _detector_instance._event_bus is None:
         try:
-            from app.distributed.data_events import get_event_bus
-            _detector_instance.set_event_bus(get_event_bus())
+            from app.coordination.event_router import get_router
+            _detector_instance.set_event_bus(get_router())
         except ImportError:
             pass  # Event bus not available
 

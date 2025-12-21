@@ -1963,21 +1963,15 @@ def generate_dataset_gpu_parallel(
                     to_pos = move_dict.get("to")
                     from_pos = move_dict.get("from")
 
-                    # Map GPU move type strings to MoveType enum
+                    # Normalize legacy aliases and map to canonical MoveType enum
                     from app.models import MoveType as CPUMoveType
-                    move_type_map = {
-                        "place_ring": CPUMoveType.PLACE_RING,
-                        "move_stack": CPUMoveType.MOVE_STACK,
-                        "overtaking_capture": CPUMoveType.OVERTAKING_CAPTURE,
-                        "chain_capture": CPUMoveType.CHAIN_CAPTURE,
-                        "line_formation": CPUMoveType.LINE_FORMATION,
-                        "territory_claim": CPUMoveType.TERRITORY_CLAIM,
-                        "skip_capture": CPUMoveType.SKIP_CAPTURE,
-                        "recovery_slide": CPUMoveType.RECOVERY_SLIDE,
-                    }
-                    cpu_move_type = move_type_map.get(
-                        move_type_str, CPUMoveType.PLACE_RING
-                    )
+                    from app.rules.legacy.move_type_aliases import convert_legacy_move_type
+
+                    normalized_type = convert_legacy_move_type(move_type_str, warn=False)
+                    try:
+                        cpu_move_type = CPUMoveType(normalized_type)
+                    except ValueError:
+                        cpu_move_type = CPUMoveType.PLACE_RING
 
                     # Create Move object with required fields
                     move = Move(

@@ -188,13 +188,14 @@ except ImportError:
 # Circuit breaker for training fault tolerance (2025-12)
 try:
     from app.distributed.circuit_breaker import CircuitState, get_training_breaker
-    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
+    from app.coordination.event_router import get_router
+    from app.distributed.data_events import DataEvent, DataEventType
     HAS_CIRCUIT_BREAKER = True
     HAS_EVENT_BUS = True
 except ImportError:
     get_training_breaker = None
     CircuitState = None
-    get_event_bus = None
+    get_router = None
     DataEvent = None
     DataEventType = None
     HAS_CIRCUIT_BREAKER = False
@@ -2306,10 +2307,10 @@ def train_model(
     _max_circuit_breaker_rollbacks = training_state.max_circuit_breaker_rollbacks
 
     # Publish training started event (2025-12)
-    if HAS_EVENT_BUS and get_event_bus is not None and (not distributed or is_main_process()):
+    if HAS_EVENT_BUS and get_router is not None and (not distributed or is_main_process()):
         try:
-            event_bus = get_event_bus()
-            event_bus.publish_sync(DataEvent(
+            router = get_router()
+            router.publish_sync(DataEvent(
                 event_type=DataEventType.TRAINING_STARTED,
                 payload={
                     "total_epochs": config.epochs_per_iter,
@@ -3076,9 +3077,9 @@ def train_model(
                 logger.info(epoch_log)
 
                 # Publish training progress event to EventBus (2025-12)
-                if HAS_EVENT_BUS and get_event_bus is not None:
+                if HAS_EVENT_BUS and get_router is not None:
                     try:
-                        event_bus = get_event_bus()
+                        router = get_router()
                         event_payload = {
                             "epoch": epoch + 1,
                             "total_epochs": config.epochs_per_iter,
@@ -3091,7 +3092,7 @@ def train_model(
                         # Add hot buffer stats if available
                         if hot_buffer is not None:
                             event_payload["hot_buffer"] = hot_buffer.get_statistics()
-                        event_bus.publish_sync(DataEvent(
+                        router.publish_sync(DataEvent(
                             event_type=DataEventType.TRAINING_PROGRESS,
                             payload=event_payload,
                             source="train",
@@ -3419,10 +3420,10 @@ def train_model(
                 logger.info("Training completed. Final checkpoint saved.")
 
                 # Publish training completed event (2025-12)
-                if HAS_EVENT_BUS and get_event_bus is not None:
+                if HAS_EVENT_BUS and get_router is not None:
                     try:
-                        event_bus = get_event_bus()
-                        event_bus.publish_sync(DataEvent(
+                        router = get_router()
+                        router.publish_sync(DataEvent(
                             event_type=DataEventType.TRAINING_COMPLETED,
                             payload={
                                 "epochs_completed": epochs_completed,

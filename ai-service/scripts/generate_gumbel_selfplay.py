@@ -54,7 +54,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.models import AIConfig, AIType, BoardType, GamePhase, GameStatus, Move
+from app.models import AIConfig, AIType, BoardType, GamePhase, GameState, GameStatus, Move
 from app.rules.default_engine import DefaultRulesEngine
 from app.training.env import RingRiftEnv, TrainingEnvConfig, make_env
 
@@ -118,7 +118,8 @@ class GameResult:
     num_moves: int
     duration_ms: float
     moves: list[dict[str, Any]] = field(default_factory=list)
-    initial_state: dict[str, Any] | None = None
+    initial_state: GameState | None = None
+    final_state: GameState | None = None
     parity_ok: bool = True
     parity_error: str = ""
 
@@ -176,28 +177,12 @@ def serialize_move(
     move: Move,
     mcts_policy: dict[str, float] | None = None,
     value: float | None = None,
+    phase: str | None = None,
 ) -> dict[str, Any]:
     """Serialize a Move to JSON-compatible dict with optional MCTS info."""
-    move_data = {
-        "type": move.type.value,
-        "player": move.player,
-    }
-
-    if move.from_pos:
-        move_data["from"] = {"x": move.from_pos.x, "y": move.from_pos.y}
-        if hasattr(move.from_pos, 'z') and move.from_pos.z is not None:
-            move_data["from"]["z"] = move.from_pos.z
-
-    if move.to:
-        move_data["to"] = {"x": move.to.x, "y": move.to.y}
-        if hasattr(move.to, 'z') and move.to.z is not None:
-            move_data["to"]["z"] = move.to.z
-
-    if move.capture_target:
-        move_data["capture_target"] = {
-            "x": move.capture_target.x,
-            "y": move.capture_target.y,
-        }
+    move_data = move.model_dump(by_alias=True, exclude_none=True, mode="json")
+    if phase and "phase" not in move_data:
+        move_data["phase"] = phase
 
     # Add MCTS policy distribution for training
     if mcts_policy:
@@ -249,13 +234,15 @@ def generate_game(
 
     # Reset environment
     state = env.reset()
-    initial_state = state.model_dump() if hasattr(state, 'model_dump') else None
+    initial_state = (
+        state.model_copy(deep=True) if hasattr(state, "model_copy") else state
+    )
 
     moves_data = []
     max_moves = config.max_moves or get_max_moves(config.board_type, config.num_players)
 
     move_count = 0
-    while state.status == GameStatus.ACTIVE and move_count < max_moves:
+    while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = state.current_player
         ai = ai_players.get(current_player)
 
@@ -264,13 +251,13 @@ def generate_game(
             break
 
         # Get legal moves
-        legal_moves = env.get_legal_moves(state)
+        legal_moves = env.legal_moves()
         if not legal_moves:
             logger.warning(f"No legal moves at move {move_count}")
             break
 
         # AI selects move (Gumbel MCTS search)
-        selected_move = ai.get_move(state)
+        selected_move = ai.select_move(state)
         if selected_move is None:
             logger.warning(f"AI returned None move at move {move_count}")
             break
@@ -284,26 +271,27 @@ def generate_game(
             value = ai._last_root_value
 
         # Serialize move with MCTS info
-        move_data = serialize_move(selected_move, mcts_policy, value)
+        phase = (
+            state.current_phase.value
+            if hasattr(state.current_phase, "value")
+            else str(state.current_phase)
+        )
+        move_data = serialize_move(selected_move, mcts_policy, value, phase=phase)
         moves_data.append(move_data)
 
         # Apply move
-        state = env.step(selected_move)
+        state, _, done, _ = env.step(selected_move)
         move_count += 1
+        if done:
+            break
 
         if config.verbose and move_count % 50 == 0:
             logger.info(f"Game {game_idx}: move {move_count}")
 
     # Determine winner
     winner = None
-    if state.status == GameStatus.FINISHED:
-        # Find winner from scores
-        if hasattr(state, 'scores') and state.scores:
-            scores = state.scores
-            if isinstance(scores, dict):
-                winner = max(scores.keys(), key=lambda p: scores.get(p, 0))
-            elif isinstance(scores, list):
-                winner = scores.index(max(scores)) + 1
+    if state.game_status == GameStatus.FINISHED:
+        winner = state.winner
 
     duration_ms = (time.time() - start_time) * 1000
 
@@ -312,11 +300,12 @@ def generate_game(
         board_type=config.board_type,
         num_players=config.num_players,
         winner=winner,
-        status=state.status.value,
+        status=state.game_status.value,
         num_moves=move_count,
         duration_ms=duration_ms,
         moves=moves_data,
         initial_state=initial_state,
+        final_state=state,
     )
 
 
@@ -373,27 +362,35 @@ def save_game_to_db(result: GameResult, db: Any) -> None:
     if not HAS_GAME_REPLAY_DB:
         return
 
-    # Convert moves to format expected by GameReplayDB
-    from app.models import Move as MoveModel, MoveType, Position
+    if result.initial_state is None or result.final_state is None:
+        logger.warning("Missing initial/final state; skipping DB write")
+        return
 
+    from app.db.unified_recording import record_completed_game
+    from app.models import Move as MoveModel
+
+    # Convert moves to format expected by GameReplayDB
     moves = []
-    for m in result.moves:
-        move = MoveModel(
-            type=MoveType(m["type"]),
-            player=m["player"],
-        )
-        if "from" in m:
-            move.from_pos = Position(x=m["from"]["x"], y=m["from"]["y"])
-        if "to" in m:
-            move.to = Position(x=m["to"]["x"], y=m["to"]["y"])
+    for idx, m in enumerate(result.moves):
+        move_data = dict(m)
+        move_data.setdefault("id", f"{result.game_id}:{idx}")
+        move = MoveModel.model_validate(move_data)
         moves.append(move)
 
-    db.record_game(
-        game_id=result.game_id,
-        board_type=result.board_type,
-        num_players=result.num_players,
-        winner=result.winner,
+    metadata = {
+        "source": "gumbel_selfplay",
+        "board_type": result.board_type,
+        "num_players": result.num_players,
+        "winner": result.winner,
+    }
+
+    record_completed_game(
+        db=db,
+        initial_state=result.initial_state,
+        final_state=result.final_state,
         moves=moves,
+        metadata=metadata,
+        game_id=result.game_id,
     )
 
 
@@ -410,7 +407,6 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
     env_config = TrainingEnvConfig(
         board_type=board_type_enum,
         num_players=config.num_players,
-        randomize_first_player=True,
     )
     env = make_env(env_config)
 

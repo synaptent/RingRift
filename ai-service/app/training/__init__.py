@@ -93,13 +93,16 @@ __all__ = [
     "HAS_CHECKPOINTING",
     "HAS_CHECKPOINT_UNIFIED",
     "HAS_CROSSBOARD_STRENGTH",
+    "HAS_CURRICULUM",
     "HAS_DATASETS",
     "HAS_DATA_LOADERS",
     "HAS_DISTRIBUTED_HELPERS",
     "HAS_DISTRIBUTED_UNIFIED",
+    "HAS_EBMO_ONLINE",
     "HAS_ELO_WEIGHTING",
     "HAS_HOT_BUFFER",
     "HAS_INTEGRATED_ENHANCEMENTS",
+    "HAS_ONLINE_LEARNING",
     "HAS_ORCHESTRATOR",
     "HAS_PROMOTION_CONTROLLER",
     "HAS_REGRESSION_DETECTOR",
@@ -122,6 +125,11 @@ __all__ = [
     "CalibrationReport",
     "CalibrationTracker",
     "CheckpointType",
+    # Curriculum learning
+    "CurriculumController",
+    "CurriculumStage",
+    "CurriculumState",
+    "create_default_curriculum",
     "DataAugmentor",
     # Distributed helpers
     "DistributedConfig",
@@ -129,6 +137,15 @@ __all__ = [
     "DistributedTrainer",
     # Elo weighting
     "EloWeightedSampler",
+    # Online learning
+    "EBMOOnlineAI",
+    "EBMOOnlineConfig",
+    "EBMOOnlineLearner",
+    "OnlineLearningConfig",
+    "OnlineLearningMetrics",
+    "OnlineLearningStats",
+    "create_online_learner",
+    "get_online_learning_config",
     # Selfplay config
     "EngineMode",
     # Data loaders
@@ -580,3 +597,44 @@ try:
     HAS_COMPOSITE_ELO_MIGRATION = True
 except ImportError:
     HAS_COMPOSITE_ELO_MIGRATION = False
+
+# =============================================================================
+# Online Learning (December 2025)
+# =============================================================================
+# Provides continuous learning during gameplay:
+# - EBMO online learning with TD-Energy and outcome-weighted loss
+# - Rolling buffer for stability
+# - Conservative learning rates to prevent catastrophic forgetting
+
+try:
+    from app.training.online_learning import (
+        EBMOOnlineAI,
+        EBMOOnlineConfig,
+        EBMOOnlineLearner,
+        OnlineLearningConfig,
+        OnlineLearningMetrics,
+        OnlineLearningStats,
+        create_online_learner,
+        get_online_learning_config,
+        HAS_EBMO_ONLINE,
+    )
+    HAS_ONLINE_LEARNING = True
+except ImportError:
+    HAS_ONLINE_LEARNING = False
+    HAS_EBMO_ONLINE = False
+
+# =============================================================================
+# Curriculum Learning (December 2025)
+# =============================================================================
+# Provides progressive difficulty training with automatic stage advancement
+
+try:
+    from app.training.curriculum import (
+        CurriculumController,
+        CurriculumStage,
+        CurriculumState,
+        create_default_curriculum,
+    )
+    HAS_CURRICULUM = True
+except ImportError:
+    HAS_CURRICULUM = False

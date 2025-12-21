@@ -726,6 +726,36 @@ except ImportError:
     P2PIntegrationConfig = None
     P2PIntegrationManager = None
 
+# Import unified loop extensions for advanced training components (Dec 2025)
+try:
+    from app.integration.unified_loop_extensions import (
+        ExtensionConfig,
+        UnifiedLoopExtensions,
+        integrate_extensions,
+    )
+    HAS_LOOP_EXTENSIONS = True
+except ImportError:
+    HAS_LOOP_EXTENSIONS = False
+    UnifiedLoopExtensions = None
+    ExtensionConfig = None
+    integrate_extensions = None
+
+# Import evaluation → curriculum bridge for selfplay weight adjustment (Dec 2025)
+try:
+    from app.integration.evaluation_curriculum_bridge import (
+        EvaluationCurriculumBridge,
+        create_evaluation_bridge,
+        get_evaluation_bridge,
+        set_evaluation_bridge,
+    )
+    HAS_CURRICULUM_BRIDGE = True
+except ImportError:
+    HAS_CURRICULUM_BRIDGE = False
+    EvaluationCurriculumBridge = None
+    create_evaluation_bridge = None
+    get_evaluation_bridge = None
+    set_evaluation_bridge = None
+
 # =============================================================================
 # Consolidated Data Sync Modules (unified infrastructure)
 # =============================================================================
@@ -3029,6 +3059,36 @@ class UnifiedAILoop:
             self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_cluster_deploy)
             print("[UnifiedLoop] Cluster deployment subscription initialized for promoted models")
 
+        # Unified loop extensions - advanced training components (Dec 2025)
+        # Integrates: calibration, temperature scheduling, plateau detection, benchmarks
+        self.extensions: UnifiedLoopExtensions | None = None
+        if HAS_LOOP_EXTENSIONS and integrate_extensions is not None:
+            try:
+                self.extensions = integrate_extensions(self)
+                print("[UnifiedLoop] Unified loop extensions initialized (calibration, plateau detection, benchmarks)")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize loop extensions: {e}")
+
+        # Evaluation → Curriculum bridge for selfplay weight adjustment (Dec 2025)
+        # Closes the loop: eval results → curriculum weights → selfplay → training
+        self.curriculum_bridge: EvaluationCurriculumBridge | None = None
+        if HAS_CURRICULUM_BRIDGE and create_evaluation_bridge is not None:
+            try:
+                # Wire to feedback controller and local selfplay generator
+                self.curriculum_bridge = create_evaluation_bridge(
+                    feedback_controller=self.feedback,
+                    feedback_router=self.feedback_router,
+                    selfplay_coordinator=self.local_selfplay,
+                )
+                # Set global instance for access from other components
+                if set_evaluation_bridge is not None:
+                    set_evaluation_bridge(self.curriculum_bridge)
+                # Subscribe to evaluation events for weight updates
+                self.event_bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_for_curriculum)
+                print("[UnifiedLoop] Evaluation → Curriculum bridge initialized (selfplay weight adjustment)")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize curriculum bridge: {e}")
+
     def _setup_stage_event_bridge(self):
         """Bridge StageEventBus events to the main EventBus for unified coordination.
 
@@ -3697,6 +3757,32 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[Feedback] Error processing evaluation feedback: {e}")
+
+    async def _on_evaluation_for_curriculum(self, event: DataEvent):
+        """Handle evaluation completion for curriculum weight adjustment.
+
+        Forwards evaluation results to the curriculum bridge which adjusts
+        selfplay config weights based on performance trends.
+        """
+        if not self.curriculum_bridge:
+            return
+
+        try:
+            payload = event.payload
+            config_key = payload.get('config')
+            if not config_key:
+                return
+
+            # Forward to curriculum bridge for weight adjustment
+            self.curriculum_bridge.add_evaluation_result(
+                config_key=config_key,
+                elo=payload.get('elo'),
+                win_rate=payload.get('win_rate'),
+                games_played=payload.get('games_played', 0),
+            )
+
+        except Exception as e:
+            print(f"[Curriculum] Error processing evaluation for curriculum: {e}")
 
     async def _check_regression_after_evaluation(self, payload: dict[str, Any]) -> None:
         """Check for regression using centralized RegressionDetector.
@@ -7932,7 +8018,8 @@ class UnifiedAILoop:
                 "curriculum", "metrics", "health_check", "utilization_optimization",
                 "hp_tuning_sync", "external_drive_sync", "pbt", "nas",
                 "per", "cross_process_event", "health_recovery", "gauntlet_culling",
-                "elo_sync", "holdout_validation", "parity_validation", "registry_sync"
+                "elo_sync", "holdout_validation", "parity_validation", "registry_sync",
+                "extensions"
             ]
             results = await asyncio.gather(
                 self._data_collection_loop(),
@@ -7955,6 +8042,7 @@ class UnifiedAILoop:
                 self._holdout_validation_loop(),  # Phase 3.2: Continuous holdout validation
                 self._parity_validation_loop(),  # Non-blocking parity validation
                 self._registry_sync_loop(),  # Cluster-wide model registry consistency
+                self._extensions_loop(),  # Advanced training: calibration, plateau detection
                 return_exceptions=True,  # Don't crash if one loop fails
             )
             # Log any exceptions from loops
@@ -7967,11 +8055,38 @@ class UnifiedAILoop:
 
         print("[UnifiedLoop] Shutdown complete")
 
+    async def _extensions_loop(self):
+        """Run unified loop extensions (calibration, plateau detection, benchmarks).
+
+        This wrapper handles the case where extensions are not available or not
+        configured, ensuring the main loop continues without error.
+        """
+        if self.extensions is None:
+            return  # Extensions not initialized, nothing to do
+
+        try:
+            await self.extensions.run_all_loops()
+        except asyncio.CancelledError:
+            if self.extensions:
+                self.extensions.stop()
+            raise
+        except Exception as e:
+            print(f"[UnifiedLoop] Extensions loop error: {e}")
+            # Don't re-raise - let other loops continue
+
     def stop(self):
         """Request graceful shutdown."""
         self._running = False
         self._shutdown_event.set()
         self._save_state()
+
+        # Stop unified loop extensions (Dec 2025)
+        if self.extensions:
+            try:
+                self.extensions.stop()
+                print("[UnifiedLoop] Loop extensions stopped")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to stop extensions: {e}")
 
         # Stop pressure monitors (2025-12)
         if HAS_PRESSURE_MONITORS:

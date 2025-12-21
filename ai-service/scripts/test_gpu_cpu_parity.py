@@ -17,8 +17,8 @@ logging.getLogger('app.ai.gpu_parallel_games').setLevel(logging.WARNING)
 
 # GPU bookkeeping moves that CPU phase machine handles implicitly
 # Note: choose_line_option and choose_territory_option are NOT bookkeeping - they are
-# real actions that need to be matched and applied. process_line and process_territory_region
-# however are automatic on CPU when lines/territories are detected.
+# real actions that need to be matched and applied. process_line is automatic on CPU
+# when lines are detected, but territory decisions remain explicit canonical moves.
 GPU_BOOKKEEPING_MOVES = {
     'skip_capture',
     'skip_recovery',
@@ -27,7 +27,6 @@ GPU_BOOKKEEPING_MOVES = {
     'no_line_action',
     'no_territory_action',
     'process_line',  # Line processing is automatic on CPU
-    'process_territory_region',  # Territory processing is automatic on CPU
 }
 
 
@@ -227,7 +226,7 @@ def test_seed(seed: int) -> tuple[int, int, int, int, list]:
                 # Line processing moves match by type - take first available
                 matched = v
                 break
-            elif move_type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION, MoveType.TERRITORY_CLAIM):
+            elif move_type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.ELIMINATE_RINGS_FROM_STACK):
                 # Territory processing moves match by type - take first available
                 matched = v
                 break
