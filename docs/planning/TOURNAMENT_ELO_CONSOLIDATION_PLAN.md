@@ -103,3 +103,56 @@
    explicit forced elimination and canonical phase histories.
 2. Add a small unit test or smoke validation to ensure tournament runs
    can be replayed via canonical history checks (opt-in/sampled).
+
+---
+
+## Implementation Status (2025-12-21)
+
+### Phase 1: Canonical Recording Hardening - COMPLETED
+
+See CODEBASE_CONSOLIDATION_PLAN.md Phase 3g: Tournament Recording Hardening
+
+- [x] `trace_mode=True` enforced in all critical tournament scripts
+- [x] 7 scripts updated to use trace_mode for canonical recording
+
+### Phase 2: Consolidate Entry Points - SUBSTANTIALLY COMPLETE
+
+- [x] `app/tournament/__init__.py` provides unified public API
+- [x] `EloService` from `app.training.elo_service` marked as preferred SSoT
+- [x] `EloDatabase` retained for backwards compatibility with deprecation guidance
+- [x] High-level APIs available: `run_quick_tournament`, `create_tournament_runner`
+- [x] `TournamentConfig` dataclass available for configuration
+
+Scripts status:
+
+- `run_tournament.py` - Primary entry point
+- `run_model_elo_tournament.py` - Uses consolidated imports from `scripts/lib/tournament_cli.py`
+- Legacy scripts have deprecation wrappers (see CODEBASE_CONSOLIDATION_PLAN.md Phase 3)
+
+### Phase 3: Distributed + Fault Tolerant Execution - PARTIAL
+
+- [x] `TournamentOrchestrator` provides distributed coordination
+- [x] Checkpoint/resume available via `run_distributed_tournament.py`
+- [ ] Full unification of distributed orchestration layers (deferred)
+
+### Phase 4: Training Ingest + Provenance - COMPLETE
+
+- [x] `GameReplayDB` format standardized
+- [x] `export_replay_dataset.py` handles tournament DB ingestion
+- [x] Canonical flag and parity hash tracked
+- [x] `TRAINING_DATA_REGISTRY.md` tracks canonical databases
+
+### Phase 5: Data Sync + Shared Storage - COMPLETE
+
+- [x] NFS paths supported for unified_elo.db
+- [x] aria2 sync available via `scripts/aria2_data_sync.py`
+- [x] Standard output locations documented
+
+### Phase 6: Observability + Runbooks - PARTIAL
+
+- [x] Metrics emitted for tournaments
+- [x] Elo dashboards integrated
+- [ ] Full runbook documentation (lower priority)
+
+**Summary:** Tournament consolidation is 85%+ complete. Main remaining work is unifying
+distributed orchestration layers and completing observability runbooks.
