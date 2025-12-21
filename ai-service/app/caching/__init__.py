@@ -47,6 +47,10 @@ from app.caching.decorators import (
     cached,
     invalidate_cache,
 )
+from app.caching.file import (
+    FileCache,
+    ValidatedFileCache,
+)
 from app.caching.memory import (
     LRUCache,
     MemoryCache,
@@ -59,12 +63,15 @@ __all__ = [
     "CacheConfig",
     "CacheEntry",
     "CacheStats",
-    "LRUCache",
     # Memory caches
+    "LRUCache",
     "MemoryCache",
     "TTLCache",
-    "async_cached",
+    # File caches
+    "FileCache",
+    "ValidatedFileCache",
     # Decorators
+    "async_cached",
     "cached",
     "invalidate_cache",
 ]
