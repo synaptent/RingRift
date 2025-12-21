@@ -547,12 +547,12 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 ### 5.5 Parity Tests
 
-| Item                            | Status | Evidence                                               |
-| ------------------------------- | ------ | ------------------------------------------------------ |
-| Square8 canonical gate verified | ✅     | `db_health.canonical_square8.json` (canonical_ok=true) |
-| Square19 parity verified        | ✅     | Parity gate passed                                     |
-| Hex parity verified             | ✅     | Radius-12 regenerated and gated                        |
-| Parity CI gate passing          | ✅     | Contract vectors 81/81                                 |
+| Item                               | Status | Evidence                                                  |
+| ---------------------------------- | ------ | --------------------------------------------------------- |
+| Square8 2P canonical gate verified | ✅     | `db_health.canonical_square8_2p.json` (canonical_ok=true) |
+| Square19 parity verified           | ✅     | Parity gate passed                                        |
+| Hex parity verified                | ✅     | Radius-12 regenerated and gated                           |
+| Parity CI gate passing             | ✅     | Contract vectors 81/81                                    |
 
 ---
 
