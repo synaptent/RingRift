@@ -125,32 +125,39 @@ export type { ProgressSnapshot, BoardSummary, GameHistoryEntry, GameTrace } from
 
 ### 2.4 Canonical GamePhase and MoveType literals
 
-For quick reference, the following string literals come directly from the `GamePhase` and
-`MoveType` unions in `src/shared/types/game.ts` and should be treated as canonical when
-integrating with the engine:
+For quick reference, the following string literals come directly from the `GamePhase`,
+`CanonicalMoveType`, and `LegacyMoveType` unions in `src/shared/types/game.ts`.
+Only `CanonicalMoveType` should be emitted for new games; `LegacyMoveType` is
+replay-only and must be quarantined to legacy compatibility paths.
 
 ```text
 GamePhase:
   'ring_placement' | 'movement' | 'capture' | 'chain_capture' | 'line_processing' | 'territory_processing' | 'forced_elimination' | 'game_over'
 
-MoveType:
+CanonicalMoveType:
   'place_ring' | 'skip_placement' | 'no_placement_action' |
-  'move_stack' | 'move_ring' | 'build_stack' | 'no_movement_action' |
+  'move_stack' | 'no_movement_action' |
   'overtaking_capture' | 'continue_capture_segment' | 'skip_capture' |
   'recovery_slide' | 'skip_recovery' |
-  'swap_sides' |
-  'process_line' | 'choose_line_option' | // legacy alias: 'choose_line_reward'
+  'swap_sides' | // pie rule meta-move (ring_placement only)
+  'process_line' | 'choose_line_option' |
   'no_line_action' |
-  'choose_territory_option' | // legacy alias: 'process_territory_region'
+  'choose_territory_option' |
   'skip_territory_processing' | 'no_territory_action' | 'eliminate_rings_from_stack' |
   'forced_elimination' |
-  'resign' | 'timeout' |
-  'line_formation' | 'territory_claim'
+  'resign' | 'timeout'
+
+LegacyMoveType (replay-only):
+  'move_ring' | 'build_stack' |
+  'choose_line_reward' | // legacy alias of choose_line_option
+  'process_territory_region' | // legacy alias of choose_territory_option
+  'line_formation' | // @deprecated
+  'territory_claim' // @deprecated
 ```
 
 These literals are the **single source of truth** for host/UI/transport code that needs to
 branch on a particular phase or move kind. Adapters must not introduce additional ad-hoc
-string discriminants outside these sets.
+string discriminants outside these sets, and must not emit legacy move types for new games.
 
 ---
 
@@ -626,9 +633,9 @@ validateMove(state: GameState, move: Move): ValidationResult;
 // Legal moves for the current player/phase.
 // - For all phases, this returns **interactive moves only**:
 //   - ring_placement: place_ring, skip_placement (when eligible).
-//   - movement: move_stack, move_ring, overtaking_capture,
-//     continue_capture_segment.
-//   - capture / chain_capture: capture segments + skip_capture.
+//   - movement: move_stack, overtaking_capture, recovery_slide, skip_recovery.
+//   - capture: overtaking_capture, skip_capture.
+//   - chain_capture: continue_capture_segment.
 //   - line_processing: process_line / choose_line_option. (legacy alias: choose_line_reward)
 //   - territory_processing: choose_territory_option /
 //     eliminate_rings_from_stack (+ skip_territory_processing).

@@ -34,7 +34,7 @@ Status legend: `TODO` → `IN_PROGRESS` → `DONE` (or `DEFERRED` with rationale
 | ENG-01  | TS engine/types     | Add canonical `skip_recovery` support end‑to‑end                | DONE   |
 | ENG-02  | Python engine/types | Implement canonical `skip_capture` support end‑to‑end           | TODO   |
 | ENG-03  | TS engine API       | Remove/align duplicate `phaseValidation.ts` contract            | DONE   |
-| DOC-01  | Docs                | Refresh `CANONICAL_ENGINE_API.md` MoveType/phase surfaces       | TODO   |
+| DOC-01  | Docs                | Refresh `CANONICAL_ENGINE_API.md` MoveType/phase surfaces       | DONE   |
 | DOC-02  | Docs                | Update `RULES_IMPLEMENTATION_MAPPING.md` rule references        | TODO   |
 | TOOL-01 | Tooling             | Fix `npm run ssot-check` doc path drift                         | TODO   |
 | TOOL-02 | Tooling             | Make `python-parity-ssot-check` actually verify enums/contracts | TODO   |
@@ -184,3 +184,4 @@ Dependency advisories are easy to accumulate and hard to triage later. If an in�
 
 - **2025-12-11:** Created tracking doc; captured baseline `ssot-check` + `npm audit` failures.
 - **2025-12-11:** `SEC-01` DONE — bumped `jsonwebtoken` `9.0.2 → 9.0.3` (transitive `jws` updated; `npm audit --omit=dev` now clean).
+- **2025-12-21:** `DOC-01` DONE — refreshed `CANONICAL_ENGINE_API.md` to separate canonical vs legacy move types and align phase/move surfaces.

@@ -60,22 +60,31 @@ This document tracks deprecated modules and their replacements as part of the co
 
 ### Tournament/Elo
 
-| Module                             | Status | Replacement       | Notes               |
-| ---------------------------------- | ------ | ----------------- | ------------------- |
-| `app/tournament/unified_elo_db.py` | CHECK  | May be superseded | Needs investigation |
+| Module                             | Status     | Replacement                   | Notes                            |
+| ---------------------------------- | ---------- | ----------------------------- | -------------------------------- |
+| `app/tournament/unified_elo_db.py` | DEPRECATED | `app/training/elo_service.py` | Emits warning on import, Q2 2026 |
+
+### Health/Recovery Coordination
+
+| Module                                           | Status     | Replacement                                  | Notes                               |
+| ------------------------------------------------ | ---------- | -------------------------------------------- | ----------------------------------- |
+| `app/coordination/error_recovery_coordinator.py` | DEPRECATED | `app/coordination/unified_health_manager.py` | Use `get_health_manager()`, Q2 2026 |
+| `app/coordination/recovery_manager.py`           | DEPRECATED | `app/coordination/unified_health_manager.py` | Use `wire_health_events()`, Q2 2026 |
 
 ## New Unified Components (December 2025)
 
 These new facades consolidate multiple older modules:
 
-| New Component             | Location                                     | Purpose                                        |
-| ------------------------- | -------------------------------------------- | ---------------------------------------------- |
-| `UnifiedDataValidator`    | `app/training/unified_data_validator.py`     | Consolidates all data validation               |
-| `UnifiedModelStore`       | `app/training/unified_model_store.py`        | Consolidates model registry/versioning/loading |
-| `DataQualityOrchestrator` | `app/quality/data_quality_orchestrator.py`   | Centralized quality event monitoring           |
-| `NodeHealthOrchestrator`  | `app/monitoring/node_health_orchestrator.py` | Centralized health event monitoring            |
-| `PEROrchestrator`         | `app/training/per_orchestrator.py`           | PER buffer event monitoring                    |
-| `SubscriptionRegistry`    | `app/distributed/subscription_registry.py`   | Event subscription tracking                    |
+| New Component             | Location                                     | Purpose                                             |
+| ------------------------- | -------------------------------------------- | --------------------------------------------------- |
+| `UnifiedDataValidator`    | `app/training/unified_data_validator.py`     | Consolidates all data validation                    |
+| `UnifiedModelStore`       | `app/training/unified_model_store.py`        | Consolidates model registry/versioning/loading      |
+| `UnifiedHealthManager`    | `app/coordination/unified_health_manager.py` | Consolidates error recovery and health management   |
+| `DataQualityOrchestrator` | `app/quality/data_quality_orchestrator.py`   | Centralized quality event monitoring                |
+| `NodeHealthOrchestrator`  | `app/monitoring/node_health_orchestrator.py` | Centralized health event monitoring                 |
+| `PEROrchestrator`         | `app/training/per_orchestrator.py`           | PER buffer event monitoring                         |
+| `SubscriptionRegistry`    | `app/distributed/subscription_registry.py`   | Event subscription tracking                         |
+| `EloService`              | `app/training/elo_service.py`                | Consolidates Elo tracking with training integration |
 
 ## Migration Guide
 
@@ -168,3 +177,75 @@ Priority order for cleanup:
 2. `app/distributed/data_sync.py` - Wrapper module only
 3. `app/distributed/data_sync_robust.py` - Wrapper module only
 4. `app/training/distributed.py` - Complex, needs careful migration
+
+## Additional Migration Guides
+
+### Health Coordination Migration
+
+**Before (Deprecated)**
+
+```python
+# OLD: Using deprecated ErrorRecoveryCoordinator
+from app.coordination.error_recovery_coordinator import ErrorRecoveryCoordinator
+coordinator = ErrorRecoveryCoordinator()
+coordinator.track_error("training", "model_failure", ErrorSeverity.ERROR)
+if coordinator.is_circuit_broken("training"):
+    handle_failure()
+
+# OLD: Using deprecated RecoveryManager
+from app.coordination.recovery_manager import RecoveryManager
+manager = RecoveryManager()
+await manager.recover_stuck_job(work_item, expected_timeout=300)
+```
+
+**After (Current - December 2025)**
+
+```python
+# NEW: Using UnifiedHealthManager
+from app.coordination.unified_health_manager import (
+    get_health_manager,
+    wire_health_events,
+)
+
+# Wire health events at startup
+manager = wire_health_events()
+
+# Track errors (unified interface)
+manager.track_error("training", "model_failure", ErrorSeverity.ERROR)
+
+# Check circuit breaker
+if manager.is_circuit_broken("training"):
+    handle_failure()
+
+# Recover stuck job
+result = await manager.recover_stuck_job(work_item, expected_timeout=300)
+
+# Get unified health stats
+stats = manager.get_health_stats()
+```
+
+### Elo Database Migration
+
+**Before (Deprecated)**
+
+```python
+# OLD: Using deprecated unified_elo_db
+from app.tournament.unified_elo_db import get_elo_database
+db = get_elo_database()
+db.record_match_and_update(...)
+```
+
+**After (Current - December 2025)**
+
+```python
+# NEW: Using EloService (SSoT for training integration)
+from app.training.elo_service import get_elo_service
+elo = get_elo_service()
+elo.record_match(
+    participant_a=...,
+    participant_b=...,
+    winner=...,
+    board_type=...,
+    num_players=...,
+)
+```
