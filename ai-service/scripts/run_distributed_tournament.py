@@ -85,6 +85,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.ai.descent_ai import DescentAI
+from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.mcts_ai import MCTSAI
 from app.ai.minimax_ai import MinimaxAI
@@ -328,6 +329,7 @@ AI_CLASSES = {
     AIType.MINIMAX: MinimaxAI,
     AIType.MCTS: MCTSAI,
     AIType.DESCENT: DescentAI,
+    AIType.GUMBEL_MCTS: GumbelMCTSAI,
 }
 
 def _tier_to_difficulty(tier: str) -> int:
