@@ -1459,8 +1459,11 @@ export function processTurn(
   // RR-PARITY-FIX-2025-12-20: Capture pendingDecision from applyMoveWithChainInfo.
   // For no_territory_action, the handler may return a forced elimination decision
   // which needs to be surfaced even when needsPostMoveProcessing is false.
+  // RR-PARITY-FIX-2025-12-21: Also capture victoryResult from applyMoveWithChainInfo.
+  // Turn-ending territory moves now check victory inline and return it directly.
   let result: { pendingDecision?: PendingDecision; victoryResult?: VictoryState } = {
     ...(applyResult.pendingDecision && { pendingDecision: applyResult.pendingDecision }),
+    ...(applyResult.victoryResult && { victoryResult: applyResult.victoryResult }),
   };
   // Line-phase moves ALWAYS need post-move processing for phase transitions (RR-PARITY-FIX-2025-12-13)
   const needsPostMoveProcessing =
@@ -2173,7 +2176,6 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       };
     }
 
-    case 'choose_territory_option':
     case 'choose_territory_option': {
       const outcome = applyProcessTerritoryRegionDecision(state, move);
       return { nextState: outcome.nextState };
@@ -2230,7 +2232,24 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         }
       }
 
-      // No forced elimination needed (or already was in FE) - rotate to next player
+      // No forced elimination needed (or already was in FE) - check victory then rotate
+      // RR-PARITY-FIX-2025-12-21: Check victory BEFORE rotating to next player.
+      // Since processPostMovePhases is not called for turn-ending territory moves,
+      // we must check victory inline to ensure territory victories are detected.
+      const victoryResult = toVictoryState(state);
+      if (victoryResult.isGameOver) {
+        return {
+          nextState: {
+            ...state,
+            gameStatus: 'completed',
+            winner: victoryResult.winner,
+            currentPhase: 'game_over' as GamePhase,
+          },
+          victoryResult,
+        };
+      }
+
+      // No victory - rotate to next player
       const noTerritoryPlayers = state.players;
       const noTerritoryPlayerIndex = noTerritoryPlayers.findIndex(
         (p) => p.playerNumber === move.player
@@ -2257,6 +2276,21 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // processing available regions. Rotate to next player and start their
       // turn. Per RR-CANON-R073: ALL players start in ring_placement without exception.
       // Clear mustMoveFromStackKey for new turn.
+
+      // RR-PARITY-FIX-2025-12-21: Check victory BEFORE rotating to next player.
+      const skipTerritoryVictory = toVictoryState(state);
+      if (skipTerritoryVictory.isGameOver) {
+        return {
+          nextState: {
+            ...state,
+            gameStatus: 'completed',
+            winner: skipTerritoryVictory.winner,
+            currentPhase: 'game_over' as GamePhase,
+          },
+          victoryResult: skipTerritoryVictory,
+        };
+      }
+
       // RR-CANON-R201: Skip permanently eliminated players (no rings anywhere).
       // CRITICAL: NO PHASE SKIPPING - players with ringsInHand == 0 will emit
       // no_placement_action which transitions to movement, but they MUST enter

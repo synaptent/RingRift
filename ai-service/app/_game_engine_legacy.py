@@ -3072,37 +3072,17 @@ class GameEngine:
         """
         Enumerate eliminate_rings_from_stack moves for line processing.
 
+        .. deprecated:: December 2025
+            Delegates to :class:`app.rules.generators.LineGenerator`.
+
         Per RR-CANON-R123: When pending_line_reward_elimination is True,
         the player must choose which stack to eliminate one ring from.
         All controlled stacks are eligible targets.
 
         Returns one ELIMINATE_RINGS_FROM_STACK move per eligible stack.
         """
-        board = game_state.board
-        moves: list[Move] = []
-
-        for stack_key, stack in board.stacks.items():
-            if stack.controlling_player == player_number and stack.stack_height > 0:
-                pos = stack.position
-                # Note: moveNumber is set to len(history), not len(history)+1, because
-                # this enumeration happens AFTER the previous line choice move was
-                # appended to history. The elimination move follows immediately.
-                # The DB will assign the actual move_number on storage.
-                moves.append(
-                    Move(
-                        id=f"eliminate-line-{stack_key}",
-                        type=MoveType.ELIMINATE_RINGS_FROM_STACK,
-                        player=player_number,
-                        to=pos,
-                        eliminated_rings=({"player": player_number, "count": 1},),
-                        elimination_context="line",
-                        timestamp=game_state.last_move_at,
-                        thinkTime=0,
-                        moveNumber=len(game_state.move_history),
-                    )
-                )
-
-        return moves
+        # Delegate to SSoT generator
+        return _line_generator._enumerate_elimination_moves(game_state, player_number)
 
     @staticmethod
     def _get_line_processing_moves(
@@ -3111,6 +3091,10 @@ class GameEngine:
     ) -> list[Move]:
         """
         Enumerate canonical line-processing **decision** moves for the player.
+
+        .. deprecated:: December 2025
+            Delegates to :class:`app.rules.generators.LineGenerator`.
+            All move enumeration logic is now in the SSoT generator module.
 
         Per RR-CANON-R076, this helper returns **only interactive moves**:
 
@@ -3130,108 +3114,8 @@ class GameEngine:
         Per RR-CANON-R123: When pending_line_reward_elimination is True, only
         eliminate_rings_from_stack moves are legal (no process_line moves).
         """
-        # RR-CANON-R123: If pending_line_reward_elimination, enumerate elimination targets
-        if game_state.pending_line_reward_elimination:
-            return GameEngine._enumerate_line_elimination_moves(game_state, player_number)
-
-        num_players = len(game_state.players)
-        lines = BoardManager.find_all_lines(game_state.board, num_players)
-        player_lines = [line for line in lines if line.player == player_number]
-
-        if not player_lines:
-            # No interactive line decisions – hosts must satisfy the phase via
-            # a `NO_LINE_ACTION_REQUIRED` phase requirement.
-            return []
-
-        required_len = get_effective_line_length(game_state.board.type, num_players)
-        moves: list[Move] = []
-
-        for idx, line in enumerate(player_lines):
-            # PROCESS_LINE decision for this line.
-            first_pos = line.positions[0]
-            moves.append(
-                Move(
-                    id=f"process-line-{idx}-{first_pos.to_key()}",
-                    type=MoveType.PROCESS_LINE,
-                    player=player_number,
-                    to=first_pos,
-                    formed_lines=(line,),  # type: ignore[arg-type]
-                    timestamp=game_state.last_move_at,
-                    thinkTime=0,
-                    moveNumber=len(game_state.move_history) + 1,
-                )
-            )
-
-        # Enumerate CHOOSE_LINE_OPTION moves for each line, mirroring
-        # src/shared/engine/lineDecisionHelpers.ts:enumerateChooseLineRewardMoves.
-        #
-        # Semantics:
-        # - If line_len < required_len: no choose-line-option moves.
-        # - If line_len == required_len: a single collapse-all move.
-        # - If line_len > required_len:
-        #   - one collapse-all move, and
-        #   - one minimum-collapse move per contiguous segment of length required_len.
-        for idx, line in enumerate(player_lines):
-            line_len = len(line.positions)
-            if line_len < required_len:
-                continue
-
-            first_pos = line.positions[0]
-            line_key = first_pos.to_key()
-            move_number = len(game_state.move_history) + 1
-
-            # Exact-length line: a single collapse-all variant.
-            if line_len == required_len:
-                moves.append(
-                    Move(
-                        id=f"choose-line-option-{idx}-{line_key}-all",
-                        type=MoveType.CHOOSE_LINE_OPTION,
-                        player=player_number,
-                        to=first_pos,
-                        formed_lines=(line,),  # type: ignore[arg-type]
-                        collapsed_markers=tuple(line.positions),
-                        timestamp=game_state.last_move_at,
-                        thinkTime=0,
-                        moveNumber=move_number,
-                    )
-                )
-                continue
-
-            # Overlength line (> required_len).
-            # Option 1: collapse all markers (collapsed_markers = full line).
-            moves.append(
-                Move(
-                    id=f"choose-line-option-{idx}-{line_key}-all",
-                    type=MoveType.CHOOSE_LINE_OPTION,
-                    player=player_number,
-                    to=first_pos,
-                    formed_lines=(line,),  # type: ignore[arg-type]
-                    collapsed_markers=tuple(line.positions),
-                    timestamp=game_state.last_move_at,
-                    thinkTime=0,
-                    moveNumber=move_number,
-                )
-            )
-
-            # Option 2: enumerate all valid minimum-collapse segments of length required_len.
-            max_start = line_len - required_len
-            for start in range(max_start + 1):
-                segment = tuple(line.positions[start : start + required_len])
-                moves.append(
-                    Move(
-                        id=f"choose-line-option-{idx}-{line_key}-min-{start}",
-                        type=MoveType.CHOOSE_LINE_OPTION,
-                        player=player_number,
-                        to=first_pos,
-                        formed_lines=(line,),  # type: ignore[arg-type]
-                        collapsed_markers=segment,
-                        timestamp=game_state.last_move_at,
-                        thinkTime=0,
-                        moveNumber=move_number,
-                    )
-                )
-
-        return moves
+        # Delegate to SSoT generator
+        return _line_generator.generate(game_state, player_number)
 
     @staticmethod
     def _did_current_turn_include_recovery_slide(

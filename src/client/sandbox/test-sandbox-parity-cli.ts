@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- testing CLI accesses internal engine state */
 import { ClientSandboxEngine } from './ClientSandboxEngine';
 import { GameState, Move, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
+import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 import { readFileSync } from 'fs';
 
 // Mock interaction handler that always selects the first option
@@ -99,7 +100,9 @@ async function main() {
     let isValid = false;
 
     try {
-      if (move.type === 'place_ring') {
+      const canonicalType = normalizeLegacyMoveType(move.type);
+
+      if (canonicalType === 'place_ring') {
         // For placement, we can check enumerateLegalRingPlacements
         // But that returns a list of positions.
         // We can check if the move.to is in that list.
@@ -107,7 +110,7 @@ async function main() {
         isValid = validPlacements.some(
           (p: any) => p.x === move.to.x && p.y === move.to.y && (p.z || 0) === (move.to.z || 0)
         );
-      } else if (move.type === 'move_stack') {
+      } else if (canonicalType === 'move_stack') {
         // For movement, check enumerateSimpleMovementLandings
         const validMoves = (sandboxEngine as any).enumerateSimpleMovementLandings(move.player);
         isValid = validMoves.some(
@@ -118,7 +121,7 @@ async function main() {
             m.to.y === move.to.y &&
             (m.to.z || 0) === (move.to.z || 0)
         );
-      } else if (move.type === 'overtaking_capture') {
+      } else if (canonicalType === 'overtaking_capture') {
         // For capture, check enumerateCaptureSegmentsFrom
         if (move.from) {
           const validCaptures = (sandboxEngine as any).enumerateCaptureSegmentsFrom(
@@ -135,7 +138,7 @@ async function main() {
               (c.target.z || 0) === (move.captureTarget?.z || 0)
           );
         }
-      } else if (move.type === 'line_formation' || move.type === 'process_line') {
+      } else if (move.type === 'line_formation' || canonicalType === 'process_line') {
         // Validate line formation directly against canonical formedLines on the board.
         // A line_formation move is considered valid if there exists a formed line
         // owned by the moving player whose positions include the target square.
@@ -150,11 +153,7 @@ async function main() {
                 p.x === target.x && p.y === target.y && (p.z ?? null) === (target.z ?? null)
             )
         );
-      } else if (
-        move.type === 'territory_claim' ||
-        move.type === 'choose_territory_option' ||
-        move.type === 'choose_territory_option'
-      ) {
+      } else if (move.type === 'territory_claim' || canonicalType === 'choose_territory_option') {
         // Territory claim is automatic/interactive
         // Check if disconnected regions exist
         // We can use findDisconnectedRegionsOnBoard (imported internally)

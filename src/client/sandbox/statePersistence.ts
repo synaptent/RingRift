@@ -48,12 +48,16 @@ function inferCategoryFromPhase(phase: string): ScenarioCategory {
       return 'movement';
     case 'chain_capture':
       return 'chain_capture';
+    case 'line_processing':
     case 'process_line':
     case 'choose_line_option':
+    case 'choose_line_reward':
+    case 'line_formation':
       return 'line_processing';
-    case 'choose_territory_option':
-    case 'choose_territory_option':
     case 'territory_processing':
+    case 'choose_territory_option':
+    case 'process_territory_region':
+    case 'territory_claim':
       return 'territory_processing';
     case 'forced_elimination':
       // Forced elimination is a special 7th phase (RR-CANON-R070) that doesn't

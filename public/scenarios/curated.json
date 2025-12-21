@@ -850,7 +850,7 @@
       },
       "suggestedMove": {
         "id": "suggested-territory-victory",
-        "type": "process_territory_region",
+        "type": "choose_territory_option",
         "player": 1,
         "to": { "x": 4, "y": 4 },
         "disconnectedRegions": [

@@ -10,6 +10,30 @@ Prevents uncoordinated task spawning across multiple orchestrators by providing:
 
 This module MUST be used by all orchestrators to prevent runaway task spawning.
 
+Architecture Relationship (December 2025):
+-----------------------------------------
+This module is part of a layered coordination architecture:
+
+1. **TaskCoordinator** (this module)
+   - Canonical for TASK ADMISSION CONTROL
+   - Decides how many tasks can run based on limits/resources
+   - Used by all task spawning code
+
+2. **OrchestratorRegistry** (:mod:`app.coordination.orchestrator_registry`)
+   - Canonical for ROLE-BASED COORDINATION
+   - Ensures only one orchestrator per role (cluster_orchestrator, etc.)
+   - Uses heartbeat-based liveness detection
+
+3. **TrainingCoordinator** (:mod:`app.coordination.training_coordinator`)
+   - Specialized facade for TRAINING COORDINATION
+   - Adds NFS-based locking for GH200 cluster
+   - Delegates to DistributedLock for low-level locking
+
+These modules work together but serve different purposes:
+- TaskCoordinator answers: "Can I spawn another task?"
+- OrchestratorRegistry answers: "Am I the designated orchestrator?"
+- TrainingCoordinator answers: "Can I start training this config?"
+
 Usage:
     coordinator = TaskCoordinator.get_instance()
 

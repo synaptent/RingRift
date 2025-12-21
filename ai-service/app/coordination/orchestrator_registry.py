@@ -12,6 +12,28 @@ Features:
 - Cross-process visibility into all active orchestrators
 - Graceful handoff when orchestrators restart
 
+Architecture Relationship (December 2025):
+-----------------------------------------
+This module is part of a layered coordination architecture:
+
+1. **TaskCoordinator** (:mod:`app.coordination.task_coordinator`)
+   - Canonical for TASK ADMISSION CONTROL
+   - Decides how many tasks can run based on limits/resources
+
+2. **OrchestratorRegistry** (this module)
+   - Canonical for ROLE-BASED COORDINATION
+   - Ensures only one orchestrator per role (cluster_orchestrator, etc.)
+   - Uses heartbeat-based liveness detection
+
+3. **TrainingCoordinator** (:mod:`app.coordination.training_coordinator`)
+   - Specialized facade for TRAINING COORDINATION
+   - Adds NFS-based locking for GH200 cluster
+
+These modules answer different questions:
+- TaskCoordinator: "Can I spawn another task?"
+- OrchestratorRegistry: "Am I the designated orchestrator?"
+- TrainingCoordinator: "Can I start training this config?"
+
 Usage:
     from app.coordination.orchestrator_registry import OrchestratorRegistry, OrchestratorRole
 

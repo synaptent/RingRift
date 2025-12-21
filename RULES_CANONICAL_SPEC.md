@@ -268,7 +268,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R073] Mandatory phase transitions for currentPhase.**
   - The `currentPhase` field in `GameState` must change at specific points during turn processing:
     - **ring_placement → movement:** After a `place_ring` or `skip_placement` move, `currentPhase` MUST change to `movement` for the same player.
-    - **movement → capture:** After a non-capture movement (`move_stack` or `move_ring`), if legal capture segments exist from the landing position per RR-CANON-R093, `currentPhase` MUST change to `capture`. If no such captures exist, proceed to `line_processing`.
+    - **movement → capture:** After a non-capture movement (`move_stack`), if legal capture segments exist from the landing position per RR-CANON-R093, `currentPhase` MUST change to `capture`. If no such captures exist, proceed to `line_processing`.
     - **capture → chain_capture:** After executing an `overtaking_capture` segment, if additional legal capture segments exist from the new landing position per RR-CANON-R103, `currentPhase` MUST change to `chain_capture` and the chain must continue.
     - **chain_capture → line_processing:** After executing a `continue_capture_segment`, if no additional legal captures exist from the new position, `currentPhase` MUST change to `line_processing`.
     - **capture → line_processing:** After executing an `overtaking_capture` segment where no chain continuation is required (no further captures from landing), `currentPhase` MUST change to `line_processing`.
@@ -313,12 +313,13 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - **No implicit phase advancement:** Silent advancement through phases without recording a move violates canonical replay semantics and will cause parity divergence between engine implementations.
     - **No additional line-processing, Territory-processing, or ring elimination may occur "between moves".** Every collapse, elimination, or region/line resolution step must be attributable to a specific, explicit move in the record:
       - `place_ring`, `skip_placement`,
-      - `move_stack` / `move_ring`,
+      - `move_stack`,
       - `overtaking_capture`, `continue_capture_segment`,
-      - `process_line`, `choose_line_option` (legacy alias: `choose_line_reward`),
-      - `choose_territory_option` (legacy alias: `process_territory_region`),
+      - `process_line`, `choose_line_option`,
+      - `choose_territory_option`,
       - `eliminate_rings_from_stack`, or
       - a host-level `forced_elimination` action modelled as an explicit move.
+    - Legacy alias names are non-canonical and only supported via legacy replay adapters.
     - Replay engines MUST NOT inject extra collapses, region resolutions, or forced eliminations solely as a consequence of "advancing phases" or "resolving ANM" when consuming a canonical recording; if such work is required by the rules, it must appear as explicit moves/choices in the recording itself.
   - Hosts are free to implement richer UX flows (for example, auto-processing a single exact-length line for a human player) **so long as** those flows still emit the corresponding canonical moves into history. Canonical replay and parity tooling must treat the move history as the sole source of truth for state changes.
   - **Training JSONL requirement:** Self-play generators that emit JSONL files for AI training MUST include all bookkeeping moves (`no_line_action`, `no_territory_action`, `no_placement_action`, etc.) in the move sequence. Training pipelines that consume this data must handle these moves correctly (applying them to advance state but not sampling from them as decision points). There is NO exemption for training data—canonical recording semantics apply uniformly across all formats.
@@ -577,7 +578,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §3.2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.2.1, 8.2, 8.3, 15.4 Q2.
 
 - **[RR-CANON-R093] Post-movement capture eligibility (landing position constraint).**
-  - After a non-capture movement (`move_stack` or `move_ring`) by P, the **optional capture opportunity** described in RR-CANON-R070 phase 3 is evaluated **only** from the stack that just moved, at its landing position.
+  - After a non-capture movement (`move_stack`) by P, the **optional capture opportunity** described in RR-CANON-R070 phase 3 is evaluated **only** from the stack that just moved, at its landing position.
   - Specifically:
     - Let `landing` be the cell where the moving stack landed after the non-capture movement.
     - Enumerate all legal overtaking capture segments (per RR-CANON-R101) whose `from` equals `landing`.

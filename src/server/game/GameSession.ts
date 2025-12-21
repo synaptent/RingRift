@@ -1826,7 +1826,6 @@ export class GameSession {
     const sortKeyForDecisionMove = (move: Move): string => {
       switch (move.type) {
         case 'process_line':
-        case 'choose_line_option':
         case 'choose_line_option': {
           // Move.formedLines is optional LineInfo[] on the Move type
           const formedLines = move.formedLines as LineInfo[] | undefined;
@@ -1834,7 +1833,6 @@ export class GameSession {
           const lineKey = primaryLine ? positionsKey(primaryLine.positions) : '~';
           return `line:${lineKey}`;
         }
-        case 'choose_territory_option':
         case 'choose_territory_option': {
           // Move.disconnectedRegions is optional Territory[] on the Move type
           const regions = move.disconnectedRegions as Territory[] | undefined;
