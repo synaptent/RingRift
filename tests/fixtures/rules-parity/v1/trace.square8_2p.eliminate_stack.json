@@ -97,10 +97,10 @@
       },
       "expected": {
         "tsValid": true,
-        "tsStateHash": "2:ring_placement:waiting#1:18:2:0|2:18:0:0###",
+        "tsStateHash": "2:ring_placement:waiting:0#1:18:2:0|2:18:0:0###",
         "tsS": 2
       },
-      "stateHash": "2:ring_placement:waiting#1:18:2:0|2:18:0:0###",
+      "stateHash": "2:ring_placement:waiting:0#1:18:2:0|2:18:0:0###",
       "sInvariant": 2
     }
   ]

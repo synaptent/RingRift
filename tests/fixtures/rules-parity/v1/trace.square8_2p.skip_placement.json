@@ -91,10 +91,10 @@
       },
       "expected": {
         "tsValid": true,
-        "tsStateHash": "1:movement:waiting#1:18:0:0|2:18:0:0#3,3:1:1:1##",
+        "tsStateHash": "1:movement:waiting:0#1:18:0:0|2:18:0:0#3,3:1:1:1##",
         "tsS": 0
       },
-      "stateHash": "1:movement:waiting#1:18:0:0|2:18:0:0#3,3:1:1:1##",
+      "stateHash": "1:movement:waiting:0#1:18:0:0|2:18:0:0#3,3:1:1:1##",
       "sInvariant": 0
     }
   ]

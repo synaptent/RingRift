@@ -142,12 +142,22 @@ describe('Trace fixtures shared-engine self-consistency', () => {
       const engine = new GameEngine(hydratedState);
 
       for (const [index, step] of fixture.steps.entries()) {
-        const before = engine.getGameState();
-        const action = moveToGameAction(step.move, before as any);
-        const event = engine.processAction(action);
-
         // Check if this step expects an invalid move (tsValid: false)
         const expectsInvalid = step.expected?.tsValid === false;
+
+        const before = engine.getGameState();
+        let action;
+        try {
+          action = moveToGameAction(step.move, before as any);
+        } catch (e) {
+          // Legacy move types throw MoveMappingError - if we expect invalid, this is fine
+          if (expectsInvalid) {
+            continue; // Expected failure - move on to next step
+          }
+          throw e; // Unexpected error - rethrow
+        }
+
+        const event = engine.processAction(action);
 
         if (expectsInvalid) {
           // For expected invalid moves, verify we get an error

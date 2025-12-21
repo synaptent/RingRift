@@ -1,5 +1,17 @@
 """Unified Lock Manager with Deadlock Detection.
 
+.. deprecated:: December 2025
+    This module is deprecated and will be removed in a future release.
+
+    **Migration Guide:**
+    - For in-process deadlock detection: Use `app.core.locking.LockHierarchy`
+    - For cross-process locks: Use `app.coordination.distributed_lock.DistributedLock`
+    - For training-specific locks: Use `app.training.locking_integration.TrainingLocks`
+
+    The functionality of this module is superseded by LockHierarchy which provides
+    a more robust approach to deadlock prevention through lock level enforcement
+    rather than wait-for graph detection.
+
 Provides in-process async lock management with:
 - Unified interface for async lock coordination
 - Lock tracking for observability
@@ -33,7 +45,7 @@ Usage:
     finally:
         await manager.release_lock("resource_id")
 
-December 2025 - Consolidation effort
+December 2025 - Consolidation effort - DEPRECATED
 """
 
 from __future__ import annotations
@@ -42,11 +54,21 @@ import asyncio
 import logging
 import threading
 import time
+import warnings
 from collections import defaultdict
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+# Emit deprecation warning at import time
+warnings.warn(
+    "app.coordination.lock_manager is deprecated (December 2025). "
+    "Use app.core.locking.LockHierarchy for in-process deadlock detection, "
+    "or app.coordination.distributed_lock.DistributedLock for cross-process locks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

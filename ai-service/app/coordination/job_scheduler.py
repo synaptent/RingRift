@@ -46,6 +46,27 @@ from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
+# Duration scheduler integration (December 2025 consolidation)
+# Provides historical duration estimation and host availability tracking
+try:
+    from app.coordination.duration_scheduler import (
+        estimate_task_duration,
+        get_resource_availability,
+        record_task_completion,
+    )
+    _DURATION_SCHEDULER_AVAILABLE = True
+except ImportError:
+    _DURATION_SCHEDULER_AVAILABLE = False
+    # Fallback stubs for when duration_scheduler is not available
+    def estimate_task_duration(task_type: str, config: str = "", host: str = "") -> float:
+        return 3600.0  # Default 1 hour
+    def get_resource_availability(host: str, task_type: str = "") -> tuple[bool, float]:
+        return (True, 0.0)  # Always available
+    def record_task_completion(
+        task_type: str, host: str, started_at: float, completed_at: float, success: bool = True
+    ) -> None:
+        pass
+
 # Resource thresholds - import from centralized thresholds (December 2025)
 try:
     from app.config.thresholds import (
@@ -288,22 +309,37 @@ class PriorityJobScheduler:
         # Find best match for highest priority job
         for job_idx, job in enumerate(self._queue):
             for host, status in available_hosts:
+                host_name = _get_name(host)
+
                 # Check GPU requirement
                 if job.requires_gpu and not _has_gpu(host):
                     continue
 
                 # Check host preference
-                if job.host_preference and _get_name(host) != job.host_preference:
+                if job.host_preference and host_name != job.host_preference:
                     continue
 
                 # Check CPU capacity for selfplay jobs
                 if job.job_type == "selfplay" and _get_cpu(status) > TARGET_CPU_UTILIZATION_MAX:
                     continue
 
+                # Check duration-based availability (December 2025 consolidation)
+                # Uses historical task data to avoid overloading hosts with long-running tasks
+                if _DURATION_SCHEDULER_AVAILABLE:
+                    is_available, _ = get_resource_availability(host_name, job.job_type)
+                    if not is_available:
+                        continue
+
                 # Found a match
                 self._queue.pop(job_idx)
                 job.started_at = time.time()
-                self._running[_get_name(host)] = job
+                # Update duration estimate from historical data (December 2025 consolidation)
+                job.estimated_duration_seconds = int(estimate_task_duration(
+                    job.job_type,
+                    str(job.config) if job.config else "",
+                    host_name,
+                ))
+                self._running[host_name] = job
                 return (job, host)
 
         return None
@@ -321,6 +357,19 @@ class PriorityJobScheduler:
         if host_name in self._running:
             job = self._running.pop(host_name)
             job.completed_at = time.time()
+
+            # Record completion to duration scheduler for historical learning (December 2025)
+            if job.started_at and _DURATION_SCHEDULER_AVAILABLE:
+                try:
+                    record_task_completion(
+                        task_type=job.job_type,
+                        host=host_name,
+                        started_at=job.started_at,
+                        completed_at=job.completed_at,
+                        success=success,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to record duration: {e}")
 
             # Keep history of completed jobs
             self._completed_jobs.append(job)

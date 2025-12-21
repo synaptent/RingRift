@@ -949,8 +949,9 @@ describe('Game creation quotas', () => {
     expect(mockPrisma.game.create).toHaveBeenCalledTimes(1);
 
     // First quota is per-user, second is per-IP.
-    expect(mockConsumeRateLimit).toHaveBeenCalledWith('gameCreateUser', 'user-1');
-    expect(mockConsumeRateLimit).toHaveBeenCalledWith('gameCreateIp', '203.0.113.1');
+    // Third argument is the request object (passed for context/logging).
+    expect(mockConsumeRateLimit).toHaveBeenCalledWith('gameCreateUser', 'user-1', expect.anything());
+    expect(mockConsumeRateLimit).toHaveBeenCalledWith('gameCreateIp', '203.0.113.1', expect.anything());
   });
 
   it('returns 429 GAME_CREATE_RATE_LIMITED when per-user quota is exceeded', async () => {
