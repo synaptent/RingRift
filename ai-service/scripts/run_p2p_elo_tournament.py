@@ -192,6 +192,62 @@ class P2PEloTournament:
         self.nodes: list[P2PNode] = []
         self.state: TournamentState | None = None
         self.elo_db_path = elo_db_path or (AI_SERVICE_ROOT / "data" / "elo_leaderboard.db")
+        self._elo_service = None
+
+    def _get_elo_service(self):
+        if self._elo_service is None:
+            try:
+                from app.training.elo_service import get_elo_service
+                self._elo_service = get_elo_service()
+            except Exception as e:
+                print(f"[Tournament] EloService unavailable: {e}")
+                self._elo_service = None
+        return self._elo_service
+
+    def _register_participant(self, elo_service, agent_id: str) -> None:
+        config = AI_TYPE_CONFIGS.get(agent_id, {})
+        try:
+            elo_service.register_participant(
+                participant_id=agent_id,
+                name=agent_id,
+                ai_type=str(config.get("ai_type", agent_id)),
+                difficulty=config.get("difficulty"),
+                use_neural_net=bool(config.get("use_neural_net", False)),
+                metadata={"source": "p2p_tournament", "description": config.get("description")},
+            )
+        except Exception as e:
+            print(f"[Tournament] Failed to register participant {agent_id}: {e}")
+
+    def _record_results_in_elo_service(self, results: list[MatchResult]) -> None:
+        elo_service = self._get_elo_service()
+        if elo_service is None:
+            return
+
+        tournament_id = self.state.tournament_id if self.state else "p2p_elo_tournament"
+        for result in results:
+            if result.winner == "agent_a":
+                winner_id = result.agent_a
+            elif result.winner == "agent_b":
+                winner_id = result.agent_b
+            else:
+                winner_id = None
+
+            self._register_participant(elo_service, result.agent_a)
+            self._register_participant(elo_service, result.agent_b)
+
+            try:
+                elo_service.record_match(
+                    participant_a=result.agent_a,
+                    participant_b=result.agent_b,
+                    winner=winner_id,
+                    board_type=self.board_type,
+                    num_players=self.num_players,
+                    game_length=result.game_length,
+                    duration_sec=result.duration_sec,
+                    tournament_id=tournament_id,
+                )
+            except Exception as e:
+                print(f"[Tournament] EloService record failed for {result.match_id}: {e}")
 
     async def discover_nodes(self) -> list[P2PNode]:
         """Discover all healthy P2P nodes via the leader."""
@@ -549,6 +605,7 @@ class P2PEloTournament:
 
         # Save to database
         self.save_ratings_to_db(self.state.ratings, results)
+        self._record_results_in_elo_service(results)
 
         return self.state
 
