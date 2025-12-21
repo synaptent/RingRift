@@ -534,11 +534,6 @@ def apply_recovery_moves_vectorized(
                         new_height = old_height - 1
                         state.stack_height[g, extraction_y, extraction_x] = new_height
 
-                        # Update cap height
-                        old_cap = state.cap_height[g, extraction_y, extraction_x].item()
-                        new_cap = min(old_cap, new_height)
-                        state.cap_height[g, extraction_y, extraction_x] = new_cap
-
                         # If stack is now empty, clear owner
                         if new_height == 0:
                             state.stack_owner[g, extraction_y, extraction_x] = 0
@@ -547,14 +542,43 @@ def apply_recovery_moves_vectorized(
                             for pp in range(1, state.num_players + 1):
                                 state.buried_at[g, pp, extraction_y, extraction_x] = False
                         else:
-                            # December 2025 BUG FIX: Only clear buried_at if there are
-                            # no more buried rings at this position. The stack might have
-                            # multiple buried rings of the same player (e.g., from multiple
-                            # captures). Only clear when new_height == new_cap (all rings
-                            # are cap rings, no buried rings remain).
-                            if new_height <= new_cap:
-                                state.buried_at[g, p, extraction_y, extraction_x] = False
-                            # Otherwise, keep buried_at True since there are still buried rings
+                            # December 2025 BUG FIX: Recalculate cap_height properly.
+                            # When a non-owner's buried ring is extracted, the cap may INCREASE
+                            # if all remaining buried rings belong to the owner (consecutive
+                            # owner rings from top now extend further down).
+                            #
+                            # First check if there are non-owner buried rings (BEFORE clearing
+                            # the extracting player's buried_at flag).
+                            owner = int(state.stack_owner[g, extraction_y, extraction_x].item())
+                            non_owner_buried = False
+                            for pp in range(1, state.num_players + 1):
+                                if pp != owner and pp != p and state.buried_at[g, pp, extraction_y, extraction_x]:
+                                    non_owner_buried = True
+                                    break
+
+                            # Now clear buried_at for the extracting player
+                            # Note: If player had multiple buried rings at this position, this
+                            # is an approximation. For full accuracy, we'd need per-position counts.
+                            state.buried_at[g, p, extraction_y, extraction_x] = False
+
+                            # Calculate new cap_height
+                            if non_owner_buried:
+                                # Still have enemy buried rings, cap stays same or decreases
+                                old_cap = state.cap_height[g, extraction_y, extraction_x].item()
+                                new_cap = min(old_cap, new_height)
+                            else:
+                                # No non-owner, non-extracting buried rings remain
+                                # If owner == extracting player, they might still have buried
+                                # rings (but buried_at just got cleared, so we can't know)
+                                # Use conservative approach: if owner extracted, cap stays same
+                                if owner == p:
+                                    old_cap = state.cap_height[g, extraction_y, extraction_x].item()
+                                    new_cap = min(old_cap, new_height)
+                                else:
+                                    # Owner didn't extract, and no other non-owner buried rings
+                                    # So all remaining rings belong to owner, cap = height
+                                    new_cap = new_height
+                            state.cap_height[g, extraction_y, extraction_x] = new_cap
 
 
 def reset_capture_chain_batch(

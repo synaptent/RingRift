@@ -214,8 +214,11 @@ test_*.py
 # One-off debug scripts with specific seeds/moves (local debugging only)
 ai-service/scripts/debug_seed*.py
 ai-service/scripts/debug_move_*.py
+ai-service/scripts/debug_chain_state.py
+ai-service/scripts/debug_export_moves.py
 ai-service/scripts/minimal_*_debug.py
 ai-service/scripts/quick_*_test.py
+ai-service/scripts/trace_*.py
 
 # Runtime state files
 ai-service/data/.elo_alert_state.json

@@ -95,10 +95,11 @@ def check_nn_quality_gate(
     print()
 
     # Run tournament: Neural vs Heuristic
-    # Use run_ai_tournament.py for consistent evaluation
+    # Use run_tournament.py basic mode for consistent evaluation
     cmd = [
         sys.executable,
-        "scripts/run_ai_tournament.py",
+        "scripts/run_tournament.py",
+        "basic",
         "--p1", "Neural",
         "--p1-model", nn_model_path,
         "--p2", "Heuristic",

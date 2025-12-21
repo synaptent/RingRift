@@ -5,14 +5,21 @@ This script consolidates all tournament functionality into a single entry point
 with multiple modes, each preserving the unique features of the original scripts:
 
 Modes:
-  basic        - Simple AI vs AI tournament (from run_ai_tournament.py)
-  models       - Neural network model evaluation (from run_model_elo_tournament.py)
-  distributed  - Multi-tier difficulty ladder (from run_distributed_tournament.py)
-  ssh          - SSH-distributed tournament (from run_ssh_distributed_tournament.py)
-  eval         - Evaluation pool tournament (from run_eval_tournaments.py)
-  diverse      - All board/player configs (from run_diverse_tournaments.py)
-  weights      - Heuristic weight profiles (from run_axis_aligned_tournament.py)
-  crossboard   - Cross-board analysis (from run_crossboard_difficulty_tournament.py)
+  basic        - Simple AI vs AI tournament
+  models       - Neural network model evaluation (run_model_elo_tournament.py)
+  distributed  - Multi-tier difficulty ladder (run_distributed_tournament.py)
+  ssh          - SSH-distributed tournament [DEPRECATED - use distributed mode]
+  eval         - Evaluation pool tournament (run_eval_tournaments.py)
+  diverse      - All board/player configs (run_diverse_tournaments.py)
+  weights      - Heuristic weight profiles [DEPRECATED]
+  crossboard   - Cross-board analysis [DEPRECATED]
+
+Deprecated standalone scripts moved to scripts/deprecated/:
+  - run_ai_tournament.py (use basic mode or run_distributed_tournament.py)
+  - run_axis_aligned_tournament.py (use weights mode if needed)
+  - run_crossboard_difficulty_tournament.py (use crossboard mode if needed)
+
+Note: run_ssh_distributed_tournament.py is kept in scripts/ as it's used by p2p_orchestrator.
 
 Usage:
     # Basic tournament
