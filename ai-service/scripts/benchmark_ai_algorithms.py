@@ -85,7 +85,7 @@ class BenchmarkConfig:
     games_per_matchup: int = 20
     device: str = "cpu"
     nn_model_id: str | None = None
-    think_time_ms: int = 2000
+    think_time_ms: int = 500  # Reduced from 2000ms for faster benchmark
     base_seed: int = 42
     output_dir: Path = field(default_factory=lambda: Path("data/benchmarks"))
 
