@@ -792,7 +792,7 @@ class TournamentRunner:
                         move = self._create_bookkeeping_move(requirement, current_player)
                         if move is not None:
                             state_before = state
-                            state = GameEngine.apply_move(state, move)
+                            state = GameEngine.apply_move(state, move, trace_mode=True)
                             move_count += 1
                             recorded_move_types.append(move.type.value)
                             if recorder is not None:
@@ -812,7 +812,7 @@ class TournamentRunner:
                     # AI couldn't select a move, pick first legal move
                     move = legal_moves[0]
                 state_before = state
-                state = GameEngine.apply_move(state, move)
+                state = GameEngine.apply_move(state, move, trace_mode=True)
                 move_count += 1
                 recorded_move_types.append(move.type.value)
                 if recorder is not None:
@@ -1067,7 +1067,7 @@ class TournamentRunner:
                 break
 
             state_before = state
-            state = GameEngine.apply_move(state, move)
+            state = GameEngine.apply_move(state, move, trace_mode=True)
             bookkeeping_moves += 1
             if recorded_move_types is not None:
                 recorded_move_types.append(move.type.value)

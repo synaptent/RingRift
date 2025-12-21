@@ -546,6 +546,7 @@ class EloDatabase:
         "baseline_random": 400.0,  # Random player pinned at 400 ELO as anchor
         "none:random": 400.0,      # Alternative random naming convention
         "random": 400.0,           # Simple random prefix
+        "tier1_random": 400.0,     # Tier 1 difficulty = random, pinned at 400
     }
 
     def _is_pinned_baseline(self, participant_id: str) -> float | None:
