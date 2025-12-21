@@ -365,9 +365,16 @@ class EloService:
                     timestamp TEXT,
                     elo_before TEXT,
                     elo_after TEXT,
-                    tournament_id TEXT
+                    tournament_id TEXT,
+                    metadata TEXT
                 )
             """)
+
+            # Migration: add metadata column if not exists (for existing DBs)
+            try:
+                conn.execute("ALTER TABLE match_history ADD COLUMN metadata TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
             # Elo history for trend analysis
             conn.execute("""
@@ -542,9 +549,17 @@ class EloService:
         num_players: int,
         game_length: int = 0,
         duration_sec: float = 0.0,
-        tournament_id: str | None = None
+        tournament_id: str | None = None,
+        metadata: dict | None = None,
     ) -> MatchResult:
-        """Record a match result and update Elo ratings."""
+        """Record a match result and update Elo ratings.
+
+        Args:
+            metadata: Optional dict with match metadata. Useful keys:
+                - weight_profile_a: Heuristic weight profile ID for participant A
+                - weight_profile_b: Heuristic weight profile ID for participant B
+                - source: Origin of the match (e.g., "tournament", "selfplay")
+        """
         match_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -612,12 +627,13 @@ class EloService:
                     pid, board_type, num_players
                 ))
 
-            # Record match
+            # Record match with optional metadata (e.g., weight profiles used)
             conn.execute("""
                 INSERT INTO match_history
                 (id, participant_ids, winner_id, game_length, duration_sec,
-                 board_type, num_players, timestamp, elo_before, elo_after, tournament_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 board_type, num_players, timestamp, elo_before, elo_after,
+                 tournament_id, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 match_id,
                 json.dumps([participant_a, participant_b]),
@@ -629,7 +645,8 @@ class EloService:
                 timestamp,
                 json.dumps(elo_before),
                 json.dumps(elo_after),
-                tournament_id
+                tournament_id,
+                json.dumps(metadata) if metadata else None
             ))
 
         # Emit ELO_UPDATED events for both participants
