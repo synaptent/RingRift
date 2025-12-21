@@ -2509,15 +2509,6 @@ class GameEngine:
                 move_number=move_number,
                 kind="continuation",
             )
-            # RR-FIX-2025-12-20: Filter out chain captures that land on visited positions.
-            # The chain_capture_state.visited_positions tracks positions where the
-            # attacker has landed during this chain (including the start position).
-            # Landing on a visited position creates a cycle which is illegal.
-            visited = set(game_state.chain_capture_state.visited_positions)
-            moves = [
-                m for m in moves
-                if m.to is None or m.to.to_key() not in visited
-            ]
         else:
             # Movement phase - enumerate captures from ALL player's stacks
             # This mirrors TS's enumerateAllCaptureMoves which iterates over

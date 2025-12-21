@@ -761,10 +761,9 @@ def generate_capture_moves_batch_vectorized(
     blocker_cumsum = torch.cumsum(is_blocker.to(torch.int32), dim=2)
     before_blocker = blocker_cumsum == 0  # True for cells before any blocker
 
-    # Find cells with ENEMY stacks only - captures cannot target own stacks
-    # Get current player for each stack, expanded to match ray dimensions (N_stacks, 8, max_dist)
-    current_player_exp = state.current_player[stack_game_idx].view(-1, 1, 1).expand(-1, n_dirs, max_dist)
-    has_stack = (ray_owner != 0) & (ray_owner != current_player_exp) & before_blocker
+    # Find cells with ANY stacks - per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+    # Self-captures are valid (can overtake own stacks if cap_height allows)
+    has_stack = (ray_owner != 0) & before_blocker
 
     # Find target: first stack along ray where my_cap_height >= target_cap_height
     my_cap_exp = stack_cap_heights_dir.unsqueeze(2).expand(-1, -1, max_dist)
@@ -1171,13 +1170,13 @@ def generate_chain_capture_moves_from_position(
 
             cell_owner = stack_owner_np[check_y, check_x]
             if cell_owner != 0:
-                # Can only capture ENEMY stacks, not own stacks
-                if cell_owner != player:
-                    target_cap = cap_height_np[check_y, check_x]
-                    if my_cap_height >= target_cap:
-                        target_y = check_y
-                        target_x = check_x
-                        target_dist = step
+                # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+                # Check cap_height comparison for any stack (own or enemy)
+                target_cap = cap_height_np[check_y, check_x]
+                if my_cap_height >= target_cap:
+                    target_y = check_y
+                    target_x = check_x
+                    target_dist = step
                 # Any stack (own or enemy) stops the search along this ray.
                 break
 
