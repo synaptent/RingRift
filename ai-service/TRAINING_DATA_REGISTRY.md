@@ -131,6 +131,10 @@ Once canonical self-play DBs are generated and exported, retrain these models:
      --summary db_health.canonical_<board>.json
    ```
 
+   For player-specific DBs, use `canonical_<board>_<players>p.db` (for example,
+   `canonical_square8_2p.db`). If you omit `--db`, the generator defaults to
+   `canonical_<board>_<players>p.db` based on `--num-players`.
+
    For distributed self-play across SSH hosts, pass `--hosts host1,host2,...`.
    Per-host DBs are merged into the destination DB (deduped by `game_id`).
    Use `--reset-db` to archive any existing destination DB before generating/merging.

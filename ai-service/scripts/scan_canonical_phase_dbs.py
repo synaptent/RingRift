@@ -15,7 +15,7 @@ Model registry format (models/registry.json example):
       "id": "ringrift_from_replays_square8_v1",
       "path": "models/ringrift_from_replays_square8.pth",
       "training_sources": [
-        "data/games/canonical_square8.db",
+        "data/games/canonical_square8_2p.db",
         "data/games/selfplay_square8.db"
       ]
     }

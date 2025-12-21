@@ -12,7 +12,7 @@ failure.
 Usage:
 
   PYTHONPATH=. python -m ai-service.scripts.check_canonical_phase_history \\
-      --db data/games/canonical_square8.db
+      --db data/games/canonical_square8_2p.db
 
 Exit codes:
   0 – all games satisfied the canonical phase-history invariant
