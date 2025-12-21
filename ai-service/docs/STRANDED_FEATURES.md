@@ -129,6 +129,23 @@ Last updated: 2025-12-21
 - **Features**: Teacher-student training, ensemble compression
 - **Integration Gap**: No automated pipeline for checkpoint distillation
 
+### 3.6 Canonical Action-Space Migration (Correctness + Strength)
+
+- **Status**: Not Integrated
+- **Files**:
+  - `app/ai/neural_net/square_encoding.py`
+  - `app/ai/neural_net/square_architectures.py`
+  - `app/ai/mcts_ai.py`, `app/ai/minimax_ai.py`
+  - `app/ai/nnue_policy.py`
+- **Issue**: The policy/action encoding still references legacy action types
+  (`line_formation`, `territory_claim`, `choose_line_reward`, `process_territory_region`).
+  This is a hidden correctness risk and dilutes policy learning signal.
+- **Next Step**: Introduce a canonical action-space adapter that maps
+  legacy aliases to canonical move types at model I/O, then refactor
+  encoders and policy heads to use only canonical action indices.
+- **Expected Impact**: Higher policy consistency, fewer off-policy errors,
+  and cleaner training data (quality + Elo).
+
 ---
 
 ## 4. SEARCH OPTIMIZATIONS
@@ -230,5 +247,6 @@ Last updated: 2025-12-21
 1. **Run experimental AI tournament** to discover if any D12-D19 beats production D9-D11
 2. **Enable multi-player value training** for 3-4P games
 3. **Add reanalysis to automated training** for data quality boost
-4. **Create LegacySearchMixin** to isolate legacy code from incremental search
-5. **Implement progressive widening** for Square19/Hex
+4. **Migrate policy/action encoding to canonical move types** (legacy aliases only via adapters)
+5. **Create LegacySearchMixin** to isolate legacy code from incremental search
+6. **Implement progressive widening** for Square19/Hex

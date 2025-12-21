@@ -46,6 +46,8 @@
    - move diversity + phase coverage scores
 3. Add lightweight validation checks for canonical phase history on
    tournament DBs (opt-in or sampled).
+4. Enforce canonical MoveType names at write time (no legacy aliases in
+   tournament output; legacy replay only via explicit adapters).
 
 ### Phase 2 - Consolidate Entry Points
 
@@ -103,6 +105,7 @@
    explicit forced elimination and canonical phase histories.
 2. Add a small unit test or smoke validation to ensure tournament runs
    can be replayed via canonical history checks (opt-in/sampled).
+3. Add a tournament-time guard to reject legacy MoveTypes in new records.
 
 ---
 

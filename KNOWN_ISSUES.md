@@ -705,7 +705,7 @@ These issues have been addressed but are kept here for context:
   - All 96 parity tests passing
 - **Rule Clarification: Post-Movement Capture Constraint (Dec 4, 2025)** –
   Clarified in `RULES_CANONICAL_SPEC.md` (new rule RR-CANON-R093) and all rules
-  docs that optional capture after non-capture movement (`move_stack`/`move_ring`)
+  docs that optional capture after non-capture movement (`move_stack`)
   must be from the **moved stack's landing position only**, not from any stack
   the player controls. This addresses a semantic divergence between TS (landing
   position constraint) and Python (any stack) engines. The TS interpretation is
