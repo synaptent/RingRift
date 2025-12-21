@@ -4,7 +4,7 @@
  *
  * Ensures that the canonical environment variable schema defined in
  * `src/server/config/env.ts` (EnvSchema) is reflected in
- * `docs/ENVIRONMENT_VARIABLES.md`.
+ * `docs/operations/ENVIRONMENT_VARIABLES.md`.
  *
  * This check is deliberately conservative:
  * - It requires that every EnvSchema key (minus an explicit ignore list)
@@ -62,7 +62,7 @@ export async function runEnvDocSsotCheck(): Promise<CheckResult> {
       name: 'env-doc-ssot',
       passed: false,
       details:
-        'docs/ENVIRONMENT_VARIABLES.md is missing (cannot validate env docs against schema).',
+        'docs/operations/ENVIRONMENT_VARIABLES.md is missing (cannot validate env docs against schema).',
     };
   }
 
@@ -93,17 +93,19 @@ export async function runEnvDocSsotCheck(): Promise<CheckResult> {
       name: 'env-doc-ssot',
       passed: true,
       details:
-        'All server EnvSchema keys (minus internal ignores) are mentioned in docs/ENVIRONMENT_VARIABLES.md.',
+        'All server EnvSchema keys (minus internal ignores) are mentioned in docs/operations/ENVIRONMENT_VARIABLES.md.',
     };
   }
 
-  problems.push('The following EnvSchema keys are not mentioned in docs/ENVIRONMENT_VARIABLES.md:');
+  problems.push(
+    'The following EnvSchema keys are not mentioned in docs/operations/ENVIRONMENT_VARIABLES.md:'
+  );
   for (const key of missingInDoc) {
     problems.push(`- ${key}`);
   }
 
   problems.push(
-    '\nIf some of these are intentionally internal-only, add them to the ignore list in scripts/ssot/env-doc-ssot-check.ts. Otherwise, document them in docs/ENVIRONMENT_VARIABLES.md as part of the canonical environment reference.'
+    '\nIf some of these are intentionally internal-only, add them to the ignore list in scripts/ssot/env-doc-ssot-check.ts. Otherwise, document them in docs/operations/ENVIRONMENT_VARIABLES.md as part of the canonical environment reference.'
   );
 
   return {

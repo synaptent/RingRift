@@ -4,7 +4,7 @@
  *
  * Ensures that the canonical error code catalog defined in
  * `src/server/errors/errorCodes.ts` is accurately reflected in
- * `docs/API_REFERENCE.md`.
+ * `docs/architecture/API_REFERENCE.md`.
  *
  * This check is intentionally conservative but not overbearing:
  * - It requires that every canonical ErrorCodes value (minus an
@@ -18,7 +18,7 @@
  *   backticks.
  *
  * The goal is to keep the human‑facing error catalog in
- * `docs/API_REFERENCE.md` aligned with the executable SSoT while still
+ * `docs/architecture/API_REFERENCE.md` aligned with the executable SSoT while still
  * allowing some internal‑only codes to remain undocumented when appropriate.
  */
 
@@ -95,7 +95,7 @@ export async function runApiDocSsotCheck(): Promise<CheckResult> {
 
   // WebSocket error codes are governed by WebSocketErrorCode in
   // src/shared/types/websocket.ts rather than ErrorCodes, but
-  // docs/API_REFERENCE.md legitimately documents them in the
+  // docs/architecture/API_REFERENCE.md legitimately documents them in the
   // WebSocket section. We treat them as additional allowed tokens
   // here so they are not flagged as unknown.
   const additionalAllowedTokens = new Set<string>([
@@ -125,25 +125,27 @@ export async function runApiDocSsotCheck(): Promise<CheckResult> {
       name: 'api-doc-ssot',
       passed: true,
       details:
-        'All canonical ErrorCodes are mentioned in docs/API_REFERENCE.md, and all documented backtick error codes map to known canonical or legacy codes.',
+        'All canonical ErrorCodes are mentioned in docs/architecture/API_REFERENCE.md, and all documented backtick error codes map to known canonical or legacy codes.',
     };
   }
 
   const problems: string[] = [];
 
   if (missingInDoc.length > 0) {
-    problems.push('The following canonical ErrorCodes are not mentioned in docs/API_REFERENCE.md:');
+    problems.push(
+      'The following canonical ErrorCodes are not mentioned in docs/architecture/API_REFERENCE.md:'
+    );
     for (const code of missingInDoc) {
       problems.push(`- ${code}`);
     }
     problems.push(
-      '\nFor each of these codes, either (a) add a row to the HTTP error catalog in docs/API_REFERENCE.md, or (b) add the code to the ignore list in scripts/ssot/api-doc-ssot-check.ts if it is intentionally internal‑only.'
+      '\nFor each of these codes, either (a) add a row to the HTTP error catalog in docs/architecture/API_REFERENCE.md, or (b) add the code to the ignore list in scripts/ssot/api-doc-ssot-check.ts if it is intentionally internal‑only.'
     );
   }
 
   if (unknownDocCodes.length > 0) {
     problems.push(
-      'The following backtick‑wrapped error codes appear in docs/API_REFERENCE.md but are not part of ErrorCodes or LegacyCodeMapping:'
+      'The following backtick‑wrapped error codes appear in docs/architecture/API_REFERENCE.md but are not part of ErrorCodes or LegacyCodeMapping:'
     );
     for (const token of unknownDocCodes) {
       problems.push(`- ${token}`);

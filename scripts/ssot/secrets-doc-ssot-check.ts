@@ -4,7 +4,7 @@
  *
  * Ensures that the canonical secret definitions in
  * `src/server/utils/secretsValidation.ts` are reflected in
- * `docs/SECRETS_MANAGEMENT.md`.
+ * `docs/operations/SECRETS_MANAGEMENT.md`.
  *
  * This is intentionally conservative:
  * - Every SECRET_DEFINITIONS entry (minus an explicit ignore list)
@@ -36,7 +36,7 @@ export async function runSecretsDocSsotCheck(): Promise<CheckResult> {
       name: 'secrets-doc-ssot',
       passed: false,
       details:
-        'docs/SECRETS_MANAGEMENT.md is missing (cannot validate secrets docs against canonical definitions).',
+        'docs/operations/SECRETS_MANAGEMENT.md is missing (cannot validate secrets docs against canonical definitions).',
     };
   }
 
@@ -68,19 +68,19 @@ export async function runSecretsDocSsotCheck(): Promise<CheckResult> {
       name: 'secrets-doc-ssot',
       passed: true,
       details:
-        'All canonical SECRET_DEFINITIONS are mentioned in docs/SECRETS_MANAGEMENT.md (minus any explicit ignores).',
+        'All canonical SECRET_DEFINITIONS are mentioned in docs/operations/SECRETS_MANAGEMENT.md (minus any explicit ignores).',
     };
   }
 
   problems.push(
-    'The following secrets from src/server/utils/secretsValidation.ts (SECRET_DEFINITIONS) are not mentioned in docs/SECRETS_MANAGEMENT.md:'
+    'The following secrets from src/server/utils/secretsValidation.ts (SECRET_DEFINITIONS) are not mentioned in docs/operations/SECRETS_MANAGEMENT.md:'
   );
   for (const name of missingInDoc) {
     problems.push(`- ${name}`);
   }
 
   problems.push(
-    '\nIf some of these are intentionally internal-only, add them to the ignore list in scripts/ssot/secrets-doc-ssot-check.ts. Otherwise, document them in docs/SECRETS_MANAGEMENT.md as part of the canonical secrets reference.'
+    '\nIf some of these are intentionally internal-only, add them to the ignore list in scripts/ssot/secrets-doc-ssot-check.ts. Otherwise, document them in docs/operations/SECRETS_MANAGEMENT.md as part of the canonical secrets reference.'
   );
 
   return {

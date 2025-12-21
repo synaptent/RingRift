@@ -64,7 +64,7 @@ export async function runCiAndConfigSsotCheck(): Promise<CheckResult> {
       problems.push('CI workflow .github/workflows/ci.yml is missing');
     }
     if (!fs.existsSync(docPath)) {
-      problems.push('docs/SUPPLY_CHAIN_AND_CI_SECURITY.md is missing');
+      problems.push('docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md is missing');
     }
 
     if (problems.length === 0) {
@@ -104,7 +104,7 @@ export async function runCiAndConfigSsotCheck(): Promise<CheckResult> {
         }
         if (!docContent.includes(jobName)) {
           problems.push(
-            `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention CI job "${jobName}" (update doc or expected list)`
+            `docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention CI job "${jobName}" (update doc or expected list)`
           );
         }
       }
@@ -120,7 +120,7 @@ export async function runCiAndConfigSsotCheck(): Promise<CheckResult> {
       }
       if (!docContent.includes(nightlyJobName)) {
         problems.push(
-          `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention nightly CI job "${nightlyJobName}" (update doc or expected list)`
+          `docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention nightly CI job "${nightlyJobName}" (update doc or expected list)`
         );
       }
 
@@ -139,7 +139,7 @@ export async function runCiAndConfigSsotCheck(): Promise<CheckResult> {
       }
       if (!docContent.includes(aiNightlyJobName)) {
         problems.push(
-          `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention nightly CI job "${aiNightlyJobName}" (update doc or expected list)`
+          `docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention nightly CI job "${aiNightlyJobName}" (update doc or expected list)`
         );
       }
 
@@ -155,7 +155,7 @@ export async function runCiAndConfigSsotCheck(): Promise<CheckResult> {
       for (const cmd of orchestratorCommands) {
         if (!docContent.includes(cmd)) {
           problems.push(
-            `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention orchestrator gate command "${cmd}"`
+            `docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md does not mention orchestrator gate command "${cmd}"`
           );
         }
 

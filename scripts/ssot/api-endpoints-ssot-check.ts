@@ -2,14 +2,14 @@
 /**
  * API endpoints ↔ OpenAPI SSoT check
  *
- * Ensures that the HTTP endpoints documented in docs/API_REFERENCE.md stay
+ * Ensures that the HTTP endpoints documented in docs/architecture/API_REFERENCE.md stay
  * aligned with the canonical OpenAPI specification generated from
  * src/server/openapi/config.ts.
  *
  * Behaviour (v1):
  * - Treat the OpenAPI spec (swaggerSpec.paths) as the canonical source of
  *   truth for REST endpoints.
- * - Parse docs/API_REFERENCE.md for endpoint tables and extract
+ * - Parse docs/architecture/API_REFERENCE.md for endpoint tables and extract
  *   (method, path) pairs.
  * - Enforce **docs → OpenAPI** coverage: every documented endpoint must
  *   exist in the OpenAPI spec with a matching HTTP method.
@@ -30,7 +30,7 @@
  * This check is intentionally conservative and explainable: failures
  * report the exact (method, path) pairs that are mismatched so that
  * authors can either:
- *   - Update docs/API_REFERENCE.md to match the spec, or
+ *   - Update docs/architecture/API_REFERENCE.md to match the spec, or
  *   - Update OpenAPI JSDoc to expose the intended endpoint, or
  *   - Add a temporary ignore entry in this script (documented
  *     technical debt) if an endpoint is deliberately undocumented.
