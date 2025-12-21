@@ -1,13 +1,31 @@
 """
 Data Quality Assessment Library
 
+.. deprecated:: 2025-12
+    For new code, prefer using the canonical quality module:
+
+        from app.quality import (
+            UnifiedQualityScorer,
+            compute_game_quality,
+            compute_sample_weight,
+        )
+
+    The app.quality module provides:
+    - Unified quality scoring across all systems
+    - Elo-based sample weighting
+    - Recency decay for freshness-weighted sampling
+    - Event emission for quality updates
+
+    This scripts/lib module is retained for backward compatibility with
+    existing scripts that use GameQualityScorer and QualityFilter.
+
 Provides utilities for evaluating and filtering training data quality:
 - Game quality scoring
 - Victory type analysis
 - Data deduplication
 - Quality statistics
 
-Usage:
+Usage (legacy):
     from scripts.lib.data_quality import GameQualityScorer, QualityFilter
 
     scorer = GameQualityScorer(config="square8_2p")
