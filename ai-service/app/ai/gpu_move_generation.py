@@ -1359,11 +1359,20 @@ def apply_single_chain_capture(
     if new_target_height <= 0:
         state.stack_owner[game_idx, target_y, target_x] = 0
         state.cap_height[game_idx, target_y, target_x] = 0
+        # BUG FIX 2025-12-20: Clear buried_at and decrement buried_rings when stack eliminated
+        for p in range(1, state.num_players + 1):
+            if state.buried_at[game_idx, p, target_y, target_x].item():
+                state.buried_at[game_idx, p, target_y, target_x] = False
+                state.buried_rings[game_idx, p] -= 1
     elif target_cap_fully_captured:
         # Cap captured, ownership transfers to opponent
         opponent = 1 if target_owner == 2 else 2
         state.stack_owner[game_idx, target_y, target_x] = opponent
         state.cap_height[game_idx, target_y, target_x] = new_target_height
+        # BUG FIX 2025-12-20: If opponent had buried ring here, it's now exposed as cap
+        if state.buried_at[game_idx, opponent, target_y, target_x].item():
+            state.buried_at[game_idx, opponent, target_y, target_x] = False
+            state.buried_rings[game_idx, opponent] -= 1
     else:
         # Cap not fully captured, defender keeps ownership
         new_target_cap = target_cap_height - 1
@@ -1534,11 +1543,20 @@ def apply_single_initial_capture(
     if new_target_height <= 0:
         state.stack_owner[game_idx, target_y, target_x] = 0
         state.cap_height[game_idx, target_y, target_x] = 0
+        # BUG FIX 2025-12-20: Clear buried_at and decrement buried_rings when stack eliminated
+        for p in range(1, state.num_players + 1):
+            if state.buried_at[game_idx, p, target_y, target_x].item():
+                state.buried_at[game_idx, p, target_y, target_x] = False
+                state.buried_rings[game_idx, p] -= 1
     elif target_cap_fully_captured:
         # Cap captured, ownership transfers to opponent
         opponent = 1 if target_owner == 2 else 2
         state.stack_owner[game_idx, target_y, target_x] = opponent
         state.cap_height[game_idx, target_y, target_x] = new_target_height
+        # BUG FIX 2025-12-20: If opponent had buried ring here, it's now exposed as cap
+        if state.buried_at[game_idx, opponent, target_y, target_x].item():
+            state.buried_at[game_idx, opponent, target_y, target_x] = False
+            state.buried_rings[game_idx, opponent] -= 1
     else:
         # Cap not fully captured, defender keeps ownership
         new_target_cap = max(1, min(target_cap_height - 1, new_target_height))
