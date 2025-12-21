@@ -1,4 +1,6 @@
 import { BoardType, BOARD_CONFIGS, Move, Position } from '../types/game';
+import { formatLegacyMoveTypeSymbol } from './legacy/legacyNotation';
+import { isLegacyMoveType, normalizeLegacyMoveType } from './legacy/legacyMoveTypes';
 
 /**
  * Shared move-notation helpers.
@@ -97,18 +99,21 @@ export function formatPosition(pos: Position, options: MoveNotationOptions = {})
 }
 
 function formatMoveType(move: Move): string {
+  if (isLegacyMoveType(move.type)) {
+    const normalizedType = normalizeLegacyMoveType(move.type);
+    if (normalizedType !== move.type) {
+      return formatMoveType({ ...move, type: normalizedType });
+    }
+    return formatLegacyMoveTypeSymbol(move.type);
+  }
+
   switch (move.type) {
     case 'place_ring':
       return 'R';
-    case 'move_ring':
     case 'move_stack':
       return 'M';
     case 'overtaking_capture':
       return 'C';
-    case 'line_formation':
-      return 'L';
-    case 'territory_claim':
-      return 'T';
     case 'skip_placement':
       return 'S';
     case 'recovery_slide':
@@ -131,17 +136,18 @@ function formatMoveType(move: Move): string {
 export function formatMove(move: Move, options: MoveNotationOptions = {}): string {
   const prefix = `P${move.player}:`;
   const kind = formatMoveType(move);
+  const normalizedType = normalizeLegacyMoveType(move.type);
 
   const toPos = move.to ? formatPosition(move.to, options) : undefined;
   const fromPos = move.from ? formatPosition(move.from, options) : undefined;
   const targetPos = move.captureTarget ? formatPosition(move.captureTarget, options) : undefined;
 
-  if (move.type === 'place_ring') {
+  if (normalizedType === 'place_ring') {
     const count = move.placementCount && move.placementCount > 1 ? ` x${move.placementCount}` : '';
     return `${prefix} ${kind} ${toPos ?? '?'}${count}`;
   }
 
-  if (move.type === 'move_ring' || move.type === 'move_stack') {
+  if (normalizedType === 'move_stack') {
     if (fromPos && toPos) {
       return `${prefix} ${kind} ${fromPos}→${toPos}`;
     }
@@ -151,7 +157,7 @@ export function formatMove(move: Move, options: MoveNotationOptions = {}): strin
     return `${prefix} ${kind}`;
   }
 
-  if (move.type === 'overtaking_capture') {
+  if (normalizedType === 'overtaking_capture') {
     if (fromPos && targetPos && toPos) {
       return `${prefix} ${kind} ${fromPos}×${targetPos}→${toPos}`;
     }
@@ -162,7 +168,7 @@ export function formatMove(move: Move, options: MoveNotationOptions = {}): strin
   }
 
   // Recovery slide (RR-CANON-R110–R115): marker slide that completes a line
-  if (move.type === 'recovery_slide') {
+  if (normalizedType === 'recovery_slide') {
     const optSuffix = move.recoveryOption ? ` [opt${move.recoveryOption}]` : '';
     if (fromPos && toPos) {
       return `${prefix} ${kind} ${fromPos}→${toPos}${optSuffix}`;
