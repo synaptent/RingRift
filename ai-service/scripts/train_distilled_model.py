@@ -27,12 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.models import BoardType
 from app.training.config import TrainConfig, get_training_config_for_board
 from app.training.train import train_model
-
-BOARD_TYPE_MAP = {
-    "square8": BoardType.SQUARE8,
-    "square19": BoardType.SQUARE19,
-    "hexagonal": BoardType.HEXAGONAL,
-}
+from scripts.lib.cli import BOARD_TYPE_MAP
 
 
 def main():

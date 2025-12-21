@@ -207,7 +207,7 @@ def play_game(
             if move is None:
                 break
 
-            state = engine.apply_move(state, move)
+            state = engine.apply_move(state, move, trace_mode=True)
 
         return state.winner
 

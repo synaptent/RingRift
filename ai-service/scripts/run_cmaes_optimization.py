@@ -230,11 +230,11 @@ FitnessDebugCallback = Callable[
 WEIGHT_KEYS: list[str] = list(HEURISTIC_WEIGHT_KEYS)
 
 # Map CLI board names to BoardType enums for evaluation wiring.
-BOARD_NAME_TO_TYPE: dict[str, BoardType] = {
-    "square8": BoardType.SQUARE8,
-    "square19": BoardType.SQUARE19,
-    "hex": BoardType.HEXAGONAL,
-}
+# Use the central mapping from scripts.lib.cli
+from scripts.lib.cli import BOARD_TYPE_MAP
+
+# Backward-compatible alias for scripts that import BOARD_NAME_TO_TYPE from here
+BOARD_NAME_TO_TYPE = BOARD_TYPE_MAP
 
 # Lightweight diagnostic counter for pie-rule usage during a single
 # evaluate_fitness() run. This is reset at the start of each evaluation

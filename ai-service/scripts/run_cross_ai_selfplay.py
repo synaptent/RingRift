@@ -234,7 +234,7 @@ def play_game(
                 break
 
             # Apply move
-            state = engine.apply_move(state, move)
+            state = engine.apply_move(state, move, trace_mode=True)
             moves += 1
 
         duration_ms = (time.time() - start_time) * 1000

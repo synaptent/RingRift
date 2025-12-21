@@ -166,7 +166,7 @@ def play_game(
         if move is None:
             break
 
-        state = engine.apply_move(state, move)
+        state = engine.apply_move(state, move, trace_mode=True)
         move_count += 1
 
     return MatchResult(

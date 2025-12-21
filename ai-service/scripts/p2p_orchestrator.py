@@ -9720,7 +9720,7 @@ print(wins / total)
                     recorded_moves.append(move)
 
                     state_before = state
-                    state = engine.apply_move(state, move)
+                    state = engine.apply_move(state, move, trace_mode=True)
                     move_count += 1
                     if recorder is not None:
                         recorder.add_move(

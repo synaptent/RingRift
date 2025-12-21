@@ -61,6 +61,7 @@ from scripts.unified_loop.config import (
     DataEventType,
     FeedbackState,
     HostState,
+    INITIAL_ELO_RATING,
     NASConfig,
     PBTConfig,
     PERConfig,
@@ -6680,6 +6681,14 @@ class UnifiedAILoop:
             print("[LocalSelfplay] Local selfplay generator not available")
             return {"success": False, "error": "Local selfplay not available", "games": 0, "samples": 0}
 
+        # Get current Elo for PFSP opponent selection
+        current_elo = INITIAL_ELO_RATING
+        if config_key in self.state.configs:
+            current_elo = self.state.configs[config_key].current_elo
+
+        # Use PFSP opponent selection if enabled in config
+        use_pfsp = getattr(self.config, 'use_pfsp', True)
+
         result = await self.local_selfplay.generate_games(
             num_games=games,
             config_key=config_key,
@@ -6687,6 +6696,8 @@ class UnifiedAILoop:
             nn_model_id=nn_model_id,
             gumbel_simulations=gumbel_simulations,
             gumbel_top_k=gumbel_top_k,
+            use_pfsp_opponent=use_pfsp,
+            current_elo=current_elo,
         )
 
         # Update state with new games

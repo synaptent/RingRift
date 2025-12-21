@@ -125,7 +125,7 @@ def run_game_random(engine, board_type, num_players, rng_seed=None):
             break
 
         moves.append((player, move, state.current_phase))
-        state = engine.apply_move(state, move)
+        state = engine.apply_move(state, move, trace_mode=True)
         move_count += 1
 
     return state, moves
