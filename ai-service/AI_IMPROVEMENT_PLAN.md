@@ -1544,8 +1544,8 @@ P1 has real actions (movement/capture) and others do not.
 ### 10.8 Future Work
 
 1. ~~**Fix RandomAI ZobristHash issue**~~ ✅ RESOLVED (thread-safe singleton)
-2. ~~**Extended tournament**~~ ✅ RESOLVED (`scripts/run_distributed_tournament.py`, `scripts/run_crossboard_difficulty_tournament.py`)
-3. ~~**Cross-board validation**~~ ✅ RESOLVED (rank-consistency summary via `scripts/run_crossboard_difficulty_tournament.py`)
+2. ~~**Extended tournament**~~ ✅ RESOLVED (`scripts/run_distributed_tournament.py`, `scripts/run_tournament.py crossboard`)
+3. ~~**Cross-board validation**~~ ✅ RESOLVED (rank-consistency summary via `scripts/run_tournament.py crossboard`)
 4. ~~**Cloud-distributed execution**~~ ✅ RESOLVED (`scripts/run_ssh_distributed_tournament.py` + `config/distributed_hosts.yaml`)
 5. ~~**Continuous strength monitoring**~~ ✅ RESOLVED (`scripts/run_strength_regression_gate.py`, CI job `python-ai-strength-regression`)
 

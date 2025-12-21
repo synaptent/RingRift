@@ -212,7 +212,7 @@ Rules:
     - D1 random.
     - D2 heuristic (current production).
     - Previous D4 persona.
-  - Use [`run_ai_tournament.py`](ai-service/scripts/run_ai_tournament.py:1) or [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py:1) to gather stats.
+  - Use [`run_tournament.py`](ai-service/scripts/run_tournament.py:1) in `basic` mode or [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py:1) to gather stats.
 
 **Outputs & versioning**
 
@@ -542,7 +542,7 @@ For each tier T ∈ {D2, D4, D6, D8}, the pipeline is:
    - Ensure `overall_pass=true`.
 
 4. **Optional cross-tier sanity evaluation:**
-   - Use [`run_ai_tournament.py`](ai-service/scripts/run_ai_tournament.py:1) or [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py:1) to play:
+   - Use [`run_tournament.py`](ai-service/scripts/run_tournament.py:1) in `basic` mode or [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py:1) to play:
      - New D2 vs old D2 vs random.
      - New D4 vs D2 / D6.
      - New D6 vs D4 / D8.

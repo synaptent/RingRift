@@ -314,8 +314,9 @@ python scripts/evaluate_ai_models.py \
     --board square8
 
 # Run AI tournament
-python scripts/run_ai_tournament.py \
-    --models heuristic,neural \
+python scripts/run_tournament.py basic \
+    --p1 heuristic \
+    --p2 neural \
     --games 50 \
     --board square8
 

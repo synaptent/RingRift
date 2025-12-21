@@ -667,7 +667,7 @@ This section enumerates the canonical modules and scripts for heuristic-weight t
   - Generates per-feature axis-aligned profiles `{key}_pos` and `{key}_neg` under `logs/axis_aligned/profiles/`, starting from [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py) and perturbing a single weight at a time.
   - Use this script to create a standardized library of axis-aligned heuristic profiles that can be fed into tournaments or evaluation harnesses to probe sensitivity of the heuristic to each feature across different boards.
 
-- [`run_axis_aligned_tournament.py`](../ai-service/scripts/run_axis_aligned_tournament.py)
+- [`run_tournament.py`](../ai-service/scripts/run_tournament.py) (`weights` mode; legacy entrypoint: `scripts/deprecated/run_axis_aligned_tournament.py`)
   - Runs round-robin tournaments among the generated axis-aligned profiles (currently at least for the Square8 configuration), reporting head-to-head performance.
   - For multi-board analysis, this harness should be configured or extended to schedule tournaments on each target board while reusing the same `{key}_pos` / `{key}_neg` profiles, so axis-aligned diagnostics remain consistent with CMA-ES and GA evaluation settings.
 

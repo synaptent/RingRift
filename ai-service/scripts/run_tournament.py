@@ -155,7 +155,7 @@ def create_parser() -> argparse.ArgumentParser:
 def run_basic_tournament(args: argparse.Namespace, config: Any) -> int:
     """Run basic AI vs AI tournament."""
     # Delegate to original script logic
-    from scripts.run_ai_tournament import main as ai_tournament_main
+    from scripts.deprecated.run_ai_tournament import main as ai_tournament_main
 
     # Convert args to original format
     sys.argv = [
@@ -277,7 +277,7 @@ def run_diverse_tournament(args: argparse.Namespace, config: Any) -> int:
 
 def run_weights_tournament(args: argparse.Namespace, config: Any) -> int:
     """Run heuristic weight profile tournament."""
-    from scripts.run_axis_aligned_tournament import main as weights_main
+    from scripts.deprecated.run_axis_aligned_tournament import main as weights_main
 
     sys_argv = [
         "run_axis_aligned_tournament.py",
@@ -294,7 +294,7 @@ def run_weights_tournament(args: argparse.Namespace, config: Any) -> int:
 
 def run_crossboard_tournament(args: argparse.Namespace, config: Any) -> int:
     """Run cross-board difficulty analysis."""
-    from scripts.run_crossboard_difficulty_tournament import main as crossboard_main
+    from scripts.deprecated.run_crossboard_difficulty_tournament import main as crossboard_main
 
     sys_argv = [
         "run_crossboard_difficulty_tournament.py",

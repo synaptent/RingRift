@@ -609,12 +609,12 @@ After each successful calibration cycle:
 
 #### Metrics to Track Manually
 
-| Metric                  | Collection Method                            | Frequency            | Owner         |
-| ----------------------- | -------------------------------------------- | -------------------- | ------------- |
-| Human win rate by tier  | Query calibration telemetry                  | Weekly               | AI/Data Owner |
-| Tier evaluation results | Run `run_tier_gate.py`                       | Monthly or on-demand | AI Owner      |
-| Perf benchmark results  | Run `run_tier_perf_benchmark.py`             | Monthly              | AI Owner      |
-| Cross-tier monotonicity | Manual tournament via `run_ai_tournament.py` | Quarterly            | AI Owner      |
+| Metric                  | Collection Method                               | Frequency            | Owner         |
+| ----------------------- | ----------------------------------------------- | -------------------- | ------------- |
+| Human win rate by tier  | Query calibration telemetry                     | Weekly               | AI/Data Owner |
+| Tier evaluation results | Run `run_tier_gate.py`                          | Monthly or on-demand | AI Owner      |
+| Perf benchmark results  | Run `run_tier_perf_benchmark.py`                | Monthly              | AI Owner      |
+| Cross-tier monotonicity | Manual tournament via `run_tournament.py basic` | Quarterly            | AI Owner      |
 
 #### Cadence for Manual Review
 

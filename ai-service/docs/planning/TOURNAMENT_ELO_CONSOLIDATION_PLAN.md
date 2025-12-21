@@ -43,9 +43,9 @@
 
 - `scripts/run_eval_tournaments.py`
   - State-pool evaluation (mid/late game snapshots).
-- `scripts/run_axis_aligned_tournament.py`, `scripts/run_profile_tournament.py`
+- `scripts/run_tournament.py` (`weights` mode; legacy entrypoint: `scripts/deprecated/run_axis_aligned_tournament.py`), `scripts/run_profile_tournament.py`
   - Heuristic profile diagnostics and structured evaluation.
-- `scripts/run_crossboard_difficulty_tournament.py`
+- `scripts/run_tournament.py` (`crossboard` mode; legacy entrypoint: `scripts/deprecated/run_crossboard_difficulty_tournament.py`)
   - Multi-board difficulty comparisons.
 
 ### Gauntlets / composite Elo
@@ -157,7 +157,7 @@ CLI (scripts/run_tournament.py) → app/tournament/pipeline.py
 | `launch_distributed_elo_tournament.py` | cluster orchestration | pipeline executor (cluster/HTTP) |
 | `run_model_elo_tournament.py`          | model Elo             | pipeline "models" mode           |
 | `run_eval_tournaments.py`              | state-pool eval       | pipeline "eval" mode             |
-| `run_axis_aligned_tournament.py`       | heuristic profiling   | pipeline "profiles" mode         |
+| `run_tournament.py` (weights)          | heuristic profiling   | pipeline "profiles" mode         |
 | `run_composite_gauntlet.py`            | composite Elo         | pipeline "composite" mode        |
 
 ---

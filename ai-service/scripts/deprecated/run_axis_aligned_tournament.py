@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 # Allow imports from app/ when run from the ai-service root.
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.ai.heuristic_ai import HeuristicAI  # type: ignore
 from app.ai.heuristic_weights import (  # type: ignore

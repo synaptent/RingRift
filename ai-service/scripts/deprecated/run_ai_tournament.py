@@ -8,8 +8,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-# Add the parent directory to sys.path to allow imports from app
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the ai-service root to sys.path to allow imports from app
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.ai.descent_ai import DescentAI
 from app.ai.heuristic_ai import HeuristicAI

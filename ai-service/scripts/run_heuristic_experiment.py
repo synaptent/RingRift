@@ -142,8 +142,8 @@ def create_empty_game_state(
 ) -> GameState:
     """Construct a minimal GameState suitable for AI-vs-AI matches.
 
-    This mirrors the helper in ``run_ai_tournament.py`` but is scoped to
-    HeuristicAI experiments.
+    This mirrors the helper in ``run_tournament.py`` (basic mode) but is
+    scoped to HeuristicAI experiments.
     """
 
     board_type = BOARD_TYPES.get(board_type_str, BoardType.SQUARE8)

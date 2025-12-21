@@ -86,7 +86,7 @@ if get_elo_service is not None:
 | ----------------------------- | -------------------------- | ----------------------------------------------------- |
 | `run_model_elo_tournament.py` | Model vs model tournaments | Keep (uses EloService)                                |
 | `run_diverse_tournaments.py`  | Multi-config tournaments   | Keep (orchestrator integration)                       |
-| `run_ai_tournament.py`        | AI type tournaments        | Keep (evaluation phase)                               |
+| `run_tournament.py` (basic)   | AI type tournaments        | Keep (evaluation phase)                               |
 | `distributed_tournament.py`   | Cluster tournaments        | Evaluate - may duplicate `run_diverse_tournaments.py` |
 
 ## Pending Refactoring Tasks
