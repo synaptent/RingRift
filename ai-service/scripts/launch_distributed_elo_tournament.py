@@ -49,8 +49,13 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 # Centralized Elo constants
 try:
-    from app.config.thresholds import ELO_K_FACTOR, INITIAL_ELO_RATING
+    from app.config.thresholds import (
+        BASELINE_ELO_RANDOM,  # Random AI pinned at 400 Elo
+        ELO_K_FACTOR,
+        INITIAL_ELO_RATING,
+    )
 except ImportError:
+    BASELINE_ELO_RANDOM = 400  # Random AI pinned at 400 Elo
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
 
@@ -971,7 +976,8 @@ def calculate_elo(results: list[MatchResult]) -> dict[str, float]:
     """
     k_factor = ELO_K_FACTOR
     initial_rating = INITIAL_ELO_RATING
-    random_anchor = 400.0  # Random is pinned at 400 Elo
+    # Use canonical constant - Random AI is ALWAYS pinned at 400 Elo
+    random_anchor = float(BASELINE_ELO_RANDOM)
 
     agents = set()
     for r in results:

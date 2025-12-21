@@ -181,7 +181,7 @@ def generate_game(
         "move_count": move_count,
         "game_status": state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status),
         "victory_type": getattr(state, 'victory_type', None),
-        "engine_mode": "policy_only",
+        "engine_mode": "policy-only",
         "moves": moves_data,
         "initial_state": initial_state,
         "timestamp": datetime.now().isoformat(),

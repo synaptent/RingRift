@@ -46,6 +46,11 @@ TRAINING_DIR = AI_SERVICE_ROOT / "data" / "training"
 ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 from app.config.thresholds import PRODUCTION_ELO_THRESHOLD
+try:  # pragma: no cover
+    from app.training.selfplay_config import normalize_engine_mode as _normalize_engine_mode
+except Exception:  # pragma: no cover
+    def _normalize_engine_mode(raw_mode: str) -> str:
+        return str(raw_mode).strip().lower()
 
 # Quality thresholds
 DEFAULT_MIN_AVG_ELO = 1350  # Minimum average Elo of participants
@@ -192,16 +197,21 @@ def analyze_game(
         quality_weight = calculate_quality_weight(avg_elo, min_elo)
 
         # Extract AI type
-        ai_type = game_data.get("ai_type", game_data.get("_ai_type", "unknown"))
+        raw_ai_type = game_data.get("ai_type") or game_data.get("_ai_type") or "unknown"
+        ai_type = _normalize_engine_mode(raw_ai_type)
         if ai_type == "unknown":
-            # Try to infer from source or participants
-            source = game_data.get("source", "")
-            if "gumbel" in source.lower():
-                ai_type = "gumbel_mcts"
-            elif "policy" in source.lower():
-                ai_type = "policy_only"
-            elif "nnue" in source.lower():
-                ai_type = "nnue_guided"
+            engine_mode = game_data.get("engine_mode")
+            if engine_mode:
+                ai_type = _normalize_engine_mode(engine_mode)
+            else:
+                # Try to infer from source or participants
+                source = game_data.get("source", "")
+                if "gumbel" in source.lower():
+                    ai_type = _normalize_engine_mode("gumbel_mcts")
+                elif "policy" in source.lower():
+                    ai_type = _normalize_engine_mode("policy_only")
+                elif "nnue" in source.lower():
+                    ai_type = _normalize_engine_mode("nnue_guided")
 
         # Extract victory type and timeout status
         victory_type = game_data.get("victory_type", game_data.get("termination_reason", "unknown"))
@@ -408,7 +418,7 @@ def main():
         "--ai-types",
         type=str,
         nargs="+",
-        help="Only include games with these AI types (e.g., --ai-types gumbel_mcts policy_only nnue-guided)",
+        help="Only include games with these AI types (e.g., --ai-types gumbel-mcts policy-only nnue-guided; legacy aliases accepted)",
     )
     parser.add_argument(
         "--exclude-timeout",
@@ -450,7 +460,11 @@ def main():
     print(f"\nTotal games found: {len(all_games)}")
 
     # Build AI types filter set
-    ai_types_filter = set(args.ai_types) if args.ai_types else None
+    ai_types_filter = (
+        {_normalize_engine_mode(value) for value in args.ai_types}
+        if args.ai_types
+        else None
+    )
     if ai_types_filter:
         print(f"Filtering to AI types: {ai_types_filter}")
 

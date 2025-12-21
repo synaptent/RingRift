@@ -31,6 +31,13 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 from app.tournament import EloDatabase
 from scripts.lib.logging_config import setup_script_logging
 
+# Import canonical baseline Elo constants (Random pinned at 400)
+try:
+    from app.config.thresholds import BASELINE_ELO_RANDOM, BASELINE_ELO_HEURISTIC
+except ImportError:
+    BASELINE_ELO_RANDOM = 400
+    BASELINE_ELO_HEURISTIC = 1200
+
 logger = setup_script_logging("gauntlet_to_elo")
 
 # Default paths
@@ -38,10 +45,11 @@ GAUNTLET_RESULTS_FILE = AI_SERVICE_ROOT / "data" / "baseline_gauntlet_results.js
 ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 # Baseline Elo anchors - fixed reference points
+# Random is ALWAYS pinned at 400 Elo as the anchor point
 BASELINE_ELOS = {
-    "random": 400,      # Random player anchor
-    "heuristic": 1000,  # Heuristic AI
-    "mcts": 1400,       # MCTS with 100 simulations
+    "random": BASELINE_ELO_RANDOM,  # Random player anchor (pinned at 400)
+    "heuristic": BASELINE_ELO_HEURISTIC,  # Heuristic AI
+    "mcts": 1400,  # MCTS with 100 simulations
 }
 
 

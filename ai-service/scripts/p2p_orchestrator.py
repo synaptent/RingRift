@@ -217,6 +217,7 @@ from scripts.p2p.constants import (
     IDLE_GPU_THRESHOLD,
     IDLE_GRACE_PERIOD,
     # Elo constants (from app.config.thresholds)
+    BASELINE_ELO_RANDOM,  # Random AI pinned at 400 Elo
     INITIAL_ELO_RATING,
     JOB_CHECK_INTERVAL,
     LEADER_DEGRADED_STEPDOWN_DELAY,
@@ -10309,7 +10310,8 @@ print(json.dumps(result))
         Uses standard Elo rating system with K-factor from app.config.thresholds.
         Random is pinned at 400 Elo as the anchor point.
         """
-        RANDOM_ANCHOR = 400  # Random is pinned at 400 Elo
+        # Use canonical constant - Random AI is ALWAYS pinned at 400 Elo
+        RANDOM_ANCHOR = BASELINE_ELO_RANDOM
 
         # Initialize ratings (using canonical constants from app.config.thresholds)
         ratings = {agent: float(INITIAL_ELO_RATING) for agent in state.agent_ids}

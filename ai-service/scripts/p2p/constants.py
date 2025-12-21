@@ -16,10 +16,12 @@ from pathlib import Path
 # Import canonical Elo constants
 try:
     from app.config.thresholds import (
+        BASELINE_ELO_RANDOM,  # Random AI pinned at 400 Elo
         ELO_K_FACTOR,
         INITIAL_ELO_RATING,
     )
 except ImportError:
+    BASELINE_ELO_RANDOM = 400  # Random AI pinned at 400 Elo
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
 

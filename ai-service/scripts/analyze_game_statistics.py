@@ -86,6 +86,12 @@ except Exception:  # pragma: no cover
     _get_canon_victory_threshold = None  # type: ignore[assignment]
     CANONICAL_RULES_AVAILABLE = False
 
+try:  # pragma: no cover
+    from app.training.selfplay_config import normalize_engine_mode as _normalize_engine_mode
+except Exception:  # pragma: no cover
+    def _normalize_engine_mode(raw_mode: str) -> str:
+        return str(raw_mode).strip().lower()
+
 
 # =============================================================================
 # Schema Normalization - handles old and new JSONL formats
@@ -180,6 +186,7 @@ def infer_ai_type(game: dict[str, Any], file_path: str = "") -> str:
     # Check explicit engine_mode first
     engine_mode = game.get("engine_mode")
     if engine_mode:
+        engine_mode = _normalize_engine_mode(engine_mode)
         mode_map = {
             "heuristic-only": "heuristic",
             "mcts-only": "mcts",

@@ -148,7 +148,7 @@ def generate_gumbel_game(
         "move_count": move_count,
         "game_status": state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status),
         "victory_type": getattr(state, 'victory_type', None),
-        "engine_mode": "gumbel_mcts",
+        "engine_mode": "gumbel-mcts",
         "moves": moves_data,
         "initial_state": initial_state,
         "timestamp": datetime.now().isoformat(),
