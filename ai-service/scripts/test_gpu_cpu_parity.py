@@ -173,8 +173,18 @@ def test_seed(seed: int) -> tuple[int, int, int, int, list]:
         # Skip pure GPU bookkeeping moves that don't affect game state
         if move_type_str in GPU_BOOKKEEPING_MOVES:
             skipped += 1
-            # But still advance CPU phases if needed
-            state = advance_cpu_through_phases(state, gpu_phase, gpu_player)
+            # Bookkeeping moves mean "we're done with this phase, advance to next"
+            # E.g., no_line_action at line_processing → CPU should be at territory_processing
+            # E.g., no_territory_action at territory_processing → CPU should be at next player's ring_placement
+            target_phase = gpu_phase
+            target_player = gpu_player
+            if move_type_str == 'no_line_action' and gpu_phase == 'line_processing':
+                target_phase = 'territory_processing'
+            elif move_type_str == 'no_territory_action' and gpu_phase == 'territory_processing':
+                # Move to next player's turn
+                target_phase = 'ring_placement'
+                target_player = (gpu_player % 2) + 1  # Toggle between 1 and 2
+            state = advance_cpu_through_phases(state, target_phase, target_player)
             continue
 
         move_type = MoveType(move_type_str)
