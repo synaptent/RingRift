@@ -45,19 +45,27 @@ All are safe to delete as issues have been resolved.
 
 ---
 
-## archive/deprecated/ (6 files)
+## archive/deprecated/ (14 files)
 
 Scripts explicitly superseded by newer implementations.
 Review before deletion to ensure functionality migrated.
 
-| Script                                    | Purpose                 | Replacement                                    | Status     |
-| ----------------------------------------- | ----------------------- | ---------------------------------------------- | ---------- |
-| `auto_model_promotion.py`                 | Auto-promote models     | `unified_orchestrator.py` promotion gates      | DEPRECATED |
-| `auto_promote.py`                         | Simple auto-promotion   | `elo_promotion_gate.py`                        | DEPRECATED |
-| `regression_gate.py`                      | Regression detection    | `unified_orchestrator.py` regression detection | DEPRECATED |
-| `run_ai_tournament.py`                    | Basic tournament runner | `run_model_elo_tournament.py`                  | DEPRECATED |
-| `run_axis_aligned_tournament.py`          | Axis-aligned evaluation | `composite_elo_dashboard.py`                   | DEPRECATED |
-| `run_crossboard_difficulty_tournament.py` | Cross-board difficulty  | Integrated into curriculum                     | DEPRECATED |
+| Script                                    | Purpose                   | Replacement                                    | Status     |
+| ----------------------------------------- | ------------------------- | ---------------------------------------------- | ---------- |
+| `alerting.py`                             | Monitor alerting          | `node_health_orchestrator.py`                  | DEPRECATED |
+| `auto_elo_tournament.py`                  | Auto Elo tournament       | `run_model_elo_tournament.py`                  | DEPRECATED |
+| `auto_model_promotion.py`                 | Auto-promote models       | `unified_orchestrator.py` promotion gates      | DEPRECATED |
+| `auto_promote.py`                         | Simple auto-promotion     | `elo_promotion_gate.py`                        | DEPRECATED |
+| `baseline_gauntlet.py`                    | Baseline gauntlet         | `run_gauntlet.py`                              | DEPRECATED |
+| `elo_promotion_gate.py`                   | Elo promotion gate        | `unified_orchestrator.py`                      | DEPRECATED |
+| `model_sync_aria2.py`                     | Model sync via aria2      | `sync_models.py`                               | DEPRECATED |
+| `p2p_model_sync.py`                       | P2P model sync            | `aria2_data_sync.py`                           | DEPRECATED |
+| `regression_gate.py`                      | Regression detection      | `unified_orchestrator.py` regression detection | DEPRECATED |
+| `run_ai_tournament.py`                    | Basic tournament runner   | `run_model_elo_tournament.py`                  | DEPRECATED |
+| `run_axis_aligned_tournament.py`          | Axis-aligned evaluation   | `composite_elo_dashboard.py`                   | DEPRECATED |
+| `run_crossboard_difficulty_tournament.py` | Cross-board difficulty    | Integrated into curriculum                     | DEPRECATED |
+| `shadow_tournament_service.py`            | Shadow tournament service | `run_model_elo_tournament.py`                  | DEPRECATED |
+| `training_dashboard.py`                   | Training dashboard        | `composite_elo_dashboard.py`                   | DEPRECATED |
 
 ---
 
