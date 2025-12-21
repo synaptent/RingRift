@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 """Elo-based model promotion gate with confidence intervals.
 
+.. deprecated:: 2025-12-20
+    This script is now consolidated into unified_promotion_daemon.py.
+    Use the elo-gate subcommand instead:
+        python scripts/unified_promotion_daemon.py elo-gate --candidate model_v5 --baseline model_v4
+
+    This standalone script remains for backward compatibility but will emit
+    a deprecation warning when run directly.
+
 Uses Wilson score confidence intervals to ensure promotions are statistically
 significant. A model is only promoted if its lower CI bound exceeds the
 promotion threshold.
 
-Usage:
+Usage (deprecated):
     python scripts/elo_promotion_gate.py --candidate model_v5 --baseline model_v4
     python scripts/elo_promotion_gate.py --candidate model_v5 --threshold 0.55 --confidence 0.95
+
+Preferred usage:
+    python scripts/unified_promotion_daemon.py elo-gate --candidate model_v5 --baseline model_v4
 """
 
 import argparse
@@ -188,6 +199,15 @@ def run_promotion_tournament(
 
 
 def main():
+    import warnings
+    warnings.warn(
+        "elo_promotion_gate.py is deprecated. "
+        "Use 'unified_promotion_daemon.py elo-gate' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    print("WARNING: This script is deprecated. Use 'unified_promotion_daemon.py elo-gate' instead.\n")
+
     parser = argparse.ArgumentParser(description="Elo-based promotion gate")
     parser.add_argument("--candidate", required=True, help="Candidate model path or ID")
     parser.add_argument("--baseline", help="Baseline model path or ID")

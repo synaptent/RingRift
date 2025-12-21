@@ -17,6 +17,14 @@ Usage:
 
     # Show status
     python scripts/unified_promotion_daemon.py --status
+
+    # Elo-based promotion gate with confidence intervals (consolidated)
+    python scripts/unified_promotion_daemon.py elo-gate --candidate model_v5 --baseline model_v4
+    python scripts/unified_promotion_daemon.py elo-gate --candidate model_v5 --threshold 0.55
+
+    # Cross-board parity gate (consolidated)
+    python scripts/unified_promotion_daemon.py parity-gate --player1 nn --player2 heuristic
+    python scripts/unified_promotion_daemon.py parity-gate --player1 nn --checkpoint model.pth
 """
 
 from __future__ import annotations
@@ -578,20 +586,174 @@ class UnifiedPromotionDaemon:
 
 
 # =============================================================================
+# Elo Gate Subcommand (consolidated from elo_promotion_gate.py)
+# =============================================================================
+
+def run_elo_gate(args: argparse.Namespace) -> int:
+    """Run Elo-based promotion gate with Wilson score confidence intervals."""
+    from scripts.elo_promotion_gate import (
+        evaluate_promotion,
+        games_needed_for_significance,
+        run_promotion_tournament,
+    )
+
+    if args.estimate_games:
+        n = games_needed_for_significance(
+            target_win_rate=args.target_rate,
+            threshold=args.threshold,
+            confidence=args.confidence,
+        )
+        print(f"Estimated games needed for {args.target_rate:.0%} true win rate:")
+        print(f"  Threshold: {args.threshold:.0%}")
+        print(f"  Confidence: {args.confidence:.0%}")
+        print(f"  Games needed: ~{n}")
+        return 0
+
+    if not args.baseline:
+        print("Error: --baseline required for tournament")
+        return 1
+
+    print("Running promotion tournament:")
+    print(f"  Candidate: {args.candidate}")
+    print(f"  Baseline: {args.baseline}")
+    print(f"  Threshold: {args.threshold:.0%}")
+    print(f"  Confidence: {args.confidence:.0%}")
+    print()
+
+    result = run_promotion_tournament(
+        candidate_path=args.candidate,
+        baseline_path=args.baseline,
+        board_type=args.board,
+        num_players=args.players,
+        min_games=args.min_games,
+        max_games=args.max_games,
+        threshold=args.threshold,
+        confidence=args.confidence,
+    )
+
+    print("=" * 60)
+    print("PROMOTION GATE RESULT")
+    print("=" * 60)
+    print(f"Decision: {'PROMOTE' if result['promote'] else 'REJECT'}")
+    print(f"Win rate: {result['win_rate']:.1%} ({result['wins']}/{result['decisive_games']})")
+    print(f"95% CI: [{result['ci_lower']:.1%}, {result['ci_upper']:.1%}]")
+    print(f"Threshold: {result['threshold']:.1%}")
+    print(f"Margin: {result['margin']:+.1%}")
+    print(f"Est. Elo diff: {result['estimated_elo_diff']:+.0f}")
+    print(f"Games played: {result['total_games']}")
+    print(f"Stop reason: {result['stop_reason']}")
+
+    if args.output:
+        import json
+        with open(args.output, "w") as f:
+            json.dump(result, f, indent=2)
+        print(f"\nResults saved to: {args.output}")
+
+    return 0 if result["promote"] else 1
+
+
+# =============================================================================
+# Parity Gate Subcommand (consolidated from run_parity_promotion_gate.py)
+# =============================================================================
+
+def run_parity_gate(args: argparse.Namespace) -> int:
+    """Run cross-board parity gate for AI models."""
+    from scripts.run_parity_promotion_gate import main as parity_main
+
+    # Convert args to argv format for parity gate
+    argv = [
+        "--player1", args.player1,
+        "--player2", args.player2,
+        "--games-per-matrix", str(args.games_per_matrix),
+        "--max-moves", str(args.max_moves),
+        "--min-ci-lower-bound", str(args.min_ci_lower_bound),
+        "--seed", str(args.seed),
+    ]
+
+    if args.checkpoint:
+        argv.extend(["--checkpoint", args.checkpoint])
+    if args.checkpoint2:
+        argv.extend(["--checkpoint2", args.checkpoint2])
+    if args.boards:
+        argv.extend(["--boards"] + args.boards)
+    if args.output_json:
+        argv.extend(["--output-json", args.output_json])
+
+    return parity_main(argv)
+
+
+# =============================================================================
 # CLI
 # =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Unified Model Promotion Daemon")
+    parser = argparse.ArgumentParser(
+        description="Unified Model Promotion Daemon",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Sub-commands")
+
+    # =========================================================================
+    # Main daemon commands (legacy positional)
+    # =========================================================================
     parser.add_argument("--check-once", action="store_true", help="Run one check cycle")
     parser.add_argument("--daemon", action="store_true", help="Run as continuous daemon")
     parser.add_argument("--status", action="store_true", help="Show daemon status")
     parser.add_argument("--dry-run", action="store_true", help="Don't actually promote")
     parser.add_argument("--config", type=str, default=str(CONFIG_FILE), help="Config file path")
 
+    # =========================================================================
+    # elo-gate subcommand (consolidated from elo_promotion_gate.py)
+    # =========================================================================
+    elo_parser = subparsers.add_parser(
+        "elo-gate",
+        help="Elo-based promotion gate with Wilson score confidence intervals",
+        description="Run adaptive tournament with statistical significance testing",
+    )
+    elo_parser.add_argument("--candidate", required=True, help="Candidate model path or ID")
+    elo_parser.add_argument("--baseline", help="Baseline model path or ID")
+    elo_parser.add_argument("--threshold", type=float, default=0.55, help="Win rate threshold")
+    elo_parser.add_argument("--confidence", type=float, default=0.95, help="Confidence level")
+    elo_parser.add_argument("--min-games", type=int, default=30, help="Minimum games to play")
+    elo_parser.add_argument("--max-games", type=int, default=200, help="Maximum games to play")
+    elo_parser.add_argument("--board", default="square8", help="Board type")
+    elo_parser.add_argument("--players", type=int, default=2, help="Number of players")
+    elo_parser.add_argument("--estimate-games", action="store_true",
+                           help="Estimate games needed for given win rate")
+    elo_parser.add_argument("--target-rate", type=float, default=0.60,
+                           help="Target win rate for estimation")
+    elo_parser.add_argument("--output", help="Output JSON file")
+
+    # =========================================================================
+    # parity-gate subcommand (consolidated from run_parity_promotion_gate.py)
+    # =========================================================================
+    parity_parser = subparsers.add_parser(
+        "parity-gate",
+        help="Cross-board parity gate for AI models",
+        description="Run candidate vs baseline evaluation matrix across boards",
+    )
+    parity_parser.add_argument("--player1", required=True, help="AI type for candidate")
+    parity_parser.add_argument("--player2", required=True, help="AI type for baseline")
+    parity_parser.add_argument("--checkpoint", help="Checkpoint for player1")
+    parity_parser.add_argument("--checkpoint2", help="Checkpoint for player2")
+    parity_parser.add_argument("--games-per-matrix", type=int, default=200, help="Games per board")
+    parity_parser.add_argument("--max-moves", type=int, default=10000, help="Max moves per game")
+    parity_parser.add_argument("--min-ci-lower-bound", type=float, default=0.5,
+                               help="Min CI lower bound threshold")
+    parity_parser.add_argument("--boards", nargs="*", default=["square8"],
+                               help="Boards to evaluate")
+    parity_parser.add_argument("--seed", type=int, default=1, help="RNG seed")
+    parity_parser.add_argument("--output-json", help="Output JSON file")
+
     args = parser.parse_args()
 
-    # Load config
+    # Handle subcommands
+    if args.command == "elo-gate":
+        return run_elo_gate(args)
+    elif args.command == "parity-gate":
+        return run_parity_gate(args)
+
+    # Handle main daemon commands
     config = DaemonConfig.from_yaml(Path(args.config))
     daemon = UnifiedPromotionDaemon(config)
 
@@ -602,6 +764,8 @@ def main():
     elif args.check_once or not any([args.status, args.daemon]):
         daemon.check_once(dry_run=args.dry_run)
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
