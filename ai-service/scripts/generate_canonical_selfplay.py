@@ -284,6 +284,7 @@ def run_selfplay_and_parity(
     include_training_data_jsonl: bool = False,
     distributed_job_timeout_seconds: int = 0,
     distributed_fetch_timeout_seconds: int = 0,
+    engine_mode: str | None = None,
 ) -> dict[str, Any]:
     """
     Delegate to run_canonical_selfplay_parity_gate.py to:
@@ -379,7 +380,6 @@ def run_selfplay_and_parity(
             "--difficulty-band",
             difficulty_band,
         ]
-        engine_mode = getattr(args, "engine_mode", None)
         if engine_mode:
             cmd += ["--engine-mode", engine_mode]
         if include_training_data_jsonl:
