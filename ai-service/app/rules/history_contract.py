@@ -65,6 +65,8 @@ def phase_move_contract() -> dict[CanonicalPhase, tuple[str, ...]]:
             "process_line",
             "choose_line_option",
             "no_line_action",
+            # RR-CANON-R123: line elimination is a separate move
+            "eliminate_rings_from_stack",
         ),
         "territory_processing": (
             "choose_territory_option",

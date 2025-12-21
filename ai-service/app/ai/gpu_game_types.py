@@ -99,6 +99,9 @@ class MoveType(IntEnum):
     # Canonical skip placement (19)
     SKIP_PLACEMENT = 19          # Skip placement phase
 
+    # Canonical elimination (20) - per RR-CANON-R123/R145
+    ELIMINATE_RINGS_FROM_STACK = 20  # Line or territory elimination
+
 
 class GamePhase(IntEnum):
     """Current phase of a game.

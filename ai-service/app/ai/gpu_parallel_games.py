@@ -1791,9 +1791,12 @@ class ParallelGameRunner:
     ) -> None:
         """Record canonical line processing moves to move_history.
 
-        Per canonical contract, LINE_PROCESSING phase must emit either:
-        - CHOOSE_LINE_OPTION: when lines were processed
-        - NO_LINE_ACTION: when no lines were available
+        Per canonical contract (RR-CANON-R123), LINE_PROCESSING phase must emit:
+        - Games WITH lines: CHOOSE_LINE_OPTION + ELIMINATE_RINGS_FROM_STACK
+        - Games WITHOUT lines: NO_LINE_ACTION
+
+        The elimination move is separate from the line choice per RR-CANON-R123
+        to support interactive stack selection in human games.
 
         Args:
             mask: Games being processed in this phase
@@ -1818,18 +1821,40 @@ class ParallelGameRunner:
                 continue
 
             player = int(players[i].item())
-            move_type = MoveType.CHOOSE_LINE_OPTION if had_lines[i] else MoveType.NO_LINE_ACTION
 
-            # Record to move_history (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
-            self.state.move_history[g, move_count, 0] = move_type
-            self.state.move_history[g, move_count, 1] = player
-            self.state.move_history[g, move_count, 2] = -1  # No position for line moves
-            self.state.move_history[g, move_count, 3] = -1
-            self.state.move_history[g, move_count, 4] = -1
-            self.state.move_history[g, move_count, 5] = -1
-            self.state.move_history[g, move_count, 6] = GamePhase.LINE_PROCESSING
+            if had_lines[i]:
+                # RR-CANON-R123: Record CHOOSE_LINE_OPTION + ELIMINATE_RINGS_FROM_STACK
+                # First: record the line choice move
+                self.state.move_history[g, move_count, 0] = MoveType.CHOOSE_LINE_OPTION
+                self.state.move_history[g, move_count, 1] = player
+                self.state.move_history[g, move_count, 2] = -1  # No position for line moves
+                self.state.move_history[g, move_count, 3] = -1
+                self.state.move_history[g, move_count, 4] = -1
+                self.state.move_history[g, move_count, 5] = -1
+                self.state.move_history[g, move_count, 6] = GamePhase.LINE_PROCESSING
+                self.state.move_count[g] += 1
+                move_count += 1
 
-            self.state.move_count[g] += 1
+                # Second: record the elimination move (if space)
+                if move_count < self.state.max_history_moves:
+                    self.state.move_history[g, move_count, 0] = MoveType.ELIMINATE_RINGS_FROM_STACK
+                    self.state.move_history[g, move_count, 1] = player
+                    self.state.move_history[g, move_count, 2] = -1  # Position filled by apply_line_elimination
+                    self.state.move_history[g, move_count, 3] = -1
+                    self.state.move_history[g, move_count, 4] = -1
+                    self.state.move_history[g, move_count, 5] = -1
+                    self.state.move_history[g, move_count, 6] = GamePhase.LINE_PROCESSING
+                    self.state.move_count[g] += 1
+            else:
+                # No lines: record NO_LINE_ACTION
+                self.state.move_history[g, move_count, 0] = MoveType.NO_LINE_ACTION
+                self.state.move_history[g, move_count, 1] = player
+                self.state.move_history[g, move_count, 2] = -1
+                self.state.move_history[g, move_count, 3] = -1
+                self.state.move_history[g, move_count, 4] = -1
+                self.state.move_history[g, move_count, 5] = -1
+                self.state.move_history[g, move_count, 6] = GamePhase.LINE_PROCESSING
+                self.state.move_count[g] += 1
 
     def _step_territory_phase(self, mask: torch.Tensor) -> None:
         """Handle TERRITORY_PROCESSING phase for games in mask.

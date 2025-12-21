@@ -2232,10 +2232,10 @@ export class GameEngine {
             type: 'eliminate_rings_from_stack',
             player: playerNumber,
             to: stack.position,
-            // For line-reward eliminations the full cap is always eliminated
-            // from the chosen stack, mirroring the sandbox elimination
-            // decision helper and the shared-engine fixtures.
-            eliminatedRings: [{ player: playerNumber, count: stack.capHeight }],
+            // RR-CANON-R022/R122: Line-reward eliminations remove exactly ONE ring
+            // from the top of the chosen stack (not the full cap).
+            eliminatedRings: [{ player: playerNumber, count: 1 }],
+            eliminationContext: 'line',
             eliminationFromStack: {
               position: stack.position,
               capHeight: stack.capHeight,

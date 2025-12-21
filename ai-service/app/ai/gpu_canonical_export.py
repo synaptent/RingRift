@@ -64,6 +64,9 @@ _GPU_TO_CANONICAL_MOVE_TYPE = {
 
     # Canonical skip placement (19)
     MoveType.SKIP_PLACEMENT: "skip_placement",
+
+    # Canonical elimination (20) - per RR-CANON-R123/R145
+    MoveType.ELIMINATE_RINGS_FROM_STACK: "eliminate_rings_from_stack",
 }
 
 
@@ -275,7 +278,7 @@ def validate_canonical_move_sequence(
         },
         "capture": {"overtaking_capture", "continue_capture_segment", "skip_capture"},
         "chain_capture": {"continue_capture_segment"},
-        "line_processing": {"process_line", "choose_line_option", "no_line_action"},
+        "line_processing": {"process_line", "choose_line_option", "no_line_action", "eliminate_rings_from_stack"},
         "territory_processing": {
             "process_territory_region",
             "choose_territory_option",

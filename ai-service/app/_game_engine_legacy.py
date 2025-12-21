@@ -797,6 +797,7 @@ class GameEngine:
                 MoveType.CHOOSE_LINE_OPTION,
                 MoveType.CHOOSE_LINE_REWARD,
                 MoveType.NO_LINE_ACTION,
+                MoveType.ELIMINATE_RINGS_FROM_STACK,  # RR-CANON-R123: line elimination
             }
         elif phase == GamePhase.TERRITORY_PROCESSING:
             allowed = {
