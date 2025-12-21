@@ -1270,12 +1270,16 @@ def apply_single_chain_capture(
     dist = max(abs(to_y - from_y), abs(to_x - from_x))
 
     # Find target BEFORE recording to history (December 2025 bugfix)
+    # December 2025 BUG FIX: Use LIVE state tensor for target finding, not the numpy
+    # snapshot. The snapshot was taken at function entry, but in chain captures, the
+    # previous capture may have already eliminated the target. Using the live tensor
+    # ensures we find the CURRENT first stack along the ray.
     target_y = None
     target_x = None
     for step in range(1, dist):
         check_y = from_y + dy * step
         check_x = from_x + dx * step
-        if stack_owner_np[check_y, check_x] != 0:
+        if state.stack_owner[game_idx, check_y, check_x].item() != 0:
             target_y = check_y
             target_x = check_x
             break

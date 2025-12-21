@@ -167,7 +167,7 @@ class TestCreateBatch:
 
         assert (state.lps_round_index == 0).all()
         assert (state.lps_current_round_first_player == 0).all()
-        assert (not state.lps_current_round_seen_mask).all()
+        assert (~state.lps_current_round_seen_mask).all()
         assert (state.lps_consecutive_exclusive_rounds == 0).all()
 
     def test_move_history_initialized(self, device):
@@ -180,7 +180,7 @@ class TestCreateBatch:
             max_history_moves=100,
         )
 
-        assert state.move_history.shape == (4, 100, 6)
+        assert state.move_history.shape == (4, 100, 9)
         assert (state.move_history == -1).all()
 
     def test_hexagonal_board_marks_oob(self, device):

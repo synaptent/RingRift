@@ -117,17 +117,21 @@ def advance_cpu_through_phases(state, target_phase_str: str, target_player: int)
             # GPU may skip line processing that CPU detects. If GPU expects a later phase,
             # we should advance past line processing.
             # December 2025: Added to handle line detection differences.
+            # December 2025 (updated): Fixed bug where requirement existence blocked advancement.
             if current_phase == 'line_processing':
-                valid = GameEngine.get_valid_moves(state, state.current_player)
-
-                # If no phase requirement and GPU expects later phase/different player, advance
+                # If GPU expects later phase/different player, advance
                 target_is_later = target_phase_str in ('territory_processing', 'ring_placement')
                 target_is_different_player = target_player != current_player
 
                 if target_is_later or target_is_different_player:
-                    # Try to synthesize no_line_action
+                    # Try to synthesize and apply bookkeeping move
                     req = GameEngine.get_phase_requirement(state, current_player)
-                    if not req:
+                    if req:
+                        # Apply the bookkeeping move to advance phase
+                        synth = GameEngine.synthesize_bookkeeping_move(req, state)
+                        state = GameEngine.apply_move(state, synth)
+                        continue
+                    else:
                         # Force transition if no requirement but GPU expects advancement
                         state.current_phase = GamePhase.TERRITORY_PROCESSING
                         continue

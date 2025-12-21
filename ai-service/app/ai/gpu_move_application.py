@@ -604,10 +604,17 @@ def apply_recovery_moves_vectorized(
                                 new_cap = new_height
                             state.cap_height[g, extraction_y, extraction_x] = new_cap
 
-                            # Clear buried_at only if player has no more buried rings
-                            # (player may have had multiple buried rings at this position)
-                            if not player_still_has_buried:
-                                state.buried_at[g, p, extraction_y, extraction_x] = False
+                            # December 2025 BUG FIX: Always clear buried_at for the extraction
+                            # position. The buried_at flag is a boolean per position, not a
+                            # count. Each extraction from a position means that position's
+                            # flag should be cleared. The player may have buried rings at
+                            # OTHER positions (tracked by buried_rings counter), but those
+                            # are separate extraction opportunities.
+                            #
+                            # Previous bug: only cleared when buried_rings reached 0, causing
+                            # the same position to be extracted multiple times while other
+                            # positions with buried rings were never extracted.
+                            state.buried_at[g, p, extraction_y, extraction_x] = False
 
 
 def reset_capture_chain_batch(
@@ -692,11 +699,15 @@ def check_and_apply_forced_elimination_batch(
     - Player still has stacks on the board
 
     If triggered, this:
-    - Records a FORCED_ELIMINATION move
+    - Selects a target stack (smallest cap height, then first position per RR-CANON-R100)
+    - Eliminates the entire cap from the target stack
+    - Records a FORCED_ELIMINATION move with target position
+    - Updates eliminated_rings and rings_caused_eliminated counters
     - Transitions phase to FORCED_ELIMINATION
-    - May lead to player elimination
+    - May lead to player elimination if no rings remain
 
     December 2025: Added for canonical phase parity.
+    December 2025: Fixed to actually apply elimination (was only recording move).
 
     Args:
         state: BatchGameState to modify
@@ -732,19 +743,90 @@ def check_and_apply_forced_elimination_batch(
     triggered_games = game_indices[triggers]
     triggered_players = players[triggers]
 
-    # Record FORCED_ELIMINATION move
+    # For each triggered game, find target stack and apply elimination
+    # Per RR-CANON-R100: Select stack with smallest positive cap height, then first position
+    target_positions_y = torch.full((len(triggered_games),), -1, dtype=torch.int32, device=state.device)
+    target_positions_x = torch.full((len(triggered_games),), -1, dtype=torch.int32, device=state.device)
+    eliminated_counts = torch.zeros(len(triggered_games), dtype=torch.int32, device=state.device)
+
+    for i, (g, player) in enumerate(zip(triggered_games.tolist(), triggered_players.tolist(), strict=False)):
+        # Find all stacks owned by this player
+        player_mask = state.stack_owner[g] == player
+        if not player_mask.any():
+            continue
+
+        # Get positions and cap heights of player's stacks
+        positions = torch.where(player_mask)
+        ys = positions[0]
+        xs = positions[1]
+        cap_heights = state.cap_height[g, ys, xs]
+
+        # Select stack with smallest positive cap height (per RR-CANON-R100)
+        # If all caps are 0, select first stack
+        positive_caps = cap_heights > 0
+        if positive_caps.any():
+            # Find minimum positive cap height
+            positive_cap_values = cap_heights[positive_caps]
+            min_cap = positive_cap_values.min()
+            # Get indices where cap == min_cap among positive caps
+            candidate_mask = (cap_heights == min_cap) & positive_caps
+        else:
+            # All caps are 0, select first stack (fallback per TS behavior)
+            candidate_mask = torch.ones_like(cap_heights, dtype=torch.bool)
+
+        # Take the first candidate (deterministic ordering)
+        candidate_indices = torch.where(candidate_mask)[0]
+        if len(candidate_indices) == 0:
+            continue
+
+        target_idx = candidate_indices[0].item()
+        target_y = ys[target_idx].item()
+        target_x = xs[target_idx].item()
+        target_cap = int(state.cap_height[g, target_y, target_x].item())
+
+        # Per TS parity: eliminate max(1, cap_height) rings
+        rings_to_eliminate = max(1, target_cap)
+
+        target_positions_y[i] = target_y
+        target_positions_x[i] = target_x
+        eliminated_counts[i] = rings_to_eliminate
+
+        # Apply elimination: reduce cap and stack height
+        current_cap = int(state.cap_height[g, target_y, target_x].item())
+        current_height = int(state.stack_height[g, target_y, target_x].item())
+
+        new_cap = max(0, current_cap - rings_to_eliminate)
+        new_height = max(0, current_height - rings_to_eliminate)
+
+        state.cap_height[g, target_y, target_x] = new_cap
+        state.stack_height[g, target_y, target_x] = new_height
+
+        # If stack is eliminated (height == 0), clear ownership
+        if new_height == 0:
+            state.stack_owner[g, target_y, target_x] = 0
+
+        # Update elimination counters
+        # Player loses their own rings (eliminated_rings tracks rings LOST by player)
+        state.eliminated_rings[g, player] += rings_to_eliminate
+        # Player causes elimination of their own rings (self-elimination counts for victory)
+        state.rings_caused_eliminated[g, player] += rings_to_eliminate
+
+    # Record FORCED_ELIMINATION move with target position
     move_idx = state.move_count[triggered_games]
     history_mask = move_idx < state.max_history_moves
     if history_mask.any():
         hist_games = triggered_games[history_mask]
         hist_move_idx = move_idx[history_mask].long()
         hist_dtype = state.move_history.dtype
+        hist_target_y = target_positions_y[history_mask]
+        hist_target_x = target_positions_x[history_mask]
+
         state.move_history[hist_games, hist_move_idx, 0] = MoveType.FORCED_ELIMINATION
         state.move_history[hist_games, hist_move_idx, 1] = triggered_players[history_mask].to(hist_dtype)
-        state.move_history[hist_games, hist_move_idx, 2] = -1
-        state.move_history[hist_games, hist_move_idx, 3] = -1
-        state.move_history[hist_games, hist_move_idx, 4] = -1
-        state.move_history[hist_games, hist_move_idx, 5] = -1
+        state.move_history[hist_games, hist_move_idx, 2] = -1  # from_y (not used)
+        state.move_history[hist_games, hist_move_idx, 3] = -1  # from_x (not used)
+        state.move_history[hist_games, hist_move_idx, 4] = hist_target_y.to(hist_dtype)  # to_y: target stack
+        state.move_history[hist_games, hist_move_idx, 5] = hist_target_x.to(hist_dtype)  # to_x: target stack
         state.move_history[hist_games, hist_move_idx, 6] = GamePhase.FORCED_ELIMINATION
 
     state.move_count[triggered_games] += 1

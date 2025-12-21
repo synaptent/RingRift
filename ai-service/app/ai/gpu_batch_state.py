@@ -513,7 +513,12 @@ class BatchGameState:
                 # Copy phase from move if present (column 6) - December 2025: canonical mapping
                 if hasattr(move, 'phase') and move.phase is not None:
                     # Map CPU phase to GPU phase (canonical phases)
+                    # move.phase is str, convert to CPUGamePhase for lookup
                     from app.models import GamePhase as CPUGamePhase
+                    try:
+                        cpu_phase = CPUGamePhase(move.phase)
+                    except ValueError:
+                        cpu_phase = CPUGamePhase.RING_PLACEMENT
                     move_phase_map = {
                         CPUGamePhase.RING_PLACEMENT: GamePhase.RING_PLACEMENT,
                         CPUGamePhase.MOVEMENT: GamePhase.MOVEMENT,
@@ -524,7 +529,7 @@ class BatchGameState:
                         CPUGamePhase.FORCED_ELIMINATION: GamePhase.FORCED_ELIMINATION,
                         CPUGamePhase.GAME_OVER: GamePhase.GAME_OVER,
                     }
-                    batch.move_history[g, i, 6] = move_phase_map.get(move.phase, GamePhase.RING_PLACEMENT)
+                    batch.move_history[g, i, 6] = move_phase_map.get(cpu_phase, GamePhase.RING_PLACEMENT)
 
         return batch
 
