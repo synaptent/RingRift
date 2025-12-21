@@ -65,15 +65,27 @@ def advance_cpu_through_phases(state, target_phase_str: str, target_player: int)
             # Handle capture/chain_capture phase advancement
             # GPU may skip captures that CPU offers. If GPU expects us to be in a later
             # phase (line_processing or beyond), we should skip the capture.
+            # December 2025: GPU also skips self-captures (own stacks) which CPU offers.
             if current_phase in ('capture', 'chain_capture'):
+                from app.board_manager import BoardManager
                 valid = GameEngine.get_valid_moves(state, state.current_player)
                 skip_moves = [v for v in valid if v.type == MoveType.SKIP_CAPTURE]
+                capture_moves = [v for v in valid if v.type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT)]
+
+                # Check if all captures are self-captures (GPU skips these)
+                all_self_captures = True
+                for c in capture_moves:
+                    if c.capture_target:
+                        target_stack = BoardManager.get_stack(c.capture_target, state.board)
+                        if target_stack and target_stack.controlling_player != current_player:
+                            all_self_captures = False
+                            break
 
                 # If GPU expects a later phase (not capture/chain_capture), skip the capture
                 target_is_later_phase = target_phase_str not in ('capture', 'chain_capture')
                 target_is_different_player = target_player != current_player
 
-                if target_is_later_phase or target_is_different_player:
+                if target_is_later_phase or target_is_different_player or all_self_captures:
                     if skip_moves:
                         # Apply skip_capture to advance past capture phase
                         state = GameEngine.apply_move(state, skip_moves[0])
@@ -86,15 +98,38 @@ def advance_cpu_through_phases(state, target_phase_str: str, target_player: int)
             # Handle territory_processing phase advancement
             # GPU may record no_territory_action when CPU sees valid territory options.
             # This happens due to territory detection differences. If GPU expects the next
-            # player's turn, we should skip territory processing.
+            # player's turn or a later phase, we should skip territory processing.
+            # December 2025: Also skip if target is same player but later phase (e.g., GPU
+            # detected no territory but CPU did).
             if current_phase == 'territory_processing':
                 valid = GameEngine.get_valid_moves(state, state.current_player)
                 skip_moves = [v for v in valid if v.type == MoveType.SKIP_TERRITORY_PROCESSING]
 
-                # If GPU expects next player's ring_placement, skip territory
-                if target_player != current_player and target_phase_str == 'ring_placement':
+                # Skip territory if GPU expects a later phase or a different player.
+                target_is_later_phase = target_phase_str in ('forced_elimination', 'ring_placement', 'game_over')
+                target_is_different_player = target_player != current_player
+                if target_is_later_phase or target_is_different_player:
                     if skip_moves:
                         state = GameEngine.apply_move(state, skip_moves[0])
+                        continue
+
+            # Handle line_processing phase advancement
+            # GPU may skip line processing that CPU detects. If GPU expects a later phase,
+            # we should advance past line processing.
+            # December 2025: Added to handle line detection differences.
+            if current_phase == 'line_processing':
+                valid = GameEngine.get_valid_moves(state, state.current_player)
+
+                # If no phase requirement and GPU expects later phase/different player, advance
+                target_is_later = target_phase_str in ('territory_processing', 'ring_placement')
+                target_is_different_player = target_player != current_player
+
+                if target_is_later or target_is_different_player:
+                    # Try to synthesize no_line_action
+                    req = GameEngine.get_phase_requirement(state, current_player)
+                    if not req:
+                        # Force transition if no requirement but GPU expects advancement
+                        state.current_phase = GamePhase.TERRITORY_PROCESSING
                         continue
 
             # No bookkeeping available and no workaround applied
