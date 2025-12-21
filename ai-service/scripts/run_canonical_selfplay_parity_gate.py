@@ -197,6 +197,7 @@ def run_selfplay_soak(
     max_moves: int,
     num_players: int,
     difficulty_band: str,
+    engine_mode: str = "mixed",
     include_training_data_jsonl: bool = False,
     soak_timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
@@ -224,7 +225,7 @@ def run_selfplay_soak(
         "--board-type",
         board_type,
         "--engine-mode",
-        "mixed",
+        engine_mode,
         "--num-players",
         str(num_players),
         "--max-moves",
@@ -433,6 +434,12 @@ def main() -> None:
             choices=["canonical", "light", "full"],
             default="light",
             help="Difficulty band (default: light)",
+        )
+        parser.add_argument(
+            "--engine-mode",
+            type=str,
+            default="mixed",
+            help="Selfplay engine mode (default: mixed)",
         )
         parser.add_argument(
             "--hosts",
@@ -691,6 +698,7 @@ def main() -> None:
                 "db_path": str(db_path),
                 "num_games": args.num_games,
                 "difficulty_band": args.difficulty_band,
+                "engine_mode": getattr(args, "engine_mode", "mixed"),
                 "seed": args.seed,
                 "max_moves": max_moves,
             }
@@ -717,6 +725,7 @@ def main() -> None:
             max_moves,
             args.num_players,
             args.difficulty_band,
+            getattr(args, "engine_mode", "mixed"),
             include_training_data_jsonl=bool(args.include_training_data_jsonl),
             soak_timeout_seconds=args.soak_timeout_seconds or None,
         )
