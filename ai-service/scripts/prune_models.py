@@ -42,8 +42,10 @@ MODELS_DIR = AI_SERVICE_ROOT / "models"
 ARCHIVE_DIR = AI_SERVICE_ROOT / "models" / "archive"
 ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"  # Canonical Elo database
 
+from app.config.thresholds import ARCHIVE_ELO_THRESHOLD
+
 # Default thresholds
-DEFAULT_MIN_ELO = 1400  # Prune models below this Elo
+DEFAULT_MIN_ELO = ARCHIVE_ELO_THRESHOLD  # Prune models below this Elo
 DEFAULT_MIN_GAMES = 30  # Only prune if model has played this many games
 DEFAULT_MIN_AGE_DAYS = 7  # Don't prune models younger than this
 

@@ -107,25 +107,64 @@ def save_promotion_history(history: dict):
 
 
 def find_model_file(model_id: str) -> Path | None:
-    """Find model file for a given model ID."""
-    # Common patterns for model files
+    """Find model file for a given model ID.
+
+    Searches for both .pt and .pth files in models/ and models/archived/.
+    Uses fuzzy matching for timestamp-based model names.
+    """
+    # Common patterns for model files (both .pt and .pth extensions)
     patterns = [
+        f"models/{model_id}.pth",
         f"models/{model_id}.pt",
+        f"models/archived/{model_id}.pth",
+        f"models/archived/{model_id}.pt",
         f"models/nnue/{model_id}.pt",
+        f"models/nnue/{model_id}.pth",
         f"models/nnue_policy_{model_id}.pt",
         f"models/config_specific/{model_id}.pt",
     ]
-    
+
     for pattern in patterns:
         path = AI_SERVICE_ROOT / pattern
         if path.exists():
             return path
-    
-    # Search recursively
+
+    # Search recursively for .pth files (most common format)
+    for pth_file in AI_SERVICE_ROOT.glob("models/**/*.pth"):
+        if model_id in pth_file.stem:
+            return pth_file
+
+    # Also search for .pt files
     for pt_file in AI_SERVICE_ROOT.glob("models/**/*.pt"):
         if model_id in pt_file.stem:
             return pt_file
-    
+
+    # Fuzzy matching: try prefix match for timestamp-based names
+    # e.g., policy_sq8_2p_20251217_205153 might match policy_sq8_2p_20251217_205331
+    # Extract base pattern (everything before last timestamp segment)
+    parts = model_id.rsplit("_", 1)
+    if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 6:
+        prefix = parts[0]  # e.g., "policy_sq8_2p_20251217"
+        candidates = list(AI_SERVICE_ROOT.glob(f"models/**/{prefix}_*.pth"))
+        candidates.extend(AI_SERVICE_ROOT.glob(f"models/**/{prefix}_*.pt"))
+        if candidates:
+            # Return the closest timestamp match
+            target_ts = int(parts[1])
+            best_match = None
+            best_diff = float("inf")
+            for c in candidates:
+                try:
+                    c_parts = c.stem.rsplit("_", 1)
+                    if len(c_parts) == 2 and c_parts[1].isdigit():
+                        diff = abs(int(c_parts[1]) - target_ts)
+                        if diff < best_diff:
+                            best_diff = diff
+                            best_match = c
+                except (ValueError, IndexError):
+                    continue
+            if best_match and best_diff < 10000:  # Within ~1 hour tolerance
+                return best_match
+
     return None
 
 

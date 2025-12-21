@@ -98,6 +98,11 @@ ELO_TIER_EXPERT = 1650      # Production-ready
 ELO_TIER_MASTER = 1800      # Strong model
 ELO_TIER_GRANDMASTER = 2000  # Exceptional model
 
+# Archive threshold for tournament management
+# Models below this ELO (with sufficient games) may be archived from active tournaments
+# Rationale: ~1400 is around heuristic-level, models below are likely not improving
+ARCHIVE_ELO_THRESHOLD = 1400
+
 # =============================================================================
 # Elo Rating System
 # =============================================================================

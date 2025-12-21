@@ -67,7 +67,16 @@ from app.models import (
 from app.rules.default_engine import DefaultRulesEngine
 from app.training.initial_state import create_initial_state
 from app.utils.victory_type import derive_victory_type
+from app.config.thresholds import ARCHIVE_ELO_THRESHOLD
 from scripts.lib.resilience import exponential_backoff_delay
+from scripts.lib.tournament_cli import (
+    archive_low_elo_models,
+    filter_archived_models,
+    generate_elo_based_matchups,
+    is_model_archived,
+    unarchive_discovered_models,
+    unarchive_model,
+)
 
 # Composite participant support for per-algorithm ELO tracking
 try:
@@ -1177,9 +1186,7 @@ LEGACY_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"  # Legacy, 
 # Import unified Elo database module
 import contextlib
 
-from app.tournament.unified_elo_db import (
-    EloDatabase,
-)
+from app.tournament import EloDatabase
 
 UNIFIED_DB_AVAILABLE = True
 
@@ -1888,174 +1895,9 @@ def run_continuous_tournament(
     db.close()
 
 
-def generate_elo_based_matchups(
-    models: list[dict[str, Any]],
-    db: EloDatabase,
-    board_type: str,
-    num_players: int,
-    max_elo_diff: int = 200,
-) -> list[tuple[dict, dict]]:
-    """Generate matchups between models with similar Elo ratings.
-
-    This produces more informative games than random matchups, as close
-    games provide more Elo information than one-sided blowouts.
-    """
-    # Get current Elo ratings for all models
-    model_elos = {}
-    for model in models:
-        rating = db.get_rating(model["model_id"], board_type, num_players)
-        model_elos[model["model_id"]] = rating.rating
-
-    # Sort models by Elo
-    sorted_models = sorted(models, key=lambda m: model_elos.get(m["model_id"], 1500), reverse=True)
-
-    matchups = []
-    used = set()
-
-    # Pair adjacent models in Elo ranking (closest ratings play each other)
-    for _i, m1 in enumerate(sorted_models):
-        if m1["model_id"] in used:
-            continue
-
-        # Find best opponent (closest Elo within range, not already paired)
-        best_opponent = None
-        best_diff = float("inf")
-
-        for m2 in sorted_models:
-            if m2["model_id"] == m1["model_id"] or m2["model_id"] in used:
-                continue
-
-            elo_diff = abs(model_elos[m1["model_id"]] - model_elos[m2["model_id"]])
-            if elo_diff <= max_elo_diff and elo_diff < best_diff:
-                best_diff = elo_diff
-                best_opponent = m2
-
-        if best_opponent:
-            matchups.append((m1, best_opponent))
-            used.add(m1["model_id"])
-            used.add(best_opponent["model_id"])
-
-    # Add remaining unmatched models paired with closest available
-    unmatched = [m for m in sorted_models if m["model_id"] not in used]
-    for i in range(0, len(unmatched) - 1, 2):
-        matchups.append((unmatched[i], unmatched[i + 1]))
-
-    return matchups
-
-
-def archive_low_elo_models(
-    db: EloDatabase,
-    board_type: str,
-    num_players: int,
-    elo_threshold: int = 1400,
-    min_games: int = 50,
-) -> list[str]:
-    """Archive models with low Elo after sufficient games.
-
-    Archived models are marked in the database and excluded from future tournaments.
-    Returns list of archived model IDs.
-    """
-    conn = db._get_connection()
-    cursor = conn.cursor()
-
-    # Find models to archive (using unified schema with participant_id)
-    cursor.execute("""
-        SELECT participant_id, rating, games_played
-        FROM elo_ratings
-        WHERE board_type = ? AND num_players = ?
-          AND rating < ? AND games_played >= ?
-    """, (board_type, num_players, elo_threshold, min_games))
-
-    to_archive = []
-    for row in cursor.fetchall():
-        model_id, rating, games = row
-        to_archive.append({
-            "model_id": model_id,
-            "rating": rating,
-            "games_played": games,
-        })
-
-    if not to_archive:
-        return []
-
-    # Create archived_models table if not exists
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS archived_models (
-            model_id TEXT,
-            board_type TEXT,
-            num_players INTEGER,
-            final_rating REAL,
-            games_played INTEGER,
-            archived_at REAL,
-            PRIMARY KEY (model_id, board_type, num_players)
-        )
-    """)
-
-    # Archive the models
-    archived = []
-    now = time.time()
-    for model in to_archive:
-        cursor.execute("""
-            INSERT OR REPLACE INTO archived_models
-            (model_id, board_type, num_players, final_rating, games_played, archived_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (model["model_id"], board_type, num_players, model["rating"], model["games_played"], now))
-        archived.append(model["model_id"])
-
-    conn.commit()
-    return archived
-
-
-def is_model_archived(db: EloDatabase, model_id: str, board_type: str, num_players: int) -> bool:
-    """Check if a model has been archived."""
-    conn = db._get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT 1 FROM archived_models
-            WHERE model_id = ? AND board_type = ? AND num_players = ?
-        """, (model_id, board_type, num_players))
-        return cursor.fetchone() is not None
-    except sqlite3.OperationalError:
-        # Table doesn't exist yet - no models archived
-        return False
-
-
-def unarchive_model(db: EloDatabase, model_id: str, board_type: str, num_players: int) -> bool:
-    """Remove a model from the archived_models table.
-
-    Returns True if the model was unarchived, False if it wasn't archived.
-    """
-    conn = db._get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            DELETE FROM archived_models
-            WHERE model_id = ? AND board_type = ? AND num_players = ?
-        """, (model_id, board_type, num_players))
-        conn.commit()
-        return cursor.rowcount > 0
-    except sqlite3.OperationalError:
-        # Table doesn't exist - nothing to unarchive
-        return False
-
-
-def unarchive_discovered_models(db: EloDatabase, models: list[dict], board_type: str, num_players: int) -> int:
-    """Unarchive any discovered models that are marked as archived in the database.
-
-    This handles the case where model files were restored from archived/ directory
-    to models/ directory but the database still has them marked as archived.
-
-    Returns the count of models unarchived.
-    """
-    unarchived_count = 0
-    for m in models:
-        model_id = m.get("model_id", "")
-        if is_model_archived(db, model_id, board_type, num_players):
-            if unarchive_model(db, model_id, board_type, num_players):
-                print(f"  Unarchived: {model_id} (model file exists)")
-                unarchived_count += 1
-    return unarchived_count
+# Archive and matchmaking functions moved to scripts/lib/tournament_cli.py
+# Imports: archive_low_elo_models, filter_archived_models, generate_elo_based_matchups,
+#          is_model_archived, unarchive_discovered_models, unarchive_model
 
 
 def main():
@@ -2074,7 +1916,7 @@ def main():
     parser.add_argument("--all-configs", action="store_true", help="Run tournament for all board/player configurations")
     parser.add_argument("--elo-matchmaking", action="store_true", help="Use Elo-based matchmaking (pair similar-rated models)")
     parser.add_argument("--elo-range", type=int, default=200, help="Max Elo difference for matchmaking (default: 200)")
-    parser.add_argument("--archive-threshold", type=int, default=1400, help="Archive models below this Elo after 50+ games")
+    parser.add_argument("--archive-threshold", type=int, default=ARCHIVE_ELO_THRESHOLD, help=f"Archive models below this Elo after 50+ games (default: {ARCHIVE_ELO_THRESHOLD})")
     parser.add_argument("--archive", action="store_true", help="Archive low-Elo models")
     parser.add_argument("--include-baselines", action="store_true", default=True,
                         help="Include baseline players (Random, Heuristic, MCTS) - DEFAULT: ON for ELO calibration")
