@@ -47,6 +47,8 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 # Import event bus helpers (consolidated imports)
 import asyncio
 
+import torch
+
 from app.distributed.event_helpers import (
     emit_elo_updated_safe,
     get_event_bus_safe,
@@ -371,6 +373,31 @@ def create_ai_from_model(
         config = AIConfig(ai_type=AIType.EBMO, board_type=board_type, difficulty=5)
         ebmo_model_path = model_path if model_path and not model_path.startswith("__BASELINE_") else None
         return EBMO_AI(player_number, config, ebmo_model_path, ebmo_config)
+
+    elif ai_type == "gmo_mcts" or model_path == "__BASELINE_GMO_MCTS__":
+        # GMO-MCTS Hybrid - combines GMO gradient scoring with MCTS tree search
+        from app.ai.gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
+        num_sims = model_def.get("mcts_simulations", 100)
+        hybrid_config = GMOMCTSConfig(
+            num_simulations=num_sims,
+            c_puct=1.5,
+            use_gmo_prior=True,
+            gmo_prior_weight=0.7,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+        )
+        config = AIConfig(ai_type=AIType.GMO_MCTS, board_type=board_type, difficulty=7)
+        return GMOMCTSHybrid(player_number, config, hybrid_config)
+
+    elif ai_type == "ig_gmo" or model_path == "__BASELINE_IG_GMO__":
+        # Information-Gain GMO with MI-based exploration and GNN encoder
+        from app.ai.ig_gmo import IGGMO, IGGMOConfig
+        ig_config = IGGMOConfig(
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            use_gnn=True,
+            mi_exploration_weight=0.3,
+        )
+        config = AIConfig(ai_type=AIType.IG_GMO, board_type=board_type, difficulty=7)
+        return IGGMO(player_number, config, ig_config)
 
     else:
         # Neural network model - use MCTS with neural net guidance
