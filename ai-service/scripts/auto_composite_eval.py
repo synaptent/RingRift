@@ -191,8 +191,8 @@ async def increase_reliability(
     # Group by algorithm to run efficient matchups
     # For now, just report - actual games would need model paths
     for p in low_rel[:10]:
-        nn_id = p.get("nn_model_id", "unknown")
-        algo = p.get("ai_algorithm", "unknown")
+        nn_id = p.get("nn_model_id") or "unknown"
+        algo = p.get("ai_algorithm") or "unknown"
         games = p.get("games_played", 0)
         needed = target_games - games
         logger.info(f"  {nn_id[:40]}:{algo} - {games} games (needs {needed} more)")

@@ -1397,8 +1397,16 @@ def apply_single_chain_capture(
         # Ownership transfers to target owner, new cap is all remaining rings
         new_owner = target_owner
         new_cap = new_height
+    elif target_owner == player:
+        # December 2025: SELF-CAPTURE BUG FIX
+        # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+        # When capturing own stack, the captured ring is the same color as attacker.
+        # Since captured ring goes to bottom and is same color, the entire
+        # resulting stack is player's color, so cap = new_height.
+        new_owner = player
+        new_cap = new_height
     else:
-        # Normal case: attacker keeps ownership, cap reduced
+        # Normal enemy capture: attacker keeps ownership, cap reduced
         new_owner = player
         new_cap = attacker_cap_height - landing_ring_cost
         if new_cap <= 0:
@@ -1578,8 +1586,16 @@ def apply_single_initial_capture(
         # Ownership transfers to target owner, new cap is all remaining rings
         new_owner = target_owner
         new_cap = new_height
+    elif target_owner == player:
+        # December 2025: SELF-CAPTURE BUG FIX
+        # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+        # When capturing own stack, the captured ring is the same color as attacker.
+        # Since captured ring goes to bottom and is same color, the entire
+        # resulting stack is player's color, so cap = new_height.
+        new_owner = player
+        new_cap = new_height
     else:
-        # Normal case: attacker keeps ownership, cap reduced
+        # Normal enemy capture: attacker keeps ownership, cap reduced
         new_owner = player
         new_cap = max(1, min(attacker_cap_height - landing_ring_cost, new_height))
 

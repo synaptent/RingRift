@@ -220,8 +220,16 @@ def apply_capture_moves_vectorized(
             # Ownership transfers to target owner, new cap is all remaining rings
             new_owner = target_owner
             new_cap = new_height
+        elif target_owner == player:
+            # December 2025: SELF-CAPTURE BUG FIX
+            # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+            # When capturing own stack, the captured ring is the same color as attacker.
+            # Since captured ring goes to bottom and is same color, the entire
+            # resulting stack is player's color, so cap = new_height.
+            new_owner = player
+            new_cap = new_height
         else:
-            # Normal case: attacker keeps ownership, cap reduced
+            # Normal enemy capture: attacker keeps ownership, cap reduced by landing cost
             new_owner = player
             new_cap = attacker_cap_height - landing_ring_cost
             if new_cap <= 0:
@@ -1722,13 +1730,25 @@ def apply_capture_moves_batch_vectorized(
     # Check if cap is fully eliminated by landing cost
     cap_fully_eliminated = landing_ring_cost >= attacker_cap_height
 
-    # Calculate new cap height and owner based on cap elimination
+    # December 2025: SELF-CAPTURE BUG FIX
+    # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+    # When capturing own stack, the captured ring is the same color as attacker.
+    # Since captured ring goes to bottom and is same color, the entire
+    # resulting stack is player's color, so cap = new_height.
+    is_self_capture = defender_owner == players
+
+    # Calculate new cap height and owner based on cap elimination and self-capture
     # If cap eliminated: new owner is target owner, new cap is all remaining rings
-    # If cap not eliminated: new owner is attacker (player), cap reduced by landing cost
+    # If self-capture: new cap is new_height (all rings are player's color)
+    # If enemy capture: new cap is attacker_cap - landing_cost
     new_cap_height = torch.where(
         cap_fully_eliminated,
         new_height,  # All remaining rings are target's color
-        torch.clamp(attacker_cap_height - landing_ring_cost, min=1)
+        torch.where(
+            is_self_capture,
+            new_height,  # Self-capture: all rings are player's color
+            torch.clamp(attacker_cap_height - landing_ring_cost, min=1)
+        )
     )
     new_cap_height = torch.minimum(new_cap_height, new_height)
 
@@ -1837,7 +1857,14 @@ def _apply_capture_moves_batch_legacy(
             state.buried_at[g, p, from_y, from_x] = False
 
         new_height = attacker_height + defender_height - 1
-        new_cap_height = attacker_cap_height
+        # December 2025: SELF-CAPTURE BUG FIX
+        # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
+        # When capturing own stack, the captured ring is the same color as attacker,
+        # so cap = new_height (all rings are player's color).
+        if defender_owner == player:
+            new_cap_height = new_height
+        else:
+            new_cap_height = attacker_cap_height
         state.stack_owner[g, to_y, to_x] = player
         state.stack_height[g, to_y, to_x] = min(5, new_height)
         state.cap_height[g, to_y, to_x] = min(5, new_cap_height)

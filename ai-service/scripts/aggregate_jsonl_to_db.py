@@ -118,8 +118,13 @@ def parse_jsonl_record(record: dict[str, Any], source: str, filepath: str) -> di
         # Required fields
         if "moves" not in record:
             return None
-        if record.get("status") != "completed":
+        # Accept completed status OR tournament format (has winner field, no status)
+        status = record.get("status")
+        has_winner = "winner" in record or "winner_player" in record
+        if status is not None and status != "completed":
             return None
+        if status is None and not has_winner:
+            return None  # Neither status nor winner - incomplete
 
         # Extract board type - handle various formats
         board_type_raw = record.get("board_type", "square8")
@@ -129,10 +134,18 @@ def parse_jsonl_record(record: dict[str, Any], source: str, filepath: str) -> di
         else:
             board_type = "square8"
 
-        # Parse winner
-        winner = record.get("winner")
-        if winner is None or winner == "":
+        # Parse winner - handle both selfplay format (int) and tournament format (winner_player)
+        winner = record.get("winner_player") or record.get("winner")
+        if winner is None or winner == "" or winner == "draw":
             winner = 0  # Draw
+        elif isinstance(winner, str):
+            # Tournament format uses "tier_a"/"tier_b" in winner, numeric in winner_player
+            if winner in ("tier_a", "tier_b"):
+                winner = record.get("winner_player", 0)
+            try:
+                winner = int(winner)
+            except (ValueError, TypeError):
+                winner = 0
         else:
             winner = int(winner)
 
