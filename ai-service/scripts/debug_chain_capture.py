@@ -1,181 +1,165 @@
-#!/usr/bin/env python
-"""Debug chain capture divergence between GPU and CPU."""
-from __future__ import annotations
+#!/usr/bin/env python3
+"""Debug chain capture detection divergence.
 
+This script traces the exact state at the point where selfplay and replay
+diverge in chain capture detection.
+"""
+
+import json
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import torch
-from app.ai.gpu_parallel_games import ParallelGameRunner
-from app.ai.gpu_canonical_export import export_game_to_canonical_dict
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from app.game_engine import GameEngine
+from app.models import BoardType, GameStatus, Move, MoveType, Position
+from app.rules.default_engine import DefaultRulesEngine
+from app.rules.capture_chain import enumerate_capture_moves_py
 from app.training.initial_state import create_initial_state
-from app.models import BoardType, MoveType, Position
-import logging
-logging.getLogger('app.ai.gpu_parallel_games').setLevel(logging.WARNING)
-
-GPU_BOOKKEEPING_MOVES = {
-    'skip_capture', 'skip_recovery', 'no_placement_action',
-    'no_movement_action', 'no_line_action', 'no_territory_action',
-    'process_line', 'process_territory_region',
-}
 
 
-def debug_seed(seed: int) -> None:
-    """Debug chain capture divergence for a seed."""
-    print(f"\n{'='*70}")
-    print(f"Debug Chain Capture Divergence: Seed {seed}")
-    print(f"{'='*70}")
+def parse_move(move_data: dict) -> Move:
+    """Parse a move from JSONL format."""
+    import uuid
+    move_type = MoveType(move_data["type"])
+    player = move_data["player"]
 
-    torch.manual_seed(seed)
-    runner = ParallelGameRunner(batch_size=1, board_size=8, num_players=2, device='cpu')
+    from_pos = None
+    if "from" in move_data:
+        f = move_data["from"]
+        from_pos = Position(x=f["x"], y=f["y"], z=f.get("z"))
 
-    for step in range(100):
-        game_status = runner.state.game_status[0].item()
-        move_count = runner.state.move_count[0].item()
-        if game_status != 0 or move_count >= 60:
-            break
-        runner._step_games([{}])
+    to_pos = None
+    if "to" in move_data:
+        t = move_data["to"]
+        to_pos = Position(x=t["x"], y=t["y"], z=t.get("z"))
 
-    game_dict = export_game_to_canonical_dict(runner.state, 0, 'square8', 2)
-    initial_state = create_initial_state(BoardType.SQUARE8, num_players=2)
-    cpu_state = initial_state
+    capture_target = None
+    if "capture_target" in move_data:
+        ct = move_data["capture_target"]
+        capture_target = Position(x=ct["x"], y=ct["y"], z=ct.get("z"))
 
-    print(f"\nTotal GPU moves: {len(game_dict['moves'])}")
+    return Move(
+        id=str(uuid.uuid4()),
+        type=move_type,
+        player=player,
+        from_pos=from_pos,
+        to=to_pos,
+        capture_target=capture_target,
+    )
 
-    for i, m in enumerate(game_dict['moves']):
-        move_type_str = m['type']
-        gpu_phase = m.get('phase', 'ring_placement')
-        gpu_player = m.get('player', 1)
 
-        # Skip bookkeeping moves
-        if move_type_str in GPU_BOOKKEEPING_MOVES:
-            for _ in range(10):
-                if cpu_state.current_phase.value == gpu_phase and cpu_state.current_player == gpu_player:
-                    break
-                req = GameEngine.get_phase_requirement(cpu_state, cpu_state.current_player)
-                if req:
-                    synth = GameEngine.synthesize_bookkeeping_move(req, cpu_state)
-                    cpu_state = GameEngine.apply_move(cpu_state, synth)
-                else:
-                    break
-            continue
+def main():
+    jsonl_path = sys.argv[1] if len(sys.argv) > 1 else "data/selfplay/hex8_fixed/test_after_size_fix.jsonl"
+    game_idx = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-        # Advance CPU to match GPU phase/player
-        for _ in range(10):
-            if cpu_state.current_phase.value == gpu_phase and cpu_state.current_player == gpu_player:
-                break
-            req = GameEngine.get_phase_requirement(cpu_state, cpu_state.current_player)
-            if req:
-                synth = GameEngine.synthesize_bookkeeping_move(req, cpu_state)
-                cpu_state = GameEngine.apply_move(cpu_state, synth)
-            elif cpu_state.current_phase.value in ('capture', 'chain_capture'):
-                valid = GameEngine.get_valid_moves(cpu_state, cpu_state.current_player)
-                skip_moves = [v for v in valid if v.type == MoveType.SKIP_CAPTURE]
-                if skip_moves:
-                    cpu_state = GameEngine.apply_move(cpu_state, skip_moves[0])
-                    continue
-                break
-            elif cpu_state.current_phase.value == 'territory_processing':
-                valid = GameEngine.get_valid_moves(cpu_state, cpu_state.current_player)
-                skip_moves = [v for v in valid if v.type == MoveType.SKIP_TERRITORY_PROCESSING]
-                if skip_moves and gpu_player != cpu_state.current_player:
-                    cpu_state = GameEngine.apply_move(cpu_state, skip_moves[0])
-                    continue
-                break
-            else:
+    # Load the specified game
+    with open(jsonl_path) as f:
+        for i, line in enumerate(f):
+            if i == game_idx:
+                game_data = json.loads(line)
                 break
 
-        # Check for phase divergence
-        if cpu_state.current_phase.value != gpu_phase or cpu_state.current_player != gpu_player:
-            print(f"\n*** PHASE DIVERGENCE at move {i} ***")
-            print(f"  GPU: {move_type_str} @ phase={gpu_phase} player={gpu_player}")
-            print(f"  CPU: phase={cpu_state.current_phase.value} player={cpu_state.current_player}")
+    print(f"Game ID: {game_data['game_id']}")
+    print(f"Board type: {game_data['board_type']}")
+    print(f"Total moves: {len(game_data['moves'])}")
+    print()
 
-            valid = GameEngine.get_valid_moves(cpu_state, cpu_state.current_player)
-            cpu_move_types = set(v.type.value for v in valid)
-            print(f"  CPU offers: {list(cpu_move_types)[:5]}")
+    # Initialize engine
+    engine = DefaultRulesEngine()
+    state = create_initial_state(
+        board_type=BoardType.HEX8,
+        num_players=2,
+    )
 
-            if cpu_state.current_phase.value == 'chain_capture':
-                print("\n  CPU is in CHAIN_CAPTURE - checking what captures are available:")
-                for v in valid[:3]:
-                    print(f"    {v.type.value}: from={v.from_pos} to={v.to}")
+    # Find the first capture move that's followed by no_line_action
+    for i, move_data in enumerate(game_data["moves"]):
+        move = parse_move(move_data)
 
-            print(f"\n  Last 5 GPU moves before divergence:")
-            for j in range(max(0, i-5), i+1):
-                gm = game_dict['moves'][j]
-                print(f"    Move {j}: {gm['type']} @ {gm.get('phase')} P{gm.get('player')}")
-                if gm.get('from'):
-                    print(f"             from={gm.get('from')} to={gm.get('to')}")
+        if move.type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT):
+            # Check next move
+            next_move = game_data["moves"][i + 1] if i + 1 < len(game_data["moves"]) else None
+            
+            if next_move and next_move["type"] == "no_line_action":
+                print(f"=== Move {i}: {move.type.value} followed by no_line_action ===")
+                print(f"  From: {move.from_pos}")
+                print(f"  Target: {move.capture_target}")
+                print(f"  Landing: {move.to}")
+                print()
 
-            return
+                # Show state BEFORE applying the capture
+                print("Board state BEFORE capture:")
+                print(f"  Phase: {state.current_phase.value}")
+                print(f"  Player: {state.current_player}")
+                print(f"  chain_capture_state: {state.chain_capture_state}")
+                print(f"  Stacks ({len(state.board.stacks)}):")
+                for key, stack in sorted(state.board.stacks.items()):
+                    print(f"    {key}: player={stack.controlling_player}, height={stack.stack_height}, rings={stack.rings}")
+                print()
 
-        # Try to match and apply the move
-        move_type = MoveType(move_type_str)
-        from_pos = Position(**m['from']) if 'from' in m and m['from'] else None
-        to_pos = Position(**m['to']) if 'to' in m and m['to'] else None
+                # Apply the capture
+                state = engine.apply_move(state, move, trace_mode=True)
 
-        valid = GameEngine.get_valid_moves(cpu_state, cpu_state.current_player)
-        matched = None
+                # Show state AFTER applying the capture
+                print("Board state AFTER capture:")
+                print(f"  Phase: {state.current_phase.value}")
+                print(f"  Player: {state.current_player}")
+                print(f"  chain_capture_state: {state.chain_capture_state}")
+                if state.chain_capture_state:
+                    print(f"    current_position: {state.chain_capture_state.current_position}")
+                    print(f"    visited_positions: {state.chain_capture_state.visited_positions}")
+                print()
 
-        for v in valid:
-            if v.type != move_type:
-                continue
-            v_to = v.to.to_key() if v.to else None
-            m_to = to_pos.to_key() if to_pos else None
+                # Check what captures are available
+                print("Enumerating chain captures...")
+                if state.chain_capture_state:
+                    attacker_pos = state.chain_capture_state.current_position
+                    captures = enumerate_capture_moves_py(
+                        state,
+                        state.current_player,
+                        attacker_pos,
+                        kind="continuation",
+                    )
+                    print(f"  Raw captures from enumerate_capture_moves_py: {len(captures)}")
+                    for cap in captures:
+                        from_str = f"({cap.from_pos.x},{cap.from_pos.y},{cap.from_pos.z})" if cap.from_pos else "None"
+                        to_str = f"({cap.to.x},{cap.to.y},{cap.to.z})" if cap.to else "None"
+                        ct_str = f"({cap.capture_target.x},{cap.capture_target.y},{cap.capture_target.z})" if cap.capture_target else "None"
+                        landing_key = cap.to.to_key() if cap.to else "None"
+                        in_visited = landing_key in state.chain_capture_state.visited_positions if state.chain_capture_state else False
+                        print(f"    {cap.type.value}: from={from_str} target={ct_str} landing={to_str} (key={landing_key}, in_visited={in_visited})")
 
-            if move_type == MoveType.PLACE_RING:
-                if v_to == m_to:
-                    matched = v
-                    break
-            elif move_type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT):
-                v_from = v.from_pos.to_key() if v.from_pos else None
-                m_from = from_pos.to_key() if from_pos else None
-                if v_from == m_from and v_to == m_to:
-                    matched = v
-                    break
-            elif move_type == MoveType.SKIP_PLACEMENT:
-                matched = v
+                    # Now check what GameEngine._get_capture_moves returns
+                    ge_captures = GameEngine._get_capture_moves(state, state.current_player)
+                    print(f"  Filtered captures from _get_capture_moves: {len(ge_captures)}")
+                    for cap in ge_captures:
+                        from_str = f"({cap.from_pos.x},{cap.from_pos.y},{cap.from_pos.z})" if cap.from_pos else "None"
+                        to_str = f"({cap.to.x},{cap.to.y},{cap.to.z})" if cap.to else "None"
+                        ct_str = f"({cap.capture_target.x},{cap.capture_target.y},{cap.capture_target.z})" if cap.capture_target else "None"
+                        print(f"    {cap.type.value}: from={from_str} target={ct_str} landing={to_str}")
+                print()
+
+                # What was recorded as the NEXT move?
+                print(f"Next recorded move (move {i+1}): {next_move['type']}")
+                print("  ERROR: Recording shows no_line_action, but replay finds chain captures!")
+                print()
+
+                # Check what valid moves the engine sees NOW
+                valid_moves = engine.get_valid_moves(state, state.current_player)
+                print(f"  Valid moves according to engine: {len(valid_moves)}")
+                valid_types = set(vm.type.value for vm in valid_moves)
+                print(f"  Types: {sorted(valid_types)}")
+
                 break
-            elif move_type == MoveType.RECOVERY_SLIDE:
-                v_from = v.from_pos.to_key() if v.from_pos else None
-                m_from = from_pos.to_key() if from_pos else None
-                if v_from == m_from and v_to == m_to:
-                    matched = v
-                    break
-            elif move_type in (MoveType.CHOOSE_LINE_OPTION, MoveType.PROCESS_LINE,
-                               MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION,
-                               MoveType.TERRITORY_CLAIM):
-                matched = v
-                break
-            else:
-                v_from = v.from_pos.to_key() if v.from_pos else None
-                m_from = from_pos.to_key() if from_pos else None
-                if v_from == m_from and v_to == m_to:
-                    matched = v
-                    break
 
-        if matched:
-            cpu_state = GameEngine.apply_move(cpu_state, matched)
-        else:
-            print(f"\n*** MOVE MISMATCH at move {i} ***")
-            print(f"  GPU: {move_type_str} from={m.get('from')} to={m.get('to')}")
-            print(f"  CPU phase={cpu_state.current_phase.value} player={cpu_state.current_player}")
-            print(f"  CPU valid moves of type {move_type_str}:")
-            for v in valid:
-                if v.type.value == move_type_str:
-                    print(f"    from={v.from_pos} to={v.to}")
-            return
+        # Apply the move
+        state = engine.apply_move(state, move, trace_mode=True)
 
-    print(f"\nSeed {seed}: All moves matched successfully!")
+    print("\nDone.")
 
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('seeds', type=int, nargs='+', help='Seeds to debug')
-    args = parser.parse_args()
-
-    for seed in args.seeds:
-        debug_seed(seed)
+if __name__ == "__main__":
+    main()
