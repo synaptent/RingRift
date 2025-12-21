@@ -37,7 +37,7 @@ Status legend: `TODO` → `IN_PROGRESS` → `DONE` (or `DEFERRED` with rationale
 | DOC-01  | Docs                | Refresh `CANONICAL_ENGINE_API.md` MoveType/phase surfaces       | DONE   |
 | DOC-02  | Docs                | Update `RULES_IMPLEMENTATION_MAPPING.md` rule references        | DONE   |
 | TOOL-01 | Tooling             | Fix `npm run ssot-check` doc path drift                         | DONE   |
-| TOOL-02 | Tooling             | Make `python-parity-ssot-check` actually verify enums/contracts | TODO   |
+| TOOL-02 | Tooling             | Make `python-parity-ssot-check` actually verify enums/contracts | DONE   |
 | SEC-01  | Security            | Bump `jsonwebtoken` to clear `jws` advisory                     | DONE   |
 
 ---
@@ -187,3 +187,4 @@ Dependency advisories are easy to accumulate and hard to triage later. If an in�
 - **2025-12-21:** `DOC-01` DONE — refreshed `CANONICAL_ENGINE_API.md` to separate canonical vs legacy move types and align phase/move surfaces.
 - **2025-12-21:** `DOC-02` DONE — updated `RULES_IMPLEMENTATION_MAPPING.md` links and top-level engine surface references.
 - **2025-12-21:** `TOOL-01` DONE — updated ssot-check doc paths (API/Env/Secrets/CI security) to match current docs layout.
+- **2025-12-21:** `TOOL-02` DONE — expanded python parity ssot check to validate TS/Python enum alignment with legacy alias allowances.
