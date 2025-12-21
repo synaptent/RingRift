@@ -68,7 +68,7 @@ def get_work_queue():
 
 # Automation managers (lazy imports to avoid circular deps)
 _auto_scaler = None
-_recovery_manager = None
+_health_manager = None  # December 2025: Consolidated from recovery_manager
 _predictive_alerts = None
 _tier_calibrator = None
 
@@ -83,16 +83,26 @@ def get_auto_scaler():
             _auto_scaler = None
     return _auto_scaler
 
-def get_recovery_manager():
-    """Get the recovery manager singleton (lazy load)."""
-    global _recovery_manager
-    if _recovery_manager is None:
+def get_health_manager():
+    """Get the health manager singleton (lazy load).
+
+    December 2025: Consolidated from get_recovery_manager().
+    Uses UnifiedHealthManager which combines recovery + error coordination.
+    """
+    global _health_manager
+    if _health_manager is None:
         try:
-            from app.coordination.recovery_manager import RecoveryManager
-            _recovery_manager = RecoveryManager()
+            from app.coordination.unified_health_manager import UnifiedHealthManager
+            _health_manager = UnifiedHealthManager.get_instance()
         except ImportError:
-            _recovery_manager = None
-    return _recovery_manager
+            _health_manager = None
+    return _health_manager
+
+
+# Backward compatibility alias (deprecated)
+def get_recovery_manager():
+    """DEPRECATED: Use get_health_manager() instead."""
+    return get_health_manager()
 
 def get_predictive_alerts():
     """Get the predictive alerts manager (lazy load)."""
@@ -17766,15 +17776,16 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     await asyncio.sleep(HEALING_INTERVAL)
                     continue
 
-                recovery_manager = get_recovery_manager()
-                if recovery_manager is None:
+                # December 2025: Use UnifiedHealthManager (consolidated from recovery_manager)
+                health_manager = get_health_manager()
+                if health_manager is None:
                     await asyncio.sleep(HEALING_INTERVAL)
                     continue
 
                 # Wire up work queue
                 wq = get_work_queue()
                 if wq is not None:
-                    recovery_manager.set_work_queue(wq)
+                    health_manager.set_work_queue(wq)
 
                     # Get running work items
                     status = wq.get_queue_status()
@@ -17789,14 +17800,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             work_items.append(WorkItem.from_dict(item_dict))
 
                     # Find stuck jobs
-                    stuck_jobs = recovery_manager.find_stuck_jobs(work_items)
+                    stuck_jobs = health_manager.find_stuck_jobs(work_items)
 
                     for work_item, expected_timeout in stuck_jobs:
                         logger.warning(
                             f"Detected stuck job {work_item.work_id} on {work_item.claimed_by} "
                             f"(running {time.time() - work_item.started_at:.0f}s > expected {expected_timeout * 1.5:.0f}s)"
                         )
-                        result = await recovery_manager.recover_stuck_job(work_item, expected_timeout)
+                        result = await health_manager.recover_stuck_job(work_item, expected_timeout)
                         if result.value == "success":
                             logger.info(f"Recovered stuck job {work_item.work_id}")
 
