@@ -137,7 +137,7 @@ const json = exportVectorBundle([vector, ...moreVectors]);
 | Category               | Description                             |
 | ---------------------- | --------------------------------------- |
 | `placement`            | Ring placement and skip_placement moves |
-| `movement`             | Stack movement (move_stack, move_ring)  |
+| `movement`             | Stack movement (move_stack)             |
 | `capture`              | Initial overtaking captures             |
 | `chain_capture`        | Chain capture continuation segments     |
 | `line_processing`      | Line detection and reward selection     |

@@ -143,7 +143,6 @@ app.distributed.client
 app.distributed.cluster_coordinator
 app.distributed.subscription_registry
 app.distributed.sync_utils
-app.coordination.lock_manager
 app.coordination.sync_base
 app.integration.unified_loop_extensions
 
@@ -158,7 +157,6 @@ app.rules.mutators.turn
 app.rules.validators.recovery
 app.game_engine.phase_requirements
 app.tournament.composite_tournament
-app.utils.async_utils
 app.utils.load_throttle
 ```
 
@@ -785,6 +783,36 @@ Consolidated duplicated code across 7+ export/training scripts (~3500 lines tota
 ### Phase 3i: Stranded Module Integration - COMPLETED (2025-12-21)
 
 Integrated orphaned but valuable modules that had zero active usage:
+
+**Note (2025-12-21):** Also extracted `LineMutator` from GameEngine - now self-contained.
+TerritoryMutator extraction is more complex (requires helper functions) - deferred to Phase 4.
+
+**TerritoryMutator Dependencies (for future extraction):**
+
+- `_apply_territory_claim` - requires `_can_process_disconnected_region`, `get_border_marker_positions`
+- `_apply_forced_elimination` - requires `_eliminate_top_ring_at`, `_extract_buried_ring_at`
+- These helpers total ~400 LOC and need careful extraction with parity tests
+
+**Cache Consolidation Status (2025-12-21):**
+Unified caching abstraction exists at `app/caching/` with:
+
+- `Cache` base class, `MemoryCache`, `TTLCache`, `LRUCache`
+- `@cached` decorator for function memoization
+- Thread-safe operations, TTL expiration, size limits
+
+AI-specific caches NOT YET using unified abstraction:
+
+- `app/ai/model_cache.py` - custom TTL+LRU cache for NN models
+- `app/ai/move_cache.py` - move generation caching
+- `app/ai/territory_cache.py` - game state caching
+- `app/training/eval_cache.py` - evaluation caching
+- `app/coordination/cache_coordination_orchestrator.py` - cross-module coordination
+
+**Recommended Migration (Q1 2026):**
+
+1. Refactor `model_cache.py` to use `app.caching.TTLCache`
+2. Create unified cache invalidation via `cache_coordination_orchestrator`
+3. Add cache metrics to training telemetry
 
 **1. Improved MCTS Module Integration:**
 

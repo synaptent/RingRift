@@ -84,10 +84,11 @@ Last updated: 2025-12-21
 
 ### 2.5 GMO-MCTS Hybrid (D17)
 
-- **Status**: Implemented, Archived
+- **Status**: Implemented, Registered (experimental)
 - **File**: `app/ai/gmo_mcts_hybrid.py`
 - **Description**: GMO priors + MCTS tree search
 - **Integration Gap**: Not validated, potential for strong play
+- **Note**: Unarchived 2025-12-21 and wired into AI factory D17 tier
 
 ---
 
@@ -154,10 +155,12 @@ Last updated: 2025-12-21
 
 ### 4.4 Progressive Widening
 
-- **Status**: Planned, Not Implemented
-- **File**: Would go in `app/ai/mcts_ai.py`
+- **Status**: Implemented, Integrated
+- **File**: `app/ai/mcts_ai.py` (lines 3265-3299)
 - **Description**: Gradually expand legal moves for large action spaces (Square19, Hex)
-- **Expected Impact**: +40-80 Elo for large boards
+- **Config**: Auto-enabled for `BoardType.SQUARE19` and `BoardType.HEXAGONAL`
+- **Formula**: `max_children = max(min_children, c * v^alpha)` where c=2.0, alpha=0.5
+- **Integration**: Used in `_can_expand_node()` at lines 1396, 1413, 2393, 2488
 
 ---
 

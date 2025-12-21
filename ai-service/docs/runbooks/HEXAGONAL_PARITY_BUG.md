@@ -215,8 +215,92 @@ The divergence may be caused by:
 
 ---
 
+## ANM State Divergence (NEW ISSUE - 2025-12-21)
+
+**Status:** INVESTIGATION IN PROGRESS
+**Priority:** CRITICAL - Blocks hexagonal training
+**Discovered:** After HEX-PARITY-01 fix
+
+### Problem Statement
+
+After fixing the territory phase bug (HEX-PARITY-01), 7 of 11 hexagonal games now fail with a NEW divergence:
+
+- **Mismatch dimension:** `anm_state`
+- **Phase:** `line_processing`
+- **Python:** `is_anm: false` (finds interactive moves)
+- **TypeScript:** `is_anm: true` (finds NO interactive moves)
+- **State hashes MATCH** (board state is identical)
+
+### Key Observation
+
+State hashes matching proves the board state (markers, stacks, collapsed_spaces) is identical
+between Python and TypeScript. The divergence is specifically in the ANM computation, not
+the underlying game state.
+
+### Investigation Findings (2025-12-21)
+
+1. **Hash now includes `pendingLineRewardElimination`** - Both Python and TypeScript include
+   this field in their hash computation (RR-PARITY-FIX-2025-12-21).
+
+2. **Position key format is consistent** - Both use comma-separated format: `"0,0,-3"`.
+
+3. **Line detection algorithms appear equivalent**:
+   - Python: `BoardManager.find_all_lines()` → `_find_line_in_direction()`
+   - TypeScript: `findAllLines()` → `findLineInDirection()`
+   - Both use same direction vectors and minimum line length (4) for hexagonal.
+
+4. **ANM check paths are identical**:
+   - Both check `pending_line_reward_elimination` first
+   - Both then call fresh line detection with `detect_now` mode
+   - Both return True if lines found for current player
+
+### Hypotheses
+
+1. **Marker iteration difference** - TypeScript Map vs Python dict may iterate differently,
+   affecting which markers are checked first and whether lines are found.
+
+2. **Position z-coordinate handling** - Subtle difference in how z=0 vs undefined is handled
+   during line stepping and marker lookup.
+
+3. **State serialization issue** - Something in how the state is serialized for parity
+   comparison may differ between Python's internal state and TypeScript's replay state.
+
+### Diagnostic Tools Created
+
+- `scripts/diagnose_anm_divergence.py` - Analyzes ANM divergences from parity gate data
+- `scripts/run_hex_anm_diagnosis.sh` - Cluster script to generate and analyze fresh hex games
+
+### Next Steps
+
+1. **Run fresh parity check on cluster** with state bundle emission
+2. **Add trace logging** to TypeScript's `findAllLines()` and Python's `find_all_lines()`
+3. **Capture actual marker keys and positions** at divergence point
+4. **Compare line-by-line** what each engine detects
+
+### Sample Divergence
+
+```json
+{
+  "game_id": "9db77afc-8585-4a31-a061-8d0c5b088ed2",
+  "diverged_at": 837,
+  "mismatch_kinds": ["anm_state"],
+  "python_summary": {
+    "current_phase": "line_processing",
+    "is_anm": false,
+    "state_hash": "2a2e232e45d3dd4f"
+  },
+  "ts_summary": {
+    "current_phase": "line_processing",
+    "is_anm": true,
+    "state_hash": "2a2e232e45d3dd4f"
+  }
+}
+```
+
+---
+
 **Last Updated:** December 21, 2025
-**Status:** FIXED - Commit 7f43c368
+**Status:** HEX-PARITY-01 FIXED - ANM divergence under investigation
 
 ---
 

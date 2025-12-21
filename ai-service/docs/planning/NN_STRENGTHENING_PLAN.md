@@ -310,9 +310,183 @@ python scripts/gpu_cluster_manager.py jobs list
 python scripts/monitor_improvement.py --board square19 --check
 ```
 
+**6. Run experimental AI tournament (D12-D19 vs production):**
+
+```bash
+# Test EBMO, GMO, IG-GMO, GMO v2 against production baselines
+# Run on cluster node with GPU
+ssh ubuntu@<node-ip> "cd ~/ringrift/ai-service && source venv/bin/activate && \
+  PYTHONPATH=. python scripts/run_model_elo_tournament.py \
+    --board square8 --players 2 \
+    --agents 'ebmo,gmo,gmo_v2,ig_gmo,heuristic,mcts_400,improved_mcts_400' \
+    --games-per-matchup 50 \
+    --run"
+```
+
+**7. Enable reanalysis in training (post-model improvement):**
+
+```bash
+# When a model shows +50 Elo improvement, reanalyze old games
+ssh ubuntu@<node-ip> "cd ~/ringrift/ai-service && source venv/bin/activate && \
+  PYTHONPATH=. python scripts/train_distilled.py \
+    --board-type square8 \
+    --enable-reanalysis \
+    --reanalysis-blend-ratio 0.7"
+```
+
 ### Priority Order for Data Generation
 
 1. **square19 2P** (3 games → 1000 games) - CRITICAL
 2. **hexagonal 2P** (0 games → 1000 games) - HIGH (UNBLOCKED: parity fix 7f43c368)
 3. **square8 2P** (200 games → 1000 games) - MEDIUM
 4. **square8 3P/4P** (2 games each → 200 games) - MEDIUM
+
+### Experimental AI Tournament Priority
+
+Run experimental D12-D19 algorithms against production to discover hidden Elo:
+
+| Algorithm     | AIType  | Expected Impact       | Priority |
+| ------------- | ------- | --------------------- | -------- |
+| EBMO          | D12     | Unknown               | HIGH     |
+| GMO           | D13     | ~68.8% vs MCTS        | HIGH     |
+| GMO v2        | D18-D19 | +50-100 Elo potential | HIGH     |
+| IG-GMO        | D14     | Research-grade        | MEDIUM   |
+| Improved MCTS | D20     | PUCT + transposition  | HIGH     |
+
+---
+
+## Complete Cluster Execution Runbook (December 2025)
+
+### CRITICAL: All Data Generation on Cluster
+
+The following commands MUST run on cluster nodes, not local machines:
+
+**Step 1: Scale square19 data (CRITICAL - currently 3 games)**
+
+```bash
+# SSH to cluster node
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+  --board-type square19 \
+  --num-games 500 \
+  --engine-mode gumbel-mcts \
+  --mcts-simulations 800 \
+  --db data/games/canonical_square19_2p.db \
+  --summary db_health.canonical_square19.json
+EOF
+```
+
+**Step 2: Scale hexagonal data (CRITICAL - currently 0 games, parity FIXED)**
+
+```bash
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+  --board-type hexagonal \
+  --num-games 500 \
+  --engine-mode gumbel-mcts \
+  --mcts-simulations 800 \
+  --db data/games/canonical_hexagonal_2p.db \
+  --summary db_health.canonical_hexagonal.json
+EOF
+```
+
+**Step 3: Scale 3P/4P data (HIGH priority)**
+
+```bash
+# 3-player games
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+  --board-type square8 \
+  --num-players 3 \
+  --num-games 200 \
+  --engine-mode gumbel-mcts \
+  --db data/games/canonical_square8_3p.db
+EOF
+
+# 4-player games
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+  --board-type square8 \
+  --num-players 4 \
+  --num-games 200 \
+  --engine-mode gumbel-mcts \
+  --db data/games/canonical_square8_4p.db
+EOF
+```
+
+**Step 4: Run comprehensive experimental AI tournament**
+
+```bash
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+
+# Full D12-D19 tournament against baselines
+PYTHONPATH=. python scripts/run_model_elo_tournament.py \
+  --board square8 --players 2 \
+  --games-per-matchup 100 \
+  --participants \
+    "ebmo:type=ebmo" \
+    "gmo:type=gmo" \
+    "gmo_v2:type=gmo_v2" \
+    "ig_gmo:type=ig_gmo" \
+    "gmo_mcts:type=gmo_mcts" \
+    "gumbel_mcts:type=gumbel_mcts,sims=800" \
+    "improved_mcts:type=improved_mcts,sims=400" \
+    "heuristic:type=heuristic,depth=4" \
+    "random:type=random" \
+  --run \
+  --output-dir results/experimental_tournament_$(date +%Y%m%d)
+EOF
+```
+
+**Step 5: Train new model after data reaches target**
+
+```bash
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+
+# Train square19 model with new data
+PYTHONPATH=. python scripts/train_distilled.py \
+  --board-type square19 \
+  --training-db data/games/canonical_square19_2p.db \
+  --epochs 100 \
+  --batch-size 256 \
+  --enable-reanalysis \
+  --reanalysis-blend-ratio 0.7 \
+  --output-dir models/square19_2p_v2
+EOF
+```
+
+**Step 6: Validate parity on new databases**
+
+```bash
+ssh ubuntu@<gpu-node> << 'EOF'
+cd ~/ringrift/ai-service && source venv/bin/activate
+
+# Validate square19 parity
+PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
+  --db data/games/canonical_square19_2p.db \
+  --sample-size 50
+
+# Validate hexagonal parity
+PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
+  --db data/games/canonical_hexagonal_2p.db \
+  --sample-size 50
+EOF
+```
+
+### Expected Elo Improvements from Cluster Work
+
+| Action                         | Expected Elo Gain  | Timeline   |
+| ------------------------------ | ------------------ | ---------- |
+| Scale square19 data (3 → 500)  | +30-50             | 1-2 days   |
+| Scale hexagonal data (0 → 500) | +30-50             | 1-2 days   |
+| Scale 3P/4P data               | +10-20             | 1 day      |
+| Experimental AI tournament     | +10-50 (discovery) | 1 day      |
+| Train new models               | +40-80             | 2-3 days   |
+| Reanalysis pipeline            | +20-40             | Continuous |
+| **Total Potential**            | **+140-290 Elo**   | 1-2 weeks  |

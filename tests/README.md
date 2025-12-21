@@ -360,14 +360,14 @@ semantics, not independent sources of truth.
   - [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1) – shared marker‑line geometry.
   - [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1) – line semantics across shared engine, backend, and sandbox.
   - [`Seed14Move35LineParity.test.ts`](tests/unit/Seed14Move35LineParity.test.ts:1) – seed‑14 guardrail for “no valid line” at a historically ambiguous state.
-  - [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – **canonical line‑decision enumeration and application**, covering `process_line` and `choose_line_reward` `Move`s and when line collapses grant `eliminate_rings_from_stack` opportunities via `pendingLineRewardElimination`.
+  - [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – **canonical line‑decision enumeration and application**, covering `process_line` and `choose_line_option` `Move`s and when line collapses grant `eliminate_rings_from_stack` opportunities via `pendingLineRewardElimination`.
 - **Territory (detection, borders, processing)**
   - [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1) – shared border‑marker expansion.
   - [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1) – shared region‑processing pipeline (collapse + internal eliminations).
   - [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
     [`sandboxTerritory.rules.test.ts`](tests/unit/sandboxTerritory.rules.test.ts:1),
     [`sandboxTerritoryEngine.rules.test.ts`](tests/unit/sandboxTerritoryEngine.rules.test.ts:1) – rules‑level suites for Q23, region collapse, and internal eliminations.
-  - [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – **canonical territory decision semantics**, covering `process_territory_region` / `eliminate_rings_from_stack` `Move`s, Q23 gating, and per‑player elimination bookkeeping.
+  - [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – **canonical territory decision semantics**, covering `choose_territory_option` / `eliminate_rings_from_stack` `Move`s, Q23 gating, and per‑player elimination bookkeeping.
 - **Placement / no-dead-placement**
   - [`placement.shared.test.ts`](tests/unit/placement.shared.test.ts:1) – shared placement validation rules.
   - [`RuleEngine.placementMultiRing.test.ts`](tests/unit/RuleEngine.placementMultiRing.test.ts:1) – backend multi‑ring placement behaviour over the shared helpers.
@@ -1097,7 +1097,7 @@ These helpers are used by suites like:
 - `RINGRIFT_SANDBOX_AI_TRACE_MODE`
   - When set to `1`/`true`, parity-focused tests construct `ClientSandboxEngine` instances with a `traceMode` option enabled.
   - In trace mode, sandbox AI still uses the full proportional policy (`chooseLocalMoveFromCandidates`), but the sandbox engine:
-    - Applies moves exclusively via canonical `Move` shapes (`place_ring`, `skip_placement`, `move_stack`/`move_ring`, `overtaking_capture`, `continue_capture_segment`).
+    - Applies moves exclusively via canonical `Move` shapes (`place_ring`, `skip_placement`, `move_stack`/`move_stack`, `overtaking_capture`, `continue_capture_segment`).
     - Records history entries so that backend `GameEngine` can replay the same canonical move list in lockstep for trace parity.
     - Aligns chain-capture phase transitions and continuation semantics with the backend (`chain_capture` phase, explicit `continue_capture_segment` moves).
 
@@ -1239,7 +1239,7 @@ This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries t
 ### Line formation & graduated rewards
 
 - **Section 11 (Line Formation & Collapse)**, **FAQ 7, 22**, **Sections 16.5/16.9.4.3**
-  - (existing) `tests/unit/lineDecisionHelpers.shared.test.ts` — canonical line‑decision enumeration and application over the shared helpers (`process_line`, `choose_line_reward`, and when eliminations are granted).
+  - (existing) `tests/unit/lineDecisionHelpers.shared.test.ts` — canonical line‑decision enumeration and application over the shared helpers (`process_line`, `choose_line_option`, and when eliminations are granted).
   - (existing) `tests/unit/ClientSandboxEngine.lines.test.ts` — sandbox line processing driven by the shared helpers.
   - (existing) `tests/unit/GameEngine.lineRewardChoiceAIService.integration.test.ts` — backend + AI choice for line rewards.
   - (existing) `tests/unit/GameEngine.lineRewardChoiceWebSocketIntegration.test.ts` — backend + WebSocket choice flow.
@@ -1248,7 +1248,7 @@ This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries t
 ### Territory disconnection & chain reactions
 
 - **Section 12 (Area Disconnection & Collapse)**, **FAQ 10, 15, 20, 23**, **Sections 16.9.4.4, 16.9.6–16.9.8**
-  - (existing) `tests/unit/territoryDecisionHelpers.shared.test.ts` — canonical `process_territory_region` / `eliminate_rings_from_stack` decision semantics (Q23, self‑elimination bookkeeping) over the shared helpers.
+  - (existing) `tests/unit/territoryDecisionHelpers.shared.test.ts` — canonical `choose_territory_option` / `eliminate_rings_from_stack` decision semantics (Q23, self‑elimination bookkeeping) over the shared helpers.
   - (existing) `tests/unit/BoardManager.territoryDisconnection.test.ts` / `.square8.test.ts` / `.hex.test.ts` — region detection & adjacency for square19, square8, and hex.
   - (existing) `tests/unit/GameEngine.territoryDisconnection.test.ts` / `.hex.test.ts` — engine‑level region processing order and interaction with the shared helpers.
   - (existing) `tests/unit/ClientSandboxEngine.territoryDisconnection.test.ts` / `.hex.test.ts` — sandbox parity.

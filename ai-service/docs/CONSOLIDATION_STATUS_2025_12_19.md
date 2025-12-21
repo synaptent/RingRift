@@ -691,3 +691,45 @@ Created `docs/runbooks/HEXAGONAL_PARITY_BUG.md`:
 - Complete EventBus import migration (63 files still direct)
 - Consolidate training enhancements modules
 - Cache system unification
+
+---
+
+## Phase 9 Work (December 21, 2025)
+
+### 44. Parity Hash Enhancement ✓
+
+Added `pendingLineRewardElimination` to state hash for ANM divergence detection:
+
+- **`app/rules/core.py:hash_game_state()`**:
+  - Added `pending_line` to meta section of hash
+  - Format: `{player}:{phase}:{status}:{pending_line}`
+  - Enables early detection of pendingLineRewardElimination sync issues
+
+- **`src/shared/engine/core.ts:fingerprintGameState()`**:
+  - Added matching `pendingLine` to meta section
+  - Ensures TS and Python hashes diverge when flag is out of sync
+
+**Root Cause Identified:**
+
+ANM parity divergence in hexagonal games caused by:
+
+1. `pendingLineRewardElimination` not included in state hash
+2. States could have identical hashes but different flag values
+3. Python: `is_anm=false` (flag set), TS: `is_anm=true` (flag not set)
+
+**Impact:** Parity tests will now detect this divergence via hash mismatch instead of ANM-only checks.
+
+### 45. Hexagonal Parity Findings (Dec 21, 2025) ✓
+
+Detailed analysis of canonical_hexagonal_2p.db parity gate:
+
+| Game     | Divergence Type                                          | Root Cause                            |
+| -------- | -------------------------------------------------------- | ------------------------------------- |
+| 2e957b49 | Phase mismatch (territory_processing vs line_processing) | Phase transition timing               |
+| a08ffd29 | ANM state mismatch (is_anm differs)                      | pendingLineRewardElimination sync     |
+| 147d36d0 | Structural (module not found)                            | ts-node legacyReplayHelper resolution |
+
+**Status:**
+
+- Hash fix applied for ANM divergence detection
+- Phase transition and module resolution issues pending investigation
