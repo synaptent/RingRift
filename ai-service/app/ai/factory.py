@@ -599,7 +599,7 @@ class AIFactory:
             from app.ai.gmo_v2 import GMOv2AI
             ai_class = GMOv2AI
         elif ai_type == AIType.GMO_MCTS:
-            from app.ai.archive.gmo_mcts_hybrid import GMOMCTSHybrid
+            from app.ai.gmo_mcts_hybrid import GMOMCTSHybrid
             ai_class = GMOMCTSHybrid
         elif ai_type == AIType.IG_GMO:
             from app.ai.ig_gmo import IGGMO
@@ -901,7 +901,7 @@ class AIFactory:
                 rng_seed=rng_seed,
                 nn_model_id=nn_model_id,
             )
-            from app.ai.archive.gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
+            from app.ai.gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
             hybrid_config = GMOMCTSConfig(num_simulations=num_simulations, device="cpu")
             return GMOMCTSHybrid(player_number, config, hybrid_config=hybrid_config)
 

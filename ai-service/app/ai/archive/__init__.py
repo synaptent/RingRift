@@ -8,14 +8,15 @@ WARNING: These modules should not be used in new code. They are kept only
 for backward compatibility with existing configurations that reference them.
 
 Archived on: 2025-12-21
+Updated: 2025-12-21 - GMOMCTSHybrid unarchived to app/ai/gmo_mcts_hybrid.py
 
 For details on each archived module and its valuable patterns, see README.md.
 """
 
 # Lazy imports to avoid loading archived code unless explicitly requested
 __all__ = [
-    "GMOMCTSHybrid",
-    "GMOMCTSConfig",
+    "GMOMCTSHybrid",  # Re-exported from main ai module (unarchived)
+    "GMOMCTSConfig",  # Re-exported from main ai module (unarchived)
     "CAGE_AI",
     "CAGEConfig",
     "EBMOOnlineAI",
@@ -27,7 +28,8 @@ __all__ = [
 def __getattr__(name: str):
     """Lazy import archived modules only when accessed."""
     if name in ("GMOMCTSHybrid", "GMOMCTSConfig"):
-        from .gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
+        # Unarchived 2025-12-21 - redirect to main ai module
+        from app.ai.gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
         return GMOMCTSHybrid if name == "GMOMCTSHybrid" else GMOMCTSConfig
     elif name in ("CAGE_AI", "CAGEConfig"):
         from .cage_ai import CAGE_AI

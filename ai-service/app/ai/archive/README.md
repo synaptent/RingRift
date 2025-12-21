@@ -4,26 +4,22 @@ This directory contains experimental AI implementations that were archived on 20
 These implementations are not actively used in production but contain valuable patterns
 that may be harvested for future development.
 
-## Archived Files
+## Restored Files
 
-### gmo_mcts_hybrid.py (405 lines)
+### gmo_mcts_hybrid.py - UNARCHIVED 2025-12-21
 
-**Status**: Archived prototype
-**Reason for archival**: Superseded by pure Gumbel MCTS in the production ladder; retained only for explicit experimental runs
+**New location**: `app/ai/gmo_mcts_hybrid.py`
+**Reason**: Restored for evaluation as potential approach to improve AI strength to 2000 Elo
 
-**Valuable patterns to harvest:**
+The hybrid combines GMO's gradient-based move scoring with MCTS tree search:
 
-- GMO-based prior policy generation for MCTS (`_get_gmo_priors`)
-- Uncertainty-based exploration bonus blending
-- Integration pattern between gradient-based and tree-search methods
-- `MCTSNode` class with UCB score calculation
-
-**Potential future use:**
-
-- Could inform hybrid approaches combining learned priors with MCTS
-- Uncertainty exploration bonus concept applicable to other AI types
+- GMO provides prior probabilities to guide MCTS
+- Uncertainty-based exploration bonus
+- Optional GMO-based rollout policy
 
 ---
+
+## Archived Files
 
 ### cage_ai.py (233 lines) + cage_network.py
 
