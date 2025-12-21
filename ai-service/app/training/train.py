@@ -106,6 +106,7 @@ from app.ai.neural_net import (
     multi_player_value_loss,
 )
 from app.models import BoardType
+from app.utils.canonical_naming import normalize_board_type
 from app.training.config import TrainConfig
 from app.training.data_loader import (
     StreamingDataLoader,
@@ -952,7 +953,7 @@ def train_model(
             )
         else:
             # Auto-generate appropriate model_id for new square training
-            board_prefix = "sq8" if config.board_type == BoardType.SQUARE8 else "sq19"
+            board_prefix = normalize_board_type(config.board_type)
             new_model_id = f"ringrift_{board_prefix}_{num_players}p"
             logger.warning(
                 f"Model ID '{config.model_id}' is for hex but training {config.board_type.name}. "

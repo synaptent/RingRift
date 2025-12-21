@@ -59,6 +59,7 @@ class RingRiftDataset(Dataset):
         use_multi_player_values: bool = False,
         filter_empty_policies: bool = True,
         return_num_players: bool = False,
+        return_auxiliary_targets: bool = False,
     ):
         self.data_path = data_path
         self.board_type = board_type
@@ -69,6 +70,9 @@ class RingRiftDataset(Dataset):
         self.use_multi_player_values = use_multi_player_values
         self.filter_empty_policies = filter_empty_policies
         self.return_num_players = return_num_players
+        # When True, includes auxiliary targets (game_length, piece_count, outcome)
+        # for multi-task learning if available in the data.
+        self.return_auxiliary_targets = return_auxiliary_targets
         self.hex_transform: HexSymmetryTransform | None = None
 
         # Initialize hex transform if augmentation enabled
@@ -93,6 +97,11 @@ class RingRiftDataset(Dataset):
         self.num_players_arr: np.ndarray | None = None
         # Effective dense policy vector length inferred from data
         self.policy_size: int = 0
+        # Auxiliary task targets (multi-task learning)
+        self.has_auxiliary_targets = False
+        self.game_lengths_arr: np.ndarray | None = None
+        self.piece_counts_arr: np.ndarray | None = None
+        self.outcomes_arr: np.ndarray | None = None
 
         if os.path.exists(data_path):
             try:
@@ -168,6 +177,39 @@ class RingRiftDataset(Dataset):
                             data_path,
                         )
                         self.return_num_players = False
+
+                    # Auxiliary task targets: optional 'game_lengths', 'piece_counts',
+                    # 'outcomes' arrays for multi-task learning (2025-12).
+                    has_game_lengths = "game_lengths" in available_keys
+                    has_piece_counts = "piece_counts" in available_keys
+                    has_outcomes = "outcomes" in available_keys
+                    if has_game_lengths or has_piece_counts or has_outcomes:
+                        self.has_auxiliary_targets = True
+                        if has_game_lengths:
+                            self.game_lengths_arr = np.asarray(
+                                self.data["game_lengths"], dtype=np.float32
+                            )
+                        if has_piece_counts:
+                            self.piece_counts_arr = np.asarray(
+                                self.data["piece_counts"], dtype=np.float32
+                            )
+                        if has_outcomes:
+                            self.outcomes_arr = np.asarray(
+                                self.data["outcomes"], dtype=np.int64
+                            )
+                        logger.info(
+                            "Auxiliary targets available in %s: game_lengths=%s, "
+                            "piece_counts=%s, outcomes=%s",
+                            data_path,
+                            has_game_lengths,
+                            has_piece_counts,
+                            has_outcomes,
+                        )
+                    elif self.return_auxiliary_targets:
+                        logger.info(
+                            "Auxiliary targets not found in %s; will derive from values",
+                            data_path,
+                        )
 
                     # Infer the canonical spatial shape (H, W) once so that
                     # callers can route samples into same-board batches if
@@ -362,6 +404,39 @@ class RingRiftDataset(Dataset):
                 dtype=torch.float32,
             )
 
+        # Build auxiliary targets dict if requested
+        aux_targets = None
+        if self.return_auxiliary_targets:
+            aux_targets = {}
+            # Game length (normalized by /100 for stability)
+            if self.game_lengths_arr is not None:
+                aux_targets["game_length"] = torch.tensor(
+                    self.game_lengths_arr[actual_idx] / 100.0,
+                    dtype=torch.float32,
+                )
+            # Piece count (normalized)
+            if self.piece_counts_arr is not None:
+                aux_targets["piece_count"] = torch.tensor(
+                    self.piece_counts_arr[actual_idx] / 20.0,  # Normalize by typical max
+                    dtype=torch.float32,
+                )
+            # Outcome (0=loss, 1=draw, 2=win)
+            if self.outcomes_arr is not None:
+                aux_targets["outcome"] = torch.tensor(
+                    self.outcomes_arr[actual_idx],
+                    dtype=torch.long,
+                )
+            else:
+                # Derive outcome from value if not pre-computed
+                val = value.item()
+                if val > 0.3:
+                    outcome = 2  # Win
+                elif val < -0.3:
+                    outcome = 0  # Loss
+                else:
+                    outcome = 1  # Draw
+                aux_targets["outcome"] = torch.tensor(outcome, dtype=torch.long)
+
         if self.return_num_players:
             num_players_val = 0
             if self.num_players_arr is not None:
@@ -369,12 +444,30 @@ class RingRiftDataset(Dataset):
                     num_players_val = int(self.num_players_arr[actual_idx])
                 except Exception:
                     num_players_val = 0
+            if self.return_auxiliary_targets:
+                return (
+                    torch.from_numpy(features),
+                    torch.from_numpy(globals_vec),
+                    value_tensor,
+                    policy_vector,
+                    torch.tensor(num_players_val, dtype=torch.int64),
+                    aux_targets,
+                )
             return (
                 torch.from_numpy(features),
                 torch.from_numpy(globals_vec),
                 value_tensor,
                 policy_vector,
                 torch.tensor(num_players_val, dtype=torch.int64),
+            )
+
+        if self.return_auxiliary_targets:
+            return (
+                torch.from_numpy(features),
+                torch.from_numpy(globals_vec),
+                value_tensor,
+                policy_vector,
+                aux_targets,
             )
 
         return (

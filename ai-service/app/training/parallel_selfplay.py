@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 # Worker process global configuration (set by _init_worker)
 _worker_config: dict[str, Any] = {}
+# Worker process opening book (lazy-initialized)
+_worker_opening_book: Any = None
 
 
 @dataclass
@@ -66,6 +68,14 @@ class ParallelSelfplayConfig:
     use_temperature_decay: bool = False  # Enable temperature decay per game
     move_temp_threshold: int = 30  # Use higher temp for first N moves
     opening_temperature: float = 1.5  # Temperature for opening moves
+    # Opening book for position diversity (prevents mode collapse)
+    use_opening_book: bool = False  # Enable via RINGRIFT_USE_OPENING_BOOK=1
+    opening_book_prob: float = 0.8  # Probability to use opening vs fresh start
+    opening_book_min_openings: int = 100  # Min openings to auto-generate
+    # EBMO online learning (gradient updates during selfplay)
+    ebmo_online_learning: bool = False  # Enable EBMO online learning during games
+    ebmo_online_lr: float = 1e-5  # Online learning rate (very low for stability)
+    ebmo_online_buffer_size: int = 20  # Games to keep in rolling buffer
 
 
 # Backward compatibility alias (December 2025)
@@ -97,11 +107,86 @@ class GameResult:
 def _worker_init(config_dict: dict) -> None:
     """Initialize worker process with config and PYTHONPATH."""
     import sys
+    global _worker_config
+
+    # Store config in worker global
+    _worker_config.clear()
+    _worker_config.update(config_dict)
 
     # Add ai-service root to path for worker processes (passed from main process)
     ai_service_root = config_dict.get('_ai_service_root')
     if ai_service_root and ai_service_root not in sys.path:
         sys.path.insert(0, ai_service_root)
+
+def _get_opening_book(board_type: str, num_players: int, min_openings: int):
+    """Get or initialize the worker's opening book (lazy initialization)."""
+    global _worker_opening_book
+
+    if _worker_opening_book is None:
+        try:
+            from app.training.opening_book import get_opening_book
+            _worker_opening_book = get_opening_book(
+                board_type=board_type,
+                num_players=num_players,
+                auto_generate=True,
+                min_openings=min_openings,
+            )
+            logger.debug(
+                f"Initialized opening book with {len(_worker_opening_book.openings)} openings"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize opening book: {e}")
+            _worker_opening_book = False  # Mark as failed, don't retry
+
+    return _worker_opening_book if _worker_opening_book else None
+
+
+def _apply_opening_to_state(env, opening) -> tuple[Any, list[dict], int]:
+    """Apply opening moves to environment, returning (state, move_dicts, move_count).
+
+    Args:
+        env: RingRiftEnv instance (must already be reset)
+        opening: Opening object with moves list
+
+    Returns:
+        Tuple of (final_state, move_dicts_applied, num_moves_applied)
+    """
+    moves_applied = []
+
+    for move_data in opening.moves:
+        legal_moves = env.legal_moves()
+        if not legal_moves:
+            break
+
+        # Find matching move from legal moves
+        target_to = move_data.get("to")
+        target_from = move_data.get("from")
+
+        matched_move = None
+        for lm in legal_moves:
+            lm_to = getattr(lm, "to_position", None)
+            lm_from = getattr(lm, "from_position", None)
+
+            # Match by destination (and optionally source)
+            if lm_to == target_to:
+                if target_from is None or lm_from == target_from:
+                    matched_move = lm
+                    break
+
+        if matched_move is None:
+            # Try to match any legal move if exact match fails
+            # This handles cases where move encoding changed
+            logger.debug("Opening move not found, breaking early")
+            break
+
+        _, _, done, _ = env.step(matched_move)
+        moves_applied.append(move_data)
+
+        if done:
+            break
+
+    return env.state, moves_applied, len(moves_applied)
+
 
 def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
     """
@@ -142,10 +227,13 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
         if config.engine == "gumbel":
             from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 
-        # Conditionally import EBMO_AI
+        # Conditionally import EBMO (with optional online learning wrapper)
         EBMO_AI = None
+        EBMOOnlineAI = None
         if config.engine == "ebmo":
             from app.ai.ebmo_ai import EBMO_AI
+            if config.ebmo_online_learning:
+                from app.ai.ebmo_online import EBMOOnlineAI, EBMOOnlineConfig
 
         # Create environment
         env = RingRiftEnv(
@@ -178,10 +266,28 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
                 )
             elif config.engine == "ebmo":
                 # EBMO uses gradient descent on action embeddings
-                ai_players[pn] = EBMO_AI(
+                base_ai = EBMO_AI(
                     player_number=pn,
                     config=ai_config,
                 )
+                # Wrap with online learning if enabled
+                if config.ebmo_online_learning and EBMOOnlineAI is not None:
+                    online_config = EBMOOnlineConfig(
+                        learning_rate=config.ebmo_online_lr,
+                        buffer_size=config.ebmo_online_buffer_size,
+                    )
+                    ai_players[pn] = EBMOOnlineAI(
+                        player_number=pn,
+                        config=ai_config,
+                        model_path=None,  # Share network from base_ai
+                        enable_online_learning=True,
+                        online_config=online_config,
+                    )
+                    # Share the network from the base AI
+                    if hasattr(base_ai, 'network') and hasattr(ai_players[pn], 'learner'):
+                        ai_players[pn].learner.network = base_ai.network
+                else:
+                    ai_players[pn] = base_ai
             else:
                 ai_players[pn] = DescentAI(
                     player_number=pn,
@@ -202,8 +308,32 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
         game_history = []
         state_history = []
         done = False
+        opening_used = None  # Track which opening was used (for stats)
 
+        # Apply opening book if enabled
         move_count = 0
+        if config.use_opening_book and random.random() < config.opening_book_prob:
+            board_type_str = (
+                config.board_type.value
+                if hasattr(config.board_type, 'value')
+                else str(config.board_type)
+            )
+            opening_book = _get_opening_book(
+                board_type=board_type_str,
+                num_players=config.num_players,
+                min_openings=config.opening_book_min_openings,
+            )
+            if opening_book is not None:
+                opening = opening_book.sample_opening()
+                if opening is not None:
+                    state, _, moves_applied = _apply_opening_to_state(env, opening)
+                    move_count = moves_applied
+                    opening_used = opening.opening_id
+                    logger.debug(
+                        f"Game {game_idx}: Applied {moves_applied} opening moves "
+                        f"from {opening.opening_id}"
+                    )
+
         while not done and move_count < config.max_moves:
             current_player = state.current_player
 
@@ -306,8 +436,19 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
                     sample['final_value'] = -1.0
         else:
             # Draw or timeout
+            winner = None
             for sample in game_history:
                 sample['final_value'] = 0.0
+
+        # EBMO online learning: update networks after game completion
+        if config.ebmo_online_learning:
+            for ai in ai_players.values():
+                if hasattr(ai, 'end_game'):
+                    try:
+                        ai.end_game(winner)
+                        logger.debug(f"Game {game_idx}: EBMO online learning updated")
+                    except Exception as e:
+                        logger.warning(f"Game {game_idx}: EBMO online learning failed: {e}")
 
         # Convert to arrays
         if not game_history:
@@ -420,6 +561,14 @@ def generate_dataset_parallel(
     use_temperature_decay: bool = False,
     opening_temperature: float = 1.5,
     move_temp_threshold: int = 30,
+    # Opening book parameters (prevents mode collapse)
+    use_opening_book: bool | None = None,  # Default: check RINGRIFT_USE_OPENING_BOOK env
+    opening_book_prob: float = 0.8,
+    opening_book_min_openings: int = 100,
+    # EBMO online learning parameters
+    ebmo_online_learning: bool = False,
+    ebmo_online_lr: float = 1e-5,
+    ebmo_online_buffer_size: int = 20,
 ) -> int:
     """
     Generate selfplay data using parallel workers.
@@ -446,6 +595,12 @@ def generate_dataset_parallel(
         gumbel_top_k: Top-k actions to consider in sequential halving
         gumbel_c_visit: Visit count exploration constant
         gumbel_c_scale: UCB scale factor
+        use_opening_book: Enable opening book for position diversity
+        opening_book_prob: Probability to use opening vs fresh start (0.0-1.0)
+        opening_book_min_openings: Minimum openings to auto-generate
+        ebmo_online_learning: Enable EBMO online learning during games
+        ebmo_online_lr: Online learning rate
+        ebmo_online_buffer_size: Games to keep in rolling buffer
 
     Returns:
         Total number of samples generated
@@ -453,8 +608,13 @@ def generate_dataset_parallel(
     if num_workers is None:
         num_workers = max(1, mp.cpu_count() - 1)
 
+    # Check environment variable for opening book if not explicitly set
+    if use_opening_book is None:
+        use_opening_book = os.environ.get("RINGRIFT_USE_OPENING_BOOK", "0") == "1"
+
     logger.info(
         f"Starting parallel selfplay: {num_games} games with {num_workers} workers"
+        + (f" (opening book enabled)" if use_opening_book else "")
     )
 
     # Prepare config (serializable)
@@ -477,6 +637,12 @@ def generate_dataset_parallel(
         use_temperature_decay=use_temperature_decay,
         move_temp_threshold=move_temp_threshold,
         opening_temperature=opening_temperature,
+        use_opening_book=use_opening_book,
+        opening_book_prob=opening_book_prob,
+        opening_book_min_openings=opening_book_min_openings,
+        ebmo_online_learning=ebmo_online_learning,
+        ebmo_online_lr=ebmo_online_lr,
+        ebmo_online_buffer_size=ebmo_online_buffer_size,
     )
     # Get ai-service root path to pass to workers
     ai_service_root = str(AI_SERVICE_ROOT)
@@ -499,6 +665,12 @@ def generate_dataset_parallel(
         'use_temperature_decay': config.use_temperature_decay,
         'move_temp_threshold': config.move_temp_threshold,
         'opening_temperature': config.opening_temperature,
+        'use_opening_book': config.use_opening_book,
+        'opening_book_prob': config.opening_book_prob,
+        'opening_book_min_openings': config.opening_book_min_openings,
+        'ebmo_online_learning': config.ebmo_online_learning,
+        'ebmo_online_lr': config.ebmo_online_lr,
+        'ebmo_online_buffer_size': config.ebmo_online_buffer_size,
         '_ai_service_root': ai_service_root,  # Path for worker processes
     }
 

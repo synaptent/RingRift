@@ -37,6 +37,7 @@ from app.training.hex_augmentation import (
     HexSymmetryTransform,
     augment_hex_sample,
 )
+from app.training.temperature_scheduling import AlphaZeroTemperature
 from app.utils.progress_reporter import SoakProgressReporter
 from app.utils.resource_guard import LIMITS, check_disk_space, get_disk_usage
 
@@ -706,6 +707,8 @@ def generate_dataset(
     multi_player_values: bool = False,
     max_players: int = 4,
     graded_outcomes: bool = False,
+    exploration_moves: int = 30,
+    exploration_temperature: float = 1.0,
 ) -> None:
     """
     Generate self-play data using DescentAI/MCTSAI and RingRiftEnv.
@@ -775,6 +778,15 @@ def generate_dataset(
         intermediate placements (2nd, 3rd) receive intermediate values
         instead of full loss (-1). For example, in a 4-player game:
         1st=+1.0, 2nd=+0.33, 3rd=-0.33, 4th=-1.0. Default: False.
+    exploration_moves:
+        Number of moves at the start of each game to use temperature-based
+        move sampling (AlphaZero-style). During exploration moves, moves are
+        sampled from the visit distribution with temperature instead of using
+        argmax. This increases training data diversity. Default: 30.
+    exploration_temperature:
+        Temperature for exploration move sampling. Higher values increase
+        randomness. τ=1.0 samples proportionally to visit counts, τ→0
+        approaches argmax. Default: 1.0.
     """
     import torch  # Import at function start for GMO device detection
     if seed is not None:
@@ -810,6 +822,17 @@ def generate_dataset(
         raise ValueError(f"Unsupported engine_mix '{engine_mix}'. Expected 'single', 'per_game', or 'per_player'.")
     if not 0.0 <= engine_ratio <= 1.0:
         raise ValueError(f"engine_ratio must be in [0.0, 1.0], got {engine_ratio}")
+
+    # Initialize AlphaZero-style temperature scheduler for exploration
+    # During the first exploration_moves moves, sample from visit distribution
+    # with temperature instead of argmax to increase training data diversity
+    temp_scheduler: AlphaZeroTemperature | None = None
+    if exploration_moves > 0 and exploration_temperature > 0:
+        temp_scheduler = AlphaZeroTemperature(
+            exploration_moves=exploration_moves,
+            exploration_temp=exploration_temperature,
+            exploitation_temp=0.0,  # Argmax after exploration phase
+        )
 
     feature_version = int(feature_version)
 
@@ -1059,6 +1082,29 @@ def generate_dataset(
             # For MCTSAI we use MCTS visit distributions as canonical soft
             # policy targets via extract_mcts_visit_distribution(...).
             move = ai.select_move(state)
+
+            # AlphaZero-style temperature sampling for early moves (exploration)
+            # For MCTS-based engines, sample from visit distribution with temperature
+            # instead of using the argmax move during the exploration phase.
+            # This increases training data diversity by exploring more of the game tree.
+            if (
+                temp_scheduler is not None
+                and move is not None
+                and current_engine in ("mcts", "gumbel")
+                and hasattr(ai, "get_visit_distribution")
+            ):
+                temp = temp_scheduler.get_temperature(move_count)
+                if temp > 0:  # Temperature > 0 means we should sample
+                    try:
+                        visit_moves, visit_probs = ai.get_visit_distribution()
+                        if visit_moves and len(visit_moves) > 1:
+                            # Sample from visit distribution with temperature
+                            sampled_move = temp_scheduler.sample_move(visit_probs, move_count)
+                            if 0 <= sampled_move < len(visit_moves):
+                                move = visit_moves[sampled_move]
+                    except Exception as e:
+                        # If sampling fails, fall back to argmax move
+                        logger.debug(f"Temperature sampling failed: {e}, using argmax move")
 
             if not move:
                 # No moves available, current player loses

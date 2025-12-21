@@ -525,9 +525,16 @@ try:
 except ImportError:
     HAS_TRAINING_ENV = False
 
-# Import seed utilities for reproducibility
+# Import seed utilities for reproducibility (Lane 3 Consolidation)
 try:
     from app.training.seed_utils import (
+        derive_ai_seed,
+        derive_replay_seed,
+        derive_worker_seed,
+        get_env_seed,
+        get_global_seed,
+        get_thread_rng,
+        reset_thread_rng,
         seed_all,
     )
     HAS_SEED_UTILS = True
