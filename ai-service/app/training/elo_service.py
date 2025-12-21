@@ -380,6 +380,14 @@ class EloService:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_match_time ON match_history(timestamp)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_history_participant ON elo_history(participant_id, board_type, num_players)")
 
+            # Schema migrations for existing databases (December 2025)
+            # Add peak_rating column if missing (older databases don't have it)
+            cursor = conn.execute("PRAGMA table_info(elo_ratings)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "peak_rating" not in columns:
+                conn.execute("ALTER TABLE elo_ratings ADD COLUMN peak_rating REAL DEFAULT 1500.0")
+                logger.info("Migrated elo_ratings: added peak_rating column")
+
     def register_participant(
         self,
         participant_id: str,
