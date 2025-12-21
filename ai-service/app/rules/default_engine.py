@@ -415,7 +415,7 @@ class DefaultRulesEngine(RulesEngine):
         canonical GameEngine.apply_move result; callers are responsible for
         asserting equivalence where appropriate.
         """
-        from app.ai.zobrist import ZobristHash
+        from app.core.zobrist import ZobristHash
         from app.board_manager import BoardManager
         from app.game_engine import GameEngine
 

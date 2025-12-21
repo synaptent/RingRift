@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from app.ai.zobrist import ZobristHash
+from app.core.zobrist import ZobristHash
 from app.models import (
     BoardState,
     BoardType,

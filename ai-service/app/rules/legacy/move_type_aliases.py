@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Mapping from legacy move type names to canonical equivalents
 # Keys are uppercase legacy names, values are lowercase canonical names
 LEGACY_TO_CANONICAL_MOVE_TYPE: Final[dict[str, str]] = {
+    # Legacy movement aliases
+    "MOVE_RING": "move_stack",
+    "BUILD_STACK": "move_stack",
     # Line phase renames (December 2024)
     "CHOOSE_LINE_REWARD": "choose_line_option",
     "LINE_REWARD": "choose_line_option",
