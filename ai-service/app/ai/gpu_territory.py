@@ -185,13 +185,11 @@ def _is_physically_disconnected(
     if len(outside_positions) == 0:
         return (False, None)
 
-    # Convert to set for O(1) lookup in later checks
-    set(map(tuple, outside_positions))
-
-    # BFS from region boundary
+    # BFS from region boundary to check what separates region from outside
     blocking_marker_players = set()
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
+    # Find region boundary cells (region cells adjacent to non-region cells or board edge)
     region_boundary = set()
     for y, x in region:
         for dy, dx in directions:
@@ -204,22 +202,24 @@ def _is_physically_disconnected(
                 # Edge of board - this boundary touches edge
                 region_boundary.add((y, x))
 
-    # Check what separates region from outside
+    # Check what separates region from outside by examining all neighbors of boundary cells
     # Use numpy array for visited tracking (faster than set for dense boards)
     visited = np.copy(region_mask)
-    queue = list(region_boundary)
     can_reach_outside = False
 
-    for y, x in queue:
+    for y, x in region_boundary:
         for dy, dx in directions:
             ny, nx = y + dy, x + dx
 
-            # Off-board - counts as barrier
+            # Off-board - counts as barrier (edge of board)
             if not (0 <= ny < board_size and 0 <= nx < board_size):
                 continue
 
             if visited[ny, nx]:
                 continue
+
+            # Mark as visited to avoid rechecking
+            visited[ny, nx] = True
 
             # Collapsed space - counts as barrier
             if not non_collapsed[ny, nx]:
@@ -227,7 +227,7 @@ def _is_physically_disconnected(
 
             # Non-collapsed cell outside region
             if outside_mask[ny, nx]:
-                # Can we reach it directly, or is there a marker barrier?
+                # Check if there's a marker barrier
                 cell_marker_owner = 0
                 if marker_owner_np is not None:
                     cell_marker_owner = marker_owner_np[ny, nx]
@@ -239,7 +239,9 @@ def _is_physically_disconnected(
                     can_reach_outside = True
 
     # If we can reach outside directly (without crossing markers), not disconnected
-    if can_reach_outside and not blocking_marker_players:
+    # Note: Even if there are ALSO markers in other directions, having ANY escape route
+    # means the region is not physically disconnected.
+    if can_reach_outside:
         return (False, None)
 
     # If blocking markers belong to multiple players, not physically disconnected

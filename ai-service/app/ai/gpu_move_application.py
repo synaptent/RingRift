@@ -547,8 +547,14 @@ def apply_recovery_moves_vectorized(
                             for pp in range(1, state.num_players + 1):
                                 state.buried_at[g, pp, extraction_y, extraction_x] = False
                         else:
-                            # Clear just this player's buried ring at this position
-                            state.buried_at[g, p, extraction_y, extraction_x] = False
+                            # December 2025 BUG FIX: Only clear buried_at if there are
+                            # no more buried rings at this position. The stack might have
+                            # multiple buried rings of the same player (e.g., from multiple
+                            # captures). Only clear when new_height == new_cap (all rings
+                            # are cap rings, no buried rings remain).
+                            if new_height <= new_cap:
+                                state.buried_at[g, p, extraction_y, extraction_x] = False
+                            # Otherwise, keep buried_at True since there are still buried rings
 
 
 def reset_capture_chain_batch(
@@ -1082,7 +1088,6 @@ def apply_movement_moves_batch_vectorized(
     # Landing on any marker (own or opponent) removes it and costs 1 ring (cap-elimination)
     dest_marker = state.marker_owner[game_indices, to_y, to_x]
     landing_on_any_marker = dest_marker != 0
-    landing_on_own_marker = dest_marker == players
     landing_ring_cost = landing_on_any_marker.int()
 
     if landing_on_any_marker.any():
@@ -1092,21 +1097,6 @@ def apply_movement_moves_batch_vectorized(
         marker_players = players[landing_on_any_marker]
         # Remove the marker
         state.marker_owner[marker_games, marker_y, marker_x] = 0
-        # Only collapse if landing on OWN marker
-        own_marker_mask = landing_on_own_marker[landing_on_any_marker]
-        if own_marker_mask.any():
-            collapse_games = marker_games[own_marker_mask]
-            collapse_y = marker_y[own_marker_mask]
-            collapse_x = marker_x[own_marker_mask]
-            collapse_players = marker_players[own_marker_mask]
-            state.is_collapsed[collapse_games, collapse_y, collapse_x] = True
-            state.territory_owner[collapse_games, collapse_y, collapse_x] = collapse_players.to(
-                state.territory_owner.dtype
-            )
-            # Update territory count per player
-            for g, p in zip(collapse_games.tolist(), collapse_players.tolist(), strict=False):
-                state.territory_count[g, p] += 1
-
         # Track eliminated rings from landing cost (cap-elimination)
         # The moving player loses a ring from their cap
         for g, p in zip(marker_games.tolist(), marker_players.tolist(), strict=False):
@@ -1148,9 +1138,41 @@ def apply_movement_moves_batch_vectorized(
         surv_players = players[is_surviving]
         surv_height = new_height[is_surviving]
         surv_cap = new_cap_height[is_surviving]
-        state.stack_owner[surv_games, surv_to_y, surv_to_x] = surv_players.to(state.stack_owner.dtype)
+
+        # December 2025 BUG FIX: When cap is eliminated but stack survives (buried rings),
+        # ownership must transfer to the buried ring owner. This happens when landing on
+        # a marker costs the moving player's entire cap (e.g., h=2 c=1 lands on marker,
+        # cap eliminated, only buried ring remains, ownership transfers to buried owner).
+        needs_ownership_transfer = (surv_cap == 0) & (surv_height > 0)
+        final_owners = surv_players.clone()
+        final_caps = surv_cap.clone()
+
+        if needs_ownership_transfer.any():
+            transfer_mask = needs_ownership_transfer
+            transfer_games = surv_games[transfer_mask]
+            transfer_y = surv_to_y[transfer_mask]
+            transfer_x = surv_to_x[transfer_mask]
+
+            # Find the buried ring owner for each game needing transfer
+            for idx in range(len(transfer_games)):
+                g = transfer_games[idx].item()
+                y_pos = transfer_y[idx].item()
+                x_pos = transfer_x[idx].item()
+
+                # Find which player has buried ring at this position
+                for p in range(1, state.num_players + 1):
+                    if state.buried_at[g, p, y_pos, x_pos].item():
+                        # Get index in the transfer subset
+                        surv_idx = torch.where(transfer_mask)[0][idx]
+                        final_owners[surv_idx] = p
+                        final_caps[surv_idx] = 1  # Exposed buried ring becomes the cap
+                        # Clear buried_at since the ring is now exposed as cap
+                        state.buried_at[g, p, y_pos, x_pos] = False
+                        break
+
+        state.stack_owner[surv_games, surv_to_y, surv_to_x] = final_owners.to(state.stack_owner.dtype)
         state.stack_height[surv_games, surv_to_y, surv_to_x] = surv_height.to(state.stack_height.dtype)
-        state.cap_height[surv_games, surv_to_y, surv_to_x] = surv_cap.to(state.cap_height.dtype)
+        state.cap_height[surv_games, surv_to_y, surv_to_x] = final_caps.to(state.cap_height.dtype)
 
     # For eliminated stacks, ensure destination remains empty
     if is_eliminated.any():
@@ -1160,8 +1182,16 @@ def apply_movement_moves_batch_vectorized(
         state.stack_owner[elim_games, elim_to_y, elim_to_x] = 0
         state.stack_height[elim_games, elim_to_y, elim_to_x] = 0
         state.cap_height[elim_games, elim_to_y, elim_to_x] = 0
-        # Also clear buried_at since the stack is gone
+        # Also clear buried_at AND decrement buried_rings since the stack is gone
+        # BUG FIX 2025-12-20: buried_rings wasn't decremented when stacks were eliminated,
+        # causing divergence with CPU buried ring counting
         for p in range(1, state.num_players + 1):
+            # Check which games had buried rings for player p at this position
+            had_buried = state.buried_at[elim_games, p, elim_to_y, elim_to_x]
+            if had_buried.any():
+                # Decrement buried_rings for games that had buried rings
+                games_with_buried = elim_games[had_buried]
+                state.buried_rings[games_with_buried, p] -= 1
             state.buried_at[elim_games, p, elim_to_y, elim_to_x] = False
 
     # Clear must_move_from constraint after movement (RR-CANON-R090)
@@ -1234,11 +1264,11 @@ def _apply_movement_moves_batch_legacy(
             if marker_owner != 0 and marker_owner != player:
                 state.marker_owner[g, check_y, check_x] = player
 
+        # December 2025 BUG FIX: Handle landing on ANY marker (own or opponent)
+        # per RR-CANON-R091/R092. Previously only handled own markers.
         dest_marker = state.marker_owner[g, to_y, to_x].item()
-        landing_ring_cost = 0
-        if dest_marker == player:
-            landing_ring_cost = 1
-            state.is_collapsed[g, to_y, to_x] = True
+        landing_ring_cost = 1 if dest_marker != 0 else 0
+        if dest_marker != 0:
             state.marker_owner[g, to_y, to_x] = 0
 
         state.stack_owner[g, from_y, from_x] = 0
@@ -1255,17 +1285,33 @@ def _apply_movement_moves_batch_legacy(
         new_cap_height = max(0, moving_cap_height - landing_ring_cost)
 
         if new_height > 0:
-            # Stack survives
-            state.stack_owner[g, to_y, to_x] = player
+            # December 2025 BUG FIX: When cap is eliminated but stack survives,
+            # ownership must transfer to the buried ring owner.
+            final_owner = player
+            final_cap = new_cap_height
+            if new_cap_height == 0:
+                # Cap eliminated, find buried ring owner
+                for p in range(1, state.num_players + 1):
+                    if state.buried_at[g, p, to_y, to_x].item():
+                        final_owner = p
+                        final_cap = 1
+                        state.buried_at[g, p, to_y, to_x] = False
+                        # BUG FIX 2025-12-20: Decrement buried_rings when ring is exposed
+                        state.buried_rings[g, p] -= 1
+                        break
+            state.stack_owner[g, to_y, to_x] = final_owner
             state.stack_height[g, to_y, to_x] = new_height
-            state.cap_height[g, to_y, to_x] = new_cap_height
+            state.cap_height[g, to_y, to_x] = final_cap
         else:
             # Stack is eliminated (landed on marker with height 1)
             state.stack_owner[g, to_y, to_x] = 0
             state.stack_height[g, to_y, to_x] = 0
             state.cap_height[g, to_y, to_x] = 0
-            # Clear buried_at since the stack is gone
+            # Clear buried_at AND decrement buried_rings since the stack is gone
+            # BUG FIX 2025-12-20: buried_rings wasn't decremented when stacks were eliminated
             for p in range(1, state.num_players + 1):
+                if state.buried_at[g, p, to_y, to_x].item():
+                    state.buried_rings[g, p] -= 1
                 state.buried_at[g, p, to_y, to_x] = False
 
         # Advance move counter only (NOT current_player - that's handled by END_TURN phase)
@@ -1564,11 +1610,17 @@ def apply_capture_moves_batch_vectorized(
 
     # If target stack is eliminated, clear any buried_at at target position
     # (those buried rings are also eliminated when the stack is destroyed)
+    # BUG FIX 2025-12-20: Also decrement buried_rings when stack is eliminated
     if target_is_empty.any():
         empty_games = game_indices[target_is_empty]
         empty_target_y = target_y[target_is_empty]
         empty_target_x = target_x[target_is_empty]
         for p in range(1, state.num_players + 1):
+            # Check which games had buried rings for player p at this position
+            had_buried = state.buried_at[empty_games, p, empty_target_y, empty_target_x]
+            if had_buried.any():
+                games_with_buried = empty_games[had_buried]
+                state.buried_rings[games_with_buried, p] -= 1
             state.buried_at[empty_games, p, empty_target_y, empty_target_x] = False
 
     # === Clear ORIGIN ===
