@@ -529,17 +529,27 @@ class FeedbackAccelerator:
         new_elo: float,
         model_id: str | None = None,
     ) -> None:
-        """Record a successful model promotion."""
+        """Record a successful model promotion.
+
+        Also notifies ImprovementOptimizer to adjust dynamic thresholds
+        based on promotion success (+5-15 Elo potential from accelerated cycles).
+        """
         if config_key not in self._configs:
             self._configs[config_key] = ConfigMomentum(config_key=config_key)
 
         momentum = self._configs[config_key]
+        old_elo = momentum.last_promotion_elo
+        elo_gain = new_elo - old_elo
         momentum.last_promotion_elo = new_elo
         momentum.total_promotions += 1
 
+        # Notify improvement optimizer for dynamic threshold adjustment
+        optimizer = get_improvement_optimizer()
+        optimizer.record_promotion_success(config_key, elo_gain, model_id or "")
+
         logger.info(
             f"[FeedbackAccelerator] {config_key}: Promotion #{momentum.total_promotions} "
-            f"at Elo {new_elo:.0f}"
+            f"at Elo {new_elo:.0f} (+{elo_gain:.0f})"
         )
 
         self._save_config(config_key)
@@ -561,6 +571,7 @@ class FeedbackAccelerator:
         """Get a detailed training decision for a config.
 
         Returns TrainingDecision with should_train, intensity, and multipliers.
+        Integrates with ImprovementOptimizer for dynamic threshold adjustment.
         """
         if config_key not in self._configs:
             # No data yet, use defaults
@@ -578,18 +589,22 @@ class FeedbackAccelerator:
         momentum = self._configs[config_key]
         games = momentum.games_since_training
 
-        # Determine threshold based on intensity
+        # Get dynamic threshold from improvement optimizer (+5-15 Elo potential)
+        optimizer_threshold = get_dynamic_threshold(config_key)
+        fast_track = optimizer_should_fast_track(config_key)
+
+        # Determine threshold based on intensity, adjusted by optimizer
         # OPTIMIZED: Higher multipliers for accelerating models to maximize learning velocity
         if momentum.intensity == TrainingIntensity.HOT_PATH:
-            threshold = HOT_PATH_MIN_GAMES  # 75 games
+            threshold = min(HOT_PATH_MIN_GAMES, optimizer_threshold)  # Use lower of two
             epochs_mult = 2.0  # OPTIMIZED: Double epochs for hot-path (was 1.5)
             lr_mult = 1.3  # OPTIMIZED: Higher LR for faster convergence (was 1.2)
-        elif momentum.intensity == TrainingIntensity.ACCELERATED:
-            threshold = ACCELERATED_MIN_GAMES  # 150 games
+        elif momentum.intensity == TrainingIntensity.ACCELERATED or fast_track:
+            threshold = min(ACCELERATED_MIN_GAMES, optimizer_threshold)
             epochs_mult = 1.5  # OPTIMIZED: More epochs (was 1.2)
             lr_mult = 1.2  # OPTIMIZED: Higher LR (was 1.1)
         elif momentum.intensity == TrainingIntensity.REDUCED:
-            threshold = MIN_GAMES_FOR_TRAINING * 1.5  # 450 games
+            threshold = max(int(MIN_GAMES_FOR_TRAINING * 1.5), optimizer_threshold)  # 450 games
             epochs_mult = 0.8
             lr_mult = 0.9
         elif momentum.intensity == TrainingIntensity.PAUSED:
@@ -604,7 +619,7 @@ class FeedbackAccelerator:
                 momentum=momentum.momentum_state,
             )
         else:
-            threshold = MIN_GAMES_FOR_TRAINING
+            threshold = optimizer_threshold  # Use optimizer's dynamic threshold
             epochs_mult = 1.0
             lr_mult = 1.0
 
@@ -702,25 +717,32 @@ class FeedbackAccelerator:
 
         Improving models should generate more data to capitalize on momentum.
         OPTIMIZED: Higher multipliers to maximize data generation during improvement.
+        Integrates ImprovementOptimizer priority boost for +5-15 Elo potential.
         """
+        # Get priority boost from improvement optimizer (based on promotion streaks, etc.)
+        optimizer_boost = get_selfplay_priority_boost(config_key)
+
         if config_key not in self._configs:
-            return 1.0
+            return 1.0 + optimizer_boost
 
         momentum = self._configs[config_key]
+        base_multiplier = 1.0
 
         if momentum.momentum_state == MomentumState.ACCELERATING:
             # OPTIMIZED: Generate 2x more data during strong improvement (was 1.5)
             if momentum.consecutive_improvements >= 3:
-                return 2.5  # Super hot-path: 2.5x data generation
-            return 2.0
+                base_multiplier = 2.5  # Super hot-path: 2.5x data generation
+            else:
+                base_multiplier = 2.0
         elif momentum.momentum_state == MomentumState.IMPROVING:
-            return 1.5  # OPTIMIZED: was 1.3
+            base_multiplier = 1.5  # OPTIMIZED: was 1.3
         elif momentum.momentum_state == MomentumState.PLATEAU:
-            return 1.2  # OPTIMIZED: Increase to try breaking plateau (was 1.1)
+            base_multiplier = 1.2  # OPTIMIZED: Increase to try breaking plateau (was 1.1)
         elif momentum.momentum_state == MomentumState.REGRESSING:
-            return 0.7  # OPTIMIZED: Reduce more to avoid bad data (was 0.8)
-        else:
-            return 1.0
+            base_multiplier = 0.7  # OPTIMIZED: Reduce more to avoid bad data (was 0.8)
+
+        # Apply optimizer boost (can add up to +0.15 for promotion streaks)
+        return min(3.0, base_multiplier + optimizer_boost)  # Cap at 3x
 
     def get_aggregate_selfplay_recommendation(self) -> dict[str, Any]:
         """Get aggregate selfplay rate recommendation across all configs.
