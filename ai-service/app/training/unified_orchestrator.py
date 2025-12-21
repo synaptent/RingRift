@@ -7,6 +7,7 @@ Central orchestration module that integrates ALL training components:
 - Checkpoint management (fault tolerance)
 - Background evaluation (continuous Elo tracking)
 - Adaptive controllers (learning rate, batch size)
+- Online learning (TD-energy + outcome-contrastive for EBMO)
 
 This provides a single entry point for advanced training with all features
 properly integrated and coordinated.
@@ -122,6 +123,22 @@ except ImportError:
     QualityBridge = None
     get_quality_bridge = None
 
+# Online learning for continuous in-game learning (December 2025)
+try:
+    from app.training.online_learning import (
+        EBMOOnlineLearner,
+        OnlineLearningConfig,
+        OnlineLearningMetrics,
+        create_online_learner,
+    )
+    _HAS_ONLINE_LEARNING = True
+except ImportError:
+    _HAS_ONLINE_LEARNING = False
+    EBMOOnlineLearner = None
+    OnlineLearningConfig = None
+    OnlineLearningMetrics = None
+    create_online_learner = None
+
 
 # =============================================================================
 # Configuration
@@ -198,6 +215,13 @@ class OrchestratorConfig:
     enable_curriculum_feedback: bool = True
     curriculum_wire_elo_events: bool = True  # Wire ELO_UPDATED → curriculum
     curriculum_wire_plateau_events: bool = True  # Wire PLATEAU_DETECTED → curriculum
+
+    # Online learning (continuous in-game learning)
+    enable_online_learning: bool = False  # Off by default; use for EBMO online AI
+    online_learning_buffer_size: int = 20
+    online_learning_rate: float = 1e-5  # Very conservative for stability
+    online_td_weight: float = 0.5  # Weight for TD-energy loss
+    online_outcome_weight: float = 0.5  # Weight for outcome-contrastive loss
 
     # Logging
     log_interval: int = 100
@@ -459,6 +483,79 @@ class QualityBridgeWrapper:
         return self._bridge is not None
 
 
+class OnlineLearningWrapper:
+    """Wrapper for online learning integration.
+
+    Enables continuous in-game learning with EBMO-style TD-energy updates.
+    Games can be fed back into the hot buffer for prioritized replay.
+    """
+
+    def __init__(self, config: OrchestratorConfig):
+        self.config = config
+        self._learner = None
+        self._metrics_history: list[OnlineLearningMetrics] = []
+
+    def initialize(self, network: Any):
+        """Initialize online learner if enabled."""
+        if not self.config.enable_online_learning:
+            return
+
+        if not _HAS_ONLINE_LEARNING:
+            logger.debug("[Orchestrator] OnlineLearning not available")
+            return
+
+        try:
+            online_config = OnlineLearningConfig(
+                buffer_size=self.config.online_learning_buffer_size,
+                learning_rate=self.config.online_learning_rate,
+                td_weight=self.config.online_td_weight,
+                outcome_weight=self.config.online_outcome_weight,
+            )
+            self._learner = create_online_learner(network, config=online_config)
+            logger.info(
+                f"[Orchestrator] OnlineLearning initialized "
+                f"(buffer={self.config.online_learning_buffer_size}, "
+                f"lr={self.config.online_learning_rate})"
+            )
+        except Exception as e:
+            logger.warning(f"[Orchestrator] OnlineLearning initialization failed: {e}")
+
+    def record_transition(self, state: Any, move: Any, player: int, next_state: Any):
+        """Record a state transition for online learning."""
+        if self._learner is not None:
+            self._learner.record_transition(state, move, player, next_state)
+
+    def update_from_game(self, winner: int | None) -> OnlineLearningMetrics | None:
+        """Run online learning update after game completes."""
+        if self._learner is not None:
+            metrics = self._learner.update_from_game(winner)
+            if metrics is not None:
+                self._metrics_history.append(metrics)
+            return metrics
+        return None
+
+    def get_game_record(self) -> Any:
+        """Get current game record for hot buffer integration."""
+        if self._learner is not None and hasattr(self._learner, "get_game_record"):
+            return self._learner.get_game_record()
+        return None
+
+    def get_stats(self) -> dict:
+        """Get online learning statistics."""
+        if not self._metrics_history:
+            return {}
+        recent = self._metrics_history[-10:]  # Last 10 updates
+        return {
+            "total_updates": len(self._metrics_history),
+            "avg_td_loss": sum(m.td_loss for m in recent) / len(recent),
+            "avg_outcome_loss": sum(m.outcome_loss for m in recent) / len(recent),
+        }
+
+    @property
+    def available(self) -> bool:
+        return self._learner is not None
+
+
 class BackgroundEvalWrapper:
     """Wrapper for background evaluation."""
 
@@ -677,6 +774,7 @@ class UnifiedTrainingOrchestrator:
         self._distributed = DistributedWrapper(self.config)
         self._background_eval = BackgroundEvalWrapper(self.config)
         self._checkpoint = CheckpointWrapper(self.config)
+        self._online_learning = OnlineLearningWrapper(self.config)
 
         # Improvement optimizer (singleton, shared across orchestrators)
         self._improvement_optimizer: ImprovementOptimizer | None = None
@@ -753,6 +851,11 @@ class UnifiedTrainingOrchestrator:
         _init_component("Enhancements", self._enhancements.initialize, self._model)
         _init_component("Distributed", self._distributed.initialize, self._model, self._optimizer)
         _init_component("BackgroundEval", self._background_eval.initialize, lambda: self._model)
+        _init_component("OnlineLearning", self._online_learning.initialize, self._model)
+
+        # Wire online learning to hot buffer for experience replay
+        if self._online_learning.available and self._hot_buffer.available:
+            logger.debug("[Orchestrator] OnlineLearning→HotBuffer pipeline enabled")
 
         # Initialize improvement optimizer (singleton)
         if self.config.enable_improvement_optimizer and _HAS_IMPROVEMENT_OPTIMIZER:
@@ -1518,6 +1621,76 @@ class UnifiedTrainingOrchestrator:
                 pass  # Metrics are optional
 
         return metrics
+
+    # =========================================================================
+    # Online Learning Integration
+    # =========================================================================
+
+    def record_online_transition(
+        self,
+        state: Any,
+        move: Any,
+        player: int,
+        next_state: Any,
+    ):
+        """Record a state transition for online learning.
+
+        Call this during gameplay to accumulate transitions for
+        TD-energy and outcome-contrastive learning.
+
+        Args:
+            state: Current game state
+            move: Move taken
+            player: Player who made the move
+            next_state: Resulting game state
+        """
+        self._online_learning.record_transition(state, move, player, next_state)
+
+    def complete_online_game(self, winner: int | None) -> dict[str, float] | None:
+        """Complete an online learning game and optionally update model.
+
+        Call this when a game ends. Updates the model using TD-energy
+        and outcome-contrastive loss, then optionally feeds the game
+        record to the hot buffer for prioritized replay.
+
+        Args:
+            winner: Winning player number (1-indexed), or None for draw
+
+        Returns:
+            Online learning metrics dict if update occurred, else None
+        """
+        metrics = self._online_learning.update_from_game(winner)
+
+        # Feed completed game to hot buffer for experience replay
+        if self._hot_buffer.available:
+            game_record = self._online_learning.get_game_record()
+            if game_record is not None:
+                self._hot_buffer.add_game(game_record)
+                logger.debug("[Orchestrator] Online game added to HotBuffer")
+
+        if metrics is not None:
+            return {
+                "td_loss": metrics.td_loss,
+                "outcome_loss": metrics.outcome_loss,
+                "total_loss": metrics.total_loss,
+            }
+        return None
+
+    def get_online_learning_stats(self) -> dict[str, Any]:
+        """Get online learning statistics.
+
+        Returns:
+            Dict with online learning metrics:
+            - total_updates: Number of game updates performed
+            - avg_td_loss: Average TD-energy loss
+            - avg_outcome_loss: Average outcome-contrastive loss
+        """
+        return self._online_learning.get_stats()
+
+    @property
+    def online_learning_available(self) -> bool:
+        """Check if online learning is available."""
+        return self._online_learning.available
 
     def __enter__(self):
         """Context manager entry."""
