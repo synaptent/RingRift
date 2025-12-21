@@ -64,231 +64,103 @@ logger = logging.getLogger(__name__)
 # Reference to the shared model cache (for direct access in this module)
 _MODEL_CACHE = _get_model_cache()
 
-INVALID_MOVE_INDEX = -1
-MAX_N = 19  # Canonical maximum side length for policy encoding (19x19 grid)
+# Import all constants from canonical SSoT module to avoid duplication.
+# Use importlib to load constants.py directly, bypassing neural_net/__init__.py
+# which would create a circular import (it imports from this module).
+import importlib.util as _importlib_util
+import pathlib as _pathlib
 
-# =============================================================================
-# Board-Specific Policy Sizes
-# =============================================================================
-#
-# Each board type has an optimal policy head size based on its action space.
-# Using board-specific sizes reduces wasted parameters and improves training.
+_constants_path = _pathlib.Path(__file__).parent / "neural_net" / "constants.py"
+_spec = _importlib_util.spec_from_file_location("_nn_constants", _constants_path)
+_constants_module = _importlib_util.module_from_spec(_spec)
+_spec.loader.exec_module(_constants_module)
 
-# Square 8x8 Policy Layout:
-#   Placement:       3 * 8 * 8 = 192
-#   Movement:        8 * 8 * 8 * 7 = 3,584  (8 directions, max 7 distance)
-#   Line Formation:  8 * 8 * 4 = 256
-#   Territory Claim: 8 * 8 = 64
-#   Skip Placement:  1
-#   Swap Sides:      1
-#   Line Choice:     4
-#   Territory Choice: 64 * 8 * 4 = 2,048
-#   Total: ~6,150 → 7,000 (with padding)
-POLICY_SIZE_8x8 = 7000
+# Re-export all constants from the loaded module
+BOARD_POLICY_SIZES = _constants_module.BOARD_POLICY_SIZES
+BOARD_SPATIAL_SIZES = _constants_module.BOARD_SPATIAL_SIZES
+HEX8_BOARD_SIZE = _constants_module.HEX8_BOARD_SIZE
+HEX8_MAX_DIST = _constants_module.HEX8_MAX_DIST
+HEX8_MOVEMENT_BASE = _constants_module.HEX8_MOVEMENT_BASE
+HEX8_MOVEMENT_SPAN = _constants_module.HEX8_MOVEMENT_SPAN
+HEX8_PLACEMENT_SPAN = _constants_module.HEX8_PLACEMENT_SPAN
+HEX8_SPECIAL_BASE = _constants_module.HEX8_SPECIAL_BASE
+HEX_BOARD_SIZE = _constants_module.HEX_BOARD_SIZE
+HEX_DIRS = _constants_module.HEX_DIRS
+HEX_MAX_DIST = _constants_module.HEX_MAX_DIST
+HEX_MOVEMENT_BASE = _constants_module.HEX_MOVEMENT_BASE
+HEX_MOVEMENT_SPAN = _constants_module.HEX_MOVEMENT_SPAN
+HEX_PLACEMENT_SPAN = _constants_module.HEX_PLACEMENT_SPAN
+HEX_SPECIAL_BASE = _constants_module.HEX_SPECIAL_BASE
+INVALID_MOVE_INDEX = _constants_module.INVALID_MOVE_INDEX
+MAX_DIST_SQUARE8 = _constants_module.MAX_DIST_SQUARE8
+MAX_DIST_SQUARE19 = _constants_module.MAX_DIST_SQUARE19
+MAX_N = _constants_module.MAX_N
+MAX_PLAYERS = _constants_module.MAX_PLAYERS
+NUM_HEX_DIRS = _constants_module.NUM_HEX_DIRS
+NUM_LINE_DIRS = _constants_module.NUM_LINE_DIRS
+NUM_SQUARE_DIRS = _constants_module.NUM_SQUARE_DIRS
+P_HEX = _constants_module.P_HEX
+POLICY_SIZE = _constants_module.POLICY_SIZE
+POLICY_SIZE_8x8 = _constants_module.POLICY_SIZE_8x8
+POLICY_SIZE_19x19 = _constants_module.POLICY_SIZE_19x19
+POLICY_SIZE_HEX8 = _constants_module.POLICY_SIZE_HEX8
+SQUARE8_EXTRA_SPECIAL_BASE = _constants_module.SQUARE8_EXTRA_SPECIAL_BASE
+SQUARE8_EXTRA_SPECIAL_SPAN = _constants_module.SQUARE8_EXTRA_SPECIAL_SPAN
+SQUARE8_FORCED_ELIMINATION_IDX = _constants_module.SQUARE8_FORCED_ELIMINATION_IDX
+SQUARE8_LINE_CHOICE_BASE = _constants_module.SQUARE8_LINE_CHOICE_BASE
+SQUARE8_LINE_CHOICE_SPAN = _constants_module.SQUARE8_LINE_CHOICE_SPAN
+SQUARE8_LINE_FORM_BASE = _constants_module.SQUARE8_LINE_FORM_BASE
+SQUARE8_LINE_FORM_SPAN = _constants_module.SQUARE8_LINE_FORM_SPAN
+SQUARE8_MOVEMENT_BASE = _constants_module.SQUARE8_MOVEMENT_BASE
+SQUARE8_MOVEMENT_SPAN = _constants_module.SQUARE8_MOVEMENT_SPAN
+SQUARE8_NO_LINE_ACTION_IDX = _constants_module.SQUARE8_NO_LINE_ACTION_IDX
+SQUARE8_NO_MOVEMENT_ACTION_IDX = _constants_module.SQUARE8_NO_MOVEMENT_ACTION_IDX
+SQUARE8_NO_PLACEMENT_ACTION_IDX = _constants_module.SQUARE8_NO_PLACEMENT_ACTION_IDX
+SQUARE8_NO_TERRITORY_ACTION_IDX = _constants_module.SQUARE8_NO_TERRITORY_ACTION_IDX
+SQUARE8_PLACEMENT_SPAN = _constants_module.SQUARE8_PLACEMENT_SPAN
+SQUARE8_SKIP_CAPTURE_IDX = _constants_module.SQUARE8_SKIP_CAPTURE_IDX
+SQUARE8_SKIP_PLACEMENT_IDX = _constants_module.SQUARE8_SKIP_PLACEMENT_IDX
+SQUARE8_SKIP_RECOVERY_IDX = _constants_module.SQUARE8_SKIP_RECOVERY_IDX
+SQUARE8_SKIP_TERRITORY_PROCESSING_IDX = _constants_module.SQUARE8_SKIP_TERRITORY_PROCESSING_IDX
+SQUARE8_SPECIAL_BASE = _constants_module.SQUARE8_SPECIAL_BASE
+SQUARE8_SWAP_SIDES_IDX = _constants_module.SQUARE8_SWAP_SIDES_IDX
+SQUARE8_TERRITORY_CHOICE_BASE = _constants_module.SQUARE8_TERRITORY_CHOICE_BASE
+SQUARE8_TERRITORY_CHOICE_SPAN = _constants_module.SQUARE8_TERRITORY_CHOICE_SPAN
+SQUARE8_TERRITORY_CLAIM_BASE = _constants_module.SQUARE8_TERRITORY_CLAIM_BASE
+SQUARE8_TERRITORY_CLAIM_SPAN = _constants_module.SQUARE8_TERRITORY_CLAIM_SPAN
+SQUARE19_EXTRA_SPECIAL_BASE = _constants_module.SQUARE19_EXTRA_SPECIAL_BASE
+SQUARE19_EXTRA_SPECIAL_SPAN = _constants_module.SQUARE19_EXTRA_SPECIAL_SPAN
+SQUARE19_FORCED_ELIMINATION_IDX = _constants_module.SQUARE19_FORCED_ELIMINATION_IDX
+SQUARE19_LINE_CHOICE_BASE = _constants_module.SQUARE19_LINE_CHOICE_BASE
+SQUARE19_LINE_CHOICE_SPAN = _constants_module.SQUARE19_LINE_CHOICE_SPAN
+SQUARE19_LINE_FORM_BASE = _constants_module.SQUARE19_LINE_FORM_BASE
+SQUARE19_LINE_FORM_SPAN = _constants_module.SQUARE19_LINE_FORM_SPAN
+SQUARE19_MOVEMENT_BASE = _constants_module.SQUARE19_MOVEMENT_BASE
+SQUARE19_MOVEMENT_SPAN = _constants_module.SQUARE19_MOVEMENT_SPAN
+SQUARE19_NO_LINE_ACTION_IDX = _constants_module.SQUARE19_NO_LINE_ACTION_IDX
+SQUARE19_NO_MOVEMENT_ACTION_IDX = _constants_module.SQUARE19_NO_MOVEMENT_ACTION_IDX
+SQUARE19_NO_PLACEMENT_ACTION_IDX = _constants_module.SQUARE19_NO_PLACEMENT_ACTION_IDX
+SQUARE19_NO_TERRITORY_ACTION_IDX = _constants_module.SQUARE19_NO_TERRITORY_ACTION_IDX
+SQUARE19_PLACEMENT_SPAN = _constants_module.SQUARE19_PLACEMENT_SPAN
+SQUARE19_SKIP_CAPTURE_IDX = _constants_module.SQUARE19_SKIP_CAPTURE_IDX
+SQUARE19_SKIP_PLACEMENT_IDX = _constants_module.SQUARE19_SKIP_PLACEMENT_IDX
+SQUARE19_SKIP_RECOVERY_IDX = _constants_module.SQUARE19_SKIP_RECOVERY_IDX
+SQUARE19_SKIP_TERRITORY_PROCESSING_IDX = _constants_module.SQUARE19_SKIP_TERRITORY_PROCESSING_IDX
+SQUARE19_SPECIAL_BASE = _constants_module.SQUARE19_SPECIAL_BASE
+SQUARE19_SWAP_SIDES_IDX = _constants_module.SQUARE19_SWAP_SIDES_IDX
+SQUARE19_TERRITORY_CHOICE_BASE = _constants_module.SQUARE19_TERRITORY_CHOICE_BASE
+SQUARE19_TERRITORY_CHOICE_SPAN = _constants_module.SQUARE19_TERRITORY_CHOICE_SPAN
+SQUARE19_TERRITORY_CLAIM_BASE = _constants_module.SQUARE19_TERRITORY_CLAIM_BASE
+SQUARE19_TERRITORY_CLAIM_SPAN = _constants_module.SQUARE19_TERRITORY_CLAIM_SPAN
+TERRITORY_MAX_PLAYERS = _constants_module.TERRITORY_MAX_PLAYERS
+TERRITORY_SIZE_BUCKETS = _constants_module.TERRITORY_SIZE_BUCKETS
+get_policy_size_for_board = _constants_module.get_policy_size_for_board
+get_spatial_size_for_board = _constants_module.get_spatial_size_for_board
 
-# Square 19x19 Policy Layout (v2 - with robust territory choice encoding):
-#   0-1082:       Placement (3 * 19 * 19 = 1,083)
-#   1083-53066:   Movement/Capture (19 * 19 * 8 * 18 = 51,984)
-#   53067-54510:  Line Formation (19 * 19 * 4 = 1,444)
-#   54511-54871:  Territory Claim (19 * 19 = 361)
-#   54872:        Skip Placement (1)
-#   54873:        Swap Sides (1)
-#   54874-54877:  Line Choice (4)
-#   54878-66429:  Territory Choice (361 * 8 * 4 = 11,552)
-#   Total: 66,430 → 67,000 (with padding)
-POLICY_SIZE_19x19 = 67000
+# Clean up temporary references
+del _importlib_util, _pathlib, _constants_path, _spec, _constants_module
 
-# Legacy alias for backwards compatibility
-POLICY_SIZE = POLICY_SIZE_19x19
-
-# Maximum number of players for multi-player value head
-MAX_PLAYERS = 4
-
-# Board type to policy size mapping
-BOARD_POLICY_SIZES: dict[BoardType, int] = {
-    BoardType.SQUARE8: POLICY_SIZE_8x8,
-    BoardType.SQUARE19: POLICY_SIZE_19x19,
-    BoardType.HEX8: 4500,  # POLICY_SIZE_HEX8 defined below
-    BoardType.HEXAGONAL: 91876,  # P_HEX defined below
-}
-
-# Board type to spatial size mapping
-BOARD_SPATIAL_SIZES: dict[BoardType, int] = {
-    BoardType.SQUARE8: 8,
-    BoardType.SQUARE19: 19,
-    BoardType.HEX8: 9,  # HEX8_BOARD_SIZE defined below
-    BoardType.HEXAGONAL: 25,  # HEX_BOARD_SIZE
-}
-
-
-def get_policy_size_for_board(board_type: BoardType) -> int:
-    """Get the optimal policy head size for a board type."""
-    return BOARD_POLICY_SIZES.get(board_type, POLICY_SIZE_19x19)
-
-
-def get_spatial_size_for_board(board_type: BoardType) -> int:
-    """Get the spatial (H, W) size for a board type."""
-    return BOARD_SPATIAL_SIZES.get(board_type, 19)
-
-
-# Hex-specific canonical geometry and policy layout constants.
-#
-# The canonical competitive hex board has radius N = 12, which yields
-# 3N^2 + 3N + 1 = 469 cells. We embed this hex into a fixed 25×25
-# bounding box (2N + 1 on each axis) using _to_canonical_xy /
-# _from_canonical_xy, and define a dedicated hex action space of size
-# P_HEX = 91_876 as documented in AI_ARCHITECTURE.md.
-HEX_BOARD_SIZE = 25
-HEX_MAX_DIST = HEX_BOARD_SIZE - 1  # 24 distance buckets (1..24)
-
-# Canonical axial directions in the 2D embedding.
-HEX_DIRS = [
-    (1, 0),  # +q
-    (0, 1),  # +r
-    (-1, 1),  # -q + r
-    (-1, 0),  # -q
-    (0, -1),  # -r
-    (1, -1),  # +q - r
-]
-NUM_HEX_DIRS = len(HEX_DIRS)
-
-# Layout spans for the hex policy head (see AI_ARCHITECTURE.md):
-#
-# Placements: 25 × 25 × 3 = 1_875
-# Movement/capture: 25 × 25 × 6 × 24 = 90_000
-# Special: 1 (skip_placement)
-# Total: P_HEX = 91_876
-HEX_PLACEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * 3
-HEX_MOVEMENT_BASE = HEX_PLACEMENT_SPAN
-HEX_MOVEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * NUM_HEX_DIRS * HEX_MAX_DIST
-HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + HEX_MOVEMENT_SPAN
-P_HEX = HEX_SPECIAL_BASE + 1
-
-# =============================================================================
-# Hex8 Board Policy Constants (radius-4 hexagonal board, 61 cells)
-# =============================================================================
-#
-# Hex8 is a smaller hexagonal board (radius=4) parallel to square8, just as
-# hexagonal (radius=12) is parallel to square19. Uses the same 6-direction
-# hex geometry but with a 9×9 bounding box.
-#
-# Hex8 Board: radius=4, cells=61 (3*16 + 12 + 1), bounding box 9×9
-HEX8_BOARD_SIZE = 9  # 2 * 4 + 1
-HEX8_RADIUS = 4
-HEX8_MAX_DIST = HEX8_BOARD_SIZE - 1  # 8 distance buckets (1..8)
-
-# Layout spans for the hex8 policy head:
-#
-# Placements: 9 × 9 × 3 = 243
-# Movement/capture: 9 × 9 × 6 × 8 = 3,888
-# Special: 1 (skip_placement)
-# Total: P_HEX8 = 4,132 → 4,500 (with padding)
-HEX8_PLACEMENT_SPAN = HEX8_BOARD_SIZE * HEX8_BOARD_SIZE * 3  # 243
-HEX8_MOVEMENT_BASE = HEX8_PLACEMENT_SPAN
-HEX8_MOVEMENT_SPAN = HEX8_BOARD_SIZE * HEX8_BOARD_SIZE * NUM_HEX_DIRS * HEX8_MAX_DIST  # 3,888
-HEX8_SPECIAL_BASE = HEX8_MOVEMENT_BASE + HEX8_MOVEMENT_SPAN
-P_HEX8 = HEX8_SPECIAL_BASE + 1  # 4,132
-POLICY_SIZE_HEX8 = 4500  # Padded policy size
-
-# =============================================================================
-# Square Board Spatial Policy Constants (V3)
-# =============================================================================
-#
-# These constants define the spatial policy layout for V3 architecture.
-# V3 uses Conv1x1 spatial heads instead of GAP→FC policy heads.
-
-# Square board directions (8 cardinal + diagonal)
-NUM_SQUARE_DIRS = 8
-
-# Maximum movement distance for each board type
-MAX_DIST_SQUARE8 = 7  # Max diagonal: sqrt(7^2 + 7^2) ≈ 9.9
-MAX_DIST_SQUARE19 = 18  # Max diagonal: sqrt(18^2 + 18^2) ≈ 25.5
-
-# Line formation directions (horizontal, vertical, diagonal)
-NUM_LINE_DIRS = 4
-
-# Territory choice encoding dimensions
-TERRITORY_SIZE_BUCKETS = 8
-TERRITORY_MAX_PLAYERS = 4
-
-# Square8 Policy Layout (V3):
-#   Placement:       [0, 191]       = 3 * 8 * 8 = 192
-#   Movement:        [192, 3775]    = 8 * 8 * 8 * 7 = 3,584
-#   Line Formation:  [3776, 4031]   = 8 * 8 * 4 = 256
-#   Territory Claim: [4032, 4095]   = 8 * 8 = 64
-#   Skip Placement:  [4096]         = 1
-#   Swap Sides:      [4097]         = 1
-#   Line Choice:     [4098, 4101]   = 4
-#   Territory Choice:[4102, 6149]   = 64 * 8 * 4 = 2,048
-#   Extra Special:   [6150, 6156]   = canonical no/skip/forced actions
-#   Total: 6,157 (POLICY_SIZE_8x8 = 7000 with padding)
-
-SQUARE8_PLACEMENT_SPAN = 3 * 8 * 8  # 192
-SQUARE8_MOVEMENT_BASE = SQUARE8_PLACEMENT_SPAN
-SQUARE8_MOVEMENT_SPAN = 8 * 8 * NUM_SQUARE_DIRS * MAX_DIST_SQUARE8  # 3,584
-SQUARE8_LINE_FORM_BASE = SQUARE8_MOVEMENT_BASE + SQUARE8_MOVEMENT_SPAN
-SQUARE8_LINE_FORM_SPAN = 8 * 8 * NUM_LINE_DIRS  # 256
-SQUARE8_TERRITORY_CLAIM_BASE = SQUARE8_LINE_FORM_BASE + SQUARE8_LINE_FORM_SPAN
-SQUARE8_TERRITORY_CLAIM_SPAN = 8 * 8  # 64
-SQUARE8_SPECIAL_BASE = SQUARE8_TERRITORY_CLAIM_BASE + SQUARE8_TERRITORY_CLAIM_SPAN
-SQUARE8_SKIP_PLACEMENT_IDX = SQUARE8_SPECIAL_BASE  # 4096
-SQUARE8_SWAP_SIDES_IDX = SQUARE8_SPECIAL_BASE + 1  # 4097
-SQUARE8_SKIP_RECOVERY_IDX = SQUARE8_SPECIAL_BASE + 2  # 4098 (RR-CANON-R112)
-SQUARE8_LINE_CHOICE_BASE = SQUARE8_SPECIAL_BASE + 3  # 4099
-SQUARE8_LINE_CHOICE_SPAN = 4
-SQUARE8_TERRITORY_CHOICE_BASE = SQUARE8_LINE_CHOICE_BASE + SQUARE8_LINE_CHOICE_SPAN
-SQUARE8_TERRITORY_CHOICE_SPAN = 8 * 8 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS  # 2,048
-SQUARE8_EXTRA_SPECIAL_BASE = (
-    SQUARE8_TERRITORY_CHOICE_BASE + SQUARE8_TERRITORY_CHOICE_SPAN
-)
-SQUARE8_NO_PLACEMENT_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE
-SQUARE8_NO_MOVEMENT_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 1
-SQUARE8_SKIP_CAPTURE_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 2
-SQUARE8_NO_LINE_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 3
-SQUARE8_NO_TERRITORY_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 4
-SQUARE8_SKIP_TERRITORY_PROCESSING_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 5
-SQUARE8_FORCED_ELIMINATION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 6
-SQUARE8_EXTRA_SPECIAL_SPAN = 7
-
-# Square19 Policy Layout (V3):
-#   Placement:       [0, 1082]      = 3 * 19 * 19 = 1,083
-#   Movement:        [1083, 53066]  = 19 * 19 * 8 * 18 = 51,984
-#   Line Formation:  [53067, 54510] = 19 * 19 * 4 = 1,444
-#   Territory Claim: [54511, 54871] = 19 * 19 = 361
-#   Skip Placement:  [54872]        = 1
-#   Swap Sides:      [54873]        = 1
-#   Skip Recovery:   [54874]        = 1 (RR-CANON-R112)
-#   Line Choice:     [54875, 54878] = 4
-#   Territory Choice:[54879, 66430] = 361 * 8 * 4 = 11,552
-#   Extra Special:   [66431, 66437] = canonical no/skip/forced actions
-#   Total: 66,438 (POLICY_SIZE_19x19 = 67000 with padding)
-
-SQUARE19_PLACEMENT_SPAN = 3 * 19 * 19  # 1,083
-SQUARE19_MOVEMENT_BASE = SQUARE19_PLACEMENT_SPAN
-SQUARE19_MOVEMENT_SPAN = 19 * 19 * NUM_SQUARE_DIRS * MAX_DIST_SQUARE19  # 51,984
-SQUARE19_LINE_FORM_BASE = SQUARE19_MOVEMENT_BASE + SQUARE19_MOVEMENT_SPAN
-SQUARE19_LINE_FORM_SPAN = 19 * 19 * NUM_LINE_DIRS  # 1,444
-SQUARE19_TERRITORY_CLAIM_BASE = SQUARE19_LINE_FORM_BASE + SQUARE19_LINE_FORM_SPAN
-SQUARE19_TERRITORY_CLAIM_SPAN = 19 * 19  # 361
-SQUARE19_SPECIAL_BASE = SQUARE19_TERRITORY_CLAIM_BASE + SQUARE19_TERRITORY_CLAIM_SPAN
-SQUARE19_SKIP_PLACEMENT_IDX = SQUARE19_SPECIAL_BASE  # 54872
-SQUARE19_SWAP_SIDES_IDX = SQUARE19_SPECIAL_BASE + 1  # 54873
-SQUARE19_SKIP_RECOVERY_IDX = SQUARE19_SPECIAL_BASE + 2  # 54874 (RR-CANON-R112)
-SQUARE19_LINE_CHOICE_BASE = SQUARE19_SPECIAL_BASE + 3  # 54875
-SQUARE19_LINE_CHOICE_SPAN = 4
-SQUARE19_TERRITORY_CHOICE_BASE = SQUARE19_LINE_CHOICE_BASE + SQUARE19_LINE_CHOICE_SPAN
-SQUARE19_TERRITORY_CHOICE_SPAN = 19 * 19 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS  # 11,552
-SQUARE19_EXTRA_SPECIAL_BASE = (
-    SQUARE19_TERRITORY_CHOICE_BASE + SQUARE19_TERRITORY_CHOICE_SPAN
-)
-SQUARE19_NO_PLACEMENT_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE
-SQUARE19_NO_MOVEMENT_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 1
-SQUARE19_SKIP_CAPTURE_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 2
-SQUARE19_NO_LINE_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 3
-SQUARE19_NO_TERRITORY_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 4
-SQUARE19_SKIP_TERRITORY_PROCESSING_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 5
-SQUARE19_FORCED_ELIMINATION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 6
-SQUARE19_EXTRA_SPECIAL_SPAN = 7
+# NOTE: All policy size constants are now imported from .neural_net.constants (SSoT)
 
 
 def encode_move_for_board(

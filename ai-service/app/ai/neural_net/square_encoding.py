@@ -457,6 +457,62 @@ class ActionEncoderSquare:
 
         return None
 
+    def encode_from_decoded(self, decoded: DecodedPolicyIndex) -> int:
+        """Re-encode a DecodedPolicyIndex back to a policy index.
+
+        This is the inverse of decode_to_components(), used for data augmentation
+        where we transform coordinates and need to re-encode.
+
+        Args:
+            decoded: Decoded policy components (potentially with transformed coords)
+
+        Returns:
+            Policy index, or INVALID_MOVE_INDEX if encoding fails
+        """
+        N = self.board_size
+
+        # Validate coordinates
+        if not (0 <= decoded.x < N and 0 <= decoded.y < N):
+            return INVALID_MOVE_INDEX
+
+        pos_idx = decoded.y * N + decoded.x
+
+        if decoded.action_type == "placement":
+            return pos_idx * 3 + decoded.count_idx
+
+        elif decoded.action_type == "movement":
+            # For movement, we also need to transform the direction
+            # The direction is stored as dir_idx (0-7), which maps to SQUARE_DIRS
+            return (
+                self.movement_base
+                + pos_idx * (NUM_SQUARE_DIRS * self.max_dist)
+                + decoded.dir_idx * self.max_dist
+                + (decoded.dist - 1)
+            )
+
+        elif decoded.action_type == "line_formation":
+            return self.line_form_base + pos_idx * NUM_LINE_DIRS + decoded.dir_idx
+
+        elif decoded.action_type == "territory_claim":
+            return self.territory_claim_base + pos_idx
+
+        elif decoded.action_type == "territory_choice":
+            return (
+                self.territory_choice_base
+                + pos_idx * (TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS)
+                + decoded.size_bucket * TERRITORY_MAX_PLAYERS
+                + decoded.player_idx
+            )
+
+        elif decoded.action_type == "line_choice":
+            return self.line_choice_base + decoded.option
+
+        # Special actions - look up in special_indices
+        elif decoded.is_special and decoded.action_type in self.special_indices:
+            return self.special_indices[decoded.action_type]
+
+        return INVALID_MOVE_INDEX
+
 
 class ActionEncoderSquare8(ActionEncoderSquare):
     """Action encoder for 8x8 square boards.
@@ -555,3 +611,88 @@ def get_action_encoder(board_type: BoardType) -> ActionEncoderSquare | None:
     elif board_type == BoardType.SQUARE19:
         return ActionEncoderSquare19()
     return None
+
+
+# ============================================================================
+# Backwards-compatible wrapper functions (migrated from _neural_net_legacy.py)
+# ============================================================================
+
+# Singleton encoder instances for backwards compatibility
+_encoder_8 = ActionEncoderSquare8()
+_encoder_19 = ActionEncoderSquare19()
+
+
+def _encode_move_square8(move: Move, board: BoardState) -> int:
+    """Encode a move for square8 board (legacy wrapper).
+
+    This function is provided for backwards compatibility with code that
+    imports `_encode_move_square8` from the legacy module.
+
+    For new code, use ActionEncoderSquare8().encode_move(move, board) instead.
+    """
+    return _encoder_8.encode_move(move, board)
+
+
+def _encode_move_square19(move: Move, board: BoardState) -> int:
+    """Encode a move for square19 board (legacy wrapper).
+
+    This function is provided for backwards compatibility with code that
+    imports `_encode_move_square19` from the legacy module.
+
+    For new code, use ActionEncoderSquare19().encode_move(move, board) instead.
+    """
+    return _encoder_19.encode_move(move, board)
+
+
+def _decode_move_square8(idx: int) -> DecodedPolicyIndex | None:
+    """Decode a policy index for square8 board (legacy wrapper).
+
+    This function is provided for backwards compatibility.
+
+    For new code, use ActionEncoderSquare8().decode_to_components(idx) instead.
+    """
+    return _encoder_8.decode_to_components(idx)
+
+
+def _decode_move_square19(idx: int) -> DecodedPolicyIndex | None:
+    """Decode a policy index for square19 board (legacy wrapper).
+
+    This function is provided for backwards compatibility.
+
+    For new code, use ActionEncoderSquare19().decode_to_components(idx) instead.
+    """
+    return _encoder_19.decode_to_components(idx)
+
+
+def transform_policy_index_square(
+    idx: int,
+    board_size: int,
+    transform_fn,
+) -> int:
+    """Transform a policy index under a coordinate transformation.
+
+    Decodes the policy index, applies the transformation to any spatial
+    coordinates, and re-encodes. Used for data augmentation (rotations,
+    reflections).
+
+    Args:
+        idx: Original policy index
+        board_size: Board size (8 or 19)
+        transform_fn: Function (x, y) -> (x', y') for coordinate transformation
+
+    Returns:
+        Transformed policy index, or original idx if transformation not applicable
+    """
+    encoder = _encoder_8 if board_size == 8 else _encoder_19
+
+    decoded = encoder.decode_to_components(idx)
+    if decoded is None or decoded.is_special:
+        return idx  # Special actions don't transform
+
+    # Apply transformation to coordinates
+    new_x, new_y = transform_fn(decoded.x, decoded.y)
+    decoded.x = new_x
+    decoded.y = new_y
+
+    # Re-encode with transformed coordinates
+    return encoder.encode_from_decoded(decoded)
