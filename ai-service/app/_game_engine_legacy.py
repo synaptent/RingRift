@@ -1,5 +1,23 @@
 """Core game engine for the RingRift AI service.
 
+.. deprecated:: December 2025
+    This module is the LEGACY game engine kept for backward compatibility with
+    historical game replays recorded under previous rule versions.
+
+    **For new code, use:**
+    - :mod:`app.game_engine` - Canonical game engine with RR-CANON compliance
+    - :mod:`app.rules.fsm` - 7-phase finite state machine
+
+    **This module will be removed** once all legacy replays have been migrated
+    or marked as unmigrateable. See :doc:`docs/specs/LEGACY_RULES_DIFF.md` for
+    details on rule differences between versions.
+
+    **Current usage:**
+    - :mod:`app.rules.legacy.replay_compatibility` uses this for legacy replays
+    - Re-exported via :mod:`app.game_engine` for backwards compatibility only
+
+    **DO NOT** add new code that depends on this module.
+
 **SSoT (Single Source of Truth) Policy:**
 
 The canonical rules defined in ``RULES_CANONICAL_SPEC.md`` (together with

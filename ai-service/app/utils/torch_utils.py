@@ -98,6 +98,224 @@ def safe_load_checkpoint(
             return checkpoint
 
 
+# =============================================================================
+# Checkpoint Version Validation
+# =============================================================================
+
+# Current checkpoint schema version
+# Increment when checkpoint format changes in breaking ways
+CHECKPOINT_SCHEMA_VERSION = "2.0"
+
+# Minimum compatible schema version for loading
+CHECKPOINT_MIN_COMPATIBLE_VERSION = "1.0"
+
+
+class CheckpointVersionError(Exception):
+    """Raised when checkpoint version is incompatible."""
+    pass
+
+
+class CheckpointVersionWarning(UserWarning):
+    """Warning for checkpoint version mismatches."""
+    pass
+
+
+def validate_checkpoint_version(
+    checkpoint: dict[str, Any],
+    *,
+    expected_version: str | None = None,
+    min_version: str | None = None,
+    strict: bool = False,
+    log_info: bool = True,
+) -> dict[str, Any]:
+    """Validate checkpoint version compatibility.
+
+    Checks if a loaded checkpoint is compatible with the current version.
+    This helps catch issues when loading old checkpoints with new code
+    or vice versa.
+
+    Args:
+        checkpoint: Loaded checkpoint dictionary
+        expected_version: If set, require exact version match
+        min_version: If set, require version >= this (default: CHECKPOINT_MIN_COMPATIBLE_VERSION)
+        strict: If True, raise error on version mismatch. If False, warn only.
+        log_info: If True, log checkpoint version info
+
+    Returns:
+        The checkpoint dictionary (unchanged, for chaining)
+
+    Raises:
+        CheckpointVersionError: If strict=True and version is incompatible
+
+    Example:
+        checkpoint = safe_load_checkpoint("model.pt")
+        validate_checkpoint_version(checkpoint, min_version="1.5")
+    """
+    import warnings
+
+    # Get version from checkpoint
+    ckpt_version = checkpoint.get("schema_version") or checkpoint.get("version") or "unknown"
+    ckpt_created = checkpoint.get("created_at") or checkpoint.get("timestamp") or "unknown"
+    ckpt_model_class = checkpoint.get("model_class") or checkpoint.get("architecture") or "unknown"
+
+    if log_info:
+        logger.info(
+            "[Checkpoint] Version: %s, Created: %s, Model: %s",
+            ckpt_version, ckpt_created, ckpt_model_class
+        )
+
+    # If version is unknown, we can't validate
+    if ckpt_version == "unknown":
+        if strict:
+            raise CheckpointVersionError(
+                "Checkpoint has no version information. "
+                "Cannot validate compatibility with strict=True."
+            )
+        logger.warning(
+            "[Checkpoint] No version information found. "
+            "This checkpoint may be from an older version."
+        )
+        return checkpoint
+
+    # Parse version for comparison
+    try:
+        ckpt_parts = _parse_version(ckpt_version)
+    except ValueError:
+        if strict:
+            raise CheckpointVersionError(f"Invalid checkpoint version format: {ckpt_version}")
+        logger.warning(f"[Checkpoint] Invalid version format: {ckpt_version}")
+        return checkpoint
+
+    # Check exact version match if requested
+    if expected_version is not None:
+        expected_parts = _parse_version(expected_version)
+        if ckpt_parts != expected_parts:
+            msg = (
+                f"Checkpoint version mismatch: expected {expected_version}, "
+                f"got {ckpt_version}"
+            )
+            if strict:
+                raise CheckpointVersionError(msg)
+            warnings.warn(msg, CheckpointVersionWarning)
+            logger.warning(f"[Checkpoint] {msg}")
+
+    # Check minimum version
+    min_ver = min_version or CHECKPOINT_MIN_COMPATIBLE_VERSION
+    min_parts = _parse_version(min_ver)
+    if ckpt_parts < min_parts:
+        msg = (
+            f"Checkpoint version {ckpt_version} is older than minimum "
+            f"compatible version {min_ver}. Loading may fail or produce "
+            "incorrect results."
+        )
+        if strict:
+            raise CheckpointVersionError(msg)
+        warnings.warn(msg, CheckpointVersionWarning)
+        logger.warning(f"[Checkpoint] {msg}")
+
+    return checkpoint
+
+
+def _parse_version(version_str: str) -> tuple[int, ...]:
+    """Parse version string to tuple of integers for comparison.
+
+    Args:
+        version_str: Version string like "1.0" or "2.1.3"
+
+    Returns:
+        Tuple of integers, e.g., (2, 1, 3)
+
+    Raises:
+        ValueError: If version string is invalid
+    """
+    parts = version_str.strip().split(".")
+    return tuple(int(p) for p in parts)
+
+
+def add_checkpoint_metadata(
+    checkpoint: dict[str, Any],
+    *,
+    model_class: str | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
+    training_config: dict | None = None,
+) -> dict[str, Any]:
+    """Add version and metadata to a checkpoint before saving.
+
+    This should be called before saving a checkpoint to ensure
+    it contains version information for future compatibility checks.
+
+    Args:
+        checkpoint: Checkpoint dictionary to augment
+        model_class: Name of the model class (e.g., "RingRiftCNN_v4")
+        board_type: Board type string (e.g., "square8", "hexagonal")
+        num_players: Number of players the model was trained for
+        training_config: Optional training configuration dict
+
+    Returns:
+        Augmented checkpoint dictionary
+
+    Example:
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+        }
+        checkpoint = add_checkpoint_metadata(
+            checkpoint,
+            model_class="RingRiftCNN_v4",
+            board_type="square8",
+            num_players=2,
+        )
+        save_checkpoint_safe(checkpoint, "model.pt")
+    """
+    from datetime import datetime
+
+    checkpoint["schema_version"] = CHECKPOINT_SCHEMA_VERSION
+    checkpoint["created_at"] = datetime.now().isoformat()
+
+    if model_class is not None:
+        checkpoint["model_class"] = model_class
+    if board_type is not None:
+        checkpoint["board_type"] = board_type
+    if num_players is not None:
+        checkpoint["num_players"] = num_players
+    if training_config is not None:
+        checkpoint["training_config"] = training_config
+
+    return checkpoint
+
+
+def get_checkpoint_info(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """Extract metadata from a checkpoint.
+
+    Args:
+        checkpoint: Loaded checkpoint dictionary
+
+    Returns:
+        Dictionary with checkpoint metadata:
+        - schema_version: Version string or "unknown"
+        - created_at: Creation timestamp or "unknown"
+        - model_class: Model class name or "unknown"
+        - board_type: Board type or "unknown"
+        - num_players: Number of players or None
+        - has_optimizer: Whether optimizer state is present
+        - has_scheduler: Whether scheduler state is present
+        - has_training_config: Whether training config is present
+        - keys: List of top-level keys in checkpoint
+    """
+    return {
+        "schema_version": checkpoint.get("schema_version") or checkpoint.get("version") or "unknown",
+        "created_at": checkpoint.get("created_at") or checkpoint.get("timestamp") or "unknown",
+        "model_class": checkpoint.get("model_class") or checkpoint.get("architecture") or "unknown",
+        "board_type": checkpoint.get("board_type") or "unknown",
+        "num_players": checkpoint.get("num_players"),
+        "has_optimizer": "optimizer_state_dict" in checkpoint or "optimizer" in checkpoint,
+        "has_scheduler": "scheduler_state_dict" in checkpoint or "scheduler" in checkpoint,
+        "has_training_config": "training_config" in checkpoint,
+        "keys": list(checkpoint.keys()),
+    }
+
+
 def load_state_dict_only(
     path: str | Path,
     *,

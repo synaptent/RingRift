@@ -233,7 +233,7 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
         if config.engine == "ebmo":
             from app.ai.ebmo_ai import EBMO_AI
             if config.ebmo_online_learning:
-                from app.ai.ebmo_online import EBMOOnlineAI, EBMOOnlineConfig
+                from app.ai.archive.ebmo_online import EBMOOnlineAI, EBMOOnlineConfig
 
         # Create environment
         env = RingRiftEnv(
