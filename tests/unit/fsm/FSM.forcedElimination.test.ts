@@ -243,18 +243,19 @@ describe('Forced Elimination Phase - Edge Cases', () => {
     };
 
     // Canonical spec: only forced_elimination move is valid in forced_elimination phase.
-    // All other moves should be rejected.
+    // Legacy replay compatibility: PLACE_RING, SKIP_PLACEMENT, NO_TERRITORY_ACTION are
+    // allowed for legacy replay where turn transitions may occur in forced_elimination.
     const invalidEvents: Array<{ event: TurnEvent; name: string }> = [
-      { event: { type: 'PLACE_RING', to: { x: 0, y: 0 } }, name: 'PLACE_RING' },
+      // PLACE_RING is valid for legacy replay (turn transition)
       {
         event: { type: 'MOVE_STACK', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } },
         name: 'MOVE_STACK',
       },
       { event: { type: 'CAPTURE', target: { x: 2, y: 2 } }, name: 'CAPTURE' },
-      { event: { type: 'SKIP_PLACEMENT' }, name: 'SKIP_PLACEMENT' },
+      // SKIP_PLACEMENT is valid for legacy replay (turn transition)
       { event: { type: 'NO_MOVEMENT_ACTION' }, name: 'NO_MOVEMENT_ACTION' },
       { event: { type: 'NO_LINE_ACTION' }, name: 'NO_LINE_ACTION' },
-      { event: { type: 'NO_TERRITORY_ACTION' }, name: 'NO_TERRITORY_ACTION' },
+      // NO_TERRITORY_ACTION is valid for legacy replay (turn transition)
       { event: { type: 'PROCESS_LINE', lineIndex: 0 }, name: 'PROCESS_LINE' },
       { event: { type: 'PROCESS_REGION', regionIndex: 0 }, name: 'PROCESS_REGION' },
       { event: { type: '_ADVANCE_TURN' }, name: '_ADVANCE_TURN' },
