@@ -296,6 +296,21 @@ __all__ = [
     "get_device",
     "setup_fault_tolerance",
     "setup_graceful_shutdown",
+    # High-tier training (December 2025 - 2000+ Elo)
+    "ALL_CONFIGS",
+    "CANONICAL_CONFIGS",
+    "HAS_HIGH_TIER_CONFIG",
+    "HAS_HIGH_TIER_ORCHESTRATOR",
+    "HighTierSelfplayConfig",
+    "HighTierTrainingConfig",
+    "TIER_ELO_TARGETS",
+    "create_high_tier_orchestrator",
+    "get_crossboard_promotion_config",
+    "get_engine_mode_for_tier",
+    "get_high_tier_config",
+    "get_high_tier_selfplay_config",
+    "get_high_tier_training_config",
+    "should_use_gumbel_engine",
 ]
 
 # Import promotion controller if available
@@ -771,3 +786,31 @@ try:
     HAS_TRAIN_SETUP = True
 except ImportError:
     HAS_TRAIN_SETUP = False
+
+# High-tier training config (December 2025 - 2000+ Elo target)
+try:
+    from app.training.high_tier_config import (
+        ALL_CONFIGS,
+        CANONICAL_CONFIGS,
+        HighTierSelfplayConfig,
+        HighTierTrainingConfig,
+        TIER_ELO_TARGETS,
+        get_crossboard_promotion_config,
+        get_engine_mode_for_tier,
+        get_high_tier_selfplay_config,
+        get_high_tier_training_config,
+        should_use_gumbel_engine,
+    )
+    HAS_HIGH_TIER_CONFIG = True
+except ImportError:
+    HAS_HIGH_TIER_CONFIG = False
+
+# High-tier orchestrator factory (December 2025)
+try:
+    from app.training.unified_orchestrator import (
+        create_high_tier_orchestrator,
+        get_high_tier_config,
+    )
+    HAS_HIGH_TIER_ORCHESTRATOR = True
+except ImportError:
+    HAS_HIGH_TIER_ORCHESTRATOR = False

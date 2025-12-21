@@ -447,6 +447,11 @@ class TrainConfig:
     # Loss is scaled by 1/gradient_accumulation_steps to maintain gradient magnitude
     gradient_accumulation_steps: int = 1  # 1 = disabled (default), 2-8 = typical values
 
+    # Gradient surgery for multi-task learning (PCGrad)
+    # Projects conflicting gradients between value/policy heads to prevent oscillation
+    # Based on "Gradient Surgery for Multi-Task Learning" (Yu et al., 2020)
+    enable_gradient_surgery: bool = False  # False = disabled (default), True = enabled
+
     # Paths (initialised to repository-root-relative defaults in __post_init__)
     # When instantiated, these will be rewritten as absolute paths anchored at
     # the ai-service repo root so that training artefacts do not depend on the

@@ -125,6 +125,22 @@ except ImportError:
     QualityBridge = None
     get_quality_bridge = None
 
+# High-tier training config for 2000+ Elo (December 2025)
+try:
+    from app.training.high_tier_config import (
+        HighTierTrainingConfig,
+        get_engine_mode_for_tier,
+        get_high_tier_training_config,
+        should_use_gumbel_engine,
+    )
+    _HAS_HIGH_TIER_CONFIG = True
+except ImportError:
+    _HAS_HIGH_TIER_CONFIG = False
+    HighTierTrainingConfig = None
+    get_engine_mode_for_tier = None
+    get_high_tier_training_config = None
+    should_use_gumbel_engine = None
+
 # Online learning for continuous in-game learning (December 2025)
 try:
     from app.training.online_learning import (
@@ -229,6 +245,27 @@ class OrchestratorConfig:
     # Logging
     log_interval: int = 100
     verbose: bool = False
+
+    # =========================================================================
+    # High-Tier Training (2000+ Elo) - December 2025
+    # =========================================================================
+
+    # Gumbel MCTS engine (default for D7+)
+    use_gumbel_engine: bool = False  # Set True for high-tier training
+    gumbel_simulation_budget: int = 150
+    gumbel_temperature: float = 1.0
+
+    # Multi-config training (all 12 board/player configurations)
+    multi_config_training: bool = False  # Train across all configs
+    config_round_robin: bool = True  # Rotate through configs
+
+    # Crossboard promotion
+    crossboard_promotion: bool = False  # Require 2000+ on all configs
+    target_tier: str = "D8"
+    target_elo: float = 2000.0
+
+    # Vector value head for multi-player
+    use_vector_value_head: bool = False  # Enable for 3p/4p games
 
 
 # =============================================================================
@@ -1738,3 +1775,78 @@ def create_orchestrator(
         **kwargs,
     )
     return UnifiedTrainingOrchestrator(model, config)
+
+
+def create_high_tier_orchestrator(
+    model: Any,
+    target_tier: str = "D8",
+    target_elo: float = 2000.0,
+    **kwargs,
+) -> UnifiedTrainingOrchestrator:
+    """Factory function to create a high-tier training orchestrator.
+
+    Creates an orchestrator configured for 2000+ Elo training with:
+    - Gumbel MCTS selfplay engine
+    - Multi-config training
+    - Crossboard promotion
+    - Vector value head for multi-player
+
+    Args:
+        model: PyTorch model
+        target_tier: Target tier (D7, D8, D9, D10)
+        target_elo: Target Elo threshold (default: 2000)
+        **kwargs: Additional config overrides
+
+    Returns:
+        Configured UnifiedTrainingOrchestrator for high-tier training
+    """
+    # Merge high-tier defaults with user overrides
+    high_tier_defaults = {
+        "use_gumbel_engine": True,
+        "gumbel_simulation_budget": 150,
+        "multi_config_training": True,
+        "crossboard_promotion": True,
+        "target_tier": target_tier,
+        "target_elo": target_elo,
+        "use_vector_value_head": True,
+        "enable_curriculum": True,
+        "enable_reanalysis": True,
+        "enable_background_eval": True,
+    }
+    high_tier_defaults.update(kwargs)
+
+    config = OrchestratorConfig(**high_tier_defaults)
+    return UnifiedTrainingOrchestrator(model, config)
+
+
+def get_high_tier_config(
+    target_tier: str = "D8",
+    target_elo: float = 2000.0,
+    **kwargs,
+) -> OrchestratorConfig:
+    """Get a high-tier OrchestratorConfig without creating an orchestrator.
+
+    Useful for inspecting or modifying config before orchestrator creation.
+
+    Args:
+        target_tier: Target tier (D7, D8, D9, D10)
+        target_elo: Target Elo threshold
+        **kwargs: Additional config overrides
+
+    Returns:
+        OrchestratorConfig for high-tier training
+    """
+    high_tier_defaults = {
+        "use_gumbel_engine": True,
+        "gumbel_simulation_budget": 150,
+        "multi_config_training": True,
+        "crossboard_promotion": True,
+        "target_tier": target_tier,
+        "target_elo": target_elo,
+        "use_vector_value_head": True,
+        "enable_curriculum": True,
+        "enable_reanalysis": True,
+        "enable_background_eval": True,
+    }
+    high_tier_defaults.update(kwargs)
+    return OrchestratorConfig(**high_tier_defaults)

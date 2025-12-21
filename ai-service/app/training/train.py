@@ -129,6 +129,7 @@ from app.training.distributed import (
     wrap_model_ddp,
 )
 from app.training.fault_tolerance import HeartbeatMonitor
+from app.training.gradient_surgery import GradientSurgeon, GradientSurgeryConfig
 from app.training.model_versioning import (
     save_model_checkpoint,
 )
@@ -902,6 +903,31 @@ def train_model(
         scaler = torch.cuda.amp.GradScaler(enabled=use_grad_scaler)
     if amp_enabled:
         logger.info(f"Mixed precision training enabled with {amp_dtype}")
+
+    # Gradient surgery for multi-task learning (2025-12)
+    # Projects conflicting gradients between value/policy heads to prevent oscillation
+    gradient_surgeon: GradientSurgeon | None = None
+    use_gradient_surgery = getattr(config, 'enable_gradient_surgery', False)
+    if use_gradient_surgery:
+        if use_grad_scaler:
+            logger.warning(
+                "Gradient surgery disabled: incompatible with FP16 GradScaler. "
+                "Use bfloat16 mixed precision or disable mixed precision."
+            )
+            use_gradient_surgery = False
+        elif getattr(config, 'gradient_accumulation_steps', 1) > 1:
+            logger.warning(
+                "Gradient surgery disabled: incompatible with gradient accumulation. "
+                "Set gradient_accumulation_steps=1 to use gradient surgery."
+            )
+            use_gradient_surgery = False
+        else:
+            gradient_surgeon = GradientSurgeon(GradientSurgeryConfig(
+                enabled=True,
+                method="pcgrad",
+                conflict_threshold=0.0,
+            ))
+            logger.info("Gradient surgery (PCGrad) enabled for multi-task learning")
 
     # Initialize dashboard metrics collector for persistent metric storage (2025-12)
     metrics_collector = None
@@ -2663,7 +2689,12 @@ def train_model(
                         policy_log_probs,
                         policy_targets,
                     )
-                    loss = value_loss + (config.policy_weight * policy_loss)
+
+                    # Collect individual losses for gradient surgery
+                    task_losses: dict[str, torch.Tensor] = {
+                        "value": value_loss,
+                        "policy": config.policy_weight * policy_loss,
+                    }
 
                     # Rank distribution loss (V3+ multi-player head)
                     rank_loss = None
@@ -2684,9 +2715,10 @@ def train_model(
                         ).sum(dim=-1)
                         if torch.any(rank_mask):
                             rank_loss = per_player_loss[rank_mask].mean()
-                            loss = loss + (config.rank_dist_weight * rank_loss)
+                            task_losses["rank"] = config.rank_dist_weight * rank_loss
 
                     # Auxiliary task loss (outcome prediction from value targets)
+                    aux_loss = None
                     if use_aux_tasks and backbone_features is not None:
                         # Derive outcome class from value targets:
                         # value > 0.3 → Win (2), value < -0.3 → Loss (0), else Draw (1)
@@ -2709,16 +2741,25 @@ def train_model(
                         aux_loss, _aux_breakdown = enhancements_manager.compute_auxiliary_loss(
                             backbone_features, aux_targets
                         )
-                        loss = loss + aux_loss
+                        task_losses["aux"] = aux_loss
+
+                    # Compute combined loss for metrics (always needed)
+                    loss = sum(task_losses.values())
 
                     # Scale loss for gradient accumulation to maintain gradient magnitude
                     if accumulation_steps > 1:
                         loss = loss / accumulation_steps
+                        # Also scale individual losses for gradient surgery
+                        task_losses = {k: v / accumulation_steps for k, v in task_losses.items()}
 
                 # Circuit breaker protection for backward pass (2025-12)
                 # Catches CUDA errors, OOM, and other runtime exceptions
                 try:
-                    if use_grad_scaler:
+                    if use_gradient_surgery and gradient_surgeon is not None:
+                        # Use gradient surgery to project conflicting gradients
+                        # Note: apply_surgery handles model.zero_grad and sets gradients
+                        gradient_surgeon.apply_surgery(model, task_losses)
+                    elif use_grad_scaler:
                         scaler.scale(loss).backward()
                     else:
                         loss.backward()
