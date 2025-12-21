@@ -335,9 +335,8 @@ class DefaultRulesEngine(RulesEngine):
                 for m in legal
             )
 
-        # Terminal/meta moves are always valid for the active player.
-        if move.type in (MoveType.RESIGN, MoveType.TIMEOUT):
-            return move.player == state.current_player
+        # Note: RESIGN and TIMEOUT are not valid MoveType enum values.
+        # Game termination is handled at a higher level, not via moves.
 
         # Forced no-op placement action is a bookkeeping move that appears in
         # canonical recordings when a player enters RING_PLACEMENT but has no

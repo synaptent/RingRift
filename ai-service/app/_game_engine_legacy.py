@@ -547,7 +547,9 @@ class GameEngine:
             new_state.zobrist_hash ^= zobrist.get_player_hash(new_state.current_player)
             new_state.zobrist_hash ^= zobrist.get_phase_hash(new_state.current_phase)
 
-        is_terminal_move = move.type in (MoveType.RESIGN, MoveType.TIMEOUT)
+        # Note: RESIGN and TIMEOUT are not valid MoveType enum values;
+        # they are handled at the game termination level, not as moves.
+        is_terminal_move = False
 
         if move.type == MoveType.SWAP_SIDES:
             GameEngine._apply_swap_sides(new_state, move)
@@ -623,9 +625,9 @@ class GameEngine:
             option = getattr(move, "recovery_option", None) or 1
             collapse_positions = getattr(move, "collapse_positions", None)
             apply_recovery_slide(new_state, move, option=option, collapse_positions=collapse_positions)
-        elif move.type in (MoveType.RESIGN, MoveType.TIMEOUT):
-            # Terminal moves: no board mutation, handled after bookkeeping.
-            pass
+        # Note: RESIGN and TIMEOUT are not valid MoveType enum values and would
+        # be handled at the game termination level, not as moves. Any unrecognized
+        # move types fall through with no board mutation.
 
         # Update move history
         new_state.move_history.append(move)
@@ -762,7 +764,9 @@ class GameEngine:
         mtype = move.type
 
         # Meta-moves allowed in any phase
-        if mtype in (MoveType.SWAP_SIDES, MoveType.RESIGN, MoveType.TIMEOUT):
+        # Note: RESIGN and TIMEOUT are not valid MoveType enum values;
+        # they are handled at the game termination level, not as moves.
+        if mtype == MoveType.SWAP_SIDES:
             return
 
         # Legacy/experimental move types – accept for now, but callers
