@@ -518,6 +518,34 @@ def _register_coordinators() -> bool:
         return False
 
 
+def _wire_integrations() -> bool:
+    """Wire integration modules to event router (C2 consolidation).
+
+    Connects standalone integration modules to the unified event system:
+    - ModelLifecycleManager (model_lifecycle.py)
+    - P2PIntegrationManager (p2p_integration.py)
+    - PipelineFeedbackController (pipeline_feedback.py)
+
+    Returns:
+        True if wiring succeeded, False otherwise
+    """
+    try:
+        from app.coordination.integration_bridge import wire_all_integrations_sync
+
+        results = wire_all_integrations_sync()
+        wired_count = sum(1 for v in results.values() if v is True)
+        total_count = len(results)
+        logger.info(f"[Bootstrap] Wired {wired_count}/{total_count} integration modules")
+        return wired_count > 0
+
+    except ImportError as e:
+        logger.debug(f"[Bootstrap] Integration bridge not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[Bootstrap] Failed to wire integrations: {e}")
+        return False
+
+
 # =============================================================================
 # Main Bootstrap Function
 # =============================================================================
@@ -543,6 +571,7 @@ def bootstrap_coordination(
     enable_multi_provider: bool = True,
     enable_job_scheduler: bool = True,
     enable_global_task: bool = True,
+    enable_integrations: bool = True,  # New: Wire integration modules (C2)
     pipeline_auto_trigger: bool = False,
     register_with_registry: bool = True,
 ) -> dict[str, Any]:
@@ -590,6 +619,7 @@ def bootstrap_coordination(
         enable_multi_provider: Initialize MultiProviderOrchestrator
         enable_job_scheduler: Initialize JobScheduler host-dead migration
         enable_global_task: Initialize global TaskCoordinator
+        enable_integrations: Wire integration modules to event router (C2)
         pipeline_auto_trigger: Auto-trigger pipeline on events
         register_with_registry: Register coordinators with OrchestratorRegistry
 
@@ -654,6 +684,10 @@ def bootstrap_coordination(
     # Register with OrchestratorRegistry
     if register_with_registry:
         _register_coordinators()
+
+    # Wire integration modules to event router (C2 consolidation)
+    if enable_integrations:
+        _wire_integrations()
 
     _state.initialized = True
     _state.completed_at = datetime.now()

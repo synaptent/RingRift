@@ -436,6 +436,18 @@ from app.coordination.event_router import (
     unsubscribe as unsubscribe_event,
 )
 
+# Integration Bridge (December 2025 - C2 consolidation)
+# Wires integration modules (model_lifecycle, p2p_integration, pipeline_feedback)
+# to the unified event router for automatic event propagation
+from app.coordination.integration_bridge import (
+    reset_integration_wiring,
+    wire_all_integrations,
+    wire_all_integrations_sync,
+    wire_model_lifecycle_events,
+    wire_p2p_integration_events,
+    wire_pipeline_feedback_events,
+)
+
 # Coordination helpers (safe wrappers to reduce duplicate try/except imports)
 from app.coordination.helpers import (
     ack_event_safe,
