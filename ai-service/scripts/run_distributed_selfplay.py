@@ -416,6 +416,8 @@ def parse_board_type(name: str) -> BoardType:
         return BoardType.SQUARE8
     if name == "square19":
         return BoardType.SQUARE19
+    if name == "hex8":
+        return BoardType.HEX8
     if name == "hexagonal" or name == "hex":
         return BoardType.HEXAGONAL
     raise ValueError(f"Unknown board type: {name}")
