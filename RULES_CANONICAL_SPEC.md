@@ -441,9 +441,10 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - Phase-level forced elimination is treated as a **global legal action** for ANM purposes (RR-CANON-R200–R203) but is **not** a "real action" for Last-Player-Standing under RR-CANON-R172.
       - The `forced_elimination` phase is the canonical location for recording this action, ensuring clear phase semantics and replay consistency.
     - **Explicit elimination decisions (during other phases).**
-      - During line processing (RR-CANON-R120–R122), elimination of a single ring as a line reward is represented as an explicit decision (`eliminate_rings_from_stack`) tied to the processed line. Any controlled stack (including height-1 standalone rings) is eligible.
-      - During Territory processing (RR-CANON-R140–R145), mandatory self-elimination of an **entire stack cap** from an eligible stack outside the processed region is likewise represented as an explicit `eliminate_rings_from_stack` decision. All controlled stacks outside the region are eligible targets for territory processing, including height-1 standalone rings. Exception: recovery actions use buried ring extraction per RR-CANON-R114.
-      - These explicit elimination moves are phase-local **interactive actions** for P and therefore count as global legal actions under RR-CANON-R200.
+      - During line processing (RR-CANON-R120–R123), elimination of a single ring as a line reward is represented as an explicit, **separate** `eliminate_rings_from_stack` decision following the `process_line` or `choose_line_option` move (see RR-CANON-R123). Any controlled stack (including height-1 standalone rings) is eligible.
+      - During Territory processing (RR-CANON-R140–R145), mandatory self-elimination of an **entire stack cap** from an eligible stack outside the processed region is likewise represented as an explicit `eliminate_rings_from_stack` decision (separate move). All controlled stacks outside the region are eligible targets for territory processing, including height-1 standalone rings. Exception: recovery actions use buried ring extraction per RR-CANON-R114.
+      - Both line and Territory elimination use separate `eliminate_rings_from_stack` moves, providing consistent interactive choice semantics across phases per RR-CANON-R206.
+      - These elimination decisions are phase-local **interactive actions** for P and therefore count as global legal actions under RR-CANON-R200.
   - In all cases, any forced elimination or explicit elimination must remove at least one ring belonging to the acting player and must increase the global eliminated-ring count in RR-CANON-R060–R061 and RR-CANON-R191.
 
 - **[RR-CANON-R206] Forced-elimination target choice (interactive choice + deterministic policies).**
@@ -842,21 +843,51 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - After each processed line, update all counters and recompute lines.
   - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §5.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.5, 11.2–11.3, 15.4 Q7, Q22.
 
-> **Example E1 – Exact-length line with no follow-up decisions (8×8).**
+- **[RR-CANON-R123] Line elimination requires a separate interactive decision (canonical clarification).**
+  - The ring elimination cost for line processing (when required by RR-CANON-R122) is represented as an **explicit, separate** `eliminate_rings_from_stack` move following the `process_line` or `choose_line_option` move.
+  - **Rationale (human UX and consistency):**
+    - Per RR-CANON-R206, "Hosts must expose forced elimination as an **interactive decision** for the acting agent...whenever more than one eligible target exists." The same principle applies to line elimination.
+    - When a player has multiple controlled stacks, they should explicitly choose which stack to eliminate from—this is a meaningful strategic decision.
+    - This provides consistency with territory processing which also uses separate `eliminate_rings_from_stack` moves.
+    - Separate moves provide better debuggability with clear state at each decision point.
+  - **Move sequence (when elimination is required):**
+    1. `process_line` or `choose_line_option` - collapses the line markers to territory
+    2. `eliminate_rings_from_stack` - eliminates one ring from the player's chosen controlled stack
+  - **Pending elimination state:**
+    - After applying `process_line` or `choose_line_option` (for Option 1/collapse-all), engines must set a pending elimination flag (e.g., `pendingLineRewardElimination: true`).
+    - While this flag is set, `eliminate_rings_from_stack` moves are legal in the `line_processing` phase.
+    - The `eliminate_rings_from_stack` move for line processing eliminates exactly **one ring** from the top of any controlled stack (not the entire cap, per RR-CANON-R022).
+    - After the elimination move, the pending flag is cleared and normal line processing continues.
+  - **Move enumeration:**
+    - When `pendingLineRewardElimination` is true, engines must enumerate one `eliminate_rings_from_stack` move for each eligible controlled stack.
+    - All controlled stacks with capHeight > 0 are eligible targets.
+  - **AI self-play and deterministic policies:**
+    - AI agents and self-play harnesses may use seeded RNG or stable policies to select among eligible elimination targets.
+    - The engine's role is to enumerate all legal targets; the agent chooses one.
+  - **Implementation note (parity enforcement):**
+    - All engines (Python, GPU, TypeScript) must use the two-move sequence (collapse then eliminate).
+    - Python and GPU engines that currently apply elimination inline must be updated to return a pending state and wait for an explicit elimination move.
+  - References: RR-CANON-R022, RR-CANON-R075, RR-CANON-R206.
+
+> **Example E1 – Exact-length line with elimination (8×8).**
 >
 > - Board: `square8`, 2-player.
-> - Situation: Late game, Player 1 (P1) has just completed a non-capture movement that forms a single, exact-length line of their own markers and does **not** disconnect any Territory regions.
+> - Situation: Late game, Player 1 (P1) has just completed a non-capture movement that forms a single, exact-length line of their own markers and does **not** disconnect any Territory regions. P1 controls at least one stack.
 > - Canonical sequence:
 >   1. P1 plays their interactive move (e.g., a `move_stack`).
 >   2. The engine detects one eligible line for P1. Even though it is the only line, P1 must process it via an explicit `process_line` decision:
->      - One `process_line` move is recorded for that line.
->      - Collapse and any required line-reward elimination are applied as consequences of that move (and, when applicable, a follow-up `choose_line_option` decision for overlength lines).
->   3. No other lines remain; the engine does **not** auto-collapse additional markers or perform extra eliminations between moves.
->   4. Because no Territory regions were disconnected, there is no `territory_processing` phase for this turn; the engine proceeds directly to victory checks and turn rotation.
+>      - One `process_line` move is recorded, collapsing the line markers to territory.
+>      - The engine sets `pendingLineRewardElimination: true`.
+>   3. P1 must choose which stack to eliminate from via an explicit `eliminate_rings_from_stack` move:
+>      - One `eliminate_rings_from_stack` move is recorded, eliminating one ring from the chosen stack.
+>      - The engine clears `pendingLineRewardElimination`.
+>   4. No other lines remain; the engine proceeds to territory_processing (or skips if no regions exist).
+>   5. Because no Territory regions were disconnected, the engine proceeds directly to victory checks and turn rotation.
 > - Replay behaviour:
 >   - A canonical GameReplayDB for this turn records:
->     - the original `move_stack` (or `overtaking_capture`), and
->     - the explicit `process_line` (and `choose_line_option`, if needed).
+>     - the original `move_stack` (or `overtaking_capture`),
+>     - the explicit `process_line`, and
+>     - the explicit `eliminate_rings_from_stack` (for exact-length and Option 1).
 >   - Canonical replay must reach the post-line state **only** by applying those explicit moves in order; it may not inject additional collapses or eliminations between them.
 
 ---
