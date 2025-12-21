@@ -49,17 +49,13 @@ def phase_move_contract() -> dict[CanonicalPhase, tuple[str, ...]]:
             "skip_recovery",
             # RR‑CANON‑R075: forced no‑op when no movement/capture is possible.
             "no_movement_action",
-            # Pie rule meta-move for 2p.
-            "swap_sides",
         ),
         "capture": (
             "overtaking_capture",
             "skip_capture",
-            "swap_sides",
         ),
         "chain_capture": (
             "continue_capture_segment",
-            "swap_sides",
         ),
         "line_processing": (
             "process_line",

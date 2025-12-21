@@ -2309,10 +2309,9 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
  * - ring_placement:
  *     place_ring, skip_placement, no_placement_action, swap_sides
  * - movement:
- *     move_stack, move_ring, build_stack, overtaking_capture,
- *     continue_capture_segment, recovery_slide, skip_recovery, no_movement_action
+ *     move_stack, overtaking_capture, recovery_slide, skip_recovery, no_movement_action
  * - capture:
- *     overtaking_capture, continue_capture_segment, skip_capture
+ *     overtaking_capture, skip_capture
  * - chain_capture:
  *     continue_capture_segment
  * - line_processing:
@@ -2582,11 +2581,11 @@ function processPostMovePhases(
     });
   }
 
-  // RR-CANON-R070 / Section 4.3: After a non-capturing movement (move_stack; legacy move_ring),
+  // RR-CANON-R070 / Section 4.3: After a non-capturing movement (move_stack),
   // the player may opt to make an overtaking capture before proceeding to line processing.
   // Check if the original move was a simple movement and if capture opportunities exist
   // FROM THE LANDING POSITION (not from all stacks).
-  const wasSimpleMovement = originalMoveType === 'move_stack' || originalMoveType === 'move_ring';
+  const wasSimpleMovement = originalMoveType === 'move_stack';
   const moveLandingPos = stateMachine.processingState.originalMove.to;
   if (wasSimpleMovement && state.currentPhase === 'movement' && moveLandingPos) {
     // Enumerate all captures and filter to only those from the landing position
@@ -3190,8 +3189,7 @@ export function validateMove(state: GameState, move: Move): { valid: boolean; re
       return { valid: true };
     }
 
-    case 'move_stack':
-    case 'move_ring': {
+    case 'move_stack': {
       if (!move.from) {
         return { valid: false, reason: 'Move.from is required' };
       }

@@ -112,12 +112,22 @@ def has_phase_local_interactive_move(
     if phase == GamePhase.FORCED_ELIMINATION:
         return has_forced_elimination_action(state, player)
 
-    # LINE_PROCESSING: Call line-processing enumeration directly, matching TS
-    # `enumerateProcessLineMoves(state, player, { detectionMode: 'detect_now' })`.
-    # Per RR-CANON-R204, this uses fresh line detection to determine if any
-    # lines exist for the player. This ensures ANM computation is identical
-    # between Python and TS engines.
+    # LINE_PROCESSING: Per RR-CANON-R123, when pending_line_reward_elimination
+    # is True, the player must execute an eliminate_rings_from_stack move.
+    # This counts as an interactive move for ANM calculation, matching TS
+    # hasPhaseLocalInteractiveMove behavior in globalActions.ts:254-267.
     if phase == GamePhase.LINE_PROCESSING:
+        if state.pending_line_reward_elimination:
+            # Player has controlled stacks -> elimination moves exist
+            for stack in state.board.stacks.values():
+                if stack.controlling_player == player and stack.stack_height > 0:
+                    return True
+            # No controlled stacks means no elimination possible (edge case)
+            return False
+
+        # Otherwise check for line processing moves using fresh line detection.
+        # Per RR-CANON-R204, this uses fresh line detection to determine if any
+        # lines exist for the player.
         moves = GameEngine._get_line_processing_moves(state, player)
         return len(moves) > 0
 
