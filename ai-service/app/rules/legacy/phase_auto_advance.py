@@ -20,6 +20,7 @@ Deprecation Plan:
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -34,6 +35,11 @@ _warned = False
 
 def auto_advance_phase(state: "GameState", max_iterations: int = 100) -> "GameState":
     """Auto-advance through phase-handling moves until at a playable phase.
+
+    .. deprecated:: 2024.12
+        This function violates RR-CANON-R075 (no silent phase fixes).
+        Use explicit bookkeeping moves in selfplay data instead.
+        Target removal: Q2 2026.
 
     GPU selfplay and some older Gumbel MCTS data skips explicit phase moves
     (line/territory processing). This helper inserts the required bookkeeping
@@ -54,6 +60,13 @@ def auto_advance_phase(state: "GameState", max_iterations: int = 100) -> "GameSt
         Playable phases are: RING_PLACEMENT, MOVEMENT, CAPTURE, CHAIN_CAPTURE
         Non-playable phases requiring auto-advance: LINE_PROCESSING, TERRITORY_PROCESSING
     """
+    warnings.warn(
+        "auto_advance_phase() is deprecated and violates RR-CANON-R075. "
+        "Generate selfplay data with explicit bookkeeping moves. "
+        "This function will be removed in Q2 2026.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _auto_advance_calls, _warned
 
     # Import here to avoid circular imports

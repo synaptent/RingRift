@@ -28,6 +28,7 @@ Deprecation Plan:
 from __future__ import annotations
 
 import logging
+import warnings
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -44,6 +45,11 @@ _warned = False
 
 def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState":
     """Auto-inject bookkeeping moves BEFORE applying a recorded move.
+
+    .. deprecated:: 2024.12
+        This function violates RR-CANON-R075 (no silent phase fixes).
+        Migrate to canonical recordings with explicit bookkeeping moves.
+        Target removal: Q2 2026.
 
     This handles the case where the database recording is missing
     intermediate no-action moves. For example, after NO_LINE_ACTION
@@ -62,6 +68,13 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
     Returns:
         Updated game state with any necessary bookkeeping moves applied.
     """
+    warnings.warn(
+        "auto_inject_before_move() is deprecated and violates RR-CANON-R075. "
+        "Use canonical recordings with explicit bookkeeping moves. "
+        "This function will be removed in Q2 2026.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _injection_calls, _coercion_calls, _warned
 
     # Import here to avoid circular imports
@@ -267,6 +280,11 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
 def auto_inject_no_action_moves(state: "GameState") -> "GameState":
     """Auto-inject NO_LINE_ACTION and NO_TERRITORY_ACTION bookkeeping moves.
 
+    .. deprecated:: 2024.12
+        This function violates RR-CANON-R075 (no silent phase fixes).
+        Migrate to canonical recordings with explicit bookkeeping moves.
+        Target removal: Q2 2026.
+
     This helper matches TS's replay behavior where the orchestrator
     auto-generates these moves to complete turn traversal through
     phases that have no interactive options.
@@ -280,6 +298,13 @@ def auto_inject_no_action_moves(state: "GameState") -> "GameState":
     Returns:
         Updated game state with bookkeeping moves auto-applied.
     """
+    warnings.warn(
+        "auto_inject_no_action_moves() is deprecated and violates RR-CANON-R075. "
+        "Use canonical recordings with explicit bookkeeping moves. "
+        "This function will be removed in Q2 2026.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _injection_calls
 
     from app.game_engine import GameEngine, PhaseRequirementType
