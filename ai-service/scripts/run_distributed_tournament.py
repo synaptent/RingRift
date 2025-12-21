@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import uuid
@@ -1365,6 +1366,52 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output path for training JSONL (default: data/tournaments/tier_tournament_{id}.jsonl).",
     )
+    parser.add_argument(
+        "--ingest-training",
+        action="store_true",
+        help="Ingest tournament replay DB into the canonical training pool (includes tournament sources).",
+    )
+    parser.add_argument(
+        "--training-output-db",
+        type=str,
+        default=None,
+        help="Output training pool DB (default: data/games/canonical_<board>[_<players>p].db).",
+    )
+    parser.add_argument(
+        "--training-holdout-db",
+        type=str,
+        default=None,
+        help="Optional holdout DB path for non-training sources.",
+    )
+    parser.add_argument(
+        "--training-quarantine-db",
+        type=str,
+        default=None,
+        help="Optional quarantine DB path for failed games.",
+    )
+    parser.add_argument(
+        "--training-report-json",
+        type=str,
+        default=None,
+        help="Optional JSON report path for the training ingest gate summary.",
+    )
+    parser.add_argument(
+        "--training-parallel-workers",
+        type=int,
+        default=4,
+        help="Parallel workers for training pool validation (default: 4).",
+    )
+    parser.add_argument(
+        "--export-npz",
+        action="store_true",
+        help="Export an NPZ dataset after ingesting the training pool.",
+    )
+    parser.add_argument(
+        "--export-npz-output",
+        type=str,
+        default=None,
+        help="Output NPZ path (default: data/training/tournament_<board>_<players>p.npz).",
+    )
     return parser.parse_args()
 
 
@@ -1533,6 +1580,87 @@ def main() -> None:
         else f"{args.output_dir}/report_{report['tournament_id']}.json"
     )
     print(f"\nFull report: {report_path}")
+
+    if args.ingest_training:
+        if args.skip_replay_db:
+            logger.warning("Skipping training ingest because --skip-replay-db was set.")
+            return
+
+        from app.db.unified_recording import RecordingConfig, RecordSource
+
+        recording_config = RecordingConfig(
+            board_type=board_type.value,
+            num_players=args.num_players,
+            source=RecordSource.TOURNAMENT,
+            db_prefix="tournament",
+            db_dir="data/games",
+        )
+        tournament_db = Path(recording_config.get_db_path()).resolve()
+        if not tournament_db.exists():
+            logger.warning("Tournament replay DB not found: %s", tournament_db)
+            return
+
+        board_token = board_type.value
+        suffix = "" if int(args.num_players) == 2 else f"_{int(args.num_players)}p"
+        default_output_db = Path("data/games") / f"canonical_{board_token}{suffix}.db"
+        output_db = Path(args.training_output_db) if args.training_output_db else default_output_db
+        report_json = (
+            Path(args.training_report_json)
+            if args.training_report_json
+            else Path(args.output_dir) / f"training_ingest_{report['tournament_id']}.json"
+        )
+
+        cmd = [
+            sys.executable,
+            "scripts/build_canonical_training_pool_db.py",
+            "--output-db",
+            str(output_db),
+            "--board-type",
+            board_type.value,
+            "--num-players",
+            str(args.num_players),
+            "--require-completed",
+            "--include-tournament",
+            "--report-json",
+            str(report_json),
+        ]
+        if args.training_parallel_workers and args.training_parallel_workers > 1:
+            cmd += ["--parallel-workers", str(args.training_parallel_workers)]
+        if args.training_holdout_db:
+            cmd += ["--holdout-db", args.training_holdout_db]
+        if args.training_quarantine_db:
+            cmd += ["--quarantine-db", args.training_quarantine_db]
+        cmd += ["--input-db", str(tournament_db)]
+
+        logger.info("Ingesting tournament DB into training pool: %s", " ".join(cmd))
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            PROJECT_ROOT
+            if not existing_pythonpath
+            else f"{PROJECT_ROOT}{os.pathsep}{existing_pythonpath}"
+        )
+        subprocess.run(cmd, cwd=PROJECT_ROOT, env=env, check=False)
+
+        if args.export_npz:
+            default_npz = Path("data/training") / f"tournament_{board_token}_{int(args.num_players)}p.npz"
+            export_output = Path(args.export_npz_output) if args.export_npz_output else default_npz
+            export_output.parent.mkdir(parents=True, exist_ok=True)
+
+            export_cmd = [
+                sys.executable,
+                "scripts/export_replay_dataset.py",
+                "--db",
+                str(output_db),
+                "--board-type",
+                board_type.value,
+                "--num-players",
+                str(args.num_players),
+                "--output",
+                str(export_output),
+            ]
+            logger.info("Exporting training dataset: %s", " ".join(export_cmd))
+            subprocess.run(export_cmd, cwd=PROJECT_ROOT, env=env, check=False)
 
 
 if __name__ == "__main__":
