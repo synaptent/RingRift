@@ -581,8 +581,6 @@ export class AIEngine {
           validMoves = validMoves.filter((m) => {
             const isMovementOrCaptureMove =
               m.type === 'move_stack' ||
-              m.type === 'move_ring' ||
-              m.type === 'build_stack' ||
               m.type === 'overtaking_capture' ||
               m.type === 'continue_capture_segment';
 
@@ -612,9 +610,7 @@ export class AIEngine {
             validMoves = validMoves.filter((m) => {
               const isMovementOrCaptureMove =
                 m.type === 'move_stack' ||
-                m.type === 'move_ring' ||
                 m.type === 'overtaking_capture' ||
-                m.type === 'build_stack' ||
                 m.type === 'continue_capture_segment';
 
               if (!isMovementOrCaptureMove) {

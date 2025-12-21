@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { formatMove, formatPosition, MoveNotationOptions } from '../../shared/engine/notation';
+import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 import type { Move, BoardType, GameHistoryEntry } from '../../shared/types/game';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -53,10 +54,17 @@ export interface MoveHistoryFromEntriesProps {
  * Get a short notation for the move type
  */
 function getMoveTypeSymbol(move: Move): string {
-  switch (move.type) {
+  if (move.type === 'line_formation') {
+    return '━';
+  }
+  if (move.type === 'territory_claim') {
+    return '◼';
+  }
+
+  const canonicalType = normalizeLegacyMoveType(move.type);
+  switch (canonicalType) {
     case 'place_ring':
       return '◯'; // Ring symbol for placement
-    case 'move_ring':
     case 'move_stack':
       return '→'; // Arrow for movement
     case 'overtaking_capture':
@@ -72,9 +80,7 @@ function getMoveTypeSymbol(move: Move): string {
       return '↻'; // Recovery skip
     case 'process_line':
     case 'choose_line_option':
-    case 'choose_line_reward':
       return '━'; // Line
-    case 'process_territory_region':
     case 'choose_territory_option':
     case 'eliminate_rings_from_stack':
       return '◼'; // Territory
@@ -88,14 +94,22 @@ function getMoveTypeSymbol(move: Move): string {
  */
 function formatMoveCompact(move: Move, options: MoveNotationOptions): string {
   const typeSymbol = getMoveTypeSymbol(move);
+  const canonicalType = normalizeLegacyMoveType(move.type);
 
-  switch (move.type) {
+  if (move.type === 'line_formation') {
+    return `${typeSymbol} Line`;
+  }
+  if (move.type === 'territory_claim') {
+    return `${typeSymbol} Territory`;
+  }
+
+  switch (canonicalType) {
     case 'place_ring': {
       const count = move.placementCount && move.placementCount > 1 ? `×${move.placementCount}` : '';
       const pos = formatPosition(move.to, options);
       return `${typeSymbol}${pos}${count}`;
     }
-    case 'move_ring':
+    case 'move_stack':
     case 'move_stack': {
       if (move.from) {
         return `${formatPosition(move.from, options)}${typeSymbol}${formatPosition(move.to, options)}`;
@@ -128,9 +142,7 @@ function formatMoveCompact(move: Move, options: MoveNotationOptions): string {
     }
     case 'process_line':
     case 'choose_line_option':
-    case 'choose_line_reward':
       return `${typeSymbol} Line`;
-    case 'process_territory_region':
     case 'choose_territory_option':
     case 'eliminate_rings_from_stack':
       return `${typeSymbol} Territory`;

@@ -91,7 +91,7 @@ export interface MovementApplicationOutcome {
 }
 
 /**
- * Apply a non-capturing stack movement (canonical `move_stack` / `move_ring`)
+ * Apply a non-capturing stack movement (canonical `move_stack`)
  * to a GameState by delegating to MovementAggregate.applySimpleMovement.
  *
  * Callers are expected to have validated legality separately using the shared

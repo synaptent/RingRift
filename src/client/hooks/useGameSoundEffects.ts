@@ -22,6 +22,7 @@
 import { useEffect, useRef } from 'react';
 import { useGameSounds, getGameEndSoundType } from './useGameSounds';
 import type { GameState, GameResult, Move } from '../../shared/types/game';
+import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 
 export interface UseGameSoundEffectsOptions {
   /** Current game state */
@@ -48,21 +49,26 @@ function getMoveTypeForSound(
   | 'process_territory'
   | 'eliminate_ring'
   | null {
-  switch (move.type) {
+  if (move.type === 'line_formation') {
+    return 'process_line';
+  }
+  if (move.type === 'territory_claim') {
+    return 'process_territory';
+  }
+
+  const canonicalType = normalizeLegacyMoveType(move.type);
+  switch (canonicalType) {
     case 'place_ring':
       return 'place_ring';
     case 'move_stack':
-    case 'move_ring':
       return 'move_stack';
     case 'overtaking_capture':
       return 'capture';
     case 'continue_capture_segment':
       return 'chain_capture';
     case 'process_line':
-    case 'choose_line_reward':
     case 'choose_line_option':
       return 'process_line';
-    case 'process_territory_region':
     case 'choose_territory_option':
       return 'process_territory';
     case 'eliminate_rings_from_stack':

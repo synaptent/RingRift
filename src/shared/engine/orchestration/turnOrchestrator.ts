@@ -70,7 +70,11 @@ import {
   applyPhaseCoercion,
   logPhaseCoercion,
 } from '../legacy/legacyReplayHelper';
-import { assertNoLegacyMoveType, isLegacyMoveType, normalizeLegacyMove } from '../legacy/legacyMoveTypes';
+import {
+  assertNoLegacyMoveType,
+  isLegacyMoveType,
+  normalizeLegacyMove,
+} from '../legacy/legacyMoveTypes';
 
 // FSM imports
 import {
@@ -1858,6 +1862,8 @@ interface ApplyMoveResult {
   pendingDecision?: PendingDecision;
   /** Line reward elimination pending after line collapse (RR-CANON-R123) */
   pendingLineRewardElimination?: boolean;
+  /** Victory result for turn-ending moves that detect game over inline */
+  victoryResult?: VictoryState;
 }
 
 /**
@@ -2309,9 +2315,8 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
  *     forced_elimination
  *
  * swap_sides is permitted only in ring_placement (pie rule). Legacy move
- * types (move_ring/build_stack/choose_line_reward/process_territory_region/
- * line_formation/territory_claim) are only accepted in replay compatibility
- * mode and must be treated as non-canonical by hosts.
+ * types (see legacy/legacyMoveTypes.ts) are only accepted in replay
+ * compatibility mode and must be treated as non-canonical by hosts.
  */
 function assertPhaseMoveInvariant(state: GameState, move: Move): void {
   const phase = state.currentPhase;

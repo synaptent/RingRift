@@ -343,11 +343,11 @@ export class SandboxOrchestratorAdapter {
           }
         );
 
-        // DEBUG: Trace decision loop for choose_line_reward
+        // DEBUG: Trace decision loop for choose_line_option
         debugLog(
           isTestEnvironment() &&
             SANDBOX_ORCHESTRATOR_TRACE_DEBUG &&
-            move.type === 'choose_line_reward',
+            moveToApply.type === 'choose_line_option',
           '[SandboxOrchestratorAdapter] Decision loop:',
           {
             decisionType: decision.type,
@@ -373,7 +373,7 @@ export class SandboxOrchestratorAdapter {
 
         // Line-order decisions are also skipped when skipTerritoryAutoResolve
         // is enabled (trace/replay mode). In that context we want explicit
-        // process_line / choose_line_reward moves from the recording to drive
+        // process_line / choose_line_option moves from the recording to drive
         // line processing, rather than auto-selecting a line inside the
         // adapter.
         if (decision.type === 'line_order' && this.skipTerritoryAutoResolve) {
@@ -463,11 +463,11 @@ export class SandboxOrchestratorAdapter {
 
         let chosenMove = await delegates.resolveDecision(decision);
 
-        // DEBUG: Trace resolved decision for choose_line_reward
+        // DEBUG: Trace resolved decision for choose_line_option
         debugLog(
           isTestEnvironment() &&
             SANDBOX_ORCHESTRATOR_TRACE_DEBUG &&
-            move.type === 'choose_line_reward',
+            moveToApply.type === 'choose_line_option',
           '[SandboxOrchestratorAdapter] Decision resolved:',
           {
             chosenMoveType: chosenMove.type,

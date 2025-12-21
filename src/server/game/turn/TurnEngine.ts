@@ -84,8 +84,6 @@ export function updatePerTurnStateAfterMove(turnState: PerTurnState, move: Move)
     move.from &&
     move.to &&
     (move.type === 'move_stack' ||
-      move.type === 'move_ring' ||
-      move.type === 'build_stack' ||
       move.type === 'overtaking_capture' ||
       move.type === 'continue_capture_segment')
   ) {

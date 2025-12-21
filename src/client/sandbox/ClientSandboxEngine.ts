@@ -63,6 +63,7 @@ import {
   // Global action helpers
   playerHasAnyRings,
 } from '../../shared/engine';
+import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 import type { LpsTrackingState } from '../../shared/engine';
 import {
   deserializeGameState,
@@ -123,6 +124,8 @@ import {
 } from './sandboxDecisionMapping';
 
 const SANDBOX_AI_STALL_DIAGNOSTICS = isSandboxAiStallDiagnosticsEnabled();
+const normalizeMoveType = (moveType: Move['type']): Move['type'] =>
+  normalizeLegacyMoveType(moveType);
 
 /**
  * Client-local engine harness for the /sandbox route.
@@ -679,16 +682,17 @@ export class ClientSandboxEngine {
     }
     this.gameEndExplanation = result.gameEndExplanation ?? null;
 
+    const canonicalType = normalizeMoveType(move.type);
+
     // Update internal turn state based on move type
-    if (move.type === 'place_ring' && move.to) {
+    if (canonicalType === 'place_ring' && move.to) {
       this._hasPlacedThisTurn = true;
       this._mustMoveFromStackKey = positionToString(move.to);
       this._selectedStackKey = positionToString(move.to);
     } else if (
-      move.type === 'move_stack' ||
-      move.type === 'move_ring' ||
-      move.type === 'overtaking_capture' ||
-      move.type === 'continue_capture_segment'
+      canonicalType === 'move_stack' ||
+      canonicalType === 'overtaking_capture' ||
+      canonicalType === 'continue_capture_segment'
     ) {
       this._selectedStackKey = undefined;
     }
@@ -3365,7 +3369,7 @@ export class ClientSandboxEngine {
         const lineKey = line.positions.map((p) => positionToString(p)).join('|');
         const rewardCandidates = moves.filter(
           (m) =>
-            (m.type === 'choose_line_option' || m.type === 'choose_line_reward') &&
+            normalizeMoveType(m.type) === 'choose_line_option' &&
             m.formedLines &&
             m.formedLines.length > 0 &&
             m.formedLines[0].positions.length === line.positions.length &&
@@ -3593,7 +3597,8 @@ export class ClientSandboxEngine {
    * without going through the full turn/phase machinery.
    */
   private async applyCanonicalProcessTerritoryRegion(move: Move): Promise<boolean> {
-    if (move.type !== 'choose_territory_option' && move.type !== 'process_territory_region') {
+    const canonicalType = normalizeMoveType(move.type);
+    if (canonicalType !== 'choose_territory_option') {
       throw new Error(
         `ClientSandboxEngine.applyCanonicalProcessTerritoryRegion: expected choose_territory_option (or legacy process_territory_region), got ${move.type}`
       );
@@ -3626,17 +3631,17 @@ export class ClientSandboxEngine {
     const supportedTypes: Move['type'][] = [
       'place_ring',
       'skip_placement',
-      'move_ring',
       'move_stack',
       'overtaking_capture',
       'continue_capture_segment',
       'skip_capture',
       'process_line',
       'choose_line_option',
-      'choose_line_reward',
-      'process_territory_region',
       'choose_territory_option',
       'eliminate_rings_from_stack',
+      // Legacy replay compatibility
+      'line_formation',
+      'territory_claim',
       // Forced-elimination phase moves (canonical 7th phase). These are emitted
       // by the shared orchestrator for players who are blocked with stacks but
       // have no legal placement/movement/capture actions.
@@ -3659,7 +3664,8 @@ export class ClientSandboxEngine {
       'no_territory_action',
     ];
 
-    if (!supportedTypes.includes(move.type)) {
+    const canonicalType = normalizeMoveType(move.type);
+    if (!supportedTypes.includes(canonicalType)) {
       throw new Error(`ClientSandboxEngine.applyCanonicalMove: unsupported move type ${move.type}`);
     }
 
@@ -3740,15 +3746,12 @@ export class ClientSandboxEngine {
     const supportedTypes: Move['type'][] = [
       'place_ring',
       'skip_placement',
-      'move_ring',
       'move_stack',
       'overtaking_capture',
       'continue_capture_segment',
       'skip_capture',
       'process_line',
       'choose_line_option',
-      'choose_line_reward',
-      'process_territory_region',
       'choose_territory_option',
       'eliminate_rings_from_stack',
       // Forced-elimination phase moves (canonical 7th phase). These appear in
@@ -3768,7 +3771,8 @@ export class ClientSandboxEngine {
       'no_movement_action',
     ];
 
-    if (!supportedTypes.includes(move.type)) {
+    const canonicalType = normalizeMoveType(move.type);
+    if (!supportedTypes.includes(canonicalType)) {
       throw new Error(
         `ClientSandboxEngine.applyCanonicalMoveForReplay: unsupported move type ${move.type}`
       );
@@ -3779,7 +3783,7 @@ export class ClientSandboxEngine {
     });
 
     // Debug: trace phase after orchestrator for move_stack parity investigation
-    if (move.type === 'move_stack') {
+    if (canonicalType === 'move_stack') {
       debugLog(
         SANDBOX_AI_STALL_DIAGNOSTICS,
         '[applyCanonicalMoveForReplay] POST-ORCHESTRATOR move_stack:',
@@ -3867,7 +3871,7 @@ export class ClientSandboxEngine {
         }
       }
 
-      // RR-CANON-R073: Mandatory phase transition after move_stack/move_ring.
+      // RR-CANON-R073: Mandatory phase transition after move_stack.
       // Per the canonical rules, after a non-capture movement, if legal capture
       // segments exist from the landing position, currentPhase MUST change to
       // 'capture'. This ensures parity with Python which transitions immediately.
@@ -3876,7 +3880,7 @@ export class ClientSandboxEngine {
       if (
         this.gameState.gameStatus === 'active' &&
         this.gameState.currentPhase === 'movement' &&
-        (move.type === 'move_stack' || move.type === 'move_ring') &&
+        canonicalType === 'move_stack' &&
         move.to
       ) {
         const capturesFromLanding = this.enumerateCaptureSegmentsFrom(move.to, move.player);
@@ -3960,7 +3964,6 @@ export class ClientSandboxEngine {
             'place_ring',
             'skip_placement',
             'move_stack',
-            'move_ring',
             'overtaking_capture',
             'continue_capture_segment',
             'swap_sides',
@@ -3969,7 +3972,8 @@ export class ClientSandboxEngine {
           const inTurnStartPhase =
             this.gameState.currentPhase === 'ring_placement' ||
             this.gameState.currentPhase === 'movement';
-          if (!inTurnStartPhase && turnStartMoves.includes(nextMove.type)) {
+          const canonicalNextMoveType = normalizeMoveType(nextMove.type);
+          if (!inTurnStartPhase && turnStartMoves.includes(canonicalNextMoveType)) {
             await this.autoResolvePendingDecisionPhasesForReplay(nextMove);
           }
         }
@@ -4152,7 +4156,6 @@ export class ClientSandboxEngine {
       'place_ring',
       'skip_placement',
       'move_stack',
-      'move_ring',
       'overtaking_capture',
       'continue_capture_segment',
       // Swap-sides is offered at the start of Player 2's interactive turn.
@@ -4167,13 +4170,15 @@ export class ClientSandboxEngine {
     const lineProcessingMoveTypes: Move['type'][] = [
       'process_line',
       'choose_line_option',
-      'choose_line_reward',
       'no_line_action',
+      // Legacy replay compatibility
+      'line_formation',
     ];
     const territoryProcessingMoveTypes: Move['type'][] = [
-      'process_territory_region',
       'choose_territory_option',
       'no_territory_action',
+      // Legacy replay compatibility
+      'territory_claim',
     ];
 
     // Handle ring_placement → movement skip: if we're in ring_placement but the
@@ -4182,13 +4187,13 @@ export class ClientSandboxEngine {
     // We should advance directly to movement phase to match.
     const movementMoveTypes: Move['type'][] = [
       'move_stack',
-      'move_ring',
       'overtaking_capture',
       'continue_capture_segment',
     ];
+    const canonicalNextMoveType = normalizeMoveType(nextMove.type);
     if (
       this.gameState.currentPhase === 'ring_placement' &&
-      movementMoveTypes.includes(nextMove.type) &&
+      movementMoveTypes.includes(canonicalNextMoveType) &&
       nextMove.player === this.gameState.currentPlayer
     ) {
       // Python recorded a movement move while player was in ring_placement.
@@ -4203,12 +4208,15 @@ export class ClientSandboxEngine {
     // because it should only apply after move_stack, not after place_ring.
     // See the post-move_stack handling in applyCanonicalMoveForReplay for details.
 
-    if (!turnStartMoveTypes.includes(nextMove.type)) {
+    if (!turnStartMoveTypes.includes(canonicalNextMoveType)) {
       // The next move is a decision-phase move. Check if we're in a mismatched phase
       // and need to transition. This handles cases like TS being in 'capture' phase
       // when Python expects 'line_processing' (because line detection takes priority).
       const currentPhase = this.gameState.currentPhase as string;
-      if (lineProcessingMoveTypes.includes(nextMove.type) && currentPhase !== 'line_processing') {
+      if (
+        lineProcessingMoveTypes.includes(canonicalNextMoveType) &&
+        currentPhase !== 'line_processing'
+      ) {
         // Need to transition to line_processing. Advance turn until we get there.
         const maxAdvances = 10;
         let advances = 0;
@@ -4221,7 +4229,7 @@ export class ClientSandboxEngine {
           advances += 1;
         }
       } else if (
-        territoryProcessingMoveTypes.includes(nextMove.type) &&
+        territoryProcessingMoveTypes.includes(canonicalNextMoveType) &&
         currentPhase !== 'territory_processing'
       ) {
         // Need to transition to territory_processing
@@ -4244,7 +4252,7 @@ export class ClientSandboxEngine {
       // (because the moving player caused the disconnection and should process it).
       if (
         this.gameState.gameStatus === 'active' &&
-        territoryProcessingMoveTypes.includes(nextMove.type) &&
+        territoryProcessingMoveTypes.includes(canonicalNextMoveType) &&
         this.gameState.currentPhase === 'territory_processing' &&
         nextMove.player !== this.gameState.currentPlayer
       ) {
@@ -4258,7 +4266,7 @@ export class ClientSandboxEngine {
       // recorded move's player.
       if (
         this.gameState.gameStatus === 'active' &&
-        lineProcessingMoveTypes.includes(nextMove.type) &&
+        lineProcessingMoveTypes.includes(canonicalNextMoveType) &&
         this.gameState.currentPhase === 'line_processing' &&
         nextMove.player !== this.gameState.currentPlayer
       ) {
@@ -4297,9 +4305,9 @@ export class ClientSandboxEngine {
           // we trust the recorded move sequence over TS detection.
           if (
             this.traceMode &&
-            (nextMove.type === 'process_territory_region' ||
-              nextMove.type === 'choose_territory_option' ||
-              nextMove.type === 'eliminate_rings_from_stack')
+            (canonicalNextMoveType === 'choose_territory_option' ||
+              canonicalNextMoveType === 'eliminate_rings_from_stack' ||
+              nextMove.type === 'territory_claim')
           ) {
             break;
           }
@@ -4329,9 +4337,9 @@ export class ClientSandboxEngine {
           // we trust the recorded move sequence over TS detection.
           if (
             this.traceMode &&
-            (nextMove.type === 'process_line' ||
-              nextMove.type === 'choose_line_option' ||
-              nextMove.type === 'choose_line_reward')
+            (canonicalNextMoveType === 'process_line' ||
+              canonicalNextMoveType === 'choose_line_option' ||
+              nextMove.type === 'line_formation')
           ) {
             break;
           }
@@ -4339,7 +4347,7 @@ export class ClientSandboxEngine {
         } else if (this.traceMode) {
           // PARITY FIX: In traceMode, if there are pending lines, do NOT
           // auto-process them. Python records line decisions as explicit
-          // moves (process_line, choose_line_option), so we must let those
+          // moves (process_line, choose_line_option, legacy line_formation), so we must let those
           // recorded moves arrive in sequence. Break here and wait for them.
           break;
         } else {
@@ -4396,7 +4404,7 @@ export class ClientSandboxEngine {
     // surface any illegal historical moves.
     if (
       this.gameState.gameStatus === 'active' &&
-      turnStartMoveTypes.includes(nextMove.type) &&
+      turnStartMoveTypes.includes(canonicalNextMoveType) &&
       nextMove.player !== this.gameState.currentPlayer
     ) {
       let hasPendingTerritory = false;

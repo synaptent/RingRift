@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { BoardType, GamePhase, Move } from '../../shared/types/game';
+import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 import type { RulesUxContext, RulesUxWeirdStateType } from '../../shared/telemetry/rulesUxEvents';
 import type { RulesWeirdStateReasonCode } from '../../shared/engine/weirdStateReasons';
 import {
@@ -793,13 +794,19 @@ export function useTeachingOverlay() {
  * Determine which teaching topic is relevant for a given move
  */
 export function getTeachingTopicForMove(move: Move): TeachingTopic | null {
-  switch (move.type) {
+  if (move.type === 'line_formation') {
+    return 'line_bonus';
+  }
+  if (move.type === 'territory_claim') {
+    return 'territory';
+  }
+
+  const canonicalType = normalizeLegacyMoveType(move.type);
+  switch (canonicalType) {
     case 'place_ring':
     case 'skip_placement':
       return 'ring_placement';
     case 'move_stack':
-    case 'move_ring':
-    case 'build_stack':
       return 'stack_movement';
     case 'overtaking_capture':
       return 'capturing';
@@ -807,9 +814,7 @@ export function getTeachingTopicForMove(move: Move): TeachingTopic | null {
       return 'chain_capture';
     case 'process_line':
     case 'choose_line_option':
-    case 'choose_line_reward':
       return 'line_bonus';
-    case 'process_territory_region':
     case 'choose_territory_option':
     case 'eliminate_rings_from_stack':
     case 'skip_territory_processing':

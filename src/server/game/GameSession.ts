@@ -1110,17 +1110,9 @@ export class GameSession {
           const allCandidates = this.gameEngine.getValidMoves(currentPlayerNumber);
           const decisionCandidates = allCandidates.filter((m) => {
             if (state.currentPhase === 'line_processing') {
-              return (
-                m.type === 'process_line' ||
-                m.type === 'choose_line_option' ||
-                m.type === 'choose_line_reward'
-              );
+              return m.type === 'process_line' || m.type === 'choose_line_option';
             }
-            return (
-              m.type === 'process_territory_region' ||
-              m.type === 'choose_territory_option' ||
-              m.type === 'eliminate_rings_from_stack'
-            );
+            return m.type === 'choose_territory_option' || m.type === 'eliminate_rings_from_stack';
           });
 
           if (decisionCandidates.length === 0) {
@@ -1659,31 +1651,22 @@ export class GameSession {
           candidateTypes: ['process_line'],
         };
       }
-      if (moves.some((m) => m.type === 'choose_line_option' || m.type === 'choose_line_reward')) {
+      if (moves.some((m) => m.type === 'choose_line_option')) {
         return {
           choiceType: 'line_reward_option',
           choiceKind: 'line_reward',
-          candidateTypes: ['choose_line_option', 'choose_line_reward'],
+          candidateTypes: ['choose_line_option'],
         };
       }
       return null;
     }
 
     if (phase === 'territory_processing') {
-      if (
-        moves.some(
-          (m) => m.type === 'choose_territory_option' || m.type === 'process_territory_region'
-        )
-      ) {
+      if (moves.some((m) => m.type === 'choose_territory_option')) {
         return {
           choiceType: 'region_order',
           choiceKind: 'territory_region_order',
-          candidateTypes: [
-            'choose_territory_option',
-            // Legacy alias accepted for replay only.
-            'process_territory_region',
-            'skip_territory_processing',
-          ],
+          candidateTypes: ['choose_territory_option', 'skip_territory_processing'],
         };
       }
       if (moves.some((m) => m.type === 'eliminate_rings_from_stack')) {
@@ -1844,14 +1827,14 @@ export class GameSession {
       switch (move.type) {
         case 'process_line':
         case 'choose_line_option':
-        case 'choose_line_reward': {
+        case 'choose_line_option': {
           // Move.formedLines is optional LineInfo[] on the Move type
           const formedLines = move.formedLines as LineInfo[] | undefined;
           const primaryLine = formedLines && formedLines.length > 0 ? formedLines[0] : null;
           const lineKey = primaryLine ? positionsKey(primaryLine.positions) : '~';
           return `line:${lineKey}`;
         }
-        case 'process_territory_region':
+        case 'choose_territory_option':
         case 'choose_territory_option': {
           // Move.disconnectedRegions is optional Territory[] on the Move type
           const regions = move.disconnectedRegions as Territory[] | undefined;

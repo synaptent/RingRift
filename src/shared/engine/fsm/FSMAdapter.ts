@@ -50,7 +50,7 @@ import { hasAnyGlobalMovementOrCapture, playerHasAnyRings } from '../globalActio
 import { isEligibleForRecovery } from '../playerStateHelpers';
 import { VALID_MOVES_BY_PHASE, isMoveValidInPhase } from '../phaseValidation';
 import { isLegacyMoveValidInPhase } from '../legacy/legacyPhaseValidation';
-import { normalizeLegacyMove } from '../legacy/legacyMoveTypes';
+import { isLegacyMoveType, normalizeLegacyMove } from '../legacy/legacyMoveTypes';
 import { getEffectiveLineLengthThreshold, getEffectiveRingsPerPlayer } from '../rulesConfig';
 import { isValidPosition } from '../validators/utils';
 
@@ -107,6 +107,10 @@ function computeNextNonEliminatedPlayer(
  * with the FSM. Each move type maps to exactly one event type.
  */
 export function moveToEvent(move: Move): TurnEvent | null {
+  if (isLegacyMoveType(move.type)) {
+    return null;
+  }
+
   switch (move.type) {
     // Ring Placement
     case 'place_ring':
@@ -197,10 +201,7 @@ export function moveToEvent(move: Move): TurnEvent | null {
 
     // Meta/swap (not FSM events)
     case 'swap_sides':
-    case 'line_formation':
-    case 'territory_claim':
-    case 'build_stack':
-      // These are either legacy or meta-moves not handled by turn FSM
+      // Meta-move not handled by turn FSM
       return null;
 
     default:
@@ -545,8 +546,8 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
     moveHint?.type === 'no_movement_action' && moveHint.player === player;
 
   // RR-CANON-R075: Trust recorded movement moves during replay.
-  // If Python recorded move_stack (legacy move_ring)/overtaking_capture, TS should trust it even
-  // if local enumeration doesn't find the move (parity divergence due to state timing).
+  // If Python recorded movement/capture moves (including legacy aliases that have been normalized),
+  // TS should trust them even if local enumeration doesn't find the move (parity divergence timing).
   const isRecordedMovementMoveForPlayer =
     moveHint &&
     moveHint.player === player &&
@@ -1355,7 +1356,7 @@ export function validateMoveWithFSM(
 
   // Check event conversion
   if (!event) {
-    // Meta-moves (swap_sides, line_formation, territory_claim) don't have FSM events.
+    // Meta-moves (swap_sides) don't have FSM events.
     // If the move type is explicitly permitted for the current phase, let it through -
     // the orchestrator handles meta-moves specially.
     //

@@ -3,6 +3,7 @@
  */
 
 import type { ReplayMoveRecord } from '../../types/replay';
+import { formatMoveTypeLabel } from '../../utils/moveTypeLabels';
 
 export interface MoveInfoProps {
   move: ReplayMoveRecord | null;
@@ -11,29 +12,7 @@ export interface MoveInfoProps {
 }
 
 function formatMoveType(moveType: string): string {
-  const map: Record<string, string> = {
-    place_ring: 'Place Ring',
-    skip_placement: 'Skip',
-    move_ring: 'Move Ring',
-    move_stack: 'Move Stack',
-    build_stack: 'Build Stack',
-    overtaking_capture: 'Capture',
-    continue_capture_segment: 'Continue Capture',
-    process_line: 'Process Line',
-    choose_line_option: 'Line Option',
-    choose_line_reward: 'Line Reward',
-    process_territory_region: 'Territory',
-    choose_territory_option: 'Territory',
-    eliminate_rings_from_stack: 'Eliminate',
-    line_formation: 'Line',
-    territory_claim: 'Territory',
-    chain_capture: 'Chain Capture',
-    forced_elimination: 'Forced Elim.',
-    swap_sides: 'Swap Sides',
-    recovery_slide: 'Recovery',
-    skip_recovery: 'Skip Recovery',
-  };
-  return map[moveType] ?? moveType.replace(/_/g, ' ');
+  return formatMoveTypeLabel(moveType as ReplayMoveRecord['moveType']);
 }
 
 function formatPosition(pos: { x: number; y: number; z?: number } | null | undefined): string {

@@ -107,7 +107,7 @@ async function main() {
         isValid = validPlacements.some(
           (p: any) => p.x === move.to.x && p.y === move.to.y && (p.z || 0) === (move.to.z || 0)
         );
-      } else if (move.type === 'move_stack' || move.type === 'move_ring') {
+      } else if (move.type === 'move_stack') {
         // For movement, check enumerateSimpleMovementLandings
         const validMoves = (sandboxEngine as any).enumerateSimpleMovementLandings(move.player);
         isValid = validMoves.some(
@@ -153,7 +153,7 @@ async function main() {
       } else if (
         move.type === 'territory_claim' ||
         move.type === 'choose_territory_option' ||
-        move.type === 'process_territory_region'
+        move.type === 'choose_territory_option'
       ) {
         // Territory claim is automatic/interactive
         // Check if disconnected regions exist

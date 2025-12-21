@@ -22,6 +22,7 @@ import {
   isSandboxAiStallDiagnosticsEnabled,
   isSandboxAiParityModeEnabled,
 } from '../../shared/utils/envFlags';
+import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 import { recordSandboxAiDiagnostics, type SandboxAiDecisionSource } from './sandboxAiDiagnostics';
 
 const SANDBOX_AI_CAPTURE_DEBUG_ENABLED = isSandboxAiCaptureDebugEnabled();
@@ -455,7 +456,7 @@ function getLineDecisionMovesForSandboxAI(gameState: GameState, hooks: SandboxAI
 
   // When explicit elimination moves are present (line‑reward debt),
   // mirror backend behaviour by preferring those over additional
-  // process_line / choose_line_reward options.
+  // process_line / choose_line_option options.
   const eliminationMoves = allMoves.filter((m) => m.type === 'eliminate_rings_from_stack');
   if (eliminationMoves.length > 0) {
     return eliminationMoves;
@@ -464,10 +465,15 @@ function getLineDecisionMovesForSandboxAI(gameState: GameState, hooks: SandboxAI
   // RR-FIX-2025-12-13: Include no_line_action in decision moves. This move is
   // synthesized by SandboxOrchestratorAdapter.getValidMoves when there are no
   // lines to process, and the AI must apply it to advance to territory_processing.
-  return allMoves.filter(
-    (m) =>
-      m.type === 'process_line' || m.type === 'choose_line_reward' || m.type === 'no_line_action'
-  );
+  return allMoves.filter((m) => {
+    const canonicalType = normalizeLegacyMoveType(m.type);
+    return (
+      canonicalType === 'process_line' ||
+      canonicalType === 'choose_line_option' ||
+      canonicalType === 'no_line_action' ||
+      m.type === 'line_formation'
+    );
+  });
 }
 
 function getTerritoryDecisionMovesForSandboxAI(
@@ -486,9 +492,10 @@ function getTerritoryDecisionMovesForSandboxAI(
   // 1. Prefer explicit region‑processing moves when present, but treat
   //    skip_territory_processing as a sibling option so the AI can choose
   //    to defer additional region processing when the rules allow.
-  const regionMoves = allMoves.filter(
-    (m) => m.type === 'choose_territory_option' || m.type === 'process_territory_region'
-  );
+  const regionMoves = allMoves.filter((m) => {
+    const canonicalType = normalizeLegacyMoveType(m.type);
+    return canonicalType === 'choose_territory_option' || m.type === 'territory_claim';
+  });
   const skipMoves = allMoves.filter((m) => m.type === 'skip_territory_processing');
   if (regionMoves.length > 0 || skipMoves.length > 0) {
     return [...regionMoves, ...skipMoves];
@@ -1360,7 +1367,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         // When a line-reward elimination is pending for the current player,
         // mirror backend GameEngine.getValidMoves behaviour by surfacing
         // explicit eliminate_rings_from_stack decisions instead of further
-        // process_line / choose_line_reward moves. This keeps the sandbox AI
+        // process_line / choose_line_option moves. This keeps the sandbox AI
         // aligned with move-driven line-processing semantics and ensures that
         // seed-based traces express the same high-level action sequence as the
         // backend (collapse line -> eliminate cap -> continue lines/territory).
@@ -1584,9 +1591,10 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
     let movementCandidates: Move[] = [];
 
     if (movementState.currentPhase === 'movement') {
-      movementCandidates = allMoves.filter(
-        (m) => m.type === 'overtaking_capture' || m.type === 'move_stack' || m.type === 'move_ring'
-      );
+      movementCandidates = allMoves.filter((m) => {
+        const canonicalType = normalizeLegacyMoveType(m.type);
+        return canonicalType === 'overtaking_capture' || canonicalType === 'move_stack';
+      });
       // Fallback: if the host-reported canonical surface has no movement/capture
       // moves but shared movement/capture helpers still see legal actions, use
       // the shared helpers to build candidates. This defends against rare
@@ -1607,7 +1615,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
 
     const captureCount = movementCandidates.filter((m) => m.type === 'overtaking_capture').length;
     const simpleMoveCount = movementCandidates.filter(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring'
+      (m) => normalizeLegacyMoveType(m.type) === 'move_stack'
     ).length;
 
     debugCaptureCount = captureCount;
@@ -1830,7 +1838,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       return;
     }
 
-    if (selectedMove.type === 'move_stack' || selectedMove.type === 'move_ring') {
+    if (normalizeLegacyMoveType(selectedMove.type) === 'move_stack') {
       const stateBeforeMove = hooks.getGameState();
 
       // Validate we're still in movement phase and it's still our turn

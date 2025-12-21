@@ -12,6 +12,7 @@
 
 import {
   BoardType,
+  LegacyMoveType,
   MoveType,
   Position,
   LineInfo,
@@ -21,6 +22,19 @@ import {
   positionToString,
   stringToPosition,
 } from './game';
+
+const LEGACY_MOVE_TYPES: readonly LegacyMoveType[] = [
+  'move_ring',
+  'build_stack',
+  'choose_line_reward',
+  'process_territory_region',
+  'line_formation',
+  'territory_claim',
+];
+
+function isLegacyMoveType(moveType: MoveType): moveType is LegacyMoveType {
+  return (LEGACY_MOVE_TYPES as readonly string[]).includes(moveType);
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Enums and Type Unions
@@ -308,8 +322,18 @@ export interface RRNMove {
 
 /**
  * Generate RingRift Notation string from a MoveRecord.
+ *
+ * Canonical-only. Legacy move types must be handled via
+ * `src/shared/engine/legacy/legacyGameRecord.ts`.
  */
 export function moveRecordToRRN(record: MoveRecord, boardType: BoardType): string {
+  if (isLegacyMoveType(record.type)) {
+    throw new Error(
+      `Legacy move type '${record.type}' is not supported by canonical RRN. ` +
+        'Use legacy helpers in src/shared/engine/legacy for legacy records.'
+    );
+  }
+
   const posToStr = (pos: Position | undefined): string => {
     if (!pos) return '?';
     return positionToRRN(pos, boardType);
@@ -333,12 +357,8 @@ export function moveRecordToRRN(record: MoveRecord, boardType: BoardType): strin
     return 'S';
   }
 
-  if (t === 'move_stack' || t === 'move_ring') {
+  if (t === 'move_stack') {
     return `${posToStr(record.from)}-${posToStr(record.to)}`;
-  }
-
-  if (t === 'build_stack') {
-    return `${posToStr(record.from)}>${posToStr(record.to)}`;
   }
 
   if (t === 'overtaking_capture') {
@@ -357,7 +377,7 @@ export function moveRecordToRRN(record: MoveRecord, boardType: BoardType): strin
     return 'L?';
   }
 
-  if (t === 'choose_line_option' || t === 'choose_line_reward') {
+  if (t === 'choose_line_option') {
     // O1 for option 1 (collapse all), O2 for option 2 (minimum collapse)
     if (record.formedLines && record.collapsedMarkers) {
       const lineLen = record.formedLines[0].positions.length;
@@ -367,7 +387,7 @@ export function moveRecordToRRN(record: MoveRecord, boardType: BoardType): strin
     return 'O?';
   }
 
-  if (t === 'process_territory_region') {
+  if (t === 'choose_territory_option') {
     if (record.disconnectedRegions && record.disconnectedRegions.length > 0) {
       const repPos = record.disconnectedRegions[0].spaces[0];
       return `T${posToStr(repPos)}`;
@@ -397,6 +417,9 @@ export interface ParsedRRNMove {
  *
  * Returns parsed move type and positions.
  * For moves without spatial coordinates, positions may be undefined.
+ *
+ * Canonical-only. Legacy notation must be handled via
+ * `src/shared/engine/legacy/legacyGameRecord.ts`.
  */
 export function parseRRNMove(notation: string, boardType: BoardType): ParsedRRNMove {
   const trimmed = notation.trim();
@@ -423,7 +446,7 @@ export function parseRRNMove(notation: string, boardType: BoardType): ParsedRRNM
 
   if (trimmed.startsWith('T')) {
     const pos = rrnToPosition(trimmed.slice(1), boardType);
-    return { moveType: 'process_territory_region', to: pos };
+    return { moveType: 'choose_territory_option', to: pos };
   }
 
   if (trimmed.startsWith('E')) {
@@ -460,10 +483,10 @@ export function parseRRNMove(notation: string, boardType: BoardType): ParsedRRNM
   }
 
   if (trimmed.includes('>')) {
-    const [fromStr, toStr] = trimmed.split('>');
-    const fromPos = rrnToPosition(fromStr, boardType);
-    const toPos = rrnToPosition(toStr, boardType);
-    return { moveType: 'build_stack', from: fromPos, to: toPos };
+    throw new Error(
+      `Legacy RRN notation '${trimmed}' is not supported by canonical parsing. ` +
+        'Use legacy helpers in src/shared/engine/legacy for legacy records.'
+    );
   }
 
   throw new Error(`Unable to parse RRN: ${notation}`);

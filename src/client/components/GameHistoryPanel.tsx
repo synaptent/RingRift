@@ -9,6 +9,7 @@ import { reconstructStateAtMove } from '../../shared/engine/replayHelpers';
 import { adaptHistoryToGameRecord } from '../services/ReplayService';
 import type { GameRecord } from '../../shared/types/gameRecord';
 import type { GameState, Move } from '../../shared/types/game';
+import { formatMoveTypeLabel } from '../utils/moveTypeLabels';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -33,24 +34,7 @@ export interface GameHistoryPanelProps {
  * Format a move type for display
  */
 function formatMoveType(moveType: string): string {
-  const typeMap: Record<string, string> = {
-    place_ring: 'Place Ring',
-    skip_placement: 'Skip Placement',
-    move_ring: 'Move Ring',
-    move_stack: 'Move Stack',
-    build_stack: 'Build Stack',
-    overtaking_capture: 'Capture',
-    continue_capture_segment: 'Continue Capture',
-    process_line: 'Process Line',
-    choose_line_option: 'Line Option',
-    choose_line_reward: 'Line Reward',
-    process_territory_region: 'Territory',
-    choose_territory_option: 'Territory',
-    eliminate_rings_from_stack: 'Eliminate Rings',
-    line_formation: 'Line Formation',
-    territory_claim: 'Territory Claim',
-  };
-  return typeMap[moveType] || moveType.replace(/_/g, ' ');
+  return formatMoveTypeLabel(moveType as Move['type']);
 }
 
 /**

@@ -955,14 +955,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     }
 
     const origins = validMoves
-      .filter(
-        (m) =>
-          m.from &&
-          (m.type === 'move_stack' ||
-            m.type === 'move_ring' ||
-            m.type === 'build_stack' ||
-            m.type === 'overtaking_capture')
-      )
+      .filter((m) => m.from && (m.type === 'move_stack' || m.type === 'overtaking_capture'))
       .map((m) => m.from as Position);
 
     if (origins.length === 0) return undefined;

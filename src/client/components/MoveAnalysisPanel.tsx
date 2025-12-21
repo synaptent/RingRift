@@ -2,6 +2,7 @@ import type { Move, Player } from '../../shared/types/game';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import { getPlayerColors } from '../adapters/gameViewModels';
 import { useAccessibility } from '../contexts/AccessibilityContext';
+import { getMoveCategoryLabel } from '../utils/moveTypeLabels';
 import { getPlayerIndicatorPatternClass } from '../utils/playerTheme';
 
 export interface MoveAnalysis {
@@ -18,49 +19,6 @@ export interface MoveAnalysisPanelProps {
   analysis: MoveAnalysis | null;
   players: Player[];
   className?: string;
-}
-
-/**
- * Get a human-readable move type label
- */
-function getMoveTypeLabel(move: Move): string {
-  switch (move.type) {
-    case 'place_ring':
-      return 'Placement';
-    case 'skip_placement':
-    case 'no_placement_action':
-      return 'Placement (no action)';
-    case 'move_stack':
-    case 'move_ring':
-      return 'Movement';
-    case 'overtaking_capture':
-    case 'continue_capture_segment':
-      return 'Capture';
-    case 'skip_capture':
-      return 'Skip Capture';
-    case 'process_line':
-    case 'choose_line_option':
-    case 'choose_line_reward':
-    case 'no_line_action':
-      return 'Line Processing';
-    case 'process_territory_region':
-    case 'choose_territory_option':
-    case 'skip_territory_processing':
-    case 'no_territory_action':
-      return 'Territory';
-    case 'eliminate_rings_from_stack':
-      return 'Eliminate Rings';
-    case 'forced_elimination':
-      return 'Forced Elim';
-    case 'swap_sides':
-      return 'Swap Sides';
-    case 'recovery_slide':
-      return 'Recovery';
-    case 'skip_recovery':
-      return 'Skip Recovery';
-    default:
-      return move.type.replace(/_/g, ' ');
-  }
 }
 
 /**
@@ -193,7 +151,9 @@ export function MoveAnalysisPanel({ analysis, players, className = '' }: MoveAna
       {/* Move Type */}
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xs text-slate-400">Type:</span>
-        <span className="text-xs text-slate-200 font-medium">{getMoveTypeLabel(move)}</span>
+        <span className="text-xs text-slate-200 font-medium">
+          {getMoveCategoryLabel(move.type)}
+        </span>
       </div>
 
       {/* Evaluation Details */}

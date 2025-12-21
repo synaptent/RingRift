@@ -101,7 +101,6 @@ export class RuleEngine {
     switch (move.type) {
       case 'place_ring':
         return this.validateRingPlacement(move, gameState);
-      case 'move_ring': // legacy alias for simple stack movement
       case 'move_stack':
         return this.validateStackMovement(move, gameState);
       case 'overtaking_capture':
@@ -110,9 +109,7 @@ export class RuleEngine {
         return this.validateChainCaptureContinuation(move, gameState);
       case 'process_line':
       case 'choose_line_option':
-      case 'choose_line_reward':
         return this.validateLineProcessingMove(move, gameState);
-      case 'process_territory_region':
       case 'choose_territory_option':
         return this.validateTerritoryProcessingMove(move, gameState);
       case 'eliminate_rings_from_stack':
@@ -597,8 +594,7 @@ export class RuleEngine {
         break;
       case 'territory_processing': {
         // Enumerate canonical territory-processing decision moves
-        // (choose_territory_option; legacy alias: process_territory_region)
-        // for the current player, subject to
+        // (choose_territory_option) for the current player, subject to
         // the self-elimination prerequisite from §12.2 / FAQ Q23. Only
         // when no such regions remain do we surface explicit
         // self-elimination decisions via eliminate_rings_from_stack
@@ -977,7 +973,7 @@ export class RuleEngine {
 
   /**
    * Enumerate canonical territory-processing decision moves
-   * (choose_territory_option; legacy alias: process_territory_region) for the current state. This now delegates to
+   * (choose_territory_option) for the current state. This now delegates to
    * the shared {@link enumerateProcessTerritoryRegionMoves} helper so that
    * backend RuleEngine, shared GameEngine, and sandbox all share a single
    * source of truth for:
@@ -1235,8 +1231,7 @@ export class RuleEngine {
   }
 
   /**
-   * Validate territory-processing decision moves (`choose_territory_option`;
-   * legacy alias: `process_territory_region`)
+   * Validate territory-processing decision moves (`choose_territory_option`)
    * during the dedicated 'territory_processing' phase.
    *
    * A move is considered valid when:

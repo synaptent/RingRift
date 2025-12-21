@@ -7,6 +7,10 @@ import { EvaluationGraph } from './EvaluationGraph';
 import { MoveAnalysisPanel, type MoveAnalysis } from './MoveAnalysisPanel';
 import { getPlayerIndicatorPatternClass } from '../utils/playerTheme';
 import {
+  isLegacyMoveType,
+  normalizeLegacyMoveType,
+} from '../../shared/engine/legacy/legacyMoveTypes';
+import {
   TeachingOverlay,
   TeachingTopicButtons,
   useTeachingOverlay,
@@ -77,47 +81,51 @@ function getPhaseDisplay(phase: GamePhase): { label: string; colorClass: string;
  */
 function getMoveAnnotation(move: Move, playerNumber: number): string {
   const prefix = `P${playerNumber}`;
-  switch (move.type) {
+  const isLegacy = isLegacyMoveType(move.type);
+  const legacySuffix = isLegacy ? ' (legacy)' : '';
+
+  if (move.type === 'line_formation') {
+    return `${prefix} formed a line${legacySuffix}`;
+  }
+  if (move.type === 'territory_claim') {
+    return `${prefix} claimed territory${legacySuffix}`;
+  }
+
+  const canonicalType = normalizeLegacyMoveType(move.type);
+
+  switch (canonicalType) {
     case 'place_ring':
-      return `${prefix} placed a ring`;
+      return `${prefix} placed a ring${legacySuffix}`;
     case 'skip_placement':
     case 'no_placement_action':
-      return `${prefix} skipped placement`;
-    case 'move_ring':
+      return `${prefix} skipped placement${legacySuffix}`;
     case 'move_stack':
-    case 'build_stack':
     case 'no_movement_action':
-      return `${prefix} moved a stack`;
+      return `${prefix} moved a stack${legacySuffix}`;
     case 'overtaking_capture':
     case 'continue_capture_segment':
-      return `${prefix} captured`;
+      return `${prefix} captured${legacySuffix}`;
     case 'skip_capture':
-      return `${prefix} skipped capture`;
+      return `${prefix} skipped capture${legacySuffix}`;
     case 'process_line':
     case 'choose_line_option':
-    case 'choose_line_reward':
     case 'no_line_action':
-      return `${prefix} claimed line bonus`;
-    case 'process_territory_region':
+      return `${prefix} claimed line bonus${legacySuffix}`;
     case 'choose_territory_option':
     case 'eliminate_rings_from_stack':
     case 'skip_territory_processing':
     case 'no_territory_action':
-      return `${prefix} processed territory`;
+      return `${prefix} processed territory${legacySuffix}`;
     case 'forced_elimination':
-      return `${prefix} forced to eliminate`;
+      return `${prefix} forced to eliminate${legacySuffix}`;
     case 'swap_sides':
-      return `${prefix} swapped sides`;
-    case 'line_formation':
-      return `${prefix} formed a line`;
-    case 'territory_claim':
-      return `${prefix} claimed territory`;
+      return `${prefix} swapped sides${legacySuffix}`;
     case 'recovery_slide':
-      return `${prefix} performed recovery`;
+      return `${prefix} performed recovery${legacySuffix}`;
     case 'skip_recovery':
-      return `${prefix} skipped recovery`;
+      return `${prefix} skipped recovery${legacySuffix}`;
     default:
-      return `${prefix} made a move`;
+      return `${prefix} made a move${legacySuffix}`;
   }
 }
 /**

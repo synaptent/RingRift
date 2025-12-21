@@ -2,6 +2,7 @@ import { Move, positionToString } from '../types/game';
 import type { Position, Territory, LineInfo } from '../types/game';
 import { flagEnabled, debugLog } from '../utils/envFlags';
 import { getRingsToEliminate, type EliminationContext } from './aggregates/EliminationAggregate';
+import { isLegacyMoveType } from './legacy/legacyMoveTypes';
 import {
   GameState as EngineGameState,
   GameAction,
@@ -42,6 +43,13 @@ export class MoveMappingError extends Error {
  * phases that index into `board.formedLines` or `board.territories`.
  */
 export function moveToGameAction(move: Move, state: EngineGameState): GameAction {
+  if (isLegacyMoveType(move.type)) {
+    throw new MoveMappingError(
+      `Move type ${move.type} is legacy-only and is not supported by the shared-engine adapter`,
+      move
+    );
+  }
+
   switch (move.type) {
     case 'place_ring':
       return mapPlaceRingMove(move);
@@ -61,13 +69,6 @@ export function moveToGameAction(move: Move, state: EngineGameState): GameAction
       return mapProcessTerritoryRegionMove(move, state);
     case 'eliminate_rings_from_stack':
       return mapEliminateRingsFromStackMove(move);
-    case 'build_stack':
-    case 'line_formation':
-    case 'territory_claim':
-      throw new MoveMappingError(
-        `Move type ${move.type} is legacy/experimental and is not supported by the shared-engine adapter`,
-        move
-      );
     default: {
       const exhaustive: never = move.type as never;
       throw new MoveMappingError(`Unknown Move type ${String(exhaustive) || move.type}`, move);

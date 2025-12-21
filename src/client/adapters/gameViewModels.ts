@@ -41,6 +41,10 @@ import type { ChoiceKind } from './choiceViewModels';
 import { getWeirdStateBanner, type WeirdStateBanner } from '../utils/gameStateWeirdness';
 import type { GameEndExplanation } from '../../shared/engine/gameEndExplanation';
 import { DEFAULT_PLAYER_THEME, getPlayerTheme, type ColorVisionMode } from '../utils/playerTheme';
+import {
+  isLegacyMoveType,
+  normalizeLegacyMoveType,
+} from '../../shared/engine/legacy/legacyMoveTypes';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HUD View Model
@@ -1225,13 +1229,12 @@ function formatPosition(pos?: Position): string {
 }
 
 function mapMoveTypeToChoiceType(actionType: Move['type']): PlayerChoiceType | undefined {
-  switch (actionType) {
+  const canonicalType = normalizeLegacyMoveType(actionType);
+  switch (canonicalType) {
     case 'process_line':
       return 'line_order';
     case 'choose_line_option':
-    case 'choose_line_reward':
       return 'line_reward_option';
-    case 'process_territory_region':
     case 'choose_territory_option':
     case 'skip_territory_processing':
       return 'region_order';
@@ -1254,44 +1257,51 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
   const { action } = entry;
   const moveLabel = `#${entry.moveNumber}`;
   const playerLabel = `P${action.player}`;
+  const legacySuffix = isLegacyMoveType(action.type) ? ' (legacy)' : '';
 
-  switch (action.type) {
+  if (action.type === 'line_formation') {
+    return `${moveLabel} — ${playerLabel} formed a line${legacySuffix}`;
+  }
+  if (action.type === 'territory_claim') {
+    return `${moveLabel} — ${playerLabel} claimed territory${legacySuffix}`;
+  }
+
+  const canonicalType = normalizeLegacyMoveType(action.type);
+
+  switch (canonicalType) {
     case 'swap_sides': {
       const otherSeat = action.player === 1 ? 2 : 1;
-      return `${moveLabel} — ${playerLabel} invoked the pie rule and swapped colours with P${otherSeat}`;
+      return `${moveLabel} — ${playerLabel} invoked the pie rule and swapped colours with P${otherSeat}${legacySuffix}`;
     }
     case 'place_ring': {
       const count = action.placementCount ?? 1;
-      return `${moveLabel} — ${playerLabel} placed ${count} ring${count === 1 ? '' : 's'} at ${formatPosition(action.to)}`;
+      return `${moveLabel} — ${playerLabel} placed ${count} ring${count === 1 ? '' : 's'} at ${formatPosition(action.to)}${legacySuffix}`;
     }
-    case 'move_ring':
     case 'move_stack': {
-      return `${moveLabel} — ${playerLabel} moved from ${formatPosition(action.from)} to ${formatPosition(action.to)}`;
-    }
-    case 'build_stack': {
-      return `${moveLabel} — ${playerLabel} built stack at ${formatPosition(action.to)} (Δ=${action.buildAmount ?? 1})`;
+      const buildAmount = action.buildAmount ?? 0;
+      const buildSuffix = buildAmount > 0 ? ` (Δ=${buildAmount})` : '';
+      return `${moveLabel} — ${playerLabel} moved from ${formatPosition(action.from)} to ${formatPosition(action.to)}${buildSuffix}${legacySuffix}`;
     }
     case 'overtaking_capture': {
       const capturedCount = action.overtakenRings?.length ?? 0;
       const captureSuffix = capturedCount > 0 ? ` x${capturedCount}` : '';
-      return `${moveLabel} — ${playerLabel} capture from ${formatPosition(action.from)} over ${formatPosition(action.captureTarget)} to ${formatPosition(action.to)}${captureSuffix}`;
+      return `${moveLabel} — ${playerLabel} capture from ${formatPosition(action.from)} over ${formatPosition(action.captureTarget)} to ${formatPosition(action.to)}${captureSuffix}${legacySuffix}`;
     }
     case 'continue_capture_segment': {
       const capturedCount = action.overtakenRings?.length ?? 0;
       const captureSuffix = capturedCount > 0 ? ` x${capturedCount}` : '';
-      return `${moveLabel} — ${playerLabel} continued capture over ${formatPosition(action.captureTarget)} to ${formatPosition(action.to)}${captureSuffix}`;
+      return `${moveLabel} — ${playerLabel} continued capture over ${formatPosition(action.captureTarget)} to ${formatPosition(action.to)}${captureSuffix}${legacySuffix}`;
     }
     case 'process_line':
     case 'choose_line_option':
-    case 'choose_line_reward': {
+    case 'no_line_action': {
       const decisionTag = getDecisionTagForMove(action) ?? '';
       const lineCount = action.formedLines?.length ?? 0;
       if (lineCount > 0) {
-        return `${moveLabel} — ${playerLabel} ${decisionTag}processed ${lineCount} line${lineCount === 1 ? '' : 's'}`;
+        return `${moveLabel} — ${playerLabel} ${decisionTag}processed ${lineCount} line${lineCount === 1 ? '' : 's'}${legacySuffix}`;
       }
-      return `${moveLabel} — ${decisionTag}Line processing by ${playerLabel}`;
+      return `${moveLabel} — ${decisionTag}Line processing by ${playerLabel}${legacySuffix}`;
     }
-    case 'process_territory_region':
     case 'choose_territory_option':
     case 'eliminate_rings_from_stack': {
       const decisionTag = getDecisionTagForMove(action) ?? '';
@@ -1309,17 +1319,17 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
         parts.push(`${eliminatedTotal} ring${eliminatedTotal === 1 ? '' : 's'} eliminated`);
       }
       const detail = parts.length > 0 ? ` (${parts.join(', ')})` : '';
-      return `${moveLabel} — ${decisionTag}Territory / elimination processing by ${playerLabel}${detail}`;
+      return `${moveLabel} — ${decisionTag}Territory / elimination processing by ${playerLabel}${detail}${legacySuffix}`;
     }
     case 'skip_placement': {
-      return `${moveLabel} — ${playerLabel} skipped placement`;
+      return `${moveLabel} — ${playerLabel} skipped placement${legacySuffix}`;
     }
     case 'skip_territory_processing': {
       const decisionTag = getDecisionTagForMove(action) ?? '';
-      return `${moveLabel} — ${decisionTag}${playerLabel} skipped further territory processing this turn`;
+      return `${moveLabel} — ${decisionTag}${playerLabel} skipped further territory processing this turn${legacySuffix}`;
     }
     default: {
-      return `${moveLabel} — ${playerLabel} performed ${action.type}`;
+      return `${moveLabel} — ${playerLabel} performed ${canonicalType}${legacySuffix}`;
     }
   }
 }
