@@ -2690,7 +2690,12 @@ def train_model(
                     if use_aux_tasks and backbone_features is not None:
                         # Derive outcome class from value targets:
                         # value > 0.3 → Win (2), value < -0.3 → Loss (0), else Draw (1)
-                        value_flat = value_targets.reshape(-1)
+                        # For multi-player games, use mean value per sample (not per player)
+                        if value_targets.dim() == 2:
+                            # Multi-player: value_targets is (batch, num_players)
+                            value_flat = value_targets.mean(dim=1)
+                        else:
+                            value_flat = value_targets.reshape(-1)
                         outcome_targets = torch.where(
                             value_flat > 0.3,
                             torch.tensor(2, device=device, dtype=torch.long),
