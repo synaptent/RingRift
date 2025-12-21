@@ -48,6 +48,13 @@ SCHEMA_VERSION = 9
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
 
+# Import centralized timeout thresholds
+try:
+    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_LONG_MS, SQLITE_TIMEOUT
+except ImportError:
+    SQLITE_BUSY_TIMEOUT_LONG_MS = 30000
+    SQLITE_TIMEOUT = 30
+
 # SQL schema creation statements (v2)
 SCHEMA_SQL = """
 -- Metadata table for schema versioning
@@ -597,12 +604,12 @@ class GameReplayDB:
 
         Uses WAL mode and busy timeout for better concurrency with multiple workers.
         """
-        conn = sqlite3.connect(str(self._db_path), timeout=30.0)
+        conn = sqlite3.connect(str(self._db_path), timeout=float(SQLITE_TIMEOUT))
         conn.row_factory = sqlite3.Row
         # WAL mode allows concurrent reads during writes
         conn.execute("PRAGMA journal_mode=WAL")
-        # Wait up to 30 seconds for locks instead of failing immediately
-        conn.execute("PRAGMA busy_timeout=30000")
+        # Wait for locks using centralized threshold
+        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_LONG_MS}")
         conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn

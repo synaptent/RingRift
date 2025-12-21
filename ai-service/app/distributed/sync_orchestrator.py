@@ -53,12 +53,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Use centralized event emitters (December 2025)
-try:
-    from app.coordination.event_emitters import emit_sync_complete as _emit_sync_event
-    HAS_CENTRALIZED_EMITTERS = True
-except ImportError:
-    HAS_CENTRALIZED_EMITTERS = False
-    _emit_sync_event = None
+# Note: event_emitters.py handles all routing to data_events, stage_events, and cross-process
+from app.coordination.event_emitters import emit_sync_complete as _emit_sync_event
 
 
 @dataclass
@@ -547,61 +543,28 @@ class SyncOrchestrator:
         return result
 
     async def _emit_sync_complete_event(self, result: FullSyncResult) -> None:
-        """Emit SYNC_COMPLETE StageEvent after sync operations.
+        """Emit SYNC_COMPLETE event using centralized emitter.
+
+        Note: event_emitters.py handles routing to all event systems
+        (data_events, stage_events, cross-process) internally.
 
         Args:
             result: The full sync result
         """
-        # Use centralized event emitter (December 2025)
-        if HAS_CENTRALIZED_EMITTERS and _emit_sync_event is not None:
-            try:
-                emitted = await _emit_sync_event(
-                    sync_type="full",
-                    items_synced=result.total_items_synced,
-                    success=result.success,
-                    duration_seconds=result.duration_seconds,
-                    iteration=self.state.total_syncs,
-                    components=[r.component for r in result.component_results],
-                    errors=result.errors,
-                )
-                if emitted:
-                    logger.debug("[SyncOrchestrator] Emitted SYNC_COMPLETE via centralized emitter")
-                    return
-            except Exception as e:
-                logger.debug(f"[SyncOrchestrator] Centralized emit failed: {e}")
-                # Fall through to legacy emit
-
-        # Legacy fallback
         try:
-            from datetime import datetime
-
-            from app.coordination.stage_events import (
-                StageCompletionResult,
-                StageEvent,
-                get_event_bus,
-            )
-
-            event_result = StageCompletionResult(
-                event=StageEvent.SYNC_COMPLETE,
+            emitted = await _emit_sync_event(
+                sync_type="full",
+                items_synced=result.total_items_synced,
                 success=result.success,
+                duration_seconds=result.duration_seconds,
                 iteration=self.state.total_syncs,
-                timestamp=datetime.now().isoformat(),
-                games_generated=result.total_items_synced,
-                metadata={
-                    "duration_seconds": result.duration_seconds,
-                    "components": [r.component for r in result.component_results],
-                    "errors": result.errors,
-                },
+                components=[r.component for r in result.component_results],
+                errors=result.errors,
             )
-
-            bus = get_event_bus()
-            await bus.emit(event_result)
-            logger.debug("[SyncOrchestrator] Emitted SYNC_COMPLETE event")
-
-        except ImportError:
-            logger.debug("[SyncOrchestrator] StageEventBus not available")
+            if emitted:
+                logger.debug("[SyncOrchestrator] Emitted SYNC_COMPLETE event")
         except Exception as e:
-            logger.debug(f"[SyncOrchestrator] Event emission failed: {e}")
+            logger.warning(f"[SyncOrchestrator] Failed to emit sync event: {e}")
 
     async def run_scheduler(self, run_once: bool = False) -> None:
         """Run the sync scheduler loop.

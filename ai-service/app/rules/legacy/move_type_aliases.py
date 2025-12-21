@@ -36,6 +36,9 @@ LEGACY_TO_CANONICAL_MOVE_TYPE: Final[dict[str, str]] = {
     "PROCESS_TERRITORY_REGION": "choose_territory_option",
     "TERRITORY_REGION": "choose_territory_option",
     "TERRITORY_CHOICE": "choose_territory_option",
+    "TERRITORY_CLAIM": "choose_territory_option",
+    # Line processing legacy naming
+    "LINE_FORMATION": "process_line",
     # Phase-specific action consolidation
     "NO_LINE_REWARD": "no_line_action",
     "SKIP_LINE_REWARD": "no_line_action",
@@ -45,6 +48,7 @@ LEGACY_TO_CANONICAL_MOVE_TYPE: Final[dict[str, str]] = {
     "CAPTURE_RING": "overtaking_capture",
     "PERFORM_CAPTURE": "overtaking_capture",
     "CAPTURE": "overtaking_capture",
+    "CHAIN_CAPTURE": "continue_capture_segment",
     # Recovery phase aliases
     "RECOVER_RING": "recovery_slide",
     "STACK_RECOVERY": "recovery_slide",

@@ -77,6 +77,13 @@ except ImportError:
     get_elo_service = None
     EloService = None
 
+# Import centralized timeout thresholds
+try:
+    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT
+except ImportError:
+    SQLITE_BUSY_TIMEOUT_MS = 10000
+    SQLITE_TIMEOUT = 30
+
 # Database location - canonical Elo database for all trained models
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "unified_elo.db"
@@ -175,7 +182,7 @@ class EloDatabase:
         configures appropriate timeouts for multi-process access.
         """
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+            self._local.conn = sqlite3.connect(str(self.db_path), timeout=float(SQLITE_TIMEOUT))
             self._local.conn.row_factory = sqlite3.Row
 
             # Enable WAL mode for better concurrency (multiple readers, one writer)
@@ -183,7 +190,7 @@ class EloDatabase:
             self._local.conn.execute('PRAGMA journal_mode=WAL')
 
             # Increase busy timeout to handle contention from multiple processes
-            self._local.conn.execute('PRAGMA busy_timeout=10000')  # 10 seconds
+            self._local.conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
 
             # Synchronous NORMAL is safe with WAL mode and faster than FULL
             self._local.conn.execute('PRAGMA synchronous=NORMAL')
