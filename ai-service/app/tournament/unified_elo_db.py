@@ -309,6 +309,15 @@ class EloDatabase:
                 tournament_id TEXT
             );
 
+        """)
+        conn.commit()
+
+        # Add missing columns if upgrading schema - MUST run before creating indexes
+        # that reference new columns like game_id
+        self._upgrade_schema_if_needed(conn)
+
+        # Create indices after schema upgrade to ensure all columns exist
+        conn.executescript("""
             -- Indices for common queries
             CREATE INDEX IF NOT EXISTS idx_elo_config
             ON elo_ratings(board_type, num_players, rating DESC);
@@ -334,9 +343,6 @@ class EloDatabase:
             ON match_history(participant_a, participant_b, board_type, num_players, timestamp);
         """)
         conn.commit()
-
-        # Add missing columns if upgrading schema
-        self._upgrade_schema_if_needed(conn)
 
     def _upgrade_schema_if_needed(self, conn: sqlite3.Connection):
         """Add missing columns to existing tables for schema upgrades."""
@@ -364,6 +370,8 @@ class EloDatabase:
             conn.execute("ALTER TABLE match_history ADD COLUMN rankings TEXT")
         if "worker" not in match_cols:
             conn.execute("ALTER TABLE match_history ADD COLUMN worker TEXT")
+        if "game_id" not in match_cols:
+            conn.execute("ALTER TABLE match_history ADD COLUMN game_id TEXT")
 
         # Upgrade rating_history table
         rating_cols = get_columns("rating_history")
