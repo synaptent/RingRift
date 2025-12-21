@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.models import BoardState, BoardType, GameState, Move, MoveType, Position
+from app.rules.legacy.move_type_aliases import convert_legacy_move_type
 
 from .constants import (
     INVALID_MOVE_INDEX,
@@ -68,7 +69,7 @@ class DecodedPolicyIndex:
     (rotations, reflections) and re-encode the policy index.
     """
 
-    action_type: str  # "placement", "movement", "line_formation", etc.
+    action_type: str  # "placement", "movement", "process_line", etc.
     board_size: int  # 8 for square8, 19 for square19
     x: int = 0  # Primary position x
     y: int = 0  # Primary position y
@@ -137,7 +138,9 @@ class ActionEncoderSquare:
             Policy index in [0, policy_size), or INVALID_MOVE_INDEX
         """
         N = self.board_size
-        move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+        raw_move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+        # Legacy aliases are normalized to canonical move types for encoding.
+        move_type = convert_legacy_move_type(raw_move_type, warn=False)
 
         # Placement
         if move_type == "place_ring":
@@ -151,9 +154,7 @@ class ActionEncoderSquare:
         # Movement / capture
         if move_type in [
             "move_stack",
-            "move_ring",
             "overtaking_capture",
-            "chain_capture",
             "continue_capture_segment",
             "recovery_slide",
         ]:
@@ -187,7 +188,7 @@ class ActionEncoderSquare:
             )
 
         # Line formation
-        if move_type in ("line_formation", "process_line"):
+        if move_type == "process_line":
             line_pos = _line_anchor_position(move)
             if line_pos is None:
                 return INVALID_MOVE_INDEX
@@ -198,7 +199,7 @@ class ActionEncoderSquare:
             return self.line_form_base + pos_idx * NUM_LINE_DIRS
 
         # Territory claim
-        if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+        if move_type == "eliminate_rings_from_stack":
             if move.to is None:
                 return INVALID_MOVE_INDEX
             cx, cy = move.to.x, move.to.y
@@ -212,13 +213,13 @@ class ActionEncoderSquare:
             return self.special_indices[move_type]
 
         # Line choice
-        if move_type in ("choose_line_reward", "choose_line_option"):
+        if move_type == "choose_line_option":
             option = (move.placement_count or 1) - 1
             option = max(0, min(3, option))
             return self.line_choice_base + option
 
         # Territory choice
-        if move_type in ("choose_territory_option", "process_territory_region"):
+        if move_type == "choose_territory_option":
             canonical_pos = move.to
             region_size = 1
             controlling_player = move.player
@@ -399,25 +400,25 @@ class ActionEncoderSquare:
                 dist=dist,
             )
 
-        # Line formation
+        # Line processing
         line_form_end = self.line_form_base + N * N * NUM_LINE_DIRS
         if self.line_form_base <= policy_idx < line_form_end:
             offset = policy_idx - self.line_form_base
             pos_idx = offset // NUM_LINE_DIRS
             return DecodedPolicyIndex(
-                action_type="line_formation",
+                action_type="process_line",
                 board_size=N,
                 y=pos_idx // N,
                 x=pos_idx % N,
                 dir_idx=offset % NUM_LINE_DIRS,
             )
 
-        # Territory claim
+        # Territory elimination
         territory_claim_end = self.territory_claim_base + N * N
         if self.territory_claim_base <= policy_idx < territory_claim_end:
             pos_idx = policy_idx - self.territory_claim_base
             return DecodedPolicyIndex(
-                action_type="territory_claim",
+                action_type="eliminate_rings_from_stack",
                 board_size=N,
                 y=pos_idx // N,
                 x=pos_idx % N,
@@ -490,10 +491,10 @@ class ActionEncoderSquare:
                 + (decoded.dist - 1)
             )
 
-        elif decoded.action_type == "line_formation":
+        elif decoded.action_type == "process_line":
             return self.line_form_base + pos_idx * NUM_LINE_DIRS + decoded.dir_idx
 
-        elif decoded.action_type == "territory_claim":
+        elif decoded.action_type == "eliminate_rings_from_stack":
             return self.territory_claim_base + pos_idx
 
         elif decoded.action_type == "territory_choice":
@@ -520,8 +521,8 @@ class ActionEncoderSquare8(ActionEncoderSquare):
     Policy layout (max ~7000 indices):
       - Placement: 0..191 (8×8×3)
       - Movement: 192..3775 (8×8×8×7)
-      - Line formation: 3776..4031 (8×8×4)
-      - Territory claim: 4032..4095 (8×8)
+      - Line processing (process_line): 3776..4031 (8×8×4)
+      - Territory elimination (eliminate_rings_from_stack): 4032..4095 (8×8)
       - Special actions: 4096..4102
       - Line choice: 4099..4102
       - Territory choice: 4103..6150
@@ -561,8 +562,8 @@ class ActionEncoderSquare19(ActionEncoderSquare):
     Policy layout (max ~67000 indices):
       - Placement: 0..1082 (19×19×3)
       - Movement: 1083..53066 (19×19×8×18)
-      - Line formation: 53067..54510 (19×19×4)
-      - Territory claim: 54511..54871 (19×19)
+      - Line processing (process_line): 53067..54510 (19×19×4)
+      - Territory elimination (eliminate_rings_from_stack): 54511..54871 (19×19)
       - Special actions: 54872..54878
       - Line choice: 54875..54878
       - Territory choice: 54879..66430

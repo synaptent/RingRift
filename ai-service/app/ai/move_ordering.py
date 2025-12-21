@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..models import Move
+from app.rules.legacy.move_type_aliases import convert_legacy_move_type
 
 
 class MoveTypePriority(IntEnum):
@@ -45,8 +46,8 @@ class MoveTypePriority(IntEnum):
 
     Higher values indicate moves that should be searched first.
     These priorities are tuned for RingRift's game mechanics where:
-    - Territory claims end the game immediately if threshold is met
-    - Line formations can trigger elimination cascades
+    - Territory decisions can end the game immediately if threshold is met
+    - Line processing can trigger elimination cascades
     - Captures are tactical forcing moves
     - Regular moves are positional
     """
@@ -65,9 +66,11 @@ class MoveTypePriority(IntEnum):
 
 # Bonus multipliers for scored move ordering
 PRIORITY_BONUS_MULTIPLIER = {
-    "territory_claim": 10000.0,
-    "line_formation": 5000.0,
-    "chain_capture": 2000.0,
+    "choose_territory_option": 10000.0,
+    "eliminate_rings_from_stack": 10000.0,
+    "process_line": 5000.0,
+    "choose_line_option": 5000.0,
+    "continue_capture_segment": 2000.0,
     "overtaking_capture": 1000.0,
     "recovery_slide": 500.0,
     "move_stack": 0.0,
@@ -110,7 +113,8 @@ class MovePriorityScorer:
         int
             Priority value (higher = search first).
         """
-        move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
+        raw_move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
+        move_type = convert_legacy_move_type(raw_move_type, warn=False)
 
         # Check custom overrides first
         if move_type in self.custom_priorities:
@@ -118,16 +122,20 @@ class MovePriorityScorer:
 
         # Map to enum
         type_map = {
-            "territory_claim": MoveTypePriority.TERRITORY_CLAIM,
-            "line_formation": MoveTypePriority.LINE_FORMATION,
+            "choose_territory_option": MoveTypePriority.TERRITORY_CLAIM,
+            "eliminate_rings_from_stack": MoveTypePriority.TERRITORY_CLAIM,
+            "process_line": MoveTypePriority.LINE_FORMATION,
+            "choose_line_option": MoveTypePriority.LINE_FORMATION,
             "recovery_slide": MoveTypePriority.RECOVERY_SLIDE,
-            "chain_capture": MoveTypePriority.CHAIN_CAPTURE,
+            "continue_capture_segment": MoveTypePriority.CHAIN_CAPTURE,
             "overtaking_capture": MoveTypePriority.OVERTAKING_CAPTURE,
             "move_stack": MoveTypePriority.MOVE_STACK,
             "place_ring": MoveTypePriority.PLACE_RING,
             "skip_placement": MoveTypePriority.SKIP_PLACEMENT,
             "no_line_action": MoveTypePriority.NO_ACTION,
             "no_territory_action": MoveTypePriority.NO_ACTION,
+            "no_movement_action": MoveTypePriority.NO_ACTION,
+            "no_placement_action": MoveTypePriority.NO_ACTION,
         }
 
         return type_map.get(move_type, MoveTypePriority.DEFAULT)
@@ -148,7 +156,8 @@ class MovePriorityScorer:
         float
             Bonus value to add to evaluation score.
         """
-        move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
+        raw_move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
+        move_type = convert_legacy_move_type(raw_move_type, warn=False)
         return self.bonus_multipliers.get(move_type, 0.0)
 
     def is_noisy_move(self, move: Move) -> bool:
@@ -167,13 +176,15 @@ class MovePriorityScorer:
         bool
             True if the move is noisy.
         """
-        move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
+        raw_move_type = str(move.type.value if hasattr(move.type, "value") else move.type)
+        move_type = convert_legacy_move_type(raw_move_type, warn=False)
         noisy_types = {
-            "territory_claim",
-            "line_formation",
-            "chain_capture",
-            "overtaking_capture",
+            "choose_territory_option",
+            "eliminate_rings_from_stack",
+            "process_line",
+            "choose_line_option",
             "continue_capture_segment",
+            "overtaking_capture",
             "recovery_slide",  # RR-CANON-R110–R115: tactical marker recovery
         }
         return move_type in noisy_types

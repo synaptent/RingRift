@@ -1367,18 +1367,20 @@ def apply_single_chain_capture(
         state.cap_height[game_idx, target_y, target_x] = 0
         # BUG FIX 2025-12-20: Clear buried_at and decrement buried_rings when stack eliminated
         for p in range(1, state.num_players + 1):
-            if state.buried_at[game_idx, p, target_y, target_x].item():
-                state.buried_at[game_idx, p, target_y, target_x] = False
-                state.buried_rings[game_idx, p] -= 1
+            buried_count = state.buried_at[game_idx, p, target_y, target_x].item()
+            if buried_count > 0:
+                state.buried_at[game_idx, p, target_y, target_x] = 0
+                state.buried_rings[game_idx, p] -= buried_count
     elif target_cap_fully_captured:
         # Cap captured, ownership transfers to opponent
         opponent = 1 if target_owner == 2 else 2
         state.stack_owner[game_idx, target_y, target_x] = opponent
         state.cap_height[game_idx, target_y, target_x] = new_target_height
         # BUG FIX 2025-12-20: If opponent had buried ring here, it's now exposed as cap
-        if state.buried_at[game_idx, opponent, target_y, target_x].item():
-            state.buried_at[game_idx, opponent, target_y, target_x] = False
-            state.buried_rings[game_idx, opponent] -= 1
+        buried_count = state.buried_at[game_idx, opponent, target_y, target_x].item()
+        if buried_count > 0:
+            state.buried_at[game_idx, opponent, target_y, target_x] = 0
+            state.buried_rings[game_idx, opponent] -= buried_count
     else:
         # Cap not fully captured, defender keeps ownership
         new_target_cap = target_cap_height - 1
@@ -1391,7 +1393,7 @@ def apply_single_chain_capture(
     if target_owner != 0 and target_owner != player:
         state.buried_rings[game_idx, target_owner] += 1
         # December 2025: Track buried ring position for recovery extraction
-        state.buried_at[game_idx, target_owner, to_y, to_x] = True
+        state.buried_at[game_idx, target_owner, to_y, to_x] += 1
 
     # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
     # ownership transfers to the target's original owner.
@@ -1412,9 +1414,10 @@ def apply_single_chain_capture(
         new_owner = opponent
         new_cap = buried_count
         # The buried rings are now exposed - clear buried tracking
-        if state.buried_at[game_idx, opponent, to_y, to_x].item():
-            state.buried_at[game_idx, opponent, to_y, to_x] = False
-            state.buried_rings[game_idx, opponent] -= 1
+        buried_count_at_pos = state.buried_at[game_idx, opponent, to_y, to_x].item()
+        if buried_count_at_pos > 0:
+            state.buried_at[game_idx, opponent, to_y, to_x] = 0
+            state.buried_rings[game_idx, opponent] -= buried_count_at_pos
     elif cap_fully_eliminated:
         # Ownership transfers to target owner, new cap is all remaining rings
         new_owner = target_owner
@@ -1449,9 +1452,10 @@ def apply_single_chain_capture(
 
     # December 2025: Move buried_at tracking from origin to landing
     for p in range(1, state.num_players + 1):
-        if state.buried_at[game_idx, p, from_y, from_x]:
-            state.buried_at[game_idx, p, to_y, to_x] = True
-            state.buried_at[game_idx, p, from_y, from_x] = False
+        buried_count = state.buried_at[game_idx, p, from_y, from_x].item()
+        if buried_count > 0:
+            state.buried_at[game_idx, p, to_y, to_x] += buried_count
+            state.buried_at[game_idx, p, from_y, from_x] = 0
 
     state.capture_chain_depth[game_idx] += 1
 
@@ -1578,18 +1582,20 @@ def apply_single_initial_capture(
         state.cap_height[game_idx, target_y, target_x] = 0
         # BUG FIX 2025-12-20: Clear buried_at and decrement buried_rings when stack eliminated
         for p in range(1, state.num_players + 1):
-            if state.buried_at[game_idx, p, target_y, target_x].item():
-                state.buried_at[game_idx, p, target_y, target_x] = False
-                state.buried_rings[game_idx, p] -= 1
+            buried_count = state.buried_at[game_idx, p, target_y, target_x].item()
+            if buried_count > 0:
+                state.buried_at[game_idx, p, target_y, target_x] = 0
+                state.buried_rings[game_idx, p] -= buried_count
     elif target_cap_fully_captured:
         # Cap captured, ownership transfers to opponent
         opponent = 1 if target_owner == 2 else 2
         state.stack_owner[game_idx, target_y, target_x] = opponent
         state.cap_height[game_idx, target_y, target_x] = new_target_height
         # BUG FIX 2025-12-20: If opponent had buried ring here, it's now exposed as cap
-        if state.buried_at[game_idx, opponent, target_y, target_x].item():
-            state.buried_at[game_idx, opponent, target_y, target_x] = False
-            state.buried_rings[game_idx, opponent] -= 1
+        buried_count = state.buried_at[game_idx, opponent, target_y, target_x].item()
+        if buried_count > 0:
+            state.buried_at[game_idx, opponent, target_y, target_x] = 0
+            state.buried_rings[game_idx, opponent] -= buried_count
     else:
         # Cap not fully captured, defender keeps ownership
         new_target_cap = max(1, min(target_cap_height - 1, new_target_height))
@@ -1598,7 +1604,7 @@ def apply_single_initial_capture(
     if target_owner != 0 and target_owner != player:
         state.buried_rings[game_idx, target_owner] += 1
         # December 2025: Track buried ring position for recovery extraction
-        state.buried_at[game_idx, target_owner, to_y, to_x] = True
+        state.buried_at[game_idx, target_owner, to_y, to_x] += 1
 
     # Set up landing stack
     # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
@@ -1620,9 +1626,10 @@ def apply_single_initial_capture(
         new_owner = opponent
         new_cap = buried_count
         # The buried rings are now exposed - clear buried tracking
-        if state.buried_at[game_idx, opponent, to_y, to_x].item():
-            state.buried_at[game_idx, opponent, to_y, to_x] = False
-            state.buried_rings[game_idx, opponent] -= 1
+        buried_count_at_pos = state.buried_at[game_idx, opponent, to_y, to_x].item()
+        if buried_count_at_pos > 0:
+            state.buried_at[game_idx, opponent, to_y, to_x] = 0
+            state.buried_rings[game_idx, opponent] -= buried_count_at_pos
     elif cap_fully_eliminated:
         # Ownership transfers to target owner, new cap is all remaining rings
         new_owner = target_owner
@@ -1653,9 +1660,10 @@ def apply_single_initial_capture(
 
     # December 2025: Move buried_at tracking from origin to landing
     for p in range(1, state.num_players + 1):
-        if state.buried_at[game_idx, p, from_y, from_x]:
-            state.buried_at[game_idx, p, to_y, to_x] = True
-            state.buried_at[game_idx, p, from_y, from_x] = False
+        buried_count = state.buried_at[game_idx, p, from_y, from_x].item()
+        if buried_count > 0:
+            state.buried_at[game_idx, p, to_y, to_x] += buried_count
+            state.buried_at[game_idx, p, from_y, from_x] = 0
 
     # Mark as being in a capture chain (for subsequent chain captures)
     # After the initial capture, we transition to CHAIN_CAPTURE phase for any

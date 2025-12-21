@@ -340,9 +340,10 @@ def _eliminate_one_ring_from_any_stack(
         state.cap_height[game_idx, y, x] = 0
         # Clear buried_at and decrement buried_rings for all players
         for p in range(1, state.num_players + 1):
-            if state.buried_at[game_idx, p, y, x].item():
-                state.buried_at[game_idx, p, y, x] = False
-                state.buried_rings[game_idx, p] -= 1
+            buried_count = state.buried_at[game_idx, p, y, x].item()
+            if buried_count > 0:
+                state.buried_at[game_idx, p, y, x] = 0
+                state.buried_rings[game_idx, p] -= buried_count
     elif new_cap_height <= 0:
         # Cap fully eliminated but stack remains - ownership transfers
         opponent = 1 if player == 2 else 2
@@ -350,9 +351,10 @@ def _eliminate_one_ring_from_any_stack(
         # New cap is all remaining rings (opponent now controls)
         state.cap_height[game_idx, y, x] = new_height
         # If opponent had buried ring here, it's now exposed as cap
-        if state.buried_at[game_idx, opponent, y, x].item():
-            state.buried_at[game_idx, opponent, y, x] = False
-            state.buried_rings[game_idx, opponent] -= 1
+        buried_count = state.buried_at[game_idx, opponent, y, x].item()
+        if buried_count > 0:
+            state.buried_at[game_idx, opponent, y, x] = 0
+            state.buried_rings[game_idx, opponent] -= buried_count
     else:
         # Cap not fully eliminated, player keeps ownership
         state.cap_height[game_idx, y, x] = new_cap_height

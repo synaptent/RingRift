@@ -36,7 +36,7 @@ _GPU_TO_CANONICAL_MOVE_TYPE = {
     MoveType.MOVEMENT: "move_stack",
     MoveType.CAPTURE: "overtaking_capture",  # Legacy generic capture
     MoveType.LINE_FORMATION: "process_line",
-    MoveType.TERRITORY_CLAIM: "process_territory_region",
+    MoveType.TERRITORY_CLAIM: "choose_territory_option",
     MoveType.SKIP: "skip_placement",  # Generic skip (context-dependent)
     MoveType.NO_ACTION: "no_territory_action",  # Generic (legacy)
     MoveType.RECOVERY_SLIDE: "recovery_slide",
@@ -280,7 +280,6 @@ def validate_canonical_move_sequence(
         "chain_capture": {"continue_capture_segment"},
         "line_processing": {"process_line", "choose_line_option", "no_line_action", "eliminate_rings_from_stack"},
         "territory_processing": {
-            "process_territory_region",
             "choose_territory_option",
             "eliminate_rings_from_stack",
             "no_territory_action",

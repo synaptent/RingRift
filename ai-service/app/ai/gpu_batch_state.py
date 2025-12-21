@@ -28,6 +28,7 @@ from .gpu_game_types import (
     GameStatus,
     MoveType,
 )
+from app.rules.legacy.move_type_aliases import convert_legacy_move_type
 
 if TYPE_CHECKING:
     from app.models import GameState
@@ -49,32 +50,26 @@ _CPU_TO_GPU_MOVE_TYPE = {
     'no_placement_action': MoveType.NO_PLACEMENT_ACTION,
     # Movement moves
     'move_stack': MoveType.MOVEMENT,
-    'move_ring': MoveType.MOVEMENT,
-    'build_stack': MoveType.MOVEMENT,
     'no_movement_action': MoveType.NO_MOVEMENT_ACTION,
     # Capture moves (canonical types)
     'overtaking_capture': MoveType.OVERTAKING_CAPTURE,
     'continue_capture_segment': MoveType.CONTINUE_CAPTURE_SEGMENT,
     'skip_capture': MoveType.SKIP_CAPTURE,
-    'chain_capture': MoveType.OVERTAKING_CAPTURE,  # Legacy alias
     # Line moves
     'process_line': MoveType.LINE_FORMATION,
-    'choose_line_reward': MoveType.CHOOSE_LINE_OPTION,
     'no_line_action': MoveType.NO_LINE_ACTION,
-    'line_formation': MoveType.LINE_FORMATION,
     'choose_line_option': MoveType.CHOOSE_LINE_OPTION,
     # Territory moves
-    'process_territory_region': MoveType.TERRITORY_CLAIM,
+    # NOTE: GPU MoveType lacks a distinct skip_territory_processing; map to NO_TERRITORY_ACTION.
     'skip_territory_processing': MoveType.NO_TERRITORY_ACTION,
     'no_territory_action': MoveType.NO_TERRITORY_ACTION,
-    'territory_claim': MoveType.TERRITORY_CLAIM,
     'choose_territory_option': MoveType.CHOOSE_TERRITORY_OPTION,
+    'eliminate_rings_from_stack': MoveType.ELIMINATE_RINGS_FROM_STACK,
     # Recovery moves
     'recovery_slide': MoveType.RECOVERY_SLIDE,
     'skip_recovery': MoveType.SKIP_RECOVERY,
     # Other
     'swap_sides': MoveType.SKIP,
-    'eliminate_rings_from_stack': MoveType.SKIP,
     'forced_elimination': MoveType.FORCED_ELIMINATION,
 }
 
@@ -87,6 +82,7 @@ def _cpu_move_type_to_gpu(cpu_move_type) -> int:
     else:
         value = cpu_move_type
 
+    value = convert_legacy_move_type(str(value), warn=False)
     gpu_type = _CPU_TO_GPU_MOVE_TYPE.get(value, MoveType.SKIP)
     return int(gpu_type)
 
@@ -144,10 +140,10 @@ class BatchGameState:
     turn_had_real_action: torch.Tensor  # bool (batch_size,)
 
     # Buried ring position tracking (December 2025 - recovery fix)
-    # Track which board positions contain each player's buried rings.
+    # Track how many buried rings each player has at each board position.
     # This enables recovery to correctly decrement stack height when extracting.
     # Shape: (batch_size, num_players + 1, board_size, board_size)
-    buried_at: torch.Tensor  # bool - True if player has a buried ring at this position
+    buried_at: torch.Tensor  # int8 count of buried rings at this position
 
     # LPS tracking (RR-CANON-R172): tensor mirrors of GameState fields.
     # We track a full-round cycle over all non-permanently-eliminated players.
@@ -266,7 +262,8 @@ class BatchGameState:
             pending_line_elimination=torch.zeros(batch_size, dtype=torch.bool, device=device),
 
             # Buried ring position tracking (December 2025 - recovery fix)
-            buried_at=torch.zeros((batch_size, num_players + 1, board_size, board_size), dtype=torch.bool, device=device),
+            # Changed from bool to int8 to track count of buried rings at each position
+            buried_at=torch.zeros((batch_size, num_players + 1, board_size, board_size), dtype=torch.int8, device=device),
 
             # LPS tracking tensors (RR-CANON-R172)
             lps_round_index=torch.zeros(batch_size, dtype=torch.int32, device=device),

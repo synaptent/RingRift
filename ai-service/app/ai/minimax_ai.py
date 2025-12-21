@@ -24,6 +24,7 @@ import time
 from typing import TYPE_CHECKING
 
 from ..models import AIConfig, BoardType, GamePhase, GameState, Move, MoveType
+from ..rules.legacy.move_type_aliases import convert_legacy_move_type
 from ..rules.mutable_state import MutableGameState
 from .bounded_transposition_table import BoundedTranspositionTable
 from .game_state_utils import infer_num_players

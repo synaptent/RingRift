@@ -31,6 +31,7 @@ import numpy as np
 import psutil
 
 from ..models import AIConfig, BoardType, GamePhase, GameState, Move, MoveType
+from ..rules.legacy.move_type_aliases import convert_legacy_move_type
 from ..rules.mutable_state import MoveUndo, MutableGameState
 from ..utils.memory_config import MemoryConfig
 from .bounded_transposition_table import BoundedTranspositionTable
@@ -2174,21 +2175,23 @@ class MCTSAI(HeuristicAI):
         weights = []
         for m in moves:
             w = 1.0
-            if m.type == "territory_claim":
+            raw_type = m.type.value if hasattr(m.type, "value") else str(m.type)
+            move_type = convert_legacy_move_type(raw_type, warn=False)
+            if move_type in ("choose_territory_option", "eliminate_rings_from_stack"):
                 w = 100.0
-            elif m.type == "line_formation":
+            elif move_type in ("process_line", "choose_line_option"):
                 w = 50.0
-            elif m.type == "chain_capture":
+            elif move_type == "continue_capture_segment":
                 w = 20.0
-            elif m.type == "overtaking_capture":
+            elif move_type == "overtaking_capture":
                 w = 10.0
-            elif m.type == "move_stack":
+            elif move_type == "move_stack":
                 to_key = m.to.to_key()
                 if to_key in state.board.stacks:
                     w = 5.0
                 else:
                     w = 2.0
-            elif m.type == "place_ring":
+            elif move_type == "place_ring":
                 w = 1.5
             weights.append(w)
         return weights
@@ -2743,21 +2746,23 @@ class MCTSAI(HeuristicAI):
         weights = []
         for m in moves:
             w = 1.0
-            if m.type == "territory_claim":
+            raw_type = m.type.value if hasattr(m.type, "value") else str(m.type)
+            move_type = convert_legacy_move_type(raw_type, warn=False)
+            if move_type in ("choose_territory_option", "eliminate_rings_from_stack"):
                 w = 100.0
-            elif m.type == "line_formation":
+            elif move_type in ("process_line", "choose_line_option"):
                 w = 50.0
-            elif m.type == "chain_capture":
+            elif move_type == "continue_capture_segment":
                 w = 20.0
-            elif m.type == "overtaking_capture":
+            elif move_type == "overtaking_capture":
                 w = 10.0
-            elif m.type == "move_stack":
+            elif move_type == "move_stack":
                 to_key = m.to.to_key()
                 if to_key in state.stacks:
                     w = 5.0
                 else:
                     w = 2.0
-            elif m.type == "place_ring":
+            elif move_type == "place_ring":
                 w = 1.5
             weights.append(w)
         return weights
