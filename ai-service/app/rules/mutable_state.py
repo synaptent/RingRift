@@ -1826,6 +1826,64 @@ class MutableGameState:
             self._collapsed[key] = move.player
             self._zobrist_hash ^= self._zobrist.get_collapsed_hash(key)
 
+        # RR-CANON-R121-R122: Apply elimination cost for Option 1 (collapse all).
+        # Option 1 is used when we collapse the ENTIRE line (all positions).
+        # Option 2 (minimum collapse) does NOT require elimination.
+        # This matches GPU process_lines_batch behavior for parity.
+        is_option_1 = len(positions_to_collapse) >= len(line_positions)
+        if is_option_1:
+            # Eliminate one ring from any controlled stack (matches GPU behavior).
+            # GPU uses _eliminate_one_ring_from_any_stack which picks first eligible
+            # in row-major order (y, x). Sort stack keys to match.
+            player = move.player
+            # Parse keys like "x,y" and sort by (y, x) to match GPU's numpy order
+            def parse_key(k: str) -> tuple[int, int]:
+                parts = k.split(',')
+                x, y = int(parts[0]), int(parts[1])
+                return (y, x)  # GPU uses row-major (y first)
+
+            sorted_keys = sorted(self._stacks.keys(), key=parse_key)
+            for stack_key in sorted_keys:
+                stack = self._stacks[stack_key]
+                if stack.controlling_player == player and stack.stack_height > 0:
+                    # Save undo info
+                    if stack_key not in undo.modified_stacks:
+                        undo.modified_stacks[stack_key] = stack.copy()
+
+                    # Eliminate one ring from this stack
+                    if stack.stack_height == 1:
+                        # Stack is fully eliminated
+                        if stack_key not in undo.removed_stacks:
+                            undo.removed_stacks[stack_key] = stack.copy()
+                        del self._stacks[stack_key]
+                    else:
+                        # Reduce stack height
+                        stack.stack_height -= 1
+                        if stack.rings:
+                            stack.rings = stack.rings[:-1]
+                        # Recalculate controlling_player and cap_height
+                        if stack.rings:
+                            stack.controlling_player = stack.rings[-1]
+                        cap_height = 0
+                        for r in reversed(stack.rings):
+                            if r == stack.controlling_player:
+                                cap_height += 1
+                            else:
+                                break
+                        stack.cap_height = cap_height
+
+                    # Update player eliminated_rings count
+                    if player in self._players:
+                        ps = self._players[player]
+                        if player not in undo.prev_eliminated_rings:
+                            undo.prev_eliminated_rings[player] = ps.eliminated_rings
+                        ps.eliminated_rings += 1
+
+                    # Update game total_rings_eliminated
+                    undo.prev_total_rings_eliminated = self._total_rings_eliminated
+                    self._total_rings_eliminated += 1
+                    break  # Only eliminate one ring
+
     def _make_process_territory(self, move: Move, undo: MoveUndo) -> None:
         """Apply territory processing move.
 

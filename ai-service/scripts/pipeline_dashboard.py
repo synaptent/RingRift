@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Pipeline Dashboard - Quick status overview of the training pipeline.
 
+.. deprecated:: 2025-12
+    Use the unified dashboard instead::
+
+        python scripts/dashboard.py pipeline
+
 Usage:
     python scripts/pipeline_dashboard.py
     watch -n 60 python scripts/pipeline_dashboard.py  # Auto-refresh

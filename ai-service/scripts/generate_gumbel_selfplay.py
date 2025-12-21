@@ -133,6 +133,10 @@ def serialize_move(move, mcts_policy: dict[str, float] | None = None) -> dict[st
         if move.capture_target.z is not None:
             pos_dict["z"] = move.capture_target.z
         move_data["capture_target"] = pos_dict
+    # Record placement_count for place_ring moves - critical for replay parity
+    # as some positions allow placing 2+ rings at once.
+    if move.placement_count is not None and move.placement_count > 1:
+        move_data["placement_count"] = move.placement_count
     return move_data
 
 

@@ -1116,6 +1116,10 @@ def generate_chain_capture_moves_from_position(
     This function checks captures only from the specified position, not all stacks.
     Uses cap_height comparison per RR-CANON-R101.
 
+    Per CPU/TS parity: landings on previously visited positions are filtered out
+    to prevent infinite cycles. The chain_visited_mask tracks which positions
+    have been the origin of capture segments during this chain.
+
     Optimized 2025-12-13: Pre-extract numpy arrays to avoid .item() calls.
 
     Args:
@@ -1135,6 +1139,8 @@ def generate_chain_capture_moves_from_position(
     stack_height_np = state.stack_height[game_idx].cpu().numpy()
     cap_height_np = state.cap_height[game_idx].cpu().numpy()
     is_collapsed_np = state.is_collapsed[game_idx].cpu().numpy()
+    # Extract visited mask to filter out landing on previously visited positions
+    chain_visited_np = state.chain_visited_mask[game_idx].cpu().numpy()
 
     # Verify we control this stack
     if stack_owner_np[from_y, from_x] != player:
@@ -1214,6 +1220,12 @@ def generate_chain_capture_moves_from_position(
             # Landing must be empty (markers are allowed).
             if stack_owner_np[landing_y, landing_x] != 0:
                 break
+
+            # Filter out landing on previously visited positions to prevent cycles.
+            # Per CPU/TS parity, landing on any position that was the origin of a
+            # previous capture segment in this chain is illegal.
+            if chain_visited_np[landing_y, landing_x]:
+                continue
 
             captures.append((landing_y, landing_x))
 
@@ -1397,16 +1409,18 @@ def apply_single_chain_capture(
         # Ownership transfers to target owner, new cap is all remaining rings
         new_owner = target_owner
         new_cap = new_height
-    elif target_owner == player:
-        # December 2025: SELF-CAPTURE BUG FIX
-        # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
-        # When capturing own stack, the captured ring is the same color as attacker.
-        # Since captured ring goes to bottom and is same color, the entire
-        # resulting stack is player's color, so cap = new_height.
+    elif target_owner == player and attacker_cap_height == attacker_height:
+        # SELF-CAPTURE without buried rings:
+        # Per RR-CANON-R101/R102, captured ring goes to bottom of stack.
+        # If attacker has no buried rings (cap == height), and target is same color,
+        # the entire resulting stack is same color, so cap = new_height.
         new_owner = player
-        new_cap = new_height
+        new_cap = new_height - landing_ring_cost
+        if new_cap <= 0:
+            new_cap = 1
     else:
-        # Normal enemy capture: attacker keeps ownership, cap reduced
+        # ENEMY CAPTURE or SELF-CAPTURE with buried rings:
+        # Captured ring goes to bottom, doesn't extend the cap sequence from top.
         new_owner = player
         new_cap = attacker_cap_height - landing_ring_cost
         if new_cap <= 0:
@@ -1428,6 +1442,10 @@ def apply_single_chain_capture(
         if state.buried_at[game_idx, p, from_y, from_x]:
             state.buried_at[game_idx, p, to_y, to_x] = True
             state.buried_at[game_idx, p, from_y, from_x] = False
+
+    # Mark the FROM position as visited (per CPU/TS parity - prevents landing cycles)
+    state.chain_visited_mask[game_idx, from_y, from_x] = True
+    state.capture_chain_depth[game_idx] += 1
 
     return to_y, to_x
 
@@ -1586,16 +1604,18 @@ def apply_single_initial_capture(
         # Ownership transfers to target owner, new cap is all remaining rings
         new_owner = target_owner
         new_cap = new_height
-    elif target_owner == player:
-        # December 2025: SELF-CAPTURE BUG FIX
-        # Per RR-CANON-R101: "Self-capture is legal: target may be owned by P."
-        # When capturing own stack, the captured ring is the same color as attacker.
-        # Since captured ring goes to bottom and is same color, the entire
-        # resulting stack is player's color, so cap = new_height.
+    elif target_owner == player and attacker_cap_height == attacker_height:
+        # SELF-CAPTURE without buried rings:
+        # Per RR-CANON-R101/R102, captured ring goes to bottom of stack.
+        # If attacker has no buried rings (cap == height), and target is same color,
+        # the entire resulting stack is same color, so cap = new_height.
         new_owner = player
-        new_cap = new_height
+        new_cap = new_height - landing_ring_cost
+        if new_cap <= 0:
+            new_cap = 1
     else:
-        # Normal enemy capture: attacker keeps ownership, cap reduced
+        # ENEMY CAPTURE or SELF-CAPTURE with buried rings:
+        # Captured ring goes to bottom, doesn't extend the cap sequence from top.
         new_owner = player
         new_cap = max(1, min(attacker_cap_height - landing_ring_cost, new_height))
 
@@ -1617,8 +1637,13 @@ def apply_single_initial_capture(
     # Mark as being in a capture chain (for subsequent chain captures)
     # After the initial capture, we transition to CHAIN_CAPTURE phase for any
     # subsequent captures, matching CPU phase machine behavior.
+    # Clear visited mask when entering new chain, then mark from as visited
+    if not state.in_capture_chain[game_idx]:
+        state.chain_visited_mask[game_idx] = False
     state.in_capture_chain[game_idx] = True
     state.capture_chain_depth[game_idx] = 1
+    # Mark the FROM position as visited (per CPU/TS parity - prevents landing cycles)
+    state.chain_visited_mask[game_idx, from_y, from_x] = True
     state.current_phase[game_idx] = GamePhase.CHAIN_CAPTURE
 
     return to_y, to_x

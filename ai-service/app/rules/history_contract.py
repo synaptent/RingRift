@@ -65,6 +65,11 @@ def phase_move_contract() -> dict[CanonicalPhase, tuple[str, ...]]:
             "process_line",
             "choose_line_option",
             "no_line_action",
+            # RR-PARITY-FIX: Allow capture moves for replay compatibility.
+            # TS coerces line_processing → chain_capture/movement when
+            # Python records captures with pre-move phase (line_processing).
+            "overtaking_capture",
+            "continue_capture_segment",
         ),
         "territory_processing": (
             "choose_territory_option",

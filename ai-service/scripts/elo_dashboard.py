@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """ELO Monitoring Dashboard.
 
+.. deprecated:: 2025-12
+    Use the unified dashboard instead::
+
+        python scripts/dashboard.py elo
+
 Real-time terminal dashboard showing:
 - Top models and production progress
 - Tournament activity and throughput

@@ -44,6 +44,9 @@ A DB is eligible for canonical training **only if**:
 - `canonical_ok: true` in the latest summary, and
 - `parity_gate.passed_canonical_parity_gate: true`.
 
+For supported boards, `canonical_ok: true` also implies canonical history
+validation plus the FE/ANM fixture gates from `generate_canonical_selfplay.py`.
+
 ---
 
 ## 2. Canonical Data Locations
@@ -53,9 +56,11 @@ A DB is eligible for canonical training **only if**:
 ```
 ai-service/data/games/
 ├── canonical_<board>.db                    # Canonical games (see registry)
+├── canonical_<board>_<players>p.db         # Player-count specific canonical games
 ├── canonical_<board>.db.parity_gate.json   # Parity gate results
-├── canonical_<board>.db.health.json        # Optional DB health summary
+├── canonical_<board>_<players>p.db.parity_gate.json
 ├── db_health.canonical_<board>.json        # Combined parity+history summary
+├── db_health.canonical_<board>_<players>p.json
 └── legacy_*.db                             # Legacy/non-canonical data
 ```
 
@@ -125,6 +130,9 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
   --db data/games/canonical_square8.db
 ```
 
+For a quick smoke check, `canonical_square8.db` is intentionally small. For
+training readiness, prefer `canonical_square8_2p.db` and its `db_health` summary.
+
 **Output (JSON):**
 
 ```json
@@ -183,8 +191,8 @@ cd ai-service
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square8 \
   --num-games 32 \
-  --db data/games/canonical_square8.db \
-  --summary data/games/db_health.canonical_square8.json
+  --db data/games/canonical_square8_2p.db \
+  --summary data/games/db_health.canonical_square8_2p.json
 ```
 
 A DB is eligible for `canonical` status **only if**:
@@ -200,8 +208,8 @@ Run the parity gate **and** canonical history check together:
 ```bash
 cd ai-service
 PYTHONPATH=. python scripts/run_parity_and_history_gate.py \\
-  --db data/games/canonical_square8.db \\
-  --summary-json data/games/db_health.canonical_square8.json
+  --db data/games/canonical_square8_2p.db \\
+  --summary-json data/games/db_health.canonical_square8_2p.json
 ```
 
 **Notes:**

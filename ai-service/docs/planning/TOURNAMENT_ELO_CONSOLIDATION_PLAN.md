@@ -141,9 +141,18 @@ CLI (scripts/run_tournament.py) → app/tournament/pipeline.py
 
 ## 4) Immediate Next Steps (Step 1 Execution)
 
-- Implement core recording hooks (TournamentRunner + distributed tournament).
-- Define canonical metadata schema and ensure it is attached to every recorded game.
-- Document migration map for each script → pipeline endpoint.
+**Step 1 scope (current):**
+
+- Wire canonical GameReplayDB recording into model Elo + basic tournaments:
+  - `scripts/run_model_elo_tournament.py`
+  - `scripts/run_tournament.py` (basic mode → TournamentRunner path).
+- Attach canonical metadata for every recorded game:
+  - `tournament_id`, `matchup_id`, `game_num`
+  - `board_type`, `num_players`, `engine_mode`, `source`
+  - AI specs: `ai_type`, `difficulty`, `model_id`, `model_path`
+  - `winner`, `game_length`, `duration_sec`, `termination_reason`
+  - `node_id`, `worker_id`, `shard_id` (when available)
+- Keep legacy JSONL export as optional output while DB recording becomes the SSoT.
 
 ---
 

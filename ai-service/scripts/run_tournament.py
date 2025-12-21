@@ -90,6 +90,11 @@ def create_parser() -> argparse.ArgumentParser:
     basic.add_argument("--board", type=str, default="square8", help="Board type")
     basic.add_argument("--games", type=int, default=100, help="Number of games")
     basic.add_argument("--max-moves", type=int, default=10000, help="Max moves per game")
+    basic.add_argument(
+        "--export-jsonl",
+        action="store_true",
+        help="Emit legacy games.jsonl output (uses legacy runner path)",
+    )
 
     # Models mode (from run_model_elo_tournament.py)
     models = subparsers.add_parser("models", help="Neural network model evaluation")
@@ -167,9 +172,9 @@ def run_basic_tournament(args: argparse.Namespace, config: Any) -> int:
         "--board", args.board,
         "--games", str(args.games),
         "--max-moves", str(args.max_moves),
-        "--output-dir", args.output_dir,
-        "--seed", str(args.seed),
     ]
+    if args.export_jsonl:
+        sys.argv.extend(["--output-dir", args.output_dir])
     return ai_tournament_main()
 
 

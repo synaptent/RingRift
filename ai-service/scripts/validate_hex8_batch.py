@@ -39,6 +39,9 @@ def parse_move(move_data: dict) -> Move:
         ct = move_data["capture_target"]
         capture_target = Position(x=ct["x"], y=ct["y"], z=ct.get("z"))
 
+    # Parse placement_count for place_ring moves (critical for replay parity)
+    placement_count = move_data.get("placement_count")
+
     return Move(
         id=str(uuid.uuid4()),
         type=move_type,
@@ -46,6 +49,7 @@ def parse_move(move_data: dict) -> Move:
         from_pos=from_pos,
         to=to_pos,
         capture_target=capture_target,
+        placement_count=placement_count,
     )
 
 

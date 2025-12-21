@@ -9,6 +9,7 @@ Features:
 2. Runs round-robin or Swiss tournaments between models
 3. Persists Elo ratings to SQLite database
 4. Generates leaderboard reports
+5. Records canonical GameReplayDB replays with rich metadata (optional JSONL)
 
 Usage:
     # Run tournament between all v3/v4/v5 models
@@ -24,9 +25,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import sqlite3
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -47,6 +51,11 @@ from app.distributed.event_helpers import (
     emit_elo_updated_safe,
     get_event_bus_safe,
     has_event_bus,
+)
+from app.db.unified_recording import (
+    RecordingConfig,
+    is_recording_enabled,
+    record_game_unified,
 )
 from app.models import (
     AIConfig,
@@ -95,6 +104,8 @@ else:
     estimate_task_duration = None
     register_running_task = None
     record_task_completion = None
+
+_RECORDING_LOCK = threading.Lock()
 
 
 # ============================================
@@ -146,6 +157,89 @@ def serialize_game_state(state) -> dict[str, Any]:
         raw = state.dict()
         return json.loads(json.dumps(raw, cls=GameRecordEncoder))
     return {}
+
+
+def _build_recording_config(
+    board_type: str,
+    num_players: int,
+    *,
+    source_tag: str,
+    db_dir: str,
+    db_prefix: str,
+    db_path: str | None,
+    tags: list[str],
+) -> RecordingConfig:
+    return RecordingConfig(
+        board_type=board_type,
+        num_players=num_players,
+        source=source_tag,
+        engine_mode="model_elo_tournament",
+        db_dir=db_dir,
+        db_prefix=db_prefix,
+        db_path=db_path,
+        tags=tags,
+        store_history_entries=True,
+    )
+
+
+def _recording_tags_for_args(args: argparse.Namespace, board_type: str, num_players: int) -> list[str]:
+    tags = [
+        "elo_tournament",
+        f"board_{board_type}",
+        f"players_{num_players}",
+    ]
+    if getattr(args, "training_mode", False):
+        tags.append("training_mode")
+    if getattr(args, "elo_matchmaking", False):
+        tags.append("elo_matchmaking")
+    if getattr(args, "both_ai_types", False):
+        tags.append("multi_ai_types")
+    if getattr(args, "baselines_only", False):
+        tags.append("baselines_only")
+    return tags
+
+
+def _matchup_id_for_models(model_a_id: str, model_b_id: str) -> str:
+    digest = hashlib.sha1(f"{model_a_id}__{model_b_id}".encode("utf-8")).hexdigest()
+    return digest[:12]
+
+
+def _record_game_if_enabled(
+    *,
+    recording_config: RecordingConfig | None,
+    initial_state: GameState | None,
+    final_state: GameState | None,
+    moves: list[Any] | None,
+    game_id: str | None,
+    extra_metadata: dict[str, Any],
+    lock: threading.Lock | None,
+) -> None:
+    if recording_config is None:
+        return
+    if initial_state is None or final_state is None or moves is None:
+        return
+    try:
+        if lock is None:
+            record_game_unified(
+                config=recording_config,
+                initial_state=initial_state,
+                final_state=final_state,
+                moves=moves,
+                extra_metadata=extra_metadata,
+                game_id=game_id,
+            )
+        else:
+            with lock:
+                record_game_unified(
+                    config=recording_config,
+                    initial_state=initial_state,
+                    final_state=final_state,
+                    moves=moves,
+                    extra_metadata=extra_metadata,
+                    game_id=game_id,
+                )
+    except Exception as e:
+        print(f"[Tournament] Recording failed for game {game_id}: {e}")
 
 
 # ============================================
@@ -270,11 +364,14 @@ def play_model_vs_model_game(
     # Create initial state
     state = create_initial_state(board_type, num_players)
     state.id = game_id
+    initial_state = state
     engine = DefaultRulesEngine()
 
     # Capture initial state for training data (use JSON-safe serialization)
     initial_state_snapshot = serialize_game_state(state) if save_game_history else None
     move_history = []
+    moves_played = []
+    termination_reason = None
 
     # Create AIs for both models
     # Model A plays as player 1, Model B plays as player 2
@@ -300,7 +397,12 @@ def play_model_vs_model_game(
         # Select move (BaseAI.select_move handles getting valid moves internally)
         move = ai.select_move(state)
         if move is None:
-            break
+            fallback_moves = engine.get_valid_moves(state, current_player)
+            if fallback_moves:
+                move = fallback_moves[0]
+            else:
+                termination_reason = "no_valid_moves"
+                break
 
         # Record move for training data
         # Move object uses 'type' attribute (not 'move_type') - match play_nn_vs_nn_game format
@@ -322,8 +424,24 @@ def play_model_vs_model_game(
                 move_record['ring_index'] = move.ring_index
             move_history.append(move_record)
 
+        moves_played.append(move)
+
         # Apply move
-        state = engine.apply_move(state, move)
+        try:
+            state = engine.apply_move(state, move)
+        except Exception as e:
+            return {
+                "winner": "error",
+                "game_length": move_count,
+                "duration_sec": time.time() - start_time,
+                "game_id": game_id,
+                "error": f"Move error: {e}",
+                "initial_state": initial_state,
+                "final_state": state,
+                "moves": moves_played,
+                "termination_reason": "apply_move_error",
+                "recordable": False,
+            }
         move_count += 1
 
     duration = time.time() - start_time
@@ -340,6 +458,11 @@ def play_model_vs_model_game(
             winner_player = 2
 
     status = "completed" if state.game_status == GameStatus.COMPLETED else str(state.game_status.value)
+    if termination_reason is None:
+        if move_count >= max_moves and state.game_status == GameStatus.ACTIVE:
+            termination_reason = "max_moves"
+        else:
+            termination_reason = status
 
     # Build game record for training data export
     game_record = None
@@ -353,6 +476,7 @@ def play_model_vs_model_game(
             'total_moves': move_count,
             'status': status,
             'game_status': status,
+            'termination_reason': termination_reason,
             'completed': state.game_status == GameStatus.COMPLETED,
             'engine_mode': 'mixed_tournament',
             'opponent_type': 'tournament_baseline',
@@ -373,6 +497,11 @@ def play_model_vs_model_game(
         "game_length": move_count,
         "duration_sec": duration,
         "game_id": game_id,
+        "initial_state": initial_state,
+        "final_state": state,
+        "moves": moves_played,
+        "termination_reason": termination_reason,
+        "recordable": termination_reason != "no_valid_moves",
         "final_status": state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status),
         "game_record": game_record,
     }
@@ -456,12 +585,15 @@ def play_nn_vs_nn_game(
 
     # Move history for training data export
     move_history = []
+    moves_played = []
+    termination_reason = None
 
     start_time = time.time()
 
     # Use canonical create_initial_state for proper setup
     game_state = create_initial_state(board_type=board_type, num_players=num_players)
     game_state.id = str(uuid.uuid4())
+    initial_state = game_state
 
     # Capture initial state snapshot for NPZ export (required for training data)
     # Use serialize_game_state() for JSON-safe serialization
@@ -560,14 +692,25 @@ def play_nn_vs_nn_game(
             }
 
         if not move:
-            # No valid moves - opponent wins
-            winner_idx = 1 if current_player == 1 else 0
-            clear_model_cache()
-            return {
-                "winner": "model_b" if winner_idx == 1 else "model_a",
-                "game_length": move_count,
-                "duration_sec": time.time() - start_time,
-            }
+            fallback_moves = rules_engine.get_valid_moves(game_state, current_player)
+            if fallback_moves:
+                move = fallback_moves[0]
+            else:
+                # No valid moves - opponent wins (not recordable for canonical DBs)
+                winner_idx = 1 if current_player == 1 else 0
+                clear_model_cache()
+                return {
+                    "winner": "model_b" if winner_idx == 1 else "model_a",
+                    "game_length": move_count,
+                    "duration_sec": time.time() - start_time,
+                    "game_id": game_state.id,
+                    "error": "no_valid_moves",
+                    "initial_state": initial_state,
+                    "final_state": game_state,
+                    "moves": moves_played,
+                    "termination_reason": "no_valid_moves",
+                    "recordable": False,
+                }
 
         # Record move for training data in canonical format (matching run_random_selfplay.py)
         if save_game_history:
@@ -590,6 +733,8 @@ def play_nn_vs_nn_game(
                 move_record['ring_index'] = move.ring_index
             move_history.append(move_record)
 
+        moves_played.append(move)
+
         try:
             game_state = rules_engine.apply_move(game_state, move)
         except Exception as e:
@@ -599,7 +744,13 @@ def play_nn_vs_nn_game(
                 "winner": "model_b" if winner_idx == 1 else "model_a",
                 "game_length": move_count,
                 "duration_sec": time.time() - start_time,
+                "game_id": game_state.id,
                 "error": f"Move error: {e}",
+                "initial_state": initial_state,
+                "final_state": game_state,
+                "moves": moves_played,
+                "termination_reason": "apply_move_error",
+                "recordable": False,
             }
 
         move_count += 1
@@ -611,6 +762,11 @@ def play_nn_vs_nn_game(
     # Derive victory type for canonical format
     victory_type, stalemate_tb = derive_victory_type(game_state, max_moves)
     status = "completed" if game_state.game_status == GameStatus.COMPLETED else str(game_state.game_status.value)
+    if termination_reason is None:
+        if move_count >= max_moves and game_state.game_status == GameStatus.ACTIVE:
+            termination_reason = "max_moves"
+        else:
+            termination_reason = status
 
     # Evaluation-only timeout tie-break (avoid draw-heavy tournaments).
     winner_player: int | None = None
@@ -641,7 +797,7 @@ def play_nn_vs_nn_game(
             'game_status': status,
             'victory_type': victory_type,
             'stalemate_tiebreaker': stalemate_tb,
-            'termination_reason': f"status:{status}:{victory_type}",
+            'termination_reason': termination_reason,
             'completed': game_state.game_status == GameStatus.COMPLETED,
             # === Engine/opponent metadata ===
             'engine_mode': 'nn_vs_nn_tournament',
@@ -658,7 +814,7 @@ def play_nn_vs_nn_game(
             'timestamp': datetime.now().isoformat(),
             'created_at': datetime.now().isoformat(),
             # === Source tracking ===
-            'source': 'run_model_elo_tournament.py',
+            'source': GAME_SOURCE_TAG,
         }
         if evaluation_tiebreak_player is not None:
             if timed_out:
@@ -678,6 +834,12 @@ def play_nn_vs_nn_game(
         "winner": winner_label,
         "game_length": move_count,
         "duration_sec": duration,
+        "game_id": game_state.id,
+        "initial_state": initial_state,
+        "final_state": game_state,
+        "moves": moves_played,
+        "termination_reason": termination_reason,
+        "recordable": True,
         "game_record": game_record,
     }
 
@@ -693,6 +855,10 @@ def run_model_matchup(
     nn_ai_type: str = "descent",
     use_both_ai_types: bool = False,
     save_games_dir: Path | None = None,
+    jsonl_enabled: bool = True,
+    recording_config: RecordingConfig | None = None,
+    recording_metadata_base: dict[str, Any] | None = None,
+    recording_lock: threading.Lock | None = None,
 ) -> dict[str, int]:
     """Run multiple games between two models and update Elo.
 
@@ -711,10 +877,12 @@ def run_model_matchup(
     results = {"model_a_wins": 0, "model_b_wins": 0, "draws": 0, "errors": 0}
 
     # Setup game saving directory
-    if save_games_dir is None:
-        save_games_dir = AI_SERVICE_ROOT / "data" / "holdouts" / "elo_tournaments"
-    save_games_dir.mkdir(parents=True, exist_ok=True)
-    jsonl_path = save_games_dir / f"tournament_{tournament_id}_{board_type}_{num_players}p.jsonl"
+    jsonl_path = None
+    if jsonl_enabled:
+        if save_games_dir is None:
+            save_games_dir = AI_SERVICE_ROOT / "data" / "holdouts" / "elo_tournaments"
+        save_games_dir.mkdir(parents=True, exist_ok=True)
+        jsonl_path = save_games_dir / f"tournament_{tournament_id}_{board_type}_{num_players}p.jsonl"
 
     # Check if either model is a baseline (requires play_model_vs_model_game)
     is_baseline_match = (
@@ -723,6 +891,8 @@ def run_model_matchup(
         model_a.get("ai_type") in ("random", "heuristic", "mcts") or
         model_b.get("ai_type") in ("random", "heuristic", "mcts")
     )
+    matchup_id = _matchup_id_for_models(model_a["model_id"], model_b["model_id"])
+    recording_base = dict(recording_metadata_base or {})
 
     for game_num in range(games):
         # Alternate who plays first
@@ -777,6 +947,7 @@ def run_model_matchup(
                     board_type=board_type_enum,
                     num_players=num_players,
                     max_moves=10000,
+                    save_game_history=jsonl_enabled,
                 )
             else:
                 # Use NN-specific game play for neural networks
@@ -787,7 +958,7 @@ def run_model_matchup(
                     num_players=num_players,
                     max_moves=10000,
                     mcts_simulations=50,  # Faster games
-                    save_game_history=True,  # Record for training
+                    save_game_history=jsonl_enabled,
                     ai_type_a=ai_type_a,
                     ai_type_b=ai_type_b,
                 )
@@ -795,10 +966,15 @@ def run_model_matchup(
             print(f"Skipping game: {e}")
             continue
 
+        if result.get("error") or result.get("winner") == "error":
+            results["errors"] += 1
+            continue
+
         # Save game record to JSONL for training data
         game_record = result.get("game_record")
-        if game_record:
+        if jsonl_path and game_record:
             game_record["tournament_id"] = tournament_id
+            game_record["matchup_id"] = matchup_id
             game_record["game_num"] = game_num
             try:
                 with open(jsonl_path, "a") as f:
@@ -821,12 +997,43 @@ def run_model_matchup(
         elif winner_id == model_b["model_id"]:
             results["model_b_wins"] += 1
             winner = model_b["model_id"]
-        elif result["winner"] == "error":
-            results["errors"] += 1
-            continue
         else:
             results["draws"] += 1
             winner = "draw"
+
+        if recording_config and result.get("recordable", True):
+            game_ai_type_a = play_a.get("ai_type") or ai_type_a
+            game_ai_type_b = play_b.get("ai_type") or ai_type_b
+            record_metadata = dict(recording_base)
+            record_metadata.update({
+                "tournament_id": tournament_id,
+                "matchup_id": matchup_id,
+                "game_num": game_num,
+                "model_a_id": model_a["model_id"],
+                "model_b_id": model_b["model_id"],
+                "seat_model_a_id": id_a,
+                "seat_model_b_id": id_b,
+                "model_a_path": play_a.get("model_path"),
+                "model_b_path": play_b.get("model_path"),
+                "ai_type_a": game_ai_type_a,
+                "ai_type_b": game_ai_type_b,
+                "ai_type_mode": "both" if use_both_ai_types else nn_ai_type,
+                "baseline_match": is_baseline_match,
+                "winner": winner,
+                "winner_id": winner_id or "draw",
+                "game_length": result.get("game_length", 0),
+                "duration_sec": result.get("duration_sec", 0.0),
+                "termination_reason": result.get("termination_reason"),
+            })
+            _record_game_if_enabled(
+                recording_config=recording_config,
+                initial_state=result.get("initial_state"),
+                final_state=result.get("final_state"),
+                moves=result.get("moves"),
+                game_id=result.get("game_id"),
+                extra_metadata=record_metadata,
+                lock=recording_lock,
+            )
 
         # Update Elo and record match using unified database
         update_elo_after_match(
@@ -1209,7 +1416,14 @@ ALL_CONFIGS = [
 ]
 
 
-def run_all_config_tournaments(args):
+def run_all_config_tournaments(
+    args,
+    *,
+    recording_metadata_base: dict[str, Any],
+    jsonl_enabled: bool,
+    jsonl_dir: Path | None,
+    recording_lock: threading.Lock | None,
+):
     """Run tournaments for all board/player configurations.
 
     This ensures there's an Elo ranking for each combination of board type and number of players.
@@ -1219,6 +1433,7 @@ def run_all_config_tournaments(args):
     db_path = Path(args.db) if args.db else ELO_DB_PATH
     db = init_elo_database(db_path)
     models_dir = AI_SERVICE_ROOT / "models"
+    record_db_enabled = not args.no_record_db and is_recording_enabled()
 
     print(f"\n{'='*80}")
     print(" Running Elo Tournaments for All Configurations")
@@ -1272,6 +1487,19 @@ def run_all_config_tournaments(args):
 
         # Run tournament for this config
         tournament_id = str(uuid.uuid4())[:8]
+        config_recording = None
+        if record_db_enabled:
+            config_recording = _build_recording_config(
+                board_type,
+                num_players,
+                source_tag=GAME_SOURCE_TAG,
+                db_dir=args.record_db_dir,
+                db_prefix=args.record_db_prefix,
+                db_path=None,
+                tags=_recording_tags_for_args(args, board_type, num_players),
+            )
+        config_metadata = dict(recording_metadata_base)
+        config_metadata["config"] = f"{board_type}_{num_players}p"
         matchups = []
         for i, m1 in enumerate(models):
             for m2 in models[i+1:]:
@@ -1296,6 +1524,11 @@ def run_all_config_tournaments(args):
                     tournament_id=tournament_id,
                     nn_ai_type=args.ai_type,
                     use_both_ai_types=args.both_ai_types,
+                    save_games_dir=jsonl_dir,
+                    jsonl_enabled=jsonl_enabled,
+                    recording_config=config_recording,
+                    recording_metadata_base=config_metadata,
+                    recording_lock=recording_lock,
                 )
                 games_completed += args.games
                 print(f"A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']}")
@@ -1321,7 +1554,15 @@ def run_all_config_tournaments(args):
     db.close()
 
 
-def run_continuous_tournament(args):
+def run_continuous_tournament(
+    args,
+    *,
+    recording_config: RecordingConfig | None,
+    recording_metadata_base: dict[str, Any],
+    jsonl_enabled: bool,
+    jsonl_dir: Path | None,
+    recording_lock: threading.Lock | None,
+):
     """Run tournaments continuously in daemon mode.
 
     This provides continuous model evaluation for the unified AI improvement loop:
@@ -1435,6 +1676,9 @@ def run_continuous_tournament(args):
 
             import uuid
             tournament_id = f"cont_{str(uuid.uuid4())[:8]}"
+            iteration_metadata = dict(recording_metadata_base)
+            iteration_metadata["mode"] = "continuous"
+            iteration_metadata["iteration"] = iteration
             games_completed = 0
             total_wins = 0
             total_games = 0
@@ -1454,6 +1698,11 @@ def run_continuous_tournament(args):
                         tournament_id=tournament_id,
                         nn_ai_type=args.ai_type,
                         use_both_ai_types=args.both_ai_types,
+                        save_games_dir=jsonl_dir,
+                        jsonl_enabled=jsonl_enabled,
+                        recording_config=recording_config,
+                        recording_metadata_base=iteration_metadata,
+                        recording_lock=recording_lock,
                     )
                     games_completed += args.games
                     total_wins += results["model_a_wins"] + results["model_b_wins"]
@@ -1693,6 +1942,26 @@ def main():
     parser.add_argument("--training-mode", action="store_true",
                         help="Training mode: tag games as 'elo_selfplay' so they feed into training pool instead of being filtered as holdout")
 
+    # Recording / export controls
+    parser.add_argument("--no-record-db", action="store_true",
+                        help="Disable GameReplayDB recording (canonical replay)")
+    parser.add_argument("--record-db-dir", type=str, default="data/games",
+                        help="Directory for tournament GameReplayDB files")
+    parser.add_argument("--record-db-prefix", type=str, default="tournament",
+                        help="Database filename prefix for tournament recordings")
+    parser.add_argument("--record-db-path", type=str,
+                        help="Explicit GameReplayDB path (single-config only)")
+    parser.add_argument("--no-jsonl", action="store_true",
+                        help="Disable legacy JSONL output")
+    parser.add_argument("--jsonl-dir", type=str,
+                        help="Directory for JSONL exports (defaults to data/holdouts/elo_tournaments)")
+    parser.add_argument("--shard-id", type=str, help="Optional shard identifier for metadata")
+    parser.add_argument("--worker-id", type=str, help="Optional worker identifier for metadata")
+    parser.add_argument("--export-npz", action="store_true",
+                        help="Export training NPZ from the recorded tournament DB after the run")
+    parser.add_argument("--npz-output", type=str,
+                        help="Output path for tournament NPZ (default: data/training/elo_tournament_<board>_<players>p.npz)")
+
     # Performance optimization
     parser.add_argument("--no-compile", action="store_true",
                         help="Disable torch.compile() for faster startup (reduces per-game overhead at cost of inference speed)")
@@ -1714,6 +1983,44 @@ def main():
     if args.training_mode:
         GAME_SOURCE_TAG = "elo_selfplay"
         print("[Tournament] Training mode enabled: games will be tagged as 'elo_selfplay' for training pool inclusion")
+
+    import socket
+    import os as os_module  # Ensure os is available in this scope
+    node_id = socket.gethostname()
+    worker_id = str(args.worker_id or os_module.getpid())
+    jsonl_enabled = not args.no_jsonl
+    jsonl_dir = Path(args.jsonl_dir) if args.jsonl_dir else None
+
+    record_db_path = args.record_db_path
+    if args.all_configs and record_db_path:
+        print("[Tournament] --record-db-path ignored with --all-configs; using prefix/dir per config")
+        record_db_path = None
+
+    record_db_enabled = not args.no_record_db and is_recording_enabled()
+    if args.no_record_db:
+        print("[Tournament] GameReplayDB recording disabled via --no-record-db")
+    elif not record_db_enabled:
+        print("[Tournament] GameReplayDB recording disabled via RINGRIFT_RECORD_SELFPLAY_GAMES")
+
+    recording_metadata_base = {
+        "node_id": node_id,
+        "worker_id": worker_id,
+        "runner": "run_model_elo_tournament",
+    }
+    if args.shard_id:
+        recording_metadata_base["shard_id"] = args.shard_id
+
+    recording_config = None
+    if record_db_enabled:
+        recording_config = _build_recording_config(
+            args.board,
+            args.players,
+            source_tag=GAME_SOURCE_TAG,
+            db_dir=args.record_db_dir,
+            db_prefix=args.record_db_prefix,
+            db_path=record_db_path,
+            tags=_recording_tags_for_args(args, args.board, args.players),
+        )
 
     # === PROCESS SAFEGUARDS ===
     # Limit torch.compile workers to prevent process sprawl
@@ -1747,9 +2054,6 @@ def main():
     task_id = None
     coord_start_time = time.time()
     if HAS_COORDINATION and not args.leaderboard_only:
-        import socket
-        node_id = socket.gethostname()
-
         # Check if another tournament is running
         try:
             registry = get_registry()
@@ -1790,12 +2094,25 @@ def main():
 
     # Continuous mode: run as daemon
     if args.continuous:
-        run_continuous_tournament(args)
+        run_continuous_tournament(
+            args,
+            recording_config=recording_config,
+            recording_metadata_base=recording_metadata_base,
+            jsonl_enabled=jsonl_enabled,
+            jsonl_dir=jsonl_dir,
+            recording_lock=_RECORDING_LOCK,
+        )
         return
 
     # If --all-configs, loop through all configurations
     if args.all_configs:
-        run_all_config_tournaments(args)
+        run_all_config_tournaments(
+            args,
+            recording_metadata_base=recording_metadata_base,
+            jsonl_enabled=jsonl_enabled,
+            jsonl_dir=jsonl_dir,
+            recording_lock=_RECORDING_LOCK,
+        )
         return
 
     db_path = Path(args.db) if args.db else ELO_DB_PATH
@@ -1927,6 +2244,11 @@ def main():
                 tournament_id=tournament_id,
                 nn_ai_type=args.ai_type,
                 use_both_ai_types=args.both_ai_types,
+                save_games_dir=jsonl_dir,
+                jsonl_enabled=jsonl_enabled,
+                recording_config=recording_config,
+                recording_metadata_base=recording_metadata_base,
+                recording_lock=_RECORDING_LOCK,
             )
             return (matchup_idx, m1, m2, results, None)
         except Exception as e:
@@ -1971,6 +2293,11 @@ def main():
                     tournament_id=tournament_id,
                     nn_ai_type=args.ai_type,
                     use_both_ai_types=args.both_ai_types,
+                    save_games_dir=jsonl_dir,
+                    jsonl_enabled=jsonl_enabled,
+                    recording_config=recording_config,
+                    recording_metadata_base=recording_metadata_base,
+                    recording_lock=_RECORDING_LOCK,
                 )
 
                 games_completed += args.games
@@ -1997,11 +2324,45 @@ def main():
 
     db.close()
 
+    if args.export_npz:
+        if args.all_configs or args.continuous:
+            print("[Tournament] --export-npz is only supported for single-run tournaments")
+        elif recording_config is None:
+            print("[Tournament] No GameReplayDB recording available; cannot export NPZ")
+        else:
+            try:
+                from scripts.export_replay_dataset import export_replay_dataset
+
+                if args.board == "square19":
+                    board_type_enum = BoardType.SQUARE19
+                elif args.board in ("hex", "hexagonal"):
+                    board_type_enum = BoardType.HEXAGONAL
+                elif args.board == "hex8":
+                    board_type_enum = BoardType.HEX8
+                else:
+                    board_type_enum = BoardType.SQUARE8
+
+                output_path = args.npz_output
+                if not output_path:
+                    output_path = str(
+                        AI_SERVICE_ROOT
+                        / "data"
+                        / "training"
+                        / f"elo_tournament_{args.board}_{args.players}p.npz"
+                    )
+                export_replay_dataset(
+                    db_path=recording_config.get_db_path(),
+                    board_type=board_type_enum,
+                    num_players=args.players,
+                    output_path=output_path,
+                    require_completed=True,
+                )
+            except Exception as e:
+                print(f"[Tournament] NPZ export failed: {e}")
+
     # Record task completion for duration learning
     if HAS_COORDINATION and task_id:
         try:
-            import socket
-            node_id = socket.gethostname()
             config = f"{args.board}_{args.players}p"
             # Args: task_type, host, started_at, completed_at, success, config
             record_task_completion("tournament", node_id, coord_start_time, time.time(), True, config)

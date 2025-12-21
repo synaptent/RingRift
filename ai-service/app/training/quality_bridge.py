@@ -9,7 +9,6 @@ Data Flow:
     2. Quality scores are computed by quality_extractor during sync
     3. Scores are stored in unified_manifest (data_manifest.db)
     4. QualityBridge reads scores and provides them to training pipelines:
-       - DataPipelineController
        - StreamingDataPipeline
        - HotDataBuffer
 
@@ -39,7 +38,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.training.data_pipeline_controller import DataPipelineController
     from app.training.hot_data_buffer import HotDataBuffer
     from app.training.streaming_pipeline import StreamingDataPipeline
 
@@ -546,38 +544,6 @@ class QualityBridge:
             logger.warning(f"Failed to auto-calibrate buffer: {e}")
 
         return result
-
-    def configure_data_pipeline_controller(
-        self,
-        controller: DataPipelineController,
-    ) -> int:
-        """Configure a DataPipelineController with quality lookups.
-
-        This is typically called automatically during controller initialization.
-
-        Args:
-            controller: DataPipelineController instance to configure
-
-        Returns:
-            Number of games in quality lookup
-        """
-        self.refresh()
-
-        # DataPipelineController already has its own manifest integration
-        # This method is for explicit reconfiguration
-        try:
-            if hasattr(controller, '_quality_lookup'):
-                controller._quality_lookup = self._quality_lookup.copy()
-            if hasattr(controller, '_elo_lookup'):
-                controller._elo_lookup = self._elo_lookup.copy()
-
-            logger.info(
-                f"Configured DataPipelineController with {len(self._quality_lookup)} quality scores"
-            )
-            return len(self._quality_lookup)
-        except Exception as e:
-            logger.warning(f"Failed to configure DataPipelineController: {e}")
-            return 0
 
     # =========================================================================
     # Status and Monitoring

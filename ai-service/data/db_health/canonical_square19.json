@@ -29,21 +29,21 @@
   "archived_dest_db": null,
   "board_type": "square19",
   "canonical_config": {
-    "games_checked": 5,
+    "games_checked": 1,
     "non_canonical_games": 0,
     "sample_issues": {}
   },
   "canonical_history": {
-    "games_checked": 5,
+    "games_checked": 1,
     "non_canonical_games": 0,
     "sample_issues": {}
   },
   "canonical_ok": false,
   "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
   "db_stats": {
-    "games_completed": 50,
-    "games_total": 50,
-    "moves_total": 30439,
+    "games_completed": 1,
+    "games_total": 1,
+    "moves_total": 612,
     "swap_sides": {
       "games": 0,
       "moves": 0
@@ -54,7 +54,7 @@
   "meets_min_recorded_games": true,
   "merge_result": null,
   "min_recorded_games": 0,
-  "num_games_requested": 50,
+  "num_games_requested": 10,
   "num_players": 2,
   "parity_gate": {
     "board_type": "square19",
@@ -65,231 +65,64 @@
     "difficulty_band": "light",
     "hosts": null,
     "max_moves": 2400,
-    "num_games": 50,
+    "num_games": 10,
     "num_players": 2,
     "parity_summary": {
       "canonical_gate": true,
       "end_of_game_only_divergences": [],
       "games_with_end_of_game_only_divergence": 0,
       "games_with_non_canonical_history": 0,
-      "games_with_semantic_divergence": 0,
-      "games_with_structural_issues": 33,
+      "games_with_semantic_divergence": 1,
+      "games_with_structural_issues": 0,
       "legacy_mode": false,
-      "mismatch_counts_by_dimension": {},
+      "mismatch_counts_by_dimension": {
+        "current_phase": 1,
+        "state_hash": 1
+      },
       "mode": "canonical",
       "passed_canonical_parity_gate": false,
       "returncode": 1,
-      "semantic_divergences": [],
-      "structural_issues": [
+      "semantic_divergences": [
         {
           "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "cf362743-8c96-42eb-9d2f-255159953a2c",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "ec0a3b99-bde2-43a8-912f-5b29f79af077",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "9fc3fb72-184d-4502-b394-ffe9949976f1",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "f0d8f30b-c741-4224-a735-08962162bb13",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "e1431e7e-584a-42bd-a749-c472877a9362",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "04cb12b0-05c4-47a2-b3d1-2005c419faf5",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "af8e3adb-b4de-4fc3-918b-a4318fe03e53",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "226e165c-3def-4498-9d3b-ae2472685a71",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "08ab8c20-aca3-4fee-8b66-2b012d00b4a8",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "6c246c56-faa8-412d-9d44-5bba3ddcba85",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "b740418d-6274-49f6-a53c-d53be825703e",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "682ffe5b-52bf-4f67-9219-fecb0bbd1b4c",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "50d806d7-122e-40d8-ba0d-0bcdc0b336f6",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "fc330557-51ef-48b4-8985-104fb0c633bf",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "5490308f-8e3d-4b70-ad34-628c0c5ded54",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "5ad99684-8b01-4c80-a26a-26c7fdd0c821",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "8ade6099-1a4e-4545-b6b8-b99eeed4135e",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "63266260-fa6e-4cd5-8daa-da54308cf2b0",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "37190f8d-bfca-497e-b553-a66a347a4a04",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "62f3a79c-b8d1-40df-8377-0775006aa91a",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "28b7364e-1ed3-40ae-83d8-284bc5b80a93",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "ab646952-8661-4dc2-bf1c-b4d97c865b8b",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "a027971e-edd2-40ec-97d1-fea3307cd527",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "113e0544-0814-4b1d-a9da-1c69ae82e36b",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "8b13e408-3d1b-4feb-93e0-241a242d6e38",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "46ba97c5-d94e-4875-bd18-315d24ac8163",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "5d1833e3-318b-4a8f-94c4-6a1d173944ad",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "e3183f49-fa53-4a3f-8763-be17837780a7",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "e52f6a33-40fe-4eeb-a233-84c7ca5b2213",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "0f4445fd-d364-41c9-9c1f-63ade8cfbd30",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "73e5cdfc-1653-46cd-bf47-377dc3b9af34",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "267d3c34-bf5b-4c43-9785-484a18117a36",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
-        },
-        {
-          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db",
-          "game_id": "557b73df-7e1d-458d-b911-ca6edd7c01ed",
-          "structure": "error",
-          "structure_reason": "RuntimeError: Phase/move invariant violated: cannot apply move type continue_capture_segment in phase line_processing"
+          "diverged_at": 145,
+          "game_id": "c0f3dd74-f6f9-489e-9ef3-474e2ef38686",
+          "is_end_of_game_only": false,
+          "mismatch_context": "post_move",
+          "mismatch_kinds": ["current_phase", "state_hash"],
+          "python_summary": {
+            "current_phase": "line_processing",
+            "current_player": 2,
+            "game_status": "active",
+            "is_anm": false,
+            "move_index": 144,
+            "state_hash": "19ad3a7caeea6146"
+          },
+          "structure": "good",
+          "structure_reason": null,
+          "total_moves_python": 612,
+          "total_moves_ts": 612,
+          "ts_summary": {
+            "current_phase": "chain_capture",
+            "current_player": 2,
+            "game_status": "active",
+            "is_anm": false,
+            "move_index": 145,
+            "state_hash": "3e9cd83460e9af3d"
+          }
         }
       ],
+      "structural_issues": [],
       "summary_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square19.db.parity_summary.json",
       "total_databases": 1,
-      "total_games_checked": 50,
+      "total_games_checked": 1,
       "view_mode": "post_move"
     },
     "passed_canonical_parity_gate": false,
     "returncode": 0,
     "seed": null,
     "soak_log_jsonl_path": "/Users/armand/Development/RingRift/ai-service/logs/selfplay/soak.canonical_square19.square19.2p.light.jsonl",
-    "soak_returncode": 0,
+    "soak_returncode": 1,
     "soak_summary_path": "/Users/armand/Development/RingRift/ai-service/logs/selfplay/soak.canonical_square19.square19.2p.light.summary.json",
     "stage": "complete"
   },

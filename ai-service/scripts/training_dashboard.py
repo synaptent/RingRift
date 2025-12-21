@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Training Metrics Dashboard - Visual overview of AI training progress.
 
+.. deprecated:: 2025-12
+    Use the unified dashboard instead::
+
+        python scripts/dashboard.py training
+
 Generates a comprehensive dashboard showing:
 1. Per-config status (models, games, ELO)
 2. Trend charts (ELO over time)

@@ -282,7 +282,7 @@ class HotDataBuffer:
     ) -> int:
         """Set manifest quality lookup tables for priority computation.
 
-        Call this with data from DataPipelineController/manifest to enable
+        Call this with data from QualityBridge/manifest to enable
         quality-weighted experience replay.
 
         Args:

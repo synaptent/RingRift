@@ -541,15 +541,26 @@ class EloDatabase:
         }
 
     # Pinned baselines that should not have their ELO updated (anchor points)
+    # These use prefix matching - any participant_id starting with these is pinned
     PINNED_BASELINES = {
         "baseline_random": 400.0,  # Random player pinned at 400 ELO as anchor
+        "none:random": 400.0,      # Alternative random naming convention
+        "random": 400.0,           # Simple random prefix
     }
 
     def _is_pinned_baseline(self, participant_id: str) -> float | None:
-        """Check if participant is a pinned baseline and return pinned ELO if so."""
+        """Check if participant is a pinned baseline and return pinned ELO if so.
+
+        Random AI must ALWAYS be pinned at 400 ELO to serve as the anchor point
+        for the entire rating system. This is critical for ELO calibration.
+        """
+        pid_lower = participant_id.lower()
         for prefix, pinned_elo in self.PINNED_BASELINES.items():
-            if participant_id.startswith(prefix):
+            if pid_lower.startswith(prefix.lower()):
                 return pinned_elo
+        # Also check for 'random' anywhere in the name for robustness
+        if 'random' in pid_lower and 'heuristic' not in pid_lower:
+            return 400.0
         return None
 
     def update_rating(self, rating: UnifiedEloRating) -> None:
@@ -1313,11 +1324,17 @@ class EloDatabase:
             "count": null_row["null_count"] if null_row else 0,
         }
 
-        # Check 4: Pinned baselines
+        # Check 4: Pinned baselines - ALL random AIs must be at 400 ELO
         baseline_rows = conn.execute("""
             SELECT participant_id, rating
             FROM elo_ratings
-            WHERE participant_id LIKE 'baseline_random%'
+            WHERE (
+                participant_id LIKE 'baseline_random%'
+                OR participant_id LIKE 'none:random%'
+                OR participant_id LIKE 'random%'
+                OR LOWER(participant_id) LIKE '%random%'
+            )
+            AND LOWER(participant_id) NOT LIKE '%heuristic%'
             AND archived_at IS NULL
         """).fetchall()
 

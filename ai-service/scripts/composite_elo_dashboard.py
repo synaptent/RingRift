@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Composite ELO System Dashboard - Quick status overview.
 
+.. deprecated:: 2025-12
+    Use the unified dashboard instead::
+
+        python scripts/dashboard.py composite
+
 Usage:
     python scripts/composite_elo_dashboard.py
     python scripts/composite_elo_dashboard.py --board square19

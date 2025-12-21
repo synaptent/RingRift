@@ -69,7 +69,7 @@ class StreamingConfig:
     # Data augmentation
     augmentation_enabled: bool = True
 
-    # Quality-based sampling (populated from manifest via DataPipelineController)
+    # Quality-based sampling (populated from manifest via QualityBridge)
     # Dict mapping game_id -> quality_score [0, 1]
     quality_lookup: dict[str, float] | None = None
     elo_lookup: dict[str, float] | None = None
@@ -399,7 +399,7 @@ class StreamingDataPipeline:
     ) -> None:
         """Set quality lookup tables for priority sampling.
 
-        Call this with data from DataPipelineController to enable
+        Call this with data from QualityBridge to enable
         quality-weighted sampling of training data.
 
         Args:

@@ -137,6 +137,9 @@ class BatchGameState:
     # Track if game is in a capture chain sequence (for CHAIN_CAPTURE phase)
     in_capture_chain: torch.Tensor  # bool (batch_size,)
     capture_chain_depth: torch.Tensor  # int16 (batch_size,) - 0 = no chain
+    # Visited positions during chain - landing on these is illegal to prevent cycles
+    # Shape: (batch_size, board_size, board_size) - True if visited during this chain
+    chain_visited_mask: torch.Tensor  # bool (batch_size, board_size, board_size)
 
     # Forced elimination detection (December 2025 - RR-CANON-R160)
     # Track if player took a "real" action this turn (placement, movement, capture)
@@ -253,6 +256,8 @@ class BatchGameState:
             # Capture chain tracking (December 2025 - canonical phases)
             in_capture_chain=torch.zeros(batch_size, dtype=torch.bool, device=device),
             capture_chain_depth=torch.zeros(batch_size, dtype=torch.int16, device=device),
+            # Track visited positions during chain to prevent landing cycles
+            chain_visited_mask=torch.zeros((batch_size, board_size, board_size), dtype=torch.bool, device=device),
 
             # Forced elimination detection (December 2025 - RR-CANON-R160)
             turn_had_real_action=torch.zeros(batch_size, dtype=torch.bool, device=device),
