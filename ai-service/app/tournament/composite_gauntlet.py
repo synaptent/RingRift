@@ -489,7 +489,10 @@ class CompositeGauntlet:
             rules = self._DefaultRulesEngine()
             start_time = time.time()
             move_count = 0
-            max_moves = 500  # Safety limit
+
+            # Use theoretical max moves based on board type to ensure games can complete
+            from app.training.env import get_theoretical_max_moves
+            max_moves = get_theoretical_max_moves(board_type_enum, self.num_players)
 
             # Play game
             while game_state.game_status == self._GameStatus.ACTIVE and move_count < max_moves:

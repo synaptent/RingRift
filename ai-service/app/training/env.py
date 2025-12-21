@@ -394,7 +394,7 @@ class RingRiftEnv:
     def __init__(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        max_moves: int = 2000,  # Minimum 2000 to allow games to complete naturally
+        max_moves: int | None = None,  # None = use theoretical max for board type
         reward_on: str = "terminal",  # "terminal" or "shaped"
         num_players: int = 2,
         *,
@@ -404,9 +404,25 @@ class RingRiftEnv:
         lps_rounds_required: int = 3,
     ):
         self.board_type = board_type
-        self.max_moves = max_moves
         self.reward_on = reward_on
         self.num_players = num_players
+
+        # Determine max_moves: use theoretical max if not specified,
+        # and warn if explicitly set below theoretical max
+        theoretical_max = get_theoretical_max_moves(board_type, num_players)
+        if max_moves is None:
+            self.max_moves = theoretical_max
+        else:
+            self.max_moves = max_moves
+            if max_moves < theoretical_max:
+                logger.warning(
+                    "max_moves=%d is below theoretical max %d for %s/%dp. "
+                    "Games may end prematurely. Consider using theoretical max.",
+                    max_moves,
+                    theoretical_max,
+                    board_type.value,
+                    num_players,
+                )
         self._default_seed = default_seed
         self._state: GameState | None = None
         self._move_count: int = 0

@@ -174,9 +174,10 @@ def play_single_game(
     state = create_initial_state(BoardType(board_type), num_players=num_players)
     engine = GameEngine()
 
-    # Play game
+    # Play game - use theoretical max moves based on board type
+    from app.training.env import get_theoretical_max_moves
     move_count = 0
-    max_moves = 500
+    max_moves = get_theoretical_max_moves(BoardType(board_type), num_players)
 
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_ai = ai_1 if state.current_player == 1 else ai_2

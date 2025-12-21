@@ -185,7 +185,9 @@ def play_game(
 
         ais = {model_player: model_ai, opp_player: opponent}
 
-        max_moves = 300
+        # Use theoretical max moves based on board type to ensure games complete
+        from app.training.env import get_theoretical_max_moves
+        max_moves = get_theoretical_max_moves(board_type, num_players=2)
         for _ in range(max_moves):
             # Check game over
             if state.game_status == GameStatus.COMPLETED:

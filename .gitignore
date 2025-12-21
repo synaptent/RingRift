@@ -269,3 +269,4 @@ ai-service/scripts/periodic_check.sh
 # Status documents with cluster details
 CURRENT_STATE_ASSESSMENT.md
 results/load-test/
+ai-service/scripts/debug_specific_move.py
