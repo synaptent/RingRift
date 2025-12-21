@@ -709,6 +709,7 @@ class DistributedTournament:
         num_players: int = 2,
         filler_ai_type: str = "Random",
         filler_difficulty: int = 1,
+        record_replay_db: bool = True,
     ):
         self.tiers = sorted(tiers, key=lambda t: int(t[1:]))
         self.games_per_matchup = games_per_matchup
@@ -726,6 +727,7 @@ class DistributedTournament:
         self.num_players = num_players
         self.filler_ai_type = filler_ai_type
         self.filler_difficulty = filler_difficulty
+        self.record_replay_db = record_replay_db
         self.record_training_data = False
         self.training_output_path: Path | None = None
         self.training_records: list[dict[str, Any]] = []
@@ -860,6 +862,7 @@ class DistributedTournament:
                 filler_ai_type=self.filler_ai_type,
                 filler_difficulty=self.filler_difficulty,
                 record_training_data=self.record_training_data,
+                record_replay_db=self.record_replay_db,
             )
 
             if game_idx % 2 == 1:
@@ -1326,6 +1329,11 @@ def parse_args() -> argparse.Namespace:
         help="Record full game history for training data export to JSONL.",
     )
     parser.add_argument(
+        "--skip-replay-db",
+        action="store_true",
+        help="Skip recording games to GameReplayDB (canonical replay).",
+    )
+    parser.add_argument(
         "--training-output",
         type=str,
         default=None,
@@ -1464,6 +1472,7 @@ def main() -> None:
         num_players=args.num_players,
         filler_ai_type=args.filler_ai,
         filler_difficulty=args.filler_difficulty,
+        record_replay_db=not args.skip_replay_db,
     )
 
     # Configure training data export if requested
