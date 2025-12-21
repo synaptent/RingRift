@@ -445,7 +445,7 @@ def run_single_game(
         UnifiedGameRecorder,
         is_recording_enabled,
     )
-    from app.quality import compute_game_quality
+    from app.quality import compute_game_quality, get_quality_category
     from app.rules.history_contract import derive_phase_from_move_type, phase_move_contract
     def _tiebreak_winner(final_state: Any) -> int | None:
         players = getattr(final_state, "players", None) or []
@@ -686,7 +686,7 @@ def run_single_game(
                     "phase_balance_score": phase_balance_score,
                     "diversity_score": diversity_score,
                     "quality_score": quality.quality_score,
-                    "quality_category": quality.category.value,
+                    "quality_category": get_quality_category(quality.quality_score).value,
                     "training_weight": quality.training_weight,
                     "sync_priority": quality.sync_priority,
                 },
