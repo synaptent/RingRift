@@ -64,7 +64,7 @@ from app.coordination.event_mappings import (
 
 # DataEventBus
 try:
-    from app.coordination.event_router import (
+    from app.distributed.data_events import (
         DataEvent,
         DataEventType,
         EventBus as DataEventBus,

@@ -176,7 +176,7 @@ def create_benchmark_state(
         # Find valid position
         attempts = 0
         while attempts < 100:
-            if board_type == BoardType.HEXAGONAL:
+            if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
                 # Hexagonal board has different valid positions
                 x = random.randint(0, board_size - 1)
                 y = random.randint(0, board_size - 1)

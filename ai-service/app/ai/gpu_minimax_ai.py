@@ -638,7 +638,7 @@ class GPUMinimaxAI(MinimaxAI):
         )
 
         # Populate from individual states
-        is_hex = self._board_type == BoardType.HEXAGONAL
+        is_hex = self._board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
 
         for i, state in enumerate(states):
             self._copy_state_to_batch(state, batch, i, is_hex, board_size)

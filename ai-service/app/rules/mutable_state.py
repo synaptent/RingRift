@@ -2056,7 +2056,7 @@ class MutableGameState:
 
     def _get_territory_neighbors(self, pos: Position) -> list[Position]:
         """Get territory-adjacent neighbors (Von Neumann for square, hex for hex)."""
-        if self._board_type == BoardType.HEXAGONAL:
+        if self._board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             return [
                 Position(
                     x=pos.x+1, y=pos.y,

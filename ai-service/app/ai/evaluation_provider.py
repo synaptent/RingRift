@@ -957,7 +957,7 @@ class HeuristicEvaluator:
         stacks = board.stacks
         directions = self.fast_geo.get_los_directions(board.type)
 
-        is_hex = board.type == BoardType.HEXAGONAL
+        is_hex = board.type in (BoardType.HEXAGONAL, BoardType.HEX8)
         if is_hex:
             board_size = int(getattr(board, "size", 13) or 13)
             limit = board_size - 1

@@ -46,6 +46,8 @@ def _parse_board_type(raw: str) -> BoardType:
 def _board_suffix(board_type: BoardType) -> str:
     if board_type == BoardType.HEXAGONAL:
         return "_hex"
+    if board_type == BoardType.HEX8:
+        return "_hex8"
     if board_type == BoardType.SQUARE19:
         return "_19x19"
     return ""

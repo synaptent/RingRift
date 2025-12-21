@@ -231,7 +231,7 @@ class RRNCoordinate(BaseModel):
     @classmethod
     def from_position(cls, pos: Position, board_type: BoardType) -> "RRNCoordinate":
         """Convert a Position to RRN coordinate notation."""
-        if board_type == BoardType.HEXAGONAL:
+        if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             if pos.z is not None:
                 notation = f"({pos.x},{pos.y},{pos.z})"
             else:
@@ -248,7 +248,7 @@ class RRNCoordinate(BaseModel):
         """Parse RRN coordinate notation to Position."""
         notation = notation.strip()
 
-        if board_type == BoardType.HEXAGONAL:
+        if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             # Hex notation: (x,y) or (x,y,z)
             if notation.startswith("(") and notation.endswith(")"):
                 parts = notation[1:-1].split(",")

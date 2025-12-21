@@ -583,4 +583,17 @@ __all__ = [
     "reset_router",
     "subscribe",
     "unsubscribe",
+    # Re-exports from data_events for backward compatibility
+    "DataEvent",
+    "DataEventType",
+    "get_event_bus",
 ]
+
+
+# Re-export get_event_bus for backward compatibility
+# Many files import: from app.coordination.event_router import get_event_bus
+def get_event_bus():
+    """Get the data event bus (re-exported for backward compatibility)."""
+    if HAS_DATA_EVENTS:
+        return get_data_event_bus()
+    return None

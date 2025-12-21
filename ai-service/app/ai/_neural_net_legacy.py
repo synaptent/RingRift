@@ -70,6 +70,7 @@ from ..models import (
     Position,
 )
 from ..rules.geometry import BoardGeometry
+from ..rules.legacy.move_type_aliases import convert_legacy_move_type
 from ..utils.torch_utils import safe_load_checkpoint
 from .base import BaseAI
 from .game_state_utils import (
@@ -275,7 +276,8 @@ def _encode_move_square8(move: Move, board: BoardState) -> int:
     """Encode move for square8 board using compact 8x8 policy layout (max ~7000)."""
     N = 8  # Board size
     MAX_DIST = MAX_DIST_SQUARE8  # 7
-    move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+    raw_move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+    move_type = convert_legacy_move_type(raw_move_type, warn=False)
 
     # Placement: 0..191 (3 * 8 * 8)
     if move_type == "place_ring":
@@ -288,8 +290,10 @@ def _encode_move_square8(move: Move, board: BoardState) -> int:
 
     # Movement: 192..3775 (8 * 8 * 8 * 7)
     if move_type in [
-        "move_stack", "move_ring", "overtaking_capture",
-        "chain_capture", "continue_capture_segment", "recovery_slide",
+        "move_stack",
+        "overtaking_capture",
+        "continue_capture_segment",
+        "recovery_slide",
     ]:
         if not move.from_pos:
             return INVALID_MOVE_INDEX
@@ -317,7 +321,7 @@ def _encode_move_square8(move: Move, board: BoardState) -> int:
         return SQUARE8_MOVEMENT_BASE + from_idx * (8 * MAX_DIST) + dir_idx * MAX_DIST + (dist - 1)
 
     # Line formation: 3776..4031
-    if move_type in ("line_formation", "process_line"):
+    if move_type == "process_line":
         line_pos = _line_anchor_position(move)
         if line_pos is None:
             return INVALID_MOVE_INDEX
@@ -328,7 +332,7 @@ def _encode_move_square8(move: Move, board: BoardState) -> int:
         return SQUARE8_LINE_FORM_BASE + pos_idx * 4  # 4 directions
 
     # Territory claim: 4032..4095
-    if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+    if move_type == "eliminate_rings_from_stack":
         if move.to is None:
             return INVALID_MOVE_INDEX
         cx, cy = move.to.x, move.to.y
@@ -369,13 +373,13 @@ def _encode_move_square8(move: Move, board: BoardState) -> int:
         return SQUARE8_FORCED_ELIMINATION_IDX
 
     # Line choice: 4099..4102
-    if move_type in ("choose_line_reward", "choose_line_option"):
+    if move_type == "choose_line_option":
         option = (move.placement_count or 1) - 1
         option = max(0, min(3, option))
         return SQUARE8_LINE_CHOICE_BASE + option
 
     # Territory choice: 4103..6150
-    if move_type in ("choose_territory_option", "process_territory_region"):
+    if move_type == "choose_territory_option":
         canonical_pos = move.to
         region_size = 1
         controlling_player = move.player
@@ -415,7 +419,8 @@ def _encode_move_square19(move: Move, board: BoardState) -> int:
     """Encode move for square19 board using 19x19 policy layout (max ~67000)."""
     N = 19  # Board size
     MAX_DIST = MAX_DIST_SQUARE19  # 18
-    move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+    raw_move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+    move_type = convert_legacy_move_type(raw_move_type, warn=False)
 
     # Placement: 0..1082 (3 * 19 * 19)
     if move_type == "place_ring":
@@ -428,8 +433,10 @@ def _encode_move_square19(move: Move, board: BoardState) -> int:
 
     # Movement: 1083..53066
     if move_type in [
-        "move_stack", "move_ring", "overtaking_capture",
-        "chain_capture", "continue_capture_segment", "recovery_slide",
+        "move_stack",
+        "overtaking_capture",
+        "continue_capture_segment",
+        "recovery_slide",
     ]:
         if not move.from_pos:
             return INVALID_MOVE_INDEX
@@ -457,7 +464,7 @@ def _encode_move_square19(move: Move, board: BoardState) -> int:
         return SQUARE19_MOVEMENT_BASE + from_idx * (8 * MAX_DIST) + dir_idx * MAX_DIST + (dist - 1)
 
     # Line formation: 53067..54510
-    if move_type in ("line_formation", "process_line"):
+    if move_type == "process_line":
         line_pos = _line_anchor_position(move)
         if line_pos is None:
             return INVALID_MOVE_INDEX
@@ -468,7 +475,7 @@ def _encode_move_square19(move: Move, board: BoardState) -> int:
         return SQUARE19_LINE_FORM_BASE + pos_idx * 4
 
     # Territory claim: 54511..54871
-    if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+    if move_type == "eliminate_rings_from_stack":
         if move.to is None:
             return INVALID_MOVE_INDEX
         cx, cy = move.to.x, move.to.y
@@ -509,13 +516,13 @@ def _encode_move_square19(move: Move, board: BoardState) -> int:
         return SQUARE19_FORCED_ELIMINATION_IDX
 
     # Line choice: 54875..54878
-    if move_type in ("choose_line_reward", "choose_line_option"):
+    if move_type == "choose_line_option":
         option = (move.placement_count or 1) - 1
         option = max(0, min(3, option))
         return SQUARE19_LINE_CHOICE_BASE + option
 
     # Territory choice: 54879..66430
-    if move_type in ("choose_territory_option", "process_territory_region"):
+    if move_type == "choose_territory_option":
         canonical_pos = move.to
         region_size = 1
         controlling_player = move.player
@@ -562,7 +569,7 @@ class DecodedPolicyIndex:
     This structure contains enough information to apply symmetry transformations
     (rotations, reflections) and re-encode the policy index.
     """
-    action_type: str  # "placement", "movement", "line_formation", etc.
+    action_type: str  # "placement", "movement", "process_line", etc.
     board_size: int   # 8 for square8, 19 for square19
     x: int = 0        # Primary position x
     y: int = 0        # Primary position y
@@ -649,7 +656,7 @@ def _decode_move_square8(idx: int) -> DecodedPolicyIndex | None:
         x = pos_idx % N
         y = pos_idx // N
         return DecodedPolicyIndex(
-            action_type="line_formation", board_size=N,
+            action_type="process_line", board_size=N,
             x=x, y=y, dir_idx=dir_idx
         )
 
@@ -659,7 +666,7 @@ def _decode_move_square8(idx: int) -> DecodedPolicyIndex | None:
         x = pos_idx % N
         y = pos_idx // N
         return DecodedPolicyIndex(
-            action_type="territory_claim", board_size=N,
+            action_type="eliminate_rings_from_stack", board_size=N,
             x=x, y=y
         )
 
@@ -754,7 +761,7 @@ def _decode_move_square19(idx: int) -> DecodedPolicyIndex | None:
         x = pos_idx % N
         y = pos_idx // N
         return DecodedPolicyIndex(
-            action_type="line_formation", board_size=N,
+            action_type="process_line", board_size=N,
             x=x, y=y, dir_idx=dir_idx
         )
 
@@ -764,7 +771,7 @@ def _decode_move_square19(idx: int) -> DecodedPolicyIndex | None:
         x = pos_idx % N
         y = pos_idx // N
         return DecodedPolicyIndex(
-            action_type="territory_claim", board_size=N,
+            action_type="eliminate_rings_from_stack", board_size=N,
             x=x, y=y
         )
 
@@ -897,7 +904,7 @@ def transform_policy_index_square(
         BASE = SQUARE8_MOVEMENT_BASE if N == 8 else SQUARE19_MOVEMENT_BASE
         return BASE + from_idx * (8 * MAX_DIST) + new_dir_idx * MAX_DIST + (decoded.dist - 1)
 
-    if decoded.action_type == "line_formation":
+    if decoded.action_type == "process_line":
         # Transform direction for line formation
         # Line directions are: horizontal(0), vertical(1), diagonal1(2), diagonal2(3)
         # Need to map these under transformation
@@ -934,7 +941,7 @@ def transform_policy_index_square(
         BASE = SQUARE8_LINE_FORM_BASE if N == 8 else SQUARE19_LINE_FORM_BASE
         return BASE + pos_idx * 4 + new_line_dir
 
-    if decoded.action_type == "territory_claim":
+    if decoded.action_type == "eliminate_rings_from_stack":
         pos_idx = y * N + x
         BASE = SQUARE8_TERRITORY_CLAIM_BASE if N == 8 else SQUARE19_TERRITORY_CLAIM_BASE
         return BASE + pos_idx
@@ -4978,7 +4985,8 @@ class NeuralNetAI(BaseAI):
         territory_base = line_base + line_span  # 54511
         skip_index = territory_base + MAX_N * MAX_N  # 54872
         swap_sides_index = skip_index + 1  # 54873
-        move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+        raw_move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+        move_type = convert_legacy_move_type(raw_move_type, warn=False)
         effective_policy_size = model_policy_size or board_policy_size or 0
 
         # Placement: 0..1082 (3 * 19 * 19)
@@ -5002,9 +5010,7 @@ class NeuralNetAI(BaseAI):
         # Recovery_slide is encoded as movement since it has from/to positions
         if move_type in [
             "move_stack",
-            "move_ring",
             "overtaking_capture",
-            "chain_capture",
             "continue_capture_segment",
             "recovery_slide",  # RR-CANON-R110–R115: marker slide to adjacent cell
         ]:
@@ -5063,7 +5069,7 @@ class NeuralNetAI(BaseAI):
             return movement_base + from_idx * (8 * max_dist) + dir_idx * max_dist + (dist - 1)
 
         # Line: 53067..54510
-        if move_type in ("line_formation", "process_line"):
+        if move_type == "process_line":
             line_pos = _line_anchor_position(move)
             if line_pos is None:
                 return INVALID_MOVE_INDEX
@@ -5079,7 +5085,7 @@ class NeuralNetAI(BaseAI):
             return line_base + pos_idx * 4
 
         # Territory: 54511..54871
-        if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+        if move_type == "eliminate_rings_from_stack":
             if move.to is None:
                 return INVALID_MOVE_INDEX
             if board is not None:
@@ -5112,7 +5118,7 @@ class NeuralNetAI(BaseAI):
         # Line choices: 4 slots (options 0-3, typically option 1 = partial, 2 = full)
         line_choice_base = skip_recovery_index + 1  # 54875 (sq19) / 4099 (sq8)
 
-        if move_type in ("choose_line_reward", "choose_line_option"):
+        if move_type == "choose_line_option":
             # Line choice uses placement_count to indicate option (1-based)
             option = (move.placement_count or 1) - 1  # Convert to 0-indexed
             option = max(0, min(3, option))  # Clamp to valid range
@@ -5128,7 +5134,7 @@ class NeuralNetAI(BaseAI):
         TERRITORY_SIZE_BUCKETS = 8
         TERRITORY_MAX_PLAYERS = 4
 
-        if move_type in ("choose_territory_option", "process_territory_region"):
+        if move_type == "choose_territory_option":
             # Extract region information from the move
             canonical_pos = move.to  # Default to move.to
             region_size = 1
@@ -5296,7 +5302,7 @@ class NeuralNetAI(BaseAI):
             }
             return Move(**move_data)
 
-        # Line formation
+        # Line processing
         if line_base <= index < territory_base:
             offset = index - line_base
             pos_idx = offset // 4  # Ignore dir_idx for now
@@ -5313,7 +5319,7 @@ class NeuralNetAI(BaseAI):
 
             move_data = {
                 "id": "decoded",
-                "type": "line_formation",
+                "type": "process_line",
                 "player": game_state.current_player,
                 "to": to_payload,
                 "timestamp": datetime.now(),
@@ -5322,7 +5328,7 @@ class NeuralNetAI(BaseAI):
             }
             return Move(**move_data)
 
-        # Territory claim
+        # Territory elimination
         if index < skip_index:
             pos_idx = index - territory_base
             cy = pos_idx // MAX_N
@@ -5338,7 +5344,7 @@ class NeuralNetAI(BaseAI):
 
             move_data = {
                 "id": "decoded",
-                "type": "territory_claim",
+                "type": "eliminate_rings_from_stack",
                 "player": game_state.current_player,
                 "to": to_payload,
                 "timestamp": datetime.now(),

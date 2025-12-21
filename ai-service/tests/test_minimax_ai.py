@@ -364,22 +364,22 @@ class TestMinimaxAIIncrementalSearch(unittest.TestCase):
         move_capture.type = "overtaking_capture"
 
         move_territory = MagicMock()
-        move_territory.type = "territory_claim"
+        move_territory.type = "choose_territory_option"
 
         move_line = MagicMock()
-        move_line.type = "line_formation"
+        move_line.type = "process_line"
 
         move_chain = MagicMock()
-        move_chain.type = "chain_capture"
+        move_chain.type = "continue_capture_segment"
 
         # Pass in arbitrary order
         moves = [move_capture, move_territory, move_line, move_chain]
         scored = ai._score_noisy_moves(moves)
 
         # Should be sorted: territory (4), line (3), chain (2), capture (1)
-        self.assertEqual(scored[0][0], 4)  # territory_claim
-        self.assertEqual(scored[1][0], 3)  # line_formation
-        self.assertEqual(scored[2][0], 2)  # chain_capture
+        self.assertEqual(scored[0][0], 4)  # choose_territory_option
+        self.assertEqual(scored[1][0], 3)  # process_line
+        self.assertEqual(scored[2][0], 2)  # continue_capture_segment
         self.assertEqual(scored[3][0], 1)  # overtaking_capture
 
     def test_store_killer_move_limits_to_two(self) -> None:

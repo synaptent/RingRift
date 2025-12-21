@@ -65,8 +65,8 @@ def parse_position(pos_dict: dict[str, Any], board_type: BoardType = None) -> Po
     # GPU selfplay uses 0-24 array indexing, while canonical uses -12 to 12 axial.
     # Detection: if ANY coordinate is negative, it's already canonical.
     # Also check if z is provided and satisfies axial constraint (x+y+z=0).
-    if board_type == BoardType.HEXAGONAL:
-        HEX_RADIUS = 12
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+        HEX_RADIUS = 12 if board_type == BoardType.HEXAGONAL else 4
 
         # Already canonical if:
         # 1. Any coordinate is negative (axial coords can be -12 to 12)

@@ -153,6 +153,8 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     if board_type == BoardType.SQUARE19:
         size = 19
     elif board_type == BoardType.HEXAGONAL:
+        size = 13
+    elif board_type == BoardType.HEX8:
         size = 5
 
     board = BoardState(type=board_type, size=size, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={})

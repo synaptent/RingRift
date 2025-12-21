@@ -73,7 +73,7 @@ def position_to_algebraic(pos: Position, board_type: BoardType) -> str:
     Returns:
         Algebraic notation string
     """
-    if board_type == BoardType.HEXAGONAL:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         return _position_to_algebraic_hex(pos)
     else:
         return _position_to_algebraic_square(pos)
@@ -111,7 +111,7 @@ def algebraic_to_position(notation: str, board_type: BoardType) -> Position:
     Raises:
         ValueError: If notation format is invalid
     """
-    if board_type == BoardType.HEXAGONAL:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         return _algebraic_to_position_hex(notation)
     else:
         return _algebraic_to_position_square(notation)
