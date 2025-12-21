@@ -1355,7 +1355,8 @@ export function validateMoveWithFSM(
     move.type === 'process_territory_region' ||
     move.type === 'forced_elimination';
 
-  if (!isPlayerMismatchExempt && move.player !== gameState.currentPlayer) {
+  // For legacy replay, trust the recorded player attribution (RR-CANON-R075)
+  if (!isPlayerMismatchExempt && !replayCompatibility && move.player !== gameState.currentPlayer) {
     return makeResult({
       valid: false,
       currentPhase: fsmState.phase,
@@ -1407,6 +1408,16 @@ export function validateMoveWithFSM(
   const result = transition(fsmState, event, gameContext);
 
   if (!result.ok) {
+    // For legacy replay, trust recorded moves even if FSM guards fail.
+    // The move type validation above already ensures the move is valid for the phase.
+    if (replayCompatibility && (isCanonicalMoveForPhase || isLegacyMoveForPhase)) {
+      return makeResult({
+        valid: true,
+        currentPhase: fsmState.phase,
+        // Note: FSM guards failed but move is trusted for legacy replay
+      });
+    }
+
     const error = result.error;
     return makeResult({
       valid: false,

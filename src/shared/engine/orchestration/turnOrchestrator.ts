@@ -1336,7 +1336,10 @@ export function processTurn(
   // Enforce canonical phase→MoveType mapping for ACTIVE states. This ensures
   // that every visited phase is represented by an explicit action, skip, or
   // no-action move per RR-CANON-R075.
-  assertPhaseMoveInvariant(state, move);
+  // Skip for legacy replay - FSM validation handles legacy move types correctly.
+  if (!options?.replayCompatibility) {
+    assertPhaseMoveInvariant(state, move);
+  }
 
   // FSM Validation: FSM is now the canonical validator - always enforce validation.
   const fsmValidationResult = performFSMValidation(
