@@ -54,6 +54,7 @@ from .orchestrator import (
     run_quick_evaluation,
 )
 from .runner import MatchResult, TournamentResults, TournamentRunner
+from .recording import TournamentRecordingOptions
 from .scheduler import Match, MatchStatus, RoundRobinScheduler, SwissScheduler, TournamentScheduler
 from .unified_elo_db import (
     EloDatabase,
@@ -121,6 +122,7 @@ __all__ = [
     "TournamentOrchestrator",
     "TournamentResults",
     "TournamentRunner",
+    "TournamentRecordingOptions",
     "TournamentScheduler",
     "TournamentSummary",
     "UnifiedEloRating",

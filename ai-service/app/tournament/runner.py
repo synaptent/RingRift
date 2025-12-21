@@ -15,6 +15,7 @@ from app.models import BoardType, GameStatus
 
 from .agents import AgentType, AIAgent, AIAgentRegistry
 from .elo import EloCalculator
+from .recording import TournamentRecordingOptions
 from .scheduler import Match, TournamentScheduler
 
 logger = logging.getLogger(__name__)
@@ -245,6 +246,7 @@ class TournamentRunner:
         seed: int | None = None,
         persist_to_unified_elo: bool = True,
         tournament_id: str | None = None,
+        recording_options: TournamentRecordingOptions | None = None,
     ):
         """Initialize tournament runner.
 
@@ -257,6 +259,7 @@ class TournamentRunner:
             seed: Random seed for reproducibility.
             persist_to_unified_elo: If True, persist results to unified Elo database.
             tournament_id: Optional tournament ID for tracking.
+            recording_options: Optional recording configuration for canonical replay data.
         """
         self.agent_registry = agent_registry
         self.scheduler = scheduler
@@ -267,6 +270,7 @@ class TournamentRunner:
         self._rng = random.Random(seed)
         self.persist_to_unified_elo = persist_to_unified_elo
         self.tournament_id = tournament_id
+        self.recording_options = recording_options or TournamentRecordingOptions()
 
         self.results: TournamentResults | None = None
         self._match_executor: Callable | None = None
@@ -580,8 +584,12 @@ class TournamentRunner:
         for distributed execution.
         """
         import time
+        from contextlib import ExitStack
 
+        from app.db.unified_recording import UnifiedGameRecorder, is_recording_enabled
         from app.game_engine import GameEngine
+        from app.quality import compute_game_quality
+        from app.rules.history_contract import derive_phase_from_move_type, phase_move_contract
         from app.training.initial_state import create_initial_state
 
         start_time = time.time()
@@ -602,91 +610,185 @@ class TournamentRunner:
             ai = self._create_ai_instance(agent, match.board_type, match.num_players)
             ai_instances.append(ai)
 
-        # Play the game
-        # Note: Game uses 1-based player numbers but AI instances use 0-based indices
-        move_count = 0
-        while state.game_status == GameStatus.ACTIVE and move_count < self.max_moves:
-            current_player = state.current_player
-            # Convert 1-based player number to 0-based index
-            ai_index = current_player - 1 if current_player > 0 else current_player
-            if ai_index < 0 or ai_index >= len(ai_instances):
-                logger.error(f"Invalid player index: {ai_index} (player={current_player})")
-                break
-            ai = ai_instances[ai_index]
+        recorded_move_types: list[str] = []
+        recording_enabled = (
+            self.recording_options is not None
+            and self.recording_options.enabled
+            and is_recording_enabled()
+        )
 
-            # Get valid moves for current player
-            legal_moves = GameEngine.get_valid_moves(state, current_player)
+        board_type_value = (
+            match.board_type.value if hasattr(match.board_type, "value") else str(match.board_type)
+        )
 
-            if not legal_moves:
-                # No interactive moves - check for bookkeeping phase requirements
-                requirement = GameEngine.get_phase_requirement(state, current_player)
-                if requirement is not None:
-                    # Create appropriate bookkeeping move based on requirement type
-                    move = self._create_bookkeeping_move(requirement, current_player)
-                    if move is not None:
-                        state = GameEngine.apply_move(state, move)
-                        move_count += 1
-                        continue
-                # No moves and no requirement - game is stuck or ended
-                break
+        with ExitStack() as stack:
+            recorder = None
+            if recording_enabled and self.recording_options is not None:
+                recording_config = self.recording_options.build_recording_config(
+                    board_type=board_type_value,
+                    num_players=match.num_players,
+                )
+                recorder = stack.enter_context(
+                    UnifiedGameRecorder(recording_config, state, game_id=match.match_id)
+                )
 
-            # Get AI move for interactive phase
-            move = ai.get_best_move(state, legal_moves)
-            if move is None:
-                # AI couldn't select a move, pick first legal move
-                move = legal_moves[0]
-            state = GameEngine.apply_move(state, move)
-            move_count += 1
+            # Play the game
+            # Note: Game uses 1-based player numbers but AI instances use 0-based indices
+            move_count = 0
+            while state.game_status == GameStatus.ACTIVE and move_count < self.max_moves:
+                current_player = state.current_player
+                # Convert 1-based player number to 0-based index
+                ai_index = current_player - 1 if current_player > 0 else current_player
+                if ai_index < 0 or ai_index >= len(ai_instances):
+                    logger.error(f"Invalid player index: {ai_index} (player={current_player})")
+                    break
+                ai = ai_instances[ai_index]
 
-            # After each move, auto-process any bookkeeping requirements
-            # This handles transitions through LINE_PROCESSING, TERRITORY_PROCESSING, etc.
-            state = self._auto_process_bookkeeping(state, move_count)
+                # Get valid moves for current player
+                legal_moves = GameEngine.get_valid_moves(state, current_player)
 
-        # Determine rankings based on elimination order or ring counts
-        rankings = self._compute_rankings(state, match.agent_ids)
+                if not legal_moves:
+                    # No interactive moves - check for bookkeeping phase requirements
+                    requirement = GameEngine.get_phase_requirement(state, current_player)
+                    if requirement is not None:
+                        # Create appropriate bookkeeping move based on requirement type
+                        move = self._create_bookkeeping_move(requirement, current_player)
+                        if move is not None:
+                            state_before = state
+                            state = GameEngine.apply_move(state, move)
+                            move_count += 1
+                            recorded_move_types.append(move.type.value)
+                            if recorder is not None:
+                                recorder.add_move(
+                                    move,
+                                    state_after=state,
+                                    state_before=state_before,
+                                    available_moves_count=0,
+                                )
+                            continue
+                    # No moves and no requirement - game is stuck or ended
+                    break
 
-        # Determine termination reason
-        if state.game_status == GameStatus.COMPLETED:
-            termination_reason = "completed"
-        elif move_count >= self.max_moves:
-            termination_reason = "max_moves"
-        else:
-            termination_reason = "no_moves"
+                # Get AI move for interactive phase
+                move = ai.get_best_move(state, legal_moves)
+                if move is None:
+                    # AI couldn't select a move, pick first legal move
+                    move = legal_moves[0]
+                state_before = state
+                state = GameEngine.apply_move(state, move)
+                move_count += 1
+                recorded_move_types.append(move.type.value)
+                if recorder is not None:
+                    recorder.add_move(
+                        move,
+                        state_after=state,
+                        state_before=state_before,
+                        available_moves_count=len(legal_moves),
+                    )
 
-        # Always determine a winner - use ranking[0] if no natural winner (2025-12-16 fix)
-        # This ensures all games have a definite outcome for ELO updates
-        if state.winner is not None:
-            winner = rankings[0]
-        elif rankings:
-            # No natural winner but we have computed rankings via tiebreaker
-            winner = rankings[0]
-            logger.info(f"Game ended via {termination_reason}, winner by tiebreaker: {winner}")
-        else:
-            winner = None
+                # After each move, auto-process any bookkeeping requirements
+                # This handles transitions through LINE_PROCESSING, TERRITORY_PROCESSING, etc.
+                state, bookkeeping_moves = self._auto_process_bookkeeping(
+                    state,
+                    recorder=recorder,
+                    recorded_move_types=recorded_move_types,
+                )
+                move_count += bookkeeping_moves
 
-        duration = time.time() - start_time
+            # Determine rankings based on elimination order or ring counts
+            rankings = self._compute_rankings(state, match.agent_ids)
 
-        # Build match metadata with agent information
-        match_metadata: dict[str, Any] = {
-            "board_type": match.board_type.value if hasattr(match.board_type, "value") else str(match.board_type),
-            "num_players": match.num_players,
-            "agents": {},
-        }
-        for agent_id in match.agent_ids:
-            agent = agents[agent_id]
-            agent_meta: dict[str, Any] = {
-                "agent_type": agent.agent_type.value if hasattr(agent.agent_type, "value") else str(agent.agent_type),
-                "version": agent.version,
+            # Determine termination reason
+            if state.game_status == GameStatus.COMPLETED:
+                termination_reason = "completed"
+            elif move_count >= self.max_moves:
+                termination_reason = "max_moves"
+            else:
+                termination_reason = "no_moves"
+
+            # Always determine a winner - use ranking[0] if no natural winner (2025-12-16 fix)
+            # This ensures all games have a definite outcome for ELO updates
+            if state.winner is not None:
+                winner = rankings[0]
+            elif rankings:
+                # No natural winner but we have computed rankings via tiebreaker
+                winner = rankings[0]
+                logger.info(f"Game ended via {termination_reason}, winner by tiebreaker: {winner}")
+            else:
+                winner = None
+
+            duration = time.time() - start_time
+
+            # Build match metadata with agent information
+            match_metadata: dict[str, Any] = {
+                "board_type": match.board_type.value if hasattr(match.board_type, "value") else str(match.board_type),
+                "num_players": match.num_players,
+                "agents": {},
             }
-            if agent.model_path:
-                # Extract model metadata for neural agents
-                model_meta = extract_model_metadata(agent.model_path)
-                agent_meta["model_type"] = model_meta["model_type"]
-                agent_meta["model_class"] = model_meta["model_class"]
-                agent_meta["architecture_version"] = model_meta["architecture_version"]
-                agent_meta["training_board_type"] = model_meta["board_type"]
-                agent_meta["training_num_players"] = model_meta["num_players"]
-            match_metadata["agents"][agent_id] = agent_meta
+            for agent_id in match.agent_ids:
+                agent = agents[agent_id]
+                agent_meta: dict[str, Any] = {
+                    "agent_type": agent.agent_type.value if hasattr(agent.agent_type, "value") else str(agent.agent_type),
+                    "version": agent.version,
+                }
+                if agent.model_path:
+                    # Extract model metadata for neural agents
+                    model_meta = extract_model_metadata(agent.model_path)
+                    agent_meta["model_type"] = model_meta["model_type"]
+                    agent_meta["model_class"] = model_meta["model_class"]
+                    agent_meta["architecture_version"] = model_meta["architecture_version"]
+                    agent_meta["training_board_type"] = model_meta["board_type"]
+                    agent_meta["training_num_players"] = model_meta["num_players"]
+                match_metadata["agents"][agent_id] = agent_meta
+
+            if recorder is not None and self.recording_options is not None:
+                unique_move_types = set(recorded_move_types)
+                phase_labels = {
+                    phase
+                    for phase in (
+                        derive_phase_from_move_type(mt) for mt in recorded_move_types
+                    )
+                    if phase
+                }
+                phase_count = len(phase_move_contract()) or 1
+                phase_balance_score = min(1.0, len(phase_labels) / phase_count)
+                diversity_score = min(1.0, len(unique_move_types) / 6.0) if unique_move_types else 0.0
+
+                quality = compute_game_quality(
+                    {
+                        "game_id": match.match_id,
+                        "move_count": move_count,
+                        "board_type": board_type_value,
+                        "num_players": match.num_players,
+                        "winner": winner,
+                        "termination_reason": termination_reason,
+                        "source": self.recording_options.source,
+                        "phase_balance_score": phase_balance_score,
+                        "diversity_score": diversity_score,
+                    }
+                )
+
+                base_metadata = {
+                    "tournament_id": self.tournament_id or "default",
+                    "match_id": match.match_id,
+                    "round_number": match.round_number,
+                    "worker_id": match.worker_id,
+                    "game_length": move_count,
+                    "termination_reason": termination_reason,
+                    "winner": winner,
+                    "agent_ids": match.agent_ids,
+                    "agent_metadata": match_metadata["agents"],
+                    "match_metadata": match.metadata,
+                    "phase_balance_score": phase_balance_score,
+                    "diversity_score": diversity_score,
+                    "quality_score": quality.quality_score,
+                    "quality_category": quality.category.value,
+                    "training_weight": quality.training_weight,
+                    "sync_priority": quality.sync_priority,
+                }
+                extra_metadata = dict(self.recording_options.extra_metadata or {})
+                extra_metadata.update(base_metadata)
+                recorder.finalize(state, extra_metadata=extra_metadata)
 
         return MatchResult(
             match_id=match.match_id,
@@ -779,7 +881,13 @@ class TournamentRunner:
             timestamp=datetime.now(),
         )
 
-    def _auto_process_bookkeeping(self, state: Any, move_count: int) -> Any:
+    def _auto_process_bookkeeping(
+        self,
+        state: Any,
+        *,
+        recorder: Any | None = None,
+        recorded_move_types: list[str] | None = None,
+    ) -> tuple[Any, int]:
         """Auto-process bookkeeping phases until an interactive phase is reached.
 
         This handles LINE_PROCESSING, TERRITORY_PROCESSING, and other non-interactive
@@ -787,14 +895,16 @@ class TournamentRunner:
 
         Args:
             state: Current game state
-            move_count: Current move count (for loop limiting)
+            recorder: Optional recorder for canonical move history
+            recorded_move_types: Optional list to append move types to
 
         Returns:
-            Updated game state after processing bookkeeping phases
+            Tuple of (updated_state, bookkeeping_moves_applied)
         """
         from app.game_engine import GameEngine
 
         max_bookkeeping_moves = 50  # Safety limit to prevent infinite loops
+        bookkeeping_moves = 0
 
         for _ in range(max_bookkeeping_moves):
             if state.game_status != GameStatus.ACTIVE:
@@ -819,9 +929,20 @@ class TournamentRunner:
             if move is None:
                 break
 
+            state_before = state
             state = GameEngine.apply_move(state, move)
+            bookkeeping_moves += 1
+            if recorded_move_types is not None:
+                recorded_move_types.append(move.type.value)
+            if recorder is not None:
+                recorder.add_move(
+                    move,
+                    state_after=state,
+                    state_before=state_before,
+                    available_moves_count=0,
+                )
 
-        return state
+        return state, bookkeeping_moves
 
     def get_leaderboard(self) -> list[tuple[str, float, dict]]:
         """Get current leaderboard with ratings and stats.

@@ -42,6 +42,42 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+
+# ============================================================================
+# JSON Serialization Helpers
+# ============================================================================
+
+class GameRecordEncoder(json.JSONEncoder):
+    """Custom JSON encoder for game records with non-serializable types."""
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump(mode="json")
+        if hasattr(obj, "dict"):
+            return obj.dict()
+        if hasattr(obj, "value"):
+            return obj.value
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, set):
+            return list(obj)
+        if isinstance(obj, bytes):
+            return obj.decode("utf-8", errors="replace")
+        return super().default(obj)
+
+
+def serialize_game_state(state: Any) -> dict[str, Any]:
+    """Serialize a GameState to a JSON-compatible dict."""
+    if hasattr(state, "model_dump"):
+        return state.model_dump(mode="json")
+    if hasattr(state, "dict"):
+        raw = state.dict()
+        # Round-trip through JSON to ensure all nested objects are serializable
+        return json.loads(json.dumps(raw, cls=GameRecordEncoder))
+    return {}
+
 # Add parent to path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -57,7 +93,7 @@ from app.config.ladder_config import get_ladder_tier_config
 from app.config.thresholds import INITIAL_ELO_RATING
 from app.game_engine import GameEngine
 from app.models import AIConfig, AIType, BoardType, GameStatus
-from app.training.generate_data import create_initial_state
+from app.training.initial_state import create_initial_state
 from app.training.significance import wilson_score_interval
 from scripts.lib.logging_config import setup_script_logging
 
@@ -360,6 +396,7 @@ def run_single_game(
     filler_ai_type: str = "Random",
     filler_difficulty: int = 1,
     record_training_data: bool = False,
+    record_replay_db: bool = True,
 ) -> MatchResult:
     """Run a single game between two AI tiers (with optional filler AIs for 3-4 player games).
 
@@ -372,7 +409,18 @@ def run_single_game(
 
     Args:
         record_training_data: If True, capture full game history for training export.
+        record_replay_db: If True, record canonical replay data to GameReplayDB.
     """
+    from contextlib import ExitStack
+
+    from app.db.unified_recording import (
+        RecordSource,
+        RecordingConfig,
+        UnifiedGameRecorder,
+        is_recording_enabled,
+    )
+    from app.quality import compute_game_quality
+    from app.rules.history_contract import derive_phase_from_move_type, phase_move_contract
     def _tiebreak_winner(final_state: Any) -> int | None:
         players = getattr(final_state, "players", None) or []
         if not players:
@@ -411,7 +459,7 @@ def run_single_game(
     move_history_list = []
     if record_training_data:
         try:
-            initial_state_snapshot = state.dict() if hasattr(state, 'dict') else None
+            initial_state_snapshot = serialize_game_state(state)
         except Exception:
             initial_state_snapshot = None
 
@@ -449,88 +497,174 @@ def run_single_game(
         )
         ai_map[p_num] = filler_ai_class(p_num, filler_config)
 
+    recorded_move_types: list[str] = []
+    recording_enabled = record_replay_db and is_recording_enabled()
+    board_type_value = board_type.value if hasattr(board_type, "value") else str(board_type)
+
     move_count = 0
     winner_override: int | None = None
-    while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
-        current_player = state.current_player
-        current_ai = ai_map.get(current_player)
 
-        if current_ai is None:
-            logger.error(f"No AI for player {current_player}")
-            break
+    duration = 0.0
+    actual_winner: int | None = None
+    tier_winner: int | None = None
+    game_record: dict[str, Any] | None = None
 
-        try:
-            move = current_ai.select_move(state)
-            if move is None:
-                requirement = GameEngine.get_phase_requirement(state, current_player)
-                if requirement is not None:
-                    move = GameEngine.synthesize_bookkeeping_move(requirement, state)
+    with ExitStack() as stack:
+        recorder = None
+        if recording_enabled:
+            recording_config = RecordingConfig(
+                board_type=board_type_value,
+                num_players=num_players,
+                source=RecordSource.TOURNAMENT,
+                engine_mode="tournament",
+                db_prefix="tournament",
+                db_dir="data/games",
+            )
+            recorder = stack.enter_context(
+                UnifiedGameRecorder(recording_config, state, game_id=game_id)
+            )
 
-            if move is None:
-                # Current player cannot move - they lose, pick another winner
-                # For simplicity in multiplayer, just use tiebreak
+        while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
+            current_player = state.current_player
+            current_ai = ai_map.get(current_player)
+
+            if current_ai is None:
+                logger.error(f"No AI for player {current_player}")
+                break
+
+            try:
+                move = current_ai.select_move(state)
+                if move is None:
+                    requirement = GameEngine.get_phase_requirement(state, current_player)
+                    if requirement is not None:
+                        move = GameEngine.synthesize_bookkeeping_move(requirement, state)
+
+                if move is None:
+                    # Current player cannot move - they lose, pick another winner
+                    # For simplicity in multiplayer, just use tiebreak
+                    winner_override = _tiebreak_winner(state)
+                    break
+
+                # Record move for training data if requested
+                if record_training_data and move is not None:
+                    try:
+                        if hasattr(move, "model_dump"):
+                            move_record = move.model_dump(mode="json")
+                        elif hasattr(move, "dict"):
+                            raw = move.dict()
+                            move_record = json.loads(json.dumps(raw, cls=GameRecordEncoder))
+                        else:
+                            move_record = {"raw": str(move)}
+                        move_history_list.append(move_record)
+                    except Exception:
+                        pass
+
+                state_before = state
+                state = engine.apply_move(state, move)
+                move_count += 1
+                recorded_move_types.append(move.type.value)
+                if recorder is not None:
+                    recorder.add_move(
+                        move,
+                        state_after=state,
+                        state_before=state_before,
+                        available_moves_count=None,
+                    )
+            except Exception as e:
+                if fail_fast:
+                    raise
+                logger.warning(f"Error in game {game_id}: {e}")
                 winner_override = _tiebreak_winner(state)
                 break
 
-            # Record move for training data if requested
-            if record_training_data and move is not None:
-                try:
-                    move_record = move.dict() if hasattr(move, 'dict') else {"raw": str(move)}
-                    move_history_list.append(move_record)
-                except Exception:
-                    pass
+        duration = time.time() - start_time
 
-            state = engine.apply_move(state, move)
-            move_count += 1
-        except Exception as e:
-            if fail_fast:
-                raise
-            logger.warning(f"Error in game {game_id}: {e}")
-            winner_override = _tiebreak_winner(state)
-            break
+        # Determine the actual winner player number
+        actual_winner = winner_override
+        if actual_winner is None and state.winner is not None:
+            actual_winner = int(state.winner)
+        if actual_winner is None:
+            actual_winner = _tiebreak_winner(state)
 
-    duration = time.time() - start_time
+        # Convert to tier winner (1=tier_a, 2=tier_b, None=filler/draw)
+        if actual_winner == 1:
+            tier_winner = 1  # tier_a won
+        elif actual_winner == 2:
+            tier_winner = 2  # tier_b won
+        # else: filler AI won or draw - tier_winner stays None
 
-    # Determine the actual winner player number
-    actual_winner = winner_override
-    if actual_winner is None and state.winner is not None:
-        actual_winner = int(state.winner)
-    if actual_winner is None:
-        actual_winner = _tiebreak_winner(state)
+        # Build game record for training if requested
+        if record_training_data:
+            winner_label = "draw"
+            if tier_winner == 1:
+                winner_label = "tier_a"
+            elif tier_winner == 2:
+                winner_label = "tier_b"
 
-    # Convert to tier winner (1=tier_a, 2=tier_b, None=filler/draw)
-    tier_winner: int | None = None
-    if actual_winner == 1:
-        tier_winner = 1  # tier_a won
-    elif actual_winner == 2:
-        tier_winner = 2  # tier_b won
-    # else: filler AI won or draw - tier_winner stays None
+            game_record = {
+                "game_id": game_id,
+                "board_type": board_type.name.lower(),
+                "num_players": num_players,
+                "winner": winner_label,
+                "winner_player": actual_winner,
+                "game_length": move_count,
+                "duration_sec": duration,
+                "moves": move_history_list,
+                "initial_state": initial_state_snapshot,
+                "tier_a": tier_a,
+                "tier_b": tier_b,
+                "source": "run_distributed_tournament",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "seed": seed,
+            }
 
-    # Build game record for training if requested
-    game_record = None
-    if record_training_data:
-        winner_label = "draw"
-        if tier_winner == 1:
-            winner_label = "tier_a"
-        elif tier_winner == 2:
-            winner_label = "tier_b"
+        if recorder is not None:
+            unique_move_types = set(recorded_move_types)
+            phase_labels = {
+                phase
+                for phase in (
+                    derive_phase_from_move_type(mt) for mt in recorded_move_types
+                )
+                if phase
+            }
+            phase_count = len(phase_move_contract()) or 1
+            phase_balance_score = min(1.0, len(phase_labels) / phase_count)
+            diversity_score = min(1.0, len(unique_move_types) / 6.0) if unique_move_types else 0.0
 
-        game_record = {
-            "game_id": game_id,
-            "board_type": board_type.name.lower(),
-            "num_players": num_players,
-            "winner": winner_label,
-            "winner_player": actual_winner,
-            "game_length": move_count,
-            "duration_sec": duration,
-            "moves": move_history_list,
-            "initial_state": initial_state_snapshot,
-            "tier_a": tier_a,
-            "tier_b": tier_b,
-            "source": "run_distributed_tournament",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "seed": seed,
-        }
+            quality = compute_game_quality(
+                {
+                    "game_id": game_id,
+                    "move_count": move_count,
+                    "board_type": board_type_value,
+                    "num_players": num_players,
+                    "winner": actual_winner,
+                    "termination_reason": state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status),
+                    "source": "run_distributed_tournament",
+                    "phase_balance_score": phase_balance_score,
+                    "diversity_score": diversity_score,
+                }
+            )
+
+            recorder.finalize(
+                state,
+                extra_metadata={
+                    "tournament_id": f"{tier_a}_vs_{tier_b}",
+                    "match_id": game_id,
+                    "tier_a": tier_a,
+                    "tier_b": tier_b,
+                    "winner_player": actual_winner,
+                    "winner_label": "tier_a" if tier_winner == 1 else ("tier_b" if tier_winner == 2 else "draw"),
+                    "game_length": move_count,
+                    "duration_sec": duration,
+                    "seed": seed,
+                    "phase_balance_score": phase_balance_score,
+                    "diversity_score": diversity_score,
+                    "quality_score": quality.quality_score,
+                    "quality_category": quality.category.value,
+                    "training_weight": quality.training_weight,
+                    "sync_priority": quality.sync_priority,
+                },
+            )
 
     return MatchResult(
         tier_a=tier_a,
@@ -592,6 +726,9 @@ class DistributedTournament:
         self.num_players = num_players
         self.filler_ai_type = filler_ai_type
         self.filler_difficulty = filler_difficulty
+        self.record_training_data = False
+        self.training_output_path: Path | None = None
+        self.training_records: list[dict[str, Any]] = []
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         if resume_file and os.path.exists(resume_file):
@@ -635,6 +772,28 @@ class DistributedTournament:
         with open(path, "w") as f:
             json.dump(self.state.to_dict(), f, indent=2)
         logger.info(f"Saved checkpoint: {path}")
+
+    def _export_training_data(self) -> None:
+        """Export collected training records to JSONL file."""
+        if not self.training_records:
+            return
+
+        if self.training_output_path is not None:
+            output_path = self.training_output_path
+        else:
+            # Use data/tournaments/ to match ingestion pipeline patterns
+            training_dir = Path("data/tournaments")
+            training_dir.mkdir(parents=True, exist_ok=True)
+            output_path = training_dir / f"tier_tournament_{self.state.tournament_id}.jsonl"
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            for record in self.training_records:
+                f.write(json.dumps(record, cls=GameRecordEncoder) + "\n")
+
+        logger.info(
+            f"Exported {len(self.training_records)} training records to {output_path}"
+        )
 
     def _update_stats(self, result: MatchResult) -> None:
         tier_a = result.tier_a
@@ -700,6 +859,7 @@ class DistributedTournament:
                 num_players=self.num_players,
                 filler_ai_type=self.filler_ai_type,
                 filler_difficulty=self.filler_difficulty,
+                record_training_data=self.record_training_data,
             )
 
             if game_idx % 2 == 1:
@@ -714,10 +874,15 @@ class DistributedTournament:
                     timestamp=result.timestamp,
                     seed=result.seed,
                     game_index=result.game_index,
+                    game_record=result.game_record,
                 )
 
             results.append(result)
             self._update_stats(result)
+
+            # Collect training records if enabled
+            if self.record_training_data and result.game_record is not None:
+                self.training_records.append(result.game_record)
 
             if (game_idx + 1) % 10 == 0:
                 logger.info(
@@ -777,6 +942,10 @@ class DistributedTournament:
         duration = time.time() - start_time
 
         self._save_checkpoint()
+
+        # Export training data if enabled
+        if self.record_training_data and self.training_records:
+            self._export_training_data()
 
         report = self.generate_report(duration)
 
@@ -1160,7 +1329,7 @@ def parse_args() -> argparse.Namespace:
         "--training-output",
         type=str,
         default=None,
-        help="Output path for training JSONL (default: data/training/distributed_tournament_{id}.jsonl).",
+        help="Output path for training JSONL (default: data/tournaments/tier_tournament_{id}.jsonl).",
     )
     return parser.parse_args()
 
@@ -1296,6 +1465,12 @@ def main() -> None:
         filler_ai_type=args.filler_ai,
         filler_difficulty=args.filler_difficulty,
     )
+
+    # Configure training data export if requested
+    if args.record_training_data:
+        tournament.record_training_data = True
+        if args.training_output:
+            tournament.training_output_path = Path(args.training_output)
 
     report = tournament.run()
 
