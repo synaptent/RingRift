@@ -16,8 +16,9 @@ Purpose: C2 consolidation - wire integration modules to coordination bootstrap
 
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.coordination.event_router import (
@@ -131,6 +132,8 @@ def _build_evaluation_result(payload: dict[str, Any]) -> "EvaluationResult" | No
 
 
 def _run_coroutine(coro: Any) -> None:
+    if coro is None:
+        return
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(coro)
@@ -150,17 +153,17 @@ def wire_model_lifecycle_events(manager: ModelLifecycleManager) -> None:
     logger.info("[IntegrationBridge] Wiring ModelLifecycleManager to event router")
 
     # Register callbacks that publish to router
-    def on_model_registered(event_data: dict[str, Any]) -> None:
-        publish_sync(EVENT_MODEL_REGISTERED, event_data, source="model_lifecycle")
+    def on_model_registered(**event_data: Any) -> None:
+        publish_sync(EVENT_MODEL_REGISTERED, dict(event_data), source="model_lifecycle")
 
-    def on_model_promoted(event_data: dict[str, Any]) -> None:
-        publish_sync(EVENT_MODEL_PROMOTED, event_data, source="model_lifecycle")
+    def on_model_promoted(**event_data: Any) -> None:
+        publish_sync(EVENT_MODEL_PROMOTED, dict(event_data), source="model_lifecycle")
 
-    def on_training_triggered(event_data: dict[str, Any]) -> None:
-        publish_sync(EVENT_TRAINING_TRIGGERED, event_data, source="model_lifecycle")
+    def on_training_triggered(**event_data: Any) -> None:
+        publish_sync(EVENT_TRAINING_TRIGGERED, dict(event_data), source="model_lifecycle")
 
-    def on_model_rollback(event_data: dict[str, Any]) -> None:
-        publish_sync(EVENT_MODEL_ROLLBACK, event_data, source="model_lifecycle")
+    def on_model_rollback(**event_data: Any) -> None:
+        publish_sync(EVENT_MODEL_ROLLBACK, dict(event_data), source="model_lifecycle")
 
     # Register with manager's callback system
     manager.register_callback("model_registered", on_model_registered)
@@ -207,25 +210,25 @@ def wire_p2p_integration_events(manager: P2PIntegrationManager) -> None:
     logger.info("[IntegrationBridge] Wiring P2PIntegrationManager to event router")
 
     # Register callbacks that publish to router
-    def on_cluster_unhealthy(event_data: dict[str, Any]) -> None:
+    def on_cluster_unhealthy(**event_data: Any) -> None:
         publish_sync(
             EVENT_CLUSTER_HEALTH_CHANGED,
             {"healthy": False, **event_data},
             source="p2p_integration",
         )
 
-    def on_cluster_healthy(event_data: dict[str, Any]) -> None:
+    def on_cluster_healthy(**event_data: Any) -> None:
         publish_sync(
             EVENT_CLUSTER_HEALTH_CHANGED,
             {"healthy": True, **event_data},
             source="p2p_integration",
         )
 
-    def on_selfplay_scaled(event_data: dict[str, Any]) -> None:
-        publish_sync(EVENT_SELFPLAY_SCALED, event_data, source="p2p_integration")
+    def on_selfplay_scaled(**event_data: Any) -> None:
+        publish_sync(EVENT_SELFPLAY_SCALED, dict(event_data), source="p2p_integration")
 
-    def on_evaluation_complete(event_data: dict[str, Any]) -> None:
-        publish_sync(EVENT_EVALUATION_COMPLETE, event_data, source="p2p_integration")
+    def on_evaluation_complete(**event_data: Any) -> None:
+        publish_sync(EVENT_EVALUATION_COMPLETE, dict(event_data), source="p2p_integration")
 
     # Register with manager's callback system
     manager.register_callback("cluster_unhealthy", on_cluster_unhealthy)
@@ -235,19 +238,40 @@ def wire_p2p_integration_events(manager: P2PIntegrationManager) -> None:
 
     # Subscribe to model promoted events to trigger P2P sync
     def on_model_promoted(event: RouterEvent) -> None:
-        if event.payload:
+        if not isinstance(event.payload, dict):
+            return
+        metadata = event.payload.get("metadata") if isinstance(event.payload.get("metadata"), dict) else {}
+        model_id = _first_present(event.payload, metadata, ["model_id", "model", "id"])
+        model_path = _first_present(event.payload, metadata, ["model_path", "path"])
+        promotion_type = _first_present(event.payload, metadata, ["promotion_type", "stage", "tier"])
+        if promotion_type and str(promotion_type).lower() not in {"production", "champion"}:
+            return
+        if not model_id or not model_path:
+            logger.debug("[IntegrationBridge] Model promotion missing model_id/model_path; skipping sync")
+            return
+
+        async def _sync() -> None:
             try:
-                manager.sync_model_to_cluster(event.payload)
+                await manager.sync_model_to_cluster(str(model_id), Path(str(model_path)))
             except Exception as e:
                 logger.error(f"[IntegrationBridge] Error syncing model to cluster: {e}")
 
+        _run_coroutine(_sync())
+
     # Subscribe to training triggered events
     def on_training_triggered(event: RouterEvent) -> None:
-        if event.payload:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+
+        async def _start_training() -> None:
             try:
-                manager.start_cluster_training(event.payload)
+                if payload and hasattr(manager, "training"):
+                    await manager.training.start_training(payload)
+                else:
+                    await manager.trigger_training()
             except Exception as e:
                 logger.error(f"[IntegrationBridge] Error starting cluster training: {e}")
+
+        _run_coroutine(_start_training())
 
     subscribe(EVENT_MODEL_PROMOTED, on_model_promoted)
     subscribe(EVENT_TRAINING_TRIGGERED, on_training_triggered)

@@ -145,6 +145,9 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
 
         # When in movement phase but the next move is from a later phase,
         # inject NO_MOVEMENT_ACTION to advance.
+        # RR-CANON-FIX (Dec 2025): Check if valid movement moves exist before
+        # injecting. This aligns with TypeScript's synthesizeBookkeepingMoves()
+        # which respects ANM semantics per RR-CANON-R200.
         movement_moves = (
             "move_stack", "no_movement_action", "recovery_slide",
             "overtaking_capture", "continue_capture_segment", "skip_capture",
@@ -152,6 +155,21 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
         )
         if current_phase == "movement":
             if next_type not in movement_moves:
+                # Check if player has valid movement moves before injecting
+                # This prevents incorrect phase advancement when moves exist
+                valid_moves = GameEngine.get_valid_moves(state)
+                movement_like_types = {
+                    MoveType.MOVE_STACK, MoveType.RECOVERY_SLIDE,
+                    MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                    MoveType.SKIP_CAPTURE, MoveType.SKIP_RECOVERY,
+                }
+                has_movement_moves = any(m.type in movement_like_types for m in valid_moves)
+
+                if has_movement_moves:
+                    # Player still has movement options - do NOT inject NO_MOVEMENT_ACTION
+                    # This matches TS behavior which returns null when moves exist
+                    break
+
                 no_movement_move = MoveModel(
                     id="legacy-inject-no-movement",
                     type=MoveType.NO_MOVEMENT_ACTION,
@@ -168,9 +186,22 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
 
         # When in capture phase but next move is from a later phase,
         # inject SKIP_CAPTURE to advance.
+        # RR-CANON-FIX (Dec 2025): Check if valid capture moves exist before
+        # injecting. This aligns with TypeScript's chain capture semantics.
         capture_moves = ("overtaking_capture", "continue_capture_segment", "skip_capture")
         if current_phase == "capture":
             if next_type not in capture_moves:
+                # Check if player has valid capture moves before injecting
+                valid_moves = GameEngine.get_valid_moves(state)
+                capture_like_types = {
+                    MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                }
+                has_capture_moves = any(m.type in capture_like_types for m in valid_moves)
+
+                if has_capture_moves:
+                    # Player still has capture options - do NOT inject SKIP_CAPTURE
+                    break
+
                 skip_capture_move = MoveModel(
                     id="legacy-inject-skip-capture",
                     type=MoveType.SKIP_CAPTURE,

@@ -335,10 +335,10 @@ describe('contracts/validators.ts - Branch Coverage', () => {
       expect(result.success).toBe(true);
     });
 
-    it('validates move with line formation fields', () => {
+    it('validates move with line formation fields (canonical type)', () => {
       const result = validateMove({
         ...validMove,
-        type: 'line_formation',
+        type: 'choose_line_option', // Canonical type (line_formation is legacy)
         formedLines: [
           {
             positions: [{ x: 0, y: 0 }],
@@ -351,10 +351,10 @@ describe('contracts/validators.ts - Branch Coverage', () => {
       expect(result.success).toBe(true);
     });
 
-    it('validates move with territory fields', () => {
+    it('validates move with territory fields (canonical type)', () => {
       const result = validateMove({
         ...validMove,
-        type: 'territory_claim',
+        type: 'choose_territory_option', // Canonical type (territory_claim is legacy)
         claimedTerritory: [
           {
             spaces: [{ x: 0, y: 0 }],
@@ -931,27 +931,31 @@ describe('contracts/validators.ts - Branch Coverage', () => {
   // Enum schemas
   // ==========================================================================
   describe('Enum schemas', () => {
-    it('ZodMoveTypeSchema validates all move types', () => {
-      const moveTypes = [
+    it('ZodMoveTypeSchema validates all canonical move types', () => {
+      // Canonical move types only - legacy types (build_stack, line_formation, territory_claim)
+      // are intentionally excluded as they are deprecated per RULES_CANONICAL_SPEC
+      const canonicalMoveTypes = [
         'place_ring',
         'move_stack',
-        'build_stack',
-        'move_stack',
         'skip_placement',
+        'no_placement_action',
+        'no_movement_action',
         'overtaking_capture',
         'continue_capture_segment',
+        'skip_capture',
         'recovery_slide',
+        'skip_recovery',
         'process_line',
         'choose_line_option',
+        'no_line_action',
         'choose_territory_option',
+        'skip_territory_processing',
+        'no_territory_action',
         'eliminate_rings_from_stack',
         'forced_elimination',
-        'no_territory_action',
-        'no_line_action',
-        'line_formation',
-        'territory_claim',
+        'swap_sides',
       ];
-      for (const type of moveTypes) {
+      for (const type of canonicalMoveTypes) {
         expect(ZodMoveTypeSchema.safeParse(type).success).toBe(true);
       }
     });
