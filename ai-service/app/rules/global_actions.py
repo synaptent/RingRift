@@ -131,9 +131,35 @@ def has_phase_local_interactive_move(
         moves = GameEngine._get_line_processing_moves(state, player)
         return len(moves) > 0
 
-    # TERRITORY_PROCESSING: Call territory enumeration directly, matching TS
-    # `enumerateProcessTerritoryRegionMoves` + `enumerateTerritoryEliminationMoves`.
+    # TERRITORY_PROCESSING: Per RR-CANON-R145, when the last move by this player
+    # was a choose_territory_option (with region data), there's a pending
+    # self-elimination that counts as an interactive move. This mirrors TS
+    # globalActions.ts which calls BOTH enumerateProcessTerritoryRegionMoves AND
+    # enumerateTerritoryEliminationMoves for the ANM check.
+    #
+    # HEX-PARITY-03 fix: Check for pending territory self-elimination explicitly,
+    # similar to the pending_line_reward_elimination check in line_processing.
     if phase == GamePhase.TERRITORY_PROCESSING:
+        # Check for pending territory self-elimination (RR-CANON-R145)
+        # This matches TS getPendingTerritorySelfEliminationRegion logic
+        last_move = state.move_history[-1] if state.move_history else None
+        if last_move is not None and last_move.player == player:
+            if last_move.type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION):
+                # Check if the move has region data (required for pending elimination)
+                regions = getattr(last_move, "disconnected_regions", None)
+                if regions:
+                    # Pending self-elimination: check for eligible elimination targets
+                    # outside the processed region
+                    processed_region_keys = {p.to_key() for p in regions[0].spaces}
+                    for stack in state.board.stacks.values():
+                        if stack.position.to_key() in processed_region_keys:
+                            continue
+                        if stack.controlling_player == player and stack.stack_height > 0:
+                            return True
+                    # No eligible elimination targets (edge case)
+                    return False
+
+        # No pending elimination: check for region processing moves
         moves = GameEngine._get_territory_processing_moves(state, player)
         return len(moves) > 0
 
