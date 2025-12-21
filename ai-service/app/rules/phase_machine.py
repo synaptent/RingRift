@@ -240,33 +240,28 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         # After movement, check for captures from the landing position.
         # Per RR-CANON-R093, post-movement captures are only available
         # from the stack that just moved, at its landing position.
-        # Clear any stale chain_capture_state from previous turns to
-        # ensure the first capture is OVERTAKING_CAPTURE (initial), not
-        # CONTINUE_CAPTURE_SEGMENT (continuation).
-        #
-        # IMPORTANT: We must enumerate captures ONLY from last_move.to,
-        # NOT from all stacks, to match TS getValidMoves("capture") behavior
-        # which filters by lastMove.to directly. This fixes parity divergence
-        # where Python was not finding captures because must_move_from_stack_key
-        # might not be set/updated correctly for all placement scenarios.
+        # Clear any stale chain_capture_state to ensure the first capture
+        # is classified as OVERTAKING_CAPTURE.
         game_state.chain_capture_state = None
 
         # Import here to avoid circular dependency
         from app.rules.capture_chain import enumerate_capture_moves_py
 
         attacker_pos = last_move.to
-        capture_moves = enumerate_capture_moves_py(
-            game_state,
-            current_player,
-            attacker_pos,
-            kind="initial",
-        )
-
-        if capture_moves:
-            game_state.current_phase = GamePhase.CAPTURE
-        else:
-            # No captures, go to line processing
+        if attacker_pos is None:
             GameEngine._advance_to_line_processing(game_state, trace_mode=trace_mode)
+        else:
+            capture_moves = enumerate_capture_moves_py(
+                game_state,
+                current_player,
+                attacker_pos,
+                kind="initial",
+            )
+
+            if capture_moves:
+                game_state.current_phase = GamePhase.CAPTURE
+            else:
+                GameEngine._advance_to_line_processing(game_state, trace_mode=trace_mode)
 
     elif last_move.type == MoveType.NO_MOVEMENT_ACTION:
         # Movement phase was visited but no legal movement or capture
