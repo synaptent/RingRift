@@ -19,13 +19,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import type {
-  BoardType,
-  GameState,
-  Move,
-  Player,
-  TimeControl,
-} from '../src/shared/types/game';
+import type { BoardType, GameState, Move, Player, TimeControl } from '../src/shared/types/game';
 import type {
   GameRecord,
   MoveRecord,
@@ -201,7 +195,7 @@ function runGame(
     if (state.gameStatus === 'completed' || state.gameStatus === 'finished') {
       break;
     }
-    let validMoves = getValidMoves(state);
+    const validMoves = getValidMoves(state);
     let selectedMove: Move | null = null;
 
     if (validMoves.length === 0) {
@@ -331,7 +325,9 @@ async function main(): Promise<void> {
       // Start with 2 players
       for (let i = 0; i < args.limit; i++) {
         const gameId = uuidv4();
-        console.log(`[generate] Running game ${i + 1}/${args.limit} for ${boardType} ${numPlayers}p...`);
+        console.log(
+          `[generate] Running game ${i + 1}/${args.limit} for ${boardType} ${numPlayers}p...`
+        );
 
         try {
           const gameRecord = runGame(gameId, boardType, numPlayers, args.maxTurns);
@@ -342,10 +338,10 @@ async function main(): Promise<void> {
               (m) => m.type === 'overtaking_capture' || m.type === 'continue_capture_segment'
             );
             const hasLines = gameRecord.moves.some(
-              (m) => m.type === 'process_line' || m.type === 'choose_line_reward'
+              (m) => m.type === 'process_line' || m.type === 'choose_line_option'
             );
             const hasTerritory = gameRecord.moves.some(
-              (m) => m.type === 'process_territory_region' || m.type === 'eliminate_rings_from_stack'
+              (m) => m.type === 'choose_territory_option' || m.type === 'eliminate_rings_from_stack'
             );
 
             let category = 'full_game';

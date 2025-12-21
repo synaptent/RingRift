@@ -142,7 +142,7 @@ function buildTerritoryRegionSelfEliminationSequence(): TerritoryCompositeSequen
 
   const regionMove: Move = {
     id: 'territory-composite-region',
-    type: 'process_territory_region',
+    type: 'choose_territory_option',
     player: 1,
     to: p1a,
     disconnectedRegions: [region],

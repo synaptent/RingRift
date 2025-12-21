@@ -3145,6 +3145,10 @@ class GameEngine:
         """
         Enumerate canonical territory-processing **decision** moves.
 
+        .. deprecated:: December 2025
+            Delegates to :class:`app.rules.generators.TerritoryGenerator`.
+            All move enumeration logic is now in the SSoT generator module.
+
         Mirrors TS `getValidTerritoryProcessingDecisionMoves` and
         `getValidEliminationDecisionMoves` while obeying R076:
 
@@ -3158,142 +3162,8 @@ class GameEngine:
           `NO_TERRITORY_ACTION_REQUIRED` requirement so hosts can emit an
           explicit `no_territory_action` bookkeeping move.
         """
-        board = game_state.board
-
-        # Mandatory self-elimination (RR-CANON-R145 / RR-CANON-R114) is modelled
-        # as an explicit ELIMINATE_RINGS_FROM_STACK move after a region is
-        # processed. When that elimination is pending, it must be resolved
-        # before offering further CHOOSE_TERRITORY_OPTION decisions.
-        last_move = game_state.move_history[-1] if game_state.move_history else None
-        if (
-            last_move is not None
-            and last_move.player == player_number
-            and last_move.type
-            in (
-                MoveType.CHOOSE_TERRITORY_OPTION,
-                MoveType.PROCESS_TERRITORY_REGION,  # legacy alias
-            )
-        ):
-            move_number = len(game_state.move_history) + 1
-            elimination_context = (
-                "recovery"
-                if GameEngine._did_current_turn_include_recovery_slide(game_state, player_number)
-                else "territory"
-            )
-
-            processed_region_keys: set[str] = set()
-            processed_regions = list(getattr(last_move, "disconnected_regions", None) or [])
-            if processed_regions:
-                processed_region_keys = {p.to_key() for p in processed_regions[0].spaces}
-
-            elimination_moves: list[Move] = []
-            for pos_key, stack in board.stacks.items():
-                if processed_region_keys and pos_key in processed_region_keys:
-                    continue
-
-                if elimination_context == "recovery":
-                    # RR-CANON-R114: recovery-context territory self-elimination
-                    # is a buried-ring extraction. Stack need not be controlled.
-                    if stack.stack_height <= 1:
-                        continue
-                    if player_number not in (stack.rings[:-1] or []):
-                        continue
-                else:
-                    # RR-CANON-R145: normal territory self-elimination requires
-                    # a controlled stack outside the region.
-                    # All controlled stacks are eligible (including height-1).
-                    if stack.controlling_player != player_number:
-                        continue
-
-                elimination_moves.append(
-                    Move(
-                        id=f"eliminate-rings-from-stack-{move_number}-{pos_key}",
-                        type=MoveType.ELIMINATE_RINGS_FROM_STACK,
-                        player=player_number,
-                        to=stack.position,
-                        elimination_context=elimination_context,
-                        timestamp=game_state.last_move_at,
-                        thinkTime=0,
-                        moveNumber=move_number,
-                    )  # type: ignore
-                )
-
-            return elimination_moves
-
-        regions = BoardManager.find_disconnected_regions(
-            board,
-            player_number,
-        )
-
-        # Per RR-CANON-R143 (Self-elimination prerequisite), a player P can process
-        # ANY disconnected region R regardless of the border color, as long as P
-        # would still control at least one ring/stack outside R after processing.
-        # The `controlling_player` attribute (border color) only determines which
-        # markers get collapsed - it does NOT restrict WHO can process the region.
-        eligible_regions = [
-            region
-            for region in (regions or [])
-            if GameEngine._can_process_disconnected_region(
-                game_state,
-                region,
-                player_number,
-            )
-        ]
-
-        moves: list[Move] = []
-
-        if eligible_regions:
-            for idx, region in enumerate(eligible_regions):
-                rep = region.spaces[0]
-                # Canonical guard: controlling_player should not be 0. If the
-                # detector returned a neutral region, attribute it to the active
-                # player to keep the recording canonical with TS expectations.
-                controlling_player = region.controlling_player if region.controlling_player != 0 else player_number
-                # Mutate the region as well to keep downstream parity tools consistent.
-                region.controlling_player = controlling_player
-                safe_region = Territory(
-                    spaces=region.spaces,
-                    controlling_player=controlling_player,
-                    is_disconnected=region.is_disconnected,
-                )
-                moves.append(
-                    Move(
-                        id=f"choose-territory-option-{idx}-{rep.to_key()}",
-                        type=MoveType.CHOOSE_TERRITORY_OPTION,
-                        player=player_number,
-                        to=rep,
-                        disconnected_regions=(safe_region,),  # type: ignore[arg-type]
-                        timestamp=game_state.last_move_at,
-                        thinkTime=0,
-                        moveNumber=len(game_state.move_history) + 1,
-                    )  # type: ignore
-                )
-            # RR-CANON-R075: Territory processing is an optional subset. When at
-            # least one territory decision exists, players must be able to
-            # explicitly stop processing further regions via a voluntary skip.
-            move_number = len(game_state.move_history) + 1
-            moves.append(
-                Move(
-                    id=f"skip-territory-processing-{move_number}",
-                    type=MoveType.SKIP_TERRITORY_PROCESSING,
-                    player=player_number,
-                    to=Position(x=0, y=0),
-                    timestamp=game_state.last_move_at,
-                    thinkTime=0,
-                    moveNumber=move_number,
-                )
-            )
-            return moves
-
-        # No eligible regions – return empty list. The host/orchestrator will
-        # receive NO_TERRITORY_ACTION_REQUIRED from get_phase_requirement and
-        # can emit an explicit no_territory_action bookkeeping move.
-        #
-        # NOTE: ELIMINATE_RINGS_FROM_STACK is ONLY valid as a mandatory
-        # follow-up after processing a territory region (per TS game.ts
-        # MoveType docs). It should NOT be generated here when there are no
-        # regions.
-        return moves
+        # Delegate to SSoT generator
+        return _territory_generator.generate(game_state, player_number)
 
     @staticmethod
     def _can_process_disconnected_region(
@@ -3304,6 +3174,9 @@ class GameEngine:
         """
         Self-elimination prerequisite for territory processing.
 
+        .. deprecated:: December 2025
+            Delegates to :class:`app.rules.generators.TerritoryGenerator`.
+
         Mirrors TS canProcessTerritoryRegion:
 
         - Normal territory context (RR-CANON-R145): Player must have at least one
@@ -3311,56 +3184,8 @@ class GameEngine:
         - Recovery context (RR-CANON-R114): Player must have at least one eligible
           buried-ring extraction target outside the region (stack need not be controlled).
         """
-        board = game_state.board
-        region_keys = {p.to_key() for p in region.spaces}
-        from app.rules.elimination import (
-            EliminationContext,
-            is_stack_eligible_for_elimination,
-        )
-
-        if GameEngine._did_current_turn_include_recovery_slide(game_state, player_number):
-            # RR-CANON-R114: recovery-context prerequisite is the existence of
-            # a stack outside the region that contains a buried ring of the
-            # player (not at top).
-            for stack in board.stacks.values():
-                if stack.position.to_key() in region_keys:
-                    continue
-                eligibility = is_stack_eligible_for_elimination(
-                    rings=stack.rings,
-                    controlling_player=stack.controlling_player,
-                    context=EliminationContext.RECOVERY,
-                    player=player_number,
-                )
-                if eligibility.eligible:
-                    return True
-            return False
-
-        player_stacks = BoardManager.get_player_stacks(board, player_number)
-
-        # Collect stacks outside the region
-        stacks_outside = [
-            stack for stack in player_stacks
-            if stack.position.to_key() not in region_keys
-        ]
-
-        if len(stacks_outside) == 0:
-            # No stacks outside region - cannot process
-            return False
-
-        # RR-CANON-R145: any controlled stack outside the region is eligible
-        # (including height-1). Delegate to the canonical eligibility helper
-        # so Python stays aligned with TS elimination rules.
-        for stack in stacks_outside:
-            eligibility = is_stack_eligible_for_elimination(
-                rings=stack.rings,
-                controlling_player=stack.controlling_player,
-                context=EliminationContext.TERRITORY,
-                player=player_number,
-            )
-            if eligibility.eligible:
-                return True
-
-        return False
+        # Delegate to SSoT generator
+        return _territory_generator._can_process_region(game_state, region, player_number)
 
     @staticmethod
     def _get_movement_moves(

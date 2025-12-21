@@ -11,6 +11,24 @@ Features:
 - Automatic cleanup of stale training jobs
 - Integration with distributed_lock for low-level locking
 
+Architecture Relationship (December 2025):
+-----------------------------------------
+This module is part of a layered coordination architecture:
+
+1. **TaskCoordinator** (:mod:`app.coordination.task_coordinator`)
+   - Canonical for TASK ADMISSION CONTROL
+   - Decides how many tasks can run based on limits/resources
+
+2. **OrchestratorRegistry** (:mod:`app.coordination.orchestrator_registry`)
+   - Canonical for ROLE-BASED COORDINATION
+   - Ensures only one orchestrator per role
+
+3. **TrainingCoordinator** (this module)
+   - Specialized facade for TRAINING COORDINATION
+   - Adds NFS-based locking for GH200 cluster
+   - Delegates to DistributedLock for low-level locking
+   - Answers: "Can I start training this (board_type, num_players) config?"
+
 Usage:
     from app.coordination.training_coordinator import (
         TrainingCoordinator,

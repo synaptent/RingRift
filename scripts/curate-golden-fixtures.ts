@@ -111,14 +111,14 @@ function categorizeGame(detail: SelfPlayGameDetail): GoldenCategory[] {
 
   // Check for specific move patterns
   const hasPlacement = moveTypes.some((t) => t === 'place_ring');
-  const hasMovement = moveTypes.some((t) => t === 'move_stack' || t === 'move_ring');
+  const hasMovement = moveTypes.some((t) => t === 'move_stack');
   const hasCapture = moveTypes.some(
     (t) => t === 'overtaking_capture' || t === 'continue_capture_segment'
   );
   const hasChainCapture = moveTypes.some((t) => t === 'continue_capture_segment');
-  const hasLine = moveTypes.some((t) => t === 'process_line' || t === 'choose_line_reward');
+  const hasLine = moveTypes.some((t) => t === 'process_line' || t === 'choose_line_option');
   const hasTerritory = moveTypes.some(
-    (t) => t === 'process_territory_region' || t === 'eliminate_rings_from_stack'
+    (t) => t === 'choose_territory_option' || t === 'eliminate_rings_from_stack'
   );
 
   // Basic placement: games with only placement and simple movement
@@ -355,14 +355,15 @@ async function main(): Promise<void> {
             numPlayers: detail.numPlayers,
             totalMoves: detail.moves.length,
             hasCaptures: detail.moves.some(
-              (m) => m.moveType === 'overtaking_capture' || m.moveType === 'continue_capture_segment'
+              (m) =>
+                m.moveType === 'overtaking_capture' || m.moveType === 'continue_capture_segment'
             ),
             hasLines: detail.moves.some(
-              (m) => m.moveType === 'process_line' || m.moveType === 'choose_line_reward'
+              (m) => m.moveType === 'process_line' || m.moveType === 'choose_line_option'
             ),
             hasTerritory: detail.moves.some(
               (m) =>
-                m.moveType === 'process_territory_region' ||
+                m.moveType === 'choose_territory_option' ||
                 m.moveType === 'eliminate_rings_from_stack'
             ),
             winner: detail.winner,
