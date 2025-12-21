@@ -519,7 +519,8 @@ class HexNeuralNet_v3(nn.Module):
         x: torch.Tensor,
         globals: torch.Tensor,
         hex_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return_features: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass with spatial policy heads.
 
@@ -527,10 +528,12 @@ class HexNeuralNet_v3(nn.Module):
             x: Input features [B, in_channels, H, W]
             globals: Global features [B, global_features]
             hex_mask: Optional validity mask [1, H, W]
+            return_features: If True, also return backbone features for auxiliary tasks
 
         Returns:
             value: [B, num_players] per-player win probability
             policy: [B, P_HEX] flat policy logits
+            features (optional): [B, feat_dim] pooled backbone features (if return_features=True)
         """
         # Apply hex mask to input to prevent information bleeding
         mask = hex_mask if hex_mask is not None else self.hex_mask
@@ -572,6 +575,9 @@ class HexNeuralNet_v3(nn.Module):
 
         # Scatter into flat policy vector
         policy_logits = self._scatter_policy_logits(placement_logits, movement_logits, special_logits, hex_mask)
+
+        if return_features:
+            return v_out, policy_logits, v_cat
 
         return v_out, policy_logits
 
@@ -724,8 +730,21 @@ class HexNeuralNet_v3_Lite(nn.Module):
         x: torch.Tensor,
         globals: torch.Tensor,
         hex_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass with spatial policy heads."""
+        return_features: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Forward pass with spatial policy heads.
+
+        Args:
+            x: Input features [B, in_channels, H, W]
+            globals: Global features [B, global_features]
+            hex_mask: Optional validity mask [1, H, W]
+            return_features: If True, also return backbone features for auxiliary tasks
+
+        Returns:
+            value: [B, num_players] per-player win probability
+            policy: [B, P_HEX] flat policy logits
+            features (optional): [B, feat_dim] pooled backbone features (if return_features=True)
+        """
         mask = hex_mask if hex_mask is not None else self.hex_mask
         if mask is not None:
             x = x * mask.to(dtype=x.dtype, device=x.device)
@@ -757,5 +776,8 @@ class HexNeuralNet_v3_Lite(nn.Module):
         special_logits = self.special_fc(special_input)
 
         policy_logits = self._scatter_policy_logits(placement_logits, movement_logits, special_logits, hex_mask)
+
+        if return_features:
+            return v_out, policy_logits, v_cat
 
         return v_out, policy_logits
