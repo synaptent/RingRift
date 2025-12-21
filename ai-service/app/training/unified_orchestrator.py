@@ -102,6 +102,7 @@ try:
         get_curriculum_feedback,
         wire_elo_to_curriculum,
         wire_plateau_to_curriculum,
+        wire_tournament_to_curriculum,
     )
     _HAS_CURRICULUM_FEEDBACK = True
 except ImportError:
@@ -110,6 +111,7 @@ except ImportError:
     get_curriculum_feedback = None
     wire_elo_to_curriculum = None
     wire_plateau_to_curriculum = None
+    wire_tournament_to_curriculum = None
 
 # Quality bridge for quality-weighted sampling (December 2025)
 try:
@@ -215,6 +217,7 @@ class OrchestratorConfig:
     enable_curriculum_feedback: bool = True
     curriculum_wire_elo_events: bool = True  # Wire ELO_UPDATED → curriculum
     curriculum_wire_plateau_events: bool = True  # Wire PLATEAU_DETECTED → curriculum
+    curriculum_wire_tournament_events: bool = True  # Wire EVALUATION_COMPLETED → curriculum
 
     # Online learning (continuous in-game learning)
     enable_online_learning: bool = False  # Off by default; use for EBMO online AI
@@ -890,6 +893,11 @@ class UnifiedTrainingOrchestrator:
                 if self.config.curriculum_wire_plateau_events and wire_plateau_to_curriculum:
                     self._plateau_watcher = wire_plateau_to_curriculum(
                         rebalance_cooldown_seconds=600.0,
+                        auto_export=True,
+                    )
+                if self.config.curriculum_wire_tournament_events and wire_tournament_to_curriculum:
+                    self._tournament_watcher = wire_tournament_to_curriculum(
+                        rebalance_cooldown_seconds=300.0,
                         auto_export=True,
                     )
 

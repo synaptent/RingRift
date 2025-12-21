@@ -68,6 +68,7 @@ class ParallelSelfplayConfig:
     use_temperature_decay: bool = False  # Enable temperature decay per game
     move_temp_threshold: int = 30  # Use higher temp for first N moves
     opening_temperature: float = 1.5  # Temperature for opening moves
+    temperature_schedule: str = "linear"  # Schedule type: linear, alphazero, cosine, adaptive, curriculum
     # Opening book for position diversity (prevents mode collapse)
     use_opening_book: bool = False  # Enable via RINGRIFT_USE_OPENING_BOOK=1
     opening_book_prob: float = 0.8  # Probability to use opening vs fresh start
@@ -344,12 +345,32 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
 
             # Calculate temperature for this move (higher early in game for exploration)
             if config.use_temperature_decay:
-                if move_count < config.move_temp_threshold:
-                    # Interpolate from opening to standard temperature
-                    progress = move_count / config.move_temp_threshold
-                    temp = config.opening_temperature * (1 - progress) + config.temperature * progress
+                # Use advanced temperature scheduling if configured
+                if config.temperature_schedule != "linear":
+                    try:
+                        from app.training.temperature_scheduling import create_scheduler
+                        if not hasattr(config, '_temp_scheduler'):
+                            config._temp_scheduler = create_scheduler(
+                                config.temperature_schedule,
+                                initial_temp=config.opening_temperature,
+                                final_temp=config.temperature,
+                                decay_end_move=config.move_temp_threshold * 2
+                            )
+                        temp = config._temp_scheduler.get_temperature(move_count, state)
+                    except ImportError:
+                        # Fallback to linear
+                        if move_count < config.move_temp_threshold:
+                            progress = move_count / config.move_temp_threshold
+                            temp = config.opening_temperature * (1 - progress) + config.temperature * progress
+                        else:
+                            temp = config.temperature
                 else:
-                    temp = config.temperature
+                    # Default linear interpolation
+                    if move_count < config.move_temp_threshold:
+                        progress = move_count / config.move_temp_threshold
+                        temp = config.opening_temperature * (1 - progress) + config.temperature * progress
+                    else:
+                        temp = config.temperature
             else:
                 temp = config.temperature
 
