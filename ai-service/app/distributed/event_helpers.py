@@ -110,7 +110,9 @@ except ImportError:
 
 # Global setting to prefer router for all emissions (December 2025)
 # Set to True to route all events through the unified router
-USE_ROUTER_BY_DEFAULT = False
+# Changed to True (December 2025) - all event emissions now route through unified router
+# which provides: EventBus + StageEventBus + CrossProcessEventQueue integration
+USE_ROUTER_BY_DEFAULT = True
 
 
 def has_event_router() -> bool:
