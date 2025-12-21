@@ -1657,9 +1657,10 @@ class GameReplayDB:
                 else str(next_move.type)
             )
 
-            # Meta-moves like swap_sides are valid in any phase - no injection needed
-            meta_moves = ("swap_sides",)
-            if next_type in meta_moves:
+            # swap_sides is a ring_placement-only meta-move; avoid injecting
+            # no-op phase transitions around it and let phase validation handle
+            # any out-of-phase records.
+            if next_type == "swap_sides":
                 break
 
             # RR-PARITY-FIX: When in ring_placement/movement but the next move

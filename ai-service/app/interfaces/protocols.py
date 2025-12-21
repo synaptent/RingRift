@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 class HashProvider(Protocol):
     """Protocol for Zobrist-style position hashing.
 
-    Implementations: app.ai.zobrist.ZobristHash
+    Implementations: app.core.zobrist.ZobristHash
 
     Used by: GameEngine for incremental hash updates
     """

@@ -49,7 +49,10 @@ class GameStatus(str, Enum):
 
 class MoveType(str, Enum):
     """
-    Canonical MoveType enumeration mirroring src/shared/types/game.ts.
+    Canonical + legacy MoveType enumeration mirroring src/shared/types/game.ts.
+
+    Legacy aliases are retained for replay compatibility only; canonical
+    recordings must use the canonical names (e.g., move_stack, choose_line_option).
     """
     # Ring Placement
     PLACE_RING = "place_ring"
@@ -63,7 +66,7 @@ class MoveType(str, Enum):
     # Movement
     MOVE_STACK = "move_stack"
     MOVE_RING = "move_ring"  # Legacy alias
-    BUILD_STACK = "build_stack"
+    BUILD_STACK = "build_stack"  # Legacy alias (deprecated)
     # Forced no-op in movement: player entered MOVEMENT but had no legal
     # movement or capture anywhere. Mirrors TS MoveType 'no_movement_action'
     # and RR-CANON-R075.
