@@ -487,13 +487,35 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
     """
     # Handle move_type vs type field
     move_type = move_dict.get("type") or move_dict.get("move_type", "unknown")
-    # Normalize GPU selfplay move types to canonical
+    # Normalize GPU selfplay move types (UPPERCASE) to canonical (lowercase)
     gpu_type_map = {
+        # Ring placement
         "PLACEMENT": "place_ring",
+        "SKIP_PLACEMENT": "skip_placement",
+        "NO_PLACEMENT_ACTION": "no_placement_action",
+        # Movement
         "MOVEMENT": "move_stack",
+        "NO_MOVEMENT_ACTION": "no_movement_action",
+        "RECOVERY_SLIDE": "recovery_slide",
+        # Capture
         "CAPTURE": "overtaking_capture",
+        "OVERTAKING_CAPTURE": "overtaking_capture",
+        "CONTINUE_CAPTURE_SEGMENT": "continue_capture_segment",
+        "SKIP_CAPTURE": "skip_capture",
+        # Line processing
         "LINE": "process_line",
+        "PROCESS_LINE": "process_line",
+        "CHOOSE_LINE_OPTION": "choose_line_option",
+        "CHOOSE_LINE_REWARD": "choose_line_reward",
+        "NO_LINE_ACTION": "no_line_action",
+        # Territory processing
         "TERRITORY": "process_territory_region",
+        "PROCESS_TERRITORY_REGION": "process_territory_region",
+        "CHOOSE_TERRITORY_OPTION": "choose_territory_option",
+        "NO_TERRITORY_ACTION": "no_territory_action",
+        # Other
+        "FORCED_ELIMINATION": "forced_elimination",
+        "ELIMINATE_RINGS_FROM_STACK": "eliminate_rings_from_stack",
     }
     if move_type in gpu_type_map:
         move_type = gpu_type_map[move_type]
