@@ -30,15 +30,46 @@ Acceptance criteria:
 - Legacy compatibility is opt-in via `src/shared/engine/legacy/legacyReplayHelpers.ts`.
 - All existing tests compile; legacy replay access has an explicit import path.
 
+## Recent Progress (2025-12-21)
+
+### Completed
+
+1. **Python phase auto-advance extraction**: Moved `_auto_advance_phase()` from
+   `nnue_policy.py` to `app/rules/legacy/phase_auto_advance.py`. This function
+   synthesizes bookkeeping moves for legacy selfplay data, violating RR-CANON-R075.
+   Now isolated with deprecation warning and metrics tracking.
+
+2. **Server-side legacy normalization**: Updated `TurnEngineAdapter.ts` to normalize
+   legacy move types unconditionally (not just in replay mode). Entry points now
+   ensure aggregates only see canonical types.
+
+3. **AI engine naming**: Verified factory.py properly normalizes CLI hyphens to
+   internal underscores (line 768). No changes needed.
+
+### Pending (Python legacy replay separation)
+
+The following Python code paths need extraction to `app/rules/legacy/`:
+
+1. **`app/db/game_replay.py:_auto_inject_before_move()`** (~200 lines)
+   - Auto-injects bookkeeping moves to bridge phase gaps in non-canonical recordings
+   - Contains extensive RR-PARITY-FIX comments for phase coercion
+   - Target: Extract to `app/rules/legacy/replay_phase_injection.py`
+   - Deprecation: Q2 2026 (after canonical data migration complete)
+
 ## Next Consolidation Lanes (Future phases)
 
-Phase 2: AI engine naming consolidation (gumbel/mcts/descent)
+Phase 2: Python legacy replay separation
 
-- Normalize engine identifiers across training/selfplay scripts and AI factory.
-- Align `gumbel`, `gumbel-mcts`, and `gumbel_mcts` naming with one canonical
-  identifier plus well-documented aliases.
+- Extract `_auto_inject_before_move()` to legacy module
+- Make `get_state_at_move(auto_inject=True)` route to legacy module
+- Add deprecation warnings and metrics tracking
 
-Phase 3: Script consolidation (per CODEBASE_CONSOLIDATION_PLAN.md)
+Phase 3: AI engine naming consolidation (gumbel/mcts/descent) ✅ COMPLETE
+
+- Verified: factory.py already normalizes engine identifiers
+- `gumbel-mcts` CLI → `gumbel_mcts` internal via `agent_key.replace("-", "_")`
+
+Phase 4: Script consolidation (per CODEBASE_CONSOLIDATION_PLAN.md)
 
 - Consolidate duplicate tournament/selfplay/training entrypoints.
 - Migrate retained functionality into the unified scripts and document removals.

@@ -210,3 +210,109 @@ Phase 3 (2-3 weeks): Automation and promotion
 2. What is the required margin vs the current heuristic baseline for promotion?
 3. Which experimental engine modes (`ig-gmo`, `cage`) are acceptable for training
    data generation vs evaluation only?
+
+---
+
+## Current Status (2025-12-21)
+
+### Training Data Volume (from TRAINING_DATA_REGISTRY.md)
+
+| Config       | Database                | Games | Status      | Target |
+| ------------ | ----------------------- | ----- | ----------- | ------ |
+| square8 2P   | canonical_square8_2p.db | 200   | canonical   | >=1000 |
+| square8 3P   | canonical_square8_3p.db | 2     | canonical   | >=200  |
+| square8 4P   | canonical_square8_4p.db | 2     | canonical   | >=200  |
+| square19 2P  | canonical_square19.db   | 3     | canonical   | >=1000 |
+| hexagonal 2P | canonical_hexagonal.db  | 0     | **BLOCKED** | >=1000 |
+
+### Current Elo Baseline (from baseline_evaluation_bundle.json)
+
+| Config       | Best Model          | Elo  | Gap to 2000 | Status                               |
+| ------------ | ------------------- | ---- | ----------- | ------------------------------------ |
+| square8 2P   | distilled_sq8_2p_v6 | 1562 | +438        | NN_COMPETITIVE                       |
+| square19 2P  | sq19_2p_nn_baseline | 1482 | +518        | **NN_WEAK (-502 vs heuristic)**      |
+| hexagonal 2P | hex_2p_nn_baseline  | 1500 | +500        | **UNBLOCKED** (parity fix: 7f43c368) |
+
+### Critical Bottlenecks
+
+1. **square19 2P**: Only 3 games in canonical DB (need 200+ for baseline, 1000+ for training)
+2. **hexagonal 2P**: Parity bug FIXED (commit 7f43c368) - can now generate training data
+3. **3P/4P configs**: Only 2 games each (insufficient for training)
+
+### Immediate Actions
+
+1. **Scale square19 selfplay** (command ready):
+
+   ```bash
+   PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+     --board-type square19 \
+     --num-games 200 \
+     --db data/games/canonical_square19.db \
+     --summary db_health.canonical_square19.json
+   ```
+
+2. **Train new square19 model** after data reaches target:
+
+   ```bash
+   python scripts/train_distilled.py \
+     --board-type square19 \
+     --training-db data/games/canonical_square19.db
+   ```
+
+3. **Evaluate new model**:
+   ```bash
+   python scripts/run_model_elo_tournament.py \
+     --board square19 --players 2 --run
+   ```
+
+### Cluster Execution Guide
+
+All training and selfplay should run on cluster nodes (not local). Use these patterns:
+
+**1. Check cluster status:**
+
+```bash
+python scripts/gpu_cluster_manager.py status
+```
+
+**2. Deploy code to cluster:**
+
+```bash
+python scripts/gpu_cluster_manager.py deploy --group primary_training
+```
+
+**3. Run selfplay on cluster node (via SSH):**
+
+```bash
+# SSH to a training node (check config/cluster.yaml for hosts)
+ssh ubuntu@<node-ip> "cd ~/ringrift/ai-service && source venv/bin/activate && \
+  PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+    --board-type square19 \
+    --num-games 200 \
+    --db data/games/canonical_square19.db \
+    --summary db_health.canonical_square19.json"
+```
+
+**4. Run distributed selfplay (multiple nodes):**
+
+```bash
+# Uses p2p orchestrator for multi-node coordination
+python scripts/p2p_orchestrator.py \
+  --board-type square19 \
+  --num-games 1000 \
+  --hosts config/cluster.yaml
+```
+
+**5. Monitor training jobs:**
+
+```bash
+python scripts/gpu_cluster_manager.py jobs list
+python scripts/monitor_improvement.py --board square19 --check
+```
+
+### Priority Order for Data Generation
+
+1. **square19 2P** (3 games → 1000 games) - CRITICAL
+2. **hexagonal 2P** (0 games → 1000 games) - HIGH (UNBLOCKED: parity fix 7f43c368)
+3. **square8 2P** (200 games → 1000 games) - MEDIUM
+4. **square8 3P/4P** (2 games each → 200 games) - MEDIUM

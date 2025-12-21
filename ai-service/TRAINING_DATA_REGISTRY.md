@@ -30,17 +30,17 @@ The `Status` column uses `canonical` only for DBs whose latest gate summary JSON
 
 Target: All 12 combinations (4 board types × 3 player counts) with canonical training data.
 
-| Board     | 2P                  | 3P           | 4P           |
-| --------- | ------------------- | ------------ | ------------ |
-| square8   | ✅ canonical (200+) | ⚠️ small (2) | ⚠️ small (2) |
-| square19  | ⚠️ small (3)        | ❌ missing   | ❌ missing   |
-| hex8      | ❌ missing          | ❌ missing   | ❌ missing   |
-| hexagonal | ❌ unblocked        | ❌ missing   | ❌ missing   |
+| Board     | 2P                       | 3P           | 4P           |
+| --------- | ------------------------ | ------------ | ------------ |
+| square8   | ✅ canonical (200+)      | ⚠️ small (2) | ⚠️ small (2) |
+| square19  | ⚠️ small (3)             | ❌ missing   | ❌ missing   |
+| hex8      | ❌ missing               | ❌ missing   | ❌ missing   |
+| hexagonal | ⚠️ partial-parity (3/11) | ❌ missing   | ❌ missing   |
 
 Legend:
 
 - ✅ = Canonical, sufficient volume (>=200 games)
-- ⚠️ = Canonical but insufficient volume (<200 games)
+- ⚠️ = Canonical/partial but insufficient volume (<200 games)
 - ❌ = Not generated yet
 
 **Priority Actions (2025-12-21):**
@@ -49,7 +49,7 @@ Legend:
 2. Scale up square19 2P to 200+ games
 3. Generate square19 3P/4P databases
 4. Generate hex8 2P/3P/4P databases (new board type)
-5. ~~Fix hexagonal parity bug~~ FIXED (commit 7f43c368) - generate hexagonal DBs
+5. ~~Fix hexagonal parity bug HEX-PARITY-01~~ FIXED (phase_machine.py:138) - new remaining issues (ANM state divergence)
 
 **Generation Commands:**
 
@@ -85,9 +85,9 @@ These targets define when large-board datasets are considered ready for training
 
 ### Pending Re-Gate / Needs Regeneration
 
-| Database                 | Board Type | Players | Status          | Gate Summary                         | Issue                                                                                                                                                                                                                                                                                  |
-| ------------------------ | ---------- | ------- | --------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_hexagonal.db` | hexagonal  | 2       | **needs_regen** | canonical_hexagonal.parity_gate.json | 2025-12-21: Root cause FIXED (commit 7f43c368). Bug was in `fsm.py:_did_process_territory_region()` checking wrong attribute `.positions` instead of `.spaces` on Territory objects. Ready for regeneration. Previous failures: Phase divergence at k=989 after `no_territory_action`. |
+| Database                 | Board Type | Players | Status                | Gate Summary                         | Issue                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------ | ---------- | ------- | --------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_hexagonal.db` | hexagonal  | 2       | **partial_canonical** | canonical_hexagonal.parity_gate.json | 2025-12-21 post HEX-PARITY-01 fix: 11 games generated, 3 pass full parity (27%), 7 fail with ANM state divergence in `line_processing` phase, 1 fails with structural issue (`skip_capture` in `forced_elimination` phase). HEX-PARITY-01 pattern (phase mismatch after `no_territory_action`) is **resolved**. Remaining issues: ANM tracking divergence, phase/move-type misalignment. |
 
 ### Legacy / Non-Canonical
 
@@ -106,15 +106,28 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 
 ### Gate Notes (2025-12-07)
 
-- 2025-12-21 HEX-PARITY-01 regeneration attempt: Attempted to regenerate `canonical_hexagonal.db`
-  using `run_canonical_selfplay_parity_gate.py`. Parity gate **failed** at k=989 with a phase
-  transition divergence: Python reports `territory_processing` while TS reports `forced_elimination`
-  after a `no_territory_action` move. This is a **different bug** than the 2025-12-20 recovery slide
-  issue. The divergence occurs in late-game stalemate scenarios where the phase state machine
-  transitions differently between implementations. A parity failure bundle was saved to:
-  `parity_failures/canonical_hexagonal__4cbcffac-083f-42b8-8c69-44628889ef34__k989.parity_failure.json`.
-  **FOLLOW-UP REQUIRED:** Fix hex-specific phase transition parity in Python GameEngine
-  (likely in territory→forced_elimination transition logic).
+- 2025-12-21 Post HEX-PARITY-01 Fix Regeneration: Successfully regenerated `canonical_hexagonal.db`
+  after the HEX-PARITY-01 fix was applied to `phase_machine.py:138`. The fix modified
+  `_on_line_processing_complete()` to skip `territory_processing` when conditions match TS behavior.
+
+  **Results (11 games checked):**
+  - 3 games (27%) pass full parity ✅
+  - 7 games fail with semantic divergence (ANM state mismatch in `line_processing` phase)
+  - 1 game fails with structural issue (`skip_capture` not valid in `forced_elimination` phase)
+
+  **HEX-PARITY-01 is RESOLVED:** The original pattern (phase mismatch after `no_territory_action`
+  where Python stayed in `territory_processing` while TS moved to `forced_elimination`) no longer
+  appears in any of the failure logs.
+
+  **New remaining parity issues (for follow-up):**
+  1. **ANM state divergence** (7 games): During `line_processing`, Python reports `is_anm: false`
+     while TS reports `is_anm: true`. State hashes match, suggesting game logic is correct but ANM
+     tracking differs. Example: game `9db77afc-8585-4a31-a061-8d0c5b088ed2` at k=837.
+  2. **Phase/move-type mismatch** (1 game): `skip_capture` move recorded while TS expected
+     `forced_elimination` phase. Game `d30e56dc-07eb-48ff-8df1-09bef5408163` at k=578.
+
+  The 3 passing games can be used for initial hexagonal training data; scale up generation once
+  the remaining parity issues are resolved.
 
 - 2025-12-20 PAR-02b hex parity audit: Verified that the PAR-01 self-capture fix (removal of
   `controlling_player != player` check in [`capture_chain.py:266-272`](app/rules/capture_chain.py:266))
@@ -443,4 +456,4 @@ Additional parity verification on improvement loop data confirms fixes work at s
 The improvement loop generates canonical-quality data and can be ingested via
 `scripts/build_canonical_training_pool_db.py`.
 
-_Last updated: 2025-12-20_
+_Last updated: 2025-12-21_
