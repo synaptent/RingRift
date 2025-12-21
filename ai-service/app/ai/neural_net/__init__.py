@@ -33,6 +33,8 @@ from app.ai.neural_net.constants import (
     HEX_PLACEMENT_SPAN,
     HEX_SPECIAL_BASE,
     INVALID_MOVE_INDEX,
+    MAX_DIST_SQUARE8,
+    MAX_DIST_SQUARE19,
     MAX_N,
     MAX_PLAYERS,
     NUM_HEX_DIRS,
@@ -44,6 +46,7 @@ from app.ai.neural_net.constants import (
     POLICY_SIZE_19x19,
     POLICY_SIZE_HEX8,
     SQUARE8_FORCED_ELIMINATION_IDX,
+    SQUARE8_LINE_CHOICE_BASE,
     SQUARE8_LINE_FORM_BASE,
     SQUARE8_MOVEMENT_BASE,
     SQUARE8_NO_LINE_ACTION_IDX,
@@ -56,15 +59,22 @@ from app.ai.neural_net.constants import (
     SQUARE8_SKIP_RECOVERY_IDX,
     SQUARE8_SKIP_TERRITORY_PROCESSING_IDX,
     SQUARE8_SWAP_SIDES_IDX,
+    SQUARE8_TERRITORY_CHOICE_BASE,
     SQUARE8_TERRITORY_CLAIM_BASE,
     SQUARE19_FORCED_ELIMINATION_IDX,
+    SQUARE19_LINE_CHOICE_BASE,
     SQUARE19_LINE_FORM_BASE,
     SQUARE19_NO_LINE_ACTION_IDX,
     SQUARE19_NO_MOVEMENT_ACTION_IDX,
     SQUARE19_NO_PLACEMENT_ACTION_IDX,
     SQUARE19_NO_TERRITORY_ACTION_IDX,
     SQUARE19_SKIP_CAPTURE_IDX,
+    SQUARE19_SKIP_PLACEMENT_IDX,
+    SQUARE19_SKIP_RECOVERY_IDX,
     SQUARE19_SKIP_TERRITORY_PROCESSING_IDX,
+    SQUARE19_SWAP_SIDES_IDX,
+    SQUARE19_TERRITORY_CHOICE_BASE,
+    SQUARE19_TERRITORY_CLAIM_BASE,
     TERRITORY_MAX_PLAYERS,
     TERRITORY_SIZE_BUCKETS,
     get_policy_size_for_board,
@@ -78,6 +88,16 @@ from app.ai.neural_net.hex_encoding import (
     _infer_board_size,
     _pos_from_key,
     _to_canonical_xy,
+)
+
+# Square encoding - migrated to square_encoding.py (Phase 2)
+from app.ai.neural_net.square_encoding import (
+    ActionEncoderSquare,
+    ActionEncoderSquare8,
+    ActionEncoderSquare19,
+    DecodedPolicyIndex,
+    SQUARE_DIRS,
+    get_action_encoder,
 )
 
 # Square architectures - migrated to square_architectures.py (Phase 2)
@@ -114,8 +134,6 @@ from app.ai.neural_net.model_factory import (
 # Classes and functions still in legacy module (to be migrated in later phases)
 from app.ai._neural_net_legacy import (
     _MODEL_CACHE,
-    # Dataclasses
-    DecodedPolicyIndex,
     # Main AI class
     NeuralNetAI,
     _decode_move_square8,
@@ -174,6 +192,9 @@ __all__ = [
     "TERRITORY_MAX_PLAYERS",
     "TERRITORY_SIZE_BUCKETS",
     "ActionEncoderHex",
+    "ActionEncoderSquare",
+    "ActionEncoderSquare8",
+    "ActionEncoderSquare19",
     "AttentionResidualBlock",
     "DecodedPolicyIndex",
     "HexNeuralNet_v2",
@@ -201,11 +222,13 @@ __all__ = [
     "create_model_for_board",
     "decode_move_for_board",
     "encode_move_for_board",
+    "get_action_encoder",
     "get_cached_model_count",
     "get_memory_tier",
     "get_model_config_for_board",
     "get_policy_size_for_board",
     "get_spatial_size_for_board",
+    "SQUARE_DIRS",
     "multi_player_value_loss",
     "rank_distribution_loss",
     "ranks_from_game_result",
