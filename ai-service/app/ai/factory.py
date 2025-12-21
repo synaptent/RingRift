@@ -61,7 +61,7 @@ class DifficultyProfile(TypedDict):
 
 
 # -----------------------------------------------------------------------------
-# Canonical difficulty profiles (1-11)
+# Canonical difficulty profiles (1-17)
 # -----------------------------------------------------------------------------
 
 # NOTE: think_time_ms is passed to the AI as a soft search-budget hint but
@@ -311,6 +311,17 @@ EBMO_DIFFICULTY_OVERRIDE: DifficultyProfile = {
     "use_neural_net": True,
 }
 
+# Experimental IG-GMO override for D3
+# Enable via environment variable: RINGRIFT_USE_IG_GMO=1
+# IG-GMO uses mutual-information exploration with GNN encoding
+IG_GMO_DIFFICULTY_OVERRIDE: DifficultyProfile = {
+    "ai_type": AIType.IG_GMO,
+    "randomness": 0.1,
+    "think_time_ms": 2000,
+    "profile_id": "v3-iggmo-3-experimental",
+    "use_neural_net": True,
+}
+
 
 # -----------------------------------------------------------------------------
 # Helper functions
@@ -325,26 +336,34 @@ def get_difficulty_profile(
 ) -> DifficultyProfile:
     """Return the difficulty profile for the given level, player count, and board.
 
-    Difficulty is clamped into [1, 11] so that out-of-range values still map
+    Difficulty is clamped into [1, max_profile] so that out-of-range values still map
     to a well-defined profile instead of silently diverging between callers.
 
     The profile may be adjusted based on:
     - num_players: For 3-4 players, uses MaxN/BRS instead of Minimax at D4-5
     - board_type: For large boards, uses Descent instead of Minimax at D4-5
+    - RINGRIFT_USE_IG_GMO env var: For D3, uses IG-GMO instead of PolicyOnly
     - RINGRIFT_USE_EBMO env var: For D3, uses EBMO instead of PolicyOnly
 
     Args:
-        difficulty: Difficulty level (1-11, clamped if out of range)
+        difficulty: Difficulty level (1-17, clamped if out of range)
         num_players: Number of players (2-4, default 2)
         board_type: Board type string (e.g., "square8", "square19", "hexagonal")
 
     Returns:
         DifficultyProfile with ai_type, randomness, think_time_ms, etc.
     """
-    effective = max(1, min(11, difficulty))
+    max_profile = max(CANONICAL_DIFFICULTY_PROFILES)
+    effective = max(1, min(max_profile, difficulty))
 
     # Start with canonical profile
     profile = CANONICAL_DIFFICULTY_PROFILES[effective]
+
+    # Check for experimental IG-GMO override at D3
+    # Enabled via RINGRIFT_USE_IG_GMO=1 environment variable
+    if effective == 3 and os.environ.get("RINGRIFT_USE_IG_GMO", "").lower() in {"1", "true", "yes"}:
+        logger.debug("Using experimental IG-GMO at D3 (RINGRIFT_USE_IG_GMO=1)")
+        return IG_GMO_DIFFICULTY_OVERRIDE
 
     # Check for experimental EBMO override at D3
     # Enabled via RINGRIFT_USE_EBMO=1 environment variable
@@ -367,7 +386,7 @@ def select_ai_type(difficulty: int) -> AIType:
     """Auto-select AI type based on canonical difficulty mapping.
 
     Args:
-        difficulty: Difficulty level (1-11)
+        difficulty: Difficulty level (1-17)
 
     Returns:
         AIType for the given difficulty level

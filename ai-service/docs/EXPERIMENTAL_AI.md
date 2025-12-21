@@ -98,6 +98,8 @@ This document describes the experimental AI algorithms available in RingRift bey
 export RINGRIFT_USE_IG_GMO=1
 ```
 
+This override is wired in `app/ai/factory.py` and affects difficulty-based AI selection.
+
 **Status:** Fully wired into AI factory. Untested against ladder.
 
 **Files:**
