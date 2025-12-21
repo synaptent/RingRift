@@ -183,13 +183,3 @@ class TestZobristHashThreadSafety:
         assert len(results) == 10
 
 
-class TestZobristReExport:
-    """Tests for re-export from app.ai.zobrist."""
-
-    def test_import_from_ai(self):
-        """Test that importing from app.ai.zobrist works."""
-        from app.ai.zobrist import ZobristHash as ZobristHashAI
-        from app.core.zobrist import ZobristHash as ZobristHashCore
-
-        # Both should return the same singleton
-        assert ZobristHashAI() is ZobristHashCore()

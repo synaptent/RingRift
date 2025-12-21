@@ -4578,6 +4578,10 @@ class UnifiedAILoop:
             self._save_state()
 
             # Publish tier promotion event (using dedicated event type)
+            # Model ID follows convention: {config_key}_best for production model
+            model_id = f"{config_key}_best"
+            games_played = config_state.game_count
+
             await self.event_bus.publish(DataEvent(
                 event_type=DataEventType.TIER_PROMOTION,
                 payload={
@@ -4586,8 +4590,8 @@ class UnifiedAILoop:
                     "new_tier": next_tier,
                     "win_rate": estimated_win_rate,
                     "elo": current_elo,
-                    "model_id": "",  # TODO: Add model_id when available
-                    "games_played": 0,  # TODO: Add games count when available
+                    "model_id": model_id,
+                    "games_played": games_played,
                 },
                 source="unified_ai_loop"
             ))

@@ -17,7 +17,7 @@ from datetime import datetime
 # Ensure app package is importable when running tests directly.
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
-from app.ai.zobrist import ZobristHash
+from app.core.zobrist import ZobristHash
 from app.game_engine import GameEngine
 from app.models import (
     BoardState,
