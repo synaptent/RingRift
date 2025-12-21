@@ -92,10 +92,12 @@ __all__ = [
     "HAS_AUGMENTATION",
     "HAS_CHECKPOINTING",
     "HAS_CHECKPOINT_UNIFIED",
+    "HAS_CONFIG_RESOLVER",
     "HAS_CROSSBOARD_STRENGTH",
     "HAS_CURRICULUM",
-    "HAS_DATASETS",
+    "HAS_DATA_LOADER_FACTORY",
     "HAS_DATA_LOADERS",
+    "HAS_DATASETS",
     "HAS_DISTILLATION",
     "HAS_DISTRIBUTED_HELPERS",
     "HAS_DISTRIBUTED_UNIFIED",
@@ -103,6 +105,7 @@ __all__ = [
     "HAS_ELO_WEIGHTING",
     "HAS_HOT_BUFFER",
     "HAS_INTEGRATED_ENHANCEMENTS",
+    "HAS_MODEL_FACTORY",
     "HAS_ONLINE_LEARNING",
     "HAS_ORCHESTRATOR",
     "HAS_PROMOTION_CONTROLLER",
@@ -113,6 +116,7 @@ __all__ = [
     "HAS_SIGNIFICANCE",
     "HAS_TEMPERATURE_SCHEDULING",
     "HAS_TOURNAMENT_UTILS",
+    "HAS_TRAIN_SETUP",
     "HAS_TRAINING_ENV",
     "HAS_TRAINING_ORCHESTRATOR",
     "HAS_UNIFIED_MODEL_STORE",
@@ -260,6 +264,38 @@ __all__ = [
     "wilson_lower_bound",
     "wilson_score_interval",
     "wrap_model_ddp",
+    # Modular training components (December 2025)
+    # Config resolver
+    "ResolvedTrainingParams",
+    "get_board_size",
+    "get_effective_architecture",
+    "resolve_training_params",
+    "validate_model_id_for_board",
+    # Model factory
+    "ModelConfig",
+    "compute_in_channels",
+    "count_parameters",
+    "create_model",
+    "get_model_architecture",
+    "load_model_weights",
+    "log_model_summary",
+    # Data loader factory
+    "DataLoaderConfig",
+    "DataLoaderResult",
+    "collect_data_paths",
+    "create_data_loaders",
+    "create_standard_loaders",
+    "create_streaming_loaders",
+    "should_use_streaming",
+    "validate_dataset_metadata",
+    # Train setup
+    "FaultToleranceComponents",
+    "FaultToleranceConfig",
+    "TrainingState",
+    "compute_effective_lr",
+    "get_device",
+    "setup_fault_tolerance",
+    "setup_graceful_shutdown",
 ]
 
 # Import promotion controller if available
@@ -671,3 +707,67 @@ try:
     HAS_DISTILLATION = True
 except ImportError:
     HAS_DISTILLATION = False
+
+# =============================================================================
+# Modular Training Components (December 2025)
+# =============================================================================
+# Extracted from monolithic train.py for better maintainability:
+# - training_config_resolver: Parameter resolution and validation
+# - model_factory: Neural network model creation
+# - data_loader_factory: Data loader creation and configuration
+# - train_setup: Fault tolerance and device setup
+
+try:
+    from app.training.training_config_resolver import (
+        ResolvedTrainingParams,
+        get_board_size,
+        get_effective_architecture,
+        resolve_training_params,
+        validate_model_id_for_board,
+    )
+    HAS_CONFIG_RESOLVER = True
+except ImportError:
+    HAS_CONFIG_RESOLVER = False
+
+try:
+    from app.training.model_factory import (
+        ModelConfig,
+        compute_in_channels,
+        count_parameters,
+        create_model,
+        get_effective_architecture as get_model_architecture,
+        load_model_weights,
+        log_model_summary,
+    )
+    HAS_MODEL_FACTORY = True
+except ImportError:
+    HAS_MODEL_FACTORY = False
+
+try:
+    from app.training.data_loader_factory import (
+        DataLoaderConfig,
+        DataLoaderResult,
+        collect_data_paths,
+        create_data_loaders,
+        create_standard_loaders,
+        create_streaming_loaders,
+        should_use_streaming,
+        validate_dataset_metadata,
+    )
+    HAS_DATA_LOADER_FACTORY = True
+except ImportError:
+    HAS_DATA_LOADER_FACTORY = False
+
+try:
+    from app.training.train_setup import (
+        FaultToleranceComponents,
+        FaultToleranceConfig,
+        TrainingState,
+        compute_effective_lr,
+        get_device,
+        setup_fault_tolerance,
+        setup_graceful_shutdown,
+    )
+    HAS_TRAIN_SETUP = True
+except ImportError:
+    HAS_TRAIN_SETUP = False

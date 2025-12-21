@@ -38,7 +38,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.ai.base import BaseAI
 from app.ai.factory import AIFactory
 from app.game_engine import GameEngine
-from app.models import AIConfig, AIType, GameState
+from app.models import AIConfig, AIType, BoardType, GameState
+from app.training.initial_state import create_initial_state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -166,10 +167,9 @@ def play_match(
     agent2 = create_agent(agent2_id, 2, config, game_seed)
     agents = {1: agent1, 2: agent2}
 
-    # Initialize game
-    from app.models import BoardType
+    # Initialize game using create_initial_state
     board_type = BoardType(config.board_type)
-    game_state = GameEngine.initialize_game(board_type, config.num_players)
+    game_state = create_initial_state(board_type, config.num_players)
 
     num_moves = 0
     max_moves = 500  # Prevent infinite games
