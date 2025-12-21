@@ -82,10 +82,11 @@ def generate_placement_moves_batch(
 
     Placement is NOT valid on:
     - Collapsed spaces (is_collapsed == True)
+    - Positions at max stack height (5) - can't exceed max height
 
     Note: The GPU engine simplifies by allowing placement on ANY non-collapsed
-    position. The placement count (1 vs 1-3) is handled during move selection
-    and application, not during move generation.
+    position below max height. The placement count (1 vs 1-3) is handled during
+    move selection and application, not during move generation.
 
     Args:
         state: Current batch game state
@@ -103,11 +104,13 @@ def generate_placement_moves_batch(
     # Find all valid placement positions per game:
     # - Must not be collapsed
     # - Must not contain a marker (placement never occurs onto an existing marker)
+    # - Must not be at max stack height (5) - can't place on full stacks
     # - Game must be active
     # valid_positions: (batch_size, board_size, board_size) bool
     valid_positions = (
         (~state.is_collapsed)
         & (state.marker_owner == 0)
+        & (state.stack_height < 5)  # Max stack height is 5 per RR-CANON rules
         & active_mask.view(-1, 1, 1)
     )
 

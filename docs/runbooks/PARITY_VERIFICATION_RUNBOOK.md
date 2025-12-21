@@ -217,6 +217,8 @@ PYTHONPATH=. python scripts/run_parity_and_history_gate.py \\
 - `--parity-mode canonical` is the default (enforces the canonical parity gate).
 - Add `--emit-state-bundles-dir <dir>` to capture divergence bundles.
 - Use `--parity-mode legacy` only for diagnostic runs on legacy data.
+- For square19/hex DBs, the wrapper defaults `RINGRIFT_USE_MAKE_UNMAKE=true` and
+  `RINGRIFT_USE_FAST_TERRITORY=false` unless those env vars are already set.
 
 ### 3.6 Tracing a Single Game
 

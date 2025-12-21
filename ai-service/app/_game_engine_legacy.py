@@ -3095,7 +3095,14 @@ class GameEngine:
         `get_phase_requirement` surfaces a corresponding
         `NO_LINE_ACTION_REQUIRED` requirement for hosts to satisfy via
         :meth:`synthesize_bookkeeping_move`.
+
+        Per RR-CANON-R123: When pending_line_reward_elimination is True, only
+        eliminate_rings_from_stack moves are legal (no process_line moves).
         """
+        # RR-CANON-R123: If pending_line_reward_elimination, enumerate elimination targets
+        if game_state.pending_line_reward_elimination:
+            return GameEngine._enumerate_line_elimination_moves(game_state, player_number)
+
         num_players = len(game_state.players)
         lines = BoardManager.find_all_lines(game_state.board, num_players)
         player_lines = [line for line in lines if line.player == player_number]
@@ -4136,56 +4143,21 @@ class GameEngine:
                     player_state.territory_spaces += collapsed_count
                     break
 
-        # RR-CANON-R121-R122: Apply elimination cost for Option 1 (collapse all).
-        # Option 1 is used when we collapse the ENTIRE line (all positions).
+        # RR-CANON-R123: Line elimination is a SEPARATE eliminate_rings_from_stack move.
+        # Option 1 (collapse all) sets pending_line_reward_elimination = True.
         # Option 2 (minimum collapse) does NOT require elimination.
-        # This matches GPU process_lines_batch behavior for parity.
+        # The actual elimination is applied via a follow-up eliminate_rings_from_stack move.
         is_option_1 = len(positions_to_collapse) >= len(target_line.positions)
         if is_option_1:
-            # Eliminate one ring from any controlled stack (matches GPU behavior).
-            # GPU uses _eliminate_one_ring_from_any_stack which picks first eligible
-            # in row-major order (y, x). Sort stack keys to match.
+            # Check if player controls any stacks (has eligible elimination targets)
             player = move.player
-            # Parse keys like "x,y" and sort by (y, x) to match GPU's numpy order
-            def parse_key(k: str) -> tuple[int, int]:
-                parts = k.split(',')
-                x, y = int(parts[0]), int(parts[1])
-                return (y, x)  # GPU uses row-major (y first)
-
-            sorted_keys = sorted(board.stacks.keys(), key=parse_key)
-            for stack_key in sorted_keys:
-                stack = board.stacks[stack_key]
-                if stack.controlling_player == player and stack.stack_height > 0:
-                    # Eliminate one ring from this stack
-                    new_height = stack.stack_height - 1
-                    if new_height == 0:
-                        # Stack is fully eliminated
-                        del board.stacks[stack_key]
-                    else:
-                        # Reduce stack height (update by recreating with new height)
-                        new_rings = list(stack.rings[:-1]) if stack.rings else []
-                        # Recalculate controlling player and cap height
-                        new_controlling = new_rings[-1] if new_rings else stack.controlling_player
-                        new_cap_height = 0
-                        for r in reversed(new_rings):
-                            if r == new_controlling:
-                                new_cap_height += 1
-                            else:
-                                break
-                        board.stacks[stack_key] = stack.model_copy(update={
-                            "stack_height": new_height,
-                            "rings": new_rings,
-                            "controlling_player": new_controlling,
-                            "cap_height": new_cap_height,
-                        })
-                    # Update player eliminated_rings count
-                    for player_state in game_state.players:
-                        if player_state.player_number == player:
-                            player_state.eliminated_rings += 1
-                            break
-                    # Update game total_rings_eliminated
-                    game_state.total_rings_eliminated += 1
-                    break  # Only eliminate one ring
+            has_controlled_stack = any(
+                stack.controlling_player == player and stack.stack_height > 0
+                for stack in board.stacks.values()
+            )
+            if has_controlled_stack:
+                # Set pending flag - requires follow-up eliminate_rings_from_stack move
+                game_state.pending_line_reward_elimination = True
 
         # Note: board.formed_lines is not currently consulted by the Python
         # GameEngine when generating further line-processing moves, and it is

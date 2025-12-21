@@ -481,6 +481,13 @@ class GameState(BaseModel):
         default=None,
         alias="rulesOptions",
     )
+    # Per RR-CANON-R123: When True, player must choose a stack for line
+    # elimination via an explicit eliminate_rings_from_stack move.
+    # Set after process_line or choose_line_option (Option 1) applies.
+    pending_line_reward_elimination: bool = Field(
+        default=False,
+        alias="pendingLineRewardElimination",
+    )
 
 
 class AIConfig(BaseModel):

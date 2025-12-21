@@ -68,6 +68,18 @@ from app.rules.default_engine import DefaultRulesEngine
 from app.training.initial_state import create_initial_state
 from app.utils.victory_type import derive_victory_type
 
+# Composite participant support for per-algorithm ELO tracking
+try:
+    from app.training.composite_participant import (
+        make_composite_participant_id,
+        STANDARD_ALGORITHM_CONFIGS,
+    )
+    HAS_COMPOSITE = True
+except ImportError:
+    HAS_COMPOSITE = False
+    make_composite_participant_id = None
+    STANDARD_ALGORITHM_CONFIGS = {}
+
 HAS_EVENT_BUS = has_event_bus()
 
 # For backwards compatibility
@@ -859,6 +871,7 @@ def run_model_matchup(
     recording_config: RecordingConfig | None = None,
     recording_metadata_base: dict[str, Any] | None = None,
     recording_lock: threading.Lock | None = None,
+    use_composite: bool = False,
 ) -> dict[str, int]:
     """Run multiple games between two models and update Elo.
 
@@ -1036,10 +1049,48 @@ def run_model_matchup(
             )
 
         # Update Elo and record match using unified database
+        # When use_composite is True, create composite participant IDs (nn:algo:config)
+        participant_a = model_a["model_id"]
+        participant_b = model_b["model_id"]
+
+        if use_composite and HAS_COMPOSITE and make_composite_participant_id:
+            # Get the AI type used for this specific game
+            game_ai_type_a = play_a.get("ai_type") or ai_type_a
+            game_ai_type_b = play_b.get("ai_type") or ai_type_b
+
+            # Map seat AI types back to the fixed model ids
+            seat_ai_types = {id_a: game_ai_type_a, id_b: game_ai_type_b}
+            model_a_ai_type = seat_ai_types.get(model_a["model_id"], game_ai_type_a)
+            model_b_ai_type = seat_ai_types.get(model_b["model_id"], game_ai_type_b)
+
+            baseline_ai_types = {"random", "heuristic", "mcts", "gmo", "ebmo"}
+            is_baseline_a = model_a.get("model_path", "").startswith("__BASELINE") or model_a.get("ai_type") in baseline_ai_types
+            is_baseline_b = model_b.get("model_path", "").startswith("__BASELINE") or model_b.get("ai_type") in baseline_ai_types
+
+            # Only create composite IDs for neural network models (not baselines)
+            if not is_baseline_a:
+                participant_a = make_composite_participant_id(
+                    nn_id=model_a["model_id"],
+                    ai_type=model_a_ai_type,
+                    config=STANDARD_ALGORITHM_CONFIGS.get(model_a_ai_type, {}),
+                )
+            if not is_baseline_b:
+                participant_b = make_composite_participant_id(
+                    nn_id=model_b["model_id"],
+                    ai_type=model_b_ai_type,
+                    config=STANDARD_ALGORITHM_CONFIGS.get(model_b_ai_type, {}),
+                )
+
+            # Update winner to use composite ID if needed
+            if winner == model_a["model_id"]:
+                winner = participant_a
+            elif winner == model_b["model_id"]:
+                winner = participant_b
+
         update_elo_after_match(
             db,
-            model_a["model_id"],
-            model_b["model_id"],
+            participant_a,
+            participant_b,
             winner,
             board_type,
             num_players,
@@ -1529,6 +1580,7 @@ def run_all_config_tournaments(
                     recording_config=config_recording,
                     recording_metadata_base=config_metadata,
                     recording_lock=recording_lock,
+                    use_composite=getattr(args, "composite", False),
                 )
                 games_completed += args.games
                 print(f"A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']}")
@@ -1703,6 +1755,7 @@ def run_continuous_tournament(
                         recording_config=recording_config,
                         recording_metadata_base=iteration_metadata,
                         recording_lock=recording_lock,
+                        use_composite=getattr(args, "composite", False),
                     )
                     games_completed += args.games
                     total_wins += results["model_a_wins"] + results["model_b_wins"]
@@ -1909,6 +1962,8 @@ def main():
     parser.add_argument("--games", type=int, default=10, help="Games per matchup")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers for matchup execution (default: 1 = sequential)")
     parser.add_argument("--top-n", type=int, help="Only include top N models by recency")
+    parser.add_argument("--top-elo", type=int, help="Only include top N models by ELO rating (recommended for focused evaluation)")
+    parser.add_argument("--composite", action="store_true", help="Use composite participant IDs (nn:algo:config) for per-algorithm ELO tracking")
     parser.add_argument("--leaderboard-only", action="store_true", help="Just show leaderboard")
     parser.add_argument("--run", action="store_true", help="Actually run games (otherwise just shows plan)")
     parser.add_argument("--mcts-sims", type=int, default=50, help="MCTS simulations per move")
@@ -2143,6 +2198,24 @@ def main():
         models = models[:args.top_n]
         print(f"Using top {args.top_n} most recent models")
 
+    # --top-elo: Select top N models by ELO rating (more useful for focused evaluation)
+    if args.top_elo and not args.baselines_only:
+        # Get current ELO ratings for all models
+        model_elos = []
+        for m in models:
+            mid = m.get("model_id", m.get("participant_id", ""))
+            rating = db.get_rating(mid, args.board, args.players)
+            model_elos.append((m, rating.rating if rating else 1500.0))
+        # Sort by ELO descending and take top N
+        model_elos.sort(key=lambda x: x[1], reverse=True)
+        # Separate baselines (keep all) from NN models (filter to top N)
+        baseline_ai_types = {"random", "heuristic", "mcts", "gmo", "ebmo"}
+        baselines = [m for m, _ in model_elos if m.get("ai_type") in baseline_ai_types]
+        nn_models = [(m, elo) for m, elo in model_elos if m.get("ai_type") not in baseline_ai_types]
+        top_nn = [m for m, _ in nn_models[:args.top_elo]]
+        models = top_nn + baselines
+        print(f"Using top {args.top_elo} models by ELO rating + {len(baselines)} baselines")
+
     # Register models
     register_models(db, models)
 
@@ -2246,6 +2319,7 @@ def main():
                 recording_config=recording_config,
                 recording_metadata_base=recording_metadata_base,
                 recording_lock=_RECORDING_LOCK,
+                use_composite=getattr(args, "composite", False),
             )
             return (matchup_idx, m1, m2, results, None)
         except Exception as e:
@@ -2295,6 +2369,7 @@ def main():
                     recording_config=recording_config,
                     recording_metadata_base=recording_metadata_base,
                     recording_lock=_RECORDING_LOCK,
+                    use_composite=getattr(args, "composite", False),
                 )
 
                 games_completed += args.games

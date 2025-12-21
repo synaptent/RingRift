@@ -43,16 +43,54 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 
-def run_cmd(cmd: Sequence[str], cwd: Path) -> subprocess.CompletedProcess:
+def run_cmd(
+    cmd: Sequence[str],
+    cwd: Path,
+    *,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     """Run a subprocess and return the completed process."""
-    proc = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    env = os.environ.copy()
+    if env_overrides:
+        env.update(env_overrides)
+    proc = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, env=env)
     return proc
+
+
+def infer_board_type(db_path: Path) -> str | None:
+    """Best-effort board_type inference from the replay DB."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
+    except Exception:
+        return None
+
+    try:
+        row = conn.execute("SELECT board_type FROM games LIMIT 1").fetchone()
+        if not row:
+            return None
+        return str(row[0]).strip().lower()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def canonical_gate_env(board_type: str | None) -> dict[str, str]:
+    env_overrides: dict[str, str] = {}
+    if board_type in {"square19", "hex", "hexagonal"}:
+        if "RINGRIFT_USE_FAST_TERRITORY" not in os.environ:
+            env_overrides["RINGRIFT_USE_FAST_TERRITORY"] = "false"
+        if "RINGRIFT_USE_MAKE_UNMAKE" not in os.environ:
+            env_overrides["RINGRIFT_USE_MAKE_UNMAKE"] = "true"
+    return env_overrides
 
 
 def main(argv: list[str]) -> int:
@@ -122,8 +160,13 @@ def main(argv: list[str]) -> int:
     ]
     history_cmd += list(args.extra_args or [])
 
+    board_type = infer_board_type(Path(args.db))
+    env_overrides = canonical_gate_env(board_type)
+    if env_overrides:
+        print(f"Canonical gate env overrides: {env_overrides}")
+
     print(f"Running parity gate: {' '.join(parity_cmd)}")
-    parity_proc = run_cmd(parity_cmd, cwd=repo_root)
+    parity_proc = run_cmd(parity_cmd, cwd=repo_root, env_overrides=env_overrides)
 
     try:
         parity_summary = json.loads(parity_proc.stdout)
@@ -141,7 +184,7 @@ def main(argv: list[str]) -> int:
         print("Parity gate passed.")
 
     print(f"Running canonical history gate: {' '.join(history_cmd)}")
-    history_proc = run_cmd(history_cmd, cwd=repo_root)
+    history_proc = run_cmd(history_cmd, cwd=repo_root, env_overrides=env_overrides)
     history_rc = history_proc.returncode
     canonical_history_ok = history_rc == 0
 
