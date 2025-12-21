@@ -517,34 +517,43 @@ class EloToCurriculumWatcher:
         trigger_config: str,
         elo_change: float,
     ) -> None:
-        """Publish curriculum rebalance event."""
+        """Publish curriculum rebalance event via centralized emitters.
+
+        December 2025: Migrated to use event_emitters.py for unified routing.
+        """
         try:
-            from app.coordination.event_router import (
-                DataEvent,
-                DataEventType,
-                get_event_bus,
-            )
-
-            event = DataEvent(
-                event_type=DataEventType.CURRICULUM_REBALANCED,
-                payload={
-                    "weights": weights,
-                    "trigger_config": trigger_config,
-                    "trigger_elo_change": elo_change,
-                    "timestamp": time.time(),
-                },
-                source="curriculum_feedback",
-            )
-
-            bus = get_event_bus()
             import asyncio
+            from app.coordination.event_emitters import emit_curriculum_rebalanced
+
+            # Get old weights for comparison (empty dict if not available)
+            old_weights: dict[str, float] = {}
+
             try:
                 asyncio.get_running_loop()
-                asyncio.create_task(bus.publish(event))
+                asyncio.create_task(
+                    emit_curriculum_rebalanced(
+                        config=trigger_config,
+                        old_weights=old_weights,
+                        new_weights=weights,
+                        reason=f"elo_change_{elo_change:.0f}",
+                        trigger="elo_change",
+                        elo_change=elo_change,
+                    )
+                )
             except RuntimeError:
-                if hasattr(bus, 'publish_sync'):
-                    bus.publish_sync(event)
-
+                asyncio.run(
+                    emit_curriculum_rebalanced(
+                        config=trigger_config,
+                        old_weights=old_weights,
+                        new_weights=weights,
+                        reason=f"elo_change_{elo_change:.0f}",
+                        trigger="elo_change",
+                        elo_change=elo_change,
+                    )
+                )
+            logger.debug("Emitted CURRICULUM_REBALANCED via centralized emitters")
+        except ImportError:
+            logger.debug("Centralized event emitters not available")
         except Exception as e:
             logger.debug(f"Failed to publish rebalance event: {e}")
 
@@ -776,35 +785,43 @@ class PlateauToCurriculumWatcher:
         trigger_config: str,
         plateau_games: int,
     ) -> None:
-        """Publish curriculum rebalance event."""
+        """Publish curriculum rebalance event via centralized emitters.
+
+        December 2025: Migrated to use event_emitters.py for unified routing.
+        """
         try:
-            from app.coordination.event_router import (
-                DataEvent,
-                DataEventType,
-                get_event_bus,
-            )
-
-            event = DataEvent(
-                event_type=DataEventType.CURRICULUM_REBALANCED,
-                payload={
-                    "weights": weights,
-                    "trigger_config": trigger_config,
-                    "trigger_reason": "plateau_detected",
-                    "plateau_duration_games": plateau_games,
-                    "timestamp": time.time(),
-                },
-                source="curriculum_feedback_plateau",
-            )
-
-            bus = get_event_bus()
             import asyncio
+            from app.coordination.event_emitters import emit_curriculum_rebalanced
+
+            # Get old weights for comparison (empty dict if not available)
+            old_weights: dict[str, float] = {}
+
             try:
                 asyncio.get_running_loop()
-                asyncio.create_task(bus.publish(event))
+                asyncio.create_task(
+                    emit_curriculum_rebalanced(
+                        config=trigger_config,
+                        old_weights=old_weights,
+                        new_weights=weights,
+                        reason="plateau_detected",
+                        trigger="plateau",
+                        plateau_duration_games=plateau_games,
+                    )
+                )
             except RuntimeError:
-                if hasattr(bus, 'publish_sync'):
-                    bus.publish_sync(event)
-
+                asyncio.run(
+                    emit_curriculum_rebalanced(
+                        config=trigger_config,
+                        old_weights=old_weights,
+                        new_weights=weights,
+                        reason="plateau_detected",
+                        trigger="plateau",
+                        plateau_duration_games=plateau_games,
+                    )
+                )
+            logger.debug("Emitted CURRICULUM_REBALANCED (plateau) via centralized emitters")
+        except ImportError:
+            logger.debug("Centralized event emitters not available")
         except Exception as e:
             logger.debug(f"Failed to publish rebalance event: {e}")
 
@@ -1078,35 +1095,43 @@ class TournamentToCurriculumWatcher:
         win_rate: float,
         reason: str,
     ) -> None:
-        """Publish curriculum rebalance event."""
+        """Publish curriculum rebalance event via centralized emitters.
+
+        December 2025: Migrated to use event_emitters.py for unified routing.
+        """
         try:
-            from app.coordination.event_router import (
-                DataEvent,
-                DataEventType,
-                get_event_bus,
-            )
-
-            event = DataEvent(
-                event_type=DataEventType.CURRICULUM_REBALANCED,
-                payload={
-                    "weights": weights,
-                    "trigger_config": trigger_config,
-                    "trigger_reason": f"tournament_{reason}",
-                    "trigger_win_rate": win_rate,
-                    "timestamp": time.time(),
-                },
-                source="curriculum_feedback_tournament",
-            )
-
-            bus = get_event_bus()
             import asyncio
+            from app.coordination.event_emitters import emit_curriculum_rebalanced
+
+            # Get old weights for comparison (empty dict if not available)
+            old_weights: dict[str, float] = {}
+
             try:
                 asyncio.get_running_loop()
-                asyncio.create_task(bus.publish(event))
+                asyncio.create_task(
+                    emit_curriculum_rebalanced(
+                        config=trigger_config,
+                        old_weights=old_weights,
+                        new_weights=weights,
+                        reason=f"tournament_{reason}",
+                        trigger="tournament",
+                        win_rate=win_rate,
+                    )
+                )
             except RuntimeError:
-                if hasattr(bus, 'publish_sync'):
-                    bus.publish_sync(event)
-
+                asyncio.run(
+                    emit_curriculum_rebalanced(
+                        config=trigger_config,
+                        old_weights=old_weights,
+                        new_weights=weights,
+                        reason=f"tournament_{reason}",
+                        trigger="tournament",
+                        win_rate=win_rate,
+                    )
+                )
+            logger.debug("Emitted CURRICULUM_REBALANCED (tournament) via centralized emitters")
+        except ImportError:
+            logger.debug("Centralized event emitters not available")
         except Exception as e:
             logger.debug(f"Failed to publish rebalance event: {e}")
 
