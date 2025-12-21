@@ -935,6 +935,67 @@ function handleForcedElimination(
       ]);
     }
 
+    // Replay compatibility: NO_TERRITORY_ACTION may appear in forced_elimination phase
+    // during replay when the previous move's handler transitioned early.
+    // Transition to turn_end to allow the next player's turn to begin.
+    case 'NO_TERRITORY_ACTION':
+      return ok<TurnEndState>(
+        {
+          phase: 'turn_end',
+          completedPlayer: state.player,
+          nextPlayer: nextPlayer(state.player, context.numPlayers),
+        },
+        [{ type: 'CHECK_VICTORY' }]
+      );
+
+    // Legacy replay compatibility: PLACE_RING from next player indicates turn has transitioned.
+    // Accept it and transition to ring_placement for that player.
+    case 'PLACE_RING': {
+      const nextPlayerNum = nextPlayer(state.player, context.numPlayers);
+      return ok<RingPlacementState>(
+        {
+          phase: 'ring_placement',
+          player: nextPlayerNum,
+          ringsInHand: 0,
+          canPlace: true,
+          validPositions: [],
+        },
+        [{ type: 'PLACE_RING', position: event.to, player: nextPlayerNum }]
+      );
+    }
+
+    // Legacy replay compatibility: SKIP_PLACEMENT from next player
+    case 'SKIP_PLACEMENT': {
+      const nextPlayerNum = nextPlayer(state.player, context.numPlayers);
+      return ok<MovementState>(
+        {
+          phase: 'movement',
+          player: nextPlayerNum,
+          canMove: true,
+          recoveryEligible: false,
+          recoveryMovesAvailable: false,
+          placedRingAt: null,
+        },
+        []
+      );
+    }
+
+    // Legacy replay compatibility: NO_PLACEMENT_ACTION from next player
+    case 'NO_PLACEMENT_ACTION': {
+      const nextPlayerNum = nextPlayer(state.player, context.numPlayers);
+      return ok<MovementState>(
+        {
+          phase: 'movement',
+          player: nextPlayerNum,
+          canMove: true,
+          recoveryEligible: false,
+          recoveryMovesAvailable: false,
+          placedRingAt: null,
+        },
+        []
+      );
+    }
+
     case 'RESIGN':
       return handleResignation(state, event);
 
