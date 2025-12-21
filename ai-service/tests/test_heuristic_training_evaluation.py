@@ -47,7 +47,7 @@ from scripts import (
     generate_axis_aligned_profiles,  # type: ignore[attr-defined]
     run_genetic_heuristic_search as ga_search,  # type: ignore[attr-defined]
 )
-from scripts.run_axis_aligned_tournament import (  # type: ignore
+from scripts.deprecated.run_axis_aligned_tournament import (  # type: ignore
     load_axis_aligned_participants,
 )
 from scripts.run_cmaes_optimization import (  # type: ignore
