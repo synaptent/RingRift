@@ -1,74 +1,130 @@
 {
+  "analysis": {
+    "analysis_dir": "/Users/armand/Development/RingRift/ai-service/data/db_health/canonical_square8.analysis",
+    "artifacts": {
+      "game_statistics": {
+        "json": "/Users/armand/Development/RingRift/ai-service/data/db_health/canonical_square8.analysis/game_statistics.json",
+        "markdown": "/Users/armand/Development/RingRift/ai-service/data/db_health/canonical_square8.analysis/game_statistics.md",
+        "returncode": 0
+      },
+      "recovery_across_games": {
+        "json": "/Users/armand/Development/RingRift/ai-service/data/db_health/canonical_square8.analysis/recovery_across_games.json",
+        "returncode": 1
+      },
+      "recovery_opportunities": {
+        "returncode": 1,
+        "text": "/Users/armand/Development/RingRift/ai-service/data/db_health/canonical_square8.analysis/recovery_opportunities.txt"
+      }
+    },
+    "log_jsonl": "/Users/armand/Development/RingRift/ai-service/logs/selfplay/soak.canonical_square8_2p.square8.2p.light.jsonl"
+  },
+  "anm_invariants": {
+    "board_type": "square8",
+    "num_failed": 0,
+    "num_tests": 12,
+    "passed": true,
+    "returncode": 0
+  },
+  "anm_ok": true,
+  "archived_dest_db": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8_2p.db.archived_20251220_235959",
   "board_type": "square8",
-  "checked_at": "2025-12-20T07:00:00Z",
-  "cluster_node": "A40 (ssh8.vast.ai:38742)",
-  "databases": [
-    {
-      "path": "data/games/staging/improvement_loop/selfplay_iter0_square8_2p.db",
-      "games": 212,
-      "schema_version": "v7",
-      "parity_check": "FAIL",
-      "failure_reason": "151 semantic divergence, 33 structural issues (pre-fix data)",
-      "canonical_status": "not_canonical",
-      "notes": "Generated before parity fix b8175468 - data is non-canonical"
-    },
-    {
-      "path": "data/games/staging/improvement_loop/selfplay_iter1_square8_2p.db",
-      "games": 254,
-      "schema_version": "v7",
-      "parity_check": "NOT_RUN",
-      "failure_reason": null,
-      "canonical_status": "unknown",
-      "notes": "Needs parity check"
-    },
-    {
-      "path": "data/games/jsonl_converted_square8_2p.db",
-      "games": 229,
-      "schema_version": "v1 (legacy)",
-      "parity_check": "FAIL",
-      "failure_reason": "missing game_moves table (old schema)",
-      "canonical_status": "not_canonical",
-      "notes": "JSONL-converted from legacy data"
-    },
-    {
-      "path": "data/games/jsonl_converted_square8_3p.db",
-      "games": 515,
-      "schema_version": "v1 (legacy)",
-      "parity_check": "FAIL",
-      "failure_reason": "missing game_moves table (old schema)",
-      "canonical_status": "not_canonical",
-      "notes": "JSONL-converted from legacy data"
-    },
-    {
-      "path": "data/games/jsonl_converted_square8_4p.db",
-      "games": 189,
-      "schema_version": "v1 (legacy)",
-      "parity_check": "FAIL",
-      "failure_reason": "missing game_moves table (old schema)",
-      "canonical_status": "not_canonical",
-      "notes": "JSONL-converted from legacy data"
+  "canonical_config": {
+    "games_checked": 1,
+    "non_canonical_games": 0,
+    "sample_issues": {}
+  },
+  "canonical_history": {
+    "games_checked": 1,
+    "non_canonical_games": 0,
+    "sample_issues": {}
+  },
+  "canonical_ok": false,
+  "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8_2p.db",
+  "db_stats": {
+    "games_completed": 1,
+    "games_total": 1,
+    "moves_total": 155,
+    "swap_sides": {
+      "games": 0,
+      "moves": 0
     }
-  ],
-  "staging_improvement_loop": {
-    "total_iterations": 60,
-    "total_games_estimated": 5000,
-    "schema_version": "v7",
-    "parity_status": "pending",
-    "notes": "Improvement loop DBs have new schema with game_moves table, parity check in progress"
   },
-  "summary": {
-    "total_games_legacy": 933,
-    "total_games_new_schema": 5000,
-    "canonical_games": 0,
-    "failing_games_legacy": 933,
-    "pending_check": 5000,
-    "pass_rate": "TBD"
+  "fe_territory_fixtures_ok": true,
+  "max_soak_attempts": 1,
+  "meets_min_recorded_games": true,
+  "merge_result": null,
+  "min_recorded_games": 0,
+  "num_games_requested": 50,
+  "num_players": 2,
+  "parity_gate": {
+    "board_type": "square8",
+    "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8_2p.db",
+    "db_paths_checked": [
+      "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8_2p.db"
+    ],
+    "difficulty_band": "light",
+    "hosts": null,
+    "max_moves": 600,
+    "num_games": 50,
+    "num_players": 2,
+    "parity_summary": {
+      "canonical_gate": true,
+      "end_of_game_only_divergences": [],
+      "games_with_end_of_game_only_divergence": 0,
+      "games_with_non_canonical_history": 0,
+      "games_with_semantic_divergence": 1,
+      "games_with_structural_issues": 0,
+      "legacy_mode": false,
+      "mismatch_counts_by_dimension": {
+        "current_phase": 1,
+        "state_hash": 1
+      },
+      "mode": "canonical",
+      "passed_canonical_parity_gate": false,
+      "returncode": 1,
+      "semantic_divergences": [
+        {
+          "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8_2p.db",
+          "diverged_at": 40,
+          "game_id": "96248e1a-4709-428f-a5a5-2798c6e6ec7d",
+          "is_end_of_game_only": false,
+          "mismatch_context": "post_move",
+          "mismatch_kinds": ["current_phase", "state_hash"],
+          "python_summary": {
+            "current_phase": "line_processing",
+            "current_player": 2,
+            "game_status": "active",
+            "is_anm": false,
+            "move_index": 39,
+            "state_hash": "18e7ebbdbf6b6526"
+          },
+          "structure": "good",
+          "structure_reason": null,
+          "total_moves_python": 155,
+          "total_moves_ts": 155,
+          "ts_summary": {
+            "current_phase": "chain_capture",
+            "current_player": 2,
+            "game_status": "active",
+            "is_anm": false,
+            "move_index": 40,
+            "state_hash": "594b9c818bc51bca"
+          }
+        }
+      ],
+      "structural_issues": [],
+      "summary_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8_2p.db.parity_summary.json",
+      "total_databases": 1,
+      "total_games_checked": 1,
+      "view_mode": "post_move"
+    },
+    "passed_canonical_parity_gate": false,
+    "returncode": 0,
+    "seed": null,
+    "soak_log_jsonl_path": "/Users/armand/Development/RingRift/ai-service/logs/selfplay/soak.canonical_square8_2p.square8.2p.light.jsonl",
+    "soak_returncode": 1,
+    "soak_summary_path": "/Users/armand/Development/RingRift/ai-service/logs/selfplay/soak.canonical_square8_2p.square8.2p.light.summary.json",
+    "stage": "complete"
   },
-  "recommendation": "Legacy JSONL-converted DBs need migration. Staging improvement_loop DBs have correct schema but need parity verification. TS replay harness requires better-sqlite3 npm package (now installed).",
-  "parity_fix": {
-    "commit": "b8175468",
-    "fix_description": "no_territory_action now handles phase transition inline",
-    "deployed_at": "2025-12-20",
-    "note": "Pre-fix data is non-canonical due to phase transition bug. Post-fix data should pass parity gates."
-  }
+  "soak_attempts_used": 1
 }
