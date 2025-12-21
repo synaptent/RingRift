@@ -379,6 +379,9 @@ def run_selfplay_and_parity(
             "--difficulty-band",
             difficulty_band,
         ]
+        engine_mode = getattr(args, "engine_mode", None)
+        if engine_mode:
+            cmd += ["--engine-mode", engine_mode]
         if include_training_data_jsonl:
             cmd.append("--include-training-data-jsonl")
         if hosts:
@@ -837,6 +840,12 @@ def main(argv: list[str] | None = None) -> int:
             choices=["canonical", "light", "full"],
             default="light",
             help="Difficulty band for self-play (default: light).",
+        )
+        parser.add_argument(
+            "--engine-mode",
+            type=str,
+            default="mixed",
+            help="Selfplay engine mode (default: mixed).",
         )
         parser.add_argument(
             "--hosts",
