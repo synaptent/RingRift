@@ -1685,6 +1685,7 @@ class NNUEPolicyDataset(Dataset):
         from ..models import GameState, Move, MoveType
         from ..models.core import GamePhase
         from ..rules.default_engine import DefaultRulesEngine
+        from ..rules.legacy import auto_advance_phase
         from ..training.initial_state import create_initial_state
 
         samples: list[NNUEPolicySample] = []
@@ -1695,73 +1696,6 @@ class NNUEPolicyDataset(Dataset):
         extraction_start = _time.time()
         games_processed = 0
         games_skipped = 0
-
-        def _auto_advance_phase(state: GameState) -> GameState:
-            """Auto-advance through phase-handling moves until at a playable phase.
-
-            GPU selfplay skips explicit phase moves (line/territory processing).
-            This helper inserts the required bookkeeping moves to advance the state.
-            """
-            safety = 0
-            def _get_status(s):
-                return s.game_status.value if hasattr(s.game_status, 'value') else str(s.game_status)
-            while _get_status(state) == "active" and safety < 100:
-                safety += 1
-                phase = state.current_phase
-                player = state.current_player
-
-                if phase == GamePhase.LINE_PROCESSING:
-                    # Auto-process lines
-                    line_moves = GameEngine._get_line_processing_moves(state, player)
-                    if line_moves:
-                        choose_moves = [m for m in line_moves if m.type == MoveType.CHOOSE_LINE_OPTION]
-                        process_moves = [m for m in line_moves if m.type == MoveType.PROCESS_LINE]
-                        picked = choose_moves[0] if choose_moves else (process_moves[0] if process_moves else None)
-                        if picked:
-                            state = GameEngine.apply_move(state, picked)
-                            continue
-                    # No lines - insert NO_LINE_ACTION
-                    no_line = Move(
-                        id="auto-no-line",
-                        type=MoveType.NO_LINE_ACTION,
-                        player=player,
-                        timestamp=state.last_move_at,
-                        think_time=0,
-                        move_number=0,
-                    )
-                    state = GameEngine.apply_move(state, no_line)
-                    continue
-
-                if phase == GamePhase.TERRITORY_PROCESSING:
-                    # Auto-process territory
-                    terr_moves = GameEngine._get_territory_processing_moves(state, player)
-                    if terr_moves:
-                        state = GameEngine.apply_move(state, terr_moves[0])
-                        continue
-                    # No territory to process
-                    no_terr = Move(
-                        id="auto-no-territory",
-                        type=MoveType.NO_TERRITORY_ACTION,
-                        player=player,
-                        timestamp=state.last_move_at,
-                        think_time=0,
-                        move_number=0,
-                    )
-                    state = GameEngine.apply_move(state, no_terr)
-                    continue
-
-                # Check for phase requirements
-                requirement = GameEngine.get_phase_requirement(state, player)
-                if requirement is not None:
-                    synthesized = GameEngine.synthesize_bookkeeping_move(requirement, state)
-                    if synthesized:
-                        state = GameEngine.apply_move(state, synthesized)
-                        continue
-
-                # At a playable phase (placement, movement, capture)
-                break
-
-            return state
 
         # Track GPU selfplay warnings (shown once per extraction)
         # GPU selfplay has known incompatibilities:
@@ -1891,7 +1825,7 @@ class NNUEPolicyDataset(Dataset):
                     game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
                     if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
                         try:
-                            state = _auto_advance_phase(state)
+                            state = auto_advance_phase(state)
                         except Exception:
                             break  # Can't continue if phase advance fails
 
@@ -2006,7 +1940,7 @@ class NNUEPolicyDataset(Dataset):
                             # Auto-advance only for GPU selfplay data WITHOUT explicit bookkeeping moves
                             game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
                             if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
-                                state = _auto_advance_phase(state)
+                                state = auto_advance_phase(state)
                     except Exception:
                         break  # Can't continue if move application fails
 

@@ -39,6 +39,11 @@ from app.rules.legacy.replay_compatibility import (
     replay_with_legacy_fallback,
     requires_legacy_replay,
 )
+from app.rules.legacy.phase_auto_advance import (
+    auto_advance_phase,
+    get_auto_advance_stats,
+    reset_auto_advance_stats,
+)
 from app.rules.legacy.state_normalization import (
     normalize_legacy_phase,
     normalize_legacy_state,
@@ -57,4 +62,8 @@ __all__ = [
     "normalize_legacy_phase",
     "normalize_legacy_state",
     "normalize_legacy_status",
+    # Phase auto-advance (deprecated)
+    "auto_advance_phase",
+    "get_auto_advance_stats",
+    "reset_auto_advance_stats",
 ]
