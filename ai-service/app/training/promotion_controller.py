@@ -784,43 +784,47 @@ class PromotionController:
         self._emit_stage_event(payload)
 
     def _emit_stage_event(self, payload: dict[str, Any]) -> None:
-        """Emit PROMOTION_COMPLETE StageEvent for coordination integration.
+        """Emit PROMOTION_COMPLETE StageEvent via centralized event_emitters.
 
         This connects promotion events to the stage event bus, enabling
         downstream consumers like TrainingDataCoordinator to react.
+
+        December 2025: Migrated to use event_emitters.py for unified routing.
         """
         try:
-            from datetime import datetime
-
-            from app.coordination.stage_events import (
-                StageCompletionResult,
-                StageEvent,
-                get_event_bus as get_stage_bus,
-            )
-
-            result = StageCompletionResult(
-                event=StageEvent.PROMOTION_COMPLETE,
-                success=True,
-                iteration=0,
-                timestamp=datetime.now().isoformat(),
-                model_id=payload.get("model_id"),
-                model_path=payload.get("model_path"),
-                elo_delta=payload.get("elo_improvement"),
-                metadata=payload,
-            )
-
-            bus = get_stage_bus()
-
             import asyncio
-            try:
-                asyncio.get_running_loop()  # Verify we're in async context
-                asyncio.create_task(bus.emit(result))
-            except RuntimeError:
-                asyncio.run(bus.emit(result))
 
-            logger.debug("Emitted PROMOTION_COMPLETE StageEvent")
+            from app.coordination.event_emitters import emit_promotion_complete
+
+            try:
+                asyncio.get_running_loop()
+                asyncio.create_task(
+                    emit_promotion_complete(
+                        model_id=payload.get("model_id"),
+                        model_path=payload.get("model_path"),
+                        board_type=payload.get("board_type"),
+                        num_players=payload.get("num_players"),
+                        old_elo=payload.get("old_elo"),
+                        new_elo=payload.get("new_elo"),
+                        promotion_type=payload.get("promotion_type"),
+                    )
+                )
+            except RuntimeError:
+                asyncio.run(
+                    emit_promotion_complete(
+                        model_id=payload.get("model_id"),
+                        model_path=payload.get("model_path"),
+                        board_type=payload.get("board_type"),
+                        num_players=payload.get("num_players"),
+                        old_elo=payload.get("old_elo"),
+                        new_elo=payload.get("new_elo"),
+                        promotion_type=payload.get("promotion_type"),
+                    )
+                )
+
+            logger.debug("Emitted PROMOTION_COMPLETE via centralized emitters")
         except ImportError:
-            logger.debug("Stage event bus not available")
+            logger.debug("Centralized event emitters not available")
         except Exception as e:
             logger.debug(f"Stage event emission failed: {e}")
 

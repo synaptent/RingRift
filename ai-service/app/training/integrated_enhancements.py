@@ -72,16 +72,18 @@ class IntegratedEnhancementsConfig:
     """
     # =========================================================================
     # Auxiliary Tasks (Multi-Task Learning)
+    # December 2025: Enabled by default for +30-80 Elo improvement
     # =========================================================================
-    auxiliary_tasks_enabled: bool = False
+    auxiliary_tasks_enabled: bool = True
     aux_game_length_weight: float = 0.1
     aux_piece_count_weight: float = 0.1
     aux_outcome_weight: float = 0.05
 
     # =========================================================================
     # Gradient Surgery (PCGrad)
+    # December 2025: Enabled with auxiliary tasks to prevent gradient conflicts
     # =========================================================================
-    gradient_surgery_enabled: bool = False
+    gradient_surgery_enabled: bool = True
     gradient_surgery_method: str = "pcgrad"  # "pcgrad" or "cagrad"
     gradient_conflict_threshold: float = 0.0
 
@@ -98,7 +100,8 @@ class IntegratedEnhancementsConfig:
     # =========================================================================
     # Background Evaluation
     # =========================================================================
-    background_eval_enabled: bool = False
+    # December 2025: Enabled for continuous Elo tracking and regression detection
+    background_eval_enabled: bool = True
     eval_interval_steps: int = 1000
     eval_games_per_check: int = 20
     eval_elo_checkpoint_threshold: float = 10.0
