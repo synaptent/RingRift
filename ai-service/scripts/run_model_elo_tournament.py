@@ -477,7 +477,7 @@ def play_model_vs_model_game(
 
         # Apply move
         try:
-            state = engine.apply_move(state, move)
+            state = engine.apply_move(state, move, trace_mode=True)
         except Exception as e:
             return {
                 "winner": "error",
@@ -785,7 +785,7 @@ def play_nn_vs_nn_game(
         moves_played.append(move)
 
         try:
-            game_state = rules_engine.apply_move(game_state, move)
+            game_state = rules_engine.apply_move(game_state, move, trace_mode=True)
         except Exception as e:
             winner_idx = 1 if current_player == 1 else 0
             clear_model_cache()

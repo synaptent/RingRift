@@ -625,7 +625,7 @@ def run_single_game(
                         pass
 
                 state_before = state
-                state = engine.apply_move(state, move)
+                state = engine.apply_move(state, move, trace_mode=True)
                 move_count += 1
                 recorded_move_types.append(move.type.value)
                 if recorder is not None:
