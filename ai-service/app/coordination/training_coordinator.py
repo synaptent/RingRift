@@ -899,9 +899,11 @@ def wire_training_events() -> TrainingCoordinator:
     coordinator = get_training_coordinator()
 
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        # Use unified event router (consolidated from data_events)
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType  # Types still needed
 
-        bus = get_event_bus()
+        router = get_router()
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -950,12 +952,12 @@ def wire_training_events() -> TrainingCoordinator:
             if job_id:
                 coordinator.complete_training(job_id, status="failed", error=error)
 
-        bus.subscribe(DataEventType.TRAINING_STARTED, _on_training_started)
-        bus.subscribe(DataEventType.TRAINING_PROGRESS, _on_training_progress)
-        bus.subscribe(DataEventType.TRAINING_COMPLETED, _on_training_completed)
-        bus.subscribe(DataEventType.TRAINING_FAILED, _on_training_failed)
+        router.subscribe(DataEventType.TRAINING_STARTED.value, _on_training_started)
+        router.subscribe(DataEventType.TRAINING_PROGRESS.value, _on_training_progress)
+        router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
+        router.subscribe(DataEventType.TRAINING_FAILED.value, _on_training_failed)
 
-        logger.info("[TrainingCoordinator] Wired to event bus (TRAINING_STARTED, TRAINING_PROGRESS, TRAINING_COMPLETED, TRAINING_FAILED)")
+        logger.info("[TrainingCoordinator] Wired to event router (TRAINING_STARTED, TRAINING_PROGRESS, TRAINING_COMPLETED, TRAINING_FAILED)")
 
     except ImportError:
         logger.warning("[TrainingCoordinator] data_events not available, running without event bus")
