@@ -49,7 +49,7 @@ import { enumerateChainCaptureSegments } from '../aggregates/CaptureAggregate';
 import { hasAnyGlobalMovementOrCapture, playerHasAnyRings } from '../globalActions';
 import { isEligibleForRecovery } from '../playerStateHelpers';
 import { VALID_MOVES_BY_PHASE, isMoveValidInPhase } from '../phaseValidation';
-import { isLegacyMoveValidInPhase } from '../legacyPhaseValidation';
+import { isLegacyMoveValidInPhase } from '../legacy/legacyPhaseValidation';
 import { getEffectiveLineLengthThreshold, getEffectiveRingsPerPlayer } from '../rulesConfig';
 import { isValidPosition } from '../validators/utils';
 

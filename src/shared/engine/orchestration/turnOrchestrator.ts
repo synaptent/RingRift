@@ -65,7 +65,12 @@ import { PhaseStateMachine, createTurnProcessingState } from './phaseStateMachin
 import { flagEnabled, debugLog, fsmTraceLog } from '../../utils/envFlags';
 import { applySwapSidesIdentitySwap, validateSwapSidesMove } from '../swapSidesHelpers';
 import { createLegacyCoercionError } from '../errors/CanonicalRecordError';
-import { detectPhaseCoercion, applyPhaseCoercion, logPhaseCoercion } from './legacyReplayHelper';
+import {
+  detectPhaseCoercion,
+  applyPhaseCoercion,
+  logPhaseCoercion,
+} from '../legacy/legacyReplayHelper';
+import { assertNoLegacyMoveType } from '../legacy/legacyMoveTypes';
 
 // FSM imports
 import {
@@ -1338,6 +1343,7 @@ export function processTurn(
   // no-action move per RR-CANON-R075.
   // Skip for legacy replay - FSM validation handles legacy move types correctly.
   if (!options?.replayCompatibility) {
+    assertNoLegacyMoveType(move, 'processTurn');
     assertPhaseMoveInvariant(state, move);
   }
 

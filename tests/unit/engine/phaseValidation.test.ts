@@ -55,10 +55,6 @@ describe('phaseValidation', () => {
       expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('choose_territory_option');
     });
 
-    it('includes legacy process_territory_region in territory_processing phase', () => {
-      expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('process_territory_region');
-    });
-
     it('includes eliminate_rings_from_stack in territory_processing phase', () => {
       expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('eliminate_rings_from_stack');
     });
@@ -128,7 +124,7 @@ describe('phaseValidation', () => {
       // All moves except meta moves should be invalid in game_over
       expect(isMoveValidInPhase('place_ring', 'game_over')).toBe(false);
       expect(isMoveValidInPhase('move_stack', 'game_over')).toBe(false);
-      expect(isMoveValidInPhase('process_territory_region', 'game_over')).toBe(false);
+      expect(isMoveValidInPhase('choose_territory_option', 'game_over')).toBe(false);
       // But meta moves are still valid
       expect(isMoveValidInPhase('resign', 'game_over')).toBe(true);
     });
@@ -188,14 +184,13 @@ describe('phaseValidation', () => {
     it('includes all line processing moves', () => {
       const moves = getValidMoveTypesForPhase('line_processing');
       expect(moves).toContain('process_line');
-      expect(moves).toContain('choose_line_reward');
+      expect(moves).toContain('choose_line_option');
       expect(moves).toContain('no_line_action');
     });
 
     it('includes all territory processing moves', () => {
       const moves = getValidMoveTypesForPhase('territory_processing');
       expect(moves).toContain('choose_territory_option');
-      expect(moves).toContain('process_territory_region');
       expect(moves).toContain('eliminate_rings_from_stack');
       expect(moves).toContain('no_territory_action');
       expect(moves).toContain('skip_territory_processing');
@@ -206,12 +201,10 @@ describe('phaseValidation', () => {
   // getPhasesForMoveType Tests
   // ===========================================================================
   describe('getPhasesForMoveType', () => {
-    // Legacy replay: place_ring is valid in ring_placement and forced_elimination
-    it('returns ring_placement and forced_elimination for place_ring', () => {
+    it('returns only ring_placement for place_ring', () => {
       const phases = getPhasesForMoveType('place_ring');
       expect(phases).toContain('ring_placement');
-      expect(phases).toContain('forced_elimination');
-      expect(phases.length).toBe(2);
+      expect(phases.length).toBe(1);
     });
 
     it('returns movement for move_stack', () => {
@@ -238,6 +231,7 @@ describe('phaseValidation', () => {
       expect(phases).toContain('movement');
       expect(phases).toContain('capture');
       expect(phases).toContain('chain_capture');
+      expect(phases.length).toBe(3);
     });
   });
 

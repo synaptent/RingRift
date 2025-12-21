@@ -12,7 +12,7 @@
  * @see legacyReplayHelper.ts for the coercion patterns used during replay
  */
 
-import type { GamePhase, MoveType as GameMoveType } from '../types/game';
+import type { GamePhase, MoveType as GameMoveType } from '../../types/game';
 
 export type MoveType = GameMoveType;
 

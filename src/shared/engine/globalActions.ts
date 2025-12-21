@@ -413,14 +413,15 @@ export function enumerateForcedEliminationOptions(
  * - Returns the updated GameState along with basic accounting metadata so
  *   callers can assert INV-ELIMINATION-MONOTONIC / INV-S-MONOTONIC.
  *
- * IMPORTANT - Auto-Selection Heuristic (December 2025 clarification):
+ * IMPORTANT - Auto-Selection Heuristic (December 2025 update):
  * When targetPosition is not provided, this function applies a deterministic
- * heuristic that differs from rules semantics. Per RR-CANON-R100, the player
- * must explicitly choose which stack to eliminate. The auto-selection heuristic
- * is intended ONLY for:
- * 1. Diagnostic/soak harnesses where user interaction is not available
- * 2. Test fixtures that need deterministic forced elimination
- * 3. Legacy code paths being phased out
+ * heuristic that differs from human-interactive rules semantics. Per RR-CANON-R100,
+ * human players must explicitly choose which stack to eliminate. The auto-selection
+ * heuristic (smallest cap first) is used for:
+ * 1. AI player paths where automated decision-making is appropriate
+ * 2. Diagnostic/soak harnesses where user interaction is not available
+ * 3. Test fixtures that need deterministic forced elimination
+ * 4. ANM resolution loops in turnOrchestrator (non-interactive processing)
  *
  * Interactive user-facing hosts MUST provide a targetPosition from an explicit
  * player choice (via elimination_target PendingDecision from the orchestrator).
@@ -473,9 +474,10 @@ export function applyForcedEliminationForPlayer(
     }
   }
 
-  // Auto-select if no target provided or target was invalid
-  // WARNING: This heuristic is for legacy/diagnostic use only. Interactive paths
-  // should always provide an explicit targetPosition from player choice.
+  // Auto-select if no target provided or target was invalid.
+  // This heuristic (smallest cap first) is appropriate for AI players, soak tests,
+  // and automated ANM resolution. Human-interactive paths should provide explicit
+  // targetPosition from player choice.
   if (!chosenStack) {
     let smallestCap = Number.POSITIVE_INFINITY;
 

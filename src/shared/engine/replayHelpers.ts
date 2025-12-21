@@ -2,7 +2,7 @@ import type { GameState, Move, BoardType, Player, TimeControl } from '../types/g
 import type { GameRecord, MoveRecord } from '../types/gameRecord';
 import { BOARD_CONFIGS } from '../types/game';
 import { createInitialGameState } from './initialState';
-import { processTurn } from './orchestration/turnOrchestrator';
+import { processTurn, type ProcessTurnOptions } from './orchestration/turnOrchestrator';
 
 /**
  * Reconstruct a GameState from a GameRecord at a given move index.
@@ -17,10 +17,42 @@ import { processTurn } from './orchestration/turnOrchestrator';
  * offline analysis, but is not guaranteed to match historical timestamps or
  * transient per-move metadata such as think times.
  *
+ * For legacy/non-canonical logs that require replay compatibility coercions,
+ * use `legacy/legacyReplayHelpers.ts` instead.
+ *
  * @param record - Canonical GameRecord to replay.
  * @param moveIndex - Number of moves from the start to apply (0 = initial).
  */
 export function reconstructStateAtMove(record: GameRecord, moveIndex: number): GameState {
+  return reconstructStateAtMoveWithOptions(record, moveIndex, {
+    // Do not auto-apply single-line/single-region post-move processing when
+    // replaying explicit canonical histories.
+    skipAutoLineProcessing: true,
+    skipSingleTerritoryAutoProcess: true,
+  });
+}
+
+type ReplayReconstructOptions = Pick<
+  ProcessTurnOptions,
+  | 'skipSingleTerritoryAutoProcess'
+  | 'skipAutoLineProcessing'
+  | 'breakOnDecisionRequired'
+  | 'replayCompatibility'
+>;
+
+/**
+ * Shared reconstruction helper with explicit replay options.
+ *
+ * This exists so legacy replay tolerance can be isolated in
+ * `src/shared/engine/legacy/legacyReplayHelpers.ts`.
+ *
+ * @internal
+ */
+export function reconstructStateAtMoveWithOptions(
+  record: GameRecord,
+  moveIndex: number,
+  options: ReplayReconstructOptions
+): GameState {
   if (moveIndex < 0) {
     throw new Error(`moveIndex must be non-negative, got ${moveIndex}`);
   }
@@ -71,6 +103,17 @@ export function reconstructStateAtMove(record: GameRecord, moveIndex: number): G
     return initialState;
   }
 
+  const replayOptions: ProcessTurnOptions = {
+    skipAutoLineProcessing: options.skipAutoLineProcessing ?? true,
+    skipSingleTerritoryAutoProcess: options.skipSingleTerritoryAutoProcess ?? true,
+    ...(options.breakOnDecisionRequired !== undefined
+      ? { breakOnDecisionRequired: options.breakOnDecisionRequired }
+      : {}),
+    ...(options.replayCompatibility !== undefined
+      ? { replayCompatibility: options.replayCompatibility }
+      : {}),
+  };
+
   // Convert MoveRecord entries into engine Moves and apply them.
   let state: GameState = initialState;
   for (let i = 0; i < clampedIndex; i += 1) {
@@ -104,15 +147,7 @@ export function reconstructStateAtMove(record: GameRecord, moveIndex: number): G
       moveNumber: rec.moveNumber,
     } as Move;
 
-    const result = processTurn(state, move, {
-      // Replay is intentionally tolerant for legacy logs / parity fixtures, but
-      // must preserve canonical phase bookkeeping for modern GameRecords.
-      replayCompatibility: true,
-      // Do not auto-apply single-line/single-region post-move processing when
-      // replaying explicit canonical histories.
-      skipAutoLineProcessing: true,
-      skipSingleTerritoryAutoProcess: true,
-    });
+    const result = processTurn(state, move, replayOptions);
     state = result.nextState;
   }
 

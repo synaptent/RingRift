@@ -28,7 +28,7 @@ import { computeNextMoveNumber } from './sharedDecisionHelpers';
  *
  * This module is the intended single source of truth for:
  *
- * - Which `process_line` and `choose_line_reward` moves are available in a
+ * - Which `process_line` and `choose_line_option` moves are available in a
  *   given `GameState` for a player, and
  * - How those moves should update the board and per-player bookkeeping when
  *   applied.
@@ -310,7 +310,7 @@ export function enumerateProcessLineMoves(
   return moves;
 }
 /**
- * Enumerate `choose_line_reward` decision moves for a specific line that has
+ * Enumerate `choose_line_option` decision moves for a specific line that has
  * already been selected for processing.
  *
  * Typical usage pattern:
@@ -547,9 +547,6 @@ export function applyProcessLineDecision(
  * Apply a `choose_line_option` move produced by
  * {@link enumerateChooseLineRewardMoves} to the given `GameState`.
  *
- * Legacy compatibility: this helper also accepts `choose_line_reward` moves
- * from historical recordings.
- *
  * Responsibilities:
  *
  * - For collapse-all variants:
@@ -569,9 +566,9 @@ export function applyChooseLineRewardDecision(
   state: GameState,
   move: Move
 ): LineDecisionApplicationOutcome {
-  if (move.type !== 'choose_line_option' && move.type !== 'choose_line_reward') {
+  if (move.type !== 'choose_line_option') {
     throw new Error(
-      `applyChooseLineRewardDecision expected move.type === 'choose_line_option' (or legacy 'choose_line_reward'), got '${move.type}'`
+      `applyChooseLineRewardDecision expected move.type === 'choose_line_option', got '${move.type}'`
     );
   }
 

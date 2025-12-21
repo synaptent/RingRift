@@ -20,7 +20,7 @@ export type BoardType = 'square8' | 'square19' | 'hex8' | 'hexagonal';
  * - 'movement'
  *   - Legal MoveType values:
  *     - 'move_stack' / 'move_ring' – non-capture movement of an entire stack.
- *     - 'build_stack'              – legacy intra-region stack reconfiguration (rare).
+ *     - 'build_stack'              – stack reconfiguration move (rare).
  *     - 'overtaking_capture'       – initial overtaking capture that may start a chain.
  *     - 'no_movement_action'       – forced no-op when no movement/capture exists (RR-CANON-R075).
  *     - 'recovery_slide' / 'skip_recovery' – recovery-eligible players may slide a

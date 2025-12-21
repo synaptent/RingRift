@@ -697,7 +697,8 @@ export {
 // REPLAY HELPERS
 // =============================================================================
 // Location: replayHelpers.ts
-// Shared helpers for reconstructing GameState from canonical GameRecord data
+// Shared helpers for reconstructing GameState from canonical GameRecord data.
+// Legacy replay compatibility lives under legacy/legacyReplayHelpers.ts.
 
 export { reconstructStateAtMove } from './replayHelpers';
 
