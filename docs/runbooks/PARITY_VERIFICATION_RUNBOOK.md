@@ -539,6 +539,9 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
   --fail-on-divergence
 ```
 
+For training readiness, re-run against `canonical_square8_2p.db` (or the
+board-specific canonical DB you are gating) and check `canonical_ok`.
+
 **Check contract vectors + plateau snapshots (CI-equivalent):**
 
 ```bash
