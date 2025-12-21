@@ -43,6 +43,21 @@ from .base import BaseAI
 from .heuristic_ai import HeuristicAI
 from .neural_net import INVALID_MOVE_INDEX, NeuralNetAI
 
+
+def _infer_num_players(game_state: GameState) -> int:
+    """Infer number of active players from game state."""
+    if hasattr(game_state, 'num_players'):
+        return int(game_state.num_players)
+    # Fallback: count players in markers/stacks
+    if hasattr(game_state, 'board') and game_state.board:
+        players = set()
+        for m in getattr(game_state.board, 'markers', {}).values():
+            if hasattr(m, 'player'):
+                players.add(m.player)
+        return max(2, len(players))
+    return 2
+
+
 if TYPE_CHECKING:
     import torch
 
@@ -209,6 +224,15 @@ class GumbelMCTSAI(BaseAI):
         # Lazy-initialized heuristic evaluator (only created when needed)
         self._heuristic_ai: HeuristicAI | None = None
 
+        # Self-play mode with Dirichlet noise for exploration (AlphaZero-style)
+        self.self_play: bool = getattr(config, 'self_play', False)
+        self.root_dirichlet_alpha: float | None = getattr(
+            config, 'root_dirichlet_alpha', None
+        )
+        self.root_noise_fraction: float = float(
+            getattr(config, 'root_noise_fraction', None) or 0.25
+        )
+
         # Load neural network (required for Gumbel MCTS)
         self.neural_net: NeuralNetAI | None = None
         try:
@@ -225,6 +249,25 @@ class GumbelMCTSAI(BaseAI):
                 ) from e
             logger.warning(f"GumbelMCTSAI: failed to load neural net ({e})")
             self.neural_net = None
+
+    def _get_value_head(self, game_state: GameState) -> int | None:
+        """Get the value head index for multi-player games.
+
+        For 3+ player games, we need to use the correct value head for this AI's
+        player perspective. For 2-player games, we can use the default (value[0])
+        since values are symmetrically negated.
+
+        Returns:
+            Player index (0-indexed) for 3+ player games, None for 2-player games.
+        """
+        num_players = _infer_num_players(game_state)
+        nn_supports_mp = (
+            self.neural_net is not None
+            and getattr(self.neural_net, "num_players", 4) >= 2
+        )
+        if nn_supports_mp and num_players > 2:
+            return self.player_number - 1  # Convert to 0-indexed
+        return None
 
     def _ensure_heuristic_evaluator(self) -> HeuristicAI | None:
         """Lazily initialize heuristic evaluator if needed.
@@ -253,6 +296,67 @@ class GumbelMCTSAI(BaseAI):
                 return None
 
         return self._heuristic_ai
+
+    def _default_dirichlet_alpha(self, board_type: BoardType) -> float:
+        """Return a board-specific default Dirichlet alpha.
+
+        Smaller alpha produces more peaked noise distributions, which is
+        appropriate for games with more legal moves.
+        """
+        if board_type in (BoardType.SQUARE19,):
+            return 0.15  # More moves → sharper noise
+        elif board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+            return 0.2
+        return 0.3  # Default for square8
+
+    def _apply_dirichlet_noise(
+        self,
+        policy_logits: np.ndarray,
+        board_type: BoardType,
+    ) -> np.ndarray:
+        """Apply Dirichlet noise to policy logits for self-play exploration.
+
+        This adds stochastic exploration at the root during self-play,
+        following AlphaZero methodology. The noise helps discover moves
+        that the policy might otherwise miss.
+
+        Args:
+            policy_logits: Array of log-probabilities for each valid move.
+            board_type: Board type for determining alpha parameter.
+
+        Returns:
+            Noised policy logits.
+        """
+        if not self.self_play or len(policy_logits) <= 1:
+            return policy_logits
+
+        if self.root_noise_fraction <= 0:
+            return policy_logits
+
+        # Determine alpha for Dirichlet distribution
+        alpha = self.root_dirichlet_alpha or self._default_dirichlet_alpha(board_type)
+        epsilon = self.root_noise_fraction
+
+        # Generate Dirichlet noise (using numpy, seeded from self.rng)
+        # Re-seed numpy's random from our RNG for reproducibility
+        np_rng = np.random.default_rng(self.rng.randint(0, 2**32 - 1))
+        noise = np_rng.dirichlet([alpha] * len(policy_logits))
+
+        # Convert logits to probabilities, apply noise, convert back
+        # Softmax: p = exp(logits) / sum(exp(logits))
+        logits_shifted = policy_logits - np.max(policy_logits)  # Numerical stability
+        probs = np.exp(logits_shifted)
+        probs = probs / (probs.sum() + 1e-10)
+
+        # Mix original priors with noise: p' = (1 - ε)p + εn
+        noised_probs = (1 - epsilon) * probs + epsilon * noise
+        noised_probs = np.clip(noised_probs, 1e-10, 1.0)
+        noised_probs = noised_probs / noised_probs.sum()
+
+        # Convert back to logits
+        noised_logits = np.log(noised_probs)
+
+        return noised_logits
 
     def _normalize_heuristic_score(self, raw_score: float) -> float:
         """Normalize heuristic score to [-1, 1] range using tanh.
@@ -289,7 +393,10 @@ class GumbelMCTSAI(BaseAI):
         nn_value: float | None = None
         if self.neural_net is not None:
             try:
-                values, _ = self.neural_net.evaluate_batch([sim_state])
+                value_head = self._get_value_head(sim_state)
+                values, _ = self.neural_net.evaluate_batch(
+                    [sim_state], value_head=value_head
+                )
                 if values:
                     nn_value = float(values[0])
             except Exception as e:
@@ -421,7 +528,10 @@ class GumbelMCTSAI(BaseAI):
             return np.zeros(len(valid_moves))
 
         try:
-            _, policy = self.neural_net.evaluate_batch([game_state])
+            value_head = self._get_value_head(game_state)
+            _, policy = self.neural_net.evaluate_batch(
+                [game_state], value_head=value_head
+            )
 
             if policy.size == 0:
                 return np.zeros(len(valid_moves))
@@ -440,7 +550,14 @@ class GumbelMCTSAI(BaseAI):
 
                 logits.append(logit)
 
-            return np.array(logits, dtype=np.float32)
+            policy_logits = np.array(logits, dtype=np.float32)
+
+            # Apply Dirichlet noise for self-play exploration at root
+            policy_logits = self._apply_dirichlet_noise(
+                policy_logits, self.board_type
+            )
+
+            return policy_logits
 
         except Exception as e:
             logger.warning(f"GumbelMCTSAI: policy evaluation failed ({e})")
@@ -606,10 +723,15 @@ class GumbelMCTSAI(BaseAI):
             batch_size = self._gpu_batch_size
             all_values: list[float] = []
 
+            # Get value_head from first state (all states have same num_players)
+            value_head = self._get_value_head(states[0]) if states else None
+
             for i in range(0, len(states), batch_size):
                 batch_states = states[i:i + batch_size]
                 try:
-                    values, _ = self.neural_net.evaluate_batch(batch_states)
+                    values, _ = self.neural_net.evaluate_batch(
+                        batch_states, value_head=value_head
+                    )
                     all_values.extend(values if values else [0.0] * len(batch_states))
                 except Exception as e:
                     logger.warning(f"GumbelMCTSAI: Batch evaluation failed: {e}")
@@ -664,7 +786,10 @@ class GumbelMCTSAI(BaseAI):
 
             # Compute sequential result using identical code path
             try:
-                seq_values, _ = self.neural_net.evaluate_batch([state])
+                value_head = self._get_value_head(state)
+                seq_values, _ = self.neural_net.evaluate_batch(
+                    [state], value_head=value_head
+                )
                 seq_value = seq_values[0] if seq_values else 0.0
             except Exception as e:
                 logger.debug(f"GumbelMCTSAI: Shadow validation NN call failed: {e}")
@@ -1076,7 +1201,10 @@ class GumbelMCTSAI(BaseAI):
         nn_value: float | None = None
         if self.neural_net is not None:
             try:
-                values, _ = self.neural_net.evaluate_batch([game_state])
+                value_head = self._get_value_head(game_state)
+                values, _ = self.neural_net.evaluate_batch(
+                    [game_state], value_head=value_head
+                )
                 nn_value = values[0] if values else None
             except Exception:
                 pass
