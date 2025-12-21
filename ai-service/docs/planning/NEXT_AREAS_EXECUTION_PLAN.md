@@ -21,6 +21,9 @@
 
 **Status:** COMPLETE - Scale verified (190+ games, 0 semantic divergence). Issues addressed:
 
+**Note:** `canonical_square8_2p.db` is the primary 2P canonical training DB; `canonical_square8.db`
+is a smaller parity smoke DB referenced by CI.
+
 1. Legacy DBs (jsonl*converted*\*) use old schema v1 - structural issue, not fixable
 2. ~~Phase transition parity bug~~ **FIXED** - `no_territory_action` now handles phase transition inline
 
