@@ -68,11 +68,18 @@ def clear_nnue_cache() -> None:
 # Feature Dimensions
 # =============================================================================
 
-# Input features: 12 planes per position
+# Input features: 12 spatial planes per position + 20 global features
+# Spatial planes (12):
 # - Ring presence per player (4 planes for 4 players max)
 # - Stack presence per player (4 planes)
 # - Territory ownership per player (4 planes)
+# Global features (20):
+# - Rings in hand per player (4 values, normalized 0-1)
+# - Game phase one-hot (8 values for 8 phases)
+# - Eliminated rings per player (4 values, normalized 0-1)
+# - Territory count per player (4 values, normalized 0-1)
 FEATURE_PLANES = 12
+GLOBAL_FEATURES = 20  # Critical for early-game evaluation
 
 BOARD_SIZES: dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
@@ -82,10 +89,10 @@ BOARD_SIZES: dict[BoardType, int] = {
 }
 
 FEATURE_DIMS: dict[BoardType, int] = {
-    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES,      # 768 features
-    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES,   # 4332 features
-    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES,  # 7500 features
-    BoardType.HEX8: 9 * 9 * FEATURE_PLANES,         # 972 features
+    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES + GLOBAL_FEATURES,      # 768 + 20 = 788 features
+    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES + GLOBAL_FEATURES,   # 4332 + 20 = 4352 features
+    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES + GLOBAL_FEATURES,  # 7500 + 20 = 7520 features
+    BoardType.HEX8: 9 * 9 * FEATURE_PLANES + GLOBAL_FEATURES,         # 972 + 20 = 992 features
 }
 
 
@@ -522,7 +529,49 @@ def extract_features_from_gamestate(
         except (ValueError, AttributeError):
             continue
 
-    return features
+    # Add global features (20 total) - CRITICAL for early-game evaluation
+    global_features = np.zeros(GLOBAL_FEATURES, dtype=np.float32)
+
+    # Rings in hand per player (4 values, normalized by initial ring count)
+    # Rotated perspective: current player first
+    initial_rings = 18 if num_players == 2 else (12 if num_players == 3 else 9)
+    for p in range(1, min(num_players + 1, 5)):
+        rotated = _rotate_player_perspective(p, player_number, num_players)
+        player_data = state.players[p - 1] if hasattr(state, 'players') and p <= len(state.players) else None
+        rings_in_hand = getattr(player_data, 'rings_in_hand', initial_rings) if player_data else initial_rings
+        global_features[rotated - 1] = rings_in_hand / initial_rings
+
+    # Game phase one-hot encoding (8 values for 8 canonical phases)
+    phase_map = {
+        'ring_placement': 0, 'movement': 1, 'capture': 2, 'chain_capture': 2,
+        'line_processing': 3, 'territory_processing': 4, 'forced_elimination': 5,
+        'game_over': 6, 'recovery': 1,  # recovery is part of movement
+    }
+    phase_name = getattr(state, 'phase', None)
+    if phase_name:
+        phase_str = phase_name.value if hasattr(phase_name, 'value') else str(phase_name).lower()
+        phase_idx = phase_map.get(phase_str, 7)  # Default to index 7 (unknown)
+        global_features[4 + phase_idx] = 1.0
+    else:
+        global_features[4] = 1.0  # Default to ring_placement phase
+
+    # Eliminated rings per player (4 values, normalized)
+    for p in range(1, min(num_players + 1, 5)):
+        rotated = _rotate_player_perspective(p, player_number, num_players)
+        player_data = state.players[p - 1] if hasattr(state, 'players') and p <= len(state.players) else None
+        eliminated = getattr(player_data, 'eliminated_rings', 0) if player_data else 0
+        global_features[12 + rotated - 1] = min(eliminated / 5.0, 1.0)
+
+    # Territory count per player (4 values, normalized by victory threshold)
+    victory_threshold = 3 if num_players == 2 else (2 if num_players <= 3 else 1)
+    for p in range(1, min(num_players + 1, 5)):
+        rotated = _rotate_player_perspective(p, player_number, num_players)
+        player_data = state.players[p - 1] if hasattr(state, 'players') and p <= len(state.players) else None
+        territory_count = getattr(player_data, 'territory_spaces', 0) if player_data else 0
+        global_features[16 + rotated - 1] = min(territory_count / (victory_threshold * 2), 1.0)
+
+    # Concatenate spatial and global features
+    return np.concatenate([features, global_features])
 
 
 def extract_features_from_mutable(
@@ -534,17 +583,21 @@ def extract_features_from_mutable(
     Optimized feature extraction that works directly with MutableGameState
     to avoid conversion overhead during search.
 
-    Feature planes (12 total) - PERSPECTIVE ROTATED:
+    Feature planes (12 spatial + 20 global) - PERSPECTIVE ROTATED:
     - Planes 0-3: Ring presence (plane 0 = current player, 1-3 = opponents)
     - Planes 4-7: Stack presence (plane 4 = current player, 5-7 = opponents)
     - Planes 8-11: Territory ownership (plane 8 = current player, 9-11 = opponents)
+    - Global 0-3: Rings in hand per player (normalized)
+    - Global 4-11: Game phase one-hot encoding
+    - Global 12-15: Eliminated rings per player (normalized)
+    - Global 16-19: Territory count per player (normalized)
 
     Args:
         state: The mutable game state
         player_number: The player perspective (1-4)
 
     Returns:
-        Flattened feature vector of shape (board_size * board_size * 12,)
+        Flattened feature vector of shape (board_size * board_size * 12 + 20,)
     """
     board_type = state.board_type
     board_size = get_board_size(board_type)
@@ -611,7 +664,61 @@ def extract_features_from_mutable(
                     plane_idx = (8 + rotated - 1) * num_positions
                     features[plane_idx + idx] = 1.0
 
-    return features
+    # Add global features (20 total) - CRITICAL for early-game evaluation
+    global_features = np.zeros(GLOBAL_FEATURES, dtype=np.float32)
+
+    # Rings in hand per player (4 values, normalized by initial ring count)
+    initial_rings = 18 if num_players == 2 else (12 if num_players == 3 else 9)
+    rings_in_hand_arr = getattr(state, '_rings_in_hand', None)
+    for p in range(1, min(num_players + 1, 5)):
+        rotated = _rotate_player_perspective(p, player_number, num_players)
+        if rings_in_hand_arr is not None and p <= len(rings_in_hand_arr):
+            rings_in_hand = int(rings_in_hand_arr[p - 1])
+        else:
+            # Fallback: count rings not on board
+            rings_in_hand = initial_rings
+        global_features[rotated - 1] = rings_in_hand / initial_rings
+
+    # Game phase one-hot encoding (8 values for 8 canonical phases)
+    phase_map = {
+        'ring_placement': 0, 'movement': 1, 'capture': 2, 'chain_capture': 2,
+        'line_processing': 3, 'territory_processing': 4, 'forced_elimination': 5,
+        'game_over': 6, 'recovery': 1,
+    }
+    phase_name = getattr(state, 'phase', None)
+    if phase_name:
+        phase_str = phase_name.value if hasattr(phase_name, 'value') else str(phase_name).lower()
+        phase_idx = phase_map.get(phase_str, 7)
+        global_features[4 + phase_idx] = 1.0
+    else:
+        global_features[4] = 1.0  # Default to ring_placement phase
+
+    # Eliminated rings per player (4 values, normalized)
+    eliminated_arr = getattr(state, '_eliminated_rings', None)
+    for p in range(1, min(num_players + 1, 5)):
+        rotated = _rotate_player_perspective(p, player_number, num_players)
+        if eliminated_arr is not None and p <= len(eliminated_arr):
+            eliminated = int(eliminated_arr[p - 1])
+        else:
+            eliminated = 0
+        global_features[12 + rotated - 1] = min(eliminated / 5.0, 1.0)
+
+    # Territory count per player (4 values, normalized by victory threshold)
+    victory_threshold = 3 if num_players == 2 else (2 if num_players <= 3 else 1)
+    territory_counts = getattr(state, '_territory_counts', None)
+    for p in range(1, min(num_players + 1, 5)):
+        rotated = _rotate_player_perspective(p, player_number, num_players)
+        if territory_counts is not None and p <= len(territory_counts):
+            territory_count = int(territory_counts[p - 1])
+        else:
+            # Fallback: count from territory array
+            territory_count = 0
+            if territories is not None:
+                territory_count = int(np.sum(territories == p))
+        global_features[16 + rotated - 1] = min(territory_count / (victory_threshold * 2), 1.0)
+
+    # Concatenate spatial and global features
+    return np.concatenate([features, global_features])
 
 
 # =============================================================================
