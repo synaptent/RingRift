@@ -32,12 +32,12 @@ run_distillation()         | INTEGRATED       | Run ensemble distillation into c
 get_distillation_stats()   | INTEGRATED       | Get distillation statistics
 ---------------------------|------------------|----------------------------------
 compute_sample_weights()   | REQUIRES DATA    | Needs opponent_elo per sample in training data
-get_curriculum_parameters()| NOT INTEGRATED   | Values never used in training loop
-apply_gradient_surgery()   | NOT INTEGRATED   | Requires restructuring loss computation
+get_curriculum_parameters()| SELFPLAY ONLY    | Used for selfplay difficulty, not training loop
+apply_gradient_surgery()   | INTEGRATED       | Via train.py with config.enable_gradient_surgery
 
 CONFIG FLAGS (December 2025):
 - auxiliary_tasks_enabled: True -> compute_auxiliary_loss() IS called
-- gradient_surgery_enabled: True -> apply_gradient_surgery() NOT called (needs refactor)
+- gradient_surgery_enabled: True -> apply_gradient_surgery() IS called (via train.py GradientSurgeon)
 - background_eval_enabled: True -> should_early_stop() IS called
 - reanalysis_enabled: True -> should_reanalyze() + process_reanalysis() available
 - distillation_enabled: True -> should_distill() + run_distillation() available

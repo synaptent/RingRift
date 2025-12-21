@@ -641,6 +641,11 @@ def train_model(
     min_quality_score: float = 0.0,
     _include_local_data: bool = True,
     _include_nfs_data: bool = True,
+    # Learning rate finder (2025-12)
+    find_lr: bool = False,
+    lr_finder_min: float = 1e-7,
+    lr_finder_max: float = 1.0,
+    lr_finder_iterations: int = 100,
 ):
     """
     Train the RingRift neural network model.
