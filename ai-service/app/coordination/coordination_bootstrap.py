@@ -86,7 +86,7 @@ _state = BootstrapState()
 
 def _init_resource_coordinator() -> BootstrapCoordinatorStatus:
     """Initialize ResourceMonitoringCoordinator."""
-    status = BootstrapBootstrapCoordinatorStatus(name="resource_coordinator")
+    status = BootstrapCoordinatorStatus(name="resource_coordinator")
     try:
         from app.coordination.resource_monitoring_coordinator import wire_resource_events
 
