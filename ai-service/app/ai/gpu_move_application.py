@@ -1166,8 +1166,10 @@ def apply_movement_moves_batch_vectorized(
                         surv_idx = torch.where(transfer_mask)[0][idx]
                         final_owners[surv_idx] = p
                         final_caps[surv_idx] = 1  # Exposed buried ring becomes the cap
-                        # Clear buried_at since the ring is now exposed as cap
+                        # Clear buried_at AND decrement buried_rings since ring is now exposed
+                        # BUG FIX 2025-12-20: buried_rings wasn't decremented when rings were exposed
                         state.buried_at[g, p, y_pos, x_pos] = False
+                        state.buried_rings[g, p] -= 1
                         break
 
         state.stack_owner[surv_games, surv_to_y, surv_to_x] = final_owners.to(state.stack_owner.dtype)
@@ -1622,6 +1624,26 @@ def apply_capture_moves_batch_vectorized(
                 games_with_buried = empty_games[had_buried]
                 state.buried_rings[games_with_buried, p] -= 1
             state.buried_at[empty_games, p, empty_target_y, empty_target_x] = False
+
+    # BUG FIX 2025-12-20: When ownership transfers due to cap capture, any previously
+    # buried rings of the new owner are now exposed (they become the cap). Clear
+    # buried_at and decrement buried_rings for these cases.
+    # This happens when: target_cap_fully_captured AND the new owner had buried rings here
+    if target_cap_fully_captured.any():
+        cap_games = game_indices[target_cap_fully_captured]
+        cap_target_y = target_y[target_cap_fully_captured]
+        cap_target_x = target_x[target_cap_fully_captured]
+        cap_new_owners = new_target_owner[target_cap_fully_captured]
+        for i in range(cap_games.shape[0]):
+            g = cap_games[i].item()
+            y = cap_target_y[i].item()
+            x = cap_target_x[i].item()
+            new_owner = cap_new_owners[i].item()
+            if new_owner > 0:  # Skip if no owner
+                # Check if the new owner had a buried ring here (now exposed)
+                if state.buried_at[g, new_owner, y, x].item():
+                    state.buried_at[g, new_owner, y, x] = False
+                    state.buried_rings[g, new_owner] -= 1
 
     # === Clear ORIGIN ===
     state.stack_owner[game_indices, from_y, from_x] = 0
