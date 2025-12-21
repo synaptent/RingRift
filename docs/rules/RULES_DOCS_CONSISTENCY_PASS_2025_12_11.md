@@ -134,7 +134,7 @@ Notes:
 
 - **Phase↔MoveType drift guard (TS↔Python):**
   - Added `scripts/ssot/phase-move-contract-ssot-check.ts` and wired it into `npm run ssot-check`.
-  - Exported a canonical-only mapping in `src/shared/engine/phaseValidation.ts` as `CANONICAL_VALID_MOVES_BY_PHASE` (matches Python `ai-service/app/rules/history_contract.py`).
+  - Made `src/shared/engine/phaseValidation.ts` canonical-only (legacy aliases live under `src/shared/engine/legacy/`) to match Python `ai-service/app/rules/history_contract.py`.
 - **SSoT docs alignment:**
   - Updated `docs/rules/RULES_IMPLEMENTATION_MAPPING.md` to reference missing RR-CANON rule anchors required by `rules-semantics-ssot`.
   - Updated `docs/architecture/CANONICAL_ENGINE_API.md` MoveType literal listing to include all non-legacy MoveTypes required by `lifecycle-api-ssot`.

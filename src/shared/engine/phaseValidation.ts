@@ -37,108 +37,43 @@ export type MoveType = GameMoveType;
 /**
  * Declarative matrix mapping phases to valid move types.
  *
- * Rules derivation:
+ * Rules derivation (canonical):
  * - ring_placement: place_ring, skip_placement, no_placement_action, swap_sides
- * - movement: move_stack, move_ring, build_stack, no_movement_action,
- *   overtaking_capture, continue_capture_segment, recovery_slide
- * - capture: overtaking_capture, continue_capture_segment, skip_capture
- * - chain_capture: overtaking_capture, continue_capture_segment
- * - line_processing: process_line, choose_line_option (legacy: choose_line_reward), no_line_action
- * - territory_processing: choose_territory_option (legacy: process_territory_region), eliminate_rings_from_stack, no_territory_action, skip_territory_processing
+ * - movement: move_stack, overtaking_capture, recovery_slide, skip_recovery, no_movement_action, swap_sides
+ * - capture: overtaking_capture, skip_capture, swap_sides
+ * - chain_capture: continue_capture_segment, swap_sides
+ * - line_processing: process_line, choose_line_option, eliminate_rings_from_stack, no_line_action
+ * - territory_processing: choose_territory_option, eliminate_rings_from_stack,
+ *   no_territory_action, skip_territory_processing
  * - forced_elimination: forced_elimination
  * - game_over: none (game ended)
  *
- * Note: Some moves can span multiple phases due to phase coercion in turnOrchestrator.
- * This matrix represents the PRIMARY valid phase for each move type.
+ * Legacy replay extensions live in `legacy/legacyPhaseValidation.ts`.
  */
 export const VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[]>> = {
   ring_placement: ['place_ring', 'skip_placement', 'no_placement_action', 'swap_sides'],
   movement: [
     'move_stack',
-    'move_ring',
-    'build_stack',
-    'no_movement_action',
     'overtaking_capture',
-    'continue_capture_segment',
     'recovery_slide',
     'skip_recovery',
-    // swap_sides is a meta-move but is only available in interactive phases
-    // (RR-CANON R180-R184). See swapSidesHelpers.ts.
+    'no_movement_action',
     'swap_sides',
   ],
-  capture: [
-    'overtaking_capture',
-    'continue_capture_segment',
-    'skip_capture',
-    // swap_sides may still be offered before Player 2 takes any non-swap move.
-    'swap_sides',
-  ],
-  chain_capture: [
-    'overtaking_capture',
-    'continue_capture_segment',
-    // swap_sides may still be offered before Player 2 takes any non-swap move.
-    'swap_sides',
-  ],
+  capture: ['overtaking_capture', 'skip_capture', 'swap_sides'],
+  chain_capture: ['continue_capture_segment', 'swap_sides'],
   line_processing: [
     'process_line',
     'choose_line_option',
-    'choose_line_reward',
     // RR-CANON-R123: line reward elimination uses eliminate_rings_from_stack
     'eliminate_rings_from_stack',
     'no_line_action',
-    // Deprecated legacy move type; accepted for replay only.
-    'line_formation',
   ],
   territory_processing: [
     'choose_territory_option',
-    'process_territory_region',
     'eliminate_rings_from_stack', // Self-elimination for territory
     'no_territory_action',
     'skip_territory_processing',
-    // Deprecated legacy move type; accepted for replay only.
-    'territory_claim',
-  ],
-  forced_elimination: ['forced_elimination'],
-  game_over: [],
-} as const;
-
-/**
- * Canonical phase → MoveType contract for recordings (RR-CANON-R070/R075).
- *
- * This mapping is intended to match Python's `ai-service/app/rules/history_contract.py`
- * and excludes legacy aliases and deprecated move types. Use this for:
- * - write-time canonical history enforcement,
- * - TS↔Python contract drift guards,
- * - tooling that must distinguish canonical vs legacy replay surfaces.
- *
- * Runtime validators that need to tolerate legacy fixtures may still rely on
- * {@link VALID_MOVES_BY_PHASE}.
- */
-export const CANONICAL_VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[]>> = {
-  ring_placement: ['place_ring', 'skip_placement', 'no_placement_action', 'swap_sides'],
-  movement: [
-    'move_stack',
-    'move_ring',
-    'build_stack',
-    'overtaking_capture',
-    'continue_capture_segment',
-    'recovery_slide',
-    'skip_recovery',
-    'no_movement_action',
-  ],
-  capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
-  chain_capture: ['continue_capture_segment'],
-  line_processing: [
-    'process_line',
-    'choose_line_option',
-    'eliminate_rings_from_stack',
-    'no_line_action',
-  ],
-  territory_processing: [
-    'choose_territory_option',
-    'eliminate_rings_from_stack',
-    'skip_territory_processing',
-    'no_territory_action',
   ],
   forced_elimination: ['forced_elimination'],
   game_over: [],

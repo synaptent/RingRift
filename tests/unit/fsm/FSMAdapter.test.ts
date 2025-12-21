@@ -514,7 +514,7 @@ describe('FSMAdapter', () => {
       expect(result.validEventTypes).toBeDefined();
     });
 
-    it('should accept swap_sides as a meta-move (allowed in any phase)', () => {
+    it('should accept swap_sides as a meta-move in ring_placement', () => {
       const state = createTestGameState();
       const move: Move = {
         id: 'test-3',
@@ -529,7 +529,7 @@ describe('FSMAdapter', () => {
       const result = validateMoveWithFSM(state, move);
 
       // swap_sides is a meta-move that bypasses FSM event conversion
-      // and is allowed in any phase via isMoveTypeValidForPhase
+      // and is allowed in ring_placement via isMoveTypeValidForPhase
       expect(result.valid).toBe(true);
     });
 
@@ -557,40 +557,33 @@ describe('FSMAdapter', () => {
 
   describe('phase ↔ MoveType mapping', () => {
     // These match VALID_MOVES_BY_PHASE in phaseValidation.ts exactly
-    // swap_sides is valid in interactive phases per RR-CANON R180-R184
+    // (canonical only; legacy aliases live in legacyPhaseValidation.ts).
     const phaseExpectations: Record<GamePhase, MoveType[]> = {
       ring_placement: ['place_ring', 'skip_placement', 'no_placement_action', 'swap_sides'],
       movement: [
         'move_stack',
         'move_ring',
         'build_stack',
-        'no_movement_action',
         'overtaking_capture',
         'continue_capture_segment',
         'recovery_slide',
         'skip_recovery',
-        'swap_sides',
+        'no_movement_action',
       ],
-      capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture', 'swap_sides'],
-      chain_capture: ['overtaking_capture', 'continue_capture_segment', 'swap_sides'],
+      capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
+      chain_capture: ['continue_capture_segment'],
       line_processing: [
         'process_line',
         'choose_line_option',
-        'choose_line_reward',
         // RR-CANON-R123: line reward elimination uses eliminate_rings_from_stack
         'eliminate_rings_from_stack',
         'no_line_action',
-        // Deprecated legacy move type; accepted for replay only
-        'line_formation',
       ],
       territory_processing: [
         'choose_territory_option',
-        'process_territory_region',
         'eliminate_rings_from_stack',
         'no_territory_action',
         'skip_territory_processing',
-        // Deprecated legacy move type; accepted for replay only
-        'territory_claim',
       ],
       // Canonical: only forced_elimination is valid
       forced_elimination: ['forced_elimination'],
@@ -665,13 +658,12 @@ describe('FSMAdapter', () => {
       }
     });
 
-    it('should treat swap_sides as valid in interactive phases only', () => {
-      // swap_sides is valid in interactive phases per RR-CANON R180-R184
+    it('should treat swap_sides as valid in ring_placement only', () => {
+      // swap_sides is a ring_placement-only move (pie rule).
       expect(isMoveTypeValidForPhase('ring_placement', 'swap_sides')).toBe(true);
-      expect(isMoveTypeValidForPhase('movement', 'swap_sides')).toBe(true);
-      expect(isMoveTypeValidForPhase('capture', 'swap_sides')).toBe(true);
-      expect(isMoveTypeValidForPhase('chain_capture', 'swap_sides')).toBe(true);
-      // NOT valid in processing phases
+      expect(isMoveTypeValidForPhase('movement', 'swap_sides')).toBe(false);
+      expect(isMoveTypeValidForPhase('capture', 'swap_sides')).toBe(false);
+      expect(isMoveTypeValidForPhase('chain_capture', 'swap_sides')).toBe(false);
       expect(isMoveTypeValidForPhase('line_processing', 'swap_sides')).toBe(false);
       expect(isMoveTypeValidForPhase('territory_processing', 'swap_sides')).toBe(false);
     });

@@ -64,9 +64,7 @@ describe('FSM Canonical Orchestrator', () => {
 
   describe('Phase-Move Type Validation', () => {
     // These mappings match VALID_MOVES_BY_PHASE in phaseValidation.ts
-    // swap_sides is a meta move permitted in interactive phases, but the
-    // canonical history contract treats it as ring_placement-only (pie rule);
-    // see CANONICAL_VALID_MOVES_BY_PHASE in phaseValidation.ts.
+    // (canonical only; legacy aliases live in legacyPhaseValidation.ts).
     const phaseMovePairs: { phase: GamePhase; validMoves: MoveType[]; invalidMoves: MoveType[] }[] =
       [
         {
@@ -84,25 +82,37 @@ describe('FSM Canonical Orchestrator', () => {
           validMoves: [
             'move_stack',
             'move_ring',
+            'build_stack',
             'overtaking_capture',
             'continue_capture_segment',
             'no_movement_action',
             'recovery_slide',
-            'swap_sides', // Valid in interactive phases per RR-CANON R180-R184
+            'skip_recovery',
           ],
-          invalidMoves: ['place_ring', 'choose_line_reward', 'process_territory_region'],
+          invalidMoves: [
+            'place_ring',
+            'swap_sides',
+            'choose_line_reward',
+            'process_territory_region',
+          ],
         },
         {
           phase: 'chain_capture',
-          validMoves: ['overtaking_capture', 'continue_capture_segment', 'swap_sides'],
+          validMoves: ['continue_capture_segment'],
           invalidMoves: ['place_ring', 'move_stack', 'choose_line_reward', 'no_movement_action'],
         },
         {
           phase: 'line_processing',
-          validMoves: ['process_line', 'choose_line_reward', 'no_line_action'],
+          validMoves: [
+            'process_line',
+            'choose_line_option',
+            'eliminate_rings_from_stack',
+            'no_line_action',
+          ],
           invalidMoves: [
             'place_ring',
             'move_stack',
+            'choose_line_reward',
             'process_territory_region',
             'overtaking_capture',
           ],
@@ -110,12 +120,18 @@ describe('FSM Canonical Orchestrator', () => {
         {
           phase: 'territory_processing',
           validMoves: [
-            'process_territory_region',
-            'no_territory_action',
             'eliminate_rings_from_stack',
             'skip_territory_processing',
+            'choose_territory_option',
+            'no_territory_action',
           ],
-          invalidMoves: ['place_ring', 'move_stack', 'choose_line_reward', 'overtaking_capture'],
+          invalidMoves: [
+            'place_ring',
+            'move_stack',
+            'choose_line_reward',
+            'process_territory_region',
+            'overtaking_capture',
+          ],
         },
       ];
 
@@ -397,19 +413,11 @@ describe('FSM Canonical Orchestrator', () => {
   });
 
   describe('Meta Move Types', () => {
-    it('should allow swap_sides in interactive phases (pie rule)', () => {
-      // swap_sides is valid in interactive phases per RR-CANON R180-R184
-      const interactivePhases: GamePhase[] = [
-        'ring_placement',
-        'movement',
-        'capture',
-        'chain_capture',
-      ];
-      interactivePhases.forEach((phase) => {
-        expect(isMoveTypeValidForPhase(phase, 'swap_sides')).toBe(true);
-      });
-
-      // swap_sides is NOT valid in processing phases
+    it('should allow swap_sides only in ring_placement (pie rule)', () => {
+      expect(isMoveTypeValidForPhase('ring_placement', 'swap_sides')).toBe(true);
+      expect(isMoveTypeValidForPhase('movement', 'swap_sides')).toBe(false);
+      expect(isMoveTypeValidForPhase('capture', 'swap_sides')).toBe(false);
+      expect(isMoveTypeValidForPhase('chain_capture', 'swap_sides')).toBe(false);
       expect(isMoveTypeValidForPhase('line_processing', 'swap_sides')).toBe(false);
       expect(isMoveTypeValidForPhase('territory_processing', 'swap_sides')).toBe(false);
     });

@@ -2288,35 +2288,32 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
  * for the currentPhase of the provided state:
  *
  * - ring_placement:
- *     place_ring, skip_placement, no_placement_action
+ *     place_ring, skip_placement, no_placement_action, swap_sides
  * - movement:
  *     move_stack, move_ring, build_stack, overtaking_capture,
- *     continue_capture_segment, recovery_slide, no_movement_action
+ *     continue_capture_segment, recovery_slide, skip_recovery, no_movement_action
  * - capture:
  *     overtaking_capture, continue_capture_segment, skip_capture
  * - chain_capture:
- *     overtaking_capture, continue_capture_segment
+ *     continue_capture_segment
  * - line_processing:
- *     process_line, choose_line_option (legacy: choose_line_reward), no_line_action
+ *     process_line, choose_line_option, eliminate_rings_from_stack, no_line_action
  * - territory_processing:
- *     choose_territory_option (legacy: process_territory_region), eliminate_rings_from_stack,
- *     skip_territory_processing, no_territory_action
+ *     choose_territory_option, eliminate_rings_from_stack, skip_territory_processing,
+ *     no_territory_action
  * - forced_elimination:
  *     forced_elimination
  *
- * swap_sides is permitted in the early interactive phases (ring_placement,
- * movement, capture, chain_capture) as a meta-move. Legacy move
- * types (line_formation, territory_claim) are accepted for historical
- * recordings but should be treated as non-canonical by hosts.
+ * swap_sides is permitted only in ring_placement (pie rule). Legacy move
+ * types (line_formation, territory_claim) are only accepted in replay
+ * compatibility mode and must be treated as non-canonical by hosts.
  */
 function assertPhaseMoveInvariant(state: GameState, move: Move): void {
   const phase = state.currentPhase;
   const type = move.type;
 
-  // Delegate to FSMAdapter's canonical phase ↔ MoveType mapping. The adapter
-  // already treats meta/legacy move types (swap_sides, line_formation,
-  // territory_claim) as universally allowed, matching the historical behavior
-  // of this invariant while centralising the actual mapping.
+  // Delegate to FSMAdapter's canonical phase ↔ MoveType mapping. Legacy
+  // compatibility is handled by replayCompatibility checks elsewhere.
   if (!isMoveTypeValidForPhase(phase, type)) {
     throw new Error(`[PHASE_MOVE_INVARIANT] Cannot apply move type '${type}' in phase '${phase}'`);
   }
@@ -3223,7 +3220,7 @@ export function validateMove(state: GameState, move: Move): { valid: boolean; re
  * only **interactive** moves:
  *
  * - ring_placement: place_ring, skip_placement (when eligible).
- * - movement: move_stack, move_ring, overtaking_capture,
+ * - movement: move_stack, overtaking_capture,
  *   continue_capture_segment.
  * - capture / chain_capture: capture segments + skip_capture.
  * - line_processing: process_line / choose_line_option (legacy: choose_line_reward).

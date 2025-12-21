@@ -59,8 +59,6 @@ export const MoveTypeSchema = {
     'swap_sides',
     'process_line',
     'choose_line_option',
-    'choose_line_reward',
-    'process_territory_region',
     'choose_territory_option',
     'eliminate_rings_from_stack',
     'forced_elimination',
@@ -69,8 +67,6 @@ export const MoveTypeSchema = {
     'skip_territory_processing',
     'resign',
     'timeout',
-    'line_formation',
-    'territory_claim',
   ],
 } as const;
 

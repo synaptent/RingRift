@@ -17,7 +17,7 @@ import { execFileSync } from 'child_process';
 
 import type { CheckResult } from './ssot-check';
 
-import { CANONICAL_VALID_MOVES_BY_PHASE } from '../../src/shared/engine/phaseValidation';
+import { VALID_MOVES_BY_PHASE } from '../../src/shared/engine/phaseValidation';
 
 function normalizeMoveList(raw: unknown): string[] {
   if (!Array.isArray(raw)) {
@@ -68,7 +68,7 @@ export async function runPhaseMoveContractSsotCheck(): Promise<CheckResult> {
     const pythonPhases = Object.keys(pythonContractRaw).sort();
 
     const tsContractRaw: Record<string, readonly string[]> = {};
-    for (const [phase, moves] of Object.entries(CANONICAL_VALID_MOVES_BY_PHASE)) {
+    for (const [phase, moves] of Object.entries(VALID_MOVES_BY_PHASE)) {
       if (phase === 'game_over') {
         continue;
       }
