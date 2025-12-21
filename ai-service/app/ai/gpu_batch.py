@@ -54,6 +54,10 @@ logger = logging.getLogger(__name__)
 def get_device(prefer_gpu: bool = True, device_id: int = 0) -> torch.device:
     """Auto-detect the best available compute device.
 
+    .. deprecated:: 2025-12
+        Use ``app.utils.torch_utils.get_device`` instead for the canonical
+        implementation with full distributed training support.
+
     Priority order:
     1. CUDA (if available and prefer_gpu=True)
     2. MPS (Apple Silicon, if available and prefer_gpu=True)
@@ -66,22 +70,10 @@ def get_device(prefer_gpu: bool = True, device_id: int = 0) -> torch.device:
     Returns:
         torch.device for the selected compute device
     """
-    if prefer_gpu:
-        if torch.cuda.is_available():
-            device = torch.device(f"cuda:{device_id}")
-            props = torch.cuda.get_device_properties(device_id)
-            logger.info(
-                f"Using CUDA device {device_id}: {props.name} "
-                f"({props.total_memory / 1024**3:.1f}GB)"
-            )
-            return device
-
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            logger.info("Using MPS (Apple Silicon)")
-            return torch.device("mps")
-
-    logger.info("Using CPU")
-    return torch.device("cpu")
+    # Delegate to canonical implementation (no deprecation warning here since
+    # this is a high-frequency call path - just document deprecation)
+    from app.utils.torch_utils import get_device as _canonical_get_device
+    return _canonical_get_device(prefer_gpu=prefer_gpu, device_id=device_id)
 
 
 def get_all_cuda_devices() -> list[torch.device]:

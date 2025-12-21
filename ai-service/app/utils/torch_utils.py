@@ -163,3 +163,145 @@ def save_checkpoint_safe(
         torch.save(checkpoint, path, _use_new_zipfile_serialization=True)
     else:
         torch.save(checkpoint, path)
+
+
+# =============================================================================
+# Device Detection and Management (Canonical Implementation)
+# =============================================================================
+#
+# This is the canonical implementation for device detection across the codebase.
+# Other modules should import from here:
+#   from app.utils.torch_utils import get_device, get_device_info
+#
+# This consolidates duplicate implementations from:
+# - app/ai/gpu_batch.py (deprecated, delegates here)
+# - app/ai/gpu_kernels.py (deprecated, delegates here)
+# - app/training/utils.py (deprecated, delegates here)
+# - app/training/train_setup.py (uses local_rank variant)
+# =============================================================================
+
+
+def get_device(
+    prefer_gpu: bool = True,
+    device_id: int | None = None,
+    local_rank: int = -1,
+) -> Any:
+    """Get the best available compute device (canonical implementation).
+
+    This is the consolidated device detection function. It supports:
+    - CUDA (NVIDIA GPUs) with device selection
+    - MPS (Apple Silicon)
+    - CPU fallback
+    - Distributed training (local_rank)
+
+    Priority order when prefer_gpu=True:
+    1. CUDA with specified device_id or local_rank
+    2. MPS (Apple Silicon)
+    3. CPU (fallback)
+
+    Args:
+        prefer_gpu: Whether to prefer GPU over CPU
+        device_id: Specific CUDA device ID to use (ignored for MPS/CPU)
+        local_rank: Local rank for distributed training (-1 for single GPU).
+                    If >= 0, overrides device_id.
+
+    Returns:
+        torch.device for the selected compute device
+
+    Example:
+        # Simple usage - auto-detect best device
+        device = get_device()
+
+        # Force CPU
+        device = get_device(prefer_gpu=False)
+
+        # Specific GPU
+        device = get_device(device_id=1)
+
+        # Distributed training
+        device = get_device(local_rank=int(os.environ.get('LOCAL_RANK', -1)))
+    """
+    if not HAS_TORCH:
+        raise ImportError("PyTorch is required for device detection")
+
+    # Distributed training takes precedence
+    if local_rank >= 0 and torch.cuda.is_available():
+        return torch.device(f"cuda:{local_rank}")
+
+    if prefer_gpu:
+        if torch.cuda.is_available():
+            cuda_id = device_id if device_id is not None else 0
+            device = torch.device(f"cuda:{cuda_id}")
+            try:
+                props = torch.cuda.get_device_properties(cuda_id)
+                logger.debug(
+                    "Using CUDA device %d: %s (%.1fGB)",
+                    cuda_id, props.name, props.total_memory / 1024**3
+                )
+            except Exception:
+                pass  # Logging is optional
+            return device
+
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            logger.debug("Using MPS (Apple Silicon)")
+            return torch.device("mps")
+
+    logger.debug("Using CPU")
+    return torch.device("cpu")
+
+
+def get_device_info() -> dict[str, Any]:
+    """Get information about available compute devices.
+
+    Returns:
+        Dictionary with device information including:
+        - cuda_available: bool
+        - cuda_device_count: int
+        - cuda_devices: list of device info dicts (if CUDA available)
+        - mps_available: bool
+        - recommended_device: str ('cuda', 'mps', or 'cpu')
+        - torch_available: bool
+
+    Example:
+        info = get_device_info()
+        if info['cuda_available']:
+            print(f"Found {info['cuda_device_count']} CUDA devices")
+            for dev in info['cuda_devices']:
+                print(f"  GPU {dev['id']}: {dev['name']} ({dev['memory_gb']:.1f}GB)")
+    """
+    info: dict[str, Any] = {
+        "torch_available": HAS_TORCH,
+        "cuda_available": False,
+        "cuda_device_count": 0,
+        "mps_available": False,
+        "recommended_device": "cpu",
+    }
+
+    if not HAS_TORCH:
+        return info
+
+    info["cuda_available"] = torch.cuda.is_available()
+    info["cuda_device_count"] = torch.cuda.device_count() if info["cuda_available"] else 0
+    info["mps_available"] = (
+        hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    )
+
+    if info["cuda_available"]:
+        info["recommended_device"] = "cuda"
+        info["cuda_devices"] = []
+        for i in range(info["cuda_device_count"]):
+            try:
+                props = torch.cuda.get_device_properties(i)
+                info["cuda_devices"].append({
+                    "id": i,
+                    "name": props.name,
+                    "memory_gb": props.total_memory / 1024**3,
+                    "compute_capability": f"{props.major}.{props.minor}",
+                    "multi_processor_count": props.multi_processor_count,
+                })
+            except Exception:
+                info["cuda_devices"].append({"id": i, "name": "Unknown", "memory_gb": 0})
+    elif info["mps_available"]:
+        info["recommended_device"] = "mps"
+
+    return info

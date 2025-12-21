@@ -33,18 +33,19 @@ logger = logging.getLogger(__name__)
 def get_device() -> torch.device:
     """Get the best available GPU device.
 
+    .. deprecated:: 2025-12
+        Use ``app.utils.torch_utils.get_device`` instead for the canonical
+        implementation with full distributed training support.
+
     For production code with more control, use:
-        from app.ai.gpu_batch import get_device
+        from app.utils.torch_utils import get_device
         device = get_device(prefer_gpu=True, device_id=0)
 
     This simple version is kept for backward compatibility with test code.
     """
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        return torch.device("cpu")
+    # Delegate to canonical implementation
+    from app.utils.torch_utils import get_device as _canonical_get_device
+    return _canonical_get_device(prefer_gpu=True)
 
 
 def is_cuda_available() -> bool:
