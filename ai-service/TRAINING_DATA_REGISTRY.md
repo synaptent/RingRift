@@ -26,6 +26,54 @@ This document tracks the provenance and canonical status of all self-play databa
 
 The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (`square8`, `square19`, and `hexagonal`), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
 
+### Coverage Matrix (2025-12-21)
+
+Target: All 12 combinations (4 board types × 3 player counts) with canonical training data.
+
+| Board     | 2P                  | 3P           | 4P           |
+| --------- | ------------------- | ------------ | ------------ |
+| square8   | ✅ canonical (200+) | ⚠️ small (2) | ⚠️ small (2) |
+| square19  | ⚠️ small (3)        | ❌ missing   | ❌ missing   |
+| hex8      | ❌ missing          | ❌ missing   | ❌ missing   |
+| hexagonal | ❌ unblocked        | ❌ missing   | ❌ missing   |
+
+Legend:
+
+- ✅ = Canonical, sufficient volume (>=200 games)
+- ⚠️ = Canonical but insufficient volume (<200 games)
+- ❌ = Not generated yet
+
+**Priority Actions (2025-12-21):**
+
+1. Scale up square8 3P/4P to 200+ games each
+2. Scale up square19 2P to 200+ games
+3. Generate square19 3P/4P databases
+4. Generate hex8 2P/3P/4P databases (new board type)
+5. ~~Fix hexagonal parity bug~~ FIXED (commit 7f43c368) - generate hexagonal DBs
+
+**Generation Commands:**
+
+```bash
+# Scale up square8 3P/4P
+python scripts/generate_canonical_selfplay.py --board square8 --num-players 3 --num-games 200 --min-recorded-games 200
+python scripts/generate_canonical_selfplay.py --board square8 --num-players 4 --num-games 200 --min-recorded-games 200
+
+# Scale up square19 2P and generate 3P/4P
+python scripts/generate_canonical_selfplay.py --board square19 --num-players 2 --num-games 200 --min-recorded-games 200
+python scripts/generate_canonical_selfplay.py --board square19 --num-players 3 --num-games 200
+python scripts/generate_canonical_selfplay.py --board square19 --num-players 4 --num-games 200
+
+# Generate hex8 databases (new board type)
+python scripts/generate_canonical_selfplay.py --board hex8 --num-players 2 --num-games 200
+python scripts/generate_canonical_selfplay.py --board hex8 --num-players 3 --num-games 200
+python scripts/generate_canonical_selfplay.py --board hex8 --num-players 4 --num-games 200
+
+# Hexagonal: Parity bug FIXED (commit 7f43c368) - now unblocked
+python scripts/generate_canonical_selfplay.py --board hexagonal --num-players 2 --num-games 200
+python scripts/generate_canonical_selfplay.py --board hexagonal --num-players 3 --num-games 200
+python scripts/generate_canonical_selfplay.py --board hexagonal --num-players 4 --num-games 200
+```
+
 ### Volume Targets (Provisional)
 
 These targets define when large-board datasets are considered ready for training and should be revisited after throughput profiling.
@@ -37,9 +85,9 @@ These targets define when large-board datasets are considered ready for training
 
 ### Pending Re-Gate / Needs Regeneration
 
-| Database                 | Board Type | Players | Status           | Gate Summary                         | Issue                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------------------------ | ---------- | ------- | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_hexagonal.db` | hexagonal  | 2       | **pending_gate** | canonical_hexagonal.parity_gate.json | 2025-12-21 regeneration attempt failed parity: Phase divergence at k=989 (`territory_processing` in Python vs `forced_elimination` in TS). Failure bundle: `parity_failures/canonical_hexagonal__4cbcffac-*.parity_failure.json`. Previous 2025-12-20 issue was recovery slide; new issue is phase transition after `no_territory_action`. **BLOCKED: Requires hex-specific phase transition parity fix in Python GameEngine.** |
+| Database                 | Board Type | Players | Status          | Gate Summary                         | Issue                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ---------- | ------- | --------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_hexagonal.db` | hexagonal  | 2       | **needs_regen** | canonical_hexagonal.parity_gate.json | 2025-12-21: Root cause FIXED (commit 7f43c368). Bug was in `fsm.py:_did_process_territory_region()` checking wrong attribute `.positions` instead of `.spaces` on Territory objects. Ready for regeneration. Previous failures: Phase divergence at k=989 after `no_territory_action`. |
 
 ### Legacy / Non-Canonical
 
