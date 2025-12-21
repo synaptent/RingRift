@@ -38,34 +38,96 @@ logger = setup_script_logging("db_to_training_npz")
 
 
 class HexEncoderWrapper:
-    """Wrapper to give hex encoders a consistent interface."""
+    """Wrapper to give hex encoders a consistent interface with frame stacking.
 
-    def __init__(self, encoder, board_size: int = 25):
+    Supports both HexStateEncoder (v2, 10 base channels → 40 total) and
+    HexStateEncoderV3 (v3, 16 base channels → 64 total) with proper frame stacking
+    for compatibility with HexNeuralNet_v2 and HexNeuralNet_v3 respectively.
+    """
+
+    def __init__(self, encoder, board_size: int = 25, history_length: int = 3):
         self._encoder = encoder
         self._board_size = board_size
+        self._history_length = history_length
+        self._history_frames: list[np.ndarray] = []
 
     def encode_state(self, state):
-        """Extract features using the hex encoder's encode_state method."""
-        return self._encoder.encode_state(state)
+        """Extract features with frame stacking for NN compatibility."""
+        features, globals_vec = self._encoder.encode_state(state)
+
+        # Build stacked features (current + history frames)
+        hist = self._history_frames[::-1][:self._history_length]
+        while len(hist) < self._history_length:
+            hist.append(np.zeros_like(features))
+
+        stacked = np.concatenate([features, *hist], axis=0)
+
+        # Update history for next call
+        self._history_frames.append(features.copy())
+        if len(self._history_frames) > self._history_length + 1:
+            self._history_frames.pop(0)
+
+        return stacked.astype(np.float32), globals_vec.astype(np.float32)
+
+    def reset_history(self):
+        """Reset history frames for a new game."""
+        self._history_frames = []
 
 
-def get_encoder(board_type: str, num_players: int):
-    """Get the appropriate state encoder for the board type."""
+def get_encoder(
+    board_type: str,
+    num_players: int,
+    hex_encoder_version: str = "v3",
+    history_length: int = 3,
+):
+    """Get the appropriate state encoder for the board type.
+
+    Args:
+        board_type: Board type string (square8, square19, hex8, hexagonal)
+        num_players: Number of players
+        hex_encoder_version: For hex boards - "v2" (40ch) or "v3" (64ch, default)
+        history_length: Number of history frames (default 3 for 4 total frames)
+
+    Returns:
+        Encoder with consistent interface (encode_state returning features, globals)
+
+    Model compatibility:
+        - v2 encoder (10 base × 4 frames = 40ch) → HexNeuralNet_v2
+        - v3 encoder (16 base × 4 frames = 64ch) → HexNeuralNet_v3 (recommended)
+    """
     from app.ai.base import AIConfig
     from app.ai.neural_net import NeuralNetAI
     from app.models import BoardType
-    from app.training.encoding import P_HEX, POLICY_SIZE_HEX8, HexStateEncoderV3
+    from app.training.encoding import (
+        P_HEX,
+        POLICY_SIZE_HEX8,
+        HexStateEncoder,
+        HexStateEncoderV3,
+    )
 
     bt = BOARD_TYPE_MAP.get(board_type, BoardType.SQUARE8)
 
     if bt in (BoardType.HEXAGONAL, BoardType.HEX8):
+        # Select hex encoder based on version
         if bt == BoardType.HEX8:
-            hex_encoder = HexStateEncoderV3(board_size=9, policy_size=POLICY_SIZE_HEX8)
+            board_size = 9
+            policy_size = POLICY_SIZE_HEX8
         else:
-            hex_encoder = HexStateEncoderV3(board_size=25, policy_size=P_HEX)
-        return HexEncoderWrapper(hex_encoder)
+            board_size = 25
+            policy_size = P_HEX
+
+        if hex_encoder_version == "v2":
+            # HexStateEncoder (v2): 10 base channels → 40 total for HexNeuralNet_v2
+            hex_encoder = HexStateEncoder(board_size=board_size, policy_size=policy_size)
+            logger.info(f"Using HexStateEncoder v2 (10 base ch × 4 frames = 40 total)")
+        else:
+            # HexStateEncoderV3: 16 base channels → 64 total for HexNeuralNet_v3
+            hex_encoder = HexStateEncoderV3(board_size=board_size, policy_size=policy_size)
+            logger.info(f"Using HexStateEncoderV3 (16 base ch × 4 frames = 64 total)")
+
+        return HexEncoderWrapper(hex_encoder, board_size=board_size, history_length=history_length)
     else:
-        # For square boards, use NeuralNetAI
+        # For square boards, use NeuralNetAI which handles frame stacking internally
         config = AIConfig(
             difficulty=5,
             think_time=0,
@@ -88,6 +150,8 @@ def export_db_to_npz(
     sample_every: int = 3,
     max_games: int | None = None,
     max_positions: int = 500000,
+    hex_encoder_version: str = "v3",
+    history_length: int = 3,
 ) -> int:
     """Export training positions from a game database.
 
@@ -115,7 +179,11 @@ def export_db_to_npz(
 
     logger.info(f"Found {len(games)} games with winners")
 
-    encoder = get_encoder(board_type, num_players)
+    encoder = get_encoder(
+        board_type, num_players,
+        hex_encoder_version=hex_encoder_version,
+        history_length=history_length,
+    )
 
     all_features = []
     all_globals = []
@@ -128,6 +196,10 @@ def export_db_to_npz(
     for game_id, winner, total_moves in games:
         if len(all_features) >= max_positions:
             break
+
+        # Reset history frames at start of each game (for hex encoders)
+        if hasattr(encoder, 'reset_history'):
+            encoder.reset_history()
 
         try:
             # Sample positions throughout the game
@@ -227,6 +299,19 @@ def main():
         default=None,
         help="Path to TRAINING_DATA_REGISTRY.md (default: repo root)",
     )
+    parser.add_argument(
+        "--hex-encoder-version",
+        type=str,
+        choices=["v2", "v3"],
+        default="v3",
+        help="Hex encoder version: v2 (40ch for HexNeuralNet_v2) or v3 (64ch for HexNeuralNet_v3, default)",
+    )
+    parser.add_argument(
+        "--history-length",
+        type=int,
+        default=3,
+        help="Number of history frames to stack (default: 3 for 4 total frames)",
+    )
 
     args = parser.parse_args()
 
@@ -255,6 +340,8 @@ def main():
         sample_every=args.sample_every,
         max_games=args.max_games,
         max_positions=args.max_positions,
+        hex_encoder_version=args.hex_encoder_version,
+        history_length=args.history_length,
     )
 
     return 0 if count > 0 else 1

@@ -129,6 +129,11 @@ class GameQuality:
     training_weight: float = 1.0  # Weight for training sampling
     sync_priority: float = 0.0  # Priority for sync ordering
 
+    @property
+    def category(self) -> QualityCategory:
+        """Get quality category based on quality score."""
+        return QualityCategory.from_score(self.quality_score)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
