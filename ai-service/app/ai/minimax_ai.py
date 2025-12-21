@@ -1150,24 +1150,32 @@ class MinimaxAI(HeuristicAI):
                 logger.debug(f"Policy ordering failed, using heuristic: {e}")
                 # Fall back to capture-first ordering
                 others.sort(
-                    key=lambda m: 1 if m.type in [
+                    key=lambda m: 1
+                    if self._canonical_move_type(m) in {
                         "overtaking_capture",
-                        "chain_capture",
-                        "line_formation",
-                        "territory_claim"
-                    ] else 0,
-                    reverse=True
+                        "continue_capture_segment",
+                        "process_line",
+                        "choose_line_option",
+                        "choose_territory_option",
+                        "eliminate_rings_from_stack",
+                    }
+                    else 0,
+                    reverse=True,
                 )
         else:
             # Sort others by priority (captures first)
             others.sort(
-                key=lambda m: 1 if m.type in [
+                key=lambda m: 1
+                if self._canonical_move_type(m) in {
                     "overtaking_capture",
-                    "chain_capture",
-                    "line_formation",
-                    "territory_claim"
-                ] else 0,
-                reverse=True
+                    "continue_capture_segment",
+                    "process_line",
+                    "choose_line_option",
+                    "choose_territory_option",
+                    "eliminate_rings_from_stack",
+                }
+                else 0,
+                reverse=True,
             )
 
         return killers + others
@@ -1261,13 +1269,14 @@ class MinimaxAI(HeuristicAI):
         scored_moves = []
         for move in noisy_moves:
             priority = 0
-            if move.type == "territory_claim":
+            move_type = self._canonical_move_type(move)
+            if move_type in ("choose_territory_option", "eliminate_rings_from_stack"):
                 priority = 4
-            elif move.type == "line_formation":
+            elif move_type in ("process_line", "choose_line_option"):
                 priority = 3
-            elif move.type == "chain_capture":
+            elif move_type == "continue_capture_segment":
                 priority = 2
-            elif move.type == "overtaking_capture":
+            elif move_type == "overtaking_capture":
                 priority = 1
             scored_moves.append((priority, move))
         scored_moves.sort(key=lambda x: x[0], reverse=True)
@@ -1329,12 +1338,14 @@ class MinimaxAI(HeuristicAI):
         )
         noisy_moves = [
             m for m in all_moves
-            if m.type in [
+            if self._canonical_move_type(m) in {
                 "overtaking_capture",
-                "chain_capture",
-                "line_formation",
-                "territory_claim"
-            ]
+                "continue_capture_segment",
+                "process_line",
+                "choose_line_option",
+                "choose_territory_option",
+                "eliminate_rings_from_stack",
+            }
         ]
 
         if not noisy_moves:
