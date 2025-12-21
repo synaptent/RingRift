@@ -15,11 +15,13 @@ from app.ai.heuristic_weights import (
 
 class AgentType(str, Enum):
     """Types of AI agents."""
+    HEURISTIC = "heuristic"
     MINIMAX = "minimax"
     MCTS = "mcts"
     RANDOM = "random"
     HYBRID = "hybrid"
     NEURAL = "neural"  # Neural network policy/value model
+    DESCENT = "descent"
 
 
 @dataclass

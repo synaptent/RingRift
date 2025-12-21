@@ -40,6 +40,103 @@ AI_CLASSES = {"Random": RandomAI, "Heuristic": HeuristicAI, "Minimax": MinimaxAI
 BOARD_TYPES = {"Square8": BoardType.SQUARE8, "Square19": BoardType.SQUARE19, "Hex": BoardType.HEXAGONAL}
 
 
+def _agent_type_from_name(name: str):
+    from app.tournament import AgentType
+
+    key = name.strip().lower()
+    if key == "random":
+        return AgentType.RANDOM
+    if key == "heuristic":
+        return AgentType.HEURISTIC
+    if key == "minimax":
+        return AgentType.MINIMAX
+    if key == "mcts":
+        return AgentType.MCTS
+    if key == "descent":
+        return AgentType.DESCENT
+    return AgentType.HEURISTIC
+
+
+def run_with_runner(args) -> None:
+    """Run the tournament using the consolidated TournamentRunner."""
+    from app.db.unified_recording import RecordSource
+    from app.tournament import AIAgent, AIAgentRegistry, TournamentRunner
+    from app.tournament.recording import TournamentRecordingOptions
+    from app.tournament.scheduler import RoundRobinScheduler
+
+    board_type = BOARD_TYPES[args.board]
+    p1_id = f"{args.p1.lower()}_d{args.p1_diff}"
+    p2_id = f"{args.p2.lower()}_d{args.p2_diff}"
+
+    registry = AIAgentRegistry()
+    registry.register(AIAgent(
+        agent_id=p1_id,
+        name=p1_id,
+        agent_type=_agent_type_from_name(args.p1),
+        search_depth=max(1, int(args.p1_diff)),
+        metadata={"difficulty": int(args.p1_diff)},
+    ))
+    registry.register(AIAgent(
+        agent_id=p2_id,
+        name=p2_id,
+        agent_type=_agent_type_from_name(args.p2),
+        search_depth=max(1, int(args.p2_diff)),
+        metadata={"difficulty": int(args.p2_diff)},
+    ))
+
+    recording_options = TournamentRecordingOptions(
+        enabled=True,
+        source=RecordSource.TOURNAMENT,
+        engine_mode="ai_vs_ai",
+        db_prefix="tournament",
+        db_dir="data/games",
+        tags=[
+            "ai_vs_ai",
+            "run_ai_tournament",
+            f"board_{board_type.value}",
+            "players_2",
+        ],
+        extra_metadata={
+            "p1_ai": args.p1,
+            "p1_difficulty": args.p1_diff,
+            "p2_ai": args.p2,
+            "p2_difficulty": args.p2_diff,
+            "source": "run_ai_tournament.py",
+        },
+    )
+
+    scheduler = RoundRobinScheduler(
+        games_per_pairing=args.games,
+        shuffle_order=False,
+    )
+    runner = TournamentRunner(
+        agent_registry=registry,
+        scheduler=scheduler,
+        max_workers=1,
+        max_moves=args.max_moves,
+        persist_to_unified_elo=False,
+        recording_options=recording_options,
+    )
+
+    results = runner.run_tournament(
+        agent_ids=[p1_id, p2_id],
+        board_type=board_type,
+        num_players=2,
+        games_per_pairing=args.games,
+    )
+    results.compute_stats()
+
+    p1_stats = results.agent_stats.get(p1_id, {})
+    p2_stats = results.agent_stats.get(p2_id, {})
+
+    print("\n" + "=" * 40)
+    print("Final Results (TournamentRunner):")
+    print(f"  {args.p1} (P1): {p1_stats.get('wins', 0)} wins")
+    print(f"  {args.p2} (P2): {p2_stats.get('wins', 0)} wins")
+    print(f"  Draws: {p1_stats.get('draws', 0)}")
+    print("=" * 40)
+
+
 def create_game_state(board_type_str: str, p1_config: dict, p2_config: dict) -> GameState:
     board_type = BOARD_TYPES.get(board_type_str, BoardType.SQUARE8)
 
@@ -237,6 +334,11 @@ def main():
     parser.add_argument("--games", type=int, default=10, help="Number of games to play")
     parser.add_argument("--output-dir", type=str, default=None, help="Output dir for games.jsonl (optional)")
     parser.add_argument("--max-moves", type=int, default=10000, help="Max moves per game before timeout tie-break")
+    parser.add_argument(
+        "--legacy-mode",
+        action="store_true",
+        help="Use legacy per-move JSONL path instead of TournamentRunner.",
+    )
 
     args = parser.parse_args()
 
@@ -269,7 +371,23 @@ def main():
         print(f"  Output: {args.output_dir}")
     print("-" * 40)
 
-    # Initialize AIs
+    use_runner = not args.legacy_mode and not args.output_dir
+    if use_runner:
+        if args.output_dir:
+            print("[Runner] --output-dir is ignored in TournamentRunner mode.")
+        run_with_runner(args)
+        if HAS_COORDINATION and task_id:
+            try:
+                import socket
+                node_id = socket.gethostname()
+                config = f"{args.p1}_vs_{args.p2}_{args.board}"
+                record_task_completion("tournament", node_id, coord_start_time, time.time(), True, config)
+                print("[Coordination] Recorded task completion")
+            except Exception as e:
+                print(f"[Coordination] Warning: Failed to record task completion: {e}")
+        return
+
+    # Initialize AIs (legacy path)
     # Note: We re-initialize or reset AIs per game if needed, but here we create instances once
     # and update player_number in run_game.
 

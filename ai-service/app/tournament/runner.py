@@ -595,13 +595,46 @@ class TournamentRunner:
                     return random.choice(legal_moves) if legal_moves else None
             return RandomAgent()
 
+        elif agent.agent_type == AgentType.HEURISTIC:
+            return self._create_heuristic_agent(agent)
+
+        elif agent.agent_type == AgentType.MINIMAX:
+            try:
+                from app.ai.minimax_ai import MinimaxAI
+                from app.models import AIConfig, AIType
+
+                difficulty = self._resolve_difficulty(agent, default_offset=2)
+                max_depth = max(1, int(agent.search_depth or 3))
+                config = AIConfig(
+                    ai_type=AIType.MINIMAX,
+                    difficulty=difficulty,
+                    max_depth=max_depth,
+                )
+                minimax_ai = MinimaxAI(player_number=0, config=config)
+
+                class MinimaxAgentWrapper:
+                    def __init__(self, ai):
+                        self._ai = ai
+
+                    def get_best_move(self, state, legal_moves):
+                        return self._ai.select_move(state)
+
+                return MinimaxAgentWrapper(minimax_ai)
+            except ImportError as e:
+                logger.warning(f"MinimaxAI not available: {e}")
+                return self._create_heuristic_agent(agent)
+
         elif agent.agent_type == AgentType.MCTS:
             # MCTS agent
             try:
                 from app.ai.mcts_ai import MCTSAI
                 from app.models import AIConfig
 
-                config = AIConfig(difficulty=agent.search_depth + 2)
+                difficulty = self._resolve_difficulty(agent, default_offset=2)
+                config = AIConfig(
+                    difficulty=difficulty,
+                    mcts_iterations=agent.mcts_simulations,
+                )
                 mcts_ai = MCTSAI(player_number=0, config=config)
 
                 # Wrapper to adapt select_move to get_best_move interface
@@ -617,6 +650,30 @@ class TournamentRunner:
                 logger.warning(f"MCTSAI not available: {e}")
                 return self._create_heuristic_agent(agent)
 
+        elif agent.agent_type == AgentType.DESCENT:
+            try:
+                from app.ai.descent_ai import DescentAI
+                from app.models import AIConfig, AIType
+
+                difficulty = self._resolve_difficulty(agent, default_offset=2)
+                config = AIConfig(
+                    ai_type=AIType.DESCENT,
+                    difficulty=difficulty,
+                )
+                descent_ai = DescentAI(player_number=0, config=config)
+
+                class DescentAgentWrapper:
+                    def __init__(self, ai):
+                        self._ai = ai
+
+                    def get_best_move(self, state, legal_moves):
+                        return self._ai.select_move(state)
+
+                return DescentAgentWrapper(descent_ai)
+            except ImportError as e:
+                logger.warning(f"DescentAI not available: {e}")
+                return self._create_heuristic_agent(agent)
+
         else:
             # Default to heuristic (minimax-like)
             return self._create_heuristic_agent(agent)
@@ -629,7 +686,8 @@ class TournamentRunner:
         from app.ai.heuristic_ai import HeuristicAI
         from app.models import AIConfig
 
-        config = AIConfig(difficulty=agent.search_depth + 2)
+        difficulty = self._resolve_difficulty(agent, default_offset=2)
+        config = AIConfig(difficulty=difficulty)
         heuristic_ai = HeuristicAI(player_number=0, config=config)
 
         # Wrapper to adapt select_move to get_best_move interface
@@ -641,6 +699,16 @@ class TournamentRunner:
                 return self._ai.select_move(state)
 
         return HeuristicAgentWrapper(heuristic_ai)
+
+    @staticmethod
+    def _resolve_difficulty(agent: AIAgent, default_offset: int = 2) -> int:
+        metadata = agent.metadata or {}
+        if isinstance(metadata, dict) and "difficulty" in metadata:
+            try:
+                return int(metadata["difficulty"])
+            except Exception:
+                pass
+        return int(agent.search_depth + default_offset)
 
     def _execute_match_local(
         self,
