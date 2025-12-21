@@ -484,10 +484,12 @@ def _did_process_territory_region(game_state: GameState, move: Move) -> bool:
             return True
 
     # Check disconnected_regions
+    # Territory class uses 'spaces' attribute, not 'positions'
     if move.disconnected_regions:
         for region in move.disconnected_regions:
-            if hasattr(region, "positions"):
-                for pos in region.positions:
+            # Territory.spaces is a list[Position]
+            if hasattr(region, "spaces"):
+                for pos in region.spaces:
                     pos_key = pos.to_key() if hasattr(pos, "to_key") else f"{pos.x},{pos.y}"
                     if pos_key in board.collapsed_spaces:
                         return True
@@ -564,7 +566,11 @@ def compute_fsm_orchestration(
                 next_phase = GamePhase.CAPTURE
             else:
                 next_phase = GamePhase.LINE_PROCESSING
-        elif move_type == MoveType.NO_MOVEMENT_ACTION or move_type == MoveType.RECOVERY_SLIDE:
+        elif move_type in (
+            MoveType.NO_MOVEMENT_ACTION,
+            MoveType.RECOVERY_SLIDE,
+            MoveType.SKIP_RECOVERY,
+        ):
             next_phase = GamePhase.LINE_PROCESSING
         elif move_type == MoveType.OVERTAKING_CAPTURE:
             # Initial capture may lead to chain capture
@@ -581,6 +587,8 @@ def compute_fsm_orchestration(
                 next_phase = GamePhase.CHAIN_CAPTURE
             else:
                 next_phase = GamePhase.LINE_PROCESSING
+        elif move_type == MoveType.SKIP_CAPTURE:
+            next_phase = GamePhase.LINE_PROCESSING
 
     elif current_phase == GamePhase.CHAIN_CAPTURE:
         if move_type == MoveType.CONTINUE_CAPTURE_SEGMENT:
