@@ -93,9 +93,10 @@ Do not treat `canonical_ok` claims here as current status. Always verify against
 the latest gate summaries under `ai-service/data/games/` and the registry in
 `ai-service/TRAINING_DATA_REGISTRY.md`.
 
-- **done** Regenerated and re-gated `canonical_square8.db` (2P) via distributed
+- **done** Regenerated and re-gated `canonical_square8_2p.db` (2P) via distributed
   `generate_canonical_selfplay.py`; parity + canonical history pass and the
-  registry is updated (`canonical_ok=true`).
+  registry is updated (`canonical_ok=true`). `canonical_square8.db` remains
+  canonical but is smaller and primarily used for quick parity smoke runs.
 - **done** `generate_canonical_selfplay.py` now streams gate progress to stderr
   (parity + pytest gates) and keeps stdout as clean JSON to avoid long silent runs.
 - **done** `generate_canonical_selfplay.py` now supports local `--reset-db`

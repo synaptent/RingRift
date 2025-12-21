@@ -71,7 +71,7 @@ Each canonical DB has an accompanying parity gate JSON:
 ```json
 {
   "board_type": "square8",
-  "db_path": "/path/to/canonical_square8.db",
+  "db_path": "/path/to/canonical_square8_2p.db",
   "num_games": 12,
   "seed": 42,
   "max_moves": 200,
@@ -127,7 +127,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db <path>
 
 ```bash
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
-  --db data/games/canonical_square8.db
+  --db data/games/canonical_square8_2p.db
 ```
 
 For a quick smoke check, `canonical_square8.db` is intentionally small. For
@@ -502,6 +502,10 @@ Two levels of parity checks run in CI:
 | `parity-ci.yml`                        | PRs affecting engine code | TS↔Python replay parity on `canonical_square8.db` |
 | `ci.yml` (`python-parity-healthcheck`) | All PRs                   | Contract vectors + plateau snapshots              |
 
+CI uses `canonical_square8.db` to keep runtime low. For training readiness
+or larger datasets, run parity against `canonical_square8_2p.db` (or the
+relevant board-specific canonical DB).
+
 ### 7.2 Parity CI Workflow (`parity-ci.yml`)
 
 The dedicated parity CI gate runs on PRs that modify:
@@ -555,6 +559,9 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 # 2. Contract vectors + plateau snapshots
 PYTHONPATH=. python scripts/run_parity_healthcheck.py --fail-on-mismatch
 ```
+
+For training readiness runs, swap in `canonical_square8_2p.db` (or the
+board-specific canonical DB you are gating) and ensure `canonical_ok=true`.
 
 ---
 
@@ -735,8 +742,8 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square8 \
   --num-games 32 \
-  --db data/games/canonical_square8.db \
-  --summary data/games/db_health.canonical_square8.json
+  --db data/games/canonical_square8_2p.db \
+  --summary data/games/db_health.canonical_square8_2p.json
 ```
 
 ---
