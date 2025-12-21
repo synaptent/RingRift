@@ -157,7 +157,7 @@ describe('MoveHistory', () => {
     });
 
     it('should display territory processing notation', () => {
-      const moves = [createTestMove(0, 'process_territory_region', 1)];
+      const moves = [createTestMove(0, 'choose_territory_option', 1)];
 
       render(<MoveHistory moves={moves} boardType={boardType} />);
 
@@ -264,9 +264,7 @@ describe('MoveHistory', () => {
 
       it('applies bottom-origin to square19 boards', () => {
         // square19 with y=18 (bottom visual row) → rank 1 when bottom-origin
-        const moves = [
-          createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 18 } }),
-        ];
+        const moves = [createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 18 } })];
 
         const { container } = render(
           <MoveHistory
@@ -286,9 +284,7 @@ describe('MoveHistory', () => {
 
       it('preserves canonical square19 ranks without the option', () => {
         // square19 with y=18 (bottom visual row) → rank 19 in canonical
-        const moves = [
-          createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 18 } }),
-        ];
+        const moves = [createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 18 } })];
 
         const { container } = render(<MoveHistory moves={moves} boardType="square19" />);
 
@@ -299,8 +295,8 @@ describe('MoveHistory', () => {
       it('formats movement notation with bottom-origin ranks', () => {
         const moves = [
           createTestMove(0, 'move_stack', 1, {
-            from: { x: 0, y: 0 },  // a8 canonical → a1 bottom-origin (for size 8)
-            to: { x: 1, y: 0 },    // b8 canonical → b1 bottom-origin
+            from: { x: 0, y: 0 }, // a8 canonical → a1 bottom-origin (for size 8)
+            to: { x: 1, y: 0 }, // b8 canonical → b1 bottom-origin
           }),
         ];
 
@@ -327,9 +323,7 @@ describe('MoveHistory', () => {
 
       it('has no effect on hex board notation', () => {
         // Hex boards use cube coordinates; squareRankFromBottom should be ignored
-        const moves = [
-          createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 0, z: 0 } }),
-        ];
+        const moves = [createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 0, z: 0 } })];
 
         const { container } = render(
           <MoveHistory

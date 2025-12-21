@@ -126,7 +126,7 @@ describe('useGameActions', () => {
     const { result } = renderHook(() => useGameActions());
 
     const movementAction = {
-      type: 'move_ring' as const,
+      type: 'move_stack' as const,
       from: { x: 1, y: 1 },
       to: { x: 2, y: 2 },
       player: 2,
@@ -452,7 +452,7 @@ describe('useValidMoves', () => {
       },
       {
         id: 'm2',
-        type: 'move_ring',
+        type: 'move_stack',
         player: 1,
         from: { x: 3, y: 3 },
         to: { x: 4, y: 4 },
@@ -483,7 +483,7 @@ describe('useValidMoves', () => {
       },
       {
         id: 'm2',
-        type: 'move_ring',
+        type: 'move_stack',
         player: 1,
         from: { x: 3, y: 3 },
         to: { x: 4, y: 4 },
@@ -535,7 +535,7 @@ describe('useValidMoves', () => {
       },
       {
         id: 'm2',
-        type: 'move_ring',
+        type: 'move_stack',
         player: 1,
         from: { x: 1, y: 1 },
         to: { x: 3, y: 3 },

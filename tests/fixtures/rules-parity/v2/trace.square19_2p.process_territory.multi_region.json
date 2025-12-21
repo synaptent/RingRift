@@ -136,7 +136,7 @@
       "label": "process_territory.multi_region",
       "move": {
         "id": "fixture-square19-2p-process-territory-multi-region",
-        "type": "process_territory_region",
+        "type": "choose_territory_option",
         "player": 1,
         "to": {
           "x": 0,

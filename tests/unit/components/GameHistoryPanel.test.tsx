@@ -379,88 +379,87 @@ describe('GameHistoryPanel', () => {
    * moves that don't follow proper turn order and phase transitions.
    */
   it.skip('opens backend replay for a finished game and allows scrubbing through moves', async () => {
-      const move1 = createMove({
-        moveNumber: 1,
-        moveData: {
-          type: 'place_ring',
-          player: 1,
-          to: { x: 3, y: 3 },
-        },
-      });
+    const move1 = createMove({
+      moveNumber: 1,
+      moveData: {
+        type: 'place_ring',
+        player: 1,
+        to: { x: 3, y: 3 },
+      },
+    });
 
-      const move2 = createMove({
-        moveNumber: 2,
-        playerId: 'player-2',
-        playerName: 'Player Two',
-        timestamp: new Date('2024-01-15T10:06:00Z').toISOString(),
-        moveData: {
-          type: 'move_ring',
-          player: 2,
-          from: { x: 3, y: 3 },
-          to: { x: 4, y: 3 },
-        },
-      });
+    const move2 = createMove({
+      moveNumber: 2,
+      playerId: 'player-2',
+      playerName: 'Player Two',
+      timestamp: new Date('2024-01-15T10:06:00Z').toISOString(),
+      moveData: {
+        type: 'move_stack',
+        player: 2,
+        from: { x: 3, y: 3 },
+        to: { x: 4, y: 3 },
+      },
+    });
 
-      const history: GameHistoryResponse = {
-        gameId: 'replay-game',
-        moves: [move1, move2],
-        totalMoves: 2,
-        result: {
-          // Cast to align with the narrowed GameResult reason type used in the API.
-          reason: 'resignation' as GameHistoryResponse['result'] extends { reason: infer R }
-            ? R
-            : never,
-          winner: 1,
-        },
-      };
+    const history: GameHistoryResponse = {
+      gameId: 'replay-game',
+      moves: [move1, move2],
+      totalMoves: 2,
+      result: {
+        // Cast to align with the narrowed GameResult reason type used in the API.
+        reason: 'resignation' as GameHistoryResponse['result'] extends { reason: infer R }
+          ? R
+          : never,
+        winner: 1,
+      },
+    };
 
-      const details = createGameDetails({
-        id: 'replay-game',
-        moveCount: 2,
-        winner: {
-          id: 'player-1',
-          username: 'Player One',
-        },
-      });
+    const details = createGameDetails({
+      id: 'replay-game',
+      moveCount: 2,
+      winner: {
+        id: 'player-1',
+        username: 'Player One',
+      },
+    });
 
-      mockGetGameHistory.mockResolvedValueOnce(history);
-      mockGetGameDetails.mockResolvedValueOnce(details);
+    mockGetGameHistory.mockResolvedValueOnce(history);
+    mockGetGameDetails.mockResolvedValueOnce(details);
 
-      render(<GameHistoryPanel gameId="replay-game" />);
+    render(<GameHistoryPanel gameId="replay-game" />);
 
-      // Wait for history to load (textual list)
-      await waitFor(() => {
-        expect(screen.getByText('Player One')).toBeInTheDocument();
-      });
+    // Wait for history to load (textual list)
+    await waitFor(() => {
+      expect(screen.getByText('Player One')).toBeInTheDocument();
+    });
 
-      // Open the backend replay panel
-      const replayButton = await screen.findByTestId('open-replay-button');
-      fireEvent.click(replayButton);
+    // Open the backend replay panel
+    const replayButton = await screen.findByTestId('open-replay-button');
+    fireEvent.click(replayButton);
 
-      // Ensure we fetched game details to construct the GameRecord adapter
-      await waitFor(() => {
-        expect(mockGetGameDetails).toHaveBeenCalledWith('replay-game');
-      });
+    // Ensure we fetched game details to construct the GameRecord adapter
+    await waitFor(() => {
+      expect(mockGetGameDetails).toHaveBeenCalledWith('replay-game');
+    });
 
-      // Backend replay panel and playback controls should be visible
-      expect(await screen.findByTestId('backend-replay-panel')).toBeInTheDocument();
-      expect(screen.getByText('History Playback')).toBeInTheDocument();
+    // Backend replay panel and playback controls should be visible
+    expect(await screen.findByTestId('backend-replay-panel')).toBeInTheDocument();
+    expect(screen.getByText('History Playback')).toBeInTheDocument();
 
-      // Wait until replay snapshots have been reconstructed so the board + move
-      // list are rendered. This implies hasSnapshots === true and the scrubber
-      // is wired up.
-      await screen.findByTestId('move-history');
+    // Wait until replay snapshots have been reconstructed so the board + move
+    // list are rendered. This implies hasSnapshots === true and the scrubber
+    // is wired up.
+    await screen.findByTestId('move-history');
 
-      // Initial label should show that we are at the end of the game (move 2 / 2)
-      expect(screen.getByText('Move 2 / 2')).toBeInTheDocument();
+    // Initial label should show that we are at the end of the game (move 2 / 2)
+    expect(screen.getByText('Move 2 / 2')).toBeInTheDocument();
 
-      // Scrub back to an earlier move and verify the indicator updates
-      const scrubber = screen.getByLabelText('Move scrubber') as HTMLInputElement;
-      fireEvent.change(scrubber, { target: { value: '1' } });
+    // Scrub back to an earlier move and verify the indicator updates
+    const scrubber = screen.getByLabelText('Move scrubber') as HTMLInputElement;
+    fireEvent.change(scrubber, { target: { value: '1' } });
 
-      await waitFor(() => {
-        expect(screen.getByText('Move 1 / 2')).toBeInTheDocument();
-      });
-    }
-  );
+    await waitFor(() => {
+      expect(screen.getByText('Move 1 / 2')).toBeInTheDocument();
+    });
+  });
 });

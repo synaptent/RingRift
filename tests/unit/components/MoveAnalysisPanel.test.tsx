@@ -116,7 +116,7 @@ describe('MoveAnalysisPanel', () => {
       { type: 'skip_territory_processing', expected: 'Territory' },
       { type: 'no_territory_action', expected: 'Territory' },
       { type: 'eliminate_rings_from_stack', expected: 'Eliminate Rings' },
-      { type: 'forced_elimination', expected: 'Forced Elim' },
+      { type: 'forced_elimination', expected: 'Forced Elimination' },
       { type: 'swap_sides', expected: 'Swap Sides' },
       { type: 'recovery_slide', expected: 'Recovery' },
       { type: 'skip_recovery', expected: 'Skip Recovery' },

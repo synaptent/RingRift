@@ -65,7 +65,7 @@ describe('GameEventLog snapshot', () => {
       },
       {
         id: 'm3',
-        type: 'process_territory_region',
+        type: 'choose_territory_option',
         player: 1,
         to: pos(0, 0),
         eliminatedRings: [{ player: 2, count: 2 }],

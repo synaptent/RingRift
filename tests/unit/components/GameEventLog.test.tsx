@@ -301,13 +301,14 @@ describe('GameEventLog', () => {
           action: createMove({
             type: 'build_stack',
             player: 1,
+            from: { x: 2, y: 2 },
             to: { x: 3, y: 3 },
             buildAmount: 2,
           }),
         }),
       ];
       render(<GameEventLog history={history} />);
-      expect(screen.getByText(/P1 built stack at \(3, 3\)/)).toBeInTheDocument();
+      expect(screen.getByText(/P1 moved from \(2, 2\) to \(3, 3\).*legacy/)).toBeInTheDocument();
     });
 
     it('formats process_line moves correctly', () => {
@@ -337,7 +338,7 @@ describe('GameEventLog', () => {
         }),
       ];
       render(<GameEventLog history={history} />);
-      expect(screen.getByText(/Territory \/ elimination processing/)).toBeInTheDocument();
+      expect(screen.getByText(/Territory \/ elimination processing.*legacy/)).toBeInTheDocument();
     });
   });
 

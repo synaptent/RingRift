@@ -896,7 +896,7 @@
       "id": "multi_phase.line_then_multi_region_territory.square8.step1_line",
       "version": "v2",
       "category": "turn",
-      "description": "Step 1 of a mixed line + multi-region territory turn on square8: Player 1 resolves an overlength horizontal line via choose_line_reward (minimum-collapse Option 2) while two disconnected regions already exist.",
+      "description": "Step 1 of a mixed line + multi-region territory turn on square8: Player 1 resolves an overlength horizontal line via choose_line_option (minimum-collapse Option 2) while two disconnected regions already exist.",
       "tags": [
         "multi_phase",
         "turn",
@@ -1046,7 +1046,7 @@
         },
         "move": {
           "id": "square-multi-region-line",
-          "type": "choose_line_reward",
+          "type": "choose_line_option",
           "player": 1,
           "formedLines": [
             {
@@ -1394,7 +1394,7 @@
       "id": "multi_phase.line_then_multi_region_territory.square19.step1_line",
       "version": "v2",
       "category": "turn",
-      "description": "Mixed line + multi-region territory sequence (square19) \u2013 step 1: overlength horizontal line for Player 1 via choose_line_reward (minimum-collapse Option 2) with two disconnected regions present.",
+      "description": "Mixed line + multi-region territory sequence (square19) \u2013 step 1: overlength horizontal line for Player 1 via choose_line_option (minimum-collapse Option 2) with two disconnected regions present.",
       "tags": [
         "multi_phase",
         "turn",
@@ -1450,7 +1450,7 @@
         },
         "move": {
           "id": "square19-multi-region-line",
-          "type": "choose_line_reward",
+          "type": "choose_line_option",
           "player": 1,
           "formedLines": [],
           "collapsedMarkers": [],
@@ -1682,7 +1682,7 @@
         },
         "move": {
           "id": "hex-multi-region-line",
-          "type": "choose_line_reward",
+          "type": "choose_line_option",
           "player": 1,
           "formedLines": [],
           "collapsedMarkers": [],

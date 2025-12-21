@@ -666,7 +666,7 @@ describe('SpectatorHUD', () => {
 
       render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
 
-      expect(screen.getByText(/P1 processed territory/)).toBeInTheDocument();
+      expect(screen.getByText(/P1 processed territory.*legacy/)).toBeInTheDocument();
     });
 
     it('displays forced_elimination annotation', () => {
@@ -690,7 +690,7 @@ describe('SpectatorHUD', () => {
 
       render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
 
-      expect(screen.getByText(/P2 formed a line/)).toBeInTheDocument();
+      expect(screen.getByText(/P2 formed a line.*legacy/)).toBeInTheDocument();
     });
 
     it('displays territory_claim annotation', () => {
@@ -698,7 +698,7 @@ describe('SpectatorHUD', () => {
 
       render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
 
-      expect(screen.getByText(/P1 claimed territory/)).toBeInTheDocument();
+      expect(screen.getByText(/P1 claimed territory.*legacy/)).toBeInTheDocument();
     });
 
     it('displays recovery_slide annotation', () => {

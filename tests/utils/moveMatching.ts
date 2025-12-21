@@ -183,7 +183,7 @@ export function movesLooselyMatch(a: Move, b: Move): boolean {
     );
   }
 
-  // For other move types (build_stack, etc.) we require exact type
+  // For other move types (including legacy aliases), require exact type
   // match and strict position equality when applicable.
   if (a.from || b.from) {
     if (!positionsEqual(a.from, b.from)) return false;

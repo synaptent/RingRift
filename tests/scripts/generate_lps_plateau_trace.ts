@@ -191,11 +191,7 @@ class LpsTracker {
       currentPhase: 'movement',
     };
     const movementMoves = this.ruleEngine.getValidMoves(movementState);
-    if (
-      movementMoves.some(
-        (m) => m.type === 'move_stack' || m.type === 'move_stack' || m.type === 'build_stack'
-      )
-    ) {
+    if (movementMoves.some((m) => m.type === 'move_stack')) {
       return true;
     }
 
