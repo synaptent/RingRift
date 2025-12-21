@@ -242,9 +242,14 @@ describe('Forced Elimination Phase - Edge Cases', () => {
       eliminationsDone: 0,
     };
 
+    // Canonical spec: only forced_elimination move is valid in forced_elimination phase.
+    // All other moves should be rejected.
     const invalidEvents: Array<{ event: TurnEvent; name: string }> = [
       { event: { type: 'PLACE_RING', to: { x: 0, y: 0 } }, name: 'PLACE_RING' },
-      { event: { type: 'MOVE_STACK', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }, name: 'MOVE_STACK' },
+      {
+        event: { type: 'MOVE_STACK', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } },
+        name: 'MOVE_STACK',
+      },
       { event: { type: 'CAPTURE', target: { x: 2, y: 2 } }, name: 'CAPTURE' },
       { event: { type: 'SKIP_PLACEMENT' }, name: 'SKIP_PLACEMENT' },
       { event: { type: 'NO_MOVEMENT_ACTION' }, name: 'NO_MOVEMENT_ACTION' },
@@ -487,11 +492,7 @@ describe('Forced Elimination Phase - Edge Cases', () => {
         eliminationsDone: 3,
       };
 
-      let result = transition(
-        state,
-        { type: 'FORCED_ELIMINATE', target: { x: 0, y: 0 } },
-        context
-      );
+      let result = transition(state, { type: 'FORCED_ELIMINATE', target: { x: 0, y: 0 } }, context);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.state.phase).toBe('forced_elimination');
@@ -505,11 +506,7 @@ describe('Forced Elimination Phase - Edge Cases', () => {
         ringsOverLimit: 5,
         eliminationsDone: 4,
       };
-      result = transition(
-        state2,
-        { type: 'FORCED_ELIMINATE', target: { x: 1, y: 1 } },
-        context
-      );
+      result = transition(state2, { type: 'FORCED_ELIMINATE', target: { x: 1, y: 1 } }, context);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.state.phase).toBe('turn_end');

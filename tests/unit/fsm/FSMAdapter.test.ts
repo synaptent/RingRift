@@ -580,6 +580,7 @@ describe('FSMAdapter', () => {
         // RR-CANON-R123: line reward elimination uses eliminate_rings_from_stack
         'eliminate_rings_from_stack',
         'no_line_action',
+        // Deprecated legacy move type; accepted for replay only
         'line_formation',
       ],
       territory_processing: [
@@ -588,27 +589,11 @@ describe('FSMAdapter', () => {
         'eliminate_rings_from_stack',
         'no_territory_action',
         'skip_territory_processing',
+        // Deprecated legacy move type; accepted for replay only
         'territory_claim',
       ],
-      // Legacy replay compatibility: many move types allowed for pre-RR-PARITY-FIX-2025-12-20 games
-      forced_elimination: [
-        'forced_elimination',
-        // Pattern 1: FORCED_ELIM_TO_TERRITORY
-        'no_territory_action',
-        'process_territory_region',
-        'choose_territory_option',
-        'eliminate_rings_from_stack',
-        'skip_territory_processing',
-        // Pattern 2: FORCED_ELIM_TO_LINE
-        'no_line_action',
-        'process_line',
-        'choose_line_option',
-        'choose_line_reward',
-        // Pattern 3: FORCED_ELIM_TO_PLACEMENT
-        'place_ring',
-        'skip_placement',
-        'no_placement_action',
-      ],
+      // Canonical: only forced_elimination is valid
+      forced_elimination: ['forced_elimination'],
       game_over: [],
     };
 
@@ -695,10 +680,10 @@ describe('FSMAdapter', () => {
       expect(isMoveTypeValidForPhase('ring_placement', 'move_stack')).toBe(false);
       expect(isMoveTypeValidForPhase('ring_placement', 'overtaking_capture')).toBe(false);
       expect(isMoveTypeValidForPhase('ring_placement', 'forced_elimination')).toBe(false);
-      // Note: forced_elimination now accepts many move types for legacy replay compatibility
-      // (pre-RR-PARITY-FIX-2025-12-20 games). Only test truly invalid combinations.
+      // Canonical: forced_elimination only accepts forced_elimination moves
       expect(isMoveTypeValidForPhase('forced_elimination', 'move_stack')).toBe(false);
       expect(isMoveTypeValidForPhase('forced_elimination', 'overtaking_capture')).toBe(false);
+      expect(isMoveTypeValidForPhase('forced_elimination', 'place_ring')).toBe(false);
     });
   });
 

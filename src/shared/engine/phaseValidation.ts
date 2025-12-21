@@ -98,31 +98,7 @@ export const VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[
     // Deprecated legacy move type; accepted for replay only.
     'territory_claim',
   ],
-  // Legacy replay compatibility: During replay of pre-RR-PARITY-FIX-2025-12-20 games,
-  // the orchestrator may transition to forced_elimination inline, but the recorded
-  // move sequence continues with moves from the original phase (placement/line/territory).
-  // These coercion patterns match legacyReplayHelper.ts:
-  // - Pattern 1: territory moves (no_territory_action, process_territory_region, etc.)
-  // - Pattern 2: line moves (no_line_action, process_line, choose_line_option, etc.)
-  // - Pattern 3: placement moves (place_ring, skip_placement, no_placement_action)
-  forced_elimination: [
-    'forced_elimination',
-    // Pattern 1: FORCED_ELIM_TO_TERRITORY
-    'no_territory_action',
-    'process_territory_region',
-    'choose_territory_option',
-    'eliminate_rings_from_stack',
-    'skip_territory_processing',
-    // Pattern 2: FORCED_ELIM_TO_LINE
-    'no_line_action',
-    'process_line',
-    'choose_line_option',
-    'choose_line_reward',
-    // Pattern 3: FORCED_ELIM_TO_PLACEMENT
-    'place_ring',
-    'skip_placement',
-    'no_placement_action',
-  ],
+  forced_elimination: ['forced_elimination'],
   game_over: [],
 } as const;
 

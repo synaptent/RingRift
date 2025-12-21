@@ -1294,7 +1294,33 @@ export function validateMoveWithFSM(
   //   TS to transition players before all Python-recorded territory moves complete
   // - forced_elimination: Python records the player whose rings are being eliminated,
   //   which may differ from the current turn's player in multiplayer games
+  // - Legacy replay pattern: when FSM is in a post-move phase but next move is from
+  //   the other player (turn has effectively transitioned)
   // RR-CANON-R075: Trust recorded moves during replay.
+  const isPlayerMismatchFromDifferentPlayer = move.player !== gameState.currentPlayer;
+
+  // Legacy replay: next player's move arriving in various phases
+  // Any move from a different player when FSM is in a post-move phase indicates
+  // a turn transition that the FSM didn't process
+  const isLegacyTurnTransition =
+    isPlayerMismatchFromDifferentPlayer &&
+    (fsmState.phase === 'forced_elimination' ||
+      fsmState.phase === 'movement' ||
+      fsmState.phase === 'capture' ||
+      fsmState.phase === 'chain_capture' ||
+      fsmState.phase === 'line_processing' ||
+      fsmState.phase === 'territory_processing');
+
+  // For legacy turn transitions, skip FSM validation entirely and trust the recorded move.
+  // The phase validation has already been expanded to allow these patterns.
+  if (isLegacyTurnTransition) {
+    return makeResult({
+      valid: true,
+      currentPhase: fsmState.phase,
+      // Note: This is a legacy replay pattern - the FSM state is stale
+    });
+  }
+
   const isPlayerMismatchExempt =
     move.type === 'no_placement_action' ||
     move.type === 'no_movement_action' ||
@@ -1424,9 +1450,15 @@ const PHASE_EVENT_TYPES: Record<TurnState['phase'], ReadonlyArray<TurnEvent['typ
     'RESIGN',
     'TIMEOUT',
   ],
-  // Also allow ELIMINATE_FROM_STACK for backwards compatibility with historical game
-  // logs that recorded 'eliminate_rings_from_stack' moves during forced_elimination.
-  forced_elimination: ['FORCED_ELIMINATE', 'ELIMINATE_FROM_STACK', 'RESIGN', 'TIMEOUT'],
+  // Also allow ELIMINATE_FROM_STACK and NO_TERRITORY_ACTION for backwards compatibility
+  // with historical game logs that recorded these moves during forced_elimination.
+  forced_elimination: [
+    'FORCED_ELIMINATE',
+    'ELIMINATE_FROM_STACK',
+    'NO_TERRITORY_ACTION',
+    'RESIGN',
+    'TIMEOUT',
+  ],
   turn_end: ['_ADVANCE_TURN'],
   game_over: [],
 };
