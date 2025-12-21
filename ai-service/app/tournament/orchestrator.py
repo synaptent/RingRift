@@ -119,6 +119,7 @@ class TournamentOrchestrator:
         # Lazy-loaded dependencies
         self._runner = None
         self._elo_db = None
+        self._elo_service = None
 
     @property
     def runner(self):
@@ -139,6 +140,18 @@ class TournamentOrchestrator:
             from app.tournament.unified_elo_db import get_elo_database
             self._elo_db = get_elo_database()
         return self._elo_db
+
+    @property
+    def elo_service(self):
+        """Lazy-load EloService (preferred)."""
+        if self._elo_service is None:
+            try:
+                from app.training.elo_service import get_elo_service
+                self._elo_service = get_elo_service()
+            except Exception as e:
+                logger.debug(f"EloService unavailable: {e}")
+                self._elo_service = None
+        return self._elo_service
 
     def run_round_robin(
         self,
@@ -376,6 +389,15 @@ class TournamentOrchestrator:
             Elo rating or None if not found
         """
         try:
+            elo_service = self.elo_service
+            if elo_service is not None:
+                rating = elo_service.get_rating(
+                    participant_id=agent_id,
+                    board_type=self.board_type,
+                    num_players=self.num_players,
+                )
+                return rating.rating if rating else None
+
             rating = self.elo_db.get_rating(
                 agent_id=agent_id,
                 board_type=self.board_type,
@@ -396,6 +418,24 @@ class TournamentOrchestrator:
             List of agent ratings sorted by Elo
         """
         try:
+            elo_service = self.elo_service
+            if elo_service is not None:
+                entries = elo_service.get_leaderboard(
+                    board_type=self.board_type,
+                    num_players=self.num_players,
+                    limit=top_n,
+                )
+                confidence_games = getattr(elo_service, "CONFIDENCE_GAMES", 0) or 1
+                return [
+                    {
+                        "agent_id": entry.participant_id,
+                        "elo": entry.rating,
+                        "uncertainty": max(0.0, 1.0 - min(1.0, entry.games_played / confidence_games)),
+                        "games_played": entry.games_played,
+                    }
+                    for entry in entries
+                ]
+
             ratings = self.elo_db.get_ratings_for_config(
                 board_type=self.board_type,
                 num_players=self.num_players,
