@@ -92,6 +92,11 @@ def main():
         type=str, default="distilled_sq8_2p",
         help="Model identifier"
     )
+    parser.add_argument(
+        "--resume",
+        type=str, default=None,
+        help="Resume training from checkpoint (for fine-tuning)"
+    )
 
     args = parser.parse_args()
 
@@ -113,6 +118,8 @@ def main():
     print("=" * 60)
     print(f"Data: {args.data}")
     print(f"Output: {args.output}")
+    if args.resume:
+        print(f"Fine-tuning from: {args.resume}")
     print(f"Architecture: {args.num_res_blocks} blocks, {args.num_filters} filters")
     print(f"Epochs: {args.epochs}")
     print(f"Batch size: {args.batch_size}")
@@ -131,6 +138,7 @@ def main():
         model_version=args.model_version,
         num_res_blocks=args.num_res_blocks,
         num_filters=args.num_filters,
+        resume_path=args.resume,
     )
 
     print("=" * 60)
