@@ -18,7 +18,6 @@ import hashlib
 import os
 import random
 import threading
-from typing import Optional
 
 import numpy as np
 import torch
@@ -27,7 +26,7 @@ import torch
 _thread_local = threading.local()
 
 # Global seed tracking for debugging
-_global_seed: Optional[int] = None
+_global_seed: int | None = None
 _seed_lock = threading.Lock()
 
 
@@ -55,7 +54,7 @@ def seed_all(seed: int, *, enable_cudnn_determinism: bool = True) -> None:
             torch.backends.cudnn.benchmark = False
 
 
-def get_thread_rng(seed: Optional[int] = None) -> random.Random:
+def get_thread_rng(seed: int | None = None) -> random.Random:
     """Get a thread-local Random instance for thread-safe randomness.
 
     Args:
@@ -154,7 +153,7 @@ def reset_thread_rng() -> None:
         delattr(_thread_local, "rng")
 
 
-def get_global_seed() -> Optional[int]:
+def get_global_seed() -> int | None:
     """Get the most recently set global seed.
 
     Returns:

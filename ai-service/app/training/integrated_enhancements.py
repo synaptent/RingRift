@@ -12,8 +12,8 @@ Unified module that consolidates and integrates all advanced training features:
 
 This module provides a single entry point for enabling/configuring all features.
 
-INTEGRATION STATUS (as of 2025-12):
-=====================================
+INTEGRATION STATUS (as of December 2025):
+==========================================
 Feature                    | Status           | Notes
 ---------------------------|------------------|----------------------------------
 get_batch_size()           | INTEGRATED       | Used in train.py for dynamic batch sizing
@@ -26,7 +26,15 @@ augment_batch_dense()      | INTEGRATED       | Used in train.py for data augmen
 ---------------------------|------------------|----------------------------------
 compute_sample_weights()   | REQUIRES DATA    | Needs opponent_elo per sample in training data
 get_curriculum_parameters()| NOT INTEGRATED   | Values never used in training loop
-apply_gradient_surgery()   | NOT INTEGRATED   | Exists but never called in train.py
+apply_gradient_surgery()   | NOT INTEGRATED   | Requires restructuring loss computation
+_reanalysis_engine         | CONFIG ONLY      | Engine exists but not called in train.py
+                           |                  | Policy reanalysis works via improvement loop
+
+CONFIG FLAGS (December 2025):
+- auxiliary_tasks_enabled: True -> compute_auxiliary_loss() IS called
+- gradient_surgery_enabled: True -> apply_gradient_surgery() NOT called (needs refactor)
+- background_eval_enabled: True -> should_early_stop() IS called
+- reanalysis_enabled: True -> Not used in train.py, but improvement loop uses mcts_visits
 
 To integrate the unused features, see the corresponding methods' docstrings
 for API details, then add calls in app/training/train.py at appropriate points.
