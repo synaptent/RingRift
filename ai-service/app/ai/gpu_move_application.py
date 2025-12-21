@@ -604,16 +604,9 @@ def apply_recovery_moves_vectorized(
                                 new_cap = new_height
                             state.cap_height[g, extraction_y, extraction_x] = new_cap
 
-                            # December 2025 BUG FIX: Always clear buried_at for the extraction
-                            # position. The buried_at flag is a boolean per position, not a
-                            # count. Each extraction from a position means that position's
-                            # flag should be cleared. The player may have buried rings at
-                            # OTHER positions (tracked by buried_rings counter), but those
-                            # are separate extraction opportunities.
-                            #
-                            # Previous bug: only cleared when buried_rings reached 0, causing
-                            # the same position to be extracted multiple times while other
-                            # positions with buried rings were never extracted.
+                            # Clear buried_at for the extracted position.
+                            # buried_at is a boolean per position, so we cannot represent
+                            # multiple buried rings at the same location accurately.
                             state.buried_at[g, p, extraction_y, extraction_x] = False
 
 
