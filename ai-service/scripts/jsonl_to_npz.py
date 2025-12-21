@@ -424,15 +424,17 @@ def build_encoder(
     Returns:
         An encoder with _extract_features(state) method
     """
-    if board_type == BoardType.HEXAGONAL:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         # Use proper hex encoders for compatible training data
+        # HEX8 uses 9×9 board, HEXAGONAL uses 25×25
+        hex_board_size = 9 if board_type == BoardType.HEX8 else 25
         if encoder_version == "v3":
             hex_encoder = HexStateEncoderV3(feature_version=feature_version)
-            logger.info("Using HexStateEncoderV3 (16 base channels -> 64 total)")
+            logger.info(f"Using HexStateEncoderV3 (16 base channels -> 64 total) for {board_type.name} ({hex_board_size}×{hex_board_size})")
         else:
             hex_encoder = HexStateEncoder(feature_version=feature_version)
-            logger.info("Using HexStateEncoder (10 base channels -> 40 total)")
-        return HexEncoderWrapper(hex_encoder, board_size=25)
+            logger.info(f"Using HexStateEncoder (10 base channels -> 40 total) for {board_type.name} ({hex_board_size}×{hex_board_size})")
+        return HexEncoderWrapper(hex_encoder, board_size=hex_board_size)
 
     # For square boards, use NeuralNetAI (14 base channels)
     config = AIConfig(
