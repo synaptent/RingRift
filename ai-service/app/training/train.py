@@ -2790,6 +2790,21 @@ def train_model(
                     if enhancements_manager is not None:
                         enhancements_manager.update_step()
 
+                        # Check if reanalysis should be triggered (2025-12)
+                        # Reanalyzes historical data with current model for improved targets
+                        if enhancements_manager.should_reanalyze():
+                            if not distributed or is_main_process():
+                                logger.info(
+                                    "[Reanalysis] Triggering MuZero-style reanalysis of training data"
+                                )
+                                reanalyzed_path = enhancements_manager.process_reanalysis(
+                                    data_path_str if data_path_str else None
+                                )
+                                if reanalyzed_path:
+                                    logger.info(f"[Reanalysis] Complete: {reanalyzed_path}")
+                                    # Note: Reanalyzed data is saved for next training run
+                                    # or can be loaded via ReanalyzedDataset for mixing
+
                 # Anomaly detection: check for NaN/Inf in loss (2025-12)
                 if anomaly_detector is not None:
                     loss_val = loss.detach().item()
@@ -3423,20 +3438,37 @@ def train_model(
                     )
                 logger.info("Training completed. Final checkpoint saved.")
 
+                # Log reanalysis summary if enabled (2025-12)
+                if enhancements_manager is not None:
+                    reanalysis_stats = enhancements_manager.get_reanalysis_stats()
+                    if reanalysis_stats.get("enabled") and reanalysis_stats.get("positions_reanalyzed", 0) > 0:
+                        logger.info(
+                            f"[Reanalysis Summary] "
+                            f"Positions: {reanalysis_stats['positions_reanalyzed']}, "
+                            f"Games: {reanalysis_stats['games_reanalyzed']}, "
+                            f"Blend ratio: {reanalysis_stats['blend_ratio']:.2f}"
+                        )
+
                 # Publish training completed event (2025-12)
                 if HAS_EVENT_BUS and get_router is not None:
                     try:
                         router = get_router()
+                        event_payload = {
+                            "epochs_completed": epochs_completed,
+                            "best_val_loss": float(best_val_loss),
+                            "final_train_loss": float(avg_train_loss),
+                            "final_val_loss": float(avg_val_loss),
+                            "config": f"{config.board_type.value}_{num_players}p",
+                            "checkpoint_path": str(final_checkpoint_path),
+                        }
+                        # Add reanalysis stats to event payload
+                        if enhancements_manager is not None:
+                            reanalysis_stats = enhancements_manager.get_reanalysis_stats()
+                            if reanalysis_stats.get("enabled"):
+                                event_payload["reanalysis"] = reanalysis_stats
                         router.publish_sync(DataEvent(
                             event_type=DataEventType.TRAINING_COMPLETED,
-                            payload={
-                                "epochs_completed": epochs_completed,
-                                "best_val_loss": float(best_val_loss),
-                                "final_train_loss": float(avg_train_loss),
-                                "final_val_loss": float(avg_val_loss),
-                                "config": f"{config.board_type.value}_{num_players}p",
-                                "checkpoint_path": str(final_checkpoint_path),
-                            },
+                            payload=event_payload,
                             source="train",
                         ))
                     except Exception as e:
