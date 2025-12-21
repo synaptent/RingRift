@@ -228,6 +228,12 @@ class TournamentState:
 
 # Import unified Elo database for persistent tracking
 try:
+    from app.training.elo_service import get_elo_service
+    ELO_SERVICE_AVAILABLE = True
+except ImportError:
+    ELO_SERVICE_AVAILABLE = False
+
+try:
     from app.tournament import get_elo_database
     UNIFIED_ELO_AVAILABLE = True
 except ImportError:
@@ -267,6 +273,24 @@ def persist_match_to_unified_elo(
     duration_sec: float = 0.0,
 ) -> None:
     """Persist match result to unified Elo database."""
+    if ELO_SERVICE_AVAILABLE:
+        try:
+            svc = get_elo_service()
+            winner_id = tier_a if winner == 1 else tier_b if winner == 2 else None
+            svc.record_match(
+                tier_a,
+                tier_b,
+                winner=winner_id,
+                board_type=board_type,
+                num_players=num_players,
+                game_length=game_length,
+                duration_sec=duration_sec,
+                tournament_id=tournament_id,
+            )
+            return
+        except Exception as e:
+            logger.warning(f"Failed to persist match to Elo service: {e}")
+
     if not UNIFIED_ELO_AVAILABLE:
         return
 

@@ -274,15 +274,23 @@ class TournamentRunner:
 
         self.results: TournamentResults | None = None
         self._match_executor: Callable | None = None
+        self._elo_service = None
         self._unified_elo_db = None
 
-        # Try to initialize unified Elo database if persistence enabled
+        # Prefer EloService for persistence; fallback to legacy unified_elo_db
         if self.persist_to_unified_elo:
             try:
-                from .unified_elo_db import get_elo_database
-                self._unified_elo_db = get_elo_database()
+                from app.training.elo_service import get_elo_service
+                self._elo_service = get_elo_service()
             except ImportError:
-                pass
+                self._elo_service = None
+
+            if self._elo_service is None:
+                try:
+                    from .unified_elo_db import get_elo_database
+                    self._unified_elo_db = get_elo_database()
+                except ImportError:
+                    pass
 
     def set_match_executor(
         self,
@@ -421,11 +429,39 @@ class TournamentRunner:
             # Multiplayer: use ranking-based update
             self.elo_calculator.update_multiplayer_ratings(result.rankings)
 
-        # Persist to unified Elo database if enabled
-        if self._unified_elo_db is not None:
+        # Persist to Elo service (preferred) or legacy unified_elo_db fallback.
+        if self._elo_service is not None:
             try:
-                # Convert rankings to 0-indexed positions (0=1st, 1=2nd, etc.)
-                rankings = [pos - 1 if pos > 0 else 0 for pos in result.rankings]
+                board_type = match.board_type.value
+                tournament_id = self.tournament_id or "default"
+                if len(result.rankings) == 2:
+                    self._elo_service.record_match(
+                        result.agent_ids[0],
+                        result.agent_ids[1],
+                        winner=result.winner,
+                        board_type=board_type,
+                        num_players=match.num_players,
+                        game_length=result.game_length,
+                        duration_sec=result.duration_seconds,
+                        tournament_id=tournament_id,
+                    )
+                else:
+                    self._record_multiplayer_elo(
+                        ordered_agent_ids=result.rankings,
+                        board_type=board_type,
+                        num_players=match.num_players,
+                        tournament_id=tournament_id,
+                        game_length=result.game_length,
+                        duration_sec=result.duration_seconds,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to persist match to Elo service: {e}")
+        elif self._unified_elo_db is not None:
+            try:
+                rankings = [
+                    result.rankings.index(pid) if pid in result.rankings else 0
+                    for pid in result.agent_ids
+                ]
                 self._unified_elo_db.record_match_and_update(
                     participant_ids=result.agent_ids,
                     rankings=rankings,
@@ -433,13 +469,46 @@ class TournamentRunner:
                     num_players=match.num_players,
                     tournament_id=self.tournament_id or "default",
                     game_length=result.game_length,
-                    duration_sec=result.duration_sec,
+                    duration_sec=result.duration_seconds,
                 )
-            except Exception:
-                pass  # Silently ignore persistence errors
+            except Exception as e:
+                logger.warning(f"Failed to persist match to unified Elo DB: {e}")
 
         # Store result
         self.results.add_result(result)
+
+    def _record_multiplayer_elo(
+        self,
+        ordered_agent_ids: list[str],
+        board_type: str,
+        num_players: int,
+        tournament_id: str,
+        game_length: int,
+        duration_sec: float,
+    ) -> None:
+        """Record a multiplayer result into EloService via pairwise matches.
+
+        This decomposes the ranking into pairwise wins (higher-ranked beats
+        lower-ranked). It is a pragmatic approximation until EloService has a
+        native multiplayer update API.
+        """
+        if self._elo_service is None:
+            return
+
+        for i in range(len(ordered_agent_ids)):
+            winner_id = ordered_agent_ids[i]
+            for j in range(i + 1, len(ordered_agent_ids)):
+                loser_id = ordered_agent_ids[j]
+                self._elo_service.record_match(
+                    winner_id,
+                    loser_id,
+                    winner=winner_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    game_length=game_length,
+                    duration_sec=duration_sec,
+                    tournament_id=tournament_id,
+                )
 
     def _create_ai_instance(
         self,
