@@ -6,7 +6,11 @@ import pytest
 
 from app.game_engine import GameEngine
 from app.models import BoardType, MoveType
-from app.rules.history_contract import phase_move_contract, validate_canonical_move
+from app.rules.history_contract import (
+    ALWAYS_VALID_MOVE_TYPES,
+    phase_move_contract,
+    validate_canonical_move,
+)
 from app.tournament.agents import AIAgent, AIAgentRegistry, AgentType
 from app.tournament.recording import TournamentRecordingOptions
 from app.tournament.runner import TournamentRunner
@@ -65,7 +69,7 @@ def test_canonical_phase_contract_completeness() -> None:
     """RR-CANON-R075: Verify phase_move_contract covers all canonical move types."""
     contract = phase_move_contract()
 
-    # All move types that should be canonical
+    # All move types that should be canonical (including always-valid meta moves)
     canonical_move_types = {
         "place_ring",
         "skip_placement",
@@ -86,7 +90,7 @@ def test_canonical_phase_contract_completeness() -> None:
         "skip_territory_processing",
         "no_territory_action",
         "forced_elimination",
-    }
+    }.union(ALWAYS_VALID_MOVE_TYPES)
 
     # Collect all move types from the contract
     contract_move_types = set()
@@ -94,7 +98,8 @@ def test_canonical_phase_contract_completeness() -> None:
         contract_move_types.update(allowed)
 
     # Verify all canonical move types are in the contract
-    missing = canonical_move_types - contract_move_types
+    phase_bound_types = canonical_move_types.difference(ALWAYS_VALID_MOVE_TYPES)
+    missing = phase_bound_types - contract_move_types
     assert not missing, f"Missing canonical move types from contract: {missing}"
 
     # Verify contract doesn't have unknown types
@@ -112,7 +117,9 @@ def test_validate_canonical_move_valid_pairs() -> None:
         ("ring_placement", "skip_placement"),
         ("movement", "move_stack"),
         ("movement", "recovery_slide"),
+        ("movement", "resign"),
         ("capture", "overtaking_capture"),
+        ("capture", "timeout"),
         ("chain_capture", "continue_capture_segment"),
         ("line_processing", "process_line"),
         ("line_processing", "choose_line_option"),
