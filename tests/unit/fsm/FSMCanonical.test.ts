@@ -390,7 +390,7 @@ describe('FSM Canonical Orchestrator', () => {
         to: { x: 0, y: 0 },
       });
 
-      const result = validateMoveWithFSM(state, move);
+      const result = validateMoveWithFSM(state, move, false, { replayCompatibility: true });
       // Should be valid (trusted) even though we're in ring_placement phase
       expect(result.valid).toBe(true);
     });

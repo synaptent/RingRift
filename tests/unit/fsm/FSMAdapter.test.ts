@@ -582,10 +582,6 @@ describe('FSMAdapter', () => {
         'no_line_action',
         // Deprecated legacy move type; accepted for replay only
         'line_formation',
-        // Legacy replay: capture moves may appear after line_processing phase transition
-        'skip_capture',
-        'overtaking_capture',
-        'continue_capture_segment',
       ],
       territory_processing: [
         'choose_territory_option',
@@ -596,14 +592,8 @@ describe('FSMAdapter', () => {
         // Deprecated legacy move type; accepted for replay only
         'territory_claim',
       ],
-      // Legacy replay: turn transition moves may appear after forced_elimination
-      forced_elimination: [
-        'forced_elimination',
-        'no_territory_action',
-        'place_ring',
-        'skip_placement',
-        'no_placement_action',
-      ],
+      // Canonical: only forced_elimination is valid
+      forced_elimination: ['forced_elimination'],
       game_over: [],
     };
 
@@ -690,11 +680,10 @@ describe('FSMAdapter', () => {
       expect(isMoveTypeValidForPhase('ring_placement', 'move_stack')).toBe(false);
       expect(isMoveTypeValidForPhase('ring_placement', 'overtaking_capture')).toBe(false);
       expect(isMoveTypeValidForPhase('ring_placement', 'forced_elimination')).toBe(false);
-      // forced_elimination accepts legacy turn transition moves for replay compatibility
+      // Canonical: forced_elimination only accepts forced_elimination moves
       expect(isMoveTypeValidForPhase('forced_elimination', 'move_stack')).toBe(false);
       expect(isMoveTypeValidForPhase('forced_elimination', 'overtaking_capture')).toBe(false);
-      // place_ring is valid in forced_elimination for legacy replay
-      expect(isMoveTypeValidForPhase('forced_elimination', 'place_ring')).toBe(true);
+      expect(isMoveTypeValidForPhase('forced_elimination', 'place_ring')).toBe(false);
     });
   });
 

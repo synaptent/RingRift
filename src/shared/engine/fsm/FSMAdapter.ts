@@ -49,6 +49,7 @@ import { enumerateChainCaptureSegments } from '../aggregates/CaptureAggregate';
 import { hasAnyGlobalMovementOrCapture, playerHasAnyRings } from '../globalActions';
 import { isEligibleForRecovery } from '../playerStateHelpers';
 import { VALID_MOVES_BY_PHASE, isMoveValidInPhase } from '../phaseValidation';
+import { isLegacyMoveValidInPhase } from '../legacyPhaseValidation';
 import { getEffectiveLineLengthThreshold, getEffectiveRingsPerPlayer } from '../rulesConfig';
 import { isValidPosition } from '../validators/utils';
 
@@ -1255,12 +1256,22 @@ export interface FSMValidationResult {
  * @param gameState Current game state
  * @param move The move to validate
  * @param includeDebugContext If true, includes full debug context in result
+ * @param options Optional flags (e.g., replayCompatibility for legacy replays)
  * @returns FSM validation result with phase context
  */
+export interface FSMValidationOptions {
+  /**
+   * Allow legacy replay move/phase coercions to pass validation.
+   * Use only for replay/parity tooling (RR-CANON-R075).
+   */
+  replayCompatibility?: boolean;
+}
+
 export function validateMoveWithFSM(
   gameState: GameState,
   move: Move,
-  includeDebugContext = false
+  includeDebugContext = false,
+  options?: FSMValidationOptions
 ): FSMValidationResult {
   // Derive FSM state and context from game state
   // Pass move as hint to help state derivation include relevant context
@@ -1298,12 +1309,26 @@ export function validateMoveWithFSM(
   //   the other player (turn has effectively transitioned)
   // RR-CANON-R075: Trust recorded moves during replay.
   const isPlayerMismatchFromDifferentPlayer = move.player !== gameState.currentPlayer;
+  const replayCompatibility = options?.replayCompatibility ?? false;
+  const phaseForMoveCheck =
+    fsmState.phase !== 'turn_end' && fsmState.phase !== 'game_over'
+      ? (fsmState.phase as GamePhase)
+      : null;
+  const isCanonicalMoveForPhase = phaseForMoveCheck
+    ? isMoveValidInPhase(move.type as MoveType, phaseForMoveCheck)
+    : false;
+  const isLegacyMoveForPhase = phaseForMoveCheck
+    ? isLegacyMoveValidInPhase(move.type as MoveType, phaseForMoveCheck)
+    : false;
 
   // Legacy replay: next player's move arriving in various phases
   // Any move from a different player when FSM is in a post-move phase indicates
   // a turn transition that the FSM didn't process
   const isLegacyTurnTransition =
+    replayCompatibility &&
     isPlayerMismatchFromDifferentPlayer &&
+    !isCanonicalMoveForPhase &&
+    isLegacyMoveForPhase &&
     (fsmState.phase === 'forced_elimination' ||
       fsmState.phase === 'movement' ||
       fsmState.phase === 'capture' ||
@@ -1337,6 +1362,18 @@ export function validateMoveWithFSM(
       errorCode: 'WRONG_PLAYER',
       reason: `Not your turn (expected player ${gameState.currentPlayer}, got ${move.player})`,
     });
+  }
+
+  if (phaseForMoveCheck && !isCanonicalMoveForPhase) {
+    if (!replayCompatibility || !isLegacyMoveForPhase) {
+      return makeResult({
+        valid: false,
+        currentPhase: fsmState.phase,
+        errorCode: 'INVALID_EVENT',
+        reason: `Move type '${move.type}' is not valid for phase '${phaseForMoveCheck}'`,
+        validEventTypes: getExpectedEventTypes(fsmState),
+      });
+    }
   }
 
   // Check event conversion

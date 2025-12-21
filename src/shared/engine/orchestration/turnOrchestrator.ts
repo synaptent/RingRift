@@ -1339,7 +1339,11 @@ export function processTurn(
   assertPhaseMoveInvariant(state, move);
 
   // FSM Validation: FSM is now the canonical validator - always enforce validation.
-  const fsmValidationResult = performFSMValidation(state, move);
+  const fsmValidationResult = performFSMValidation(
+    state,
+    move,
+    options?.replayCompatibility ?? false
+  );
   if (!fsmValidationResult.valid) {
     const reason = fsmValidationResult.reason || `FSM validation rejected ${move.type} move`;
     throw new Error(
@@ -2366,13 +2370,17 @@ function emitFSMValidationEvent(event: FSMValidationEvent): void {
  * @param move - The move to validate
  * @returns FSM validation result
  */
-function performFSMValidation(state: GameState, move: Move): FSMValidationInternalResult {
+function performFSMValidation(
+  state: GameState,
+  move: Move,
+  replayCompatibility = false
+): FSMValidationInternalResult {
   const startTime = Date.now();
   const moveNumber = state.moveHistory.length + 1;
 
   try {
     // Run FSM validation
-    const fsmResult = validateMoveWithFSM(state, move);
+    const fsmResult = validateMoveWithFSM(state, move, false, { replayCompatibility });
 
     // Emit structured event for monitoring
     emitFSMValidationEvent({
