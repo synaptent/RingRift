@@ -328,7 +328,7 @@ def _should_cache_ai(ai_type: AIType, game_state: GameState) -> bool:
     """Return True if this request should reuse a persistent AI instance."""
     if not AI_INSTANCE_CACHE_ENABLED:
         return False
-    if ai_type not in (AIType.MINIMAX, AIType.MCTS, AIType.DESCENT):
+    if ai_type not in (AIType.MINIMAX, AIType.MCTS, AIType.DESCENT, AIType.GUMBEL_MCTS):
         return False
     if getattr(game_state, "game_status", None) != GameStatus.ACTIVE:
         return False
@@ -1012,7 +1012,13 @@ async def get_ai_move(request: MoveRequest):
         if use_neural_net and ladder_config is not None and ladder_config.model_id:
             nn_model_id = ladder_config.model_id
 
-        if ai_type not in (AIType.MINIMAX, AIType.MCTS, AIType.DESCENT, AIType.NEURAL_DEMO):
+        if ai_type not in (
+            AIType.MINIMAX,
+            AIType.MCTS,
+            AIType.DESCENT,
+            AIType.GUMBEL_MCTS,
+            AIType.NEURAL_DEMO,
+        ):
             # Defensive: ignore model ids for non-neural engines.
             nn_model_id = None
             use_neural_net = False
@@ -1145,7 +1151,7 @@ async def get_ai_move(request: MoveRequest):
         try:
             if ai_type == AIType.MINIMAX:
                 effective_use_neural_net = bool(getattr(ai, "use_nnue", False))
-            elif ai_type in (AIType.MCTS, AIType.DESCENT, AIType.NEURAL_DEMO):
+            elif ai_type in (AIType.MCTS, AIType.DESCENT, AIType.GUMBEL_MCTS, AIType.NEURAL_DEMO):
                 effective_use_neural_net = getattr(ai, "neural_net", None) is not None
             else:
                 effective_use_neural_net = False
@@ -1990,7 +1996,11 @@ async def ladder_health(
                 "root_present": nnue_dir.exists(),
             }
 
-        if effective.ai_type in (AIType.MCTS, AIType.DESCENT) and effective.use_neural_net and effective.model_id:
+        if (
+            effective.ai_type in (AIType.MCTS, AIType.DESCENT, AIType.GUMBEL_MCTS)
+            and effective.use_neural_net
+            and effective.model_id
+        ):
             resolved = _resolve_latest_checkpoint(models_dir, effective.model_id)
             chosen = resolved.get("chosen")
             if not chosen or not chosen.get("exists"):
@@ -2201,6 +2211,10 @@ def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
         from .ai.mcts_ai import MCTSAI
 
         return MCTSAI(player_number, config)
+    elif ai_type == AIType.GUMBEL_MCTS:
+        from .ai.gumbel_mcts_ai import GumbelMCTSAI
+
+        return GumbelMCTSAI(player_number, config)
     elif ai_type == AIType.DESCENT:
         return DescentAI(player_number, config)
     elif ai_type == AIType.IG_GMO:

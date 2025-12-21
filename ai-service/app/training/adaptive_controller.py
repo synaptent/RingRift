@@ -34,7 +34,7 @@ try:
         emit_hyperparameter_updated,
         emit_plateau_detected,
     )
-    from app.distributed.data_events import (
+    from app.coordination.event_router import (
         DataEventType,
         get_event_bus,
     )
