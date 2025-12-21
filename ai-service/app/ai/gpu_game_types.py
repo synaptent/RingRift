@@ -108,8 +108,9 @@ class GamePhase(IntEnum):
     Values 5+ are canonical phases added December 2025 for parity.
 
     Canonical phase order:
-    ring_placement → movement → capture → chain_capture → recovery →
-    line_processing → territory_processing → forced_elimination → game_over
+    ring_placement → movement → capture → chain_capture → line_processing →
+    territory_processing → forced_elimination → game_over
+    (Recovery is a movement-phase action; RECOVERY here is GPU-internal only.)
     """
     # Legacy GPU phases (0-4)
     RING_PLACEMENT = 0       # Initial ring placement
