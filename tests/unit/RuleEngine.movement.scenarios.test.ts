@@ -57,7 +57,7 @@ describe('RuleEngine movement scenarios (Section 8.2–8.3; FAQ 2–3)', () => {
 
     const moves = ruleEngine.getValidMoves(gameState);
     const movementMoves = moves.filter(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack'
     ) as Move[];
 
     // There must be at least one legal move of distance >= 2.
@@ -95,7 +95,7 @@ describe('RuleEngine movement scenarios (Section 8.2–8.3; FAQ 2–3)', () => {
 
     const moves = ruleEngine.getValidMoves(gameState);
     const movementMoves = moves.filter(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack'
     ) as Move[];
 
     // There must be at least one legal move of distance >= stackHeight.
@@ -133,7 +133,7 @@ describe('RuleEngine movement scenarios (Section 8.2–8.3; FAQ 2–3)', () => {
 
     const moves = ruleEngine.getValidMoves(gameState);
     const movementMoves = moves.filter(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack'
     ) as Move[];
 
     expect(movementMoves.length).toBeGreaterThan(0);
@@ -197,7 +197,7 @@ describe('RuleEngine movement scenarios (Section 8.2–8.3; FAQ 2–3)', () => {
 
     const moves = ruleEngine.getValidMoves(gameState);
     const movementMoves = moves.filter(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack'
     ) as Move[];
 
     // No legal move may "jump over" the stack at (5,3) or the

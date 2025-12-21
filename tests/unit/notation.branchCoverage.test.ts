@@ -4,7 +4,7 @@
  * Branch coverage tests for notation.ts targeting uncovered branches:
  * - formatPosition: square board, hex board, negative coordinates, z coordinate
  * - formatMoveType: all move types
- * - formatMove: place_ring, move_ring, move_stack, overtaking_capture, fallback
+ * - formatMove: place_ring, move_stack, move_stack, overtaking_capture, fallback
  * - formatMoveList: basic functionality
  */
 
@@ -122,8 +122,8 @@ describe('notation branch coverage', () => {
       expect(result).toContain(' R ');
     });
 
-    it('formats move_ring as M', () => {
-      const move = makeMove({ type: 'move_ring', from: pos(0, 0), to: pos(1, 0) });
+    it('formats move_stack as M', () => {
+      const move = makeMove({ type: 'move_stack', from: pos(0, 0), to: pos(1, 0) });
       const result = formatMove(move);
       expect(result).toContain(' M ');
     });
@@ -197,7 +197,7 @@ describe('notation branch coverage', () => {
       });
     });
 
-    describe('move_ring and move_stack moves', () => {
+    describe('move_stack and move_stack moves', () => {
       it('formats move with from and to', () => {
         const move = makeMove({ type: 'move_stack', player: 1, from: pos(0, 0), to: pos(3, 0) });
         const result = formatMove(move);
@@ -205,7 +205,7 @@ describe('notation branch coverage', () => {
       });
 
       it('formats move with only to', () => {
-        const move = makeMove({ type: 'move_ring', player: 2, from: undefined, to: pos(5, 5) });
+        const move = makeMove({ type: 'move_stack', player: 2, from: undefined, to: pos(5, 5) });
         const result = formatMove(move);
         expect(result).toBe('P2: M f6');
       });

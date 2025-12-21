@@ -174,7 +174,9 @@ describeOrSkip('FAQ Q16-Q18: Victory Conditions & Control Transfer', () => {
       gameState.currentPhase = 'movement';
 
       const moves = engine.getValidMoves(1);
-      const moveMoves = moves.filter((m: any) => m.type === 'move_stack' || m.type === 'move_ring');
+      const moveMoves = moves.filter(
+        (m: any) => m.type === 'move_stack' || m.type === 'move_stack'
+      );
 
       // All moves must satisfy min distance ≥ 1
       for (const move of moveMoves) {

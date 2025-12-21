@@ -65,7 +65,7 @@ describe('Movement ANM / no_movement_action parity', () => {
       (m) =>
         m.player === state.currentPlayer &&
         (m.type === 'move_stack' ||
-          m.type === 'move_ring' ||
+          m.type === 'move_stack' ||
           m.type === 'overtaking_capture' ||
           m.type === 'continue_capture_segment' ||
           m.type === 'recovery_slide')
@@ -102,7 +102,7 @@ describe('Movement ANM / no_movement_action parity', () => {
       (m) =>
         m.player === state.currentPlayer &&
         (m.type === 'move_stack' ||
-          m.type === 'move_ring' ||
+          m.type === 'move_stack' ||
           m.type === 'overtaking_capture' ||
           m.type === 'continue_capture_segment' ||
           m.type === 'recovery_slide')

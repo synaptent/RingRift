@@ -706,11 +706,11 @@ describe('MovementAggregate - Branch Coverage', () => {
       }
     });
 
-    it('rejects move_ring type (legacy alias)', () => {
+    it('rejects move_stack type (legacy alias)', () => {
       const state = makeBaseState();
       const move: Move = {
         id: 'test',
-        type: 'move_ring',
+        type: 'move_stack',
         player: 1,
         from: pos(3, 3),
         to: pos(6, 3),

@@ -122,7 +122,7 @@ describe('GameEngine pie rule (swap_sides meta-move)', () => {
 
     p1Moves = engine.getValidMoves(1);
     const move = p1Moves.find(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'overtaking_capture'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack' || m.type === 'overtaking_capture'
     );
     expect(move).toBeDefined();
 
@@ -202,7 +202,7 @@ describe('GameEngine pie rule (swap_sides meta-move)', () => {
 
     p1Moves = engine.getValidMoves(1);
     const move = p1Moves.find(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'overtaking_capture'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack' || m.type === 'overtaking_capture'
     );
     expect(move).toBeDefined();
 
@@ -243,7 +243,7 @@ describe('GameEngine pie rule (swap_sides meta-move)', () => {
 
     p1Moves = engine.getValidMoves(1);
     const move = p1Moves.find(
-      (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'overtaking_capture'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack' || m.type === 'overtaking_capture'
     );
     expect(move).toBeDefined();
 

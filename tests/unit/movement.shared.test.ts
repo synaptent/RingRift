@@ -355,7 +355,7 @@ describe('enumerateSimpleMoveTargetsFromStack shared helper', () => {
       .getValidMoves(state)
       .filter(
         (m: Move) =>
-          (m.type === 'move_stack' || m.type === 'move_ring') &&
+          (m.type === 'move_stack' || m.type === 'move_stack') &&
           m.from &&
           positionToString(m.from) === fromKey
       )
@@ -416,7 +416,7 @@ describe('enumerateSimpleMoveTargetsFromStack shared helper', () => {
         .getValidMoves(state)
         .filter(
           (m: Move) =>
-            (m.type === 'move_stack' || m.type === 'move_ring') &&
+            (m.type === 'move_stack' || m.type === 'move_stack') &&
             m.from &&
             positionToString(m.from) === fromKey
         )
@@ -477,7 +477,7 @@ describe('enumerateSimpleMoveTargetsFromStack shared helper', () => {
       .getValidMoves(state)
       .filter(
         (m: Move) =>
-          (m.type === 'move_stack' || m.type === 'move_ring') &&
+          (m.type === 'move_stack' || m.type === 'move_stack') &&
           m.from &&
           positionToString(m.from) === fromKey
       )

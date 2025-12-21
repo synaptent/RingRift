@@ -118,10 +118,10 @@ describe('GameRecordRepository.exportAsJsonl mapping', () => {
         {
           id: 'm2',
           moveNumber: 2,
-          moveType: 'move_ring',
+          moveType: 'move_stack',
           moveData: {
             player: 2,
-            type: 'move_ring',
+            type: 'move_stack',
             from: { x: 3, y: 3 },
             to: { x: 4, y: 4 },
             thinkTime: 700,
@@ -227,7 +227,7 @@ describe('GameRecordRepository.exportAsJsonl mapping', () => {
     expect(record.moves[1]).toMatchObject({
       moveNumber: 2,
       player: 2,
-      type: 'move_ring',
+      type: 'move_stack',
       thinkTimeMs: 700,
       from: { x: 3, y: 3 },
       to: { x: 4, y: 4 },

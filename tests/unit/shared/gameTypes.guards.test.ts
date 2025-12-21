@@ -28,14 +28,14 @@ function baseMove(overrides: Partial<Move>): Move {
 }
 
 describe('shared types – move type guards', () => {
-  it('isMovementMove narrows move_stack and move_ring only', () => {
+  it('isMovementMove narrows move_stack and move_stack only', () => {
     const moveStack = baseMove({
       type: 'move_stack',
       from: { x: 0, y: 0 },
       to: { x: 1, y: 0 },
     }) as Move;
     const moveRing = baseMove({
-      type: 'move_ring',
+      type: 'move_stack',
       from: { x: 0, y: 0 },
       to: { x: 0, y: 1 },
     }) as Move;

@@ -783,7 +783,7 @@ describe('localAIMoveSelection branch coverage', () => {
     expect(selected1?.id).toBe(selected2?.id);
   });
 
-  it('handles build_stack and move_ring types', () => {
+  it('handles build_stack and move_stack types', () => {
     const state = makeBaseGameState();
     state.currentPhase = 'movement';
     (state.board as any).stacks = {};
@@ -802,7 +802,7 @@ describe('localAIMoveSelection branch coverage', () => {
 
     const moveRing: Move = {
       id: 'move-ring-1',
-      type: 'move_ring',
+      type: 'move_stack',
       player: 1,
       from: { x: 1, y: 1 },
       to: { x: 2, y: 2 },
@@ -815,6 +815,6 @@ describe('localAIMoveSelection branch coverage', () => {
     const selected = chooseLocalMoveFromCandidates(1, state as any, [buildMove, moveRing], rng, 0);
 
     // Should select one of the simple movement types
-    expect(['build_stack', 'move_ring']).toContain(selected?.type);
+    expect(['build_stack', 'move_stack']).toContain(selected?.type);
   });
 });

@@ -244,7 +244,7 @@ describeOrSkip('FAQ Q9-Q14: Edge Cases & Special Mechanics', () => {
 
         const moves = engine.getValidMoves(1);
         const moveMoves = moves.filter(
-          (m: any) => m.type === 'move_stack' || m.type === 'move_ring'
+          (m: any) => m.type === 'move_stack' || m.type === 'move_stack'
         );
 
         // Should have moves in all 8 directions

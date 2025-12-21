@@ -114,7 +114,7 @@ describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,
 
     const backendSimple = backendMoves.filter(
       (m) =>
-        (m.type === 'move_stack' || m.type === 'move_ring') &&
+        (m.type === 'move_stack' || m.type === 'move_stack') &&
         m.from &&
         m.to &&
         positionToString(m.from) === fromKey &&

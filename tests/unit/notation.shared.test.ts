@@ -111,10 +111,10 @@ describe('notation', () => {
       });
     });
 
-    describe('move_ring / move_stack', () => {
-      it('formats move_ring with from and to', () => {
+    describe('move_stack / move_stack', () => {
+      it('formats move_stack with from and to', () => {
         const move: Move = {
-          type: 'move_ring',
+          type: 'move_stack',
           player: 1,
           from: pos(1, 1),
           to: pos(3, 1),
@@ -136,7 +136,7 @@ describe('notation', () => {
 
       it('formats movement with only to (no from)', () => {
         const move: Move = {
-          type: 'move_ring',
+          type: 'move_stack',
           player: 1,
           to: pos(5, 5),
         };
@@ -146,7 +146,7 @@ describe('notation', () => {
 
       it('formats movement without from or to', () => {
         const move: Move = {
-          type: 'move_ring',
+          type: 'move_stack',
           player: 1,
         } as Move;
         const result = formatMove(move, { boardType: 'square8' });
@@ -268,7 +268,7 @@ describe('notation', () => {
       const moves: Move[] = [
         { type: 'place_ring', player: 1, to: pos(0, 0) },
         { type: 'place_ring', player: 2, to: pos(7, 7) },
-        { type: 'move_ring', player: 1, from: pos(0, 0), to: pos(0, 4) },
+        { type: 'move_stack', player: 1, from: pos(0, 0), to: pos(0, 4) },
       ];
       const result = formatMoveList(moves, { boardType: 'square8' });
       expect(result).toEqual(['1. P1: R a1', '2. P2: R h8', '3. P1: M a1→a5']);

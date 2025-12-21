@@ -45,7 +45,7 @@ describe('AIEngine service integration (profile-driven)', () => {
 
     const fakeMove: Move = {
       id: 'svc-move-1',
-      type: 'move_ring',
+      type: 'move_stack',
       player: 1,
       from: { x: 0, y: 0 },
       to: { x: 1, y: 0 },
@@ -155,7 +155,7 @@ describe('AIEngine service integration (profile-driven)', () => {
 
     const fakeMove: Move = {
       id: 'svc-move-ig-gmo',
-      type: 'move_ring',
+      type: 'move_stack',
       player: 1,
       from: { x: 0, y: 0 },
       to: { x: 1, y: 0 },
@@ -513,7 +513,7 @@ describe('AIEngine service integration (profile-driven)', () => {
 
     const fakeMove: Move = {
       id: 'svc-move-mcts',
-      type: 'move_ring',
+      type: 'move_stack',
       player: 1,
       from: { x: 0, y: 0 },
       to: { x: 1, y: 0 },
@@ -615,7 +615,7 @@ describe('AIEngine service integration (profile-driven)', () => {
 
     const fakeMove: Move = {
       id: 'svc-move-descent',
-      type: 'move_ring',
+      type: 'move_stack',
       player: 1,
       from: { x: 0, y: 0 },
       to: { x: 1, y: 0 },

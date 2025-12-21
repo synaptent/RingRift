@@ -140,10 +140,10 @@ describe('notation helpers', () => {
       expect(formatMove(move, { boardType })).toBe('P1: process_line →c3');
     });
 
-    it('formats move_ring without from position', () => {
+    it('formats move_stack without from position', () => {
       const move: Move = {
         id: '',
-        type: 'move_ring',
+        type: 'move_stack',
         player: 1,
         to: pos(3, 3),
         timestamp: new Date(),

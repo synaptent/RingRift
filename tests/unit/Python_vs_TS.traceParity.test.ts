@@ -152,7 +152,7 @@ describe('Python vs TS Trace Parity', () => {
             isValidSandbox = validPlacements.some(
               (p: any) => p.x === move.to.x && p.y === move.to.y && (p.z || 0) === (move.to.z || 0)
             );
-          } else if (move.type === 'move_stack' || move.type === 'move_ring') {
+          } else if (move.type === 'move_stack' || move.type === 'move_stack') {
             const validMoves = (sandboxEngine as any).enumerateSimpleMovementLandings(move.player);
             isValidSandbox = validMoves.some(
               (m: any) =>

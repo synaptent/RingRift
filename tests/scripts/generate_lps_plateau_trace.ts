@@ -193,7 +193,7 @@ class LpsTracker {
     const movementMoves = this.ruleEngine.getValidMoves(movementState);
     if (
       movementMoves.some(
-        (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
+        (m) => m.type === 'move_stack' || m.type === 'move_stack' || m.type === 'build_stack'
       )
     ) {
       return true;
@@ -231,10 +231,7 @@ class LpsTracker {
 
     const currentPlayer = state.currentPlayer;
 
-    if (
-      this.currentRoundFirstPlayer === null ||
-      this.currentRoundActorMask.size === 0
-    ) {
+    if (this.currentRoundFirstPlayer === null || this.currentRoundActorMask.size === 0) {
       this.currentRoundFirstPlayer = currentPlayer;
       this.currentRoundActorMask = new Map();
     } else if (currentPlayer === this.currentRoundFirstPlayer) {
@@ -317,7 +314,10 @@ class LpsTracker {
   }
 }
 
-async function findFirstLpsPlateau(seed: number, maxActions: number): Promise<{
+async function findFirstLpsPlateau(
+  seed: number,
+  maxActions: number
+): Promise<{
   plateauState: GameState;
   plateauActionIndex: number;
   lpsCandidate: number;
@@ -426,11 +426,7 @@ async function main(): Promise<void> {
   if (!result) {
     // eslint-disable-next-line no-console
     console.log(
-      '[LPS harness] no LPS plateau found for seed=' +
-        seed +
-        ' within ' +
-        maxActions +
-        ' actions'
+      '[LPS harness] no LPS plateau found for seed=' + seed + ' within ' + maxActions + ' actions'
     );
     return;
   }
@@ -458,5 +454,4 @@ async function main(): Promise<void> {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 main();

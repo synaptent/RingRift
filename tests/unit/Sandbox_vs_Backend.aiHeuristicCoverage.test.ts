@@ -400,7 +400,7 @@ describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => 
 
   function buildBackendMovementSummaryForMismatch(sandboxMove: Move, backendMoves: Move[]): string {
     const movementLikeBackendMoves = backendMoves.filter(
-      (m) => m.type === 'move_ring' || m.type === 'move_stack'
+      (m) => m.type === 'move_stack' || m.type === 'move_stack'
     );
 
     const sameFromBackendMoves = movementLikeBackendMoves.filter((m) =>
@@ -426,12 +426,12 @@ describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => 
     if (a.player !== b.player) return false;
 
     // Treat simple non-capture movements as equivalent whether they are
-    // labelled move_ring (sandbox legacy) or move_stack (backend canonical),
+    // labelled move_stack (sandbox legacy) or move_stack (backend canonical),
     // as long as from/to match.
     const isSimpleMovementPair =
-      (a.type === 'move_ring' && b.type === 'move_stack') ||
-      (a.type === 'move_stack' && b.type === 'move_ring') ||
-      (a.type === 'move_ring' && b.type === 'move_ring') ||
+      (a.type === 'move_stack' && b.type === 'move_stack') ||
+      (a.type === 'move_stack' && b.type === 'move_stack') ||
+      (a.type === 'move_stack' && b.type === 'move_stack') ||
       (a.type === 'move_stack' && b.type === 'move_stack');
 
     if (isSimpleMovementPair) {
@@ -1134,7 +1134,7 @@ describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => 
         // If we are in movement phase, dump the movement-like moves and stop.
         if (state.currentPhase === 'movement') {
           const movementLike = backendMoves.filter(
-            (m) => m.type === 'move_ring' || m.type === 'move_stack'
+            (m) => m.type === 'move_stack' || m.type === 'move_stack'
           );
 
           console.log(

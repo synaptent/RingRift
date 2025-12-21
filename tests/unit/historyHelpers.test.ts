@@ -51,7 +51,7 @@ describe('historyHelpers module', () => {
 
     const createMockMove = (overrides: Partial<Move> = {}): Move =>
       ({
-        type: 'move_ring',
+        type: 'move_stack',
         player: 1,
         moveNumber: 5,
         from: { x: 0, y: 0 } as Coord,
@@ -354,7 +354,7 @@ describe('historyHelpers module', () => {
     const createMockEntry = (moveNumber: number): GameHistoryEntry =>
       ({
         moveNumber,
-        action: { type: 'move_ring' } as Move,
+        action: { type: 'move_stack' } as Move,
         actor: 1,
         phaseBefore: 'movement',
         phaseAfter: 'movement',

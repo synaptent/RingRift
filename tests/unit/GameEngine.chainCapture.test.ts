@@ -132,7 +132,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       const result = await engine.makeMove({
         // Wrong player attempts to move while chain is active
         player: 2,
-        type: 'move_ring',
+        type: 'move_stack',
         from: chainCurrent,
         to: { x: 6, y: 6 },
       } as any);
@@ -163,7 +163,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       // Case 1: correct player but wrong move type
       const wrongType = await engine.makeMove({
         player: 1,
-        type: 'move_ring',
+        type: 'move_stack',
         from: chainCurrent,
         to: { x: 6, y: 6 },
       } as any);

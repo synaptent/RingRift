@@ -54,7 +54,7 @@ describe('swapSidesHelpers', () => {
       turnNumber: 2,
       moveHistory: [
         { type: 'place_ring', player: 1, to: { x: 3, y: 3 }, placementCount: 1 } as Move,
-        { type: 'move_ring', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
+        { type: 'move_stack', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
       ],
       rulesOptions: { swapRuleEnabled: true },
       ...overrides,
@@ -146,7 +146,7 @@ describe('swapSidesHelpers', () => {
       const state = createBaseState({
         moveHistory: [
           { type: 'place_ring', player: 1, to: { x: 3, y: 3 }, placementCount: 1 } as Move,
-          { type: 'move_ring', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
+          { type: 'move_stack', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
           { type: 'swap_sides', player: 2, to: { x: 0, y: 0 } } as unknown as Move,
         ],
       });
@@ -166,7 +166,7 @@ describe('swapSidesHelpers', () => {
       const state = createBaseState({
         moveHistory: [
           { type: 'place_ring', player: 1, to: { x: 3, y: 3 }, placementCount: 1 } as Move,
-          { type: 'move_ring', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
+          { type: 'move_stack', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
           { type: 'place_ring', player: 2, to: { x: 5, y: 5 }, placementCount: 1 } as Move,
         ],
       });
@@ -268,7 +268,7 @@ describe('swapSidesHelpers', () => {
       const state = createBaseState({
         moveHistory: [
           { type: 'place_ring', player: 1, to: { x: 3, y: 3 }, placementCount: 1 } as Move,
-          { type: 'move_ring', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
+          { type: 'move_stack', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
           { type: 'place_ring', player: 2, to: { x: 5, y: 5 }, placementCount: 1 } as Move,
         ],
       });
@@ -283,7 +283,7 @@ describe('swapSidesHelpers', () => {
       const state = createBaseState({
         moveHistory: [
           { type: 'place_ring', player: 1, to: { x: 3, y: 3 }, placementCount: 1 } as Move,
-          { type: 'move_ring', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
+          { type: 'move_stack', player: 1, from: { x: 3, y: 3 }, to: { x: 4, y: 3 } } as Move,
           { type: 'swap_sides', player: 2, to: { x: 0, y: 0 } } as unknown as Move,
         ],
       });

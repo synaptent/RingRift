@@ -719,7 +719,7 @@ describe('MovementAggregate enumeration helpers', () => {
     expect(movesForPlayer.length).toBeGreaterThan(0);
 
     for (const move of movesForPlayer) {
-      expect(move.type === 'move_stack' || move.type === 'move_ring').toBe(true);
+      expect(move.type === 'move_stack' || move.type === 'move_stack').toBe(true);
       expect(move.player).toBe(1);
       expect(move.from).toBeDefined();
       expect(move.to).toBeDefined();
@@ -807,7 +807,7 @@ describe('MovementAggregate.applyMovement', () => {
     if (result.success) {
       throw new Error('Expected applyMovement to fail for non-movement move type');
     }
-    expect(result.reason).toMatch(/Expected 'move_stack' or 'move_ring'/);
+    expect(result.reason).toMatch(/Expected 'move_stack' or 'move_stack'/);
   });
 
   test('rejects movement moves without a from position', () => {

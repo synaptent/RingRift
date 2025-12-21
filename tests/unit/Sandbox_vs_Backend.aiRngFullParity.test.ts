@@ -201,9 +201,9 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
       if (a.player !== b.player) return false;
 
       const isSimpleMovementPair =
-        (a.type === 'move_ring' && b.type === 'move_stack') ||
-        (a.type === 'move_stack' && b.type === 'move_ring') ||
-        (a.type === 'move_ring' && b.type === 'move_ring') ||
+        (a.type === 'move_stack' && b.type === 'move_stack') ||
+        (a.type === 'move_stack' && b.type === 'move_stack') ||
+        (a.type === 'move_stack' && b.type === 'move_stack') ||
         (a.type === 'move_stack' && b.type === 'move_stack');
 
       if (isSimpleMovementPair) {

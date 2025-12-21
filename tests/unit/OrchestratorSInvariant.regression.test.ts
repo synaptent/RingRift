@@ -168,7 +168,7 @@ describe('Orchestrator S-invariant – backend harness parity', () => {
         const realMoveTypes: Move['type'][] = [
           'place_ring',
           'skip_placement',
-          'move_ring',
+          'move_stack',
           'move_stack',
           'overtaking_capture',
           'continue_capture_segment',

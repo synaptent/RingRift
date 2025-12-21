@@ -150,7 +150,7 @@ describeOrSkip('FAQ Q1-Q6: Basic Mechanics', () => {
 
         const moves = engine.getValidMoves(1);
         const moveMoves = moves.filter(
-          (m: any) => m.type === 'move_stack' || m.type === 'move_ring'
+          (m: any) => m.type === 'move_stack' || m.type === 'move_stack'
         );
 
         // All moves must be at least distance 1
@@ -187,7 +187,7 @@ describeOrSkip('FAQ Q1-Q6: Basic Mechanics', () => {
 
         const moves = engine.getValidMoves(1);
         const moveMoves = moves.filter(
-          (m: any) => m.type === 'move_stack' || m.type === 'move_ring'
+          (m: any) => m.type === 'move_stack' || m.type === 'move_stack'
         );
 
         // All moves must be at least distance 4 (Chebyshev)

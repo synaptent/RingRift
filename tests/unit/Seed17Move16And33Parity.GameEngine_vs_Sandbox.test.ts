@@ -132,12 +132,12 @@ maybeDescribe('Seed17 early capture parity: GameEngine vs ClientSandboxEngine', 
       if (candidate.player !== reference.player) continue;
 
       // Treat simple non-capture stack movements equivalently whether they
-      // are labelled move_ring or move_stack, but require exact MoveType
+      // are labelled move_stack or move_stack, but require exact MoveType
       // match for captures and decision moves.
       const isSimpleMovementPair =
-        (reference.type === 'move_ring' && candidate.type === 'move_stack') ||
-        (reference.type === 'move_stack' && candidate.type === 'move_ring') ||
-        (reference.type === 'move_ring' && candidate.type === 'move_ring') ||
+        (reference.type === 'move_stack' && candidate.type === 'move_stack') ||
+        (reference.type === 'move_stack' && candidate.type === 'move_stack') ||
+        (reference.type === 'move_stack' && candidate.type === 'move_stack') ||
         (reference.type === 'move_stack' && candidate.type === 'move_stack');
 
       if (isSimpleMovementPair) {

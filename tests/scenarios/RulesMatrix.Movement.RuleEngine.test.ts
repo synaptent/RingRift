@@ -188,7 +188,7 @@ describe('RulesMatrix → RuleEngine movement scenarios (Section 8.2–8.3; FAQ 
 
       const moves = ruleEngine.getValidMoves(gameState);
       const movementMoves = moves.filter(
-        (m) => m.type === 'move_stack' || m.type === 'move_ring'
+        (m) => m.type === 'move_stack' || m.type === 'move_stack'
       ) as Move[];
 
       if (scenario.ref.id.startsWith('Rules_8_2_Q2_minimum_distance')) {
