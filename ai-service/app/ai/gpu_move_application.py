@@ -571,19 +571,26 @@ def apply_recovery_moves_vectorized(
                             # owner rings from top now extend further down).
                             #
                             # Check if there are non-owner buried rings remaining AFTER
-                            # this extraction. We check for players other than the owner
-                            # and the extracting player (since extracting player's ring
-                            # is being removed).
+                            # this extraction. Key insight: the extracting player may still
+                            # have MORE buried rings at this position (we only extracted one).
+                            # Check buried_rings[p] > 0 to determine if player still has buried.
                             owner = int(state.stack_owner[g, extraction_y, extraction_x].item())
-                            non_owner_buried_remaining = False
+                            player_still_has_buried = state.buried_rings[g, p].item() > 0
+                            other_player_buried_remaining = False
                             for pp in range(1, state.num_players + 1):
                                 if pp != owner and pp != p and state.buried_at[g, pp, extraction_y, extraction_x]:
-                                    non_owner_buried_remaining = True
+                                    other_player_buried_remaining = True
                                     break
+
+                            # Include extracting player's remaining buried rings in the check
+                            non_owner_buried_remaining = (
+                                other_player_buried_remaining or
+                                (p != owner and player_still_has_buried)
+                            )
 
                             # Calculate new cap_height FIRST (before clearing buried_at)
                             if non_owner_buried_remaining:
-                                # Still have other enemy buried rings, cap stays same or decreases
+                                # Still have non-owner buried rings, cap stays same or decreases
                                 old_cap = state.cap_height[g, extraction_y, extraction_x].item()
                                 new_cap = min(old_cap, new_height)
                             elif owner == p:
@@ -592,15 +599,14 @@ def apply_recovery_moves_vectorized(
                                 old_cap = state.cap_height[g, extraction_y, extraction_x].item()
                                 new_cap = min(old_cap, new_height)
                             else:
-                                # Non-owner extracted and no other non-owner buried rings
+                                # Non-owner extracted and no non-owner buried rings remaining
                                 # All remaining rings belong to owner, cap = height
                                 new_cap = new_height
                             state.cap_height[g, extraction_y, extraction_x] = new_cap
 
-                            # Clear buried_at only if no buried rings remain in the stack
-                            # (original conservative logic - player may have multiple buried
-                            # rings at this position from multiple captures)
-                            if new_height <= new_cap:
+                            # Clear buried_at only if player has no more buried rings
+                            # (player may have had multiple buried rings at this position)
+                            if not player_still_has_buried:
                                 state.buried_at[g, p, extraction_y, extraction_x] = False
 
 

@@ -605,24 +605,26 @@ class GameEngine:
             MoveType.CHOOSE_LINE_OPTION,
         ):
             GameEngine._apply_line_formation(new_state, move)
+        elif move.type == MoveType.ELIMINATE_RINGS_FROM_STACK:
+            # RR-CANON-R122/R123/R145: eliminate_rings_from_stack can occur in:
+            # - LINE_PROCESSING: for Option 1 line reward (eliminates exactly 1 ring)
+            # - TERRITORY_PROCESSING: for territory claim prerequisite (eliminates cap)
+            # - FORCED_ELIMINATION: when player exceeds ring limit (eliminates cap)
+            GameEngine._apply_forced_elimination(new_state, move)
+            # Clear pending flag if this was a line elimination
+            elimination_context = getattr(move, 'elimination_context', None)
+            if elimination_context == 'line':
+                new_state.pending_line_reward_elimination = False
         elif move.type in (
             # Canonical territory decision move (legacy alias: PROCESS_TERRITORY_REGION).
             MoveType.CHOOSE_TERRITORY_OPTION,
             # Legacy alias retained for replay compatibility.
             MoveType.PROCESS_TERRITORY_REGION,
-            MoveType.ELIMINATE_RINGS_FROM_STACK,
             MoveType.TERRITORY_CLAIM,
         ):
             # Territory decisions:
             # - choose_territory_option (legacy alias: process_territory_region)
-            # - eliminate_rings_from_stack (mandatory self-elimination prerequisite)
-            #
-            # Note: eliminate_rings_from_stack is implemented by reusing the
-            # forced-elimination helper.
-            if move.type == MoveType.ELIMINATE_RINGS_FROM_STACK:
-                GameEngine._apply_forced_elimination(new_state, move)
-            else:
-                GameEngine._apply_territory_claim(new_state, move)
+            GameEngine._apply_territory_claim(new_state, move)
         elif move.type == MoveType.FORCED_ELIMINATION:
             GameEngine._apply_forced_elimination(new_state, move)
         elif move.type == MoveType.RECOVERY_SLIDE:
@@ -3072,6 +3074,42 @@ class GameEngine:
         # After elimination, re-check victory conditions in case thresholds
         # were crossed.
         GameEngine._check_victory(game_state)
+
+    @staticmethod
+    def _enumerate_line_elimination_moves(
+        game_state: GameState,
+        player_number: int,
+    ) -> list[Move]:
+        """
+        Enumerate eliminate_rings_from_stack moves for line processing.
+
+        Per RR-CANON-R123: When pending_line_reward_elimination is True,
+        the player must choose which stack to eliminate one ring from.
+        All controlled stacks are eligible targets.
+
+        Returns one ELIMINATE_RINGS_FROM_STACK move per eligible stack.
+        """
+        board = game_state.board
+        moves: list[Move] = []
+
+        for stack_key, stack in board.stacks.items():
+            if stack.controlling_player == player_number and stack.stack_height > 0:
+                pos = stack.position
+                moves.append(
+                    Move(
+                        id=f"eliminate-line-{stack_key}",
+                        type=MoveType.ELIMINATE_RINGS_FROM_STACK,
+                        player=player_number,
+                        to=pos,
+                        eliminated_rings=({"player": player_number, "count": 1},),
+                        elimination_context="line",
+                        timestamp=game_state.last_move_at,
+                        thinkTime=0,
+                        moveNumber=len(game_state.move_history) + 1,
+                    )
+                )
+
+        return moves
 
     @staticmethod
     def _get_line_processing_moves(

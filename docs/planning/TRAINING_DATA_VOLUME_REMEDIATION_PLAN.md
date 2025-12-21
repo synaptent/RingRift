@@ -258,7 +258,6 @@ cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 \
 
 ```bash
 cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 \
-  RINGRIFT_USE_MAKE_UNMAKE=true \
   python scripts/generate_canonical_selfplay.py \
     --board square19 \
     --num-players 2 \
@@ -294,7 +293,6 @@ cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 \
 
 ```bash
 cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 \
-  RINGRIFT_USE_MAKE_UNMAKE=true \
   python scripts/generate_canonical_selfplay.py \
     --board hexagonal \
     --num-players 2 \
@@ -681,10 +679,10 @@ cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 pyth
 cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 python scripts/generate_canonical_selfplay.py --board square8 --num-players 4 --num-games 100 --min-recorded-games 500 --max-soak-attempts 6 --difficulty-band light --db data/games/canonical_square8_4p.db --summary data/games/db_health.canonical_square8_4p.json' > logs/vol03_square8_4p.log 2>&1 &
 
 # VOL-04: Square19 (run in background)
-cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 RINGRIFT_USE_MAKE_UNMAKE=true python scripts/generate_canonical_selfplay.py --board square19 --num-players 2 --num-games 100 --min-recorded-games 1000 --max-soak-attempts 15 --difficulty-band light --db data/games/canonical_square19.db --summary data/games/db_health.canonical_square19.json' > logs/vol04_square19.log 2>&1 &
+cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 python scripts/generate_canonical_selfplay.py --board square19 --num-players 2 --num-games 100 --min-recorded-games 1000 --max-soak-attempts 15 --difficulty-band light --db data/games/canonical_square19.db --summary data/games/db_health.canonical_square19.json' > logs/vol04_square19.log 2>&1 &
 
 # VOL-05: Hexagonal (run in background)
-cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 RINGRIFT_USE_MAKE_UNMAKE=true python scripts/generate_canonical_selfplay.py --board hexagonal --num-players 2 --num-games 50 --min-recorded-games 1000 --max-soak-attempts 25 --difficulty-band light --db data/games/canonical_hexagonal.db --summary data/games/db_health.canonical_hexagonal.json' > logs/vol05_hexagonal.log 2>&1 &
+cd ai-service && nohup bash -c 'PYTHONPATH=. RINGRIFT_SKIP_RESOURCE_GUARD=1 python scripts/generate_canonical_selfplay.py --board hexagonal --num-players 2 --num-games 50 --min-recorded-games 1000 --max-soak-attempts 25 --difficulty-band light --db data/games/canonical_hexagonal.db --summary data/games/db_health.canonical_hexagonal.json' > logs/vol05_hexagonal.log 2>&1 &
 ```
 
 ---

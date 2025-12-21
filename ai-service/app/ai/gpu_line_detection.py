@@ -406,6 +406,9 @@ def process_lines_batch(
             for line in game_lines:
                 positions_to_collapse = line.positions
 
+                # Determine if this line requires elimination (Option 1)
+                requires_elimination = False
+
                 if line.is_overlength:
                     use_option2 = random_vals[random_idx % max_lines_estimate] < option2_probability
                     random_idx += 1
@@ -419,12 +422,18 @@ def process_lines_batch(
                         else:
                             positions_to_collapse = all_positions[:required_length]
                     else:
+                        # Option 1: collapse all, requires elimination
                         positions_to_collapse = line.positions
                         if (stack_owner_np == p).any():
-                            _eliminate_one_ring_from_any_stack(state, g, p)
+                            requires_elimination = True
                 else:
+                    # Exact-length line always requires elimination
                     if (stack_owner_np == p).any():
-                        _eliminate_one_ring_from_any_stack(state, g, p)
+                        requires_elimination = True
+
+                # RR-CANON-R123: Set pending flag instead of inline elimination
+                if requires_elimination:
+                    state.pending_line_elimination[g] = True
 
                 for (y, x) in positions_to_collapse:
                     state.marker_owner[g, y, x] = 0
@@ -433,7 +442,40 @@ def process_lines_batch(
                     state.territory_count[g, p] += 1
 
 
+def apply_line_elimination_batch(
+    state: BatchGameState,
+    game_mask: torch.Tensor | None = None,
+) -> None:
+    """Apply pending line eliminations for games with pending_line_elimination set.
+
+    RR-CANON-R123: Line elimination is a separate explicit move. This function
+    applies the elimination for self-play harnesses that auto-apply moves.
+
+    For interactive play, the pending_line_elimination flag indicates that
+    the player must choose a stack to eliminate from before continuing.
+
+    Args:
+        state: BatchGameState to modify
+        game_mask: Optional mask of games to process (default: active games)
+    """
+    if game_mask is None:
+        game_mask = state.get_active_mask()
+
+    # Find games with pending line elimination
+    pending_mask = state.pending_line_elimination & game_mask
+
+    if not pending_mask.any():
+        return
+
+    # Process each pending game
+    for g in pending_mask.nonzero(as_tuple=True)[0].tolist():
+        player = int(state.current_player[g].item())
+        _eliminate_one_ring_from_any_stack(state, g, player)
+        state.pending_line_elimination[g] = False
+
+
 __all__ = [
+    'apply_line_elimination_batch',
     'detect_lines_batch',
     'detect_lines_vectorized',
     'detect_lines_with_metadata',

@@ -159,6 +159,11 @@ class BatchGameState:
     lps_consecutive_exclusive_rounds: torch.Tensor  # int16 (batch_size,)
     lps_consecutive_exclusive_player: torch.Tensor  # int8 (batch_size,) 0=none
 
+    # RR-CANON-R123: Pending line elimination tracking
+    # When True, player must eliminate one ring via explicit move before
+    # continuing with line processing. Set after Option 1 line collapse.
+    pending_line_elimination: torch.Tensor  # bool (batch_size,)
+
     # Move history: (batch_size, max_moves, 9)
     # Columns: [move_type, player, from_y, from_x, to_y, to_x, phase, capture_target_y, capture_target_x]
     # -1 indicates unused slot or N/A (e.g., capture_target for non-capture moves)
@@ -256,6 +261,9 @@ class BatchGameState:
 
             # Forced elimination detection (December 2025 - RR-CANON-R160)
             turn_had_real_action=torch.zeros(batch_size, dtype=torch.bool, device=device),
+
+            # RR-CANON-R123: Pending line elimination tracking
+            pending_line_elimination=torch.zeros(batch_size, dtype=torch.bool, device=device),
 
             # Buried ring position tracking (December 2025 - recovery fix)
             buried_at=torch.zeros((batch_size, num_players + 1, board_size, board_size), dtype=torch.bool, device=device),

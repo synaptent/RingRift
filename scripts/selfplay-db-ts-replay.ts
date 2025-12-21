@@ -488,7 +488,14 @@ function isMoveValidInPhase(moveType: Move['type'], phase: GamePhase): boolean {
     ],
     capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
     chain_capture: ['overtaking_capture', 'continue_capture_segment'],
-    line_processing: ['process_line', 'choose_line_option', 'choose_line_reward', 'no_line_action'],
+    // RR-CANON-R123: eliminate_rings_from_stack is valid in line_processing when pending elimination
+    line_processing: [
+      'process_line',
+      'choose_line_option',
+      'choose_line_reward',
+      'no_line_action',
+      'eliminate_rings_from_stack',
+    ],
     territory_processing: [
       'process_territory_region',
       'choose_territory_option',
@@ -625,6 +632,124 @@ function getMovePhase(moveType: Move['type']): GamePhase | null {
     default:
       return null;
   }
+}
+
+/**
+ * Check if the next recorded move is an eliminate_rings_from_stack with line context.
+ * Used to detect whether synthesis is needed for old recordings.
+ */
+function isLineEliminationMove(move: Move | undefined): boolean {
+  if (!move) return false;
+  if (move.type !== 'eliminate_rings_from_stack') return false;
+  // Check eliminationContext - if 'line', it's a line elimination
+  // Old recordings may not have this field, so absence means territory context
+  const context = (move as any).eliminationContext;
+  return context === 'line';
+}
+
+/**
+ * Check if a just-applied line move requires elimination and the next recorded move
+ * is NOT an elimination move. Per RR-CANON-R123, exact-length lines and Option 1
+ * (collapse-all) for overlength lines require elimination.
+ *
+ * @param appliedMove The line move that was just applied
+ * @param state The game state after applying the move
+ * @param nextRecordedMove The next move in the recording (if any)
+ * @returns true if we should synthesize an elimination move
+ */
+function shouldSynthesizeLineElimination(
+  appliedMove: Move,
+  state: GameState,
+  nextRecordedMove: Move | undefined
+): boolean {
+  // Only applies to line processing moves
+  const lineTypes = ['process_line', 'choose_line_option', 'choose_line_reward'];
+  if (!lineTypes.includes(appliedMove.type)) return false;
+
+  // If the next recorded move is already a line elimination, no synthesis needed
+  if (isLineEliminationMove(nextRecordedMove)) return false;
+
+  // Check if the line move was Option 1 (collapse all) or exact-length
+  // For process_line: always exact-length (Option 1 semantics)
+  // For choose_line_option/choose_line_reward: check collapsedMarkers vs line length
+  const isCollapseAll =
+    appliedMove.type === 'process_line' ||
+    (appliedMove as any).collapseAll === true ||
+    // Legacy: if collapsedMarkers covers entire line, it's Option 1
+    (appliedMove as any).isFullLineCollapse === true;
+
+  // For minimum-collapse (Option 2), no elimination needed
+  if (!isCollapseAll && appliedMove.type !== 'process_line') {
+    // Check if this is minimum collapse by looking at the move structure
+    const collapsedMarkers = (appliedMove as any).collapsedMarkers;
+    const linePositions = (appliedMove as any).linePositions;
+    if (collapsedMarkers && linePositions && collapsedMarkers.length < linePositions.length) {
+      return false; // Option 2: minimum collapse, no elimination
+    }
+  }
+
+  // Check if the player has any controlled stacks for elimination
+  const player = appliedMove.player;
+  const stacks = state.board.stacks;
+  let hasEligibleStack = false;
+
+  for (const [, stack] of stacks) {
+    if (stack.controllingPlayer === player && stack.stackHeight > 0) {
+      hasEligibleStack = true;
+      break;
+    }
+  }
+
+  return hasEligibleStack;
+}
+
+/**
+ * Synthesize an eliminate_rings_from_stack move for line elimination.
+ * Per RR-CANON-R123, finds the first eligible stack (row-major order) and creates
+ * an elimination move with eliminationContext: 'line'.
+ *
+ * @param state The game state after line collapse
+ * @param player The player who needs to eliminate
+ * @param moveNumberBase Base move number for the synthesized move
+ * @returns The synthesized elimination move, or null if no eligible stack
+ */
+function synthesizeLineEliminationMove(
+  state: GameState,
+  player: number,
+  moveNumberBase: number
+): Move | null {
+  const stacks = state.board.stacks;
+
+  // Find first eligible stack in row-major order (y first, then x) to match GPU behavior
+  let targetPosition: Position | null = null;
+  let minKey: [number, number] | null = null;
+
+  for (const [posKey, stack] of stacks) {
+    if (stack.controllingPlayer !== player) continue;
+    if (stack.stackHeight <= 0) continue;
+
+    // Parse position key (format: "x,y")
+    const pos = stack.position;
+    const key: [number, number] = [pos.y, pos.x]; // row-major: y first
+
+    if (minKey === null || key[0] < minKey[0] || (key[0] === minKey[0] && key[1] < minKey[1])) {
+      minKey = key;
+      targetPosition = pos;
+    }
+  }
+
+  if (!targetPosition) return null;
+
+  return {
+    id: `synthesized-line-elimination-${moveNumberBase}`,
+    type: 'eliminate_rings_from_stack',
+    player,
+    to: targetPosition,
+    eliminationContext: 'line', // RR-CANON-R123: line context eliminates exactly 1 ring
+    timestamp: new Date(),
+    thinkTime: 0,
+    moveNumber: moveNumberBase,
+  } as Move;
 }
 
 function summarizeState(label: string, state: GameState): Record<string, unknown> {
@@ -1077,8 +1202,50 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
       throw new Error(result.error);
     }
 
-    const state = engine.getState();
-    const stateTyped = state as GameState;
+    let state = engine.getState();
+    let stateTyped = state as GameState;
+
+    // RR-CANON-R123: Synthesize line elimination move if needed
+    // Check if the just-applied move was a line processing move that requires elimination
+    // and the next recorded move is NOT an elimination move with line context.
+    const nextRecordedMove = recordedMoves[i + 1];
+    if (shouldSynthesizeLineElimination(move, stateTyped, nextRecordedMove)) {
+      const elimMove = synthesizeLineEliminationMove(stateTyped, move.player, applied + 1);
+      if (elimMove) {
+        synthesizedCount += 1;
+
+        if (!minimalReplay) {
+          // eslint-disable-next-line no-console
+          console.log(
+            JSON.stringify({
+              kind: 'ts-replay-line-elimination-synthesis',
+              k: applied,
+              db_move_index: i,
+              eliminationTarget: elimMove.to,
+              player: elimMove.player,
+            })
+          );
+        }
+
+        const elimResult = await engine.applyMove(elimMove);
+        if (!elimResult.success) {
+          console.error(
+            JSON.stringify({
+              kind: 'ts-replay-line-elimination-error',
+              k: applied,
+              elimMove,
+              error: elimResult.error,
+              stateSummary: summarizeState('elim-error', engine.getState() as GameState),
+            })
+          );
+          // Continue anyway - the elimination might not be strictly required
+        } else {
+          // Update state after applying elimination
+          state = engine.getState();
+          stateTyped = state as GameState;
+        }
+      }
+    }
 
     // Check for immediate victory conditions (ring elimination, territory, Early LPS)
     // This must happen after every move to match Python's apply_move behavior.

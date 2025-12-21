@@ -731,6 +731,14 @@ class RingRiftEnv:
         # before the next agent action. This is essential for TS↔Python parity.
         auto_generated_moves = []
         while self._state.game_status == GameStatus.ACTIVE:
+            # RR-FIX-2025-12-20: Skip auto-bookkeeping during capture phases.
+            # CAPTURE and CHAIN_CAPTURE phases require player decisions (selecting
+            # captures or declining). Bookkeeping moves are only valid in phases
+            # where no interactive moves exist. Breaking here ensures the next
+            # player action is correctly recorded as a capture move.
+            if self._state.current_phase in (GamePhase.CAPTURE, GamePhase.CHAIN_CAPTURE):
+                break
+
             current_player = self._state.current_player
             requirement = GameEngine.get_phase_requirement(
                 self._state,

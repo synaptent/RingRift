@@ -601,7 +601,7 @@ Key entrypoints:
     the parity harness:
     - Reconstructs the Python `GameState` via `deserialize_game_state`.
     - Compares players, stacks, and collapsed territory against the TS state
-      (reusing the same summarizers as `debug_ts_python_state_diff.py`).
+      (reusing the same parity summarizers as `app/db/parity_validator.py`).
     - Prints a concise structural diff summary plus per-player eliminations /
       territory / rings-in-hand.
   - Typical usage:

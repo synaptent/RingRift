@@ -37,6 +37,9 @@ Notes:
     - check_ts_python_replay_parity.py
     - check_canonical_phase_history.py
 - Any extra args are forwarded to both underlying scripts.
+- For square19/hex DBs, the wrapper defaults
+  RINGRIFT_USE_MAKE_UNMAKE=true and RINGRIFT_USE_FAST_TERRITORY=false
+  unless those environment variables are already set.
 """
 
 from __future__ import annotations
@@ -203,7 +206,9 @@ def main(argv: list[str]) -> int:
 
     gate_summary = {
         "db_path": args.db,
+        "board_type": board_type,
         "parity_mode": args.parity_mode,
+        "env_overrides": env_overrides,
         "parity_summary": parity_summary,
         "canonical_history": {
             "returncode": history_rc,

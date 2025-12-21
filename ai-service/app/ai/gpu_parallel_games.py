@@ -43,7 +43,11 @@ import torch
 from .gpu_batch import get_device
 from .gpu_batch_state import BatchGameState
 from .gpu_game_types import GamePhase, GameStatus
-from .gpu_line_detection import detect_lines_vectorized, process_lines_batch
+from .gpu_line_detection import (
+    apply_line_elimination_batch,
+    detect_lines_vectorized,
+    process_lines_batch,
+)
 from .gpu_move_application import (
     apply_capture_moves_batch,
     apply_movement_moves_batch,
@@ -68,7 +72,6 @@ from .gpu_move_generation import (
 )
 from .gpu_selection import select_moves_heuristic, select_moves_vectorized
 from .gpu_territory import compute_territory_batch
-from .gpu_heuristic import evaluate_positions_batch
 from .shadow_validation import (
     AsyncShadowValidator,
     ShadowValidator,
@@ -1770,8 +1773,10 @@ class ParallelGameRunner:
             _, line_counts = detect_lines_vectorized(self.state, p, mask)
             games_with_lines = games_with_lines | (line_counts > 0)
 
-        # Process the lines
+        # Process the lines (collapses markers to territory, sets pending elimination flag)
         process_lines_batch(self.state, mask)
+        # RR-CANON-R123: Auto-apply line elimination for self-play (no interactive choice)
+        apply_line_elimination_batch(self.state, mask)
 
         # Record canonical moves to move_history
         # Games WITH lines: record CHOOSE_LINE_OPTION (player "chose" to process lines)
@@ -2353,8 +2358,10 @@ class ParallelGameRunner:
                 # No lines formed, we're done with cascade
                 break
 
-            # Process lines (collapse markers, eliminate rings)
+            # Process lines (collapse markers, set pending elimination flag)
             process_lines_batch(self.state, single_game_mask)
+            # RR-CANON-R123: Auto-apply line elimination for cascade processing
+            apply_line_elimination_batch(self.state, single_game_mask)
 
             # After line processing, check for territory claims
             compute_territory_batch(self.state, single_game_mask)

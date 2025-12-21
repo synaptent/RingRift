@@ -427,7 +427,7 @@ Following the FSM Extension Strategy, Phase 1 validation has been successfully i
 ═══════════════════════════════════════════════════════════
   FSM Active Mode Validation
 ═══════════════════════════════════════════════════════════
-  ✓ canonical_square8.db: 22/22 passed, 1816 moves
+  ✓ canonical_square8.db (parity smoke DB): 22/22 passed, 1816 moves
   Total: 22/22 games passed
   Moves validated: 1816
   Divergences: 0

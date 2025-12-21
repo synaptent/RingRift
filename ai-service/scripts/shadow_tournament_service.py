@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """Shadow Tournament Service - Continuous lightweight model evaluation.
 
+.. deprecated:: 2025-12
+    This standalone service is deprecated. Use the unified loop integration instead::
+
+        # For unified loop integration:
+        from scripts.unified_loop.tournament import ShadowTournamentService
+
+        # For standalone tournaments:
+        python scripts/run_distributed_tournament.py
+
 This service provides quick feedback on model quality by running mini-tournaments
 every 15 minutes instead of waiting for full 6-hour Elo calibration.
 
