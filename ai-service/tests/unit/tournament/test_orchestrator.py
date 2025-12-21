@@ -453,6 +453,8 @@ class TestEloDbMethods:
 
         orch = TournamentOrchestrator()
         orch._elo_db = mock_elo_db
+        # Mock elo_service property to return None, ensuring elo_db path is tested
+        type(orch).elo_service = PropertyMock(return_value=None)
         return orch
 
     def test_get_current_elo(self, orchestrator, mock_elo_db):

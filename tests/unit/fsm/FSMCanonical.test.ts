@@ -85,24 +85,35 @@ describe('FSM Canonical Orchestrator', () => {
             'no_movement_action',
             'recovery_slide',
             'skip_recovery',
+          ],
+          invalidMoves: [
+            'place_ring',
+            'choose_line_option',
+            'choose_territory_option',
             'swap_sides',
           ],
-          invalidMoves: ['place_ring', 'choose_line_option', 'choose_territory_option'],
         },
         {
           phase: 'capture',
-          validMoves: ['overtaking_capture', 'skip_capture', 'swap_sides'],
+          validMoves: ['overtaking_capture', 'skip_capture'],
           invalidMoves: [
             'place_ring',
             'move_stack',
             'continue_capture_segment',
             'no_movement_action',
+            'swap_sides',
           ],
         },
         {
           phase: 'chain_capture',
-          validMoves: ['continue_capture_segment', 'swap_sides'],
-          invalidMoves: ['place_ring', 'move_stack', 'choose_line_option', 'no_movement_action'],
+          validMoves: ['continue_capture_segment'],
+          invalidMoves: [
+            'place_ring',
+            'move_stack',
+            'choose_line_option',
+            'no_movement_action',
+            'swap_sides',
+          ],
         },
         {
           phase: 'line_processing',
@@ -418,9 +429,9 @@ describe('FSM Canonical Orchestrator', () => {
   describe('Meta Move Types', () => {
     it('should allow swap_sides only in early phases (pie rule)', () => {
       expect(isMoveTypeValidForPhase('ring_placement', 'swap_sides')).toBe(true);
-      expect(isMoveTypeValidForPhase('movement', 'swap_sides')).toBe(true);
-      expect(isMoveTypeValidForPhase('capture', 'swap_sides')).toBe(true);
-      expect(isMoveTypeValidForPhase('chain_capture', 'swap_sides')).toBe(true);
+      expect(isMoveTypeValidForPhase('movement', 'swap_sides')).toBe(false);
+      expect(isMoveTypeValidForPhase('capture', 'swap_sides')).toBe(false);
+      expect(isMoveTypeValidForPhase('chain_capture', 'swap_sides')).toBe(false);
       expect(isMoveTypeValidForPhase('line_processing', 'swap_sides')).toBe(false);
       expect(isMoveTypeValidForPhase('territory_processing', 'swap_sides')).toBe(false);
     });

@@ -59,7 +59,7 @@ class TestOrchestratorConfig:
         config = OrchestratorConfig()
 
         assert config.enable_enhancements is True
-        assert config.enable_auxiliary_tasks is False
+        assert config.enable_auxiliary_tasks is True  # Aux heads add +5-15 Elo
         assert config.enable_gradient_surgery is False
         assert config.enable_elo_weighting is True
         assert config.enable_curriculum is True

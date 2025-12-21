@@ -58,10 +58,9 @@ const PHASE_TO_VALID_MOVE_TYPES: Partial<Record<GamePhase, MoveType[]>> = {
     'no_movement_action',
     'recovery_slide',
     'skip_recovery',
-    'swap_sides',
   ],
-  capture: ['overtaking_capture', 'skip_capture', 'swap_sides'],
-  chain_capture: ['continue_capture_segment', 'swap_sides'],
+  capture: ['overtaking_capture', 'skip_capture'],
+  chain_capture: ['continue_capture_segment'],
   line_processing: [
     'process_line',
     'choose_line_option',

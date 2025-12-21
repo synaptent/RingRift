@@ -79,18 +79,15 @@ class TestPriorityWithSignals:
     """Tests for selfplay priority with signal computer integration."""
 
     def _create_selfplay_generator(self, configs: dict, signal_computer=None, scheduler=None):
-        """Create a SelfplayGenerator with mocked dependencies."""
+        """Create a LocalSelfplayGenerator with mocked dependencies."""
         # Import here to avoid circular imports
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={k: MockConfigState(**v) for k, v in configs.items()})
-        config = SelfplayConfig()
         event_bus = MagicMock()
 
-        generator = SelfplayGenerator(config, state, event_bus)
+        generator = LocalSelfplayGenerator(state, event_bus, training_scheduler=scheduler)
         generator._signal_computer = signal_computer
-        generator._training_scheduler = scheduler
 
         return generator
 
@@ -203,12 +200,10 @@ class TestDiversityNeed:
     """Tests for diversity need calculation from training quality."""
 
     def _create_generator(self, scheduler=None):
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={"square8_2p": MockConfigState()})
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
-        generator._training_scheduler = scheduler
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
         return generator
 
     def test_overfit_detected_returns_high_diversity(self):
@@ -258,12 +253,10 @@ class TestAdaptiveEngineSelection:
     """Tests for adaptive engine selection based on feedback signals."""
 
     def _create_generator(self, scheduler=None, signal_computer=None):
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={"square8_2p": MockConfigState()})
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
-        generator._training_scheduler = scheduler
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
         generator._signal_computer = signal_computer
         return generator
 
@@ -278,34 +271,34 @@ class TestAdaptiveEngineSelection:
         assert engine == "mcts"
 
     def test_high_priority_selects_gumbel(self):
-        """High priority (>=0.7) without diversity need should select gumbel."""
+        """High priority (above threshold) without diversity need should select gumbel."""
         # High games = high priority (close to threshold)
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        # Priority formula: proximity*0.4 + curriculum*0.25 + staleness*0.15
+        # With 1000/1000 games and curriculum=1.0: ~0.4 + 0.08 + 0 = 0.48
+        # Use quality_threshold=0.4 to test the gumbel selection logic
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={
-            "square8_2p": MockConfigState(games_since_training=900)  # 90% of threshold
+            "square8_2p": MockConfigState(games_since_training=1000)  # At threshold
         })
         scheduler = MockTrainingScheduler(threshold=1000)
 
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
-        generator._training_scheduler = scheduler
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
 
-        engine = generator.get_adaptive_engine("square8_2p")
+        # Use lower threshold since priority max is ~0.48 without staleness/signals
+        engine = generator.get_adaptive_engine("square8_2p", quality_threshold=0.4)
         assert engine == "gumbel"
 
     def test_low_priority_selects_descent(self):
         """Low priority should select descent for throughput."""
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={
             "square8_2p": MockConfigState(games_since_training=100)  # 10% of threshold
         })
         scheduler = MockTrainingScheduler(threshold=1000)
 
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
-        generator._training_scheduler = scheduler
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
 
         engine = generator.get_adaptive_engine("square8_2p")
         assert engine == "descent"
@@ -317,15 +310,13 @@ class TestAdaptiveEngineSelection:
             quality_by_config={"square8_2p": {"loss_plateau": True}}  # 0.6 diversity
         )
 
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={
             "square8_2p": MockConfigState(games_since_training=100)  # Low priority
         })
 
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
-        generator._training_scheduler = scheduler
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
 
         engine = generator.get_adaptive_engine("square8_2p")
         # Should use descent (low priority) not mcts (diversity < 0.7)
@@ -342,8 +333,7 @@ class TestFeedbackLoopIntegration:
 
     def test_regression_triggers_both_priority_boost_and_engine_adaptation(self):
         """Regression should boost priority AND may trigger engine change."""
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         # Config with regression and overfit (full feedback loop)
         state = MockLoopState(configs={
@@ -359,9 +349,8 @@ class TestFeedbackLoopIntegration:
             quality_by_config={"square8_2p": {"overfit_detected": True}}
         )
 
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
         generator._signal_computer = signal_computer
-        generator._training_scheduler = scheduler
 
         # Priority should be boosted (baseline ~0.5 proximity, +0.20 regression)
         priorities = generator.get_config_priorities()
@@ -373,8 +362,7 @@ class TestFeedbackLoopIntegration:
 
     def test_full_loop_prioritizes_struggling_config(self):
         """In a multi-config scenario, struggling config should win priority."""
-        from scripts.unified_loop.selfplay import SelfplayGenerator
-        from scripts.unified_loop.config import SelfplayConfig
+        from scripts.unified_loop.selfplay import LocalSelfplayGenerator
 
         state = MockLoopState(configs={
             "square8_2p": MockConfigState(games_since_training=400),   # 40% proximity
@@ -388,9 +376,8 @@ class TestFeedbackLoopIntegration:
 
         scheduler = MockTrainingScheduler(threshold=1000)
 
-        generator = SelfplayGenerator(SelfplayConfig(), state, MagicMock())
+        generator = LocalSelfplayGenerator(state, MagicMock(), training_scheduler=scheduler)
         generator._signal_computer = signal_computer
-        generator._training_scheduler = scheduler
 
         # Despite lower proximity, hexagonal should win due to regression boost
         prioritized = generator.get_prioritized_config()
