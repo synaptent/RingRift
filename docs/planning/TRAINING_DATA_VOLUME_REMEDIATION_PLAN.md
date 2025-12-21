@@ -131,7 +131,10 @@ From AI-07 observations, approximately **5% of generated games** encounter edge-
 These tasks can run on the development machine using `nohup` for long-running processes.
 
 Note: `canonical_ok` in `db_health.*.json` already gates parity, canonical history, FE/territory fixtures,
-and ANM invariants. Treat it as the go/no-go signal for promoting a DB.
+and ANM invariants. Treat it as the go/no-go signal for promoting a DB. For
+square19/hex runs, `generate_canonical_selfplay.py` defaults to
+`RINGRIFT_USE_MAKE_UNMAKE=true` and `RINGRIFT_USE_FAST_TERRITORY=false` unless
+overridden, so explicit env flags are optional.
 
 #### VOL-01: Square8 2-Player Scale-Up
 
