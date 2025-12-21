@@ -210,16 +210,19 @@ generate_selfplay_all() {
         echo "--- Starting canonical selfplay for $config_key on $host ---"
 
         # Use generate_canonical_selfplay.py which validates parity + canonical phase history
+        # Uses --min-recorded-games + --max-soak-attempts for iterative scale-up
         local selfplay_cmd="cd $REMOTE_PATH && source venv/bin/activate && \\
             export PYTHONPATH=\$PYTHONPATH:$REMOTE_PATH && \\
-            mkdir -p data/games logs && \\
+            mkdir -p data/games logs data/training && \\
             nohup python scripts/generate_canonical_selfplay.py \\
                 --board $board \\
                 --num-players $players \\
-                --num-games 250 \\
+                --num-games 50 \\
                 --min-recorded-games 200 \\
-                --validate-parity \\
-                --canonical-gate \\
+                --max-soak-attempts 10 \\
+                --difficulty-band light \\
+                --db data/games/canonical_${board}_${players}p.db \\
+                --summary data/games/db_health.canonical_${board}_${players}p.json \\
                 > logs/canonical_selfplay_${config_key}.log 2>&1 &
             echo 'Canonical selfplay started for $config_key (PID: '\$!')'
             sleep 2
@@ -234,9 +237,17 @@ generate_selfplay_all() {
     print_header "Canonical Selfplay Deployed"
     echo "Monitor with: $0 status"
     echo ""
-    echo "Once selfplay completes, export NPZ and train:"
-    echo "  1. ssh <host> 'cd $REMOTE_PATH && python scripts/db_to_training_npz.py'"
-    echo "  2. $0 deploy"
+    echo "Once selfplay completes (check logs/canonical_selfplay_*.log for 'canonical_ok: true'):"
+    echo ""
+    echo "  1. Export to NPZ format per-config:"
+    echo "     ssh <host> 'cd $REMOTE_PATH && python scripts/db_to_training_npz.py \\"
+    echo "       --db data/games/canonical_<board>_<N>p.db \\"
+    echo "       --output data/training/canonical_<board>_<N>p.npz \\"
+    echo "       --board-type <board> --num-players <N>'"
+    echo ""
+    echo "  2. Train models: $0 deploy"
+    echo ""
+    echo "  3. Collect trained models: $0 collect"
 }
 
 case "${1:-help}" in

@@ -457,3 +457,134 @@ The improvement loop generates canonical-quality data and can be ingested via
 `scripts/build_canonical_training_pool_db.py`.
 
 _Last updated: 2025-12-21_
+
+---
+
+## Cluster Deployment Workflow (Lambda GH200/H100)
+
+Use the cluster deployment script to scale canonical selfplay across all 12 board/player combinations. This workflow is required for generating sufficient training data for 2000+ Elo models.
+
+### Prerequisites
+
+1. **SSH access** to Lambda cluster nodes via Tailscale
+2. **Repository cloned** at `~/ringrift/ai-service` on each node
+3. **Python venv** set up with dependencies at `~/ringrift/ai-service/venv`
+4. **Node.js + npx** available for TS parity verification
+
+### Deployment Script
+
+```bash
+# From ai-service/ directory
+./scripts/deploy_multi_config_training.sh <command>
+```
+
+| Command    | Description                                             |
+| ---------- | ------------------------------------------------------- |
+| `selfplay` | Deploy canonical selfplay generation for all 12 configs |
+| `status`   | Check training/selfplay status on all nodes             |
+| `deploy`   | Deploy NNUE training for all 12 configs                 |
+| `collect`  | Collect trained models from cluster to local            |
+| `help`     | Show usage information                                  |
+
+### Full Workflow
+
+**Step 1: Generate Canonical Training Data (Cluster)**
+
+```bash
+# Deploy selfplay to all cluster nodes
+./scripts/deploy_multi_config_training.sh selfplay
+
+# Monitor progress
+./scripts/deploy_multi_config_training.sh status
+
+# Check completion on specific node
+ssh ubuntu@lambda-gh200-a 'tail -f ~/ringrift/ai-service/logs/canonical_selfplay_square8_2p.log'
+```
+
+Each node generates games iteratively until `--min-recorded-games 200` is reached. Look for `"canonical_ok": true` in the summary JSON to confirm data is ready.
+
+**Step 2: Export to NPZ Format (Cluster)**
+
+Once selfplay completes, export to NPZ format on each node:
+
+```bash
+# SSH to node and run export
+ssh ubuntu@lambda-gh200-a 'cd ~/ringrift/ai-service && source venv/bin/activate && \
+  python scripts/db_to_training_npz.py \
+    --db data/games/canonical_square8_2p.db \
+    --output data/training/canonical_square8_2p.npz \
+    --board-type square8 --num-players 2'
+```
+
+Or use the batch export script:
+
+```bash
+ssh ubuntu@lambda-gh200-a 'cd ~/ringrift/ai-service && \
+  for board in square8 square19 hex8 hexagonal; do
+    for players in 2 3 4; do
+      db="data/games/canonical_${board}_${players}p.db"
+      npz="data/training/canonical_${board}_${players}p.npz"
+      if [[ -f "$db" ]]; then
+        python scripts/db_to_training_npz.py --db "$db" --output "$npz" \
+          --board-type "$board" --num-players "$players" && echo "Exported $npz"
+      fi
+    done
+  done'
+```
+
+**Step 3: Train Models (Cluster)**
+
+```bash
+# Deploy training for all 12 configs
+./scripts/deploy_multi_config_training.sh deploy
+
+# Monitor training progress
+./scripts/deploy_multi_config_training.sh status
+```
+
+**Step 4: Collect Trained Models (Local)**
+
+```bash
+# Collect models from all cluster nodes
+./scripts/deploy_multi_config_training.sh collect
+```
+
+Models are saved to `models/nnue/cluster_collected_<timestamp>/`.
+
+### Node Allocation
+
+The script distributes configs across available nodes round-robin:
+
+| GPU Type | Nodes                         | Best For                            |
+| -------- | ----------------------------- | ----------------------------------- |
+| GH200    | 10 nodes (a-l, excluding b,j) | square8, hex8 (smaller boards)      |
+| H100     | 2 nodes                       | square19, hexagonal (larger boards) |
+
+For large boards (square19, hexagonal), prefer H100 nodes for faster game generation.
+
+### Data Volume Targets
+
+| Board Type | Min Games | Training Target | Games/Hour (est.) |
+| ---------- | --------- | --------------- | ----------------- |
+| square8    | 200       | 1000+           | ~50-100           |
+| square19   | 200       | 1000+           | ~10-20            |
+| hex8       | 200       | 1000+           | ~30-50            |
+| hexagonal  | 200       | 1000+           | ~5-15             |
+
+### Troubleshooting
+
+**"No cluster nodes available"**
+
+- Check Tailscale is running: `tailscale status`
+- Verify SSH connectivity: `ssh ubuntu@lambda-gh200-a 'echo ok'`
+
+**Selfplay failing parity gate**
+
+- Check the gate summary: `cat data/games/db_health.canonical_<board>_<N>p.json`
+- Look for `passed_canonical_parity_gate: false` or `non_canonical_games > 0`
+- May indicate rules engine divergence requiring code fix
+
+**Training not finding data**
+
+- Verify NPZ export completed: `ls -la data/training/canonical_*.npz`
+- Check NPZ is non-empty: `python -c "import numpy as np; d=np.load('data/training/canonical_square8_2p.npz'); print(d['features'].shape)"`
