@@ -552,11 +552,50 @@ class EloDatabase:
         board_type: str,
         num_players: int,
     ) -> dict[str, UnifiedEloRating]:
-        """Get ratings for multiple participants at once."""
-        return {
-            pid: self.get_rating(pid, board_type, num_players)
-            for pid in participant_ids
-        }
+        """Get ratings for multiple participants at once using batch query.
+
+        Optimized to use a single SQL query with IN clause instead of N queries.
+        For participants without ratings, returns default UnifiedEloRating.
+        """
+        if not participant_ids:
+            return {}
+
+        conn = self._get_connection()
+        result: dict[str, UnifiedEloRating] = {}
+
+        # Process in chunks to avoid SQLite SQLITE_MAX_VARIABLE_NUMBER limit
+        chunk_size = 500
+        for i in range(0, len(participant_ids), chunk_size):
+            chunk = participant_ids[i:i + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = conn.execute(f"""
+                SELECT participant_id, rating, games_played, wins, losses, draws,
+                       rating_deviation, last_update
+                FROM elo_ratings
+                WHERE participant_id IN ({placeholders})
+                  AND board_type = ? AND num_players = ?
+            """, (*chunk, board_type, num_players)).fetchall()
+
+            for row in rows:
+                result[row["participant_id"]] = UnifiedEloRating(
+                    participant_id=row["participant_id"],
+                    board_type=board_type,
+                    num_players=num_players,
+                    rating=row["rating"],
+                    games_played=row["games_played"],
+                    wins=row["wins"],
+                    losses=row["losses"],
+                    draws=row["draws"],
+                    rating_deviation=row["rating_deviation"],
+                    last_update=row["last_update"],
+                )
+
+        # Fill in defaults for missing participants
+        for pid in participant_ids:
+            if pid not in result:
+                result[pid] = UnifiedEloRating(pid, board_type, num_players)
+
+        return result
 
     # Pinned baselines that should not have their ELO updated (anchor points)
     # These use prefix matching - any participant_id starting with these is pinned
