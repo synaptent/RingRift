@@ -1784,3 +1784,58 @@ async def emit_calibration_completed(
         },
         source=source,
     ))
+
+
+# =============================================================================
+# Deprecation Support (December 2025)
+# =============================================================================
+# This module is deprecated in favor of app.coordination.event_router.
+# The __getattr__ hook intercepts imports and issues deprecation warnings
+# to guide developers to the unified router.
+
+import warnings as _deprecation_warnings
+
+# Track which names have already warned to avoid duplicate warnings
+_warned_names: set[str] = set()
+
+
+def __getattr__(name: str) -> Any:
+    """Intercept module imports and issue deprecation warnings.
+
+    This allows us to maintain backward compatibility while guiding users
+    to the unified event router in app.coordination.event_router.
+
+    Args:
+        name: The name being imported
+
+    Returns:
+        The requested object from the module namespace
+
+    Raises:
+        AttributeError: If name is not a known export
+    """
+    # All public exports that should trigger a deprecation warning
+    DEPRECATED_EXPORTS = {
+        'DataEvent',
+        'DataEventType',
+        'EventBus',
+        'get_event_bus',
+        'reset_event_bus',
+    }
+
+    if name in DEPRECATED_EXPORTS:
+        # Only warn once per name to avoid spam in test output
+        if name not in _warned_names:
+            _warned_names.add(name)
+            _deprecation_warnings.warn(
+                f"Direct imports from app.distributed.data_events are deprecated "
+                f"(December 2025). Use app.coordination.event_router instead:\n"
+                f"    from app.coordination.event_router import {name}",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        # Return the object from this module's globals
+        return globals()[name]
+
+    # Raise AttributeError for unknown names (standard Python behavior)
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
