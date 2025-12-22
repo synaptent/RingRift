@@ -151,6 +151,7 @@ scripts/tunnel_watchdog.sh
 
 # Documentation with cluster-specific details (use .example templates)
 docs/CLUSTER_OPERATIONS.md
+docs/CLUSTER_ACCESS.md
 docs/SSH_ACCESS_GUIDE.md
 docs/ai/CLUSTER_NODE_CONFIGURATION.md
 

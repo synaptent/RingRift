@@ -201,7 +201,7 @@ def get_move_type_count() -> int:
 # Move Constants
 # =============================================================================
 
-# Maximum number of stacks a position can have
+# Maximum height tracked in GPU representation (soft limit for tensor storage)
 MAX_STACK_HEIGHT = 8
 
 # Direction vectors for square boards (8 directions)

@@ -275,8 +275,13 @@ def chunked_transfer(
 
         # Reassemble on remote
         logger.info("Reassembling chunks on remote...")
-        remote_base = os.path.dirname(remote_path)
-        remote_filename = os.path.basename(remote_path)
+        # Handle trailing slash in remote_path
+        remote_path_clean = remote_path.rstrip('/')
+        remote_base = os.path.dirname(remote_path_clean)
+        remote_filename = os.path.basename(remote_path_clean)
+        # If remote_path was a directory, use the local filename
+        if not remote_filename or remote_filename == os.path.basename(remote_base):
+            remote_filename = local_path.name if hasattr(local_path, 'name') else os.path.basename(str(local_path))
 
         # If we compressed, reassemble to .gz file first, then decompress
         if cleanup_compressed:
