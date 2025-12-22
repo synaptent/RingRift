@@ -2163,7 +2163,6 @@ function applyMoveWithChainInfo(
       };
     }
 
-    case 'choose_line_option':
     case 'choose_line_option': {
       const outcome = applyChooseLineRewardDecision(state, move);
       // RR-CANON-R123: Set pendingLineRewardElimination on GameState for ANM parity
