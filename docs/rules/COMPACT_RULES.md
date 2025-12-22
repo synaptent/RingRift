@@ -351,7 +351,7 @@ Two cases:
    - Collapse **all markers in L** to `collapsedSpaces[pos] = P` and remove markers.
    - `P` must **eliminate one ring** from the top of any stack `P` controls (including height-1 standalone rings). Any controlled stack is an eligible target.
    - The eliminated ring updates `eliminatedRings` counters and victory totals.
-   - **Edge case: no controlled stacks.** If `P` controls zero stacks at line processing time, the elimination cost is waived. The line is still collapsed to territory; only the ring elimination is skipped.
+   - **Edge case: no controlled stacks.** If `P` controls zero stacks at line processing time (e.g., the move that formed the line landed on a marker, eliminating `P`'s top ring and causing control to pass to a buried opponent ring), the elimination cost is waived. The line is still collapsed to territory; only the ring elimination is skipped.
 
 2. **Overlength: `len > requiredLen`**
    - `P` chooses **Option 1** or **Option 2**:
