@@ -151,6 +151,8 @@ class GumbelSelfplayConfig:
     simulation_budget: int = 150  # Gumbel simulations per move
     think_time_ms: int = 0  # 0 = use simulation budget, >0 = time limit
     temperature: float = 1.0  # Policy temperature for exploration
+    temperature_threshold: int = 30  # Move after which to use greedy (temp=0)
+    use_temperature_curriculum: bool = True  # Enable move-based temperature decay
     max_moves: int = 0  # 0 = auto-derive from board/players
     output_path: str = ""
     output_dir: str = ""
@@ -161,6 +163,26 @@ class GumbelSelfplayConfig:
     # Neural net settings
     nn_model_id: str = ""  # Empty = use default for board
     use_gpu: bool = True
+
+    def get_temperature_for_move(self, move_number: int) -> float:
+        """Get temperature for a specific move number.
+
+        Implements AlphaZero-style temperature scheduling:
+        - Full exploration (temp=1.0) for early moves
+        - Greedy selection (temp→0) after threshold
+
+        Returns:
+            Temperature value for the move (0.0-1.0+)
+        """
+        if not self.use_temperature_curriculum:
+            return self.temperature
+
+        if move_number >= self.temperature_threshold:
+            return 0.1  # Near-greedy after threshold
+
+        # Linear decay from temperature to 0.1 over threshold moves
+        progress = move_number / self.temperature_threshold
+        return self.temperature * (1.0 - 0.9 * progress)
 
 
 @dataclass

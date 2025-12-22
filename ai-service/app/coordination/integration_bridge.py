@@ -556,6 +556,13 @@ async def wire_all_integrations() -> dict[str, bool]:
         logger.error(f"[IntegrationBridge] Error wiring sync managers: {e}")
         results["sync_managers"] = False
 
+    # Wire evaluation curriculum bridge (December 2025)
+    try:
+        results["evaluation_curriculum"] = wire_evaluation_curriculum_bridge()
+    except Exception as e:
+        logger.error(f"[IntegrationBridge] Error wiring evaluation curriculum: {e}")
+        results["evaluation_curriculum"] = False
+
     _integration_wired = True
     logger.info(f"[IntegrationBridge] Integration wiring complete: {results}")
 
