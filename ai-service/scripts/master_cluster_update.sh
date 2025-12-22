@@ -20,8 +20,13 @@ echo ""
 
 # SSH update function
 update_ssh() {
-    local name="$1" host="$2" user="$3" port="${4:-22}"
-    result=$(timeout 25 ssh -o ConnectTimeout=12 -o BatchMode=yes -o StrictHostKeyChecking=no -p "$port" "${user}@${host}" '
+    local name="$1" host="$2" user="$3" port="${4:-22}" ssh_key="$5"
+    local ssh_opts="-o ConnectTimeout=12 -o BatchMode=yes -o StrictHostKeyChecking=no"
+    if [[ -n "$ssh_key" ]]; then
+        ssh_key="${ssh_key/#\~/$HOME}"
+        ssh_opts="$ssh_opts -i $ssh_key"
+    fi
+    result=$(timeout 25 ssh $ssh_opts -p "$port" "${user}@${host}" '
         for d in ~/ringrift ~/RingRift ~/ai-service /root/RingRift /root/ringrift ~/Development/RingRift /workspace/RingRift /workspace/ringrift; do
             if [ -d "$d/.git" ]; then
                 cd "$d"
@@ -62,7 +67,8 @@ for group_name, group_data in config.items():
         continue
     if isinstance(group_data, dict) and "nodes" in group_data:
         desc = group_data.get("description", group_name)
-        print(f"GROUP:{group_name}:{desc}:{len(group_data['nodes'])}")
+        ssh_key = group_data.get("ssh_key", "")
+        print(f"GROUP:{group_name}:{desc}:{len(group_data['nodes'])}:{ssh_key}")
         for node in group_data["nodes"]:
             name = node.get("name", "unknown")
             host = node.get("host", "")
@@ -73,13 +79,15 @@ PYTHON_SCRIPT
 
 # Process nodes from temp file
 total_count=0
+current_ssh_key=""
 
-while IFS=: read -r type arg1 arg2 arg3 arg4; do
+while IFS=: read -r type arg1 arg2 arg3 arg4 arg5; do
     if [[ "$type" == "GROUP" ]]; then
         # Wait for previous group to complete
         wait
         desc="$arg2"
         count="$arg3"
+        current_ssh_key="$arg4"
         echo ""
         echo "=== $desc ($count nodes) ==="
     elif [[ "$type" == "NODE" ]]; then
@@ -88,7 +96,7 @@ while IFS=: read -r type arg1 arg2 arg3 arg4; do
         user="$arg3"
         port="$arg4"
         ((total_count++))
-        update_ssh "$name" "$host" "$user" "$port" </dev/null &
+        update_ssh "$name" "$host" "$user" "$port" "$current_ssh_key" </dev/null &
     fi
 done < "$TMPFILE"
 

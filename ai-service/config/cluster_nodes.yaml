@@ -32,23 +32,23 @@ lambda_gh200_tailscale:
     - { name: a10, host: '100.91.25.13', user: ubuntu, gpu: 'A10 24GB', gpu_memory_gb: 24 }
 
 # ================================================================================
-# LAMBDA DIRECT IP NODES
+# LAMBDA ADDITIONAL NODES (via Tailscale)
 # ================================================================================
-lambda_direct:
-  description: 'Lambda nodes via direct IP'
+lambda_additional_tailscale:
+  description: 'Lambda additional nodes via Tailscale'
   nodes:
-    - { name: a10-a, host: '150.136.65.197', user: ubuntu, gpu: 'A10 24GB', gpu_memory_gb: 24 }
-    - { name: a10-b, host: '129.153.159.191', user: ubuntu, gpu: 'A10 24GB', gpu_memory_gb: 24 }
-    - { name: a10-c, host: '150.136.56.240', user: ubuntu, gpu: 'A10 24GB', gpu_memory_gb: 24 }
-    - { name: gh200-n, host: '192.222.51.204', user: ubuntu, gpu: 'GH200 96GB', gpu_memory_gb: 96 }
-    - { name: gh200-r, host: '192.222.50.172', user: ubuntu, gpu: 'GH200 96GB', gpu_memory_gb: 96 }
-    - { name: gh200-p, host: '192.222.51.215', user: ubuntu, gpu: 'GH200 96GB', gpu_memory_gb: 96 }
+    - { name: a10-b, host: '100.101.45.4', user: ubuntu, gpu: 'A10 24GB', gpu_memory_gb: 24 }
+    - { name: a10-c, host: '100.78.55.103', user: ubuntu, gpu: 'A10 24GB', gpu_memory_gb: 24 }
+    - { name: gh200-n, host: '100.85.106.113', user: ubuntu, gpu: 'GH200 96GB', gpu_memory_gb: 96 }
+    - { name: gh200-r, host: '100.106.0.3', user: ubuntu, gpu: 'GH200 96GB', gpu_memory_gb: 96 }
+    - { name: gh200-p, host: '100.81.5.33', user: ubuntu, gpu: 'GH200 96GB', gpu_memory_gb: 96 }
 
 # ================================================================================
 # VAST.AI INSTANCES
 # ================================================================================
 vast_ai:
   description: 'Vast.ai GPU instances'
+  ssh_key: '~/.ssh/id_cluster'
   nodes:
     - { name: vast-28844365, host: 'ssh5.vast.ai', user: root, port: 14364 }
     - { name: vast-28844370, host: 'ssh2.vast.ai', user: root, port: 14370 }
