@@ -55,10 +55,8 @@ vast_ai:
     - { name: vast-28844401, host: 'ssh1.vast.ai', user: root, port: 14400 }
     - { name: vast-28889766, host: 'ssh3.vast.ai', user: root, port: 19766 }
     - { name: vast-28889768, host: 'ssh2.vast.ai', user: root, port: 19768 }
-    - { name: vast-28889941, host: 'ssh3.vast.ai', user: root, port: 19940 }
     - { name: vast-28890015, host: 'ssh9.vast.ai', user: root, port: 10014 }
     - { name: vast-28918742, host: 'ssh8.vast.ai', user: root, port: 38742 }
-    - { name: vast-28920043, host: 'ssh2.vast.ai', user: root, port: 10042 }
     - { name: vast-28925166, host: 'ssh1.vast.ai', user: root, port: 15166 }
     - { name: vast-29031159, host: 'ssh5.vast.ai', user: root, port: 31158 }
     - { name: vast-29031161, host: 'ssh2.vast.ai', user: root, port: 31160 }
@@ -93,15 +91,24 @@ mac_cluster_local:
     - { name: mbp-local, host: '10.0.0.89', user: armand }
 
 # ================================================================================
-# TAILSCALE MISC NODES
+# AWS NODES (require PEM key)
 # ================================================================================
-tailscale_misc:
-  description: 'Miscellaneous Tailscale nodes'
+aws_nodes:
+  description: 'AWS EC2 nodes'
+  ssh_key: '~/.ssh/ringrift-staging-key.pem'
   nodes:
-    - { name: vast-container, host: '100.100.242.64', user: root }
-    - { name: vast-3070-ts, host: '100.74.154.36', user: root, gpu: 'RTX 3070', gpu_memory_gb: 8 }
     - { name: aws-staging, host: '100.121.198.28', user: ubuntu }
     - { name: aws-worker, host: '100.115.97.24', user: ubuntu }
+
+# ================================================================================
+# TAILSCALE MISC NODES (currently offline)
+# ================================================================================
+# tailscale_misc:
+#   description: 'Miscellaneous Tailscale nodes'
+#   ssh_key: '~/.ssh/id_cluster'
+#   nodes:
+#     - { name: vast-container, host: '100.100.242.64', user: root }
+#     - { name: vast-3070-ts, host: '100.74.154.36', user: root, gpu: 'RTX 3070', gpu_memory_gb: 8 }
 
 # ================================================================================
 # CONFIGURATION OPTIONS
