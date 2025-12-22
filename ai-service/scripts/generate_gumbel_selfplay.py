@@ -259,11 +259,16 @@ def serialize_move(
     mcts_policy: dict[str, float] | None = None,
     value: float | None = None,
     phase: str | None = None,
+    move_number: int | None = None,
 ) -> dict[str, Any]:
     """Serialize a Move to JSON-compatible dict with optional MCTS info."""
     move_data = move.model_dump(by_alias=True, exclude_none=True, mode="json")
     if phase and "phase" not in move_data:
         move_data["phase"] = phase
+
+    # Add move_number for proper training sample ordering (critical for NNUE)
+    if move_number is not None:
+        move_data["moveNumber"] = move_number
 
     # Add MCTS policy distribution for training
     if mcts_policy:
@@ -367,7 +372,10 @@ def generate_game(
             if hasattr(state.current_phase, "value")
             else str(state.current_phase)
         )
-        move_data = serialize_move(selected_move, mcts_policy, value, phase=phase)
+        # move_count is 0-indexed during loop, but moveNumber should be 1-indexed for consistency
+        move_data = serialize_move(
+            selected_move, mcts_policy, value, phase=phase, move_number=move_count + 1
+        )
         moves_data.append(move_data)
 
         # Apply move

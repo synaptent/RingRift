@@ -48,7 +48,7 @@ from app.training.hex_augmentation import (
 
 
 def create_hex_game_state(
-    size: int = 13,
+    size: int = 25,
     current_player: int = 1,
     phase: GamePhase = GamePhase.MOVEMENT,
 ) -> GameState:
@@ -305,7 +305,7 @@ class TestActionEncoderHex:
         """Create a test hex board."""
         return BoardState(
             type=BoardType.HEXAGONAL,
-            size=13,
+            size=25,
             stacks={},
             markers={},
             collapsedSpaces={},

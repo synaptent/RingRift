@@ -844,7 +844,7 @@ class GPUSelfPlayGenerator:
                             "FORCED_ELIMINATION": "forced_elimination",
                             "GAME_OVER": "game_over",
                         }
-                        for raw_move in raw_moves:
+                        for move_idx, raw_move in enumerate(raw_moves):
                             move_type_str = raw_move.get("move_type") or "PLACEMENT"
                             phase_str = raw_move.get("phase") or "RING_PLACEMENT"
                             canonical_type = gpu_type_map.get(move_type_str, move_type_str.lower() if move_type_str else "unknown")
@@ -852,6 +852,7 @@ class GPUSelfPlayGenerator:
                                 "type": canonical_type,
                                 "player": raw_move.get("player", 1),
                                 "phase": gpu_phase_map.get(phase_str, phase_str.lower() if phase_str else "ring_placement"),
+                                "moveNumber": move_idx + 1,  # 1-indexed for NNUE training compatibility
                             }
                             # Add position fields if present (convert tuples to dicts)
                             from_pos = raw_move.get("from_pos")
@@ -888,7 +889,12 @@ class GPUSelfPlayGenerator:
                                 _canonical_validation_stats["games_invalid"] += 1
                                 _canonical_validation_stats["total_errors"] += len(errors)
                     else:
-                        moves_for_record = raw_moves
+                        # Add moveNumber to raw moves for training compatibility
+                        moves_for_record = []
+                        for move_idx, raw_move in enumerate(raw_moves):
+                            move_with_number = dict(raw_move)
+                            move_with_number["moveNumber"] = move_idx + 1
+                            moves_for_record.append(move_with_number)
 
                     record = {
                         # === Core game identifiers ===

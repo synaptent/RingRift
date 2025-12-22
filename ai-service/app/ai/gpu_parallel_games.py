@@ -2200,7 +2200,7 @@ class ParallelGameRunner:
 
         for g in torch.where(mask)[0].tolist():
             # Check if game is still active
-            if self.state.game_status[g].item() != GameStatus.IN_PROGRESS:
+            if self.state.game_status[g].item() != GameStatus.ACTIVE:
                 continue
 
             player = int(self.state.current_player[g].item())

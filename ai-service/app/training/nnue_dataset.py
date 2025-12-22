@@ -41,6 +41,33 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Database Schema Migration
+# =============================================================================
+
+
+def _ensure_training_columns(conn: sqlite3.Connection) -> None:
+    """Ensure the games table has the excluded_from_training column.
+
+    This migrates older databases that were created before this column existed.
+    Uses ALTER TABLE which is safe for concurrent reads.
+    """
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(games)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    if "excluded_from_training" not in columns:
+        try:
+            cursor.execute(
+                "ALTER TABLE games ADD COLUMN excluded_from_training INTEGER DEFAULT 0"
+            )
+            conn.commit()
+            logger.info("Added excluded_from_training column to games table")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                logger.warning(f"Could not add excluded_from_training column: {e}")
+
+
+# =============================================================================
 # GPU-Accelerated Feature Extraction
 # =============================================================================
 
@@ -630,6 +657,7 @@ class NNUESQLiteDataset(Dataset):
         # Fall back to snapshot/replay extraction
         samples: list[NNUESample] = []
         conn = sqlite3.connect(db_path)
+        _ensure_training_columns(conn)  # Migrate schema if needed
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -1392,6 +1420,7 @@ class NNUEStreamingDataset(IterableDataset):
     def _stream_from_db(self, db_path: str) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Stream samples from a single database."""
         conn = sqlite3.connect(db_path)
+        _ensure_training_columns(conn)  # Migrate schema if needed
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -1648,6 +1677,7 @@ def count_available_samples(
 
         try:
             conn = sqlite3.connect(db_path)
+            _ensure_training_columns(conn)  # Migrate schema if needed
             cursor = conn.cursor()
 
             # RR-CANON compliance: filter by schema_version if require_canonical_schema

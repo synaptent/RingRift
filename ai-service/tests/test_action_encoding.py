@@ -55,10 +55,10 @@ def make_dummy_hex_game_state() -> GameState:
     """Create a minimal, canonical hex GameState for encoder tests.
 
     This mirrors the helper patterns in tests/rules/test_utils.py but uses a
-    hexagonal board (BoardType.HEXAGONAL) with size=13 (radius=12), which
-    matches the canonical N=12 hex used by the neural-net encoder.
+    hexagonal board (BoardType.HEXAGONAL) with size=25 (bounding box = 2*radius+1),
+    which matches the canonical N=12 hex used by the neural-net encoder.
     """
-    board = BoardState(type=BoardType.HEXAGONAL, size=13)
+    board = BoardState(type=BoardType.HEXAGONAL, size=25)
     rings_per_player = get_rings_per_player(BoardType.HEXAGONAL)
 
     players = [
