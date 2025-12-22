@@ -83,6 +83,7 @@ ai-service/app/training/**/data/
 # Note: ai-service/app/models/ contains Python code - .pth files excluded by *.pth pattern below
 
 # AI service models and eval pools (large files - use Git LFS if versioning needed)
+models/
 ai-service/models/
 ai-service/data/eval_pools/
 ai-service/runs/

@@ -156,9 +156,34 @@ def play_single_game(
 
     start_time = time.time()
 
-    # Load models
-    evaluator_a = NNUEEvaluator(model_a_path, board_type=BoardType(board_type))
-    evaluator_b = NNUEEvaluator(model_b_path, board_type=BoardType(board_type))
+    # Load models - NNUEEvaluator needs (board_type, player_number, num_players)
+    # For model comparison, we create evaluators for player 1 (will swap based on model_a_player)
+    # Use model_id by extracting from path, or fall back to None for default path
+    from pathlib import Path
+
+    def get_model_id_from_path(model_path: str) -> str | None:
+        """Extract model_id from path like models/nnue/nnue_square8_2p.pt -> nnue_square8_2p"""
+        p = Path(model_path)
+        if p.exists() and p.suffix == ".pt":
+            # For explicit paths, we need to load directly
+            return None
+        return p.stem if p.stem else None
+
+    # Create evaluators - load model directly from path if specified
+    evaluator_a = NNUEEvaluator(
+        board_type=BoardType(board_type),
+        player_number=1,  # Will be swapped if needed
+        num_players=num_players,
+        model_id=get_model_id_from_path(model_a_path),
+        allow_fresh=True,
+    )
+    evaluator_b = NNUEEvaluator(
+        board_type=BoardType(board_type),
+        player_number=2,
+        num_players=num_players,
+        model_id=get_model_id_from_path(model_b_path),
+        allow_fresh=True,
+    )
 
     # Create AIs
     config = AIConfig(difficulty=5, think_time=1000)

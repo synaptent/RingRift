@@ -10,10 +10,13 @@ specifically designed for quick model quality checks during promotion.
 
 from __future__ import annotations
 
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 # Add ai-service to path
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
