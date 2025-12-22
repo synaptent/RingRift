@@ -170,7 +170,7 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
             if next_type not in movement_moves:
                 # Check if player has valid movement moves before injecting
                 # This prevents incorrect phase advancement when moves exist
-                valid_moves = GameEngine.get_valid_moves(state)
+                valid_moves = GameEngine.get_valid_moves(state, state.current_player)
                 movement_like_types = {
                     MoveType.MOVE_STACK, MoveType.RECOVERY_SLIDE,
                     MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
@@ -205,7 +205,7 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
         if current_phase == "capture":
             if next_type not in capture_moves:
                 # Check if player has valid capture moves before injecting
-                valid_moves = GameEngine.get_valid_moves(state)
+                valid_moves = GameEngine.get_valid_moves(state, state.current_player)
                 capture_like_types = {
                     MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
                 }
@@ -251,6 +251,7 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
                     moveNumber=0,
                 )
                 state = GameEngine.apply_move(state, no_territory_move, trace_mode=True)
+                continue  # Continue to check if more injections needed
             else:
                 break
 
@@ -289,6 +290,7 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
                     moveNumber=0,
                 )
                 state = GameEngine.apply_move(state, no_line_move, trace_mode=True)
+                continue  # Continue to check if more injections needed
             else:
                 break
         else:
