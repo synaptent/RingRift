@@ -454,32 +454,30 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
 
     elif normalized_type == MoveType.ELIMINATE_RINGS_FROM_STACK:
         # After an explicit ELIMINATE_RINGS_FROM_STACK decision, re-evaluate whether
-        # more territory decisions remain for the **same player**. When no further
-        # regions exist, delegate to the canonical post-territory helper so that we
-        # either enter FORCED_ELIMINATION (ANM + material) or perform a full turn
-        # end via GameEngine._end_turn, mirroring the TS orchestrator semantics for
-        # territory completion.
+        # more territory decisions remain for the **same player**.
+        #
+        # RR-FIX-HEX-PARITY-02-2025-12-22: TS treats eliminate_rings_from_stack as a
+        # territory phase move and does NOT immediately advance the turn. Instead, it
+        # stays in territory_processing and lets the main orchestration flow handle
+        # phase completion. This is different from the previous Python behavior which
+        # called _on_territory_processing_complete() immediately when no regions remain.
+        #
+        # To match TS: Always stay in TERRITORY_PROCESSING after elimination. The host
+        # will synthesize NO_TERRITORY_ACTION via get_phase_requirement when no further
+        # territory moves exist, which will then trigger the proper phase completion.
         remaining_regions = GameEngine._get_territory_processing_moves(
             game_state,
             current_player,
         )
 
-        if remaining_regions:
-            # Stay in territory_processing and keep the current player; hosts will
-            # surface the next CHOOSE_TERRITORY_OPTION decision.
-            game_state.current_phase = GamePhase.TERRITORY_PROCESSING
-        else:
-            # Territory processing is complete for this player after the required
-            # elimination cost has been paid. Advance immediately (TS parity).
-            #
-            # NOTE: NO_TERRITORY_ACTION is reserved for the case where the player
-            # entered TERRITORY_PROCESSING and had *no* eligible territory decisions
-            # at all (forced no-op). It is not required as a "closing" move after
-            # executing territory decisions.
-            _on_territory_processing_complete(
-                game_state,
-                trace_mode=trace_mode,
-                last_move=last_move,
+        # Always stay in territory_processing after elimination, matching TS behavior.
+        # The next phase check will happen when hosts query get_phase_requirement.
+        game_state.current_phase = GamePhase.TERRITORY_PROCESSING
+
+        if trace_mode and not remaining_regions:
+            logger.debug(
+                "[phase_machine] eliminate_rings_from_stack complete, no regions remain. "
+                "Staying in TERRITORY_PROCESSING for host to synthesize NO_TERRITORY_ACTION."
             )
 
     elif normalized_type == MoveType.CHOOSE_TERRITORY_OPTION:
