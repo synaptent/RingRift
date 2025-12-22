@@ -120,7 +120,7 @@ class DaemonConfig:
             fast_mode=gauntlet.get("fast_mode", True),
             elo_threshold=promotion.get("elo_threshold", 25.0),
             min_games=promotion.get("min_games", 50),
-            min_win_rate=promotion.get("min_win_rate", 0.52),
+            min_win_rate=promotion.get("min_win_rate", 0.35),  # Lowered from 0.52
             confidence_level=promotion.get("confidence_level", 0.95),
             cluster_sync_enabled=cluster.get("enabled", True),
             restart_p2p_after_sync=cluster.get("restart_p2p", False),
