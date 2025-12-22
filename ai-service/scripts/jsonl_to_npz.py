@@ -96,20 +96,12 @@ def create_initial_state_from_record(
     Used as fallback when JSONL record doesn't include initial_state
     (e.g., older gumbel selfplay data).
     """
+    from app.training.initial_state import create_initial_state
+
     board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
 
-    # Default board sizes
-    default_sizes = {
-        BoardType.SQUARE8: 8,
-        BoardType.SQUARE19: 19,
-        BoardType.HEXAGONAL: 25,
-        BoardType.HEX8: 9,
-    }
-    size = board_size or default_sizes.get(board_type, 8)
-
-    return GameEngine.create_initial_state(
+    return create_initial_state(
         board_type=board_type,
-        board_size=size,
         num_players=num_players,
     )
 
