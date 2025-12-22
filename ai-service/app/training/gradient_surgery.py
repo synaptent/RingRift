@@ -59,11 +59,15 @@ class GradientSurgeon:
             model.zero_grad()
             loss.backward(retain_graph=True)
 
-            # Flatten all gradients into single vector
+            # Flatten ALL parameters into single vector (use zeros for None grads)
+            # This ensures consistent tensor sizes across tasks
             grads = []
             for param in model.parameters():
                 if param.grad is not None:
                     grads.append(param.grad.view(-1).clone())
+                else:
+                    # Include zeros for parameters without gradients
+                    grads.append(torch.zeros(param.numel(), device=param.device))
 
             if grads:
                 task_grads[task_name] = torch.cat(grads)
