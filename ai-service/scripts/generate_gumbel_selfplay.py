@@ -86,6 +86,62 @@ ALL_CONFIGS = [
 ]
 
 
+def _emit_gumbel_selfplay_complete(
+    config: "GumbelSelfplayConfig",
+    games_generated: int,
+    duration_seconds: float,
+    success: bool = True,
+    error: str = "",
+) -> None:
+    """Emit selfplay completion event for pipeline coordination (December 2025).
+
+    This notifies downstream pipeline stages that Gumbel MCTS selfplay has completed.
+    Uses gpu_selfplay type since Gumbel MCTS leverages GPU acceleration.
+
+    Args:
+        config: Selfplay configuration
+        games_generated: Number of games successfully generated
+        duration_seconds: Total duration in seconds
+        success: Whether selfplay completed successfully
+        error: Error message if failed
+    """
+    try:
+        import asyncio
+        import socket
+
+        from app.coordination.selfplay_orchestrator import emit_selfplay_completion
+
+        node_id = socket.gethostname()
+        task_id = f"gumbel_selfplay_{config.board_type}_{config.num_players}p_{int(time.time())}"
+
+        async def emit():
+            return await emit_selfplay_completion(
+                task_id=task_id,
+                board_type=config.board_type,
+                num_players=config.num_players,
+                games_generated=games_generated,
+                success=success,
+                node_id=node_id,
+                selfplay_type="gpu_selfplay",  # Gumbel MCTS uses GPU acceleration
+                error=error,
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(emit())
+        except RuntimeError:
+            asyncio.run(emit())
+
+        logger.debug(
+            f"Emitted GPU_SELFPLAY_COMPLETE: {games_generated} games, "
+            f"{duration_seconds:.2f}s, task_id={task_id}"
+        )
+    except ImportError:
+        pass  # SelfplayOrchestrator not available
+    except Exception as e:
+        logger.debug(f"Failed to emit GPU_SELFPLAY_COMPLETE: {e}")
+
+
 @dataclass
 class GumbelSelfplayConfig:
     """Configuration for Gumbel MCTS selfplay generation."""
@@ -464,6 +520,7 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
     if results:
         avg_moves = sum(r.num_moves for r in results) / len(results)
         avg_duration = sum(r.duration_ms for r in results) / len(results)
+        total_duration_sec = sum(r.duration_ms for r in results) / 1000.0
         winners = [r.winner for r in results if r.winner is not None]
         win_dist = {p: winners.count(p) for p in range(1, config.num_players + 1)}
 
@@ -475,6 +532,14 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
         if config.validate_parity:
             logger.info(f"  Parity failures: {parity_failures}")
         logger.info(f"  Output: {output_path}")
+
+        # Emit selfplay completion event for pipeline coordination (December 2025)
+        _emit_gumbel_selfplay_complete(
+            config=config,
+            games_generated=len(results),
+            duration_seconds=total_duration_sec,
+            success=True,
+        )
 
     return results
 

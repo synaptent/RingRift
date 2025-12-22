@@ -238,8 +238,13 @@ __all__ = [
     "get_world_size",
     # Tournament utilities
     "infer_victory_reason",
-    # Crossboard strength
+    # Crossboard strength (December 2025)
+    "ALL_BOARD_CONFIGS",
+    "aggregate_cross_board_elos",
+    "check_promotion_threshold",
+    "config_key",
     "inversion_count",
+    "parse_config_key",
     "is_distributed",
     "is_main_process",
     "load_checkpoint",
@@ -447,8 +452,13 @@ except ImportError:
 # Import crossboard strength analysis (December 2025)
 try:
     from app.training.crossboard_strength import (
+        ALL_BOARD_CONFIGS,
+        aggregate_cross_board_elos,
+        check_promotion_threshold,
+        config_key,
         inversion_count,
         normalise_tier_name,
+        parse_config_key,
         rank_order_from_elos,
         spearman_rank_correlation,
         summarize_crossboard_tier_strength,

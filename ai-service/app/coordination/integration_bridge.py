@@ -520,11 +520,165 @@ def reset_integration_wiring() -> None:
     _integration_wired = False
 
 
+# =============================================================================
+# Integration Health Verification (December 2025)
+# =============================================================================
+
+_health_check_subscriptions: dict[str, bool] = {}
+
+
+def _register_health_subscription(event_type: str) -> None:
+    """Register that an event was received for health tracking."""
+    _health_check_subscriptions[event_type] = True
+
+
+async def verify_integration_health(
+    timeout_seconds: float = 5.0,
+) -> dict[str, Any]:
+    """Verify that integration event wiring is functional.
+
+    Emits test events and verifies they propagate through the router
+    and reach subscribed handlers.
+
+    Args:
+        timeout_seconds: How long to wait for event propagation
+
+    Returns:
+        Dictionary with health status and event verification results
+    """
+    global _health_check_subscriptions
+    _health_check_subscriptions.clear()
+
+    results: dict[str, Any] = {
+        "wired": _integration_wired,
+        "events_tested": [],
+        "events_received": [],
+        "health_ok": False,
+        "details": {},
+    }
+
+    if not _integration_wired:
+        results["details"]["error"] = "Integration not wired - call wire_all_integrations first"
+        return results
+
+    # Subscribe to test events
+    test_events = [
+        EVENT_MODEL_REGISTERED,
+        EVENT_TRAINING_COMPLETED,
+        EVENT_EVALUATION_COMPLETE,
+        EVENT_FEEDBACK_SIGNAL,
+    ]
+
+    for event_type in test_events:
+        try:
+            subscribe(event_type, lambda e, et=event_type: _register_health_subscription(et))
+        except Exception as e:
+            results["details"][event_type] = f"subscription_failed: {e}"
+
+    # Emit test events
+    for event_type in test_events:
+        results["events_tested"].append(event_type)
+        try:
+            test_event = RouterEvent(
+                event_type=event_type,
+                payload={"_health_check": True, "test_event": event_type},
+                source="integration_bridge_health_check",
+            )
+            publish_sync(test_event)
+        except Exception as e:
+            results["details"][event_type] = f"publish_failed: {e}"
+
+    # Wait briefly for async propagation
+    await asyncio.sleep(min(0.5, timeout_seconds))
+
+    # Check which events were received
+    for event_type in test_events:
+        if _health_check_subscriptions.get(event_type):
+            results["events_received"].append(event_type)
+            results["details"][event_type] = "ok"
+        else:
+            results["details"][event_type] = "not_received"
+
+    # Determine overall health (75% threshold)
+    received_count = len(results["events_received"])
+    tested_count = len(results["events_tested"])
+    results["health_ok"] = received_count >= tested_count * 0.75
+
+    logger.info(
+        f"[IntegrationBridge] Health check: {received_count}/{tested_count} events verified"
+    )
+
+    return results
+
+
+def verify_integration_health_sync(timeout_seconds: float = 5.0) -> dict[str, Any]:
+    """Synchronous wrapper for verify_integration_health."""
+    try:
+        asyncio.get_running_loop()
+        return {"scheduled": True, "async_context": True}
+    except RuntimeError:
+        return asyncio.run(verify_integration_health(timeout_seconds))
+
+
+def get_wiring_status() -> dict[str, Any]:
+    """Get current integration wiring status.
+
+    Returns:
+        Dictionary with wiring status and component details
+    """
+    return {
+        "wired": _integration_wired,
+        "event_types_registered": [
+            EVENT_MODEL_REGISTERED,
+            EVENT_MODEL_PROMOTED,
+            EVENT_MODEL_REJECTED,
+            EVENT_MODEL_ROLLBACK,
+            EVENT_TRAINING_TRIGGERED,
+            EVENT_TRAINING_COMPLETED,
+            EVENT_EVALUATION_COMPLETE,
+            EVENT_EVALUATION_SCHEDULED,
+            EVENT_CLUSTER_HEALTH_CHANGED,
+            EVENT_SELFPLAY_SCALED,
+            EVENT_FEEDBACK_SIGNAL,
+            EVENT_PARITY_VALIDATION_COMPLETE,
+            EVENT_ELO_UPDATED,
+            EVENT_REGISTRY_SYNC_NEEDED,
+        ],
+        "components": [
+            "model_lifecycle",
+            "p2p_integration",
+            "pipeline_feedback",
+            "sync_managers",
+        ],
+    }
+
+
 __all__ = [
+    # Main wiring functions
     "wire_all_integrations",
     "wire_all_integrations_sync",
     "wire_model_lifecycle_events",
     "wire_p2p_integration_events",
     "wire_pipeline_feedback_events",
+    "wire_sync_manager_events",
+    # Health and status
+    "verify_integration_health",
+    "verify_integration_health_sync",
+    "get_wiring_status",
     "reset_integration_wiring",
+    # Event constants
+    "EVENT_MODEL_REGISTERED",
+    "EVENT_MODEL_PROMOTED",
+    "EVENT_MODEL_REJECTED",
+    "EVENT_MODEL_ROLLBACK",
+    "EVENT_TRAINING_TRIGGERED",
+    "EVENT_TRAINING_COMPLETED",
+    "EVENT_EVALUATION_COMPLETE",
+    "EVENT_EVALUATION_SCHEDULED",
+    "EVENT_CLUSTER_HEALTH_CHANGED",
+    "EVENT_SELFPLAY_SCALED",
+    "EVENT_FEEDBACK_SIGNAL",
+    "EVENT_PARITY_VALIDATION_COMPLETE",
+    "EVENT_ELO_UPDATED",
+    "EVENT_REGISTRY_SYNC_NEEDED",
 ]
