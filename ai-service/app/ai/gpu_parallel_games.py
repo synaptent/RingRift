@@ -2004,7 +2004,8 @@ class ParallelGameRunner:
 
         # Process territory claims and capture elimination/region positions
         # Use current_player_only=True to match CPU semantics (process only current player's regions)
-        territory_elimination_positions, territory_region_positions = compute_territory_batch(
+        # Returns: (elimination_positions, region_positions, opponent_eliminated_dict)
+        territory_elimination_positions, territory_region_positions, opp_elim_dict = compute_territory_batch(
             self.state, mask, current_player_only=True
         )
 
@@ -2014,9 +2015,17 @@ class ParallelGameRunner:
         territory_changed = (territory_after.sum(dim=1) != territory_before.sum(dim=1))
         games_with_territory = mask & territory_changed
 
-        # Record canonical territory moves (including elimination)
+        # Convert opponent_eliminated dict to tensor for skip_elimination
+        # compute_territory_batch now checks opponent elimination BEFORE self-elimination
+        opponent_eliminated = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
+        for g, eliminated in opp_elim_dict.items():
+            if eliminated:
+                opponent_eliminated[g] = True
+
+        # Record canonical territory moves (elimination only if game continues)
         self._record_territory_phase_moves(
-            mask, games_with_territory, territory_elimination_positions, territory_region_positions
+            mask, games_with_territory, territory_elimination_positions, territory_region_positions,
+            skip_elimination=opponent_eliminated,
         )
 
         # Cascade check: Did territory processing create new marker lines?
@@ -2044,12 +2053,78 @@ class ParallelGameRunner:
             still_territory = mask & (self.state.current_phase == GamePhase.TERRITORY_PROCESSING)
             self.state.current_phase[still_territory] = GamePhase.END_TURN
 
+        # December 2025: Check for player elimination after territory processing
+        # If any player has been eliminated (no rings anywhere), end the game
+        self._check_player_elimination(mask)
+
+    def _check_opponent_eliminated(
+        self, mask: torch.Tensor, games_with_territory: torch.Tensor
+    ) -> torch.Tensor:
+        """Check if opponent was eliminated by territory processing.
+
+        Returns a boolean mask of games where opponent has no rings left.
+        Used to skip self-elimination recording when game ends during territory.
+        """
+        result = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
+
+        active_mask = mask & games_with_territory & self.state.get_active_mask()
+        if not active_mask.any():
+            return result
+
+        # Get current player for each game
+        current_players = self.state.current_player
+
+        # Compute player ring status
+        player_has_rings = self._compute_player_ring_status_batch()
+
+        # In 2-player games, check if the opponent has no rings
+        if self.num_players == 2:
+            for g in torch.where(active_mask)[0].tolist():
+                current_p = int(current_players[g].item())
+                opponent_p = 2 if current_p == 1 else 1
+                if not player_has_rings[g, opponent_p]:
+                    result[g] = True
+
+        return result
+
+    def _check_player_elimination(self, mask: torch.Tensor) -> None:
+        """Check if any player has been eliminated (no rings anywhere).
+
+        A player is eliminated when they have:
+        - No controlled stacks
+        - No rings in hand
+        - No buried rings (cannot recover)
+
+        When a player is eliminated, the remaining player wins.
+        This matches CPU's game-over detection after territory processing.
+        """
+        active_mask = mask & self.state.get_active_mask()
+        if not active_mask.any():
+            return
+
+        # Compute player ring status for all players
+        player_has_rings = self._compute_player_ring_status_batch()
+
+        # For each player, check if they have no rings at all
+        for p in range(1, self.num_players + 1):
+            # Games where player p has no rings
+            player_eliminated = active_mask & ~player_has_rings[:, p]
+
+            if player_eliminated.any():
+                # Player p is eliminated, determine winner
+                # In 2-player game, the other player wins
+                if self.num_players == 2:
+                    winner = 2 if p == 1 else 1
+                    self.state.winner[player_eliminated] = winner
+                    self.state.game_status[player_eliminated] = GameStatus.COMPLETED
+
     def _record_territory_phase_moves(
         self,
         mask: torch.Tensor,
         games_with_territory: torch.Tensor,
         elimination_positions: dict[int, list[tuple[int, int, int]]],
         region_positions: dict[int, tuple[int, int]],
+        skip_elimination: torch.Tensor | None = None,
     ) -> None:
         """Record canonical territory processing moves to move_history.
 
@@ -2060,11 +2135,15 @@ class ParallelGameRunner:
         The elimination move is separate per CPU engine semantics: after each
         CHOOSE_TERRITORY_OPTION, an ELIMINATE_RINGS_FROM_STACK follows.
 
+        December 2025: If opponent was eliminated during territory collapse, skip
+        the self-elimination recording - game ends immediately per CPU semantics.
+
         Args:
             mask: Games being processed in this phase
             games_with_territory: Which games had territory to claim
             elimination_positions: Dict mapping game_idx to list of (player, y, x) eliminations
             region_positions: Dict mapping game_idx to (y, x) region representative position
+            skip_elimination: Boolean mask - skip elimination recording for these games
         """
         from .gpu_game_types import MoveType
 
@@ -2103,6 +2182,10 @@ class ParallelGameRunner:
                 # Second: record the elimination move(s) for current player (if space)
                 # Note: CPU records one CHOOSE + ELIMINATE pair per region for current player.
                 # GPU batches all territory processing but we only record current player's eliminations.
+                # December 2025: Skip elimination if opponent was eliminated (game ends immediately)
+                if skip_elimination is not None and skip_elimination[g]:
+                    continue  # Game ends - don't record elimination move
+
                 elims = elimination_positions.get(g, [])
                 for elim_player, elim_y, elim_x in elims:
                     if elim_player != player:

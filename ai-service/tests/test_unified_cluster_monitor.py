@@ -9,7 +9,7 @@ Tests the consolidated cluster monitoring system that provides:
 
 import json
 
-# Import from scripts directory
+# Import from app.monitoring module
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -18,9 +18,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
-
-from unified_cluster_monitor import (
+from app.monitoring.unified_cluster_monitor import (
     ClusterConfig,
     ClusterHealth,
     LeaderHealth,

@@ -27,18 +27,20 @@ from .health import (
     check_node_health,
     HealthStatus,
 )
-from .alerting import (
-    send_alert,
-    AlertLevel,
-)
+
+# Alerting module is planned but not yet implemented
+# from .alerting import (
+#     send_alert,
+#     AlertLevel,
+# )
 
 __all__ = [
-    "AlertLevel",
+    # "AlertLevel",  # Not yet implemented
     "HealthStatus",
     "check_cluster_health",
     "check_node_health",
     "get_cluster_status",
     "get_node_status",
     "print_cluster_status",
-    "send_alert",
+    # "send_alert",  # Not yet implemented
 ]

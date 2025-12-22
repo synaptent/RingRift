@@ -1047,10 +1047,11 @@ class UnifiedTrainingOrchestrator:
             device = next(self._model.parameters()).device
 
             # Determine feature shape based on board type
+            # Board sizes are bounding boxes: hex8=9 (radius 4), hexagonal=25 (radius 12)
             board_size_map = {
                 "square8": 8,
                 "square19": 19,
-                "hex8": 15,  # Hex8 uses 15x15 grid
+                "hex8": 9,  # Hex8 bounding box = 2*radius + 1 = 9 for radius=4
                 "hexagonal": 25,
             }
             board_size = board_size_map.get(self.config.board_type, 8)

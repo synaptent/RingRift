@@ -9,13 +9,12 @@ Tests move application functions per RR-CANON rules:
 
 from dataclasses import dataclass
 
+import pytest
 import torch
 
 from app.ai.gpu_game_types import GamePhase, MoveType
 from app.ai.gpu_move_application import (
-    _apply_capture_moves_batch_legacy,
-    _apply_movement_moves_batch_legacy,
-    _apply_placement_moves_batch_legacy,
+    # Legacy functions were removed - using current implementations
     apply_capture_moves_batch,
     apply_capture_moves_batch_vectorized,
     apply_capture_moves_vectorized,
@@ -410,6 +409,7 @@ class TestApplyPlacementMovesBatch:
         assert state.move_history[0, 0, 3].item() == 5  # x
 
 
+@pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
 class TestApplyPlacementLegacy:
     """Tests for _apply_placement_moves_batch_legacy."""
 
@@ -508,6 +508,7 @@ class TestApplyMovementMovesBatch:
         assert state.move_count[0].item() == 0
 
 
+@pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
 class TestApplyMovementLegacy:
     """Tests for _apply_movement_moves_batch_legacy."""
 
@@ -606,6 +607,7 @@ class TestApplyCaptureMovesBatch:
         assert state.move_history[0, 0, 3].item() == 2  # from_x
 
 
+@pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
 class TestApplyCaptureLegacy:
     """Tests for _apply_capture_moves_batch_legacy."""
 
@@ -1009,9 +1011,7 @@ class TestMoveApplicationIntegration:
     def test_module_exports(self):
         """Test that all expected functions are exported."""
         from app.ai.gpu_move_application import (
-            _apply_capture_moves_batch_legacy,
-            _apply_movement_moves_batch_legacy,
-            _apply_placement_moves_batch_legacy,
+            # Legacy functions removed - only current implementations tested
             apply_capture_moves_batch,
             apply_capture_moves_batch_vectorized,
             apply_capture_moves_vectorized,
@@ -1030,11 +1030,8 @@ class TestMoveApplicationIntegration:
         assert callable(apply_recovery_moves_vectorized)
         assert callable(apply_no_action_moves_batch)
         assert callable(apply_placement_moves_batch_vectorized)
-        assert callable(_apply_placement_moves_batch_legacy)
         assert callable(apply_placement_moves_batch)
         assert callable(apply_movement_moves_batch_vectorized)
-        assert callable(_apply_movement_moves_batch_legacy)
         assert callable(apply_movement_moves_batch)
         assert callable(apply_capture_moves_batch_vectorized)
-        assert callable(_apply_capture_moves_batch_legacy)
         assert callable(apply_capture_moves_batch)

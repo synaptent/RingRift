@@ -426,7 +426,7 @@ def compute_territory_batch(
     state: BatchGameState,
     game_mask: torch.Tensor | None = None,
     current_player_only: bool = False,
-) -> tuple[dict[int, list[tuple[int, int, int]]], dict[int, tuple[int, int]]]:
+) -> tuple[dict[int, list[tuple[int, int, int]]], dict[int, tuple[int, int]], dict[int, bool]]:
     """Compute and update territory claims (in-place).
 
     Per RR-CANON-R140-R146:
@@ -454,9 +454,11 @@ def compute_territory_batch(
         Tuple of:
         - Dictionary mapping game_idx to list of (player, y, x) elimination positions
         - Dictionary mapping game_idx to (y, x) region representative position
+        - Dictionary mapping game_idx to bool indicating if opponent was eliminated by region collapse
     """
     elimination_positions: dict[int, list[tuple[int, int, int]]] = {}
     region_positions: dict[int, tuple[int, int]] = {}  # First region position per game
+    opponent_eliminated: dict[int, bool] = {}  # True if opponent eliminated by region collapse
     batch_size = state.batch_size
     board_size = state.board_size
     is_hex = _is_hex_board(board_size)
@@ -588,35 +590,61 @@ def compute_territory_batch(
                                         is_collapsed_np[y, x] = True
                                         marker_owner_np[y, x] = 0
 
-                    # 4. Mandatory self-elimination (eliminate cap)
-                    state.stack_height[g, cap_y, cap_x] = 0
-                    state.stack_owner[g, cap_y, cap_x] = 0
-                    stack_height_np[cap_y, cap_x] = 0
-                    stack_owner_np[cap_y, cap_x] = 0
-                    # Player eliminates own rings for territory cap cost
-                    state.eliminated_rings[g, player] += cap_height
-                    # Player CAUSED these eliminations (self-elimination counts for victory)
-                    state.rings_caused_eliminated[g, player] += cap_height
-
-                    # Track elimination position for move recording
-                    if g not in elimination_positions:
-                        elimination_positions[g] = []
-                    elimination_positions[g].append((player, cap_y, cap_x))
+                    # 3. Check if opponent was eliminated by region collapse
+                    # If so, game ends and we skip self-elimination (matches CPU behavior)
+                    # For 2-player games, check if opponent has any stacks left
+                    opp_eliminated = False
+                    if state.num_players == 2:
+                        opponent = 2 if player == 1 else 1
+                        # Check if opponent has any stacks anywhere
+                        opp_has_stacks = (stack_owner_np == opponent).any()
+                        if not opp_has_stacks:
+                            # Also check buried rings and rings in hand
+                            opp_buried = int(state.buried_rings[g, opponent].item()) if hasattr(state, 'buried_rings') else 0
+                            opp_hand = int(state.rings_in_hand[g, opponent].item()) if hasattr(state, 'rings_in_hand') else 0
+                            if opp_buried == 0 and opp_hand == 0:
+                                opp_eliminated = True
+                                opponent_eliminated[g] = True
 
                     # Track region representative position for CHOOSE_TERRITORY_OPTION recording
                     # Use first cell of region (deterministic) matching CPU's Territory.spaces[0]
                     if g not in region_positions:
                         region_positions[g] = rep  # rep is min(region), gives (y, x)
 
+                    # 4. Mandatory self-elimination (eliminate cap) - skip if opponent eliminated
+                    if not opp_eliminated:
+                        state.stack_height[g, cap_y, cap_x] = 0
+                        state.stack_owner[g, cap_y, cap_x] = 0
+                        stack_height_np[cap_y, cap_x] = 0
+                        stack_owner_np[cap_y, cap_x] = 0
+                        # Player eliminates own rings for territory cap cost
+                        state.eliminated_rings[g, player] += cap_height
+                        # Player CAUSED these eliminations (self-elimination counts for victory)
+                        state.rings_caused_eliminated[g, player] += cap_height
+
+                        # Track elimination position for move recording
+                        if g not in elimination_positions:
+                            elimination_positions[g] = []
+                        elimination_positions[g].append((player, cap_y, cap_x))
+
                     # Update territory count
                     state.territory_count[g, player] += territory_count
 
                     processed_representatives.add(rep)
                     found_processable = True
-                    break  # Move to next region
+
+                    # If opponent was eliminated, stop processing - game is over
+                    if opp_eliminated:
+                        break  # Exit player loop
+
+                    break  # Move to next region (processed one region for this player)
 
                 if found_processable:
                     break
+
+            # If opponent was eliminated during this iteration, stop all territory processing
+            if g in opponent_eliminated and opponent_eliminated[g]:
+                break
 
             if not found_processable:
                 break
@@ -647,7 +675,7 @@ def compute_territory_batch(
                 if _is_color_disconnected(state, g, region):
                     eligible_regions.append((region, border_player))
 
-    return elimination_positions, region_positions
+    return elimination_positions, region_positions, opponent_eliminated
 
 
 __all__ = [

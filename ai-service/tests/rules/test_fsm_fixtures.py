@@ -62,8 +62,9 @@ _EVENT_TO_MOVE_TYPE: dict[str, MoveType | None] = {
     "PROCESS_REGION": MoveType.CHOOSE_TERRITORY_OPTION,  # Canonical type (legacy: PROCESS_TERRITORY_REGION)
     "FORCED_ELIMINATE": MoveType.FORCED_ELIMINATION,
     "_ADVANCE_TURN": None,  # Internal FSM event, not a move type
-    "RESIGN": MoveType.RESIGN,
-    "TIMEOUT": MoveType.TIMEOUT,
+    # Game-ending events - not regular moves, cause immediate termination
+    "RESIGN": None,  # Game ends immediately on resignation
+    "TIMEOUT": None,  # Game ends immediately on timeout
 }
 
 # Map fixture phase strings to GamePhase enum

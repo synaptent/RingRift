@@ -68,18 +68,36 @@ def clear_nnue_cache() -> None:
 # Feature Dimensions
 # =============================================================================
 
-# Input features: 12 spatial planes per position + 20 global features
-# Spatial planes (12):
-# - Ring presence per player (4 planes for 4 players max)
-# - Stack presence per player (4 planes)
-# - Territory ownership per player (4 planes)
-# Global features (20):
-# - Rings in hand per player (4 values, normalized 0-1)
-# - Game phase one-hot (8 values for 8 phases)
-# - Eliminated rings per player (4 values, normalized 0-1)
-# - Territory count per player (4 values, normalized 0-1)
-FEATURE_PLANES = 12
-GLOBAL_FEATURES = 20  # Critical for early-game evaluation
+# Input features: 26 spatial planes per position + 32 global features
+#
+# Spatial planes (26 total):
+# - Planes 0-3: Ring presence per player (4 planes for 4 players max)
+# - Planes 4-7: Stack height per player (4 planes, normalized by 5.0)
+# - Planes 8-11: Territory ownership per player (4 planes)
+# - Planes 12-15: Marker presence per player (4 planes) [V3]
+# - Planes 16-19: Cap height per player (4 planes, normalized by 5.0) [V3]
+# - Planes 20-23: Line threat per direction (4 planes: H, V, diag, anti-diag) [V3]
+# - Planes 24-25: Capture threat map (vulnerability, opportunity) [V3]
+#
+# Global features (32 total):
+# - Indices 0-3: Rings in hand per player (4 values, normalized 0-1)
+# - Indices 4-11: Game phase one-hot (8 values for 8 phases)
+# - Indices 12-15: Eliminated rings per player (4 values, normalized 0-1)
+# - Indices 16-19: Territory count per player (4 values, normalized 0-1)
+# - Indices 20-23: Victory proximity per player (4 values) [V3]
+# - Index 24: Board occupancy (stacks / total_spaces) [V3]
+# - Index 25: Marker density (markers / total_spaces) [V3]
+# - Index 26: Turn number normalized (turn / 100) [V3]
+# - Indices 27-30: Ring supply ratio per player (rings / total_remaining) [V3]
+# - Index 31: Reserved [V3]
+
+# V2 constants (backwards compatible)
+FEATURE_PLANES_V2 = 12
+GLOBAL_FEATURES_V2 = 20
+
+# V3 constants (new features)
+FEATURE_PLANES = 26  # 12 original + 4 marker + 4 cap height + 4 line threat + 2 capture threat
+GLOBAL_FEATURES = 32  # 20 original + 12 enhanced
 
 BOARD_SIZES: dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
@@ -88,30 +106,45 @@ BOARD_SIZES: dict[BoardType, int] = {
     BoardType.HEX8: 9,        # Radius 4, embedded in 9x9 grid
 }
 
+# V2 dimensions (backwards compatible: 12 spatial planes + 20 global)
+FEATURE_DIMS_V2: dict[BoardType, int] = {
+    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES_V2 + GLOBAL_FEATURES_V2,      # 768 + 20 = 788
+    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES_V2 + GLOBAL_FEATURES_V2,   # 4332 + 20 = 4352
+    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES_V2 + GLOBAL_FEATURES_V2,  # 7500 + 20 = 7520
+    BoardType.HEX8: 9 * 9 * FEATURE_PLANES_V2 + GLOBAL_FEATURES_V2,         # 972 + 20 = 992
+}
+
+# V3 dimensions (new features: 26 spatial planes + 32 global)
 FEATURE_DIMS: dict[BoardType, int] = {
-    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES + GLOBAL_FEATURES,      # 768 + 20 = 788 features
-    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES + GLOBAL_FEATURES,   # 4332 + 20 = 4352 features
-    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES + GLOBAL_FEATURES,  # 7500 + 20 = 7520 features
-    BoardType.HEX8: 9 * 9 * FEATURE_PLANES + GLOBAL_FEATURES,         # 972 + 20 = 992 features
+    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES + GLOBAL_FEATURES,      # 1664 + 32 = 1696
+    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES + GLOBAL_FEATURES,   # 9386 + 32 = 9418
+    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES + GLOBAL_FEATURES,  # 16250 + 32 = 16282
+    BoardType.HEX8: 9 * 9 * FEATURE_PLANES + GLOBAL_FEATURES,         # 2106 + 32 = 2138
 }
 
 # =============================================================================
 # Feature Versioning
 # =============================================================================
 # Feature version tracks input encoding changes (separate from architecture version)
-# V1: Spatial features only (768 for SQUARE8)
-# V2: Spatial + 20 global features (788 for SQUARE8) - added Dec 21, 2025
+# V1: Spatial features only (768 for SQUARE8) - 12 planes, 0 global
+# V2: Spatial + 20 global features (788 for SQUARE8) - 12 planes, 20 global
+# V3: Enhanced features (1696 for SQUARE8) - 26 planes, 32 global [Dec 22, 2025]
+#     Added: marker planes, cap height, line threats, capture threats, victory proximity
 NNUE_FEATURE_V1 = 1
 NNUE_FEATURE_V2 = 2
-CURRENT_NNUE_FEATURE_VERSION = NNUE_FEATURE_V2
+NNUE_FEATURE_V3 = 3
+CURRENT_NNUE_FEATURE_VERSION = NNUE_FEATURE_V3
 
 # Spatial-only dimensions (V1 feature encoding)
-SPATIAL_DIMS: dict[BoardType, int] = {
-    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES,      # 768
-    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES,   # 4332
-    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES,  # 7500
-    BoardType.HEX8: 9 * 9 * FEATURE_PLANES,         # 972
+SPATIAL_DIMS_V1: dict[BoardType, int] = {
+    BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES_V2,      # 768
+    BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES_V2,   # 4332
+    BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES_V2,  # 7500
+    BoardType.HEX8: 9 * 9 * FEATURE_PLANES_V2,         # 972
 }
+
+# V2 spatial dimensions (for backwards compatibility detection)
+SPATIAL_DIMS: dict[BoardType, int] = SPATIAL_DIMS_V1  # Alias for V2 detection
 
 
 def get_feature_dim_for_version(board_type: BoardType, feature_version: int) -> int:
@@ -119,15 +152,17 @@ def get_feature_dim_for_version(board_type: BoardType, feature_version: int) -> 
 
     Args:
         board_type: Board type
-        feature_version: 1 for V1 (spatial only), 2 for V2 (spatial + global)
+        feature_version: 1 for V1 (spatial only), 2 for V2, 3 for V3 (enhanced)
 
     Returns:
         Feature dimension for the given version
     """
-    spatial = SPATIAL_DIMS.get(board_type, SPATIAL_DIMS[BoardType.SQUARE8])
-    if feature_version >= NNUE_FEATURE_V2:
-        return spatial + GLOBAL_FEATURES
-    return spatial
+    if feature_version >= NNUE_FEATURE_V3:
+        return FEATURE_DIMS.get(board_type, FEATURE_DIMS[BoardType.SQUARE8])
+    elif feature_version >= NNUE_FEATURE_V2:
+        return FEATURE_DIMS_V2.get(board_type, FEATURE_DIMS_V2[BoardType.SQUARE8])
+    else:
+        return SPATIAL_DIMS_V1.get(board_type, SPATIAL_DIMS_V1[BoardType.SQUARE8])
 
 
 def detect_feature_version_from_accumulator(
@@ -141,15 +176,19 @@ def detect_feature_version_from_accumulator(
         board_type: Board type for the model
 
     Returns:
-        Detected feature version (1 or 2)
+        Detected feature version (1, 2, or 3)
     """
     input_size = acc_weight_shape[1] if len(acc_weight_shape) >= 2 else 0
-    spatial_size = SPATIAL_DIMS.get(board_type, SPATIAL_DIMS[BoardType.SQUARE8])
+    spatial_v1 = SPATIAL_DIMS_V1.get(board_type, SPATIAL_DIMS_V1[BoardType.SQUARE8])
+    v2_size = FEATURE_DIMS_V2.get(board_type, FEATURE_DIMS_V2[BoardType.SQUARE8])
+    v3_size = FEATURE_DIMS.get(board_type, FEATURE_DIMS[BoardType.SQUARE8])
 
-    if input_size == spatial_size:
+    if input_size == spatial_v1:
         return NNUE_FEATURE_V1
-    elif input_size == spatial_size + GLOBAL_FEATURES:
+    elif input_size == v2_size:
         return NNUE_FEATURE_V2
+    elif input_size == v3_size:
+        return NNUE_FEATURE_V3
     else:
         # Unknown size - assume latest version
         logger.warning(f"Unknown accumulator input size {input_size} for {board_type}, assuming V{CURRENT_NNUE_FEATURE_VERSION}")
@@ -286,8 +325,8 @@ class RingRiftNNUE(nn.Module):
     to enable fast inference without GPU.
     """
 
-    ARCHITECTURE_VERSION = "v1.3.0"  # Added stochastic depth support
-    FEATURE_VERSION = CURRENT_NNUE_FEATURE_VERSION  # V2: spatial + global features
+    ARCHITECTURE_VERSION = "v1.4.0"  # V3 features: markers, cap height, line threats, capture threats
+    FEATURE_VERSION = CURRENT_NNUE_FEATURE_VERSION  # V3: 26 spatial planes + 32 global features
 
     def __init__(
         self,
@@ -557,26 +596,76 @@ def _rotate_player_perspective(owner: int, player_number: int, num_players: int 
     return rotated
 
 
+def _compute_line_length(markers: dict, pos_key: str, player: int, dx: int, dy: int, board_size: int) -> int:
+    """Compute line length in a direction from a marker position."""
+    parts = pos_key.split(",")
+    if len(parts) < 2:
+        return 1
+    x, y = int(parts[0]), int(parts[1])
+    length = 1  # Count self
+
+    # Count forward
+    for step in range(1, 6):  # Max line length is 5+
+        nx, ny = x + dx * step, y + dy * step
+        neighbor_key = f"{nx},{ny}"
+        if neighbor_key in markers:
+            m = markers[neighbor_key]
+            if getattr(m, 'player', 0) == player:
+                length += 1
+            else:
+                break
+        else:
+            break
+
+    # Count backward
+    for step in range(1, 6):
+        nx, ny = x - dx * step, y - dy * step
+        neighbor_key = f"{nx},{ny}"
+        if neighbor_key in markers:
+            m = markers[neighbor_key]
+            if getattr(m, 'player', 0) == player:
+                length += 1
+            else:
+                break
+        else:
+            break
+
+    return length
+
+
 def extract_features_from_gamestate(
     state: GameState,
     player_number: int,
 ) -> np.ndarray:
-    """Extract NNUE features from immutable GameState.
+    """Extract NNUE V3 features from immutable GameState.
 
-    Feature planes (12 total) - PERSPECTIVE ROTATED:
+    Feature planes (26 total) - PERSPECTIVE ROTATED:
     - Planes 0-3: Ring presence (plane 0 = current player, 1-3 = opponents)
-    - Planes 4-7: Stack presence (plane 4 = current player, 5-7 = opponents)
-    - Planes 8-11: Territory ownership (plane 8 = current player, 9-11 = opponents)
+    - Planes 4-7: Stack height (normalized by 5.0)
+    - Planes 8-11: Territory ownership
+    - Planes 12-15: Marker presence [V3]
+    - Planes 16-19: Cap height (normalized by 5.0) [V3]
+    - Planes 20-23: Line threat per direction (H, V, diag, anti-diag) [V3]
+    - Planes 24-25: Capture threat (vulnerability, opportunity) [V3]
 
-    The perspective rotation ensures that Eval(state, P1) can differ from
-    Eval(state, P2), which is required for proper minimax evaluation.
+    Global features (32 total):
+    - Indices 0-3: Rings in hand per player
+    - Indices 4-11: Game phase one-hot (8 phases)
+    - Indices 12-15: Eliminated rings per player
+    - Indices 16-19: Territory count per player
+    - Indices 20-23: Victory proximity per player [V3]
+    - Index 24: Board occupancy [V3]
+    - Index 25: Marker density [V3]
+    - Index 26: Turn number normalized [V3]
+    - Indices 27-30: Ring supply ratio [V3]
+    - Index 31: Reserved [V3]
 
     Args:
         state: The game state to extract features from
         player_number: The player perspective (1-4)
 
     Returns:
-        Flattened feature vector of shape (board_size * board_size * 12,)
+        Flattened feature vector of shape (FEATURE_DIMS[board_type],)
     """
     board = state.board
     board_type = board.type
@@ -584,10 +673,13 @@ def extract_features_from_gamestate(
     num_positions = board_size * board_size
     num_players = len(state.players) if hasattr(state, 'players') else 2
 
-    # Initialize feature planes
+    # Initialize feature planes (26 planes for V3)
     features = np.zeros(num_positions * FEATURE_PLANES, dtype=np.float32)
 
-    # Extract ring/stack positions from board.stacks (Dict[str, RingStack])
+    # Collect stacks info for capture threat computation
+    stacks_by_pos: dict[str, tuple[int, int, int]] = {}  # pos_key -> (owner, height, cap_height)
+
+    # Extract ring/stack/cap_height from board.stacks
     for pos_key, ring_stack in (board.stacks or {}).items():
         try:
             parts = pos_key.split(",")
@@ -602,22 +694,27 @@ def extract_features_from_gamestate(
                     rings = getattr(ring_stack, 'rings', [])
                     for ring_owner in rings:
                         if 1 <= ring_owner <= 4:
-                            # Rotate so current player is always plane 0
-                            rotated = _rotate_player_perspective(
-                                ring_owner, player_number, num_players
-                            )
+                            rotated = _rotate_player_perspective(ring_owner, player_number, num_players)
                             plane_idx = (rotated - 1) * num_positions
                             features[plane_idx + idx] = 1.0
 
-                    # Stack features (planes 4-7) - ROTATED perspective
+                    # Stack height features (planes 4-7) - ROTATED perspective
                     owner = getattr(ring_stack, 'controlling_player', 0)
                     height = getattr(ring_stack, 'stack_height', 0)
+                    cap_height = getattr(ring_stack, 'cap_height', 0)
+
                     if 1 <= owner <= 4 and height > 0:
-                        rotated = _rotate_player_perspective(
-                            owner, player_number, num_players
-                        )
+                        rotated = _rotate_player_perspective(owner, player_number, num_players)
+                        # Stack height (planes 4-7)
                         plane_idx = (4 + rotated - 1) * num_positions
                         features[plane_idx + idx] = min(height / 5.0, 1.0)
+
+                        # Cap height (planes 16-19) [V3]
+                        plane_idx = (16 + rotated - 1) * num_positions
+                        features[plane_idx + idx] = min(cap_height / 5.0, 1.0)
+
+                        # Store for capture threat computation
+                        stacks_by_pos[pos_key] = (owner, height, cap_height)
         except (ValueError, AttributeError):
             continue
 
@@ -626,9 +723,7 @@ def extract_features_from_gamestate(
         try:
             pnum = getattr(territory, 'player', 0)
             if 1 <= pnum <= 4:
-                rotated = _rotate_player_perspective(
-                    pnum, player_number, num_players
-                )
+                rotated = _rotate_player_perspective(pnum, player_number, num_players)
                 for pos in (getattr(territory, 'spaces', None) or []):
                     idx = _pos_to_index(pos, board_size, board_type)
                     if 0 <= idx < num_positions:
@@ -637,46 +732,139 @@ def extract_features_from_gamestate(
         except (ValueError, AttributeError):
             continue
 
-    # Add global features (20 total) - CRITICAL for early-game evaluation
+    # Extract marker features (planes 12-15) [V3] and compute line threats
+    markers = getattr(board, 'markers', None) or {}
+    marker_count = 0
+    line_directions = [(1, 0), (0, 1), (1, 1), (1, -1)]  # H, V, diag, anti-diag
+
+    for pos_key, marker in markers.items():
+        try:
+            parts = pos_key.split(",")
+            if len(parts) >= 2:
+                x, y = int(parts[0]), int(parts[1])
+                z = int(parts[2]) if len(parts) == 3 else None
+                pos = Position(x=x, y=y, z=z)
+                idx = _pos_to_index(pos, board_size, board_type)
+                marker_owner = getattr(marker, 'player', 0)
+
+                if 0 <= idx < num_positions and 1 <= marker_owner <= 4:
+                    marker_count += 1
+                    rotated = _rotate_player_perspective(marker_owner, player_number, num_players)
+
+                    # Marker presence (planes 12-15)
+                    plane_idx = (12 + rotated - 1) * num_positions
+                    features[plane_idx + idx] = 1.0
+
+                    # Line threat detection (planes 20-23) - only for current player
+                    if rotated == 1:  # Current player's markers
+                        for dir_idx, (dx, dy) in enumerate(line_directions):
+                            line_len = _compute_line_length(markers, pos_key, marker_owner, dx, dy, board_size)
+                            # Normalize: 5+ is max (forms a capture line)
+                            plane_idx = (20 + dir_idx) * num_positions
+                            features[plane_idx + idx] = max(features[plane_idx + idx], min(line_len / 5.0, 1.0))
+        except (ValueError, AttributeError):
+            continue
+
+    # Capture threat map (planes 24-25) [V3]
+    # Simplified: check for stacks that can be captured based on cap height
+    for pos_key, (owner, height, cap_height) in stacks_by_pos.items():
+        try:
+            parts = pos_key.split(",")
+            if len(parts) < 2:
+                continue
+            x, y = int(parts[0]), int(parts[1])
+            idx = y * board_size + x
+            if idx < 0 or idx >= num_positions:
+                continue
+
+            rotated_owner = _rotate_player_perspective(owner, player_number, num_players)
+
+            # Check adjacent stacks for capture threats
+            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)]:
+                neighbor_key = f"{x + dx},{y + dy}"
+                if neighbor_key in stacks_by_pos:
+                    n_owner, n_height, n_cap = stacks_by_pos[neighbor_key]
+                    if n_owner != owner:  # Enemy stack
+                        if rotated_owner == 1:  # Our stack
+                            if n_cap >= cap_height:
+                                # We are vulnerable (plane 24)
+                                features[24 * num_positions + idx] = max(
+                                    features[24 * num_positions + idx],
+                                    min((n_cap - cap_height + 1) / 5.0, 1.0)
+                                )
+                            if cap_height >= n_cap:
+                                # We can capture (plane 25)
+                                features[25 * num_positions + idx] = max(
+                                    features[25 * num_positions + idx],
+                                    min((cap_height - n_cap + 1) / 5.0, 1.0)
+                                )
+        except (ValueError, AttributeError):
+            continue
+
+    # Add global features (32 total for V3)
     global_features = np.zeros(GLOBAL_FEATURES, dtype=np.float32)
 
-    # Rings in hand per player (4 values, normalized by initial ring count)
-    # Rotated perspective: current player first
+    # Rings in hand per player (indices 0-3)
     initial_rings = 18 if num_players == 2 else (12 if num_players == 3 else 9)
+    total_rings_remaining = 0
     for p in range(1, min(num_players + 1, 5)):
         rotated = _rotate_player_perspective(p, player_number, num_players)
         player_data = state.players[p - 1] if hasattr(state, 'players') and p <= len(state.players) else None
         rings_in_hand = getattr(player_data, 'rings_in_hand', initial_rings) if player_data else initial_rings
         global_features[rotated - 1] = rings_in_hand / initial_rings
+        total_rings_remaining += rings_in_hand
 
-    # Game phase one-hot encoding (8 values for 8 canonical phases)
+    # Game phase one-hot encoding (indices 4-11)
     phase_map = {
         'ring_placement': 0, 'movement': 1, 'capture': 2, 'chain_capture': 2,
         'line_processing': 3, 'territory_processing': 4, 'forced_elimination': 5,
-        'game_over': 6, 'recovery': 1,  # recovery is part of movement
+        'game_over': 6, 'recovery': 1,
     }
     phase_name = getattr(state, 'phase', None)
     if phase_name:
         phase_str = phase_name.value if hasattr(phase_name, 'value') else str(phase_name).lower()
-        phase_idx = phase_map.get(phase_str, 7)  # Default to index 7 (unknown)
+        phase_idx = phase_map.get(phase_str, 7)
         global_features[4 + phase_idx] = 1.0
     else:
-        global_features[4] = 1.0  # Default to ring_placement phase
+        global_features[4] = 1.0
 
-    # Eliminated rings per player (4 values, normalized)
+    # Eliminated rings per player (indices 12-15)
+    victory_threshold = 3 if num_players == 2 else (2 if num_players <= 3 else 1)
+    elimination_threshold = 12
+
     for p in range(1, min(num_players + 1, 5)):
         rotated = _rotate_player_perspective(p, player_number, num_players)
         player_data = state.players[p - 1] if hasattr(state, 'players') and p <= len(state.players) else None
         eliminated = getattr(player_data, 'eliminated_rings', 0) if player_data else 0
+        territory_count = getattr(player_data, 'territory_spaces', 0) if player_data else 0
+
         global_features[12 + rotated - 1] = min(eliminated / 5.0, 1.0)
 
-    # Territory count per player (4 values, normalized by victory threshold)
-    victory_threshold = 3 if num_players == 2 else (2 if num_players <= 3 else 1)
-    for p in range(1, min(num_players + 1, 5)):
-        rotated = _rotate_player_perspective(p, player_number, num_players)
-        player_data = state.players[p - 1] if hasattr(state, 'players') and p <= len(state.players) else None
-        territory_count = getattr(player_data, 'territory_spaces', 0) if player_data else 0
+        # Territory count (indices 16-19)
         global_features[16 + rotated - 1] = min(territory_count / (victory_threshold * 2), 1.0)
+
+        # Victory proximity (indices 20-23) [V3]
+        territory_progress = territory_count / victory_threshold if victory_threshold > 0 else 0
+        elim_progress = eliminated / elimination_threshold
+        victory_prox = max(territory_progress, elim_progress)
+        global_features[20 + rotated - 1] = min(victory_prox, 1.0)
+
+        # Ring supply ratio (indices 27-30) [V3]
+        rings_in_hand = getattr(player_data, 'rings_in_hand', 0) if player_data else 0
+        if total_rings_remaining > 0:
+            global_features[27 + rotated - 1] = rings_in_hand / total_rings_remaining
+
+    # Board occupancy (index 24) [V3]
+    global_features[24] = len(stacks_by_pos) / num_positions
+
+    # Marker density (index 25) [V3]
+    global_features[25] = marker_count / num_positions
+
+    # Turn number normalized (index 26) [V3]
+    turn_count = getattr(state, 'turn_count', 0) or getattr(state, 'move_count', 0) or 0
+    global_features[26] = min(turn_count / 100.0, 1.0)
+
+    # Index 31: Reserved for future use
 
     # Concatenate spatial and global features
     return np.concatenate([features, global_features])
