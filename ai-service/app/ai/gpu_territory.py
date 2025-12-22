@@ -191,69 +191,6 @@ def _find_all_regions(
     return regions
 
 
-def _find_regions_with_border_color(
-    state: BatchGameState,
-    game_idx: int,
-    border_player: int,
-) -> list[set[tuple[int, int]]]:
-    """Find regions where a specific player's markers act as borders.
-
-    December 2025: Added to match CPU semantics for territory detection.
-    CPU considers single-color marker borders when finding disconnected regions.
-    This function treats markers of border_player as barriers during flood fill,
-    similar to collapsed cells.
-
-    Args:
-        state: BatchGameState
-        game_idx: Game index
-        border_player: Player whose markers act as borders
-
-    Returns:
-        List of regions separated by border_player's markers (and collapsed cells)
-    """
-    board_size = state.board_size
-    g = game_idx
-    is_hex = _is_hex_board(board_size)
-
-    is_collapsed_np = state.is_collapsed[g].cpu().numpy()
-    marker_owner_np = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
-
-    # Non-traversable cells: collapsed OR markers of border_player
-    visited = np.zeros((board_size, board_size), dtype=np.bool_)
-    for y in range(board_size):
-        for x in range(board_size):
-            if is_collapsed_np[y, x]:
-                visited[y, x] = True
-            elif marker_owner_np is not None and marker_owner_np[y, x] == border_player:
-                visited[y, x] = True
-
-    regions = []
-
-    for start_y in range(board_size):
-        for start_x in range(board_size):
-            if visited[start_y, start_x]:
-                continue
-
-            # BFS flood fill
-            region = set()
-            queue = deque([(start_y, start_x)])
-            visited[start_y, start_x] = True
-
-            while queue:
-                y, x = queue.popleft()
-                region.add((y, x))
-
-                for ny, nx in _get_neighbors(y, x, board_size, is_hex):
-                    if not visited[ny, nx]:
-                        visited[ny, nx] = True
-                        queue.append((ny, nx))
-
-            if region:
-                regions.append(region)
-
-    return regions
-
-
 def _is_physically_disconnected(
     state: BatchGameState,
     game_idx: int,
@@ -475,40 +412,10 @@ def compute_territory_batch(
         # R140: Find all maximal regions of non-collapsed cells
         all_regions = _find_all_regions(state, g)
 
-        # December 2025: Also find regions using marker borders (CPU parity fix)
-        # CPU considers single-color marker borders when finding disconnected regions.
-        # If collapsed cells alone don't divide the board, try each player's markers as borders.
+        # If only one region, no territory processing possible
+        # (entire non-collapsed board is connected)
         if len(all_regions) <= 1:
-            # Find active players (those with stacks)
-            stack_owner_np_check = state.stack_owner[g].cpu().numpy()
-            active_players_check = set()
-            for y in range(board_size):
-                for x in range(board_size):
-                    owner = stack_owner_np_check[y, x]
-                    if owner > 0:
-                        active_players_check.add(int(owner))
-
-            # Try each player as a potential border color
-            marker_border_regions = []
-            for border_player in range(1, state.num_players + 1):
-                regions_with_border = _find_regions_with_border_color(state, g, border_player)
-                for region in regions_with_border:
-                    # Check color-disconnection: region must be missing at least one active player
-                    players_in_region = set()
-                    for y, x in region:
-                        owner = stack_owner_np_check[y, x]
-                        if owner > 0:
-                            players_in_region.add(int(owner))
-                    if players_in_region < active_players_check:
-                        # This region is color-disconnected
-                        marker_border_regions.append((region, border_player))
-
-            if marker_border_regions:
-                # Use marker border regions instead
-                all_regions = [r for r, _ in marker_border_regions]
-            else:
-                # No disconnected regions found
-                continue
+            continue
 
         # Pre-extract game arrays as numpy to avoid .item() calls in loops
         # (Optimized 2025-12-13)

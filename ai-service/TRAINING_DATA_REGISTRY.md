@@ -107,20 +107,7 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 
 ### Gate Notes (2025-12-07)
 
-- 2025-12-22 **HEX-PARITY-02 RESOLVED**: ANM state divergence fixed by recent commits:
-  - `e4472d9d` - `fix(parity): only set pendingLineRewardElimination when player has stacks`
-  - `ec6e07ed` - `fix(parity): derive territory elimination context for ANM check`
-  - `68928736` - `fix(legacy): add phase coercion for line→territory parity issues`
-
-  **Verification Results (`canonical_hexagonal_2p.db`, 34 games):**
-  - `passed_canonical_parity_gate: true` ✅
-  - 0 semantic divergences
-  - 1 end-of-game edge case (current_player at game_over, non-blocking)
-
-  **Status: READY FOR REGENERATION.** Fresh hexagonal data can now be generated with parity
-  validation. The old 300-game database should be regenerated to create canonical training data.
-
-- 2025-12-21 Fresh Hexagonal Regeneration (300 games) [SUPERSEDED]: Regenerated `canonical_hexagonal.db` with
+- 2025-12-21 Fresh Hexagonal Regeneration (300 games): Regenerated `canonical_hexagonal.db` with
   300 games using `run_self_play_soak.py --engine-mode random-only`. All 300 games recorded
   successfully with 0 invariant violations.
 
@@ -131,8 +118,8 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 
   **Primary Divergence Pattern (98 games):** ANM state mismatch in `territory_processing` phase.
   Python reports `is_anm: true` while TS reports `is_anm: false`. State hashes match, confirming
-  game logic is correct but ANM tracking differs. ~~This indicates HEX-PARITY-02 (ANM state
-  divergence) is **NOT resolved** contrary to the initial assessment.~~ **FIXED in commits above.**
+  game logic is correct but ANM tracking differs. This indicates HEX-PARITY-02 (ANM state
+  divergence) is **NOT resolved** contrary to the initial assessment.
 
   **Secondary Issues (6 games):** Full state divergence with `current_player`, `current_phase`,
   and `state_hash` mismatches. Python shows `ring_placement` phase while TS shows
@@ -142,7 +129,8 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
   - `de0d9a9d-492a-496a-860a-48cdf38e9199`: `continue_capture_segment` in `forced_elimination` phase
   - `c5759dbb-710e-4723-8d64-43a70be38400`: `move_stack` with "No stack at origin" error
 
-  **Status: ~~PARITY BLOCKED~~ SUPERSEDED.** See 2025-12-22 entry above.
+  **Status: PARITY BLOCKED.** Cannot mark as canonical until ANM parity bugs are fixed.
+  The 300 games are recorded but not usable for canonical training.
 
 - 2025-12-21 (earlier) Post HEX-PARITY-01 Fix Regeneration: Successfully regenerated `canonical_hexagonal.db`
   after the HEX-PARITY-01 fix was applied to `phase_machine.py:138`. The fix modified
