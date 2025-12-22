@@ -87,7 +87,7 @@ class PolicyOnlyAI(BaseAI):
         # Load neural network
         self.neural_net: NeuralNetAI | None = None
         try:
-            self.neural_net = NeuralNetAI(player_number, config)
+            self.neural_net = NeuralNetAI(player_number, config, board_type=self.board_type)
             logger.info(
                 f"PolicyOnlyAI(player={player_number}): loaded neural network "
                 f"(model={config.nn_model_id}, temp={self.temperature})"
