@@ -243,6 +243,7 @@ def check_promotion_threshold(
     *,
     min_configs: int = 9,
     allow_partial: bool = False,
+    max_gap: float = 50.0,
 ) -> dict[str, object]:
     """Check if model meets promotion threshold across all configurations.
 
@@ -250,7 +251,8 @@ def check_promotion_threshold(
         config_elos: Mapping from config key to Elo estimate.
         target_elo: Target Elo threshold (e.g., 2000).
         min_configs: Minimum number of configs required for promotion.
-        allow_partial: If True, allow promotion if weakest config is within 50 Elo.
+        allow_partial: If True, allow promotion if weakest config is within max_gap Elo.
+        max_gap: Maximum Elo gap allowed for partial promotion (default 50).
 
     Returns:
         Dictionary with promotion decision:
@@ -290,11 +292,11 @@ def check_promotion_threshold(
             "gap_to_threshold": 0.0,
         }
 
-    # Check partial promotion
-    if allow_partial and min_gap <= 50:
+    # Check partial promotion with configurable gap
+    if allow_partial and min_gap <= max_gap:
         return {
             "eligible": True,
-            "reason": f"Partial promotion: {len(above)} configs above, weakest within 50 Elo",
+            "reason": f"Partial promotion: {len(above)} configs above, weakest within {max_gap:.0f} Elo",
             "configs_above_threshold": len(above),
             "configs_below_threshold": below,
             "gap_to_threshold": round(min_gap, 1),
@@ -306,5 +308,80 @@ def check_promotion_threshold(
         "configs_above_threshold": len(above),
         "configs_below_threshold": below,
         "gap_to_threshold": round(min_gap, 1),
+    }
+
+
+def check_promotion_threshold_strict(
+    config_elos: dict[str, float],
+    target_elo: float = 2000.0,
+    *,
+    min_configs: int = 12,
+    max_elo_gap: float = 25.0,
+) -> dict[str, object]:
+    """Strict promotion check: ALL configs must meet threshold.
+
+    This is the recommended gate for 2000+ Elo tier promotion.
+    Ensures balanced strength across all 12 board/player configurations.
+
+    Args:
+        config_elos: Mapping from config key to Elo estimate.
+        target_elo: Target Elo threshold (default 2000).
+        min_configs: Minimum configs required (default 12 for all configs).
+        max_elo_gap: Maximum acceptable gap below threshold (default 25 Elo).
+
+    Returns:
+        Dictionary with promotion decision including detailed analysis.
+    """
+    if len(config_elos) < min_configs:
+        return {
+            "eligible": False,
+            "reason": f"Missing configs: {len(config_elos)}/{min_configs}",
+            "configs_evaluated": len(config_elos),
+            "configs_required": min_configs,
+            "gap_analysis": None,
+        }
+
+    below_threshold = []
+    max_gap = 0.0
+
+    for cfg, elo in config_elos.items():
+        gap = target_elo - elo
+        if gap > 0:
+            below_threshold.append((cfg, round(gap, 1)))
+            max_gap = max(max_gap, gap)
+
+    # Sort by gap (worst first)
+    below_threshold.sort(key=lambda x: x[1], reverse=True)
+
+    if not below_threshold:
+        return {
+            "eligible": True,
+            "reason": f"All {len(config_elos)} configs exceed {target_elo:.0f} Elo",
+            "configs_evaluated": len(config_elos),
+            "configs_required": min_configs,
+            "gap_analysis": {"max_gap": 0.0, "configs_below": []},
+        }
+
+    if max_gap > max_elo_gap:
+        return {
+            "eligible": False,
+            "reason": f"Weakest config gap: {max_gap:.0f} Elo (limit: {max_elo_gap:.0f})",
+            "configs_evaluated": len(config_elos),
+            "configs_required": min_configs,
+            "gap_analysis": {
+                "max_gap": round(max_gap, 1),
+                "configs_below": below_threshold,
+            },
+        }
+
+    return {
+        "eligible": True,
+        "reason": f"All configs within {max_elo_gap:.0f} Elo of threshold",
+        "configs_evaluated": len(config_elos),
+        "configs_required": min_configs,
+        "gap_analysis": {
+            "max_gap": round(max_gap, 1),
+            "configs_below": below_threshold,
+        },
     }
 

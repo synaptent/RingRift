@@ -56,6 +56,7 @@ EVENT_FEEDBACK_SIGNAL = "feedback_signal"
 EVENT_PARITY_VALIDATION_COMPLETE = "parity_validation_complete"
 EVENT_ELO_UPDATED = "elo_updated"
 EVENT_REGISTRY_SYNC_NEEDED = "registry_sync_needed"
+EVENT_CURRICULUM_UPDATED = "curriculum_updated"
 
 
 # =============================================================================
@@ -412,6 +413,67 @@ def wire_sync_manager_events() -> None:
     subscribe(EVENT_ELO_UPDATED, on_elo_updated_sync)
 
     logger.info("[IntegrationBridge] Sync managers wired successfully")
+
+
+# =============================================================================
+# Evaluation Curriculum Bridge (December 2025)
+# =============================================================================
+
+
+def wire_evaluation_curriculum_bridge() -> bool:
+    """Wire evaluation results to curriculum weight adjustments.
+
+    Connects evaluation completion events to the EvaluationCurriculumBridge,
+    which adjusts selfplay config weights based on performance trends.
+
+    Returns:
+        True if wiring successful, False otherwise
+    """
+    try:
+        from app.integration.evaluation_curriculum_bridge import (
+            EvaluationCurriculumBridge,
+        )
+
+        bridge = EvaluationCurriculumBridge()
+
+        def on_evaluation_complete(event: RouterEvent) -> None:
+            if not isinstance(event.payload, dict):
+                return
+
+            config_key = event.payload.get("config_key")
+            metrics = event.payload.get("metrics", {})
+            elo = metrics.get("elo")
+            win_rate = metrics.get("win_rate")
+
+            if config_key and (elo is not None or win_rate is not None):
+                # Update curriculum with evaluation results
+                bridge.on_evaluation_result(
+                    config_key=config_key,
+                    elo=elo,
+                    win_rate=win_rate,
+                )
+                # Emit curriculum update event
+                curriculum_weights = bridge.get_curriculum_weights()
+                publish_sync(RouterEvent(
+                    event_type=EVENT_CURRICULUM_UPDATED,
+                    payload={
+                        "config_key": config_key,
+                        "weights": curriculum_weights,
+                        "trigger": "evaluation_complete",
+                    },
+                    source="integration_bridge",
+                ))
+
+        subscribe(EVENT_EVALUATION_COMPLETE, on_evaluation_complete)
+        logger.info("[IntegrationBridge] Evaluation curriculum bridge wired successfully")
+        return True
+
+    except ImportError as e:
+        logger.debug(f"[IntegrationBridge] EvaluationCurriculumBridge not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[IntegrationBridge] Error wiring evaluation bridge: {e}")
+        return False
 
 
 # =============================================================================

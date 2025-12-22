@@ -2755,10 +2755,21 @@ def train_model(
                         policy_targets,
                     )
 
+                    # Entropy regularization to prevent policy collapse
+                    # H(p) = -sum(p * log(p)); higher entropy = more exploration
+                    # We add -entropy_weight * H to encourage exploration
+                    entropy_bonus = torch.tensor(0.0, device=device)
+                    if config.entropy_weight > 0:
+                        policy_probs = policy_log_probs.exp()
+                        # Entropy: -sum(p * log(p)), clamping log for numerical stability
+                        policy_entropy = -(policy_probs * policy_log_probs.clamp(min=-20)).sum(dim=1).mean()
+                        # Subtract entropy (maximize entropy = minimize negative entropy)
+                        entropy_bonus = -config.entropy_weight * policy_entropy
+
                     # Collect individual losses for gradient surgery
                     task_losses: dict[str, torch.Tensor] = {
                         "value": value_loss,
-                        "policy": config.policy_weight * policy_loss,
+                        "policy": config.policy_weight * policy_loss + entropy_bonus,
                     }
 
                     # Rank distribution loss (V3+ multi-player head)

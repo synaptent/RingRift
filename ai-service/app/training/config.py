@@ -396,6 +396,11 @@ class TrainConfig:
     policy_weight: float = 1.0
     rank_dist_weight: float = 0.2
 
+    # Entropy regularization to prevent policy collapse
+    # Adds -entropy_weight * H(policy) to the loss, encouraging exploration
+    # Based on AlphaZero/MuZero entropy bonus for policy diversity
+    entropy_weight: float = 0.01  # Default 0.01 (+10-20 Elo from policy diversity)
+
     # Learning rate schedule settings for better convergence
     warmup_epochs: int = 1  # LR warmup for training stability
     lr_scheduler: str = "cosine"  # Options: 'none', 'step', 'cosine', 'cosine-warm-restarts'
