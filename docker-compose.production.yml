@@ -1,0 +1,407 @@
+# =============================================================================
+# RingRift Production Deployment
+# =============================================================================
+#
+# This is the PRODUCTION docker-compose configuration. It differs from staging:
+#
+# - NO default passwords or secrets (will fail if not provided)
+# - SSL/TLS enforced
+# - Resource limits tuned for production workloads
+# - Logging configured for production aggregation
+# - Health checks more aggressive
+#
+# PREREQUISITES:
+# 1. Copy .env.production.example to .env.production
+# 2. Generate all secrets (see docs/runbooks/DEPLOYMENT_INITIAL.md)
+# 3. Obtain SSL certificates
+# 4. Configure DNS
+#
+# USAGE:
+#   docker compose -f docker-compose.production.yml --env-file .env.production up -d
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Node.js API Server
+  # ===========================================================================
+  app:
+    image: ${DOCKER_REGISTRY:-ghcr.io/an0mium}/ringrift:${VERSION:-latest}
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SOCKET_PORT=3001
+      # Database - NO DEFAULTS (will fail if not set)
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - REDIS_URL=${REDIS_URL:?REDIS_URL is required}
+      - AI_SERVICE_URL=http://ai-service:8001
+      # Auth - NO DEFAULTS (will fail if not set)
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-15m}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      # CORS - Must be explicitly configured
+      - CORS_ORIGIN=${CORS_ORIGIN:?CORS_ORIGIN is required}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=json
+      # Application mode
+      - RINGRIFT_RULES_MODE=ts
+      - RINGRIFT_APP_TOPOLOGY=single
+      - ORCHESTRATOR_ADAPTER_ENABLED=true
+      - ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED=true
+      - ORCHESTRATOR_ERROR_THRESHOLD_PERCENT=5
+      - ORCHESTRATOR_ERROR_WINDOW_SECONDS=300
+      - ORCHESTRATOR_LATENCY_THRESHOLD_MS=500
+      # Rate limits (production values)
+      - RATE_LIMIT_API_POINTS=${RATE_LIMIT_API_POINTS:-1000}
+      - RATE_LIMIT_AUTH_POINTS=${RATE_LIMIT_AUTH_POINTS:-100}
+      - RATE_LIMIT_AUTH_LOGIN_POINTS=${RATE_LIMIT_AUTH_LOGIN_POINTS:-10}
+      - RATE_LIMIT_AUTH_REGISTER_POINTS=${RATE_LIMIT_AUTH_REGISTER_POINTS:-5}
+      - RATE_LIMIT_GAME_POINTS=${RATE_LIMIT_GAME_POINTS:-500}
+      - RATE_LIMIT_GAME_CREATE_USER_POINTS=${RATE_LIMIT_GAME_CREATE_USER_POINTS:-10}
+      - RATE_LIMIT_GAME_CREATE_IP_POINTS=${RATE_LIMIT_GAME_CREATE_IP_POINTS:-20}
+      # Capacity
+      - MAX_CONCURRENT_GAMES=${MAX_CONCURRENT_GAMES:-150}
+      - MAX_CONCURRENT_CONNECTIONS=${MAX_CONCURRENT_CONNECTIONS:-500}
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/server/server/index.js"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    volumes:
+      - app_uploads:/app/uploads
+      - app_logs:/app/logs
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - production-network
+    logging:
+      driver: json-file
+      options:
+        max-size: '50m'
+        max-file: '10'
+
+  # ===========================================================================
+  # Nginx Reverse Proxy with SSL
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx.production.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - app
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost/health']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - production-network
+    logging:
+      driver: json-file
+      options:
+        max-size: '100m'
+        max-file: '10'
+
+  # ===========================================================================
+  # PostgreSQL
+  # ===========================================================================
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ringrift}
+      POSTGRES_USER: ${POSTGRES_USER:-ringrift}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --lc-collate=en_US.utf8 --lc-ctype=en_US.utf8'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    # NOT exposing port externally in production
+    # Use SSH tunnel or VPN for admin access
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    command: >
+      postgres
+        -c max_connections=300
+        -c shared_buffers=1GB
+        -c effective_cache_size=3GB
+        -c maintenance_work_mem=256MB
+        -c work_mem=32MB
+        -c wal_buffers=64MB
+        -c checkpoint_completion_target=0.9
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c min_wal_size=2GB
+        -c max_wal_size=8GB
+        -c log_min_duration_statement=1000
+        -c log_statement=none
+        -c log_checkpoints=on
+        -c log_lock_waits=on
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ringrift} -d ${POSTGRES_DB:-ringrift}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - production-network
+    logging:
+      driver: json-file
+      options:
+        max-size: '50m'
+        max-file: '5'
+
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --appendfsync everysec
+        --save 900 1
+        --save 300 10
+        --save 60 10000
+        --tcp-keepalive 300
+        --timeout 0
+        --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    # NOT exposing port externally in production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - production-network
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '3'
+
+  # ===========================================================================
+  # AI Service
+  # ===========================================================================
+  ai-service:
+    image: ${DOCKER_REGISTRY:-ghcr.io/an0mium}/ringrift-ai:${VERSION:-latest}
+    environment:
+      - PYTHON_ENV=production
+      - LOG_LEVEL=${AI_LOG_LEVEL:-INFO}
+      - AI_SERVICE_PORT=8001
+      - RINGRIFT_TRAINED_HEURISTIC_PROFILES=/app/data/trained_heuristic_profiles.json
+      - AI_MAX_CONCURRENT_REQUESTS=${AI_MAX_CONCURRENT_REQUESTS:-100}
+      - AI_REQUEST_TIMEOUT=${AI_REQUEST_TIMEOUT:-10000}
+    volumes:
+      - ./ai-service/models:/app/models:ro
+      - ./ai-service/data:/app/data:ro
+      - ai_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import httpx; resp = httpx.get('http://localhost:8001/health', timeout=2.0); raise SystemExit(0 if resp.status_code == 200 else 1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - production-network
+    logging:
+      driver: json-file
+      options:
+        max-size: '50m'
+        max-file: '10'
+
+  # ===========================================================================
+  # Monitoring Stack
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./monitoring/prometheus/alerting-rules.yaml:/etc/prometheus/alerting-rules.yaml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - app
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    networks:
+      - production-network
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '3'
+
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    networks:
+      - production-network
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    ports:
+      - '3002:3000'
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:?GRAFANA_ROOT_URL is required}
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - production-network
+
+# =============================================================================
+# Volumes (persistent data)
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  grafana_data:
+    driver: local
+  app_uploads:
+    driver: local
+  app_logs:
+    driver: local
+  ai_logs:
+    driver: local
+  nginx_cache:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  production-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
