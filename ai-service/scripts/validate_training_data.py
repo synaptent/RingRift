@@ -121,8 +121,16 @@ def validate_sqlite_db(db_path: str, fix: bool = False) -> ValidationStats:
             is_valid = True
 
             # Check completion status
+            # Valid statuses for training:
+            # - "completed": naturally finished game
+            # - "max_moves": hit move limit (still has valid data, just no natural winner)
+            # Invalid statuses:
+            # - "active": game still in progress (incomplete)
+            # - "timeout": wall-clock timeout (may be incomplete)
+            # - "abandoned": explicitly abandoned
+            VALID_STATUSES = {'completed', 'max_moves'}
             game_status = game['game_status'] if 'game_status' in columns else None
-            if game_status != 'completed':
+            if game_status not in VALID_STATUSES:
                 stats.not_completed += 1
                 is_valid = False
 
@@ -288,8 +296,10 @@ def validate_jsonl_file(jsonl_path: str, fix: bool = False) -> ValidationStats:
                     continue
 
                 # Check game status
+                # Valid statuses: "completed" (natural end) or "max_moves" (hit limit)
+                VALID_STATUSES = {'completed', 'max_moves'}
                 game_status = record.get('game_status') or record.get('status')
-                if game_status != 'completed':
+                if game_status not in VALID_STATUSES:
                     stats.not_completed += 1
                     is_valid = False
 

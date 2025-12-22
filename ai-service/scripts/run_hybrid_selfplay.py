@@ -1079,13 +1079,18 @@ def run_hybrid_selfplay(
                 stalemate_by_tiebreaker[stalemate_tiebreaker] = stalemate_by_tiebreaker.get(stalemate_tiebreaker, 0) + 1
 
             # Derive effective game status for training data validity
-            # If game hit max_moves or timed out, status is still "active" in game_state
-            # but should be marked as "completed" for training (with victory_type indicating reason)
+            # Games that exit with status "active" need a distinct status based on why they ended
             effective_status = game_state.game_status
             if effective_status == "active":
-                # Game exited loop without natural completion - mark as completed
-                # The victory_type (timeout, stalemate) indicates why
-                effective_status = "completed"
+                if game_timed_out:
+                    # Wall-clock timeout - game was forcibly stopped
+                    effective_status = "timeout"
+                elif victory_type == "timeout":
+                    # Hit max_moves limit without natural conclusion
+                    effective_status = "max_moves"
+                else:
+                    # Other non-natural endings (stalemate resolved by tiebreaker, etc.)
+                    effective_status = "completed"
 
             record = {
                 # === Core game identifiers ===
