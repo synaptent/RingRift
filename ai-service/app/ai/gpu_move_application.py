@@ -89,6 +89,7 @@ def apply_capture_moves_vectorized(
         # Get attacker stack info at origin.
         attacker_height = int(state.stack_height[g, from_y, from_x].item())
         attacker_cap_height = int(state.cap_height[g, from_y, from_x].item())
+        attacker_ring_under = int(state.ring_under_cap[g, from_y, from_x].item())
 
         # Capture move representation:
         # - (from -> landing) is stored in BatchMoves
@@ -222,7 +223,12 @@ def apply_capture_moves_vectorized(
         if target_owner != 0 and target_owner != player:
             state.buried_rings[g, target_owner] += 1
             # December 2025: Track buried ring count at position for recovery extraction
-            state.buried_at[g, target_owner, to_y, to_x] += 1
+            # BUG FIX (2025-12-22): Only add to buried_at if the attacker ALREADY HAS a
+            # ring_under_cap. When attacker_ring_under == 0, the captured ring BECOMES
+            # the new ring_under_cap (not buried). When attacker_ring_under > 0, the
+            # captured ring goes UNDER the existing ring_under_cap (buried).
+            if attacker_ring_under > 0:
+                state.buried_at[g, target_owner, to_y, to_x] += 1
 
         # Move attacker to landing and apply net height change:
         # +1 captured ring (to bottom) - landing marker elimination cost.
@@ -1718,12 +1724,19 @@ def apply_capture_moves_batch_vectorized(
             accumulate=True
         )
         # Track buried ring count at landing (December 2025 - recovery fix)
-        # The captured ring goes under the attacker's stack at the landing position
-        tnz_games = game_indices[target_owner_nonzero]
-        tnz_owners = defender_owner[target_owner_nonzero].long()
-        tnz_to_y = to_y[target_owner_nonzero]
-        tnz_to_x = to_x[target_owner_nonzero]
-        state.buried_at[tnz_games, tnz_owners, tnz_to_y, tnz_to_x] += 1
+        # The captured ring goes under the attacker's stack at the landing position.
+        # BUG FIX (2025-12-22): Only add to buried_at if the attacker ALREADY HAS a
+        # ring_under_cap. When attacker_ring_under == 0, the captured ring BECOMES
+        # the new ring_under_cap (not buried). When attacker_ring_under > 0, the
+        # captured ring goes UNDER the existing ring_under_cap (buried).
+        attacker_has_ruc = attacker_ring_under > 0
+        should_bury = target_owner_nonzero & attacker_has_ruc
+        if should_bury.any():
+            tnz_games = game_indices[should_bury]
+            tnz_owners = defender_owner[should_bury].long()
+            tnz_to_y = to_y[should_bury]
+            tnz_to_x = to_x[should_bury]
+            state.buried_at[tnz_games, tnz_owners, tnz_to_y, tnz_to_x] += 1
 
     # If target stack is eliminated, clear any buried_at at target position
     # (those buried rings are also eliminated when the stack is destroyed)

@@ -1555,6 +1555,8 @@ def apply_single_chain_capture(
     # - The target stack is implicit as the first stack along the ray
     attacker_height = int(stack_height_np[from_y, from_x])
     attacker_cap_height = int(cap_height_np[from_y, from_x])
+    # BUG FIX (2025-12-22): Extract attacker_ring_under early for buried_at logic
+    attacker_ring_under_early = int(state.ring_under_cap[game_idx, from_y, from_x].item())
 
     dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
     dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
@@ -1702,7 +1704,12 @@ def apply_single_chain_capture(
     if target_owner != 0 and target_owner != player:
         state.buried_rings[game_idx, target_owner] += 1
         # December 2025: Track buried ring position for recovery extraction
-        state.buried_at[game_idx, target_owner, to_y, to_x] += 1
+        # BUG FIX (2025-12-22): Only add to buried_at if the attacker already has a
+        # ring_under_cap. When attacker_ring_under_early == 0, the captured ring
+        # BECOMES the new ring_under_cap (not buried). When attacker_ring_under_early > 0,
+        # the captured ring goes UNDER the existing ring_under_cap (buried).
+        if attacker_ring_under_early > 0:
+            state.buried_at[game_idx, target_owner, to_y, to_x] += 1
 
     # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,
     # ownership transfers to the target's original owner.
@@ -1829,6 +1836,8 @@ def apply_single_initial_capture(
 
     attacker_height = int(stack_height_np[from_y, from_x])
     attacker_cap_height = int(cap_height_np[from_y, from_x])
+    # BUG FIX (2025-12-22): Extract attacker_ring_under early for buried_at logic
+    attacker_ring_under_early = int(state.ring_under_cap[game_idx, from_y, from_x].item())
 
     dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
     dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
@@ -1952,7 +1961,12 @@ def apply_single_initial_capture(
     if target_owner != 0 and target_owner != player:
         state.buried_rings[game_idx, target_owner] += 1
         # December 2025: Track buried ring position for recovery extraction
-        state.buried_at[game_idx, target_owner, to_y, to_x] += 1
+        # BUG FIX (2025-12-22): Only add to buried_at if the attacker already has a
+        # ring_under_cap. When attacker_ring_under_early == 0, the captured ring
+        # BECOMES the new ring_under_cap (not buried). When attacker_ring_under_early > 0,
+        # the captured ring goes UNDER the existing ring_under_cap (buried).
+        if attacker_ring_under_early > 0:
+            state.buried_at[game_idx, target_owner, to_y, to_x] += 1
 
     # Set up landing stack
     # December 2025: BUG FIX - When landing marker eliminates the attacker's entire cap,

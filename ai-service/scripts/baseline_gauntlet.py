@@ -85,80 +85,106 @@ def run_game(ai1: "BaseAI", ai2: "BaseAI", board_type: BoardType, num_players: i
     return None
 
 
-def create_ai_from_model(model: dict[str, Any], player: int) -> "BaseAI":
+def create_ai_from_model(
+    model: dict[str, Any],
+    player: int,
+    board_type: BoardType = BoardType.SQUARE8,
+    num_players: int = 2,
+) -> "BaseAI":
     """Create AI instance from model dictionary.
 
     Args:
         model: Model dict with 'path', 'name', 'type' keys
         player: Player number (1-based)
+        board_type: Board type for the game
+        num_players: Number of players
 
     Returns:
-        AI instance
+        AI instance with loaded model weights
     """
+    import warnings
+
     model_type = model.get("type", "nn").lower()
     model_path = Path(model.get("path", ""))
-    ai_config = AIConfig(difficulty=5)
 
-    if model_type == "nnue":
-        from app.ai.nnue_ai import NNUEAI
-
-        ai = NNUEAI(player, ai_config)
+    # For neural network models (CNN policy networks), use NeuralNetAI
+    if model_type in ("nnue", "nn", "neural"):
         if model_path.exists():
-            ai.load_model(model_path)
-        return ai
+            try:
+                # Suppress deprecation warnings for legacy module
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=DeprecationWarning)
+                    from app.ai._neural_net_legacy import NeuralNetAI
 
-    elif model_type == "nn" or model_type == "neural":
-        # Try NNUE first (preferred), fall back to legacy
-        try:
-            from app.ai.nnue_ai import NNUEAI
+                # Create config with explicit model path
+                ai_config = AIConfig(
+                    difficulty=5,
+                    nn_model_id=str(model_path.resolve()),
+                    board_type=board_type,
+                )
+                ai = NeuralNetAI(
+                    player_number=player,
+                    config=ai_config,
+                    board_type=board_type,
+                )
 
-            ai = NNUEAI(player, ai_config)
-            if model_path.exists():
-                ai.load_model(model_path)
-            return ai
-        except Exception:
-            pass
+                if ai.model is not None:
+                    logger.info(f"Loaded CNN model from {model_path}")
+                    return ai
+                else:
+                    logger.warning(f"Failed to load CNN model from {model_path}")
+            except Exception as e:
+                logger.warning(f"Error loading neural model: {e}")
 
-        # Legacy neural net
-        try:
-            from app.ai.neural_net import NeuralNetAI
-
-            ai = NeuralNetAI(player, ai_config)
-            if model_path.exists():
-                ai.load_model(model_path)
-            return ai
-        except Exception:
-            pass
+        # Fallback to heuristic if model loading failed
+        logger.info("Using HeuristicAI (model load failed or no path)")
+        return HeuristicAI(player, AIConfig(difficulty=5, board_type=board_type))
 
     elif model_type == "mcts":
         from app.ai.mcts_ai import MCTSAI
 
+        ai_config = AIConfig(difficulty=5, board_type=board_type)
         mcts_config = {"simulations": 100}
         return MCTSAI(player, ai_config, mcts_config)
 
     elif model_type == "heuristic":
-        return HeuristicAI(player, ai_config)
+        return HeuristicAI(player, AIConfig(difficulty=5, board_type=board_type))
 
     elif model_type == "random":
-        return RandomAI(player, ai_config)
+        return RandomAI(player, AIConfig(difficulty=1))
 
-    # Default to NNUE
-    try:
-        from app.ai.nnue_ai import NNUEAI
+    # Default: try to load as CNN, fallback to heuristic
+    if model_path.exists():
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                from app.ai._neural_net_legacy import NeuralNetAI
 
-        ai = NNUEAI(player, ai_config)
-        if model_path.exists():
-            ai.load_model(model_path)
-        return ai
-    except Exception:
-        # Fallback to heuristic
-        return HeuristicAI(player, ai_config)
+            ai_config = AIConfig(
+                difficulty=5,
+                nn_model_id=str(model_path.resolve()),
+                board_type=board_type,
+            )
+            ai = NeuralNetAI(
+                player_number=player,
+                config=ai_config,
+                board_type=board_type,
+            )
+
+            if ai.model is not None:
+                logger.info(f"Loaded CNN model from {model_path}")
+                return ai
+        except Exception as e:
+            logger.debug(f"Failed to load as CNN: {e}")
+
+    return HeuristicAI(player, AIConfig(difficulty=5, board_type=board_type))
 
 
 def run_gauntlet_for_model(
     model: dict[str, Any],
     num_games: int = 10,
     board_type: BoardType = BoardType.SQUARE8,
+    num_players: int = 2,
     fast_mode: bool = True,
 ) -> GauntletResult:
     """Run baseline gauntlet evaluation for a model.
@@ -167,16 +193,18 @@ def run_gauntlet_for_model(
         model: Model dict with 'path', 'name', 'type' keys
         num_games: Games per baseline opponent
         board_type: Board type for evaluation
+        num_players: Number of players (default 2)
         fast_mode: If True, use fewer simulations for MCTS opponents
 
     Returns:
         GauntletResult with win rates and composite score
     """
     model_type = model.get("type", "nn")
-    num_players = 2  # Standard 2-player gauntlet
 
-    # Create model AI (as player 1)
-    model_ai = create_ai_from_model(model, player=1)
+    # Create model AI (as player 1) with proper model loading
+    model_ai = create_ai_from_model(
+        model, player=1, board_type=board_type, num_players=num_players
+    )
 
     # Baseline opponents (as player 2)
     random_ai = RandomAI(2, AIConfig(difficulty=1))

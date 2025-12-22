@@ -233,11 +233,13 @@ class GauntletRunner:
 
             board_type = BoardType(model_info.get("board_type", "square8"))
 
+            num_players = model_info.get("num_players", 2)
             logger.info(f"[Gauntlet] Running {self.config.games_per_baseline} games per baseline...")
             result = run_gauntlet_for_model(
                 model=model_dict,
                 num_games=self.config.games_per_baseline,
                 board_type=board_type,
+                num_players=num_players,
                 fast_mode=self.config.fast_mode,
             )
 

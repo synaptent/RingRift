@@ -191,3 +191,4 @@ data/diversity/
 
 # Training data and model checkpoints
 training_data/
+OVERNIGHT_MONITORING.md
