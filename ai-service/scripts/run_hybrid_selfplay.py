@@ -35,6 +35,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +64,11 @@ except ImportError:
 # Disk monitoring thresholds - raised to 85% as of 2025-12-17 (238GB free is plenty)
 DISK_WARNING_THRESHOLD = 75  # Pause selfplay
 DISK_CRITICAL_THRESHOLD = 85  # Abort selfplay
+
+# Timeout handling constants
+DEFAULT_GAME_TIMEOUT = 300  # 5 minutes per game
+DEFAULT_SESSION_TIMEOUT = 14400  # 4 hours for entire session
+HEARTBEAT_INTERVAL = 60  # Log progress every 60 seconds
 
 # =============================================================================
 # Default Heuristic Weights (used when no --weights-file is specified)
@@ -232,6 +238,8 @@ def run_hybrid_selfplay(
     mcts_sims: int = 100,
     nnue_blend: float = 0.5,
     nn_model_id: str | None = None,
+    game_timeout: int = DEFAULT_GAME_TIMEOUT,
+    session_timeout: int = DEFAULT_SESSION_TIMEOUT,
 ) -> dict[str, Any]:
     """Run hybrid GPU-accelerated self-play.
 
@@ -653,44 +661,87 @@ def run_hybrid_selfplay(
 
     logger.info(f"Starting {num_games} games...")
     start_time = time.time()
+    session_deadline = start_time + session_timeout
 
-    with open(games_file, "w") as f:
-        # Acquire exclusive lock to prevent JSONL corruption from concurrent writes
-        try:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logger.error(f"Cannot acquire lock on {games_file} - another process is writing")
-            sys.exit(1)
-        for game_idx in range(num_games):
-            # Check disk space every 10 games
-            if game_idx % 10 == 0:
-                disk_status = check_disk_space(logger, output_dir)
-                if disk_status == "critical":
-                    logger.error(f"Aborting selfplay at game {game_idx} due to critical disk usage")
-                    break
-                elif disk_status == "warning":
-                    logger.warning(f"Disk space low, continuing cautiously at game {game_idx}")
+    # Heartbeat tracking for stuck detection
+    games_completed = 0
+    games_timed_out = 0
+    current_game_start = time.time()
+    heartbeat_stop = threading.Event()
 
-            game_start = time.time()
-
-            # Create initial state
-            game_state = create_initial_state(
-                board_type=board_type_enum,
-                num_players=num_players,
+    def heartbeat_thread():
+        """Log progress periodically to detect stuck sessions."""
+        while not heartbeat_stop.is_set():
+            heartbeat_stop.wait(HEARTBEAT_INTERVAL)
+            if heartbeat_stop.is_set():
+                break
+            elapsed = time.time() - start_time
+            game_elapsed = time.time() - current_game_start
+            remaining_session = session_deadline - time.time()
+            logger.info(
+                f"[Heartbeat] Session running for {elapsed:.0f}s, "
+                f"{games_completed}/{num_games} games done, "
+                f"current game: {game_elapsed:.0f}s, "
+                f"session timeout in {remaining_session:.0f}s"
             )
-            initial_state_for_db = game_state
-            # Capture initial state for training data export (required for NPZ conversion)
-            initial_state_snapshot = game_state.model_dump(mode="json")
+            if game_elapsed > game_timeout:
+                logger.warning(f"Current game taking {game_elapsed:.0f}s (timeout: {game_timeout}s)")
 
-            moves_played = []
-            moves_for_db = []
-            move_count = 0
+    heartbeat = threading.Thread(target=heartbeat_thread, daemon=True)
+    heartbeat.start()
 
-            while game_state.game_status == "active" and move_count < max_moves:
-                current_player = game_state.current_player
-                mcts_policy_dist = None  # Reset for each move; populated if MCTS mode is used
+    try:
+        with open(games_file, "w") as f:
+            # Acquire exclusive lock to prevent JSONL corruption from concurrent writes
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                logger.error(f"Cannot acquire lock on {games_file} - another process is writing")
+                sys.exit(1)
+            for game_idx in range(num_games):
+                # Check session timeout
+                if time.time() > session_deadline:
+                    logger.error(f"Session timeout ({session_timeout}s) exceeded at game {game_idx}")
+                    break
 
-                # Get valid moves (CPU - full rules)
+                # Check disk space every 10 games
+                if game_idx % 10 == 0:
+                    disk_status = check_disk_space(logger, output_dir)
+                    if disk_status == "critical":
+                        logger.error(f"Aborting selfplay at game {game_idx} due to critical disk usage")
+                        break
+                    elif disk_status == "warning":
+                        logger.warning(f"Disk space low, continuing cautiously at game {game_idx}")
+
+                game_start = time.time()
+                current_game_start = game_start  # Update for heartbeat tracking
+
+                # Create initial state
+                game_state = create_initial_state(
+                    board_type=board_type_enum,
+                    num_players=num_players,
+                )
+                initial_state_for_db = game_state
+                # Capture initial state for training data export (required for NPZ conversion)
+                initial_state_snapshot = game_state.model_dump(mode="json")
+
+                moves_played = []
+                moves_for_db = []
+                move_count = 0
+                game_timed_out = False
+
+                while game_state.game_status == "active" and move_count < max_moves:
+                    # Check game timeout
+                    if time.time() - game_start > game_timeout:
+                        logger.warning(f"Game {game_idx} timed out after {game_timeout}s, aborting")
+                        game_timed_out = True
+                        games_timed_out += 1
+                        break
+
+                    current_player = game_state.current_player
+                    mcts_policy_dist = None  # Reset for each move; populated if MCTS mode is used
+
+                    # Get valid moves (CPU - full rules)
                 valid_moves = GameEngine.get_valid_moves(
                     game_state, current_player
                 )
@@ -1104,6 +1155,13 @@ def run_hybrid_selfplay(
                     f"{games_per_sec:.2f} g/s, ETA: {eta:.0f}s"
                 )
 
+                # Update games completed for heartbeat
+                games_completed = game_idx + 1
+
+    finally:
+        heartbeat_stop.set()
+        heartbeat.join(timeout=2)
+
     total_elapsed = time.time() - start_time
 
     # Get evaluator stats
@@ -1363,6 +1421,20 @@ def main():
     parser.add_argument("--ram-storage", action="store_true", help="Use ramdrive storage")
     parser.add_argument("--sync-target", type=str, help="Target directory for ramdrive sync")
 
+    # Timeout handling
+    parser.add_argument(
+        "--game-timeout",
+        type=int,
+        default=DEFAULT_GAME_TIMEOUT,
+        help=f"Timeout per game in seconds (default: {DEFAULT_GAME_TIMEOUT})",
+    )
+    parser.add_argument(
+        "--session-timeout",
+        type=int,
+        default=DEFAULT_SESSION_TIMEOUT,
+        help=f"Timeout for entire session in seconds (default: {DEFAULT_SESSION_TIMEOUT})",
+    )
+
     parsed = parser.parse_args()
 
     # Create SelfplayConfig from parsed args
@@ -1578,6 +1650,8 @@ def main():
                 mcts_sims=args.mcts_sims,
                 nnue_blend=args.nnue_blend,
                 nn_model_id=args.nn_model_id,
+                game_timeout=args.game_timeout,
+                session_timeout=args.session_timeout,
             )
         finally:
             # Stop ramdrive syncer and perform final sync

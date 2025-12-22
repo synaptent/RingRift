@@ -32,7 +32,7 @@ import sqlite3
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -138,6 +138,11 @@ _RECORDING_LOCK = threading.Lock()
 # When --training-mode is used, this is changed to "elo_selfplay" so games
 # feed into training pool instead of being filtered as holdout
 GAME_SOURCE_TAG = "run_model_elo_tournament"
+
+# Timeout handling constants
+DEFAULT_MATCHUP_TIMEOUT = 600  # 10 minutes per matchup
+DEFAULT_TOURNAMENT_TIMEOUT = 7200  # 2 hours for entire tournament
+HEARTBEAT_INTERVAL = 60  # Log progress every 60 seconds
 
 
 # ============================================
@@ -2005,6 +2010,10 @@ def main():
     # Resilience options
     parser.add_argument("--game-retries", type=int, default=3,
                         help="Number of retries for transient game failures (default: 3)")
+    parser.add_argument("--matchup-timeout", type=int, default=DEFAULT_MATCHUP_TIMEOUT,
+                        help=f"Timeout per matchup in seconds (default: {DEFAULT_MATCHUP_TIMEOUT})")
+    parser.add_argument("--tournament-timeout", type=int, default=DEFAULT_TOURNAMENT_TIMEOUT,
+                        help=f"Timeout for entire tournament in seconds (default: {DEFAULT_TOURNAMENT_TIMEOUT})")
 
     args = parser.parse_args()
 
@@ -2331,24 +2340,94 @@ def main():
         # Parallel execution with ThreadPoolExecutor
         matchup_data = [(i, m1, m2) for i, (m1, m2) in enumerate(matchups)]
 
-        with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(run_single_matchup, data): data for data in matchup_data}
+        # Heartbeat tracking for stuck detection
+        last_completion_time = time.time()
+        matchups_completed = 0
+        matchups_timed_out = 0
+        heartbeat_stop = threading.Event()
 
-            for future in as_completed(futures):
-                matchup_idx, m1, m2, results, error = future.result()
-
-                if error:
-                    print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
-                    print(f"  Error: {error}")
-                    continue
-
-                games_completed += args.games
+        def heartbeat_thread():
+            """Log progress periodically to detect stuck tournaments."""
+            while not heartbeat_stop.is_set():
+                heartbeat_stop.wait(HEARTBEAT_INTERVAL)
+                if heartbeat_stop.is_set():
+                    break
                 elapsed = time.time() - start_time
-                rate = games_completed / elapsed if elapsed > 0 else 0
+                since_last = time.time() - last_completion_time
+                remaining_timeout = args.tournament_timeout - elapsed
+                print(
+                    f"[Heartbeat] Tournament running for {elapsed:.0f}s, "
+                    f"{matchups_completed}/{len(matchups)} matchups done, "
+                    f"{since_last:.0f}s since last completion, "
+                    f"timeout in {remaining_timeout:.0f}s"
+                )
+                if since_last > args.matchup_timeout:
+                    print(f"[Warning] No matchup completed in {since_last:.0f}s (timeout: {args.matchup_timeout}s)")
 
-                print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
-                print(f"  Results: A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']} E={results['errors']}")
-                print(f"  Progress: {games_completed}/{total_games} games ({rate:.1f} games/sec)")
+        heartbeat = threading.Thread(target=heartbeat_thread, daemon=True)
+        heartbeat.start()
+
+        try:
+            with ThreadPoolExecutor(max_workers=args.workers) as executor:
+                futures = {executor.submit(run_single_matchup, data): data for data in matchup_data}
+                pending_futures = set(futures.keys())
+
+                # Use tournament timeout for overall as_completed
+                tournament_deadline = start_time + args.tournament_timeout
+
+                while pending_futures:
+                    # Calculate remaining time for this batch
+                    remaining_time = tournament_deadline - time.time()
+                    if remaining_time <= 0:
+                        print(f"\n[Timeout] Tournament timeout ({args.tournament_timeout}s) exceeded")
+                        # Cancel remaining futures
+                        for f in pending_futures:
+                            f.cancel()
+                        break
+
+                    # Use matchup timeout for individual completion waits
+                    try:
+                        done_iter = as_completed(pending_futures, timeout=min(args.matchup_timeout, remaining_time))
+                        for future in done_iter:
+                            pending_futures.discard(future)
+                            last_completion_time = time.time()
+
+                            try:
+                                matchup_idx, m1, m2, results, error = future.result(timeout=5)
+                            except Exception as e:
+                                print(f"\n[Error] Failed to get matchup result: {e}")
+                                continue
+
+                            matchups_completed += 1
+
+                            if error:
+                                print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
+                                print(f"  Error: {error}")
+                                continue
+
+                            games_completed += args.games
+                            elapsed = time.time() - start_time
+                            rate = games_completed / elapsed if elapsed > 0 else 0
+
+                            print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
+                            print(f"  Results: A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']} E={results['errors']}")
+                            print(f"  Progress: {games_completed}/{total_games} games ({rate:.1f} games/sec)")
+
+                    except FuturesTimeoutError:
+                        matchups_timed_out += 1
+                        print(f"\n[Timeout] Matchup batch timed out after {args.matchup_timeout}s ({matchups_timed_out} timeouts so far)")
+                        # Cancel oldest pending futures if we hit too many timeouts
+                        if matchups_timed_out >= 3:
+                            print(f"[Warning] {matchups_timed_out} timeouts - cancelling stuck futures")
+                            for f in list(pending_futures)[:args.workers]:
+                                f.cancel()
+                                pending_futures.discard(f)
+
+                if pending_futures:
+                    print(f"\n[Warning] {len(pending_futures)} matchups did not complete (cancelled/timed out)")
+        finally:
+            heartbeat_stop.set()
+            heartbeat.join(timeout=2)
     else:
         # Sequential execution (original behavior)
         for matchup_idx, (m1, m2) in enumerate(matchups):

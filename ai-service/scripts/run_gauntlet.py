@@ -16,12 +16,19 @@ Usage:
 
     # Dry run (show what would be evaluated)
     python scripts/run_gauntlet.py --dry-run
+
+Timeout Handling:
+    - Each gauntlet run has a configurable timeout (default: 30 min)
+    - Stuck runs are automatically cleaned up by the gauntlet module
+    - Failed runs are logged and the script continues to next config
 """
 
 import argparse
 import asyncio
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 # Add ai-service to path
@@ -42,14 +49,71 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("run_gauntlet")
 
 
+# Default timeout for gauntlet execution (30 minutes)
+DEFAULT_GAUNTLET_TIMEOUT = 1800
+# Heartbeat interval for progress logging (60 seconds)
+HEARTBEAT_INTERVAL = 60
+
+
+async def _run_with_heartbeat(
+    coro,
+    config_key: str,
+    timeout_seconds: int,
+) -> tuple[bool, any]:
+    """Run a coroutine with periodic heartbeat logging and timeout.
+
+    Args:
+        coro: Coroutine to run
+        config_key: Config being processed (for logging)
+        timeout_seconds: Maximum execution time
+
+    Returns:
+        Tuple of (success, result_or_error)
+    """
+    start_time = time.time()
+
+    async def heartbeat_task():
+        """Log progress periodically."""
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            elapsed = time.time() - start_time
+            remaining = timeout_seconds - elapsed
+            logger.info(
+                f"[Heartbeat] {config_key}: running for {elapsed:.0f}s, "
+                f"timeout in {remaining:.0f}s"
+            )
+
+    heartbeat = asyncio.create_task(heartbeat_task())
+    try:
+        result = await asyncio.wait_for(coro, timeout=timeout_seconds)
+        return True, result
+    except asyncio.TimeoutError:
+        elapsed = time.time() - start_time
+        logger.error(
+            f"[Timeout] {config_key} gauntlet timed out after {elapsed:.0f}s "
+            f"(limit: {timeout_seconds}s)"
+        )
+        return False, None
+    except Exception as e:
+        logger.error(f"[Error] {config_key} gauntlet failed: {e}")
+        return False, e
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+
+
 async def run_gauntlet_for_config(
     gauntlet: DistributedNNGauntlet,
     culler: ModelCullingController,
     config_key: str,
     distributed: bool = True,
     p2p_url: str | None = None,
+    timeout_seconds: int = DEFAULT_GAUNTLET_TIMEOUT,
 ) -> dict:
-    """Run gauntlet and culling for a single config.
+    """Run gauntlet and culling for a single config with timeout protection.
 
     Args:
         gauntlet: Gauntlet evaluator
@@ -57,11 +121,12 @@ async def run_gauntlet_for_config(
         config_key: Config to evaluate
         distributed: Whether to use distributed execution
         p2p_url: P2P orchestrator URL
+        timeout_seconds: Maximum time for gauntlet execution
 
     Returns:
         Result dict
     """
-    logger.info(f"=== Processing {config_key} ===")
+    logger.info(f"=== Processing {config_key} (timeout: {timeout_seconds}s) ===")
 
     # Check current state
     model_count = gauntlet.count_models(config_key)
@@ -79,11 +144,24 @@ async def run_gauntlet_for_config(
             "models_evaluated": 0,
         }
 
-    # Run gauntlet
+    # Run gauntlet with timeout and heartbeat
     if distributed:
-        result = await gauntlet.run_gauntlet_distributed(config_key, p2p_url)
+        coro = gauntlet.run_gauntlet_distributed(config_key, p2p_url)
     else:
-        result = await gauntlet.run_gauntlet(config_key)
+        coro = gauntlet.run_gauntlet(config_key)
+
+    success, result = await _run_with_heartbeat(coro, config_key, timeout_seconds)
+
+    if not success:
+        # Gauntlet timed out or failed - mark as failed and continue
+        logger.warning(f"Gauntlet for {config_key} did not complete successfully")
+        return {
+            "config_key": config_key,
+            "status": "timeout" if result is None else "error",
+            "error": str(result) if result else "Timeout exceeded",
+            "models_evaluated": 0,
+            "total_games": 0,
+        }
 
     logger.info(
         f"Gauntlet {result.run_id}: {result.models_evaluated} models, "
@@ -146,6 +224,12 @@ async def main():
         default=5,
         help="Minimum games for a model to be considered rated",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_GAUNTLET_TIMEOUT,
+        help=f"Timeout per gauntlet in seconds (default: {DEFAULT_GAUNTLET_TIMEOUT})",
+    )
 
     args = parser.parse_args()
 
@@ -191,7 +275,7 @@ async def main():
             logger.info("")
         return
 
-    # Run gauntlet for each config
+    # Run gauntlet for each config with timeout protection
     results = []
     for config_key in configs:
         try:
@@ -201,6 +285,7 @@ async def main():
                 config_key=config_key,
                 distributed=not args.local,
                 p2p_url=args.p2p_url,
+                timeout_seconds=args.timeout,
             )
             results.append(result)
         except Exception as e:
@@ -210,6 +295,8 @@ async def main():
                 "status": "error",
                 "error": str(e),
             })
+        # Brief pause between configs to allow cleanup
+        await asyncio.sleep(1)
 
     # Summary
     logger.info("\n=== Summary ===")

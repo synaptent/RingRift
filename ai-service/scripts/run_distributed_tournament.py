@@ -37,7 +37,8 @@ import subprocess
 import sys
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,6 +102,11 @@ from scripts.lib.logging_config import setup_script_logging
 from scripts.lib.resilience import exponential_backoff_delay
 
 logger = setup_script_logging("run_distributed_tournament")
+
+# Timeout handling constants
+DEFAULT_MATCHUP_TIMEOUT = 600  # 10 minutes per matchup
+DEFAULT_TOURNAMENT_TIMEOUT = 7200  # 2 hours for entire tournament
+HEARTBEAT_INTERVAL = 60  # Log progress every 60 seconds
 
 
 # ============================================================================
@@ -776,9 +782,13 @@ class DistributedTournament:
         filler_difficulty: int = 1,
         record_replay_db: bool = True,
         game_retries: int = 3,
+        matchup_timeout: int = DEFAULT_MATCHUP_TIMEOUT,
+        tournament_timeout: int = DEFAULT_TOURNAMENT_TIMEOUT,
     ):
         self.tiers = sorted(tiers, key=lambda t: int(t[1:]))
         self.game_retries = game_retries
+        self.matchup_timeout = matchup_timeout
+        self.tournament_timeout = tournament_timeout
         self.games_per_matchup = games_per_matchup
         self.board_type = board_type
 
@@ -1004,41 +1014,101 @@ class DistributedTournament:
 
         start_time = time.time()
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {}
+        # Heartbeat tracking for stuck detection
+        last_completion_time = time.time()
+        completed = 0
+        matchups_timed_out = 0
+        heartbeat_stop = threading.Event()
 
-            for tier_a, tier_b in pending:
-                worker_name = f"worker_{len(futures) % self.max_workers}"
-                if self.worker_label:
-                    worker_name = f"{self.worker_label}:{worker_name}"
-                future = executor.submit(
-                    self.run_matchup, tier_a, tier_b, worker_name
+        def heartbeat_thread():
+            """Log progress periodically to detect stuck tournaments."""
+            while not heartbeat_stop.is_set():
+                heartbeat_stop.wait(HEARTBEAT_INTERVAL)
+                if heartbeat_stop.is_set():
+                    break
+                elapsed = time.time() - start_time
+                since_last = time.time() - last_completion_time
+                remaining_timeout = self.tournament_timeout - elapsed
+                logger.info(
+                    f"[Heartbeat] Tournament running for {elapsed:.0f}s, "
+                    f"{completed}/{total_matchups} matchups done, "
+                    f"{since_last:.0f}s since last completion, "
+                    f"timeout in {remaining_timeout:.0f}s"
                 )
-                futures[future] = (tier_a, tier_b)
+                if since_last > self.matchup_timeout:
+                    logger.warning(f"No matchup completed in {since_last:.0f}s (timeout: {self.matchup_timeout}s)")
 
-            completed = 0
-            for future in as_completed(futures):
-                tier_a, tier_b = futures[future]
-                try:
-                    results = future.result()
-                    self.state.completed_matchups.append((tier_a, tier_b))
-                    completed += 1
+        heartbeat = threading.Thread(target=heartbeat_thread, daemon=True)
+        heartbeat.start()
 
-                    wins_a = sum(1 for r in results if r.winner == 1)
-                    wins_b = sum(1 for r in results if r.winner == 2)
-                    draws = sum(1 for r in results if r.winner is None)
-                    logger.info(
-                        f"Completed {completed}/{total_matchups}: "
-                        f"{tier_a} vs {tier_b} = {wins_a}-{wins_b}-{draws}"
+        try:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {}
+
+                for tier_a, tier_b in pending:
+                    worker_name = f"worker_{len(futures) % self.max_workers}"
+                    if self.worker_label:
+                        worker_name = f"{self.worker_label}:{worker_name}"
+                    future = executor.submit(
+                        self.run_matchup, tier_a, tier_b, worker_name
                     )
+                    futures[future] = (tier_a, tier_b)
 
-                    if completed % 5 == 0:
-                        self._save_checkpoint()
+                pending_futures = set(futures.keys())
+                tournament_deadline = start_time + self.tournament_timeout
 
-                except Exception as e:
-                    logger.error(f"Matchup {tier_a} vs {tier_b} failed: {e}")
-                    if self.fail_fast:
-                        raise
+                while pending_futures:
+                    # Calculate remaining time
+                    remaining_time = tournament_deadline - time.time()
+                    if remaining_time <= 0:
+                        logger.error(f"Tournament timeout ({self.tournament_timeout}s) exceeded")
+                        for f in pending_futures:
+                            f.cancel()
+                        break
+
+                    try:
+                        done_iter = as_completed(pending_futures, timeout=min(self.matchup_timeout, remaining_time))
+                        for future in done_iter:
+                            pending_futures.discard(future)
+                            last_completion_time = time.time()
+                            tier_a, tier_b = futures[future]
+
+                            try:
+                                results = future.result(timeout=5)
+                                self.state.completed_matchups.append((tier_a, tier_b))
+                                completed += 1
+
+                                wins_a = sum(1 for r in results if r.winner == 1)
+                                wins_b = sum(1 for r in results if r.winner == 2)
+                                draws = sum(1 for r in results if r.winner is None)
+                                logger.info(
+                                    f"Completed {completed}/{total_matchups}: "
+                                    f"{tier_a} vs {tier_b} = {wins_a}-{wins_b}-{draws}"
+                                )
+
+                                if completed % 5 == 0:
+                                    self._save_checkpoint()
+
+                            except Exception as e:
+                                logger.error(f"Matchup {tier_a} vs {tier_b} failed: {e}")
+                                if self.fail_fast:
+                                    raise
+
+                    except FuturesTimeoutError:
+                        matchups_timed_out += 1
+                        logger.warning(f"Matchup batch timed out after {self.matchup_timeout}s ({matchups_timed_out} timeouts)")
+                        if matchups_timed_out >= 3:
+                            logger.warning(f"{matchups_timed_out} timeouts - cancelling stuck futures")
+                            for f in list(pending_futures)[:self.max_workers]:
+                                f.cancel()
+                                pending_futures.discard(f)
+
+                if pending_futures:
+                    logger.warning(f"{len(pending_futures)} matchups did not complete (cancelled/timed out)")
+
+        finally:
+            heartbeat_stop.set()
+            heartbeat.join(timeout=2)
 
         duration = time.time() - start_time
 
@@ -1408,6 +1478,18 @@ def parse_args() -> argparse.Namespace:
         help="Number of retries for failed individual games (default: 3).",
     )
     parser.add_argument(
+        "--matchup-timeout",
+        type=int,
+        default=DEFAULT_MATCHUP_TIMEOUT,
+        help=f"Timeout per matchup in seconds (default: {DEFAULT_MATCHUP_TIMEOUT})",
+    )
+    parser.add_argument(
+        "--tournament-timeout",
+        type=int,
+        default=DEFAULT_TOURNAMENT_TIMEOUT,
+        help=f"Timeout for entire tournament in seconds (default: {DEFAULT_TOURNAMENT_TIMEOUT})",
+    )
+    parser.add_argument(
         "--num-players",
         type=int,
         default=2,
@@ -1624,6 +1706,8 @@ def main() -> None:
         filler_difficulty=args.filler_difficulty,
         record_replay_db=not args.skip_replay_db,
         game_retries=args.game_retries,
+        matchup_timeout=args.matchup_timeout,
+        tournament_timeout=args.tournament_timeout,
     )
 
     # Configure training data export if requested
