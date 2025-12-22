@@ -1827,11 +1827,14 @@ class NNUEPolicyDataset(Dataset):
                     move_type_str = move_dict.get('type', '')
                     is_bookkeeping_move = move_type_str.startswith('no_')
 
-                    # Auto-advance only for GPU selfplay data WITHOUT explicit bookkeeping moves
+                    # LEGACY PATH (RR-CANON-R075 VIOLATION - deprecated, removal Q2 2026):
+                    # Auto-advance only for GPU selfplay data WITHOUT explicit bookkeeping moves.
+                    # This violates canonical spec: new selfplay must emit explicit bookkeeping moves.
+                    # Once all legacy GPU data is regenerated with Gumbel MCTS, remove this block.
                     game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
                     if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
                         try:
-                            state = auto_advance_phase(state)
+                            state = auto_advance_phase(state)  # emits DeprecationWarning
                         except Exception:
                             break  # Can't continue if phase advance fails
 
