@@ -289,7 +289,12 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
                     thinkTime=0,
                     moveNumber=0,
                 )
+                logger.warning(
+                    f"PHASE_INJECT: Injecting NO_LINE_ACTION, phase before: {state.current_phase}, "
+                    f"next_type: {next_type}, pending_line_elim: {getattr(state, 'pending_line_reward_elimination', False)}"
+                )
                 state = GameEngine.apply_move(state, no_line_move, trace_mode=True)
+                logger.warning(f"PHASE_INJECT: After NO_LINE_ACTION, phase now: {state.current_phase}")
                 continue  # Continue to check if more injections needed
             else:
                 break
