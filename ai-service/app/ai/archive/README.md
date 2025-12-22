@@ -23,19 +23,25 @@ The hybrid combines GMO's gradient-based move scoring with MCTS tree search:
 
 ### cage_ai.py (233 lines) + cage_network.py
 
-**Status**: Research prototype
+**Status**: Research prototype - PATTERNS HARVESTED ✅
 **Reason for archival**: Never deployed to production ladder
 
-**Valuable patterns to harvest:**
+**Harvested patterns (December 2025):**
 
-- Graph neural network for board representation (`board_to_graph`)
+- ✅ Graph neural network for board representation → `app/ai/neural_net/graph_encoding.py`
+  - `board_to_graph()` for square boards
+  - `board_to_graph_hex()` for hexagonal boards
+  - Node/edge feature encoding for GNN architectures
+
+**Remaining patterns (not yet harvested):**
+
 - Primal-dual optimization for constrained move selection
 - Energy-based move evaluation (lower energy = better move)
 
 **Potential future use:**
 
-- GNN approach could improve position understanding for complex board states
 - Constraint-aware optimization applicable to legal move filtering
+- Energy-based formulation for value network alternatives
 
 ---
 
