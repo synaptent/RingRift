@@ -3703,6 +3703,7 @@ class NeuralNetAI(BaseAI):
                         # Infer model architecture from weight keys when metadata is absent.
                         # V3 models have spatial policy heads; V2 models have FC policy heads.
                         # V4 models have attention blocks (query/key/value) in residual layers.
+                        # NNUE models have accumulator/hidden layers (different architecture).
                         # This is the definitive way to distinguish them.
                         v3_spatial_keys = (
                             "placement_conv.weight",
@@ -3715,11 +3716,14 @@ class NeuralNetAI(BaseAI):
                         v2_policy_keys = ("policy_fc1.weight", "policy_fc2.weight")
                         # V4 uses AttentionResidualBlock with query/key/value convolutions
                         v4_attention_patterns = ("res_blocks.0.query.weight", "res_blocks.0.key.weight")
+                        # NNUE models have accumulator/hidden layers (sparse feature architecture)
+                        nnue_keys = ("accumulator.weight", "hidden.0.weight", "value_head.weight")
 
                         has_v3_spatial = any(k in state_dict for k in v3_spatial_keys)
                         has_v3_rank_dist = any(k in state_dict for k in v3_rank_dist_keys)
                         has_v2_policy = any(k in state_dict for k in v2_policy_keys)
                         has_v4_attention = any(k in state_dict for k in v4_attention_patterns)
+                        has_nnue = all(k in state_dict for k in nnue_keys)
 
                         if model_class_name is None:
                             if has_v4_attention:
@@ -3742,6 +3746,23 @@ class NeuralNetAI(BaseAI):
                                     model_class_name,
                                     has_v3_spatial,
                                     has_v3_rank_dist,
+                                )
+                            elif has_nnue:
+                                # NNUE model detected - incompatible with NeuralNetAI
+                                # NNUE models use sparse feature extraction (accumulator/hidden)
+                                # which is different from the spatial CNN-based encoding.
+                                # Use scripts/train_nnue.py or NNUE-specific AI classes instead.
+                                logger.error(
+                                    "Detected NNUE architecture checkpoint (accumulator/hidden layers). "
+                                    "NNUE models require sparse feature extraction and cannot be loaded "
+                                    "by NeuralNetAI. Use NNUE-specific training/inference scripts. "
+                                    "Checkpoint: %s",
+                                    model_path,
+                                )
+                                raise ValueError(
+                                    f"NNUE checkpoint detected: {model_path}. "
+                                    "NNUE models use sparse feature extraction incompatible with "
+                                    "NeuralNetAI's spatial encoding. Use NNUE-specific AI class."
                                 )
                             elif has_v2_policy:
                                 # Definitely a V2 model - use FC policy heads
