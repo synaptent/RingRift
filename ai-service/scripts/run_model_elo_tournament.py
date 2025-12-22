@@ -1251,6 +1251,15 @@ def discover_models(
         if not (pattern in name or "ringrift_v" in name):
             continue
 
+        # Skip NNUE-style checkpoints that use sparse feature architecture.
+        # These have names like "policy_sq8_2p_*" and contain accumulator/hidden layers
+        # that are incompatible with NeuralNetAI's spatial encoding.
+        # NNUE checkpoints should be in models/nnue/ and use .pt extension.
+        if name.startswith("policy_") and pattern in name:
+            # This is likely an NNUE policy checkpoint, skip it
+            # (proper NNUE support would require a different AI class)
+            continue
+
         # Extract version info from filename or checkpoint metadata
         version = "unknown"
         if "ringrift_v5" in name or "_v5_" in name or name.endswith("_v5"):
