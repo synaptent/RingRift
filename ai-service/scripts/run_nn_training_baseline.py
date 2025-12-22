@@ -79,6 +79,22 @@ def _dataset_has_multi_player_values(data_path: str) -> bool:
         return False
 
 
+def _detect_dataset_feature_version(data_path: str) -> int | None:
+    """Auto-detect feature_version from NPZ dataset metadata.
+
+    Returns:
+        Feature version (1, 2, or 3) if found in dataset, None otherwise.
+        None signals legacy data without version metadata (treated as v1).
+    """
+    try:
+        with np.load(data_path, mmap_mode='r', allow_pickle=True) as f:
+            if 'feature_version' in f.files:
+                return int(np.asarray(f['feature_version']).item())
+    except Exception:
+        pass
+    return None
+
+
 def _parse_board(board: str) -> BoardType:
     """Map CLI board string to BoardType."""
     b = board.lower()
@@ -475,6 +491,23 @@ def main(argv: list[str] | None = None) -> int:
         use_multi_player = _dataset_has_multi_player_values(data_path)
         if use_multi_player:
             print(f"Detected multi-player value targets in {data_path}, enabling multi_player mode.")
+
+    # Auto-detect feature_version from dataset metadata (not in demo mode).
+    # This allows training to work with datasets of different feature versions
+    # without requiring explicit --feature-version flags.
+    if not args.demo and os.path.exists(data_path):
+        detected_fv = _detect_dataset_feature_version(data_path)
+        if detected_fv is not None:
+            if detected_fv != train_cfg.feature_version:
+                print(f"[Auto-detect] Dataset has feature_version={detected_fv}, "
+                      f"adjusting config from {train_cfg.feature_version}")
+                train_cfg.feature_version = detected_fv
+        else:
+            # Legacy dataset without feature_version metadata - use v1
+            if train_cfg.feature_version != 1:
+                print(f"[Auto-detect] Dataset missing feature_version (legacy), "
+                      f"adjusting config from {train_cfg.feature_version} to 1")
+                train_cfg.feature_version = 1
 
     # Run training. The current train_model implementation does not surface
     # final loss/metrics directly, so we record structural metadata and stub
