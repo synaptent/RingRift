@@ -12,6 +12,7 @@ from app.models import (
     Player,
     Position,
     RingStack,
+    Territory,
     TimeControl,
 )
 
@@ -115,6 +116,13 @@ def test_move_cache_does_not_hide_territory_followup_elimination_moves() -> None
         ]
     )
 
+    # Create a territory region that was processed. Must include disconnected_regions
+    # so that _check_pending_elimination knows a region was actually processed.
+    processed_region = Territory(
+        spaces=[Position(x=1, y=1)],
+        controlling_player=1,
+        is_disconnected=True,
+    )
     followup_surface = _make_base_state(
         move_history=[
             Move(
@@ -122,6 +130,7 @@ def test_move_cache_does_not_hide_territory_followup_elimination_moves() -> None
                 type=MoveType.CHOOSE_TERRITORY_OPTION,
                 player=1,
                 to=Position(x=1, y=1),
+                disconnected_regions=(processed_region,),
                 timestamp=now,
                 thinkTime=0,
                 moveNumber=1,
