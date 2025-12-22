@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from .gpu_game_types import GamePhase, MoveType
+from .gpu_game_types import GamePhase, MoveType, MAX_STACK_HEIGHT
 
 if TYPE_CHECKING:
     from .gpu_parallel_games import BatchGameState
@@ -82,7 +82,7 @@ def generate_placement_moves_batch(
 
     Placement is NOT valid on:
     - Collapsed spaces (is_collapsed == True)
-    - Positions at max stack height (5) - can't exceed max height
+    - Positions at max stack height (MAX_STACK_HEIGHT) - can't exceed max height
 
     Note: The GPU engine simplifies by allowing placement on ANY non-collapsed
     position below max height. The placement count (1 vs 1-3) is handled during
@@ -104,13 +104,13 @@ def generate_placement_moves_batch(
     # Find all valid placement positions per game:
     # - Must not be collapsed
     # - Must not contain a marker (placement never occurs onto an existing marker)
-    # - Must not be at max stack height (5) - can't place on full stacks
+    # - Must not be at max stack height (MAX_STACK_HEIGHT) - can't place on full stacks
     # - Game must be active
     # valid_positions: (batch_size, board_size, board_size) bool
     valid_positions = (
         (~state.is_collapsed)
         & (state.marker_owner == 0)
-        & (state.stack_height < 5)  # Max stack height is 5 per RR-CANON rules
+        & (state.stack_height < MAX_STACK_HEIGHT)  # Max stack height per gpu_game_types.MAX_STACK_HEIGHT
         & active_mask.view(-1, 1, 1)
     )
 

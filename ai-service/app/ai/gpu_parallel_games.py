@@ -45,7 +45,7 @@ from app.utils.resource_guard import check_gpu_memory, check_memory, clear_gpu_m
 
 from .gpu_batch import get_device
 from .gpu_batch_state import BatchGameState
-from .gpu_game_types import GamePhase, GameStatus
+from .gpu_game_types import GamePhase, GameStatus, MAX_STACK_HEIGHT
 from .gpu_line_detection import (
     apply_line_elimination_batch,
     detect_lines_vectorized,
@@ -2396,7 +2396,7 @@ class ParallelGameRunner:
         # Place merged stack at destination (attacker on top)
         new_height = attacker_height + defender_new_height
         state.stack_owner[g, to_y, to_x] = player
-        state.stack_height[g, to_y, to_x] = min(5, new_height)  # Cap at 5
+        state.stack_height[g, to_y, to_x] = min(MAX_STACK_HEIGHT, new_height)  # Cap at MAX_STACK_HEIGHT
 
     def _apply_single_movement(self, g: int, move_idx: int, moves: BatchMoves) -> None:
         """Apply a single movement move for game g at global index move_idx.
@@ -2468,7 +2468,7 @@ class ParallelGameRunner:
         elif dest_owner == player:
             # Merging with own stack
             new_height = dest_height + moving_height - landing_ring_cost
-            state.stack_height[g, to_y, to_x] = min(5, new_height)  # Cap at 5
+            state.stack_height[g, to_y, to_x] = min(MAX_STACK_HEIGHT, new_height)  # Cap at MAX_STACK_HEIGHT
 
     def _apply_single_recovery(self, g: int, move_idx: int, moves: BatchMoves) -> None:
         """Apply a single recovery slide move for game g at global index move_idx.

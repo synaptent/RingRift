@@ -910,13 +910,36 @@ class AsyncGPUEvaluator:
             features: Feature tensor for this position
             global_features: Global features (optional)
             callback: Function to call with (value, policy) results
+
+        Note:
+            Uses non-blocking put to avoid deadlock if worker thread isn't running.
+            If queue is full and worker isn't running, the request is processed
+            synchronously as a fallback.
         """
+        if not self._running:
+            logger.warning("AsyncGPUEvaluator.queue_position called without start() - auto-starting worker")
+            self.start()
+
         request = EvalRequest(
             features=features,
             global_features=global_features,
             callback=callback,
         )
-        self._queue.put(request)
+        try:
+            self._queue.put_nowait(request)
+        except queue.Full:
+            # Queue is full - process synchronously as fallback to avoid deadlock
+            logger.warning("AsyncGPUEvaluator queue full, processing request synchronously")
+            try:
+                values, policies = self.evaluator.evaluate_batch(
+                    features[np.newaxis],
+                    global_features[np.newaxis] if global_features is not None else None
+                )
+                callback(values[0], policies[0])
+            except Exception as e:
+                logger.error(f"Synchronous fallback evaluation failed: {e}")
+                # Call callback with neutral values as last resort
+                callback(np.array([0.0]), np.zeros(1))
 
     def flush(self) -> None:
         """Force processing of all pending requests."""
@@ -956,9 +979,22 @@ class AsyncGPUEvaluator:
         )
 
         if not should_process:
-            # Put requests back in queue
+            # Put requests back in queue using non-blocking put to avoid deadlock
             for req in requests:
-                self._queue.put(req)
+                try:
+                    self._queue.put_nowait(req)
+                except queue.Full:
+                    # Queue is full - process this request synchronously
+                    logger.warning("Queue full during re-insert, processing synchronously")
+                    try:
+                        values, policies = self.evaluator.evaluate_batch(
+                            req.features[np.newaxis],
+                            req.global_features[np.newaxis] if req.global_features is not None else None
+                        )
+                        req.callback(values[0], policies[0])
+                    except Exception as e:
+                        logger.error(f"Synchronous fallback failed: {e}")
+                        req.callback(np.array([0.0]), np.zeros(1))
             return
 
         # Process batch

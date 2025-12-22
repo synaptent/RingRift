@@ -21,6 +21,8 @@ import logging
 
 import torch
 
+from .gpu_game_types import MAX_STACK_HEIGHT
+
 logger = logging.getLogger(__name__)
 
 
@@ -789,11 +791,11 @@ def apply_capture_batch(
         # Merge stacks - attacker on top
         new_height = attacker_height + defender_height - 1  # -1 for eliminated ring
 
-        # Cap at 5
-        if new_height > 5:
+        # Cap at MAX_STACK_HEIGHT
+        if new_height > MAX_STACK_HEIGHT:
             # Excess rings become buried for defender
-            buried_rings[g, defender] += new_height - 5
-            new_height = 5
+            buried_rings[g, defender] += new_height - MAX_STACK_HEIGHT
+            new_height = MAX_STACK_HEIGHT
 
         stack_owner[g, ty, tx] = player
         stack_height[g, ty, tx] = new_height
