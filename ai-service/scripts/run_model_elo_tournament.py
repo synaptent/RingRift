@@ -1468,17 +1468,22 @@ def discover_models(
         # Skip for performance - reading 2000+ checkpoints is too slow
         # The actual model architecture is detected when loaded for play
 
-        # Add matching model
-        models.append({
-            "model_id": name,
-            "model_path": str(f),
-            "board_type": board_type,
-            "num_players": num_players,
-            "version": version,
-            "size_mb": f.stat().st_size / (1024 * 1024),
-            "created_at": f.stat().st_mtime,
-            "model_type": "nn",
-        })
+        # Add matching model (skip if file was deleted between glob and stat)
+        try:
+            stat_info = f.stat()
+            models.append({
+                "model_id": name,
+                "model_path": str(f),
+                "board_type": board_type,
+                "num_players": num_players,
+                "version": version,
+                "size_mb": stat_info.st_size / (1024 * 1024),
+                "created_at": stat_info.st_mtime,
+                "model_type": "nn",
+            })
+        except (FileNotFoundError, OSError):
+            # File was deleted or is a broken symlink - skip it
+            continue
 
     # Also discover NNUE models if requested
     if include_nnue:

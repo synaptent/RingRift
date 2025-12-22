@@ -1710,8 +1710,10 @@ describe('turnOrchestrator turn advancement', () => {
 
   it('skips eliminated players during turn rotation', () => {
     // 3 player game where player 2 has no rings anywhere (eliminated)
-    // Note: eliminatedRings means "rings this player eliminated from opponents",
-    // NOT "this player's own rings that were eliminated".
+    // Note: eliminatedRings means "total rings this player CAUSED to be eliminated"
+    // (any color, including self-elimination), NOT "this player's own rings that
+    // were eliminated by others". Per RR-CANON-R060, eliminated rings are credited
+    // to the causing player.
     // A player is eliminated when ringsInHand == 0 AND they have no stacks on the board.
     const board = createEmptyBoard();
     const state: GameState = {
@@ -1722,7 +1724,7 @@ describe('turnOrchestrator turn advancement', () => {
       boardType: 'square8',
       players: [
         createPlayerWithRings(1, 10), // Active
-        createPlayerWithRings(2, 0, 0), // Eliminated (no rings in hand, no rings on board)
+        createPlayerWithRings(2, 0, 0), // Eliminated (no rings in hand, no rings on board, no eliminations caused)
         createPlayerWithRings(3, 10), // Active
       ],
       board,
@@ -1754,6 +1756,57 @@ describe('turnOrchestrator turn advancement', () => {
     // Should skip player 2 (eliminated) and advance to player 3
     expect(result.nextState.currentPlayer).toBe(3);
     expect(result.nextState.currentPhase).toBe('ring_placement');
+  });
+
+  it('detects victory for player with high eliminatedRings even if they have no rings left', () => {
+    // Per RR-CANON-R060/R170: eliminatedRings is credited to the CAUSING player.
+    // A player with ringsInHand=0 but eliminatedRings >= victoryThreshold has WON,
+    // they should NOT be skipped as "eliminated". This tests the distinction between:
+    // - A player who lost all their rings (eliminated, skipped in rotation)
+    // - A player who caused enough eliminations to win (victor)
+    const board = createEmptyBoard();
+    const state: GameState = {
+      id: 'test-victory-high-elim-no-rings',
+      currentPlayer: 1,
+      currentPhase: 'territory_processing',
+      gameStatus: 'active',
+      boardType: 'square8',
+      players: [
+        createPlayerWithRings(1, 10), // Active
+        createPlayerWithRings(2, 0, 18), // No rings left BUT caused 18 eliminations (winner!)
+        createPlayerWithRings(3, 10), // Active
+      ],
+      board,
+      moveHistory: [],
+      history: [],
+      lastMoveAt: new Date(),
+      createdAt: new Date(),
+      isRated: false,
+      spectators: [],
+      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      maxPlayers: 3,
+      totalRingsInPlay: 20,
+      victoryThreshold: 12, // Player 2's 18 eliminations exceeds this
+    };
+
+    const move: Move = {
+      id: 'skip-terr',
+      type: 'skip_territory_processing',
+      player: 1,
+      to: { x: 0, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const result = processTurn(state, move);
+
+    // Victory should be detected for player 2 (18 >= 12 threshold)
+    expect(result.nextState.gameStatus).toBe('completed');
+    expect(result.nextState.currentPhase).toBe('game_over');
+    expect(result.victoryResult).toBeDefined();
+    expect(result.victoryResult!.isGameOver).toBe(true);
+    expect(result.victoryResult!.winner).toBe(2);
   });
 
   it('detects victory when elimination threshold is reached', () => {

@@ -1388,8 +1388,9 @@ def apply_movement_moves_batch_vectorized(
                     surv_idx = torch.where(transfer_mask)[0][idx]
                     final_owners[surv_idx] = new_owner
 
-                    # Update stack_owner first so compute_cap_from_ring_stack sees correct owner
+                    # Set stack_owner and stack_height first so compute_cap_from_ring_stack sees correct values
                     state.stack_owner[g, y_pos, x_pos] = new_owner
+                    state.stack_height[g, y_pos, x_pos] = surv_height[surv_idx].item()
 
                     # December 2025: Use ring_stack for authoritative cap computation
                     new_cap = compute_cap_from_ring_stack(state, g, y_pos, x_pos)
