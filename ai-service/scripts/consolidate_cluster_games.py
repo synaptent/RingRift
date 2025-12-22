@@ -51,17 +51,11 @@ DATA_DIR = PROJECT_ROOT / "data"
 GAMES_DIR = DATA_DIR / "games"
 
 # Databases to merge into selfplay.db
+# NOTE: jsonl_converted_*.db files were removed as they only contain metadata
+# without game_moves data, making them unusable for training. Use
+# jsonl_aggregated.db which has full game replay data.
 MERGE_SOURCES = [
     "jsonl_aggregated.db",
-    "jsonl_converted_hexagonal_2p.db",
-    "jsonl_converted_hexagonal_3p.db",
-    "jsonl_converted_hexagonal_4p.db",
-    "jsonl_converted_square19_2p.db",
-    "jsonl_converted_square19_3p.db",
-    "jsonl_converted_square19_4p.db",
-    "jsonl_converted_square8_2p.db",
-    "jsonl_converted_square8_3p.db",
-    "jsonl_converted_square8_4p.db",
     "tournament_hexagonal_2p.db",
     "tournament_hexagonal_3p.db",
     "tournament_hexagonal_4p.db",

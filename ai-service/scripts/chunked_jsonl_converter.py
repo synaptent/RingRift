@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 """Chunked JSONL to SQLite converter with parallel processing support.
 
+DEPRECATED: This script creates databases with metadata only (games table)
+but NO game_moves table, making the output UNUSABLE for neural network training.
+
+For training data, use jsonl_to_npz.py instead which:
+1. Properly replays games with move encoding
+2. Extracts policy targets for supervised learning
+3. Creates NPZ files directly usable by training scripts
+
+The jsonl_converted_*.db files created by this script have been removed
+from the cluster as they only waste disk space.
+
 This utility processes JSONL selfplay files in manageable chunks to avoid
 memory issues with large files. It supports:
 - Chunked reading (configurable lines per batch)
