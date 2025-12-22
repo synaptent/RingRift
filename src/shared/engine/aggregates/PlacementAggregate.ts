@@ -505,8 +505,8 @@ export function enumeratePlacementPositions(state: GameState, player: number): P
 
   // Different iteration for hexagonal vs square boards
   if (boardType === 'hexagonal' || boardType === 'hex8') {
-    // Hexagonal board uses axial coordinates with radius = size
-    const radius = size;
+    // boardSize is the bounding box (2*radius + 1). Radius = (size - 1) / 2.
+    const radius = (size - 1) / 2;
     for (let q = -radius; q <= radius; q++) {
       const r1 = Math.max(-radius, -q - radius);
       const r2 = Math.min(radius, -q + radius);

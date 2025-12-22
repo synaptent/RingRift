@@ -119,9 +119,12 @@ class InferredModelConfig:
     policy_size: int = 4672
     is_lite_variant: bool = False
     hidden_dim: int = 256
-    input_channels: int = 56
+    input_channels: int = 14  # BASE input channels (not total)
     global_features: int = 20
     hex_radius: int = 4
+    policy_intermediate: int = 384  # Inferred from policy_fc1
+    value_intermediate: int = 128  # Inferred from value_fc1
+    history_length: int = 3  # Inferred from total_in_channels / base_channels
 
 
 @dataclass
@@ -204,15 +207,29 @@ def infer_config_from_checkpoint(
         if "num_players" in meta_config:
             config.num_players = meta_config["num_players"]
 
-    # Infer from conv1 shape: [out_channels, in_channels, H, W]
+    # Infer from conv1 shape: [out_channels, total_in_channels, H, W]
     if "conv1.weight" in state_dict:
         conv1_shape = state_dict["conv1.weight"].shape
         config.num_filters = conv1_shape[0]
-        config.input_channels = conv1_shape[1]
+        total_in_channels = conv1_shape[1]
 
-        # Lite variant detection: fewer filters
-        if config.num_filters <= 96:
-            config.is_lite_variant = True
+        # Infer base input_channels and history_length from total
+        # Common combinations: 14*(3+1)=56, 12*(2+1)=36, 14*(2+1)=42
+        for hist_len in [3, 2, 4, 1]:
+            divisor = hist_len + 1
+            if total_in_channels % divisor == 0:
+                base_channels = total_in_channels // divisor
+                if base_channels in [12, 14, 16]:  # Common base channel counts
+                    config.input_channels = base_channels
+                    config.history_length = hist_len
+                    break
+        else:
+            # Fallback: assume history_length=3, use total as-is
+            config.input_channels = total_in_channels
+            config.history_length = 0  # Will use model's default
+
+        # Lite variant detection: fewer filters AND smaller intermediate layers
+        # Don't just rely on filter count alone
 
     # Count residual blocks
     max_block_idx = -1
@@ -256,6 +273,21 @@ def infer_config_from_checkpoint(
     # NNUE-specific: hidden_dim from accumulator
     if "accumulator.weight" in state_dict:
         config.hidden_dim = state_dict["accumulator.weight"].shape[0]
+
+    # Infer intermediate layer sizes from FC layers
+    if "policy_fc1.weight" in state_dict:
+        config.policy_intermediate = state_dict["policy_fc1.weight"].shape[0]
+    if "value_fc1.weight" in state_dict:
+        config.value_intermediate = state_dict["value_fc1.weight"].shape[0]
+
+    # Lite variant detection: based on BOTH filter count AND intermediate sizes
+    # Lite variants have: 96 filters, 192 policy_intermediate, 64 value_intermediate
+    # Full variants have: 192 filters, 384 policy_intermediate, 128 value_intermediate
+    config.is_lite_variant = (
+        config.num_filters <= 96
+        and config.policy_intermediate <= 200
+        and config.value_intermediate <= 80
+    )
 
     return config
 
@@ -496,12 +528,15 @@ class UnifiedModelLoader:
             cls = RingRiftCNN_v2_Lite if config.is_lite_variant else RingRiftCNN_v2
             return cls(
                 board_size=board_size,
-                total_in_channels=config.input_channels,
+                in_channels=config.input_channels,
                 global_features=config.global_features,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
+                history_length=config.history_length,
                 num_players=config.num_players,
                 policy_size=config.policy_size,
+                policy_intermediate=config.policy_intermediate,
+                value_intermediate=config.value_intermediate,
             )
 
         elif architecture in {ModelArchitecture.CNN_V3, ModelArchitecture.CNN_V3_LITE}:
@@ -513,12 +548,14 @@ class UnifiedModelLoader:
             cls = RingRiftCNN_v3_Lite if config.is_lite_variant else RingRiftCNN_v3
             return cls(
                 board_size=board_size,
-                total_in_channels=config.input_channels,
+                in_channels=config.input_channels,
                 global_features=config.global_features,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
                 num_players=config.num_players,
                 policy_size=config.policy_size,
+                policy_intermediate=config.policy_intermediate,
+                value_intermediate=config.value_intermediate,
             )
 
         elif architecture == ModelArchitecture.CNN_V4:
@@ -526,12 +563,14 @@ class UnifiedModelLoader:
 
             return RingRiftCNN_v4(
                 board_size=board_size,
-                total_in_channels=config.input_channels,
+                in_channels=config.input_channels,
                 global_features=config.global_features,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
                 num_players=config.num_players,
                 policy_size=config.policy_size,
+                policy_intermediate=config.policy_intermediate,
+                value_intermediate=config.value_intermediate,
             )
 
         elif architecture in {ModelArchitecture.HEX_V2, ModelArchitecture.HEX_V2_LITE}:
@@ -543,7 +582,7 @@ class UnifiedModelLoader:
             cls = HexNeuralNet_v2_Lite if config.is_lite_variant else HexNeuralNet_v2
             return cls(
                 hex_radius=config.hex_radius,
-                total_in_channels=config.input_channels,
+                in_channels=config.input_channels,
                 global_features=config.global_features,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
@@ -560,7 +599,7 @@ class UnifiedModelLoader:
             cls = HexNeuralNet_v3_Lite if config.is_lite_variant else HexNeuralNet_v3
             return cls(
                 hex_radius=config.hex_radius,
-                total_in_channels=config.input_channels,
+                in_channels=config.input_channels,
                 global_features=config.global_features,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
@@ -574,12 +613,14 @@ class UnifiedModelLoader:
 
             return RingRiftCNN_v2(
                 board_size=board_size,
-                total_in_channels=config.input_channels,
+                in_channels=config.input_channels,
                 global_features=config.global_features,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
                 num_players=config.num_players,
                 policy_size=config.policy_size,
+                policy_intermediate=config.policy_intermediate,
+                value_intermediate=config.value_intermediate,
             )
 
         raise ValueError(f"Unsupported architecture: {architecture}")

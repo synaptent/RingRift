@@ -4109,8 +4109,8 @@ class GameEngine:
                 for y in range(19):
                     positions.append(Position(x=x, y=y))
         elif board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
-            # Hex boards: size = radius + 1 (TS BOARD_CONFIGS). Radius = size - 1.
-            radius = size - 1
+            # Hex boards: size = bounding box (2*radius + 1). Radius = (size - 1) // 2.
+            radius = (size - 1) // 2
             for x in range(-radius, radius + 1):
                 for y in range(-radius, radius + 1):
                     z = -x - y
@@ -4138,8 +4138,8 @@ class GameEngine:
 
         elif board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             hex_directions = [(1, 0, -1), (-1, 0, 1), (0, 1, -1), (0, -1, 1), (1, -1, 0), (-1, 1, 0)]
-            # Hex boards: size = radius + 1 (TS BOARD_CONFIGS). Radius = size - 1.
-            radius = size - 1
+            # Hex boards: size = bounding box (2*radius + 1). Radius = (size - 1) // 2.
+            radius = (size - 1) // 2
             for dx, dy, dz in hex_directions:
                 if pos.z is None:
                     continue
@@ -4173,8 +4173,8 @@ class GameEngine:
             directions = [(1, 0, -1), (-1, 0, 1), (0, 1, -1), (0, -1, 1), (1, -1, 0), (-1, 1, 0)]
 
         # Use size from board for bounds checking
-        # For hex boards: size = radius + 1 (TS BOARD_CONFIGS). Radius = size - 1.
-        radius = size - 1
+        # For hex boards: size = bounding box (2*radius + 1). Radius = (size - 1) // 2.
+        radius = (size - 1) // 2
 
         for dx, dy, dz in directions:
             curr_x, curr_y = pos.x, pos.y

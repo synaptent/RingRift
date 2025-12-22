@@ -178,8 +178,8 @@ class HeuristicOptimizationProblem(Problem):
             self.gpu_runner_available = True
             self.evaluate_fitness_gpu = evaluate_candidate_fitness_gpu
 
-            # Map board type to size
-            board_sizes = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25, "hex8": 8}
+            # Map board type to size (bounding box for hex boards)
+            board_sizes = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25, "hex8": 9}
             self.board_size = board_sizes.get(self.board_type.lower(), 8)
 
             logger.info(f"GPU game runner initialized for {self.board_type}")

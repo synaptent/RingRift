@@ -76,8 +76,8 @@ describe('isValidPosition', () => {
 
   describe('hexagonal board validation', () => {
     const boardType: BoardType = 'hexagonal';
-    // Size of 4 means radius = 3
-    const boardSize = 4;
+    // Size = bounding box = 2*radius + 1. So boardSize=7 means radius=3.
+    const boardSize = 7;
 
     it('returns true for center hex (0,0)', () => {
       const pos: Position = { x: 0, y: 0, z: 0 };
@@ -155,24 +155,28 @@ describe('isValidPosition', () => {
 
   describe('hexagonal board with different sizes', () => {
     const boardType: BoardType = 'hexagonal';
+    // Size = bounding box = 2*radius + 1. radius = (size - 1) / 2.
 
     it('size 1 has radius 0, only center is valid', () => {
+      // radius = (1 - 1) / 2 = 0
       const boardSize = 1;
       expect(isValidPosition({ x: 0, y: 0 }, boardType, boardSize)).toBe(true);
       expect(isValidPosition({ x: 1, y: 0 }, boardType, boardSize)).toBe(false);
       expect(isValidPosition({ x: 0, y: 1 }, boardType, boardSize)).toBe(false);
     });
 
-    it('size 2 allows radius 1 positions', () => {
-      const boardSize = 2;
+    it('size 3 allows radius 1 positions', () => {
+      // radius = (3 - 1) / 2 = 1
+      const boardSize = 3;
       expect(isValidPosition({ x: 0, y: 0 }, boardType, boardSize)).toBe(true);
       expect(isValidPosition({ x: 1, y: 0, z: -1 }, boardType, boardSize)).toBe(true);
       expect(isValidPosition({ x: -1, y: 1, z: 0 }, boardType, boardSize)).toBe(true);
       expect(isValidPosition({ x: 2, y: 0, z: -2 }, boardType, boardSize)).toBe(false);
     });
 
-    it('size 5 allows radius 4 positions', () => {
-      const boardSize = 5;
+    it('size 9 allows radius 4 positions', () => {
+      // radius = (9 - 1) / 2 = 4
+      const boardSize = 9;
       expect(isValidPosition({ x: 4, y: 0, z: -4 }, boardType, boardSize)).toBe(true);
       expect(isValidPosition({ x: 5, y: 0, z: -5 }, boardType, boardSize)).toBe(false);
     });
@@ -194,8 +198,8 @@ describe('isValidPosition', () => {
     it('hexagonal with z explicitly provided as undefined uses calculated s', () => {
       const pos: Position = { x: 1, y: -1, z: undefined };
       // s = -q - r = -1 - (-1) = 0
-      // All within radius
-      expect(isValidPosition(pos, 'hexagonal', 4)).toBe(true);
+      // All within radius (boardSize=3 means radius=1)
+      expect(isValidPosition(pos, 'hexagonal', 3)).toBe(true);
     });
   });
 });

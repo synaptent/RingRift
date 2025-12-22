@@ -9,9 +9,9 @@ import { debugLog, flagEnabled } from '../../utils/envFlags';
  */
 export function isValidPosition(pos: Position, boardType: BoardType, boardSize: number): boolean {
   if (boardType === 'hexagonal' || boardType === 'hex8') {
-    // For hex boards: hexagonal uses boardSize-1 as radius, hex8 uses fixed radius=4
-    // hex8: radius=4, hexagonal: radius=12 (boardSize-1)
-    const radius = boardType === 'hex8' ? 4 : boardSize - 1;
+    // For hex boards: boardSize is the bounding box (2*radius + 1).
+    // hex8: boardSize=9 → radius=4, hexagonal: boardSize=25 → radius=12
+    const radius = (boardSize - 1) / 2;
     const q = pos.x;
     const r = pos.y;
     const s = pos.z ?? -q - r;

@@ -49,7 +49,29 @@ This document specifies the **hex8** board variant, a smaller hexagonal board de
 | `lineAdjacency`      | 6 (hex dirs)      | Same as hexagonal                 |
 | `territoryAdjacency` | 6 (hex dirs)      | Same as hexagonal                 |
 
-### 2.3 Coordinate System
+### 2.3 Size Semantics (Unified Convention)
+
+**IMPORTANT:** The `size` field in BOARD_CONFIGS represents the **bounding box dimension**, not the radius.
+
+| Board       | Radius | Size (Bounding Box) | Formula         |
+| ----------- | ------ | ------------------- | --------------- |
+| `hex8`      | 4      | 9                   | 2 × 4 + 1 = 9   |
+| `hexagonal` | 12     | 25                  | 2 × 12 + 1 = 25 |
+
+**Conversion formulas:**
+
+- `size = 2 * radius + 1` (radius to bounding box)
+- `radius = (size - 1) / 2` (bounding box to radius)
+
+This convention is used **consistently** across:
+
+- TypeScript: `src/shared/types/game.ts` (BOARD_CONFIGS)
+- Python: `ai-service/app/rules/core.py` (BOARD_CONFIGS)
+- All radius calculations throughout the codebase
+
+**Rationale:** Using bounding box as `size` eliminates confusion between different size semantics and matches the natural tensor allocation dimensions for GPU/neural network code.
+
+### 2.4 Coordinate System
 
 Uses same axial coordinate system as full hexagonal:
 
@@ -57,7 +79,7 @@ Uses same axial coordinate system as full hexagonal:
 - Valid cells: `max(|x|, |y|, |z|) <= 4` (radius)
 - Bounding box embedding: 9×9 grid with center at (4, 4)
 
-### 2.4 Movement Directions
+### 2.5 Movement Directions
 
 Same 6 hex directions as full hexagonal:
 

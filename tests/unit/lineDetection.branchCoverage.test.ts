@@ -288,7 +288,8 @@ describe('lineDetection branch coverage', () => {
 
   describe('hexagonal board support', () => {
     it('uses hexagonal directions for hex boards', () => {
-      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+      // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
       // Hex line along one axis (x+1, y=0, z-1 is one of the 3 hex directions)
       // Using cube coordinates where x + y + z = 0
       addMarker(board, pos(0, 0, 0), 1);
@@ -302,7 +303,8 @@ describe('lineDetection branch coverage', () => {
     });
 
     it('validates hex positions using cube coordinate constraints', () => {
-      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+      // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
       // Invalid position (x + y + z !== 0 or out of bounds) should not be included
       // But we can't directly test isValidPosition, so we test indirectly by
       // putting markers that would extend past valid bounds
@@ -312,7 +314,7 @@ describe('lineDetection branch coverage', () => {
       addMarker(board, pos(1, 0, -1), 1);
       addMarker(board, pos(2, 0, -2), 1);
       addMarker(board, pos(3, 0, -3), 1);
-      // pos(4, 0, -4) is still valid for size 5 (radius 4)
+      // pos(4, 0, -4) is still valid for size 9 (radius 4)
 
       const lines = findAllLines(board);
 
@@ -320,8 +322,9 @@ describe('lineDetection branch coverage', () => {
     });
 
     it('stops line at hex board edge', () => {
-      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 3 });
-      // Size 3 means radius 2
+      // Size = bounding box = 2*radius + 1. size=5 means radius=2.
+      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+      // Size 5 means radius 2
       // Try to make a line that extends beyond radius
       addMarker(board, pos(-2, 0, 2), 1);
       addMarker(board, pos(-1, 0, 1), 1);
@@ -519,7 +522,8 @@ describe('lineDetection branch coverage', () => {
 
     describe('hexagonal board validation', () => {
       it('validates cube coordinate constraint (q + r + s === 0)', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+        // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
         // Valid hex positions must satisfy q + r + s === 0
         addMarker(board, pos(0, 0, 0), 1); // 0 + 0 + 0 = 0 ✓
         addMarker(board, pos(1, -1, 0), 1); // 1 + (-1) + 0 = 0 ✓
@@ -531,8 +535,9 @@ describe('lineDetection branch coverage', () => {
       });
 
       it('validates radius constraint', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 3 });
-        // Size 3 means radius 2, so |q|, |r|, |s| <= 2
+        // Size = bounding box = 2*radius + 1. size=5 means radius=2.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+        // Size 5 means radius 2, so |q|, |r|, |s| <= 2
         addMarker(board, pos(0, 0, 0), 1);
         addMarker(board, pos(1, -1, 0), 1);
         addMarker(board, pos(2, -2, 0), 1);
@@ -544,7 +549,8 @@ describe('lineDetection branch coverage', () => {
       });
 
       it('computes z from x and y when z is undefined', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+        // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
         // Test that z = -x - y is used when z is undefined
         // This tests the isValidPosition logic: s = position.z || -q - r
         addMarker(board, pos(0, 0, 0), 1);

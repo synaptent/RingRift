@@ -254,7 +254,8 @@ function forEachBoardPosition(board: BoardState, fn: (pos: Position) => void): v
   const size = board.size;
 
   if (board.type === 'hexagonal' || board.type === 'hex8') {
-    const radius = size - 1;
+    // boardSize is the bounding box (2*radius + 1)
+    const radius = (size - 1) / 2;
     for (let q = -radius; q <= radius; q++) {
       const r1 = Math.max(-radius, -q - radius);
       const r2 = Math.min(radius, -q + radius);
@@ -277,7 +278,8 @@ function forEachBoardPosition(board: BoardState, fn: (pos: Position) => void): v
  */
 function isValidBoardPosition(boardType: BoardType, size: number, position: Position): boolean {
   if (boardType === 'hexagonal' || boardType === 'hex8') {
-    const radius = size - 1;
+    // boardSize is the bounding box (2*radius + 1)
+    const radius = (size - 1) / 2;
     const q = position.x;
     const r = position.y;
     const s = position.z ?? -q - r;

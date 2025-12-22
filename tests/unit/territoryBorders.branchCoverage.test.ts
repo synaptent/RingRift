@@ -228,7 +228,8 @@ describe('territoryBorders branch coverage', () => {
 
     describe('hex board behavior', () => {
       it('does not expand on hex boards (seed only)', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+        // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
         // Region at center, marker at adjacent position
         addMarker(board, pos(1, 0, -1), 1);
         // Another marker that would be found via expansion on square but not hex
@@ -248,7 +249,8 @@ describe('territoryBorders branch coverage', () => {
   describe('getTerritoryNeighbors adjacency types', () => {
     describe('hexagonal adjacency', () => {
       it('uses 6 hex directions for hexagonal boards', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+        // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
         // Place markers in all 6 hex directions from center
         addMarker(board, pos(1, 0, -1), 1); // East
         addMarker(board, pos(1, -1, 0), 1); // NE
@@ -294,7 +296,8 @@ describe('territoryBorders branch coverage', () => {
 
   describe('getMooreNeighbors', () => {
     it('returns empty for hex boards', () => {
-      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+      // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
       addMarker(board, pos(1, 0, -1), 1);
       addMarker(board, pos(1, 1, -2), 1); // Would be Moore neighbor
       const region = [pos(0, 0, 0)];
@@ -330,8 +333,9 @@ describe('territoryBorders branch coverage', () => {
   describe('isValidPositionOnBoard', () => {
     describe('hexagonal board validation', () => {
       it('validates hex positions within radius', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 3 });
-        // size 3 = radius 2
+        // Size = bounding box = 2*radius + 1. size=5 means radius=2.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+        // size 5 = radius 2
         addMarker(board, pos(2, 0, -2), 1); // At edge of radius
         const region = [pos(1, 0, -1)];
 
@@ -341,8 +345,9 @@ describe('territoryBorders branch coverage', () => {
       });
 
       it('rejects hex positions outside radius', () => {
-        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 2 });
-        // size 2 = radius 1
+        // Size = bounding box = 2*radius + 1. size=3 means radius=1.
+        const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 3 });
+        // size 3 = radius 1
         // (2, 0, -2) would be outside radius 1
         addMarker(board, pos(2, 0, -2), 1);
         const region = [pos(0, 0, 0)];
@@ -407,7 +412,8 @@ describe('territoryBorders branch coverage', () => {
     });
 
     it('sorts hex positions in cube-lexicographic order (x, y, z)', () => {
-      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+      // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
       addMarker(board, pos(1, 0, -1), 1); // x=1
       addMarker(board, pos(0, 1, -1), 1); // x=0
       addMarker(board, pos(-1, 1, 0), 1); // x=-1
@@ -422,7 +428,8 @@ describe('territoryBorders branch coverage', () => {
     });
 
     it('handles mixed z values (computes z from x,y when undefined)', () => {
-      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 5 });
+      // Size = bounding box = 2*radius + 1. size=9 means radius=4.
+      const board = makeBoardState({ type: 'hexagonal' as BoardType, size: 9 });
       // Add markers with explicit z
       addMarker(board, pos(1, -1, 0), 1);
       addMarker(board, pos(1, 0, -1), 1);

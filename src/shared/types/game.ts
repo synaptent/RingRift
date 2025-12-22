@@ -1002,7 +1002,7 @@ export const BOARD_CONFIGS = {
     type: 'square' as const,
   },
   hex8: {
-    size: 5, // Hex8 board: radius = 4, so size = radius + 1 = 5
+    size: 9, // Hex8 board: bounding box = 2*radius + 1 = 9 for radius=4
     totalSpaces: 61, // 3r² + 3r + 1 = 3(16) + 12 + 1 = 61 for r=4
     ringsPerPlayer: 18, // Same as square8
     lineLength: 4, // Minimum line length for collapse (hex)
@@ -1012,7 +1012,7 @@ export const BOARD_CONFIGS = {
     type: 'hexagonal' as const,
   },
   hexagonal: {
-    size: 13, // Radius of hexagonal board (size - 1 = 12)
+    size: 25, // Hexagonal board: bounding box = 2*radius + 1 = 25 for radius=12
     totalSpaces: 469,
     ringsPerPlayer: 96,
     lineLength: 4, // Minimum line length for collapse (hex)

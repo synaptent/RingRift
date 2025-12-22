@@ -136,6 +136,10 @@ def play_single_game(
 ) -> MatchResult:
     """Play a single game between two models.
 
+    Uses UnifiedModelLoader to automatically detect and load ANY model architecture
+    (NNUE, CNN, Hex, experimental). Wraps models in UniversalAI which selects the
+    appropriate play strategy based on architecture.
+
     Args:
         model_a_path: Path to model A
         model_b_path: Path to model B
@@ -148,84 +152,57 @@ def play_single_game(
     Returns:
         MatchResult with game outcome
     """
-    from app.ai.minimax_ai import MinimaxAI
-    from app.ai.nnue import BatchNNUEEvaluator
-    from app.game_engine import GameEngine
-    from app.models import AIConfig, AIType, BoardType, GameStatus
-    from app.training.generate_data import create_initial_state
+    from app.ai.heuristic_ai import HeuristicAI
+    from app.ai.unified_loader import UnifiedModelLoader
+    from app.ai.universal_ai import UniversalAI
+    from app.models import AIConfig, BoardType, GameStatus
+    from app.rules.default_engine import DefaultRulesEngine
+    from app.training.initial_state import create_initial_state
 
     start_time = time.time()
+    bt = BoardType(board_type)
 
-    # Load NNUE models from explicit paths using BatchNNUEEvaluator
-    evaluator_a = BatchNNUEEvaluator(
-        board_type=BoardType(board_type),
-        num_players=num_players,
-        model_path=model_a_path,
-    )
-    evaluator_b = BatchNNUEEvaluator(
-        board_type=BoardType(board_type),
-        num_players=num_players,
-        model_path=model_b_path,
-    )
+    # Use UnifiedModelLoader to detect and load models of any architecture
+    loader = UnifiedModelLoader()
 
-    if not evaluator_a.available:
-        raise RuntimeError(f"Failed to load model A from {model_a_path}")
-    if not evaluator_b.available:
-        raise RuntimeError(f"Failed to load model B from {model_b_path}")
+    def create_ai(model_path: str, player: int) -> UniversalAI | HeuristicAI:
+        """Create AI from model path using unified loader."""
+        try:
+            loaded = loader.load(
+                model_path,
+                board_type=bt,
+                num_players=num_players,
+                allow_fresh=False,  # Require existing weights
+            )
+            config = AIConfig(difficulty=5, board_type=bt)
+            return UniversalAI(
+                player_number=player,
+                config=config,
+                loaded_model=loaded,
+                board_type=bt,
+                num_players=num_players,
+                use_mcts=False,  # Direct policy/minimax for speed
+                policy_temperature=0.1,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model from {model_path}: {e}")
 
-    # Create AIs - use MinimaxAI with NNUE evaluation
-    # Scale depth based on simulations parameter (simulations/20 -> depth 3-7)
-    depth = max(3, min(7, mcts_simulations // 20))
-    config = AIConfig(
-        ai_type=AIType.MINIMAX,
-        difficulty=depth,  # Maps to search depth
-        think_time=5000,
-        use_neural_net=True,
-        board_type=BoardType(board_type),
-    )
-
-    # Create MinimaxAI instances and inject custom evaluators
-    ai_1 = MinimaxAI(1, config)
-    ai_2 = MinimaxAI(2, config)
-
-    # Override the NNUE evaluators with our custom loaded models
+    # Create AIs - assign to correct player numbers based on model_a_player
     if model_a_player == 1:
-        ai_1._nnue_evaluator_override = evaluator_a
-        ai_2._nnue_evaluator_override = evaluator_b
+        ai_1 = create_ai(model_a_path, 1)
+        ai_2 = create_ai(model_b_path, 2)
     else:
-        ai_1._nnue_evaluator_override = evaluator_b
-        ai_2._nnue_evaluator_override = evaluator_a
-
-    # Monkey-patch the evaluate method to use our custom evaluators
-    def make_custom_evaluate(ai, evaluator):
-        original_evaluate = ai.evaluate_mutable
-        def custom_evaluate(state):
-            try:
-                # Use BatchNNUEEvaluator's single-state evaluation
-                import torch
-                from app.ai.nnue_features import extract_features_from_gamestate
-                features = extract_features_from_gamestate(state, evaluator.board_type)
-                features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
-                with torch.no_grad():
-                    score = evaluator.model(features_tensor).item()
-                # Scale to centipawn-like values and adjust for player perspective
-                scaled = score * 10000
-                return scaled if state.current_player == ai.player_number else -scaled
-            except Exception:
-                return original_evaluate(state)
-        return custom_evaluate
-
-    ai_1.evaluate_mutable = make_custom_evaluate(ai_1, ai_1._nnue_evaluator_override)
-    ai_2.evaluate_mutable = make_custom_evaluate(ai_2, ai_2._nnue_evaluator_override)
+        ai_1 = create_ai(model_b_path, 1)
+        ai_2 = create_ai(model_a_path, 2)
 
     # Create game
-    state = create_initial_state(BoardType(board_type), num_players=num_players)
-    engine = GameEngine()
+    state = create_initial_state(board_type=bt, num_players=num_players)
+    engine = DefaultRulesEngine()
 
     # Play game - use theoretical max moves based on board type
     from app.training.env import get_theoretical_max_moves
     move_count = 0
-    max_moves = get_theoretical_max_moves(BoardType(board_type), num_players)
+    max_moves = get_theoretical_max_moves(bt, num_players)
 
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_ai = ai_1 if state.current_player == 1 else ai_2

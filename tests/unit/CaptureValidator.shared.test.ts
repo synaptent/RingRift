@@ -877,11 +877,12 @@ describe('CaptureValidator', () => {
             },
           ],
         ]);
+        // Size = bounding box = 2*radius + 1. size=7 means radius=3.
         const state = createMinimalState({
           currentPhase: 'movement',
           currentPlayer: 1,
           boardType: 'hexagonal',
-          boardSize: 4,
+          boardSize: 7,
           stacks,
         });
 

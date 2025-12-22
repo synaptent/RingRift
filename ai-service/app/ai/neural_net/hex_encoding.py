@@ -51,11 +51,11 @@ def _infer_board_size(board: BoardState | GameState) -> int:
     if board_type == BoardType.SQUARE19:
         return 19
     if board_type == BoardType.HEXAGONAL:
-        radius = board.size - 1  # board.size=13 → radius=12
-        return 2 * radius + 1    # → bounding box = 25
+        # board.size is now the bounding box directly (25)
+        return board.size
     if board_type == BoardType.HEX8:
-        radius = board.size - 1  # board.size=5 → radius=4
-        return 2 * radius + 1    # → bounding box = 9
+        # board.size is now the bounding box directly (9)
+        return board.size
 
     # Defensive fallback: use board.size but guard against unsupported sizes
     size = getattr(board, "size", 8)

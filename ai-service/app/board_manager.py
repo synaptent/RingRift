@@ -121,9 +121,9 @@ class BoardManager:
         elif board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             # Compute z from x,y if not provided (hex constraint: x + y + z = 0)
             z = position.z if position.z is not None else -position.x - position.y
-            # Hex boards: size = radius + 1 (TS BOARD_CONFIGS). Radius = size - 1.
-            # HEX8: size=5 -> radius=4, HEXAGONAL: size=13 -> radius=12
-            radius = size - 1
+            # Hex boards: size = bounding box (2*radius + 1). Radius = (size - 1) // 2.
+            # HEX8: size=9 -> radius=4, HEXAGONAL: size=25 -> radius=12
+            radius = (size - 1) // 2
             return (abs(position.x) <= radius and
                     abs(position.y) <= radius and
                     abs(z) <= radius and
@@ -324,8 +324,8 @@ class BoardManager:
                 for y in range(19):
                     positions.append(Position(x=x, y=y))
         elif board.type in (BoardType.HEXAGONAL, BoardType.HEX8):
-            # Hex boards: size = radius + 1 (TS BOARD_CONFIGS). Radius = size - 1.
-            radius = board.size - 1
+            # Hex boards: size = bounding box (2*radius + 1). Radius = (size - 1) // 2.
+            radius = (board.size - 1) // 2
             for x in range(-radius, radius + 1):
                 for y in range(-radius, radius + 1):
                     z = -x - y

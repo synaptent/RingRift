@@ -796,9 +796,19 @@ def create_hybrid_evaluator(
     Returns:
         Configured HybridGPUEvaluator
     """
-    board_size = {"square8": 8, "square19": 19, "hex8": 9, "hex": 25, "hexagonal": 25}.get(
-        board_type.lower(), 8
-    )
+    # Use BOARD_CONFIGS for canonical size (now includes correct bounding box for hex boards)
+    from app.models import BoardType
+    from app.rules.core import BOARD_CONFIGS
+
+    board_type_key = board_type.lower()
+    board_type_enum = {
+        "square8": BoardType.SQUARE8,
+        "square19": BoardType.SQUARE19,
+        "hex8": BoardType.HEX8,
+        "hex": BoardType.HEXAGONAL,
+        "hexagonal": BoardType.HEXAGONAL,
+    }.get(board_type_key, BoardType.SQUARE8)
+    board_size = BOARD_CONFIGS[board_type_enum].size
 
     device = get_device(prefer_gpu=prefer_gpu)
 

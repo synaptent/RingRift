@@ -78,8 +78,8 @@ export function formatPosition(pos: Position, options: MoveNotationOptions = {})
   if (config.type === 'hexagonal') {
     // Map hex coordinates (q, r, s) to algebraic-like (File+Rank).
     // We treat 'q' (vertical) as Rank and 'r' (oblique) as File.
-    // Radius is size - 1.
-    const radius = config.size - 1;
+    // boardSize is the bounding box (2*radius + 1). Radius = (size - 1) / 2.
+    const radius = (config.size - 1) / 2;
 
     // Rank: Map q from [-radius, radius] to [2*radius + 1, 1]
     // Top row (q = -radius) -> Rank 2*radius + 1

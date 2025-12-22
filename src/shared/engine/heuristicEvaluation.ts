@@ -389,8 +389,9 @@ function getAdjacentPositions(pos: Position, boardType: BoardType, size: number)
 function forEachBoardPosition(board: BoardState, fn: (pos: Position) => void): void {
   const size = board.size;
 
-  if (board.type === 'hexagonal') {
-    const radius = size - 1;
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
+    // boardSize is the bounding box (2*radius + 1)
+    const radius = (size - 1) / 2;
     for (let q = -radius; q <= radius; q++) {
       const r1 = Math.max(-radius, -q - radius);
       const r2 = Math.min(radius, -q + radius);
