@@ -204,6 +204,11 @@ def get_move_type_count() -> int:
 # Maximum height tracked in GPU representation (soft limit for tensor storage)
 MAX_STACK_HEIGHT = 8
 
+# Maximum ring depth tracked per stack position (December 2025 - full ring composition)
+# Tracks all rings in a stack from bottom to top for accurate cap computation
+# after ownership transfers. 16 is sufficient for any realistic game scenario.
+MAX_RING_STACK_DEPTH = 16
+
 # Direction vectors for square boards (8 directions)
 SQUARE_DIRECTIONS = [
     (-1, -1), (-1, 0), (-1, 1),
@@ -223,6 +228,7 @@ LINE_DIRECTIONS = [
 __all__ = [
     'LINE_DIRECTIONS',
     # Constants
+    'MAX_RING_STACK_DEPTH',
     'MAX_STACK_HEIGHT',
     'SQUARE_DIRECTIONS',
     # Dataclasses

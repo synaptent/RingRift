@@ -24,6 +24,7 @@ import torch
 
 from .gpu_batch import get_device
 from .gpu_game_types import (
+    MAX_RING_STACK_DEPTH,
     GamePhase,
     GameStatus,
     MoveType,
@@ -104,6 +105,7 @@ class BatchGameState:
     stack_height: torch.Tensor     # 0-5 (total rings in stack)
     cap_height: torch.Tensor       # 0-5 (consecutive top rings of owner's color per RR-CANON-R101)
     ring_under_cap: torch.Tensor   # 0=none, 1-4=player (December 2025 - ownership transfer fix)
+    ring_stack: torch.Tensor       # (batch, board_size, board_size, 16) full ring composition bottom-to-top
     marker_owner: torch.Tensor     # 0=none, 1-4=player
     territory_owner: torch.Tensor  # 0=neutral, 1-4=player
     is_collapsed: torch.Tensor     # bool
@@ -230,6 +232,7 @@ class BatchGameState:
             stack_height=torch.zeros((batch_size, board_size, board_size), dtype=torch.int8, device=device),
             cap_height=torch.zeros((batch_size, board_size, board_size), dtype=torch.int8, device=device),
             ring_under_cap=torch.zeros((batch_size, board_size, board_size), dtype=torch.int8, device=device),
+            ring_stack=torch.zeros((batch_size, board_size, board_size, MAX_RING_STACK_DEPTH), dtype=torch.int8, device=device),
             marker_owner=torch.zeros((batch_size, board_size, board_size), dtype=torch.int8, device=device),
             territory_owner=torch.zeros((batch_size, board_size, board_size), dtype=torch.int8, device=device),
             is_collapsed=torch.zeros((batch_size, board_size, board_size), dtype=torch.bool, device=device),
@@ -414,6 +417,11 @@ class BatchGameState:
                 batch.stack_owner[g, row, col] = stack.controlling_player
                 batch.stack_height[g, row, col] = stack.stack_height
                 batch.cap_height[g, row, col] = stack.cap_height
+                # Copy full ring composition (December 2025 - ring_stack tensor)
+                if hasattr(stack, 'rings') and stack.rings:
+                    for i, ring_owner in enumerate(stack.rings):
+                        if i < MAX_RING_STACK_DEPTH:
+                            batch.ring_stack[g, row, col, i] = ring_owner
 
             # Copy collapsed spaces
             for pos_key, territory_owner in board.collapsed_spaces.items():
@@ -590,15 +598,15 @@ class BatchGameState:
                 stack_height = self.stack_height[game_idx, y, x].item()
                 if stack_owner > 0 and stack_height > 0:
                     cap_h = self.cap_height[game_idx, y, x].item()
-                    # Reconstruct rings - cap rings on top, buried on bottom
+                    # Reconstruct rings from ring_stack tensor (December 2025)
                     rings = []
-                    buried_count = stack_height - cap_h
-                    # Bottom rings (buried from opponent) - approximation
-                    for _ in range(buried_count):
-                        rings.append(3 - stack_owner if stack_owner <= 2 else 1)
-                    # Top rings (owner's color)
-                    for _ in range(cap_h):
-                        rings.append(stack_owner)
+                    for i in range(int(stack_height)):
+                        ring_owner = self.ring_stack[game_idx, y, x, i].item()
+                        if ring_owner > 0:
+                            rings.append(int(ring_owner))
+                        else:
+                            # Fallback for empty slots (shouldn't happen)
+                            rings.append(int(stack_owner))
 
                     stacks[pos_key] = RingStack(
                         position=Position(x=col, y=row),

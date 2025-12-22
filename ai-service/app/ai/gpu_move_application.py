@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from .gpu_game_types import GamePhase, MoveType
+from .gpu_game_types import GamePhase, MoveType, MAX_RING_STACK_DEPTH
+from .gpu_move_generation import compute_cap_from_ring_stack
 
 if TYPE_CHECKING:
     from .gpu_move_generation import BatchMoves
@@ -534,6 +535,17 @@ def apply_recovery_moves_vectorized(
         # December 2025: Clear ring_under_cap when stack is cleared
         state.ring_under_cap[ss_games[is_cleared], ss_to_y[is_cleared], ss_to_x[is_cleared]] = 0
 
+        # December 2025: Update ring_stack for stack-strike (pop top ring)
+        for i in range(len(ss_games)):
+            g = ss_games[i].item()
+            y_pos = ss_to_y[i].item()
+            x_pos = ss_to_x[i].item()
+            old_h = int(ss_dest_height[i].item())
+            if old_h > 0:
+                state.ring_stack[g, y_pos, x_pos, old_h - 1] = 0
+                if is_cleared[i]:
+                    state.ring_stack[g, y_pos, x_pos, :] = 0
+
         # December 2025 BUG FIX: When cap becomes 0 but height > 0, the entire
         # cap was eliminated and a buried ring is now on top. Recalculate ownership
         # by finding who has buried rings at this position.
@@ -561,14 +573,8 @@ def apply_recovery_moves_vectorized(
                             new_ring_under = pp
                             break
                     state.ring_under_cap[g, y_pos, x_pos] = new_ring_under
-                    # BUG FIX 2025-12-21: Set cap correctly based on ring_under_cap (RR-CANON-R022)
-                    # If new_ring_under > 0, there's an opponent ring below, so cap = 1
-                    # If new_ring_under == 0, all remaining rings are new owner's color, so cap = height
-                    current_height = int(state.stack_height[g, y_pos, x_pos].item())
-                    if new_ring_under > 0:
-                        new_owner_cap = 1
-                    else:
-                        new_owner_cap = current_height
+                    # December 2025: Use ring_stack for authoritative cap computation
+                    new_owner_cap = compute_cap_from_ring_stack(state, g, y_pos, x_pos)
                     state.cap_height[g, y_pos, x_pos] = new_owner_cap
                     # Decrement the exposed buried ring count for new owner
                     if state.buried_at[g, new_owner, y_pos, x_pos].item() > 0:
@@ -621,6 +627,8 @@ def apply_recovery_moves_vectorized(
                             state.stack_owner[g, extraction_y, extraction_x] = 0
                             state.cap_height[g, extraction_y, extraction_x] = 0
                             state.ring_under_cap[g, extraction_y, extraction_x] = 0
+                            # December 2025: Clear ring_stack when stack is eliminated
+                            state.ring_stack[g, extraction_y, extraction_x, :] = 0
                             # Clear all buried_at for this empty position
                             for pp in range(1, state.num_players + 1):
                                 state.buried_at[g, pp, extraction_y, extraction_x] = 0
@@ -683,6 +691,24 @@ def apply_recovery_moves_vectorized(
                                             new_ring_under = pp
                                             break
                                 state.ring_under_cap[g, extraction_y, extraction_x] = new_ring_under
+
+                            # December 2025: Update ring_stack - remove extracted ring and shift
+                            # Find the bottommost ring of extracting player and remove it
+                            extraction_idx = -1
+                            for ring_i in range(int(old_height)):
+                                if int(state.ring_stack[g, extraction_y, extraction_x, ring_i].item()) == p:
+                                    extraction_idx = ring_i
+                                    break
+                            if extraction_idx >= 0:
+                                # Shift remaining rings down
+                                for ring_i in range(extraction_idx, int(new_height)):
+                                    state.ring_stack[g, extraction_y, extraction_x, ring_i] = \
+                                        state.ring_stack[g, extraction_y, extraction_x, ring_i + 1]
+                                state.ring_stack[g, extraction_y, extraction_x, new_height] = 0
+
+                            # December 2025: Use ring_stack for authoritative cap computation
+                            computed_cap = compute_cap_from_ring_stack(state, g, extraction_y, extraction_x)
+                            state.cap_height[g, extraction_y, extraction_x] = computed_cap
 
                             # Decrement buried_at count for the extracted position.
                             # Now properly tracks multiple buried rings at same location.
@@ -1072,6 +1098,12 @@ def apply_placement_moves_batch_vectorized(
     state.cap_height[game_indices, y, x] = new_cap.to(state.cap_height.dtype)
     state.ring_under_cap[game_indices, y, x] = new_ring_under.to(state.ring_under_cap.dtype)
 
+    # December 2025: Update ring_stack - add placed ring at top of stack
+    # Ring goes at index (old_height) if stacking, or index 0 if empty
+    # Clamp to MAX_RING_STACK_DEPTH - 1 to avoid overflow
+    ring_idx = torch.clamp(dest_height.long(), min=0, max=MAX_RING_STACK_DEPTH - 1)
+    state.ring_stack[game_indices, y, x, ring_idx] = players.to(state.ring_stack.dtype)
+
     # Handle buried rings for opponent stacks - vectorized with index_put_
     # All rings in the previous owner's cap become buried when control flips.
     is_opponent = ~is_empty & (dest_owner != 0) & (dest_owner != players)
@@ -1269,11 +1301,28 @@ def apply_movement_moves_batch_vectorized(
     # Place departure marker at origin (per RR-CANON-R090)
     state.marker_owner[game_indices, from_y, from_x] = players.to(state.marker_owner.dtype)
 
+    # December 2025: Transfer ring_stack from origin to destination BEFORE clearing
+    # First copy the ring_stack, then handle landing cost
+    for i in range(n_games):
+        g = game_indices[i].item()
+        fy, fx = from_y[i].item(), from_x[i].item()
+        ty, tx = to_y[i].item(), to_x[i].item()
+        h = int(moving_height[i].item())
+        cost = int(landing_ring_cost[i].item())
+        # Copy ring_stack from origin to destination
+        state.ring_stack[g, ty, tx, :h] = state.ring_stack[g, fy, fx, :h]
+        state.ring_stack[g, ty, tx, h:] = 0  # Clear any remaining slots
+        # Handle landing cost - remove top ring
+        if cost > 0 and h > 0:
+            state.ring_stack[g, ty, tx, h - 1] = 0
+
     # Clear origin stack
     state.stack_owner[game_indices, from_y, from_x] = 0
     state.stack_height[game_indices, from_y, from_x] = 0
     state.cap_height[game_indices, from_y, from_x] = 0
     state.ring_under_cap[game_indices, from_y, from_x] = 0
+    # Clear origin ring_stack
+    state.ring_stack[game_indices, from_y, from_x, :] = 0
 
     # Move buried_at tracking from origin to destination (December 2025 - recovery fix)
     # Buried rings move with the stack, so we need to update the position tracking
@@ -1327,11 +1376,8 @@ def apply_movement_moves_batch_vectorized(
             # Use ring_under_cap to get the correct new owner (the player whose ring
             # was directly under the eliminated cap)
             #
-            # BUG FIX (2025-12-21): When cap is eliminated, ALL consecutive buried rings
-            # of the same player become the new cap, not just 1. For example, if a stack
-            # is [1, 1, 2] (rings from bottom to top) with cap=1 (player 2), and the cap
-            # is eliminated, the remaining stack [1, 1] should have cap=2 (both player 1
-            # rings), not cap=1.
+            # December 2025: Use compute_cap_from_ring_stack for authoritative cap computation
+            # after ownership transfer. This replaces the old buried_at-based heuristic.
             for idx in range(len(transfer_games)):
                 g = transfer_games[idx].item()
                 y_pos = transfer_y[idx].item()
@@ -1342,15 +1388,18 @@ def apply_movement_moves_batch_vectorized(
                     surv_idx = torch.where(transfer_mask)[0][idx]
                     final_owners[surv_idx] = new_owner
 
-                    # Get count of buried rings for new_owner at this position
-                    # ALL consecutive rings of new_owner become the new cap
-                    buried_count = int(state.buried_at[g, new_owner, y_pos, x_pos].item())
-                    new_cap = max(1, buried_count)  # At least 1 ring (the ring_under_cap)
+                    # Update stack_owner first so compute_cap_from_ring_stack sees correct owner
+                    state.stack_owner[g, y_pos, x_pos] = new_owner
+
+                    # December 2025: Use ring_stack for authoritative cap computation
+                    new_cap = compute_cap_from_ring_stack(state, g, y_pos, x_pos)
                     final_caps[surv_idx] = new_cap
 
                     # Clear buried_at for new_owner (all rings are now exposed as cap)
+                    buried_count = int(state.buried_at[g, new_owner, y_pos, x_pos].item())
                     state.buried_at[g, new_owner, y_pos, x_pos] = 0
-                    state.buried_rings[g, new_owner] -= buried_count
+                    if buried_count > 0:
+                        state.buried_rings[g, new_owner] -= buried_count
 
                     # Compute new ring_under_cap: find next player with buried rings at this position
                     next_ring_under = 0
@@ -1376,6 +1425,8 @@ def apply_movement_moves_batch_vectorized(
         state.stack_height[elim_games, elim_to_y, elim_to_x] = 0
         state.cap_height[elim_games, elim_to_y, elim_to_x] = 0
         state.ring_under_cap[elim_games, elim_to_y, elim_to_x] = 0
+        # December 2025: Clear ring_stack for eliminated stacks
+        state.ring_stack[elim_games, elim_to_y, elim_to_x, :] = 0
         # Also clear buried_at AND decrement buried_rings since the stack is gone
         # BUG FIX 2025-12-20: buried_rings wasn't decremented when stacks were eliminated,
         # causing divergence with CPU buried ring counting

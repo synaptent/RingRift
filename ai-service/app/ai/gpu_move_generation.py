@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from .gpu_game_types import GamePhase, MoveType, MAX_STACK_HEIGHT
+from .gpu_game_types import GamePhase, MoveType, MAX_RING_STACK_DEPTH, MAX_STACK_HEIGHT
 
 if TYPE_CHECKING:
     from .gpu_parallel_games import BatchGameState
@@ -52,6 +52,44 @@ class BatchMoves:
 
     total_moves: int
     device: torch.device
+
+
+# =============================================================================
+# Ring Stack Helpers (December 2025 - Full Ring Composition Tracking)
+# =============================================================================
+
+
+def compute_cap_from_ring_stack(state, game_idx: int, y: int, x: int) -> int:
+    """Compute cap_height from ring_stack by counting consecutive same-color rings from top.
+
+    This is the authoritative cap computation after ownership transfers.
+    The ring_stack tensor stores all rings from bottom (index 0) to top (index height-1).
+
+    Args:
+        state: BatchGameState with ring_stack tensor
+        game_idx: Game index in batch
+        y, x: Position on board
+
+    Returns:
+        Number of consecutive rings from top matching the controlling player
+    """
+    height = int(state.stack_height[game_idx, y, x].item())
+    if height <= 0:
+        return 0
+
+    owner = int(state.stack_owner[game_idx, y, x].item())
+    if owner <= 0:
+        return 0
+
+    cap = 0
+    # Count from top (height-1) down to bottom (0)
+    for i in range(height - 1, -1, -1):
+        ring_owner = int(state.ring_stack[game_idx, y, x, i].item())
+        if ring_owner == owner:
+            cap += 1
+        else:
+            break
+    return cap
 
 
 def _empty_batch_moves(batch_size: int, device: torch.device) -> BatchMoves:
@@ -1659,10 +1697,17 @@ def apply_single_chain_capture(
     # Check if target's cap was fully captured
     target_cap_fully_captured = target_cap_height == 1  # Only transfer when capturing LAST cap ring (RR-CANON-R022)
 
+    # December 2025: Pop top ring from target's ring_stack
+    # The top ring is at index (target_height - 1), shift remaining rings
+    if target_height > 0:
+        state.ring_stack[game_idx, target_y, target_x, target_height - 1] = 0
+
     if new_target_height <= 0:
         state.stack_owner[game_idx, target_y, target_x] = 0
         state.cap_height[game_idx, target_y, target_x] = 0
         state.ring_under_cap[game_idx, target_y, target_x] = 0
+        # Clear ring_stack when stack eliminated (December 2025)
+        state.ring_stack[game_idx, target_y, target_x, :] = 0
         # BUG FIX 2025-12-20: Clear buried_at and decrement buried_rings when stack eliminated
         for p in range(1, state.num_players + 1):
             buried_count = state.buried_at[game_idx, p, target_y, target_x].item()
@@ -1681,17 +1726,17 @@ def apply_single_chain_capture(
                 new_ring_under = p
                 break
         state.ring_under_cap[game_idx, target_y, target_x] = new_ring_under
-        # BUG FIX 2025-12-21: cap_height depends on whether opponent rings exist below
-        # If new_ring_under > 0, there's an opponent ring below the exposed ring, so cap = 1
-        # If new_ring_under == 0, all remaining rings are new owner's color, so cap = new_target_height
-        if new_ring_under > 0:
-            state.cap_height[game_idx, target_y, target_x] = 1
-        else:
-            state.cap_height[game_idx, target_y, target_x] = new_target_height
-        # BUG FIX 2025-12-20: If new owner had buried ring here, decrement since it's now cap
+        # December 2025: Use ring_stack for authoritative cap computation after ownership transfer
+        new_target_cap = compute_cap_from_ring_stack(state, game_idx, target_y, target_x)
+        state.cap_height[game_idx, target_y, target_x] = new_target_cap
+        # BUG FIX 2025-12-22: Only decrement buried_at if the ring_under_cap player
+        # actually HAD buried rings at this position. The ring_under_cap itself is NOT
+        # in buried_at (only rings BELOW ring_under_cap are buried).
         if target_ring_under > 0:
-            state.buried_at[game_idx, target_ring_under, target_y, target_x] -= 1
-            state.buried_rings[game_idx, target_ring_under] -= 1
+            buried_count = state.buried_at[game_idx, target_ring_under, target_y, target_x].item()
+            if buried_count > 0:
+                state.buried_at[game_idx, target_ring_under, target_y, target_x] -= 1
+                state.buried_rings[game_idx, target_ring_under] -= 1
     else:
         # Cap not fully captured, defender keeps ownership
         # new_target_cap can be 0 as transient state (RR-CANON-R022)
@@ -1781,11 +1826,35 @@ def apply_single_chain_capture(
     state.cap_height[game_idx, to_y, to_x] = new_cap
     state.ring_under_cap[game_idx, to_y, to_x] = new_ring_under
 
+    # December 2025: Build landing ring_stack from attacker + captured ring
+    # 1. Copy attacker's ring_stack to landing position (will be modified)
+    state.ring_stack[game_idx, to_y, to_x, :] = state.ring_stack[game_idx, from_y, from_x, :]
+
+    # 2. Handle landing_ring_cost (marker elimination removes top ring)
+    if landing_ring_cost > 0 and attacker_height > 0:
+        state.ring_stack[game_idx, to_y, to_x, attacker_height - 1] = 0
+
+    # 3. Shift existing rings up by 1 and insert captured ring at bottom
+    # The captured ring goes to index 0, existing rings shift up
+    if attacker_height > 0 and new_height > 0 and new_height < MAX_RING_STACK_DEPTH:
+        # Shift rings up (from top down to avoid overwriting)
+        for i in range(min(new_height - 1, attacker_height - landing_ring_cost - 1), -1, -1):
+            state.ring_stack[game_idx, to_y, to_x, i + 1] = state.ring_stack[game_idx, to_y, to_x, i]
+        # Insert captured ring at bottom
+        state.ring_stack[game_idx, to_y, to_x, 0] = target_owner
+
+    # 4. If cap_fully_eliminated with ownership transfer, recompute cap from ring_stack
+    if cap_fully_eliminated and attacker_has_buried:
+        # Recompute cap after ownership transfer
+        computed_cap = compute_cap_from_ring_stack(state, game_idx, to_y, to_x)
+        state.cap_height[game_idx, to_y, to_x] = computed_cap
+
     # Clear origin stack and leave departure marker.
     state.stack_height[game_idx, from_y, from_x] = 0
     state.stack_owner[game_idx, from_y, from_x] = 0
     state.cap_height[game_idx, from_y, from_x] = 0
     state.ring_under_cap[game_idx, from_y, from_x] = 0
+    state.ring_stack[game_idx, from_y, from_x, :] = 0  # Clear origin ring_stack
     state.marker_owner[game_idx, from_y, from_x] = player
 
     # December 2025: Move buried_at tracking from origin to landing
@@ -1918,10 +1987,16 @@ def apply_single_initial_capture(
     # Check if target's cap was fully captured
     target_cap_fully_captured = target_cap_height == 1  # Only transfer when capturing LAST cap ring (RR-CANON-R022)
 
+    # December 2025: Pop top ring from target's ring_stack
+    if target_height > 0:
+        state.ring_stack[game_idx, target_y, target_x, target_height - 1] = 0
+
     if new_target_height <= 0:
         state.stack_owner[game_idx, target_y, target_x] = 0
         state.cap_height[game_idx, target_y, target_x] = 0
         state.ring_under_cap[game_idx, target_y, target_x] = 0
+        # Clear ring_stack when stack eliminated (December 2025)
+        state.ring_stack[game_idx, target_y, target_x, :] = 0
         # BUG FIX 2025-12-20: Clear buried_at and decrement buried_rings when stack eliminated
         for p in range(1, state.num_players + 1):
             buried_count = state.buried_at[game_idx, p, target_y, target_x].item()
@@ -1940,17 +2015,17 @@ def apply_single_initial_capture(
                 new_ring_under = p
                 break
         state.ring_under_cap[game_idx, target_y, target_x] = new_ring_under
-        # BUG FIX 2025-12-21: cap_height depends on whether opponent rings exist below
-        # If new_ring_under > 0, there's an opponent ring below the exposed ring, so cap = 1
-        # If new_ring_under == 0, all remaining rings are new owner's color, so cap = new_target_height
-        if new_ring_under > 0:
-            state.cap_height[game_idx, target_y, target_x] = 1
-        else:
-            state.cap_height[game_idx, target_y, target_x] = new_target_height
-        # BUG FIX 2025-12-20: Decrement buried tracking for newly exposed ring
+        # December 2025: Use ring_stack for authoritative cap computation after ownership transfer
+        new_target_cap = compute_cap_from_ring_stack(state, game_idx, target_y, target_x)
+        state.cap_height[game_idx, target_y, target_x] = new_target_cap
+        # BUG FIX 2025-12-22: Only decrement buried_at if the ring_under_cap player
+        # actually HAD buried rings at this position. The ring_under_cap itself is NOT
+        # in buried_at (only rings BELOW ring_under_cap are buried).
         if target_ring_under > 0:
-            state.buried_at[game_idx, target_ring_under, target_y, target_x] -= 1
-            state.buried_rings[game_idx, target_ring_under] -= 1
+            buried_count = state.buried_at[game_idx, target_ring_under, target_y, target_x].item()
+            if buried_count > 0:
+                state.buried_at[game_idx, target_ring_under, target_y, target_x] -= 1
+                state.buried_rings[game_idx, target_ring_under] -= 1
     else:
         # Cap not fully captured, defender keeps ownership
         # new_target_cap can be 0 as transient state (RR-CANON-R022)
@@ -2042,11 +2117,35 @@ def apply_single_initial_capture(
     state.cap_height[game_idx, to_y, to_x] = new_cap
     state.ring_under_cap[game_idx, to_y, to_x] = new_ring_under
 
+    # December 2025: Build landing ring_stack from attacker + captured ring
+    # 1. Copy attacker's ring_stack to landing position (will be modified)
+    state.ring_stack[game_idx, to_y, to_x, :] = state.ring_stack[game_idx, from_y, from_x, :]
+
+    # 2. Handle landing_ring_cost (marker elimination removes top ring)
+    if landing_ring_cost > 0 and attacker_height > 0:
+        state.ring_stack[game_idx, to_y, to_x, attacker_height - 1] = 0
+
+    # 3. Shift existing rings up by 1 and insert captured ring at bottom
+    # The captured ring goes to index 0, existing rings shift up
+    if attacker_height > 0 and new_height > 0 and new_height < MAX_RING_STACK_DEPTH:
+        # Shift rings up (from top down to avoid overwriting)
+        for i in range(min(new_height - 1, attacker_height - landing_ring_cost - 1), -1, -1):
+            state.ring_stack[game_idx, to_y, to_x, i + 1] = state.ring_stack[game_idx, to_y, to_x, i]
+        # Insert captured ring at bottom
+        state.ring_stack[game_idx, to_y, to_x, 0] = target_owner
+
+    # 4. If cap_fully_eliminated with ownership transfer, recompute cap from ring_stack
+    if cap_fully_eliminated and attacker_has_buried:
+        # Recompute cap after ownership transfer
+        computed_cap = compute_cap_from_ring_stack(state, game_idx, to_y, to_x)
+        state.cap_height[game_idx, to_y, to_x] = computed_cap
+
     # Clear origin
     state.stack_height[game_idx, from_y, from_x] = 0
     state.stack_owner[game_idx, from_y, from_x] = 0
     state.cap_height[game_idx, from_y, from_x] = 0
     state.ring_under_cap[game_idx, from_y, from_x] = 0
+    state.ring_stack[game_idx, from_y, from_x, :] = 0  # Clear origin ring_stack
     state.marker_owner[game_idx, from_y, from_x] = player
 
     # December 2025: Move buried_at tracking from origin to landing
