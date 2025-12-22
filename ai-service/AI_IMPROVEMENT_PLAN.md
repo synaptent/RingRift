@@ -1,4 +1,4 @@
-> **Doc Status (2025-12-14): Active (AI host improvement plan, Python service only)**
+> **Doc Status (2025-12-22): Active (AI host improvement plan, Python service only)**
 >
 > - Role: prioritized technical improvement and performance plan for the Python AI microservice (agents, search patterns, training pipeline). It informs work on the AI host, but does not redefine game rules.
 > - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
@@ -166,15 +166,23 @@ stochastic tie-breaking and exploration were more correlated than necessary.
 game during dataset generation (`BaseAI.reset_for_new_game`), so each game is
 reproducible in isolation under a base seed while avoiding correlated streams.
 
-#### 1.3.5 Hex-Specific Model Not Trained
+#### 1.3.5 Hex-Specific Model Training Pipeline
+
+**Status (2025-12-22):** ✅ **UNBLOCKED** — Parity validation complete for all hex boards.
 
 **Location:** [`neural_net.py:1390-1519`](app/ai/neural_net.py:1390)
 
-The `HexNeuralNet` class exists with proper architecture, but:
+The `HexNeuralNet` class exists with proper architecture. As of 2025-12-22:
 
-- No trained weights file exists for hex boards
-- Self-play training in [`train_loop.py`](app/training/train_loop.py) defaults to square boards
-- Hex-specific action encoder [`ActionEncoderHex`](app/ai/neural_net.py:1161) is implemented but unused in training
+- All 12 board/player combinations (including hex8 and hexagonal) pass parity validation
+- Canonical training databases exist for all configurations (see `TRAINING_DATA_REGISTRY.md`)
+- HEX-PARITY-02 (ANM state divergence) has been resolved
+- Training data volumes need scaling to 200+ games per configuration
+
+**Remaining work:**
+
+- Scale canonical training data to 200+ games per board/player config
+- Run hex-specific self-play and training pipeline on cluster
 
 #### 1.3.6 Self-Play Game Recording (Track 11)
 
@@ -376,7 +384,9 @@ class IncrementalRulesEngine:
 
 ### Priority 3: Hex Board Training Pipeline (High Impact, Medium Effort)
 
-**Current State:** Hex-specific neural network exists but is never trained.
+**Status (2025-12-22):** ✅ **UNBLOCKED** — HEX-PARITY-02 resolved, all hexagonal board/player combinations pass parity validation.
+
+**Current State:** Hex-specific neural network exists and is now ready for training. All 12 board/player combinations (square8, square19, hex8, hexagonal × 2P/3P/4P) have canonical training data with 100% parity verification. Training data volumes are still small (3-34 games per config) and need scaling to 200+ games.
 
 **Proposed Solution:**
 

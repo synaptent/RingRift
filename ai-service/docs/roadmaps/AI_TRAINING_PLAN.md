@@ -1,6 +1,8 @@
 # AI Training Plan: Heuristic Weight Optimization & Neural Network Training
 
-> **Doc Status (2025-12-14): Active**
+> **Doc Status (2025-12-22): Active**
+>
+> **Parity Status (2025-12-22):** ✅ All 12 board/player combinations (square8, square19, hex8, hexagonal × 2P/3P/4P) pass parity validation. HEX-PARITY-02 resolved. Canonical training data exists for all configurations (see `TRAINING_DATA_REGISTRY.md`). Training data volumes need scaling to 200+ games per config.
 
 This document outlines the complete training pipeline for optimizing RingRift AI,
 covering heuristic weight optimization via CMA-ES and neural network training.

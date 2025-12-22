@@ -1,6 +1,8 @@
 # RingRift Testing Guide
 
-> **Doc Status (2025-12-13): Active (test meta-doc, non-semantics)**
+> **Doc Status (2025-12-22): Active (test meta-doc, non-semantics)**
+>
+> **Coverage Status (2025-12-22):** 10,259+ TypeScript tests passing (75.67% statement coverage), 130 React component test files (80.55% component coverage), ~88% rules scenario coverage via 170 contract vectors and 30 scenario test files.
 >
 > **Role:** High-level guide to the RingRift TS+Python test suites: how they are structured, how to run them in different profiles (core/diagnostics/CI), and where to start when adding or debugging tests. This doc is a **test/meta reference only** – it explains how tests are organised and which commands/environments to use; it does **not** define game rules or lifecycle semantics.
 >
