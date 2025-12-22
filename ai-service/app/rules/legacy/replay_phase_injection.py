@@ -264,7 +264,7 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
                 # This handles hybrid selfplay recordings with different line detection.
                 if next_type in territory_moves:
                     # Check if no_line_action is actually valid
-                    valid_moves = GameEngine.get_valid_moves(state)
+                    valid_moves = GameEngine.get_valid_moves(state, state.current_player)
                     has_line_moves = any(
                         m.type in {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD}
                         for m in valid_moves
