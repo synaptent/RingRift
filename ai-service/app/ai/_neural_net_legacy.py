@@ -96,6 +96,7 @@ from .model_cache import (
     strip_module_prefix as _strip_module_prefix,
 )
 from .neural_net.blocks import AttentionResidualBlock  # Canonical implementation
+from .neural_net.hex_encoding import ActionEncoderHex  # For hex board move encoding
 
 # Re-export loss functions for backwards compatibility
 # These are imported by app.ai.neural_net.__init__ and external code
