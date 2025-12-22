@@ -152,15 +152,31 @@ def export_db_to_npz(
     max_positions: int = 500000,
     hex_encoder_version: str = "v3",
     history_length: int = 3,
+    legacy_injection: bool = False,
 ) -> int:
     """Export training positions from a game database.
+
+    Args:
+        legacy_injection: If True, auto-inject missing bookkeeping moves
+            (NO_TERRITORY_ACTION, etc.) to heal non-canonical recordings.
+            WARNING: Violates RR-CANON-R075 - use only for old data recovery.
 
     Returns number of positions exported.
     """
     from app.db.game_replay import GameReplayDB
 
     logger.info(f"Loading database: {db_path}")
-    replay = GameReplayDB(str(db_path))
+
+    # When legacy_injection is enabled, open DB with enforce_canonical_history=False
+    # to allow phase injection during replay
+    enforce_canonical = not legacy_injection
+    replay = GameReplayDB(str(db_path), enforce_canonical_history=enforce_canonical)
+
+    if legacy_injection:
+        logger.warning(
+            "LEGACY INJECTION ENABLED: Auto-injecting missing phase transitions. "
+            "This violates RR-CANON-R075 - data should be marked as 'healed' in registry."
+        )
 
     # Get game IDs
     conn = sqlite3.connect(str(db_path))
@@ -312,6 +328,16 @@ def main():
         default=3,
         help="Number of history frames to stack (default: 3 for 4 total frames)",
     )
+    parser.add_argument(
+        "--legacy-injection",
+        action="store_true",
+        help=(
+            "Enable legacy phase injection for non-canonical recordings. "
+            "Auto-injects missing bookkeeping moves (NO_TERRITORY_ACTION, etc.) "
+            "to heal games recorded before explicit phase transitions were required. "
+            "WARNING: Violates RR-CANON-R075 - use only for old data recovery."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -342,6 +368,7 @@ def main():
         max_positions=args.max_positions,
         hex_encoder_version=args.hex_encoder_version,
         history_length=args.history_length,
+        legacy_injection=args.legacy_injection,
     )
 
     return 0 if count > 0 else 1
