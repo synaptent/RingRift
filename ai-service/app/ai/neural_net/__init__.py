@@ -123,6 +123,15 @@ from app.ai.neural_net.hex_architectures import (
     HexNeuralNet_v3_Lite,
 )
 
+# Graph encoding - extracted from archive/cage_network.py (December 2025)
+# Enables GNN-based position evaluation
+from app.ai.neural_net.graph_encoding import (
+    NODE_FEATURE_IDX,
+    EDGE_ATTR_IDX,
+    board_to_graph,
+    board_to_graph_hex,
+)
+
 # Loss functions - migrated to neural_losses.py (Phase 3)
 from app.ai.neural_losses import (
     multi_player_value_loss,

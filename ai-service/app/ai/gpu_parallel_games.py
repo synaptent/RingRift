@@ -1487,10 +1487,14 @@ class ParallelGameRunner:
         ).squeeze(1)
         recovery_eligible = mask & (~controls_stack) & has_marker & (buried_for_current > 0)
 
-        games_with_rings = mask & (rings_for_current_player > 0) & (~recovery_eligible)
-        # Games skipping placement: recovery-eligible (choosing to skip) or no rings
-        games_skip_placement = mask & recovery_eligible & (rings_for_current_player > 0)
-        games_no_placement = mask & (rings_for_current_player == 0) & (~recovery_eligible)
+        # December 2025: BUG FIX - Per RR-CANON-R086, recovery-eligible players with rings
+        # MAY choose to place or skip. Previously, we forced skip_placement for all recovery-
+        # eligible players, which violated canonical rules and caused GPU-CPU parity failures.
+        # Now recovery-eligible players are included in games_with_rings and will place normally.
+        # Skip_placement for recovery is handled when no valid placements exist.
+        games_with_rings = mask & (rings_for_current_player > 0)
+        # Games with no rings: no_placement_action
+        games_no_placement = mask & (rings_for_current_player == 0)
 
         # Games WITH rings: generate and apply placement moves
         if games_with_rings.any():
@@ -1509,12 +1513,7 @@ class ParallelGameRunner:
                 games_placed = games_with_rings & (moves.moves_per_game > 0)
                 mark_real_action_batch(self.state, games_placed)
 
-        # December 2025: Record explicit phase moves for canonical compliance
-        # Games skipping placement to enable recovery: skip_placement
-        if games_skip_placement.any():
-            self._record_skip_placement_moves(games_skip_placement)
-
-        # Games with no rings (and not recovery eligible): no_placement_action
+        # Games with no rings: no_placement_action
         if games_no_placement.any():
             apply_no_action_moves_batch(self.state, games_no_placement)
 
