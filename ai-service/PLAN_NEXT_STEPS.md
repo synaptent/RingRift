@@ -24,7 +24,7 @@ Goal: One authoritative view of job states and utilization across Slurm/Vast/P2P
 
 1. Extend reconciliation to capture additional terminal metadata (exit codes) when available.
 
-## Lane 2: Canonical Data Pipeline Hardening
+## Lane 2: Canonical Data Pipeline Hardening (Complete)
 
 Goal: Canonical data only enters training, everywhere.
 
@@ -38,12 +38,9 @@ Goal: Canonical data only enters training, everywhere.
 - Gated curriculum, tuning, and v2/v3 compare training entrypoints on canonical DBs.
 - Added canonical filters and pass-through flags in the multi-config training loop.
 - Added canonical enforcement flags to auto training and canonical training entrypoints.
-
-### Next Tasks
-
-1. Extend gating to any remaining DB-driven scripts not yet covered.
-2. Update `TRAINING_DATA_REGISTRY.md` and add health summary checks to automation.
-3. Add a small CLI to verify canonical status and provenance for a DB path.
+- Extended gating to `distill_cnn_to_nnue.py`, `distill_to_nnue.py`, `distributed_export.py` (2025-12-22).
+- Updated `TRAINING_DATA_REGISTRY.md` with all 12 board/player configs now passing parity (2025-12-22).
+- CLI for canonical verification exists at `scripts/verify_canonical_db.py`.
 
 ## Lane 3: AI Determinism, Registry, and Correctness
 

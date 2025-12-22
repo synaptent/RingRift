@@ -65,6 +65,8 @@ from scripts.lib.ssh import run_ssh_command as lib_run_ssh_command
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from app.training.canonical_sources import enforce_canonical_sources
+
 # Unified resource guard - 80% utilization limits (enforced 2025-12-16)
 try:
     from app.utils.resource_guard import (
@@ -1118,6 +1120,10 @@ def main():
                                help="Number of parallel workers within this node (default: 1)")
     worker_parser.add_argument("--serve", action="store_true", help="Serve output via HTTP")
     worker_parser.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT)
+    worker_parser.add_argument("--allow-noncanonical", action="store_true",
+                               help="Allow exporting from non-canonical DBs")
+    worker_parser.add_argument("--registry", type=str, default=None,
+                               help="Path to TRAINING_DATA_REGISTRY.md")
 
     # Coordinate command
     coord_parser = subparsers.add_parser("coordinate", help="Coordinate distributed export")
@@ -1129,6 +1135,10 @@ def main():
     coord_parser.add_argument("--min-moves", type=int, default=10)
     coord_parser.add_argument("--encoder-version", default="default")
     coord_parser.add_argument("--hosts-config", help="Path to hosts YAML config")
+    coord_parser.add_argument("--allow-noncanonical", action="store_true",
+                               help="Allow exporting from non-canonical DBs")
+    coord_parser.add_argument("--registry", type=str, default=None,
+                               help="Path to TRAINING_DATA_REGISTRY.md")
 
     # Merge command
     merge_parser = subparsers.add_parser("merge", help="Merge NPZ chunks")
@@ -1143,6 +1153,10 @@ def main():
     split_parser.add_argument("--chunks", type=int, default=8)
     split_parser.add_argument("--min-moves", type=int, default=10)
     split_parser.add_argument("--output-dir", required=True)
+    split_parser.add_argument("--allow-noncanonical", action="store_true",
+                               help="Allow exporting from non-canonical DBs")
+    split_parser.add_argument("--registry", type=str, default=None,
+                               help="Path to TRAINING_DATA_REGISTRY.md")
 
     args = parser.parse_args()
 
@@ -1159,6 +1173,18 @@ def main():
             logger.error(f"Insufficient memory for {args.command} command")
             logger.error("Memory usage exceeds 80% limit")
             return 1
+
+    # Enforce canonical sources for commands that use databases
+    if args.command in ("worker", "coordinate", "split") and hasattr(args, "db_paths"):
+        db_paths = [Path(p) for p in args.db_paths] if args.db_paths else []
+        if db_paths:
+            registry_path = Path(args.registry) if getattr(args, "registry", None) else None
+            enforce_canonical_sources(
+                db_paths=db_paths,
+                registry_path=registry_path,
+                allow_noncanonical=getattr(args, "allow_noncanonical", False),
+                error_prefix="distributed-export",
+            )
 
     if args.command == "worker":
         return cmd_worker(args)

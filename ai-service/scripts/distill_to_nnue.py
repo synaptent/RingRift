@@ -69,6 +69,8 @@ from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("distill_to_nnue")
 
+from app.training.canonical_sources import enforce_canonical_sources
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, IterableDataset
@@ -633,8 +635,30 @@ def main() -> None:
         action="store_true",
         help="Check configuration and position counts without training.",
     )
+    parser.add_argument(
+        "--allow-noncanonical",
+        action="store_true",
+        help="Allow distilling from non-canonical DBs (bypasses registry check).",
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default=None,
+        help="Path to TRAINING_DATA_REGISTRY.md (defaults to repo root).",
+    )
 
     args = parser.parse_args()
+
+    # Enforce canonical sources for DB inputs
+    db_paths = [Path(p) for p in args.db] if args.db else []
+    if db_paths:
+        registry_path = Path(args.registry) if args.registry else None
+        enforce_canonical_sources(
+            db_paths=db_paths,
+            registry_path=registry_path,
+            allow_noncanonical=args.allow_noncanonical,
+            error_prefix="distill-to-nnue",
+        )
 
     # Parse board type
     board_type_map = {

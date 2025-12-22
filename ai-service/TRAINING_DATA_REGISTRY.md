@@ -16,40 +16,48 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database                  | Board Type | Players | Status        | Gate Summary                        | Notes                                                                                                                                                                                         |
-| ------------------------- | ---------- | ------- | ------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8_2p.db` | square8    | 2       | **canonical** | db_health.canonical_square8_2p.json | 2025-12-16 Vast.ai regeneration (200 games, 12,642 samples); 100% semantic parity verified; NPZ exported to `data/training/canonical_square8_2p.npz`                                          |
-| `canonical_square8.db`    | square8    | 2       | **canonical** | db_health.canonical_square8.json    | 2025-12-12 distributed regeneration (12 games) and re-gate after TS territory-control parity fix; `canonical_ok=true` (only end-of-game-only current_player mismatch). Small parity smoke DB. |
-| `canonical_square8_3p.db` | square8    | 3       | **canonical** | db_health.canonical_square8_3p.json | 2025-12-12 initial 3P canonical DB (2 games) gated successfully (`canonical_ok=true`; parity only end-of-game-only current_player mismatch).                                                  |
-| `canonical_square8_4p.db` | square8    | 4       | **canonical** | db_health.canonical_square8_4p.json | 2025-12-12 4P canonical DB (2 games) gated successfully (`canonical_ok=true`). Scale up for training.                                                                                         |
-| `canonical_square19.db`   | square19   | 2       | **canonical** | db_health.canonical_square19.json   | 2025-12-20 regenerated via direct soak (3 games, 1,903 moves) with `RINGRIFT_USE_MAKE_UNMAKE=true` (light band). Parity + canonical history gates passed; still below volume targets.         |
+| Database                    | Board Type | Players | Status        | Gate Summary                          | Notes                                                                |
+| --------------------------- | ---------- | ------- | ------------- | ------------------------------------- | -------------------------------------------------------------------- |
+| `canonical_square8_2p.db`   | square8    | 2       | **canonical** | db_health.canonical_square8_2p.json   | 43 games, 100% parity verified (2025-12-22)                          |
+| `canonical_square8_3p.db`   | square8    | 3       | **canonical** | db_health.canonical_square8_3p.json   | 21 games, 100% parity verified (2025-12-22)                          |
+| `canonical_square8_4p.db`   | square8    | 4       | **canonical** | db_health.canonical_square8_4p.json   | 5 games, 100% parity verified (2025-12-22)                           |
+| `canonical_square19_2p.db`  | square19   | 2       | **canonical** | db_health.canonical_square19_2p.json  | 24 games, 100% parity verified (2025-12-22)                          |
+| `canonical_square19_3p.db`  | square19   | 3       | **canonical** | db_health.canonical_square19_3p.json  | 5 games, 100% parity verified (2025-12-22)                           |
+| `canonical_square19_4p.db`  | square19   | 4       | **canonical** | db_health.canonical_square19_4p.json  | 3 games, 100% parity verified (2025-12-22)                           |
+| `canonical_hex8_2p.db`      | hex8       | 2       | **canonical** | db_health.canonical_hex8_2p.json      | 10 games, 100% parity verified (2025-12-22)                          |
+| `canonical_hex8_3p.db`      | hex8       | 3       | **canonical** | db_health.canonical_hex8_3p.json      | 5 games, 100% parity verified (2025-12-22)                           |
+| `canonical_hex8_4p.db`      | hex8       | 4       | **canonical** | db_health.canonical_hex8_4p.json      | 5 games, 100% parity verified (2025-12-22)                           |
+| `canonical_hexagonal_2p.db` | hexagonal  | 2       | **canonical** | db_health.canonical_hexagonal_2p.json | 34 games, 100% parity verified (2025-12-22). HEX-PARITY-02 RESOLVED. |
+| `canonical_hexagonal_3p.db` | hexagonal  | 3       | **canonical** | db_health.canonical_hexagonal_3p.json | 5 games, 100% parity verified (2025-12-22)                           |
+| `canonical_hexagonal_4p.db` | hexagonal  | 4       | **canonical** | db_health.canonical_hexagonal_4p.json | 3 games, 100% parity verified (2025-12-22)                           |
 
 The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (`square8`, `square19`, and `hexagonal`), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
 
-### Coverage Matrix (2025-12-21)
+### Coverage Matrix (2025-12-22)
 
 Target: All 12 combinations (4 board types × 3 player counts) with canonical training data.
 
-| Board     | 2P                      | 3P           | 4P           |
-| --------- | ----------------------- | ------------ | ------------ |
-| square8   | ✅ canonical (200+)     | ⚠️ small (2) | ⚠️ small (2) |
-| square19  | ⚠️ small (3)            | ❌ missing   | ❌ missing   |
-| hex8      | ❌ missing              | ❌ missing   | ❌ missing   |
-| hexagonal | ❌ parity-blocked (300) | ❌ missing   | ❌ missing   |
+| Board     | 2P            | 3P            | 4P           |
+| --------- | ------------- | ------------- | ------------ |
+| square8   | ⚠️ small (43) | ⚠️ small (21) | ⚠️ small (5) |
+| square19  | ⚠️ small (24) | ⚠️ small (5)  | ⚠️ small (3) |
+| hex8      | ⚠️ small (10) | ⚠️ small (5)  | ⚠️ small (5) |
+| hexagonal | ⚠️ small (34) | ⚠️ small (5)  | ⚠️ small (3) |
 
 Legend:
 
 - ✅ = Canonical, sufficient volume (>=200 games)
-- ⚠️ = Canonical/partial but insufficient volume (<200 games)
-- ❌ = Not generated yet
+- ⚠️ = Canonical but insufficient volume (<200 games)
+- ❌ = Not generated or parity-blocked
 
-**Priority Actions (2025-12-21):**
+**All 12 board/player combinations now pass parity validation!** (2025-12-22)
 
-1. Scale up square8 3P/4P to 200+ games each
-2. Scale up square19 2P to 200+ games
-3. Generate square19 3P/4P databases
-4. Generate hex8 2P/3P/4P databases (new board type)
-5. ~~Fix hexagonal parity bug HEX-PARITY-01~~ FIXED (phase_machine.py:138) - new remaining issues (ANM state divergence)
+**Priority Actions (2025-12-22):**
+
+1. Scale up square8 2P/3P/4P to 200+ games each
+2. Scale up square19 2P/3P/4P to 200+ games each
+3. Scale up hex8 2P/3P/4P to 200+ games each
+4. Scale up hexagonal 2P/3P/4P to 200+ games each
 
 **Generation Commands:**
 
@@ -85,10 +93,11 @@ These targets define when large-board datasets are considered ready for training
 
 ### Pending Re-Gate / Needs Regeneration
 
-| Database                 | Board Type | Players | Status             | Gate Summary                         | Issue                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------ | ---------- | ------- | ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `canonical_hexagonal.db` | hexagonal  | 2       | **parity_blocked** | canonical_hexagonal.parity_gate.json | 2025-12-21 fresh regeneration (300 games, random-only AI): **98% semantic divergence rate** (98/100 sampled). Primary issue is ANM state mismatch in `territory_processing` phase - Python reports `is_anm: true` while TS reports `is_anm: false`. State hashes match (game logic correct) but ANM tracking differs. 2 games also have structural issues (legacy phase coercion errors). **HEX-PARITY-02 is NOT fully resolved.** Cannot mark as canonical until ANM parity bug is fixed. |
-| `all_jsonl_training.db`  | mixed      | 2,3,4   | **pending_gate**   | N/A                                  | 2025-12-21 aggregated JSONL selfplay data. Contains hex8 (662 2p, 597 3p, 526 4p games), hexagonal, square8, square19. Use with `--allow-pending-gate` flag for initial model training while canonical generation catches up. Generated by `aggregate_jsonl_to_db.py`.                                                                                                                                                                                                                     |
+| Database                | Board Type | Players | Status           | Gate Summary | Issue                                                                                                                                                                                                                                                                  |
+| ----------------------- | ---------- | ------- | ---------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `all_jsonl_training.db` | mixed      | 2,3,4   | **pending_gate** | N/A          | 2025-12-21 aggregated JSONL selfplay data. Contains hex8 (662 2p, 597 3p, 526 4p games), hexagonal, square8, square19. Use with `--allow-pending-gate` flag for initial model training while canonical generation catches up. Generated by `aggregate_jsonl_to_db.py`. |
+
+**Note:** `canonical_hexagonal.db` (empty) has been superseded by `canonical_hexagonal_2p.db` (34 games, canonical). HEX-PARITY-02 was resolved as of 2025-12-22.
 
 ### Legacy / Non-Canonical
 

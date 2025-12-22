@@ -32,11 +32,13 @@ from typing import Any, Optional
 
 import torch
 
-# Add project root to path
+# Add project root to path (early, before local imports)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+from app.training.canonical_sources import enforce_canonical_sources
 
 import contextlib
 
@@ -382,6 +384,17 @@ def main():
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size for CNN inference")
     parser.add_argument("--temperature", type=float, default=1.0, help="Softmax temperature")
     parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
+    parser.add_argument(
+        "--allow-noncanonical",
+        action="store_true",
+        help="Allow distilling from non-canonical DBs (bypasses registry check)",
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default=None,
+        help="Path to TRAINING_DATA_REGISTRY.md (defaults to repo root)",
+    )
     args = parser.parse_args()
 
     board_type = parse_board_type(args.board_type)
@@ -391,6 +404,16 @@ def main():
 
     # Detect input type
     is_db_input = input_path.suffix.lower() == '.db'
+
+    # Enforce canonical source for DB inputs
+    if is_db_input:
+        registry_path = Path(args.registry) if args.registry else None
+        enforce_canonical_sources(
+            db_paths=[input_path],
+            registry_path=registry_path,
+            allow_noncanonical=args.allow_noncanonical,
+            error_prefix="distill-cnn-to-nnue",
+        )
 
     logger.info("CNN Policy Distillation")
     logger.info(f"  Input: {args.input} ({'SQLite DB' if is_db_input else 'JSONL'})")
