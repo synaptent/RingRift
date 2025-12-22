@@ -736,7 +736,10 @@ function shouldSynthesizeLineElimination(
   if (!isCollapseAll && appliedMove.type !== 'process_line') {
     // Check if this is minimum collapse by looking at the move structure
     const collapsedMarkers = (appliedMove as any).collapsedMarkers;
-    const linePositions = (appliedMove as any).linePositions;
+    // Line positions can be in linePositions OR formedLines[0].positions
+    const linePositions =
+      (appliedMove as any).linePositions ||
+      ((appliedMove as any).formedLines?.[0]?.positions as Position[] | undefined);
     if (collapsedMarkers && linePositions && collapsedMarkers.length < linePositions.length) {
       return false; // Option 2: minimum collapse, no elimination
     }
@@ -778,7 +781,7 @@ function synthesizeLineEliminationMove(
   let targetPosition: Position | null = null;
   let minKey: [number, number] | null = null;
 
-  for (const [posKey, stack] of stacks) {
+  for (const [_posKey, stack] of stacks) {
     if (stack.controllingPlayer !== player) continue;
     if (stack.stackHeight <= 0) continue;
 
