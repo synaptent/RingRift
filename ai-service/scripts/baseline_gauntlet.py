@@ -85,75 +85,17 @@ def run_game(ai1: "BaseAI", ai2: "BaseAI", board_type: BoardType, num_players: i
     return None
 
 
-def _is_nnue_checkpoint(model_path: Path) -> bool:
-    """Check if checkpoint is NNUE format (has accumulator weights)."""
-    import torch
-    try:
-        ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
-        if isinstance(ckpt, dict):
-            state = ckpt.get("model_state_dict", ckpt)
-            return any("accumulator" in k for k in state.keys())
-    except Exception:
-        pass
-    return False
-
-
-def _create_nnue_ai(
-    model_path: Path,
-    player: int,
-    board_type: BoardType,
-    num_players: int,
-) -> "BaseAI | None":
-    """Create AI using NNUE model with MinimaxAI wrapper."""
-    try:
-        from app.ai.minimax_ai import MinimaxAI
-        from app.ai.nnue import BatchNNUEEvaluator
-
-        evaluator = BatchNNUEEvaluator(
-            board_type=board_type,
-            num_players=num_players,
-            model_path=model_path,
-        )
-
-        if not evaluator.available:
-            return None
-
-        ai_config = AIConfig(difficulty=5, board_type=board_type)
-        ai = MinimaxAI(player, ai_config)
-
-        # Inject custom NNUE evaluator
-        import torch
-        from app.ai.nnue_features import extract_features_from_gamestate
-
-        original_evaluate = ai.evaluate_mutable
-
-        def custom_evaluate(state):
-            try:
-                features = extract_features_from_gamestate(state, board_type)
-                features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
-                if evaluator.device.type == "cuda":
-                    features_tensor = features_tensor.to(evaluator.device)
-                with torch.no_grad():
-                    value = evaluator.model(features_tensor)
-                    return float(value.item())
-            except Exception:
-                return original_evaluate(state)
-
-        ai.evaluate_mutable = custom_evaluate
-        logger.info(f"Loaded NNUE model from {model_path}")
-        return ai
-    except Exception as e:
-        logger.debug(f"Failed to load NNUE: {e}")
-        return None
-
-
 def create_ai_from_model(
     model: dict[str, Any],
     player: int,
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
 ) -> "BaseAI":
-    """Create AI instance from model dictionary.
+    """Create AI instance from model dictionary using UnifiedModelLoader.
+
+    This function uses the unified model loader to automatically detect
+    and load ANY model architecture (NNUE, CNN, Hex, experimental).
+    It never fails - always returns a working AI (falls back to heuristic).
 
     Args:
         model: Model dict with 'path', 'name', 'type' keys
@@ -162,50 +104,12 @@ def create_ai_from_model(
         num_players: Number of players
 
     Returns:
-        AI instance with loaded model weights
+        AI instance with loaded model weights (or heuristic fallback)
     """
-    import warnings
-
     model_type = model.get("type", "nn").lower()
     model_path = Path(model.get("path", ""))
 
-    if not model_path.exists():
-        logger.info("Using HeuristicAI (no model path)")
-        return HeuristicAI(player, AIConfig(difficulty=5, board_type=board_type))
-
-    # Check if it's an NNUE model (has accumulator weights)
-    if _is_nnue_checkpoint(model_path):
-        ai = _create_nnue_ai(model_path, player, board_type, num_players)
-        if ai is not None:
-            return ai
-        logger.warning(f"Failed to load NNUE model from {model_path}")
-
-    # Try to load as CNN model
-    if model_type in ("nnue", "nn", "neural") or model_type not in ("mcts", "heuristic", "random"):
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=DeprecationWarning)
-                from app.ai._neural_net_legacy import NeuralNetAI
-
-            ai_config = AIConfig(
-                difficulty=5,
-                nn_model_id=str(model_path.resolve()),
-                board_type=board_type,
-            )
-            ai = NeuralNetAI(
-                player_number=player,
-                config=ai_config,
-                board_type=board_type,
-            )
-
-            if ai.model is not None:
-                logger.info(f"Loaded CNN model from {model_path}")
-                return ai
-            else:
-                logger.warning(f"Failed to load CNN model from {model_path}")
-        except Exception as e:
-            logger.warning(f"Error loading neural model: {e}")
-
+    # Handle special model types first
     if model_type == "mcts":
         from app.ai.mcts_ai import MCTSAI
         ai_config = AIConfig(difficulty=5, board_type=board_type)
@@ -218,8 +122,50 @@ def create_ai_from_model(
     elif model_type == "random":
         return RandomAI(player, AIConfig(difficulty=1))
 
-    # Fallback to heuristic
-    logger.info("Using HeuristicAI (model load failed)")
+    # Check if model path exists
+    if not model_path.exists():
+        logger.info(f"Model path not found: {model_path}, using HeuristicAI")
+        return HeuristicAI(player, AIConfig(difficulty=5, board_type=board_type))
+
+    # Use UnifiedModelLoader + UniversalAI for all neural network models
+    try:
+        from app.ai.unified_loader import UnifiedModelLoader
+        from app.ai.universal_ai import UniversalAI
+
+        loader = UnifiedModelLoader()
+        loaded = loader.load(
+            model_path,
+            board_type=board_type,
+            num_players=num_players,
+            allow_fresh=False,  # Fail if can't load, we'll catch and fallback
+        )
+
+        config = AIConfig(
+            difficulty=5,
+            board_type=board_type,
+        )
+
+        ai = UniversalAI(
+            player_number=player,
+            config=config,
+            loaded_model=loaded,
+            board_type=board_type,
+            num_players=num_players,
+            use_mcts=False,  # Use direct policy/minimax for speed
+            policy_temperature=0.1,  # Low temp for more deterministic play
+        )
+
+        logger.info(
+            f"Loaded {loaded.architecture.name} model from {model_path} "
+            f"(board={board_type}, players={num_players})"
+        )
+        return ai
+
+    except Exception as e:
+        logger.warning(f"UnifiedModelLoader failed for {model_path}: {e}")
+
+    # Fallback to heuristic - NEVER fail
+    logger.info("Using HeuristicAI (unified loader failed)")
     return HeuristicAI(player, AIConfig(difficulty=5, board_type=board_type))
 
 

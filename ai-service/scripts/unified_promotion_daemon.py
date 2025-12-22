@@ -169,8 +169,8 @@ class ModelWatcher:
             models.extend(self.models_dir.glob(pattern))
             # Include subdirs but skip hidden dirs and rsync-partial
             for model in self.models_dir.glob(f"**/{pattern}"):
-                # Skip hidden directories and rsync-partial
-                if any(part.startswith('.') or 'rsync' in part.lower()
+                # Skip hidden directories, rsync-partial, and archive folders
+                if any(part.startswith('.') or 'rsync' in part.lower() or 'archive' in part.lower()
                        for part in model.relative_to(self.models_dir).parts[:-1]):
                     continue
                 models.append(model)
