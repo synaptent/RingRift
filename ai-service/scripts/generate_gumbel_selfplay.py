@@ -418,6 +418,13 @@ def save_game_to_jsonl(result: GameResult, output_path: Path) -> None:
     """Append game result to JSONL file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Serialize initial_state for NPZ conversion compatibility
+    initial_state_dict = None
+    if result.initial_state is not None:
+        initial_state_dict = result.initial_state.model_dump(
+            by_alias=True, exclude_none=True, mode="json"
+        )
+
     game_data = {
         "game_id": result.game_id,
         "board_type": result.board_type,
@@ -429,6 +436,7 @@ def save_game_to_jsonl(result: GameResult, output_path: Path) -> None:
         "moves": result.moves,
         "parity_ok": result.parity_ok,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "initial_state": initial_state_dict,
     }
 
     with open(output_path, "a") as f:

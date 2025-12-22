@@ -85,6 +85,34 @@ from app.models import AIConfig, BoardType, GameState, Move, MoveType, Position
 from app.rules.serialization import deserialize_game_state
 from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 
+
+def create_initial_state_from_record(
+    board_type_str: str,
+    num_players: int,
+    board_size: int | None = None,
+) -> GameState:
+    """Create a fresh initial state from board_type and num_players.
+
+    Used as fallback when JSONL record doesn't include initial_state
+    (e.g., older gumbel selfplay data).
+    """
+    board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
+
+    # Default board sizes
+    default_sizes = {
+        BoardType.SQUARE8: 8,
+        BoardType.SQUARE19: 19,
+        BoardType.HEXAGONAL: 25,
+        BoardType.HEX8: 9,
+    }
+    size = board_size or default_sizes.get(board_type, 8)
+
+    return GameEngine.create_initial_state(
+        board_type=board_type,
+        board_size=size,
+        num_players=num_players,
+    )
+
 # Phase transition moves for completing turns
 NO_ACTION_MOVES = {
     "movement": MoveType.NO_MOVEMENT_ACTION,
@@ -278,14 +306,21 @@ def _process_gpu_selfplay_record(
     moves_list = record.get("moves", [])
     winner = record.get("winner", 0)
     num_players = record.get("num_players", 2)
+    board_type_str = record.get("board_type", "square8")
 
-    if not initial_state_dict or not moves_list:
+    if not moves_list:
         return (features_list, globals_list, values_list, values_mp_list,
                 num_players_list, policy_indices_list, policy_values_list,
                 move_numbers_list, total_game_moves_list, phases_list, 0)
 
-    # Parse initial state
-    initial_state = deserialize_game_state(initial_state_dict)
+    # Parse initial state (or create fresh if not provided)
+    if initial_state_dict:
+        initial_state = deserialize_game_state(initial_state_dict)
+    else:
+        # Fallback: create fresh initial state from board_type/num_players
+        initial_state = create_initial_state_from_record(
+            board_type_str, num_players, record.get("board_size")
+        )
 
     # Fix board_type from record's top-level field (GPU selfplay bug workaround)
     # GPU selfplay sometimes saves wrong board_type in initial_state
@@ -925,9 +960,15 @@ def process_jsonl_file(
             initial_state_dict = record.get("initial_state")
             moves_list = record.get("moves", [])
 
-            if not initial_state_dict or not moves_list:
+            if not moves_list:
                 stats.games_skipped_no_data += 1
                 continue
+
+            # Create initial state from board_type/num_players if not provided
+            # (fallback for older gumbel selfplay data without initial_state)
+            if not initial_state_dict:
+                board_size = record.get("board_size")
+                initial_state_dict = "__create_fresh__"  # Marker for fallback
 
             try:
                 # GPU selfplay mode: use simplified processing without FSM validation
@@ -957,7 +998,13 @@ def process_jsonl_file(
                     continue
 
                 # Standard mode: parse initial state and replay through FSM
-                initial_state = deserialize_game_state(initial_state_dict)
+                if initial_state_dict == "__create_fresh__":
+                    # Fallback: create fresh initial state from board_type/num_players
+                    initial_state = create_initial_state_from_record(
+                        board_type_str, num_players, record.get("board_size")
+                    )
+                else:
+                    initial_state = deserialize_game_state(initial_state_dict)
 
                 # Parse moves
                 moves = [parse_move(m) for m in moves_list]
