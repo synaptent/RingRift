@@ -264,20 +264,29 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
                 # injection would fail (e.g., Python sees lines that TS didn't).
                 # This handles hybrid selfplay recordings with different line detection.
                 if next_type in territory_moves:
-                    # Check if no_line_action is actually valid
+                    # RR-PARITY-FIX (Dec 2025): The recording has a territory action but
+                    # Python is in line_processing. This can happen when:
+                    # 1. Python sees lines that TS didn't detect (has_line_moves=True)
+                    # 2. pending_line_reward_elimination is True (Python detected line reward)
+                    # In either case, we need to coerce to territory_processing to match
+                    # the recording's expected phase.
+                    pending_elim = getattr(state, 'pending_line_reward_elimination', False)
                     valid_moves = GameEngine.get_valid_moves(state, state.current_player)
                     has_line_moves = any(
                         m.type in {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD}
                         for m in valid_moves
                     )
-                    if has_line_moves:
-                        # Python sees line moves but recording skipped them - coerce phase
+                    if has_line_moves or pending_elim:
+                        # Python sees line state that recording skipped - coerce phase
                         _coercion_calls += 1
                         logger.warning(
-                            "PHASE_COERCION: Forcing line_processing → territory_processing "
-                            "(hybrid recording skipped line processing, Python sees lines)"
+                            f"PHASE_COERCION: Forcing line_processing → territory_processing "
+                            f"(has_line_moves={has_line_moves}, pending_elim={pending_elim})"
                         )
                         state.current_phase = GamePhase.TERRITORY_PROCESSING
+                        # Clear pending_line_reward_elimination since we're skipping it
+                        if pending_elim:
+                            state.pending_line_reward_elimination = False
                         continue
 
                 no_line_move = MoveModel(
