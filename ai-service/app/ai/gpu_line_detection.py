@@ -388,7 +388,7 @@ def process_lines_batch(
     state: BatchGameState,
     game_mask: torch.Tensor | None = None,
     option2_probability: float = 0.3,
-) -> None:
+) -> dict[int, tuple[int, int]]:
     """Process formed marker lines for all players (in-place).
 
     Per RR-CANON-R121-R122:
@@ -402,6 +402,10 @@ def process_lines_batch(
         state: BatchGameState to modify
         game_mask: Mask of games to process
         option2_probability: Probability of choosing Option 2 for overlength lines
+
+    Returns:
+        Dictionary mapping game_idx to (y, x) of the first position of the processed line.
+        Used for recording CHOOSE_LINE_OPTION moves with correct target position.
     """
     batch_size = state.batch_size
     board_size = state.board_size
@@ -411,6 +415,9 @@ def process_lines_batch(
         game_mask = state.get_active_mask()
 
     required_length = get_required_line_length(board_size, state.num_players)
+
+    # Track first line position per game for move recording
+    line_positions: dict[int, tuple[int, int]] = {}
 
     max_lines_estimate = 100
     random_vals = torch.rand(max_lines_estimate, device=device).cpu().numpy()
@@ -461,11 +468,19 @@ def process_lines_batch(
                 if requires_elimination:
                     state.pending_line_elimination[g] = True
 
+                # Record first line position for CHOOSE_LINE_OPTION move recording
+                # Only record first line for each game (CPU exports first line position)
+                if g not in line_positions and positions_to_collapse:
+                    first_y, first_x = positions_to_collapse[0]
+                    line_positions[g] = (first_y, first_x)
+
                 for (y, x) in positions_to_collapse:
                     state.marker_owner[g, y, x] = 0
                     state.territory_owner[g, y, x] = p
                     state.is_collapsed[g, y, x] = True
                     state.territory_count[g, p] += 1
+
+    return line_positions
 
 
 def apply_line_elimination_batch(

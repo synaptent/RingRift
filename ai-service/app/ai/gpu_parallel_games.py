@@ -1888,7 +1888,8 @@ class ParallelGameRunner:
             games_with_lines = games_with_lines | (line_counts > 0)
 
         # Process the lines (collapses markers to territory, sets pending elimination flag)
-        process_lines_batch(self.state, mask)
+        # Returns first line position per game for move recording
+        line_positions = process_lines_batch(self.state, mask)
         # RR-CANON-R123: Auto-apply line elimination for self-play (no interactive choice)
         # Capture elimination positions for move recording
         elimination_positions = apply_line_elimination_batch(self.state, mask)
@@ -1896,7 +1897,7 @@ class ParallelGameRunner:
         # Record canonical moves to move_history
         # Games WITH lines: record CHOOSE_LINE_OPTION (player "chose" to process lines)
         # Games WITHOUT lines: record NO_LINE_ACTION
-        self._record_line_phase_moves(mask, games_with_lines, elimination_positions)
+        self._record_line_phase_moves(mask, games_with_lines, elimination_positions, line_positions)
 
         # After line processing, advance to TERRITORY_PROCESSING phase
         self.state.current_phase[mask] = GamePhase.TERRITORY_PROCESSING
@@ -1906,6 +1907,7 @@ class ParallelGameRunner:
         mask: torch.Tensor,
         games_with_lines: torch.Tensor,
         elimination_positions: dict[int, tuple[int, int]],
+        line_positions: dict[int, tuple[int, int]],
     ) -> None:
         """Record canonical line processing moves to move_history.
 
@@ -1920,6 +1922,7 @@ class ParallelGameRunner:
             mask: Games being processed in this phase
             games_with_lines: Which games had lines to process
             elimination_positions: Dict mapping game_idx to (y, x) of eliminated stack
+            line_positions: Dict mapping game_idx to (y, x) of first position of processed line
         """
         from .gpu_game_types import MoveType
 
@@ -1944,12 +1947,14 @@ class ParallelGameRunner:
             if had_lines[i]:
                 # RR-CANON-R123: Record CHOOSE_LINE_OPTION + ELIMINATE_RINGS_FROM_STACK
                 # First: record the line choice move
+                # Get first position of processed line for this game (for CPU parity)
+                line_y, line_x = line_positions.get(g, (-1, -1))
                 self.state.move_history[g, move_count, 0] = MoveType.CHOOSE_LINE_OPTION
                 self.state.move_history[g, move_count, 1] = player
-                self.state.move_history[g, move_count, 2] = -1  # No position for line moves
-                self.state.move_history[g, move_count, 3] = -1
-                self.state.move_history[g, move_count, 4] = -1
-                self.state.move_history[g, move_count, 5] = -1
+                self.state.move_history[g, move_count, 2] = -1  # from_y (not used)
+                self.state.move_history[g, move_count, 3] = -1  # from_x (not used)
+                self.state.move_history[g, move_count, 4] = line_y  # to_y: first pos of line
+                self.state.move_history[g, move_count, 5] = line_x  # to_x: first pos of line
                 self.state.move_history[g, move_count, 6] = GamePhase.LINE_PROCESSING
                 self.state.move_count[g] += 1
                 move_count += 1

@@ -170,6 +170,10 @@ class ModelMetadata:
         architecture_version: Semantic version string (e.g., "v2.1.0")
         model_class: Fully qualified class name (e.g., "RingRiftCNN")
         config: Full model configuration for reconstruction
+        board_type: Board type (square8, square19, hex8, hexagonal)
+        board_size: Spatial dimension (8, 19, 9, 25)
+        num_players: Number of players (2, 3, 4)
+        policy_size: Output policy size (7000, 67000, 4500, 91876)
         training_info: Training details (epochs, samples, metrics)
         created_at: ISO 8601 timestamp of checkpoint creation
         checksum: SHA256 hash of the serialized state_dict bytes
@@ -178,6 +182,10 @@ class ModelMetadata:
     architecture_version: str
     model_class: str
     config: dict[str, Any]
+    board_type: str = ""  # square8, square19, hex8, hexagonal
+    board_size: int = 0   # 8, 19, 9, 25
+    num_players: int = 0  # 2, 3, 4
+    policy_size: int = 0  # 7000, 67000, 4500, 91876
     training_info: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     checksum: str = ""
@@ -353,6 +361,27 @@ def get_model_config(model: nn.Module) -> dict[str, Any]:
             config["feature_version"] = int(feature_version)
         except (TypeError, ValueError):
             config["feature_version"] = feature_version
+
+    # Infer board_type from model architecture
+    if "board_type" not in config:
+        board_size = config.get("board_size", 0)
+        policy_size = config.get("policy_size", 0)
+        hex_radius = getattr(model, "hex_radius", None)
+
+        if hex_radius is not None:
+            # Hex model: radius 4 = hex8, radius 12 = hexagonal
+            config["board_type"] = "hex8" if hex_radius <= 4 else "hexagonal"
+        elif class_name in ("HexNeuralNet_v2", "HexNeuralNet_v2_Lite", "HexNeuralNet_v3", "HexNeuralNet_v3_Lite"):
+            # Hex model without explicit radius - infer from board_size
+            config["board_type"] = "hex8" if board_size <= 9 else "hexagonal"
+        elif board_size == 8:
+            config["board_type"] = "square8"
+        elif board_size == 19:
+            config["board_type"] = "square19"
+        elif board_size == 9 and policy_size < 10000:
+            config["board_type"] = "hex8"
+        elif board_size == 25:
+            config["board_type"] = "hexagonal"
 
     return config
 

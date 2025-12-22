@@ -269,8 +269,9 @@ class BatchGameState:
             pending_line_elimination=torch.zeros(batch_size, dtype=torch.bool, device=device),
 
             # Buried ring position tracking (December 2025 - recovery fix)
-            # Changed from bool to int8 to track count of buried rings at each position
-            buried_at=torch.zeros((batch_size, num_players + 1, board_size, board_size), dtype=torch.int8, device=device),
+            # Changed from bool to int32 to track count of buried rings at each position
+            # (MPS backend requires int32 for index_put_ operations)
+            buried_at=torch.zeros((batch_size, num_players + 1, board_size, board_size), dtype=torch.int32, device=device),
 
             # LPS tracking tensors (RR-CANON-R172)
             lps_round_index=torch.zeros(batch_size, dtype=torch.int32, device=device),

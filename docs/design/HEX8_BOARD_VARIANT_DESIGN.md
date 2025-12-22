@@ -1,8 +1,8 @@
 # Hex8 Board Variant Design
 
-> **Status:** Draft
+> **Status:** Implemented (2025-12-22)
 > **Author:** Claude Code
-> **Date:** 2025-12-16
+> **Date:** 2025-12-16, Updated 2025-12-22
 > **Related:** RULES_CANONICAL_SPEC.md, AI_ARCHITECTURE.md
 
 ## 1. Overview
