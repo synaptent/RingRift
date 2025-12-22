@@ -211,9 +211,8 @@ def apply_capture_moves_vectorized(
                 state.buried_rings[g, target_ring_under] -= 1
         else:
             # Cap not fully captured, defender keeps ownership
-            new_target_cap = target_cap_height - 1
-            if new_target_cap <= 0:
-                new_target_cap = 1
+            # new_target_cap can be 0 as transient state (RR-CANON-R022)
+            new_target_cap = max(0, target_cap_height - 1)
             if new_target_cap > new_target_height:
                 new_target_cap = new_target_height
             state.cap_height[g, target_y, target_x] = new_target_cap
@@ -275,9 +274,8 @@ def apply_capture_moves_vectorized(
             # ENEMY CAPTURE or SELF-CAPTURE with buried rings:
             # Captured ring goes to bottom, doesn't extend the cap sequence from top.
             new_owner = player
-            new_cap = attacker_cap_height - landing_ring_cost
-            if new_cap <= 0:
-                new_cap = 1
+            # new_cap can be 0 as transient state (RR-CANON-R022)
+            new_cap = max(0, attacker_cap_height - landing_ring_cost)
             if new_cap > new_height:
                 new_cap = new_height
             # ring_under_cap is preserved from attacker (captured ring goes to bottom)
@@ -410,9 +408,8 @@ def apply_movement_moves_vectorized(
             state.stack_height[g, to_y, to_x] = final_height
             state.stack_owner[g, to_y, to_x] = player
             # Best-effort cap update (GPU does not track ring colors beyond capHeight metadata).
-            new_cap = moving_cap_height - landing_ring_cost
-            if new_cap <= 0:
-                new_cap = 1
+            # new_cap can be 0 as transient state (RR-CANON-R022)
+            new_cap = max(0, moving_cap_height - landing_ring_cost)
             if new_cap > final_height:
                 new_cap = final_height
             state.cap_height[g, to_y, to_x] = new_cap
@@ -543,17 +540,13 @@ def apply_recovery_moves_vectorized(
 
                 # Find new owner: check buried_at for each player
                 new_owner = 0
-                new_owner_cap = 0
                 for p in range(1, state.num_players + 1):
                     if state.buried_at[g, p, y_pos, x_pos].item() > 0:
                         new_owner = p
-                        # Conservative cap estimate: at least 1 ring
-                        new_owner_cap = 1
                         break
 
                 if new_owner > 0:
                     state.stack_owner[g, y_pos, x_pos] = new_owner
-                    state.cap_height[g, y_pos, x_pos] = new_owner_cap
                     # December 2025: Update ring_under_cap for new ownership
                     # Find if there are other players' rings buried under the new cap
                     new_ring_under = 0
@@ -562,6 +555,15 @@ def apply_recovery_moves_vectorized(
                             new_ring_under = pp
                             break
                     state.ring_under_cap[g, y_pos, x_pos] = new_ring_under
+                    # BUG FIX 2025-12-21: Set cap correctly based on ring_under_cap (RR-CANON-R022)
+                    # If new_ring_under > 0, there's an opponent ring below, so cap = 1
+                    # If new_ring_under == 0, all remaining rings are new owner's color, so cap = height
+                    current_height = int(state.stack_height[g, y_pos, x_pos].item())
+                    if new_ring_under > 0:
+                        new_owner_cap = 1
+                    else:
+                        new_owner_cap = current_height
+                    state.cap_height[g, y_pos, x_pos] = new_owner_cap
                     # Decrement the exposed buried ring count for new owner
                     if state.buried_at[g, new_owner, y_pos, x_pos].item() > 0:
                         state.buried_at[g, new_owner, y_pos, x_pos] -= 1

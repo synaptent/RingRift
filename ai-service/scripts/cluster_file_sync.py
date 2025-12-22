@@ -284,29 +284,29 @@ def chunked_transfer(
             remote_filename = local_path.name if hasattr(local_path, 'name') else os.path.basename(str(local_path))
 
         # If we compressed, reassemble to .gz file first, then decompress
+        # Use bash -c to ensure proper glob expansion
+        chunk_pattern = f"{transfer_path.stem}_chunk_*"
         if cleanup_compressed:
-            reassemble_cmd = [
-                "ssh", "-i", config.ssh_key,
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "ConnectTimeout=30",
-                "-p", str(port),
-                f"root@{host}",
+            shell_cmd = (
                 f"cd {remote_base} && "
-                f"cat {transfer_path.stem}_chunk_* > {remote_filename}.gz && "
+                f"cat {chunk_pattern} > {remote_filename}.gz && "
                 f"gunzip -f {remote_filename}.gz && "
-                f"rm -f {transfer_path.stem}_chunk_*"
-            ]
+                f"rm -f {chunk_pattern}"
+            )
         else:
-            reassemble_cmd = [
-                "ssh", "-i", config.ssh_key,
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "ConnectTimeout=30",
-                "-p", str(port),
-                f"root@{host}",
+            shell_cmd = (
                 f"cd {remote_base} && "
-                f"cat {transfer_path.stem}_chunk_* > {remote_filename} && "
-                f"rm -f {transfer_path.stem}_chunk_*"
-            ]
+                f"cat {chunk_pattern} > {remote_filename} && "
+                f"rm -f {chunk_pattern}"
+            )
+        reassemble_cmd = [
+            "ssh", "-i", config.ssh_key,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ConnectTimeout=30",
+            "-p", str(port),
+            f"root@{host}",
+            "bash", "-c", shell_cmd
+        ]
 
         result = subprocess.run(reassemble_cmd, capture_output=True, text=True, timeout=120)
 

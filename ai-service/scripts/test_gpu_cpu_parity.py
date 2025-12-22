@@ -233,6 +233,17 @@ def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]
 
     total_moves = int(runner.state.move_count[0].item())
     game_dict = export_game_to_canonical_dict(runner.state, 0, 'square8', 2)
+
+    if debug:
+        # Print GPU final state for key positions
+        print(f"\n=== GPU Final State (seed {seed}) ===")
+        for y in range(8):
+            for x in range(8):
+                owner = runner.state.stack_owner[0, y, x].item()
+                height = runner.state.stack_height[0, y, x].item()
+                if height > 0:
+                    cap = runner.state.cap_height[0, y, x].item()
+                    print(f"  ({y},{x}): owner={owner}, height={height}, cap={cap}")
     exported_moves = len(game_dict['moves'])
 
     initial_state = create_initial_state(BoardType.SQUARE8, num_players=2)
@@ -244,6 +255,12 @@ def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]
         move_type_str = m['type']
         gpu_phase = m.get('phase', 'ring_placement')
         gpu_player = m.get('player', 1)
+
+        if debug and move_type_str not in GPU_BOOKKEEPING_MOVES:
+            # Print every non-bookkeeping move
+            from_p = Position(**m['from']) if 'from' in m and m['from'] else None
+            to_p = Position(**m['to']) if 'to' in m and m['to'] else None
+            print(f"Move {i}: {move_type_str} from={from_p.to_key() if from_p else None} to={to_p.to_key() if to_p else None} (player={gpu_player})")
 
         # Skip pure GPU bookkeeping moves that don't affect game state
         if move_type_str in GPU_BOOKKEEPING_MOVES:
@@ -302,9 +319,23 @@ def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]
             if debug:
                 print(f"  Move {i}: {m['type']} (GPU phase={gpu_phase}, player={gpu_player})")
                 print(f"    CPU: phase={state.current_phase.value}, player={state.current_player}")
-                print(f"    Valid moves: {[v.type.value for v in valid][:10]}")
+                valid_positions = [(v.type.value, v.to.to_key() if v.to else None) for v in valid[:15]]
+                print(f"    Valid moves (first 15): {valid_positions}")
                 if from_pos:
-                    print(f"    from={from_pos.to_key()}, to={to_pos.to_key() if to_pos else None}")
+                    print(f"    GPU move: from={from_pos.to_key()}, to={to_pos.to_key() if to_pos else None}")
+                # Check stack at target position
+                if to_pos:
+                    stack = state.board.stacks.get(to_pos.to_key())
+                    if stack:
+                        print(f"    Stack at target: height={stack.stack_height}, owner={stack.controlling_player}, cap={stack.cap_height}")
+                    else:
+                        print(f"    No stack at target")
+                # For placement moves, check all stacks owned by current player
+                if move_type_str == 'place_ring':
+                    my_stacks = [(k, s.stack_height, s.cap_height) for k, s in state.board.stacks.items()
+                                 if s.controlling_player == state.current_player]
+                    print(f"    Player {state.current_player} stacks: {my_stacks[:10]}")
+                    print(f"    Rings in hand: {[p.rings_in_hand for p in state.players]}")
             errors.append((i, m['type'], state.current_phase.value))
 
     return total_moves, exported_moves, skipped, len(errors), errors[:3]
@@ -315,7 +346,17 @@ def main():
     parser = argparse.ArgumentParser(description='Test GPU-CPU parity')
     parser.add_argument('--seeds', type=int, default=6, help='Number of seeds to test')
     parser.add_argument('--start-seed', type=int, default=42, help='Starting seed value')
+    parser.add_argument('--specific-seed', type=int, help='Test a specific seed with debug output')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output for failures')
     args = parser.parse_args()
+
+    # If specific seed requested, run just that one with debug
+    if args.specific_seed is not None:
+        moves, exported, skipped, error_count, errors = test_seed(args.specific_seed, debug=True)
+        status = 'PASS' if error_count == 0 else 'FAIL'
+        print(f'\nSeed {args.specific_seed}: {status} ({error_count} errors)')
+        print(f'  Total moves: {moves}, Exported: {exported}, Skipped: {skipped}')
+        return
 
     # Generate seeds: either use default list or generate random ones
     if args.seeds <= 6:
