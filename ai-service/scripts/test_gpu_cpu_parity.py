@@ -217,14 +217,32 @@ def find_matching_move(valid_moves, move_type, from_pos, to_pos):
     return None
 
 
+def capture_gpu_state(runner, move_idx: int) -> dict:
+    """Capture GPU state snapshot for debugging."""
+    state = {}
+    for y in range(8):
+        for x in range(8):
+            owner = runner.state.stack_owner[0, y, x].item()
+            height = runner.state.stack_height[0, y, x].item()
+            if height > 0:
+                cap = runner.state.cap_height[0, y, x].item()
+                ring_under = runner.state.ring_under_cap[0, y, x].item()
+                state[(y, x)] = {'owner': owner, 'height': height, 'cap': cap, 'ring_under': ring_under}
+    return state
+
+
 def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]:
     """Test GPU to CPU parity for a given seed."""
     torch.manual_seed(seed)
     runner = ParallelGameRunner(batch_size=1, board_size=8, num_players=2, device='cpu')
 
+    # Capture GPU state at each move for debugging
+    gpu_states = {}
     for step in range(100):
+        move_count = int(runner.state.move_count[0].item())
+        if debug and move_count not in gpu_states:
+            gpu_states[move_count] = capture_gpu_state(runner, move_count)
         game_status = runner.state.game_status[0].item()
-        move_count = runner.state.move_count[0].item()
         if game_status != 0:
             break
         if move_count >= 60:
@@ -243,7 +261,8 @@ def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]
                 height = runner.state.stack_height[0, y, x].item()
                 if height > 0:
                     cap = runner.state.cap_height[0, y, x].item()
-                    print(f"  ({y},{x}): owner={owner}, height={height}, cap={cap}")
+                    ring_under = runner.state.ring_under_cap[0, y, x].item()
+                    print(f"  ({y},{x}): owner={owner}, height={height}, cap={cap}, ring_under={ring_under}")
     exported_moves = len(game_dict['moves'])
 
     initial_state = create_initial_state(BoardType.SQUARE8, num_players=2)
@@ -261,6 +280,13 @@ def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]
             from_p = Position(**m['from']) if 'from' in m and m['from'] else None
             to_p = Position(**m['to']) if 'to' in m and m['to'] else None
             print(f"Move {i}: {move_type_str} from={from_p.to_key() if from_p else None} to={to_p.to_key() if to_p else None} (player={gpu_player})")
+            # Check key positions for divergence tracking (2,4 is problematic position)
+            key_pos_24 = state.board.stacks.get('2,4')
+            key_pos_61 = state.board.stacks.get('6,1')
+            if key_pos_24:
+                print(f"  >> 2,4 before: owner={key_pos_24.controlling_player}, h={key_pos_24.stack_height}, cap={key_pos_24.cap_height}")
+            if key_pos_61:
+                print(f"  >> 6,1 before: owner={key_pos_61.controlling_player}, h={key_pos_61.stack_height}, cap={key_pos_61.cap_height}")
 
         # Skip pure GPU bookkeeping moves that don't affect game state
         if move_type_str in GPU_BOOKKEEPING_MOVES:
@@ -336,6 +362,14 @@ def test_seed(seed: int, debug: bool = False) -> tuple[int, int, int, int, list]
                                  if s.controlling_player == state.current_player]
                     print(f"    Player {state.current_player} stacks: {my_stacks[:10]}")
                     print(f"    Rings in hand: {[p.rings_in_hand for p in state.players]}")
+                # For eliminate_rings_from_stack, show GPU state at that point
+                if move_type_str == 'eliminate_rings_from_stack' and to_pos:
+                    # GPU coordinates: y = to_pos.y, x = to_pos.x
+                    gpu_y, gpu_x = to_pos.y, to_pos.x
+                    if gpu_states and i in gpu_states:
+                        gpu_state_at_move = gpu_states.get(i, {})
+                        if (gpu_y, gpu_x) in gpu_state_at_move:
+                            print(f"    GPU state at move {i} for ({gpu_y},{gpu_x}): {gpu_state_at_move[(gpu_y, gpu_x)]}")
             errors.append((i, m['type'], state.current_phase.value))
 
     return total_moves, exported_moves, skipped, len(errors), errors[:3]

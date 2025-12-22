@@ -346,15 +346,37 @@ def _eliminate_one_ring_from_any_stack(
                 state.buried_rings[game_idx, p] -= buried_count
     elif new_cap_height <= 0:
         # Cap fully eliminated but stack remains - ownership transfers
-        opponent = 1 if player == 2 else 2
-        state.stack_owner[game_idx, y, x] = opponent
-        # New cap is all remaining rings (opponent now controls)
-        state.cap_height[game_idx, y, x] = new_height
-        # If opponent had buried ring here, it's now exposed as cap
-        buried_count = state.buried_at[game_idx, opponent, y, x].item()
+        # BUG FIX 2025-12-21: Use ring_under_cap for new owner, not hardcoded opponent
+        # Per RR-CANON-R022: when cap is eliminated, the ring below becomes the new cap
+        ring_under = int(state.ring_under_cap[game_idx, y, x].item())
+        if ring_under > 0:
+            new_owner = ring_under
+        else:
+            # Fallback to opponent if ring_under_cap not set (shouldn't happen)
+            new_owner = 1 if player == 2 else 2
+        state.stack_owner[game_idx, y, x] = new_owner
+
+        # Find the new ring_under_cap by checking buried_at for other players
+        new_ring_under = 0
+        for p in range(1, state.num_players + 1):
+            if p != new_owner and state.buried_at[game_idx, p, y, x].item() > 0:
+                new_ring_under = p
+                break
+        state.ring_under_cap[game_idx, y, x] = new_ring_under
+
+        # BUG FIX 2025-12-21: cap_height depends on whether there are opponent rings below
+        # If new_ring_under > 0, there's an opponent ring below, so cap = 1
+        # If new_ring_under == 0, all remaining rings are new owner's color, so cap = new_height
+        if new_ring_under > 0:
+            state.cap_height[game_idx, y, x] = 1
+        else:
+            state.cap_height[game_idx, y, x] = new_height
+
+        # If new owner had buried ring here, it's now exposed as cap - decrement tracking
+        buried_count = state.buried_at[game_idx, new_owner, y, x].item()
         if buried_count > 0:
-            state.buried_at[game_idx, opponent, y, x] = 0
-            state.buried_rings[game_idx, opponent] -= buried_count
+            state.buried_at[game_idx, new_owner, y, x] -= 1
+            state.buried_rings[game_idx, new_owner] -= 1
     else:
         # Cap not fully eliminated, player keeps ownership
         state.cap_height[game_idx, y, x] = new_cap_height
