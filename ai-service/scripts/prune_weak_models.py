@@ -103,12 +103,12 @@ def backup_model(model_file: Path):
     shutil.move(str(model_file), str(dest))
 
 
-def prune_models(models: list[Path], backup: bool = True) -> int:
+def prune_models(models: list[tuple[Path, dict]], backup: bool = True) -> int:
     """Prune the specified models."""
     pruned = 0
     log_entries = []
 
-    for model_file in models:
+    for model_file, info in models:
         try:
             size_mb = model_file.stat().st_size / (1024 * 1024)
             if backup:
@@ -123,6 +123,8 @@ def prune_models(models: list[Path], backup: bool = True) -> int:
                 "name": model_file.name,
                 "action": action,
                 "size_mb": round(size_mb, 2),
+                "elo": info["elo"],
+                "games": info["games"],
                 "timestamp": datetime.now().isoformat(),
             })
             print(f"  {action}: {model_file.name} ({size_mb:.1f}MB)")
@@ -143,17 +145,19 @@ def prune_models(models: list[Path], backup: bool = True) -> int:
     return pruned
 
 
-def calculate_savings(models: list[Path]) -> float:
+def calculate_savings(models: list[tuple[Path, dict]]) -> float:
     """Calculate total disk space that would be freed."""
-    return sum(m.stat().st_size for m in models) / (1024 * 1024 * 1024)  # GB
+    return sum(m.stat().st_size for m, _ in models) / (1024 * 1024 * 1024)  # GB
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prune weak models")
+    parser = argparse.ArgumentParser(description="Prune weak models based on Elo ratings")
     parser.add_argument("--dry-run", action="store_true", help="Preview without deleting")
     parser.add_argument("--prune", action="store_true", help="Actually prune models")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                        help=f"Score threshold (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("--elo-threshold", type=float, default=DEFAULT_ELO_THRESHOLD,
+                        help=f"Elo threshold - prune below this (default: {DEFAULT_ELO_THRESHOLD})")
+    parser.add_argument("--min-games", type=int, default=DEFAULT_MIN_GAMES,
+                        help=f"Min games required for reliable rating (default: {DEFAULT_MIN_GAMES})")
     parser.add_argument("--no-backup", action="store_true", help="Delete instead of backup")
     args = parser.parse_args()
 
@@ -161,19 +165,19 @@ def main():
         print("Specify --dry-run to preview or --prune to delete")
         return 1
 
-    # Load scores
-    scores = load_gauntlet_results()
-    print(f"Loaded scores for {len(scores)} models")
+    # Load Elo ratings
+    ratings = load_elo_ratings()
+    print(f"Loaded Elo ratings for {len(ratings)} models")
 
-    if not scores:
-        print("No gauntlet results found. Run aggregate_elo_results.py --collect first.")
+    if not ratings:
+        print("No Elo ratings found. Run tournaments first to generate ratings.")
         return 1
 
     # Find models to prune
-    to_prune = find_models_to_prune(scores, args.threshold)
+    to_prune = find_models_to_prune(ratings, args.elo_threshold, args.min_games)
     savings_gb = calculate_savings(to_prune)
 
-    print(f"\nModels below threshold ({args.threshold}):")
+    print(f"\nModels below Elo {args.elo_threshold} (with >= {args.min_games} games):")
     print(f"  Count: {len(to_prune)}")
     print(f"  Space: {savings_gb:.2f} GB")
 
@@ -183,9 +187,8 @@ def main():
 
     if args.dry_run:
         print("\n[DRY RUN] Would prune:")
-        for m in sorted(to_prune, key=lambda x: scores.get(x.stem, 0)):
-            score = scores.get(m.stem, 0)
-            print(f"  {m.name}: score={score:.2f}")
+        for m, info in sorted(to_prune, key=lambda x: x[1]["elo"]):
+            print(f"  {m.name}: Elo={info['elo']:.0f} ({info['games']} games)")
         print("\nRun with --prune to actually delete these models")
     else:
         print(f"\nPruning {len(to_prune)} models...")

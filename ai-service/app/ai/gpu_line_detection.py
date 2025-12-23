@@ -476,9 +476,12 @@ def process_lines_batch(
 
                 # Record first line position for CHOOSE_LINE_OPTION move recording
                 # Only record first line for each game (CPU exports first line position)
+                # BUG FIX 2025-12-22: Use canonical ordering to match CPU.
+                # CPU orders line positions by (x, y), so we find min by (x, y) coords.
+                # Since tensor positions are (y, x), we sort by (p[1], p[0]).
                 if g not in line_positions and positions_to_collapse:
-                    first_y, first_x = positions_to_collapse[0]
-                    line_positions[g] = (first_y, first_x)
+                    canonical_first = min(positions_to_collapse, key=lambda p: (p[1], p[0]))
+                    line_positions[g] = canonical_first
 
                 for (y, x) in positions_to_collapse:
                     state.marker_owner[g, y, x] = 0

@@ -113,7 +113,15 @@ class BoardManager:
     def is_valid_position(
         position: Position, board_type: BoardType, size: int
     ) -> bool:
-        """Return True if ``position`` is on the board for ``board_type``."""
+        """Return True if ``position`` is on the board for ``board_type``.
+
+        Note: Hex boards have two conventions for ``size``:
+          - Convention A: size = radius + 1 (e.g., size=13 for radius=12)
+          - Convention B: size = 2*radius + 1 (e.g., size=25 for radius=12)
+
+        This function detects which convention is used based on size value
+        and computes radius accordingly for backwards compatibility.
+        """
         if board_type == BoardType.SQUARE8:
             return 0 <= position.x < 8 and 0 <= position.y < 8
         elif board_type == BoardType.SQUARE19:
@@ -121,9 +129,19 @@ class BoardManager:
         elif board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             # Compute z from x,y if not provided (hex constraint: x + y + z = 0)
             z = position.z if position.z is not None else -position.x - position.y
-            # Hex boards: size = bounding box (2*radius + 1). Radius = (size - 1) // 2.
-            # HEX8: size=9 -> radius=4, HEXAGONAL: size=25 -> radius=12
-            radius = (size - 1) // 2
+
+            # Detect convention based on size value:
+            # - Convention A: size <= 13 means radius = size - 1
+            #   (HEXAGONAL: size=13 -> radius=12, HEX8: size=5 -> radius=4)
+            # - Convention B: size > 13 means radius = (size - 1) // 2
+            #   (HEXAGONAL: size=25 -> radius=12, HEX8: size=9 -> radius=4)
+            if size <= 13:
+                # Convention A: size = radius + 1
+                radius = size - 1
+            else:
+                # Convention B: size = 2*radius + 1
+                radius = (size - 1) // 2
+
             return (abs(position.x) <= radius and
                     abs(position.y) <= radius and
                     abs(z) <= radius and
