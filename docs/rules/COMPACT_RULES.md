@@ -14,7 +14,7 @@
 
 ### 1.1 Supported board types
 
-`BoardType ∈ { square8, square19, hexagonal }`
+`BoardType ∈ { square8, square19, hex8, hexagonal }`
 
 For each board type, define a static configuration:
 
@@ -22,6 +22,7 @@ For each board type, define a static configuration:
 | --------- | ---- | ----------- | -------------- | ---------------- | ----------------- | ------------- | ------------------- | --------------- |
 | square8   | 8    | 64          | 18             | 4 (2p), 3 (3–4p) | Moore (8-dir)     | Moore         | Von Neumann (4-dir) | orthogonal grid |
 | square19  | 19   | 361         | 72             | 4                | Moore             | Moore         | Von Neumann         | orthogonal grid |
+| hex8      | 9    | 61          | 18             | 4 (2p), 3 (3–4p) | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
 | hexagonal | 13   | 469         | 96             | 4                | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
 
 - **Ring supply semantics:** For each player P, `ringsPerPlayer` is the maximum number of rings of P's own colour that may ever be in play: all of P's rings currently on the board in any stack (regardless of which player controls those stacks) plus all of P's rings in hand must never exceed this value. Rings of other colours that P has captured and that are buried in stacks P controls do **not** count against P's `ringsPerPlayer` cap; they remain, by colour, part of the original owner's supply for conservation and victory accounting.

@@ -99,7 +99,7 @@ export function playerHasAnyRings(state: GameState, player: number): boolean {
       continue;
     }
     // Check the rings array for any ring owned by this player
-    // The rings array contains player numbers from bottom to top
+    // The rings array contains player numbers from top to bottom (rings[0] is top)
     if (stack.rings && stack.rings.includes(player)) {
       return true;
     }

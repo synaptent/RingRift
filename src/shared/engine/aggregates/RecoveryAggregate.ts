@@ -1127,26 +1127,86 @@ function isValidPosition(position: Position, board: BoardState): boolean {
 
 /**
  * Get marker at position.
+ * RR-PARITY-FIX-2025-12-22: For hex boards, tries both "x,y,z" and "x,y" key formats
+ * to match Python's _get_position_keys_for_lookup behavior.
  */
 function getMarker(position: Position, board: BoardState): number | undefined {
   const posKey = positionToString(position);
-  return board.markers.get(posKey)?.player;
+  const marker = board.markers.get(posKey);
+  if (marker) return marker.player;
+
+  // For hex boards, also try alternate key format (with or without z)
+  const isHex = board.type === 'hexagonal' || board.type === 'hex8';
+  if (isHex) {
+    const parts = posKey.split(',');
+    if (parts.length === 3) {
+      // Primary was "x,y,z", also try "x,y"
+      const shortKey = `${parts[0]},${parts[1]}`;
+      const shortMarker = board.markers.get(shortKey);
+      if (shortMarker) return shortMarker.player;
+    } else if (parts.length === 2) {
+      // Primary was "x,y", also try "x,y,z"
+      const z = -Number(parts[0]) - Number(parts[1]);
+      const fullKey = `${parts[0]},${parts[1]},${z}`;
+      const fullMarker = board.markers.get(fullKey);
+      if (fullMarker) return fullMarker.player;
+    }
+  }
+
+  return undefined;
 }
 
 /**
  * Get stack at position.
+ * RR-PARITY-FIX-2025-12-22: For hex boards, tries both key formats.
  */
 function getStack(position: Position, board: BoardState): RingStack | undefined {
   const posKey = positionToString(position);
-  return board.stacks.get(posKey);
+  const stack = board.stacks.get(posKey);
+  if (stack) return stack;
+
+  // For hex boards, also try alternate key format (with or without z)
+  const isHex = board.type === 'hexagonal' || board.type === 'hex8';
+  if (isHex) {
+    const parts = posKey.split(',');
+    if (parts.length === 3) {
+      const shortKey = `${parts[0]},${parts[1]}`;
+      const shortStack = board.stacks.get(shortKey);
+      if (shortStack) return shortStack;
+    } else if (parts.length === 2) {
+      const z = -Number(parts[0]) - Number(parts[1]);
+      const fullKey = `${parts[0]},${parts[1]},${z}`;
+      const fullStack = board.stacks.get(fullKey);
+      if (fullStack) return fullStack;
+    }
+  }
+
+  return undefined;
 }
 
 /**
  * Check if position is a collapsed space.
+ * RR-PARITY-FIX-2025-12-22: For hex boards, tries both key formats.
  */
 function isCollapsedSpace(position: Position, board: BoardState): boolean {
   const posKey = positionToString(position);
-  return board.collapsedSpaces.has(posKey);
+  if (board.collapsedSpaces.has(posKey)) return true;
+
+  // For hex boards, also try alternate key format (with or without z)
+  const isHex = board.type === 'hexagonal' || board.type === 'hex8';
+  if (isHex) {
+    const parts = posKey.split(',');
+    if (parts.length === 3) {
+      const shortKey = `${parts[0]},${parts[1]}`;
+      if (board.collapsedSpaces.has(shortKey)) return true;
+    } else if (parts.length === 2) {
+      const z = -Number(parts[0]) - Number(parts[1]);
+      const fullKey = `${parts[0]},${parts[1]},${z}`;
+      if (board.collapsedSpaces.has(fullKey)) return true;
+    }
+  }
+
+  return false;
 }
 
 /**
