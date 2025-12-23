@@ -41,7 +41,7 @@ torchvision==0.17.2
 
 # TensorBoard
 tensorboard==2.18.0
-tensorboardX==2.6.2.2
+tensorboardX==2.6.4
 
 # CMA-ES for heuristic weight optimization
 cma>=3.3.0
