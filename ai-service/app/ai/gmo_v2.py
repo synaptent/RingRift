@@ -697,6 +697,142 @@ class GMOv2AI(BaseAI):
         params.extend(self.value_net.parameters())
         return params
 
+    # =========================================================================
+    # Online Learning Support
+    # =========================================================================
+
+    def enable_online_learning(
+        self,
+        lr: float = 0.00005,  # Very conservative for v2
+        buffer_size: int = 300,
+        discount: float = 0.99,
+        weight_decay: float = 0.02,
+        max_grad_norm: float = 0.5,
+    ) -> None:
+        """Enable continuous learning during play.
+
+        Uses conservative hyperparameters to prevent catastrophic forgetting
+        while allowing incremental improvement.
+
+        Args:
+            lr: Learning rate for online updates (very low for stability)
+            buffer_size: Size of experience replay buffer
+            discount: Temporal discount factor
+            weight_decay: L2 regularization strength
+            max_grad_norm: Maximum gradient norm for clipping
+        """
+        self._online_buffer: list[tuple[torch.Tensor, torch.Tensor, float]] = []
+        self._online_trajectory: list[tuple[torch.Tensor, torch.Tensor, float]] = []
+        self._online_lr = lr
+        self._online_buffer_size = buffer_size
+        self._online_discount = discount
+        self._online_weight_decay = weight_decay
+        self._online_max_grad_norm = max_grad_norm
+
+        self._online_optimizer = torch.optim.AdamW(
+            self.get_parameters(),
+            lr=lr,
+            weight_decay=weight_decay,
+        )
+
+        self._online_enabled = True
+        logger.info(
+            f"GMO v2 online learning enabled (lr={lr}, buffer={buffer_size})"
+        )
+
+    def disable_online_learning(self) -> None:
+        """Disable continuous learning."""
+        self._online_enabled = False
+        self._online_buffer = []
+        self._online_trajectory = []
+        logger.info("GMO v2 online learning disabled")
+
+    def is_learning_enabled(self) -> bool:
+        """Check if online learning is active."""
+        return getattr(self, '_online_enabled', False)
+
+    def record_move(
+        self,
+        state: GameState,
+        move: Move,
+        predicted_value: float,
+    ) -> None:
+        """Record a move during gameplay for later learning."""
+        if not self.is_learning_enabled():
+            return
+
+        with torch.no_grad():
+            state_embed = self.state_encoder(state)
+            move_embed = self.move_encoder(move)
+
+        self._online_trajectory.append((
+            state_embed.detach().cpu(),
+            move_embed.detach().cpu(),
+            predicted_value,
+        ))
+
+    def update_on_game_end(self, outcome: float) -> float:
+        """Update model based on game outcome.
+
+        Args:
+            outcome: Game result from this player's perspective
+                    (+1 win, 0 draw, -1 loss)
+
+        Returns:
+            Average loss for this update
+        """
+        if not self.is_learning_enabled() or not self._online_trajectory:
+            return 0.0
+
+        # Assign discounted rewards
+        for i, (state_embed, move_embed, _) in enumerate(self._online_trajectory):
+            progress = (i + 1) / len(self._online_trajectory)
+            discounted_outcome = outcome * (0.5 + 0.5 * progress)
+            self._online_buffer.append((state_embed, move_embed, discounted_outcome))
+
+        # Trim buffer
+        while len(self._online_buffer) > self._online_buffer_size:
+            self._online_buffer.pop(0)
+
+        # Clear trajectory
+        self._online_trajectory = []
+
+        # Perform update if buffer is large enough
+        if len(self._online_buffer) < 16:
+            return 0.0
+
+        # Sample batch from buffer
+        batch_size = min(32, len(self._online_buffer))
+        indices = np.random.choice(len(self._online_buffer), batch_size, replace=False)
+
+        state_embeds = torch.stack([
+            self._online_buffer[i][0] for i in indices
+        ]).to(self.device)
+        move_embeds = torch.stack([
+            self._online_buffer[i][1] for i in indices
+        ]).to(self.device)
+        outcomes = torch.tensor([
+            self._online_buffer[i][2] for i in indices
+        ], dtype=torch.float32, device=self.device)
+
+        # Update
+        self._online_optimizer.zero_grad()
+        pred_values, pred_log_vars = self.value_net(state_embeds, move_embeds)
+
+        # NLL loss with uncertainty
+        variance = torch.exp(pred_log_vars) + 1e-8
+        loss = (0.5 * torch.log(variance) +
+                0.5 * ((outcomes - pred_values) ** 2) / variance).mean()
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            self.get_parameters(),
+            self._online_max_grad_norm,
+        )
+        self._online_optimizer.step()
+
+        return loss.item()
+
 
 # =============================================================================
 # Factory function

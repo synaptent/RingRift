@@ -200,6 +200,123 @@ class ModelWatcher:
 
 
 # =============================================================================
+# Elo Integration - Fixes V4 model evaluation gap
+# =============================================================================
+
+class EloIntegration:
+    """Update Elo database after gauntlet evaluation.
+
+    This fixes the broken pipeline where gauntlet results were stored
+    in daemon state but never written to the Elo database.
+    """
+
+    # Baseline Elo anchors (pinned reference points)
+    BASELINE_ELOS = {
+        "random": 400,
+        "heuristic": 1200,
+        "mcts": 1400,
+    }
+
+    def __init__(self):
+        self._db = None
+
+    @property
+    def db(self):
+        """Lazy-load Elo database."""
+        if self._db is None:
+            from app.tournament import EloDatabase
+            self._db = EloDatabase(AI_SERVICE_ROOT / "data" / "unified_elo.db")
+        return self._db
+
+    def estimate_elo_from_win_rate(self, win_rate: float, opponent_elo: float) -> float:
+        """Estimate player Elo from win rate against opponent with known Elo."""
+        import math
+        if win_rate <= 0.01:
+            return opponent_elo - 400
+        if win_rate >= 0.99:
+            return opponent_elo + 400
+        return opponent_elo - 400 * math.log10(1 / win_rate - 1)
+
+    def calibrate_elo(self, vs_random: float, vs_heuristic: float, vs_mcts: float = 0.0) -> float:
+        """Calibrate Elo rating from gauntlet results against baselines."""
+        estimates = []
+        weights = []
+
+        for win_rate, baseline_elo in [
+            (vs_random, self.BASELINE_ELOS["random"]),
+            (vs_heuristic, self.BASELINE_ELOS["heuristic"]),
+            (vs_mcts, self.BASELINE_ELOS["mcts"]),
+        ]:
+            if win_rate > 0:
+                elo_est = self.estimate_elo_from_win_rate(win_rate, baseline_elo)
+                estimates.append(elo_est)
+                # Weight by reliability: mid-range win rates are more reliable
+                reliability = max(0.1, 1 - abs(win_rate - 0.5) * 2)
+                weights.append(reliability)
+
+        if not estimates:
+            return 1500.0
+
+        total_weight = sum(weights)
+        calibrated_elo = sum(e * w for e, w in zip(estimates, weights)) / total_weight
+        return max(200, min(2400, calibrated_elo))
+
+    def update_elo_from_gauntlet(self, gauntlet_result: dict) -> bool:
+        """Update Elo database with gauntlet result.
+
+        Args:
+            gauntlet_result: Dict with model_path, vs_random, vs_heuristic, vs_mcts, etc.
+
+        Returns:
+            True if update succeeded, False otherwise.
+        """
+        try:
+            model_path = gauntlet_result.get("model_path", "")
+            model_name = Path(model_path).stem
+            board_type = gauntlet_result.get("board_type", "square8")
+            num_players = gauntlet_result.get("num_players", 2)
+
+            vs_random = gauntlet_result.get("vs_random", 0.0)
+            vs_heuristic = gauntlet_result.get("vs_heuristic", 0.0)
+            vs_mcts = gauntlet_result.get("vs_mcts", 0.0)
+            games_played = gauntlet_result.get("games_played", 0)
+
+            # Calibrate Elo from gauntlet results
+            calibrated_elo = self.calibrate_elo(vs_random, vs_heuristic, vs_mcts)
+
+            # Generate participant ID
+            participant_id = model_name
+
+            # Register participant if needed
+            self.db.register_participant(
+                participant_id=participant_id,
+                participant_type="model",
+                model_path=model_path,
+            )
+
+            # Get current rating and update
+            current = self.db.get_rating(participant_id, board_type, num_players)
+            current.rating = calibrated_elo
+            current.games_played = games_played
+
+            # Approximate wins/losses from win rates
+            games_per_baseline = games_played // 2 if games_played else 10
+            avg_win_rate = (vs_random + vs_heuristic) / 2
+            current.wins = int(avg_win_rate * games_played)
+            current.losses = games_played - current.wins
+
+            self.db.update_rating(current)
+
+            logger.info(f"[Elo] Updated {participant_id} ({board_type}_{num_players}p): "
+                       f"Elo={calibrated_elo:.0f}, games={games_played}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[Elo] Failed to update Elo for {gauntlet_result.get('model_path', 'unknown')}: {e}")
+            return False
+
+
+# =============================================================================
 # Gauntlet Runner
 # =============================================================================
 
@@ -472,6 +589,7 @@ class UnifiedPromotionDaemon:
         self.checker = PromotionChecker(config)
         self.sync = ClusterSync(config)
         self.notifier = Notifier(config)
+        self.elo_integration = EloIntegration()  # NEW: Update Elo DB after evaluation
 
         self.state = self._load_state()
 
@@ -552,6 +670,11 @@ class UnifiedPromotionDaemon:
 
             results["evaluated"] += 1
             self.state.evaluated_models[str(model_path)] = gauntlet_result
+
+            # NEW: Update Elo database with gauntlet results
+            # This fixes the broken pipeline where V4 models were evaluated but never got Elo ratings
+            if not dry_run:
+                self.elo_integration.update_elo_from_gauntlet(gauntlet_result)
 
             # Check promotion criteria
             should_promote, reason = self.checker.should_promote(gauntlet_result)

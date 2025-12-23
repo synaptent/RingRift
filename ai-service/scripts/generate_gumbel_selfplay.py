@@ -346,6 +346,9 @@ def generate_game(
             logger.error(f"No AI for player {current_player}")
             break
 
+        # Update AI's player number for current player (critical for correct move generation)
+        ai.player_number = current_player
+
         # Get legal moves
         legal_moves = env.legal_moves()
         if not legal_moves:
@@ -357,6 +360,11 @@ def generate_game(
         if selected_move is None:
             logger.warning(f"AI returned None move at move {move_count}")
             break
+
+        # Validate selected move is legal; fall back to random if not
+        if selected_move not in legal_moves:
+            logger.warning(f"AI selected invalid move at move {move_count}, falling back to random")
+            selected_move = legal_moves[random.randint(0, len(legal_moves) - 1)]
 
         # Extract MCTS policy distribution for training
         mcts_policy = extract_policy_from_gumbel(ai, legal_moves)

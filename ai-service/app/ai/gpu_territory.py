@@ -429,7 +429,7 @@ def compute_territory_batch(
     state: BatchGameState,
     game_mask: torch.Tensor | None = None,
     current_player_only: bool = False,
-) -> tuple[dict[int, list[tuple[int, int, int]]], dict[int, tuple[int, int]]]:
+) -> tuple[dict[int, list[tuple[int, int, int, int, int]]], dict[int, tuple[int, int]]]:
     """Compute and update territory claims (in-place).
 
     Per RR-CANON-R140-R146:
@@ -455,10 +455,12 @@ def compute_territory_batch(
 
     Returns:
         Tuple of:
-        - Dictionary mapping game_idx to list of (player, y, x) elimination positions
-        - Dictionary mapping game_idx to (y, x) region representative position
+        - Dictionary mapping game_idx to list of (player, region_y, region_x, elim_y, elim_x)
+          Each tuple pairs a territory region with its elimination stack for proper CHOOSE+ELIM recording
+        - Dictionary mapping game_idx to (y, x) first region representative position (for backwards compat)
     """
-    elimination_positions: dict[int, list[tuple[int, int, int]]] = {}
+    # Changed: territory_moves now includes region position for each elimination
+    territory_moves: dict[int, list[tuple[int, int, int, int, int]]] = {}
     region_positions: dict[int, tuple[int, int]] = {}  # First region position per game
     batch_size = state.batch_size
     board_size = state.board_size
@@ -482,6 +484,13 @@ def compute_territory_batch(
         stack_owner_np = state.stack_owner[g].cpu().numpy()
         is_collapsed_np = state.is_collapsed[g].cpu().numpy()
         marker_owner_np = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
+
+        # CPU parity: Skip territory detection if only 1 or 0 active players
+        # (matches CPU BoardManager.find_disconnected_regions early exit)
+        active_mask = (stack_owner_np > 0) & (stack_height_np > 0)
+        active_players = set(stack_owner_np[active_mask].tolist())
+        if len(active_players) <= 1:
+            continue
 
         # Collect all marker colors on the board (matches CPU algorithm)
         marker_colors = set()
@@ -568,28 +577,59 @@ def compute_territory_batch(
                             territory_count += 1
                             is_collapsed_np[y, x] = True
 
-                    # 2. Collapse border markers of single border color B (if applicable)
-                    if border_player is not None and marker_owner_np is not None:
-                        # Convert region to set once for O(1) lookup
+                    # 2. Collapse border markers (CPU parity: collapses ALL connected markers)
+                    # CPU algorithm:
+                    #   Step 1: Find seed markers adjacent to region (von Neumann/territory adjacency)
+                    #   Step 2: BFS through connected markers using Moore adjacency (8-dir for square)
+                    # NOTE: CPU collapses all markers regardless of color, not just border_player.
+                    # This differs from canonical spec but we match CPU for parity.
+                    if marker_owner_np is not None:
                         region_set = set(region) if not isinstance(region, set) else region
-                        # Find and collapse border markers - use numpy for reading
-                        for y in range(board_size):
-                            for x in range(board_size):
-                                if marker_owner_np[y, x] == border_player:
-                                    # Check if this marker is on the boundary of region
-                                    # Use board-type-appropriate neighbor connectivity
-                                    is_boundary = any(
-                                        (ny, nx) in region_set
-                                        for ny, nx in _get_neighbors(y, x, board_size, is_hex)
-                                    )
 
-                                    if is_boundary and not is_collapsed_np[y, x]:
-                                        state.is_collapsed[g, y, x] = True
-                                        state.territory_owner[g, y, x] = player
-                                        state.marker_owner[g, y, x] = 0
-                                        territory_count += 1
-                                        is_collapsed_np[y, x] = True
-                                        marker_owner_np[y, x] = 0
+                        # Step 1: Find seed markers adjacent to region (von Neumann = 4-dir)
+                        # Territory adjacency uses von Neumann for square boards
+                        von_neumann_dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                        seed_markers: set[tuple[int, int]] = set()
+
+                        for ry, rx in region:
+                            for dy, dx in von_neumann_dirs:
+                                ny, nx = ry + dy, rx + dx
+                                if 0 <= ny < board_size and 0 <= nx < board_size:
+                                    if (ny, nx) not in region_set and marker_owner_np[ny, nx] > 0:
+                                        seed_markers.add((ny, nx))
+
+                        # Step 2: BFS through connected markers using Moore adjacency (8-dir)
+                        # For hex boards, CPU doesn't expand (matches TS)
+                        border_markers = set(seed_markers)
+                        if not is_hex and seed_markers:
+                            moore_dirs = [
+                                (-1, -1), (-1, 0), (-1, 1),
+                                (0, -1),           (0, 1),
+                                (1, -1),  (1, 0),  (1, 1)
+                            ]
+                            queue = list(seed_markers)
+                            visited = set(seed_markers) | region_set
+
+                            while queue:
+                                cy, cx = queue.pop(0)
+                                for dy, dx in moore_dirs:
+                                    ny, nx = cy + dy, cx + dx
+                                    if 0 <= ny < board_size and 0 <= nx < board_size:
+                                        if (ny, nx) not in visited:
+                                            visited.add((ny, nx))
+                                            if marker_owner_np[ny, nx] > 0:
+                                                border_markers.add((ny, nx))
+                                                queue.append((ny, nx))
+
+                        # Collapse all border markers
+                        for y, x in border_markers:
+                            if not is_collapsed_np[y, x]:
+                                state.is_collapsed[g, y, x] = True
+                                state.territory_owner[g, y, x] = player
+                                state.marker_owner[g, y, x] = 0
+                                territory_count += 1
+                                is_collapsed_np[y, x] = True
+                                marker_owner_np[y, x] = 0
 
                     # Track region representative position for CHOOSE_TERRITORY_OPTION recording
                     # Use first cell of region (deterministic) matching CPU's Territory.spaces[0]
@@ -675,10 +715,12 @@ def compute_territory_batch(
                             if hasattr(state, 'ring_stack'):
                                 state.ring_stack[g, cap_y, cap_x, :] = 0
 
-                        # Track elimination position for move recording
-                        if g not in elimination_positions:
-                            elimination_positions[g] = []
-                        elimination_positions[g].append((player, cap_y, cap_x))
+                        # Track territory move for CHOOSE+ELIM recording
+                        # Include region position so each elimination is paired with its territory
+                        if g not in territory_moves:
+                            territory_moves[g] = []
+                        # rep is (y, x) tuple from min(region)
+                        territory_moves[g].append((player, rep[0], rep[1], cap_y, cap_x))
 
                     processed_representatives.add(rep)
                     found_processable = True
@@ -716,7 +758,7 @@ def compute_territory_batch(
                 if _is_color_disconnected(state, g, region):
                     eligible_regions.append((region, border_player))
 
-    return elimination_positions, region_positions
+    return territory_moves, region_positions
 
 
 __all__ = [

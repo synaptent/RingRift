@@ -435,53 +435,60 @@ def _create_ringrift_problem(config: "CMAESConfig", baseline_weights: HeuristicW
 
         def _evaluate(self, solutions) -> "torch.Tensor":
             """Evaluate solutions - handles EvoTorch Solution objects."""
-            # EvoTorch passes Solution objects - extract the values tensor
-            # Handle both single Solution and SolutionBatch
-            try:
-                # Try batch access first
-                batch_size = len(solutions)
-                is_batch = True
-            except TypeError:
-                # Single solution
-                is_batch = False
+            # EvoTorch can pass either a single Solution or a SolutionBatch
+            # Check for SolutionBatch by looking for access_values method + checking ndim
 
-            if not is_batch:
-                # Single Solution object
-                values = solutions.values.detach().cpu().numpy()
-                weights = {k: float(values[i]) for i, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
-                fitness, _stats = evaluate_fitness(
-                    candidate_weights=weights,
-                    baseline_weights=self.baseline_weights,
-                    config=self.config,
-                )
-                self.eval_count += 1
+            def get_values_tensor(sol):
+                """Get the values tensor from a Solution object."""
+                vals = sol.values
+                if callable(vals):
+                    vals = vals()
+                return vals
 
-                if fitness > self.best_fitness:
-                    self.best_fitness = fitness
-                    self.best_weights = weights.copy()
+            # Check if this is a batch by checking if access_values returns 2D tensor
+            has_access = hasattr(solutions, 'access_values')
+            if has_access:
+                all_vals = solutions.access_values()
+                if all_vals.dim() == 2:
+                    # True batch
+                    batch_size = all_vals.shape[0]
+                    all_values = all_vals.detach().cpu().numpy()
 
-                solutions.set_evals(torch.tensor([fitness], device=solutions.values.device, dtype=torch.float32))
-                return None
-            else:
-                # SolutionBatch
-                for i in range(batch_size):
-                    sol = solutions[i]
-                    values = sol.values.detach().cpu().numpy()
-                    weights = {k: float(values[j]) for j, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
-                    fitness, _stats = evaluate_fitness(
-                        candidate_weights=weights,
-                        baseline_weights=self.baseline_weights,
-                        config=self.config,
-                    )
-                    self.eval_count += 1
+                    for i in range(batch_size):
+                        values = all_values[i]
+                        weights = {k: float(values[j]) for j, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
+                        fitness, _stats = evaluate_fitness(
+                            candidate_weights=weights,
+                            baseline_weights=self.baseline_weights,
+                            config=self.config,
+                        )
+                        self.eval_count += 1
 
-                    if fitness > self.best_fitness:
-                        self.best_fitness = fitness
-                        self.best_weights = weights.copy()
+                        if fitness > self.best_fitness:
+                            self.best_fitness = fitness
+                            self.best_weights = weights.copy()
 
-                    sol.set_evals(torch.tensor([fitness], device=sol.values.device, dtype=torch.float32))
+                        solutions[i].set_evals(torch.tensor([fitness], device=solutions.device, dtype=torch.float32))
 
-                return None
+                    return None
+
+            # Single Solution - get values directly
+            vals = get_values_tensor(solutions)
+            values = vals.detach().cpu().numpy()
+            weights = {k: float(values[i]) for i, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
+            fitness, _stats = evaluate_fitness(
+                candidate_weights=weights,
+                baseline_weights=self.baseline_weights,
+                config=self.config,
+            )
+            self.eval_count += 1
+
+            if fitness > self.best_fitness:
+                self.best_fitness = fitness
+                self.best_weights = weights.copy()
+
+            solutions.set_evals(torch.tensor([fitness], device=vals.device, dtype=torch.float32))
+            return None
 
     return RingRiftOptimizationProblem()
 
@@ -1018,52 +1025,59 @@ def run_evotorch_distributed(
             )
 
         def _evaluate(self, solutions) -> "torch.Tensor":
-            # Handle EvoTorch Solution objects
-            try:
-                batch_size = len(solutions)
-                is_batch = True
-            except TypeError:
-                is_batch = False
+            # Handle EvoTorch Solution objects - same pattern as local evaluation
 
-            if not is_batch:
-                # Single Solution object
-                values = solutions.values.detach().cpu().numpy()
-                weights = {k: float(values[i]) for i, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
-                candidates = [weights]
-                fitness_scores = self.coordinator.evaluate_candidates(
-                    candidates, self.config.baseline_weights
-                )
-                self.eval_count += 1
-                fitness = fitness_scores[0]
-                if fitness > self.best_fitness:
-                    self.best_fitness = fitness
-                    self.best_weights = weights.copy()
-                solutions.set_evals(torch.tensor([fitness], device=solutions.values.device, dtype=torch.float32))
-                return None
-            else:
-                # SolutionBatch - gather all weights first, then distribute
-                candidates = []
-                for i in range(batch_size):
-                    sol = solutions[i]
-                    values = sol.values.detach().cpu().numpy()
-                    weights = {k: float(values[j]) for j, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
-                    candidates.append(weights)
+            def get_values_tensor(sol):
+                vals = sol.values
+                if callable(vals):
+                    vals = vals()
+                return vals
 
-                # Distributed evaluation
-                fitness_scores = self.coordinator.evaluate_candidates(
-                    candidates, self.config.baseline_weights
-                )
+            # Check if batch by checking access_values dimensionality
+            has_access = hasattr(solutions, 'access_values')
+            if has_access:
+                all_vals = solutions.access_values()
+                if all_vals.dim() == 2:
+                    # True batch - gather all candidates then distribute
+                    batch_size = all_vals.shape[0]
+                    all_values = all_vals.detach().cpu().numpy()
+                    candidates = []
+                    for i in range(batch_size):
+                        values = all_values[i]
+                        weights = {k: float(values[j]) for j, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
+                        candidates.append(weights)
 
-                self.eval_count += batch_size
+                    # Distributed evaluation
+                    fitness_scores = self.coordinator.evaluate_candidates(
+                        candidates, self.config.baseline_weights
+                    )
 
-                # Track best and set evals
-                for i, fitness in enumerate(fitness_scores):
-                    if fitness > self.best_fitness:
-                        self.best_fitness = fitness
-                        self.best_weights = candidates[i].copy()
-                    solutions[i].set_evals(torch.tensor([fitness], device=solutions[i].values.device, dtype=torch.float32))
+                    self.eval_count += batch_size
 
-                return None
+                    # Track best and set evals
+                    for i, fitness in enumerate(fitness_scores):
+                        if fitness > self.best_fitness:
+                            self.best_fitness = fitness
+                            self.best_weights = candidates[i].copy()
+                        solutions[i].set_evals(torch.tensor([fitness], device=solutions.device, dtype=torch.float32))
+
+                    return None
+
+            # Single Solution
+            vals = get_values_tensor(solutions)
+            values = vals.detach().cpu().numpy()
+            weights = {k: float(values[i]) for i, k in enumerate(HEURISTIC_WEIGHT_KEYS)}
+            candidates = [weights]
+            fitness_scores = self.coordinator.evaluate_candidates(
+                candidates, self.config.baseline_weights
+            )
+            self.eval_count += 1
+            fitness = fitness_scores[0]
+            if fitness > self.best_fitness:
+                self.best_fitness = fitness
+                self.best_weights = weights.copy()
+            solutions.set_evals(torch.tensor([fitness], device=vals.device, dtype=torch.float32))
+            return None
 
     problem = DistributedProblem()
     initial_weights = weights_to_tensor(config.baseline_weights, "cpu")
@@ -1483,7 +1497,12 @@ Examples:
         multi_board=args.multi_board or bool(eval_boards),
     )
 
-    # Select backend
+    # Worker mode doesn't need CMA-ES backend - run immediately
+    if config.mode == "worker":
+        run_worker_mode(config)
+        return
+
+    # Select backend (only needed for non-worker modes)
     if config.backend == "evotorch" and not EVOTORCH_AVAILABLE:
         logger.warning("EvoTorch not available, falling back to pycma")
         config.backend = "pycma"
@@ -1493,10 +1512,7 @@ Examples:
         sys.exit(1)
 
     # Run appropriate mode
-    if config.mode == "worker":
-        run_worker_mode(config)
-        return
-    elif config.mode == "distributed":
+    if config.mode == "distributed":
         best_weights, best_fitness = run_distributed_cmaes(config)
     elif config.mode == "iterative":
         best_weights, best_fitness = run_iterative_cmaes(config)

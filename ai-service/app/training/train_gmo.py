@@ -485,11 +485,18 @@ def train_gmo(
     optimizer = optim.AdamW(
         list(state_encoder.parameters()) + list(value_net.parameters()),
         lr=learning_rate,
-        weight_decay=0.01,
+        weight_decay=0.02,  # Increased from 0.01 for stronger regularization
     )
 
-    # Training loop
+    # Learning rate scheduler for better convergence
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=10, T_mult=2
+    )
+
+    # Training loop with early stopping
     best_val_loss = float("inf")
+    epochs_without_improvement = 0
+    early_stopping_patience = 15  # Stop if no improvement for 15 epochs
 
     for epoch in range(num_epochs):
         # Train
@@ -511,9 +518,10 @@ def train_gmo(
             f"val_acc={val_acc:.2%}"
         )
 
-        # Save best model
+        # Save best model and track early stopping
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            epochs_without_improvement = 0
             checkpoint_path = output_dir / "gmo_best.pt"
             torch.save({
                 "state_encoder": state_encoder.state_dict(),
@@ -524,6 +532,14 @@ def train_gmo(
                 "val_loss": val_loss,
             }, checkpoint_path)
             logger.info(f"Saved best model (val_loss={val_loss:.4f})")
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= early_stopping_patience:
+                logger.info(f"Early stopping at epoch {epoch+1} (no improvement for {early_stopping_patience} epochs)")
+                break
+
+        # Update learning rate
+        scheduler.step()
 
         # Evaluate vs Random AI periodically
         if (epoch + 1) % eval_interval == 0:

@@ -65,7 +65,7 @@ class EBMODatasetConfig:
     action_feature_dim: int = 14
 
     # Processing
-    max_samples_per_game: int = 100
+    max_samples_per_game: int | None = None  # None = load all samples
     shuffle_buffer_size: int = 10000
 
     def __post_init__(self):
@@ -285,8 +285,12 @@ class GameDataParser:
         policy_indices = data.get("policy_indices")
         data.get("policy_values")
 
-        num_positions = min(len(features), max_samples)
-        indices = np.random.choice(len(features), num_positions, replace=False)
+        # Handle None = load all samples
+        if max_samples is None:
+            indices = np.arange(len(features))
+        else:
+            num_positions = min(len(features), max_samples)
+            indices = np.random.choice(len(features), num_positions, replace=False)
 
         for idx in indices:
             board_feat = features[idx]
@@ -387,7 +391,7 @@ class EBMODataset(Dataset):
         num_negatives: int = 15,
         hard_negative_ratio: float = 0.3,
         board_size: int = 8,
-        max_samples_per_game: int = 100,
+        max_samples_per_game: int | None = None,  # None = load all samples
         preload: bool = False,
     ):
         """Initialize EBMO dataset.
@@ -520,7 +524,7 @@ class EBMOStreamingDataset(IterableDataset):
         num_negatives: int = 15,
         hard_negative_ratio: float = 0.3,
         board_size: int = 8,
-        max_samples_per_game: int = 100,
+        max_samples_per_game: int | None = None,  # None = load all samples
         shuffle: bool = True,
     ):
         if data_paths is None:

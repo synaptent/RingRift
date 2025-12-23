@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """Chunked JSONL to SQLite converter with parallel processing support.
 
-DEPRECATED: This script creates databases with metadata only (games table)
-but NO game_moves table, making the output UNUSABLE for neural network training.
-
-For training data, use jsonl_to_npz.py instead which:
-1. Properly replays games with move encoding
-2. Extracts policy targets for supervised learning
-3. Creates NPZ files directly usable by training scripts
-
-The jsonl_converted_*.db files created by this script have been removed
-from the cluster as they only waste disk space.
-
 This utility processes JSONL selfplay files in manageable chunks to avoid
-memory issues with large files. It supports:
+memory issues with large files. It creates SQLite databases with both
+game metadata AND move data (game_moves table) for training compatibility.
+
+Output schema:
+- games: Game metadata (game_id, board_type, num_players, winner, etc.)
+- game_moves: Individual moves (game_id, move_number, player, move_type, move_json)
+
+This utility supports:
 - Chunked reading (configurable lines per batch)
 - Parallel file processing with configurable workers
 - Progress tracking and resumption
@@ -172,6 +168,7 @@ def get_db_connection(
                 num_players INTEGER,
                 winner INTEGER,
                 move_count INTEGER,
+                total_moves INTEGER,
                 game_status TEXT,
                 victory_type TEXT,
                 created_at TEXT,
@@ -179,8 +176,22 @@ def get_db_connection(
                 metadata_json TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS game_moves (
+                game_id TEXT NOT NULL,
+                move_number INTEGER NOT NULL,
+                turn_number INTEGER,
+                player INTEGER,
+                phase TEXT,
+                move_type TEXT,
+                move_json TEXT,
+                PRIMARY KEY (game_id, move_number),
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_games_board_type ON games(board_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_games_status ON games(game_status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_moves_game_id ON game_moves(game_id)")
         conn.commit()
 
     return conn
@@ -193,6 +204,8 @@ def process_chunk(
     file_stem: str,
 ) -> tuple[int, int, int]:
     """Process a chunk of records and insert into database.
+
+    Inserts both game metadata (games table) and individual moves (game_moves table).
 
     Returns (added, duplicates, invalid) counts.
     """
@@ -212,25 +225,33 @@ def process_chunk(
             orig_id = record.get("game_id", record.get("_source_line", 0))
             game_id = f"{file_stem}_{orig_id}"
 
+            # Extract moves from record
+            moves = record.get("moves", [])
+            if not moves:
+                # Games without moves are not useful for training
+                invalid += 1
+                continue
+
             # Extract fields
             board_type = record.get("board_type", "square8")
             num_players = record.get("num_players", 2)
             winner = record.get("winner", 0)
-            move_count = record.get("move_count", len(record.get("moves", [])))
+            move_count = len(moves)
             victory_type = record.get("victory_type", "unknown")
             timestamp = record.get("timestamp", record.get("created_at", ""))
 
-            # Insert with conflict handling
+            # Insert game with conflict handling
             cursor = conn.execute("""
                 INSERT OR IGNORE INTO games
-                (game_id, board_type, num_players, winner, move_count,
+                (game_id, board_type, num_players, winner, move_count, total_moves,
                  game_status, victory_type, created_at, source, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 game_id,
                 board_type,
                 num_players,
                 winner,
+                move_count,
                 move_count,
                 "completed",
                 victory_type,
@@ -240,6 +261,38 @@ def process_chunk(
             ))
 
             if cursor.rowcount > 0:
+                # Game was inserted, now insert moves
+                move_rows = []
+                for move_num, move in enumerate(moves):
+                    if isinstance(move, dict):
+                        player = move.get("player", 0)
+                        move_type = move.get("type", "unknown")
+                        phase = move.get("phase", "")
+                        move_json = json.dumps(move)
+                    else:
+                        # Move might be a string or other format
+                        player = 0
+                        move_type = "unknown"
+                        phase = ""
+                        move_json = json.dumps({"raw": move})
+
+                    move_rows.append((
+                        game_id,
+                        move_num,
+                        move_num // num_players,  # Approximate turn number
+                        player,
+                        phase,
+                        move_type,
+                        move_json,
+                    ))
+
+                if move_rows:
+                    conn.executemany("""
+                        INSERT OR IGNORE INTO game_moves
+                        (game_id, move_number, turn_number, player, phase, move_type, move_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, move_rows)
+
                 added += 1
             else:
                 duplicates += 1

@@ -2002,9 +2002,9 @@ class ParallelGameRunner:
         # Capture territory counts BEFORE processing (to detect if territory was claimed)
         territory_before = self.state.territory_count.clone()
 
-        # Process territory claims and capture elimination/region positions
+        # Process territory claims and capture territory moves (region + elimination pairs)
         # Use current_player_only=True to match CPU semantics (process only current player's regions)
-        territory_elimination_positions, territory_region_positions = compute_territory_batch(
+        territory_moves, territory_region_positions = compute_territory_batch(
             self.state, mask, current_player_only=True
         )
 
@@ -2019,10 +2019,10 @@ class ParallelGameRunner:
         # If territory victory achieved, skip self-elimination recording - game ends immediately
         territory_victory = self._check_territory_victory(mask & games_with_territory)
 
-        # Record canonical territory moves
+        # Record canonical territory moves (CHOOSE + ELIM pairs for each territory)
         # Skip ELIMINATE for games where territory victory was achieved (game ends after CHOOSE)
         self._record_territory_phase_moves(
-            mask, games_with_territory, territory_elimination_positions, territory_region_positions,
+            mask, games_with_territory, territory_moves, territory_region_positions,
             skip_elimination=territory_victory,
         )
 
@@ -2237,14 +2237,14 @@ class ParallelGameRunner:
         self,
         mask: torch.Tensor,
         games_with_territory: torch.Tensor,
-        elimination_positions: dict[int, list[tuple[int, int, int]]],
+        territory_moves: dict[int, list[tuple[int, int, int, int, int]]],
         region_positions: dict[int, tuple[int, int]],
         skip_elimination: torch.Tensor | None = None,
     ) -> None:
         """Record canonical territory processing moves to move_history.
 
         Per canonical contract (RR-CANON-R145), TERRITORY_PROCESSING phase must emit:
-        - Games WITH territory: CHOOSE_TERRITORY_OPTION + ELIMINATE_RINGS_FROM_STACK
+        - Games WITH territory: CHOOSE_TERRITORY_OPTION + ELIMINATE_RINGS_FROM_STACK pairs
         - Games WITHOUT territory: NO_TERRITORY_ACTION
 
         Per RR-CANON-R145, self-elimination is MANDATORY when processing territory.
@@ -2252,11 +2252,14 @@ class ParallelGameRunner:
         ends immediately and self-elimination is skipped (per CPU behavior matching
         RR-CANON-R171).
 
+        CPU parity: Each territory region requires a CHOOSE + ELIM pair. When multiple
+        territories are processed (due to chain reactions), we emit multiple pairs.
+
         Args:
             mask: Games being processed in this phase
             games_with_territory: Which games had territory to claim
-            elimination_positions: Dict mapping game_idx to list of (player, y, x) eliminations
-            region_positions: Dict mapping game_idx to (y, x) region representative position
+            territory_moves: Dict mapping game_idx to list of (player, region_y, region_x, elim_y, elim_x)
+            region_positions: Dict mapping game_idx to (y, x) first region position (backwards compat)
             skip_elimination: Boolean mask - skip elimination recording for games with territory victory
         """
         from .gpu_game_types import MoveType
@@ -2280,33 +2283,42 @@ class ParallelGameRunner:
             player = int(players[i].item())
 
             if had_territory[i]:
-                # RR-CANON-R145: Record CHOOSE_TERRITORY_OPTION + ELIMINATE_RINGS_FROM_STACK
-                # First: record the territory choice move with region position
-                region_y, region_x = region_positions.get(g, (-1, -1))
-                self.state.move_history[g, move_count, 0] = MoveType.CHOOSE_TERRITORY_OPTION
-                self.state.move_history[g, move_count, 1] = player
-                self.state.move_history[g, move_count, 2] = -1  # from_y: not applicable
-                self.state.move_history[g, move_count, 3] = -1  # from_x: not applicable
-                self.state.move_history[g, move_count, 4] = region_y  # to_y: region representative
-                self.state.move_history[g, move_count, 5] = region_x  # to_x: region representative
-                self.state.move_history[g, move_count, 6] = GamePhase.TERRITORY_PROCESSING
-                self.state.move_count[g] += 1
-                move_count += 1
-
-                # Second: record the elimination move(s) for current player (if space)
-                # Note: CPU records one CHOOSE + ELIMINATE pair per region for current player.
-                # GPU batches all territory processing but we only record current player's eliminations.
-                # Skip elimination if territory victory was achieved - game ends immediately
+                # RR-CANON-R145: Record CHOOSE_TERRITORY_OPTION + ELIMINATE_RINGS_FROM_STACK pairs
+                # CPU parity: Each territory needs its own CHOOSE + ELIM pair
+                # Skip all recording if territory victory was achieved - game ends immediately
                 if skip_elimination is not None and skip_elimination[g]:
-                    continue  # Territory victory - game ends, no elimination move
+                    # Record just the first territory choice for history, then skip
+                    region_y, region_x = region_positions.get(g, (-1, -1))
+                    self.state.move_history[g, move_count, 0] = MoveType.CHOOSE_TERRITORY_OPTION
+                    self.state.move_history[g, move_count, 1] = player
+                    self.state.move_history[g, move_count, 2] = -1
+                    self.state.move_history[g, move_count, 3] = -1
+                    self.state.move_history[g, move_count, 4] = region_y
+                    self.state.move_history[g, move_count, 5] = region_x
+                    self.state.move_history[g, move_count, 6] = GamePhase.TERRITORY_PROCESSING
+                    self.state.move_count[g] += 1
+                    continue  # Territory victory - game ends, no elimination moves
 
-                # Per RR-CANON-R145, self-elimination is MANDATORY for territory processing.
-                elims = elimination_positions.get(g, [])
-                for elim_player, elim_y, elim_x in elims:
+                # Record CHOOSE + ELIM pair for each territory processed
+                moves = territory_moves.get(g, [])
+                for elim_player, region_y, region_x, elim_y, elim_x in moves:
                     if elim_player != player:
-                        continue  # Only record eliminations for current player
-                    if move_count >= self.state.max_history_moves:
-                        break
+                        continue  # Only record moves for current player
+                    if move_count >= self.state.max_history_moves - 1:
+                        break  # Need space for both CHOOSE and ELIM
+
+                    # Record CHOOSE_TERRITORY_OPTION for this region
+                    self.state.move_history[g, move_count, 0] = MoveType.CHOOSE_TERRITORY_OPTION
+                    self.state.move_history[g, move_count, 1] = player
+                    self.state.move_history[g, move_count, 2] = -1  # from_y: not applicable
+                    self.state.move_history[g, move_count, 3] = -1  # from_x: not applicable
+                    self.state.move_history[g, move_count, 4] = region_y  # to_y: region representative
+                    self.state.move_history[g, move_count, 5] = region_x  # to_x: region representative
+                    self.state.move_history[g, move_count, 6] = GamePhase.TERRITORY_PROCESSING
+                    self.state.move_count[g] += 1
+                    move_count += 1
+
+                    # Record ELIMINATE_RINGS_FROM_STACK for this region
                     self.state.move_history[g, move_count, 0] = MoveType.ELIMINATE_RINGS_FROM_STACK
                     self.state.move_history[g, move_count, 1] = elim_player
                     self.state.move_history[g, move_count, 2] = -1  # from_y (not used)

@@ -74,7 +74,7 @@ class GMOConfig:
     exploration_temp: float = 1.0  # Base exploration temperature
 
     # MC Dropout parameters (critical - do not reduce mc_samples)
-    dropout_rate: float = 0.1
+    dropout_rate: float = 0.15  # Increased from 0.1 for regularization
     mc_samples: int = 10  # Number of dropout samples for uncertainty
 
     # Uncertainty calibration
