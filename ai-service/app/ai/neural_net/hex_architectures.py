@@ -145,7 +145,8 @@ class HexNeuralNet_v2(nn.Module):
         x: torch.Tensor,
         globals: torch.Tensor,
         hex_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return_features: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Apply hex mask to input to prevent information bleeding
         if hex_mask is not None:
             x = x * hex_mask.to(dtype=x.dtype, device=x.device)
@@ -156,6 +157,9 @@ class HexNeuralNet_v2(nn.Module):
         out = self.relu(self.bn1(self.conv1(x)))
         for block in self.res_blocks:
             out = block(out)
+
+        # Global pooled features for optional return
+        out_pooled = self._masked_global_avg_pool(out, hex_mask)
 
         # Multi-player value head with masked pooling
         v = self.value_conv(out)
@@ -174,6 +178,9 @@ class HexNeuralNet_v2(nn.Module):
         p_hidden = self.relu(self.policy_fc1(p_cat))
         p_hidden = self.dropout(p_hidden)
         p_logits = self.policy_fc2(p_hidden)
+
+        if return_features:
+            return v_out, p_logits, out_pooled
 
         return v_out, p_logits
 
@@ -289,7 +296,8 @@ class HexNeuralNet_v2_Lite(nn.Module):
         x: torch.Tensor,
         globals: torch.Tensor,
         hex_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return_features: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Apply hex mask to input to prevent information bleeding
         if hex_mask is not None:
             x = x * hex_mask.to(dtype=x.dtype, device=x.device)
@@ -300,6 +308,9 @@ class HexNeuralNet_v2_Lite(nn.Module):
         out = self.relu(self.bn1(self.conv1(x)))
         for block in self.res_blocks:
             out = block(out)
+
+        # Global pooled features for optional return
+        out_pooled = self._masked_global_avg_pool(out, hex_mask)
 
         # Multi-player value head with masked pooling
         v = self.value_conv(out)
@@ -318,6 +329,9 @@ class HexNeuralNet_v2_Lite(nn.Module):
         p_hidden = self.relu(self.policy_fc1(p_cat))
         p_hidden = self.dropout(p_hidden)
         p_logits = self.policy_fc2(p_hidden)
+
+        if return_features:
+            return v_out, p_logits, out_pooled
 
         return v_out, p_logits
 

@@ -174,7 +174,7 @@ def get_nn_value(
     """Get the value prediction from the teacher NN model.
 
     Args:
-        model: Teacher NN model
+        model: Teacher NN model (NeuralNetAI instance)
         game_state: Game state to evaluate
         player_number: Player perspective for value
         device: Device model is on
@@ -182,25 +182,14 @@ def get_nn_value(
     Returns:
         Value in [-1, 1] from the NN
     """
-    # Import feature extraction from neural_net module
-    from app.ai.neural_net import (
-        BOARD_SPATIAL_SIZES,
-        encode_global_features,
-        encode_state_to_tensor,
-    )
-
-    board_type = game_state.board_type
-    board_size = BOARD_SPATIAL_SIZES.get(board_type, 8)
-
-    # Encode features for NN
-    features = encode_state_to_tensor(game_state, board_size=board_size)
-    globals_vec = encode_global_features(game_state)
+    # Use NeuralNetAI's _extract_features to get both board and global features
+    features, globals_vec = model._extract_features(game_state)
 
     # Get value prediction
     with torch.no_grad():
         x = torch.from_numpy(features[None, ...]).float().to(device)
         g = torch.from_numpy(globals_vec[None, ...]).float().to(device)
-        output = model(x, g)
+        output = model.model(x, g)
 
         # Handle different output formats (v2 vs v3)
         if isinstance(output, tuple):
