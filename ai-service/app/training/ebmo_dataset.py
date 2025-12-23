@@ -261,7 +261,7 @@ class GameDataParser:
         action_generator: ActionFeatureGenerator,
         num_negatives: int = 15,
         hard_negative_ratio: float = 0.3,
-        max_samples: int = 100,
+        max_samples: int | None = None,
     ) -> list[EBMOSample]:
         """Extract EBMO samples from game data.
 
@@ -270,7 +270,7 @@ class GameDataParser:
             action_generator: Feature generator
             num_negatives: Number of negative samples per positive
             hard_negative_ratio: Fraction of hard negatives
-            max_samples: Maximum samples to extract
+            max_samples: Maximum samples to extract (None = all)
 
         Returns:
             List of EBMOSample objects
@@ -452,6 +452,8 @@ class EBMODataset(Dataset):
         if self.preloaded_samples is not None:
             return len(self.preloaded_samples)
         # Estimate based on file count and max samples
+        if self.max_samples_per_game is None:
+            return len(self.file_paths) * 1000  # Estimate ~1000 samples per game
         return len(self.file_paths) * self.max_samples_per_game
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, ...]:

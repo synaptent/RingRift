@@ -32,6 +32,7 @@ from ..ai.gmo_ai import (
     nll_loss_with_uncertainty,
 )
 from ..models import AIConfig, BoardType, GameState, Move
+from .data_augmentation import DataAugmentor
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class GMODataset(Dataset):
     """Dataset for GMO training.
 
     Loads game records and extracts (state, move, outcome) tuples.
+    Supports optional data augmentation using D4 symmetries for square boards.
     """
 
     def __init__(
@@ -52,11 +54,19 @@ class GMODataset(Dataset):
         state_encoder: StateEncoder,
         move_encoder: MoveEncoder,
         max_samples: int | None = None,
+        augment: bool = False,
+        board_type: str = "square8",
     ):
         self.data_path = data_path
         self.state_encoder = state_encoder
         self.move_encoder = move_encoder
         self.samples: list[tuple[torch.Tensor, torch.Tensor, float]] = []
+        self.augment = augment
+        self.board_size = state_encoder.board_size
+        self.num_planes = state_encoder.num_planes
+
+        # Initialize augmentor if augmentation is enabled
+        self.augmentor = DataAugmentor(board_type) if augment else None
 
         self._load_data(max_samples)
 
@@ -146,6 +156,23 @@ class GMODataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         state_features, move_embed, outcome = self.samples[idx]
+
+        # Apply random D4 augmentation if enabled
+        if self.augment and self.augmentor is not None:
+            import random
+            # Reshape to 2D for augmentation: (planes, H, W)
+            features_2d = state_features.numpy().reshape(
+                self.num_planes, self.board_size, self.board_size
+            )
+            # Apply random D4 transform (0-7)
+            transform_idx = random.randint(0, 7)
+            if transform_idx > 0:  # 0 is identity
+                features_2d = self.augmentor.transformer.apply_transform(
+                    features_2d, transform_idx
+                )
+            # Reshape back to 1D
+            state_features = torch.from_numpy(features_2d.flatten().astype('float32'))
+
         return state_features, move_embed, torch.tensor(outcome, dtype=torch.float32)
 
 
@@ -416,6 +443,7 @@ def train_gmo(
     max_samples: int | None = None,
     eval_interval: int = 5,
     device_str: str = "cpu",
+    augment: bool = False,
 ) -> None:
     """Train GMO networks.
 
@@ -459,6 +487,8 @@ def train_gmo(
         state_encoder=state_encoder,
         move_encoder=move_encoder,
         max_samples=max_samples,
+        augment=augment,
+        board_type="square8",  # TODO: make configurable
     )
 
     # Split into train/val
@@ -598,6 +628,11 @@ def main() -> None:
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--eval-interval", type=int, default=5)
     parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="Enable D4 data augmentation (8x effective data)",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="cpu",
@@ -624,6 +659,7 @@ def main() -> None:
         max_samples=args.max_samples,
         eval_interval=args.eval_interval,
         device_str=args.device,
+        augment=args.augment,
     )
 
 

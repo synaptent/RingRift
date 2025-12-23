@@ -403,10 +403,26 @@ class BatchGameState:
             board_type=board_type_str,
         )
 
+        # For hex boards, compute radius for cube→canvas coordinate conversion
+        is_hex = board_type_enum in (BoardType.HEXAGONAL, BoardType.HEX8)
+        radius = (board_size - 1) // 2 if is_hex else 0
+
         def parse_position_key(key: str) -> tuple[int, int]:
-            """Parse 'row,col' position key to (row, col) tuple."""
+            """Parse position key to (row, col) tensor indices.
+
+            For hex boards: key is 'x,y,z' in cube coords, convert to canvas (row, col)
+            For square boards: key is 'col,row' in canvas coords
+            """
             parts = key.split(',')
-            return int(parts[0]), int(parts[1])
+            if len(parts) == 3:
+                # Cube coords: x,y,z where x+y+z=0
+                cube_x, cube_y = int(parts[0]), int(parts[1])
+                col = cube_x + radius
+                row = cube_y + radius
+                return row, col
+            else:
+                # Square boards: key is 'col,row' (x,y format)
+                return int(parts[1]), int(parts[0])
 
         # Copy state from each game
         for g, game_state in enumerate(game_states):
@@ -589,10 +605,25 @@ class BatchGameState:
         markers: dict[str, MarkerInfo] = {}
         collapsed_spaces: dict[str, int] = {}
 
+        # For hex boards, compute radius for canvas→cube coordinate conversion
+        # Cube coords use x,y,z where x+y+z=0 and each in [-radius, radius]
+        is_hex = board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
+        radius = (self.board_size - 1) // 2 if is_hex else 0
+
         for row in range(self.board_size):
             for col in range(self.board_size):
                 y, x = row, col  # Tensor coords
-                pos_key = f"{col},{row}"  # CPU uses x,y format for keys
+
+                # For hex boards, convert canvas→cube coords for canonical format
+                if is_hex:
+                    cube_x = col - radius
+                    cube_y = row - radius
+                    cube_z = -cube_x - cube_y
+                    pos_key = f"{cube_x},{cube_y},{cube_z}"
+                    position = Position(x=cube_x, y=cube_y, z=cube_z)
+                else:
+                    pos_key = f"{col},{row}"  # Square boards use canvas coords
+                    position = Position(x=col, y=row)
 
                 # Check for stack
                 stack_owner = self.stack_owner[game_idx, y, x].item()
@@ -610,7 +641,7 @@ class BatchGameState:
                             rings.append(int(stack_owner))
 
                     stacks[pos_key] = RingStack(
-                        position=Position(x=col, y=row),
+                        position=position,
                         rings=rings,
                         stackHeight=stack_height,
                         capHeight=cap_h,
@@ -622,7 +653,7 @@ class BatchGameState:
                 if marker_owner > 0:
                     markers[pos_key] = MarkerInfo(
                         player=marker_owner,
-                        position=Position(x=col, y=row),
+                        position=position,
                         type="regular",
                     )
 

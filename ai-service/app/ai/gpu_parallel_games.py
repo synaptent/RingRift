@@ -2909,7 +2909,7 @@ class ParallelGameRunner:
             8: BoardType.SQUARE8,
             9: BoardType.HEX8,
             19: BoardType.SQUARE19,
-            13: BoardType.HEXAGONAL,
+            25: BoardType.HEXAGONAL,  # Fix: size=25 (bounding box), not 13
         }
         board_type = board_type_map.get(self.board_size, BoardType.SQUARE8)
         ring_elimination_threshold = get_victory_threshold(board_type, self.num_players)

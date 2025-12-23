@@ -219,16 +219,24 @@ def parse_board_type(board_str: str) -> BoardType:
 
 
 def get_max_moves(board_type: str, num_players: int) -> int:
-    """Get reasonable max moves for board/player combo."""
+    """Get reasonable max moves for board/player combo.
+
+    Note: These limits are for script-side move counting. Each script move
+    may generate multiple env moves (due to auto-bookkeeping), so these limits
+    should be ~1.5-2x the env's theoretical max to account for the multiplier.
+
+    For Gumbel games specifically, the env.max_moves is set to 1.5x theoretical
+    max, so these script limits provide additional headroom.
+    """
     base = {
-        "square8": 400,
-        "square19": 1500,
-        "hex8": 300,
-        "hexagonal": 2000,
+        "square8": 600,   # Increased from 400 for Gumbel's slower progression
+        "square19": 2000,
+        "hex8": 500,      # Increased from 300
+        "hexagonal": 3000,
     }
     # More players = potentially longer games
     multiplier = 1.0 + (num_players - 2) * 0.25
-    return int(base.get(board_type, 500) * multiplier)
+    return int(base.get(board_type, 600) * multiplier)
 
 
 def create_gumbel_ai(
@@ -315,6 +323,8 @@ def generate_game(
     game_idx: int,
 ) -> GameResult:
     """Generate a single selfplay game with Gumbel MCTS."""
+    from app.rules.core import compute_progress_snapshot
+
     game_id = str(uuid.uuid4())
     start_time = time.time()
 
@@ -336,6 +346,11 @@ def generate_game(
 
     moves_data = []
     max_moves = config.max_moves or get_max_moves(config.board_type, config.num_players)
+
+    # S-invariant tracking for non-termination diagnosis
+    s_history = []
+    initial_snapshot = compute_progress_snapshot(state)
+    s_history.append(initial_snapshot['S'])
 
     move_count = 0
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
@@ -389,6 +404,11 @@ def generate_game(
         # Apply move
         state, _, done, _ = env.step(selected_move)
         move_count += 1
+
+        # Track S-invariant progression
+        snapshot = compute_progress_snapshot(state)
+        s_history.append(snapshot['S'])
+
         if done:
             break
 
@@ -399,6 +419,26 @@ def generate_game(
     winner = None
     if state.game_status == GameStatus.COMPLETED:
         winner = state.winner
+    else:
+        # Game did not complete - log diagnostic info
+        final_snapshot = compute_progress_snapshot(state)
+        s_delta = s_history[-1] - s_history[0] if len(s_history) > 1 else 0
+        s_rate = s_delta / move_count if move_count > 0 else 0
+
+        # Count rings per player
+        rings_per_player = {}
+        for p in state.players:
+            rings_on_board = sum(1 for s in state.board.stacks.values() for r in s.rings if r == p.player_number)
+            rings_per_player[p.player_number] = rings_on_board + p.rings_in_hand
+
+        logger.warning(
+            f"GAME_NON_TERMINATION_DIAGNOSTIC: game={game_idx}, seed={game_seed}, "
+            f"moves={move_count}, status={state.game_status.value}, "
+            f"S={final_snapshot['S']} (m={final_snapshot['markers']}, "
+            f"c={final_snapshot['collapsed']}, e={final_snapshot['eliminated']}), "
+            f"S_rate={s_rate:.3f}/move, rings={rings_per_player}, "
+            f"phase={state.current_phase.value}"
+        )
 
     duration_ms = (time.time() - start_time) * 1000
 
@@ -518,12 +558,22 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
         f"{config.num_games} games, budget={config.simulation_budget}"
     )
 
-    # Create environment
+    # Create environment with increased max_moves for Gumbel games.
+    # Gumbel MCTS plays more defensively than heuristic AI, requiring more
+    # moves to reach a decisive outcome. The default theoretical max (600 for
+    # square8 2p) is based on heuristic games; Gumbel games may need 50-100%
+    # more moves due to slower S-invariant progression.
+    from app.training.env import get_theoretical_max_moves
+    theoretical_max = get_theoretical_max_moves(board_type_enum, config.num_players)
+    gumbel_max_moves = int(theoretical_max * 1.5)  # 50% increase for Gumbel
+
     env_config = TrainingEnvConfig(
         board_type=board_type_enum,
         num_players=config.num_players,
+        max_moves=gumbel_max_moves,
     )
     env = make_env(env_config)
+    logger.info(f"Env max_moves set to {gumbel_max_moves} (1.5x theoretical max {theoretical_max})")
 
     # Create AI players (same AI for all players in selfplay)
     ai_players = {}

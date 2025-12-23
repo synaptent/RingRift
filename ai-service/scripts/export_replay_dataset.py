@@ -77,8 +77,107 @@ logger = logging.getLogger(__name__)
 
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.db import GameReplayDB
-from app.models import AIConfig, BoardType, GameState
+from app.models import AIConfig, BoardType, GameState, Move, Position
 from app.training.canonical_sources import enforce_canonical_sources
+
+
+def _normalize_hex_board_size(board: "BoardState") -> "BoardState":
+    """Normalize hex board size from legacy Convention A to Convention B.
+
+    Legacy hexagonal games stored board.size=13 (radius+1), but the encoder
+    expects board.size=25 (2*radius+1 = bounding box). This function creates
+    a normalized board with the correct size for encoding.
+
+    Note: This modifies only the size attribute. Position data in board.stacks
+    should already be in cube coordinates [-12, 12].
+    """
+    from app.models import BoardState, BoardType
+
+    if board.type != BoardType.HEXAGONAL:
+        return board
+
+    # Convention A: size = radius + 1 = 13
+    # Convention B: size = 2*radius + 1 = 25
+    if board.size == 13:
+        # Create a new BoardState with corrected size
+        return BoardState(
+            type=board.type,
+            size=25,  # Correct bounding box size
+            stacks=board.stacks,
+        )
+
+    return board
+
+
+def _normalize_hex_move_coords(move: Move, board_type: BoardType, board_size: int) -> Move:
+    """Normalize move positions from canvas to cube coords for hex boards.
+
+    Legacy GPU selfplay stored hexagonal positions in canvas coords [0, board_size).
+    The encoder expects cube coords [-radius, radius]. This function detects and
+    converts canvas coords to cube coords for hex boards.
+
+    Detection heuristic: If any coord > radius, it's likely canvas coords.
+    For unambiguous cases (coords in [0, radius]), we assume cube coords.
+    """
+    if board_type not in (BoardType.HEXAGONAL, BoardType.HEX8):
+        return move
+
+    radius = (board_size - 1) // 2
+
+    def maybe_convert(pos: Position | None) -> Position | None:
+        if pos is None:
+            return None
+
+        # Check if coords look like canvas (any coord > radius means canvas)
+        x, y = pos.x, pos.y
+        if x > radius or y > radius or x < -radius or y < -radius:
+            # These are definitely canvas coords [0, board_size) - convert to cube
+            cube_x = x - radius
+            cube_y = y - radius
+            cube_z = -cube_x - cube_y
+            return Position(x=cube_x, y=cube_y, z=cube_z)
+        else:
+            # Ambiguous or already cube coords - assume cube (z might need fixing)
+            if pos.z is None:
+                z = -x - y
+                return Position(x=x, y=y, z=z)
+            return pos
+
+    # Create new Move with normalized positions
+    return Move(
+        id=move.id,
+        type=move.type,
+        player=move.player,
+        from_pos=maybe_convert(move.from_pos),
+        to=maybe_convert(move.to),
+        capture_target=move.capture_target,
+        captured_stacks=move.captured_stacks,
+        capture_chain=move.capture_chain,
+        overtaken_rings=move.overtaken_rings,
+        placed_on_stack=move.placed_on_stack,
+        placement_count=move.placement_count,
+        stack_moved=move.stack_moved,
+        minimum_distance=move.minimum_distance,
+        actual_distance=move.actual_distance,
+        marker_left=move.marker_left,
+        line_index=move.line_index,
+        formed_lines=move.formed_lines,
+        collapsed_markers=move.collapsed_markers,
+        claimed_territory=move.claimed_territory,
+        disconnected_regions=move.disconnected_regions,
+        recovery_option=move.recovery_option,
+        recovery_mode=move.recovery_mode,
+        collapse_positions=move.collapse_positions,
+        extraction_stacks=move.extraction_stacks,
+        eliminated_rings=move.eliminated_rings,
+        elimination_context=move.elimination_context,
+        timestamp=move.timestamp,
+        think_time=move.think_time,
+        move_number=move.move_number,
+        phase=move.phase,
+    )
+
+
 from app.training.encoding import get_encoder_for_board_type
 from app.training.export_cache import get_export_cache
 from app.training.export_core import (
@@ -433,10 +532,14 @@ def export_replay_dataset_multi(
                 if len(history_frames) > history_length + 1:
                     history_frames.pop(0)
 
+                # Normalize hex board size and move coords for legacy data
+                normalized_board = _normalize_hex_board_size(state_before.board)
+                normalized_move = _normalize_hex_move_coords(move, board_type, 25 if board_type == BoardType.HEXAGONAL else initial_state.board.size)
+
                 if use_board_aware_encoding:
-                    idx = encode_move_for_board(move, state_before.board)
+                    idx = encode_move_for_board(normalized_move, normalized_board)
                 else:
-                    idx = encoder.encode_move(move, state_before.board)
+                    idx = encoder.encode_move(normalized_move, normalized_board)
                 if idx == INVALID_MOVE_INDEX:
                     continue
 
