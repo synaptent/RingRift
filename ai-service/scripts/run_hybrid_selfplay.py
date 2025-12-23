@@ -541,9 +541,10 @@ def run_hybrid_selfplay(
                 difficulty=6,
                 think_time=2000,  # 2 second think time
                 use_neural_net=True,
+                nn_model_id=nn_model_id,  # Use specified model
             )
             descent_ai = DescentAI(config=descent_config, player_number=1)
-            logger.info("Descent AI initialized with neural net evaluation")
+            logger.info(f"Descent AI initialized with neural net evaluation (model={nn_model_id or 'default'})")
         except ImportError as e:
             logger.warning(f"Descent AI not available: {e}. Falling back to heuristic.")
             descent_ai = None
@@ -559,9 +560,10 @@ def run_hybrid_selfplay(
                 difficulty=4,
                 policy_temperature=1.0,  # Exploratory temperature for diversity
                 use_neural_net=True,
+                nn_model_id=nn_model_id,  # Use specified model
             )
             policy_only_ai = PolicyOnlyAI(player_number=1, config=policy_config, board_type=board_type)
-            logger.info("Policy-Only AI initialized for fast selfplay (no search)")
+            logger.info(f"Policy-Only AI initialized for fast selfplay (model={nn_model_id or 'default'})")
         except ImportError as e:
             logger.warning(f"Policy-Only AI not available: {e}. Falling back to heuristic.")
             policy_only_ai = None
@@ -889,7 +891,7 @@ def run_hybrid_selfplay(
                             try:
                                 # Update AI's player number for current player
                                 minimax_ai.player_number = current_player
-                                best_move = minimax_ai.get_move(game_state)
+                                best_move = minimax_ai.select_move(game_state)
                                 if best_move is None or best_move not in valid_moves:
                                     # Fallback to heuristic if minimax fails
                                     move_scores = evaluator.evaluate_moves(
@@ -909,7 +911,7 @@ def run_hybrid_selfplay(
                             try:
                                 # Update AI's player number for current player
                                 descent_ai.player_number = current_player
-                                best_move = descent_ai.get_move(game_state)
+                                best_move = descent_ai.select_move(game_state)
                                 if best_move is None or best_move not in valid_moves:
                                     # Fallback to heuristic if descent fails
                                     move_scores = evaluator.evaluate_moves(
@@ -1057,120 +1059,120 @@ def run_hybrid_selfplay(
                         moves_played.append(move_record)
                         move_count += 1
 
-            game_time = time.time() - game_start
-            total_time += game_time
-            total_moves += move_count
-            total_games += 1
-            game_lengths.append(move_count)  # Track individual game length
+                game_time = time.time() - game_start
+                total_time += game_time
+                total_moves += move_count
+                total_games += 1
+                game_lengths.append(move_count)  # Track individual game length
 
-            # Record result
-            winner = game_state.winner or 0
-            if winner == 0:
-                draws += 1
-            else:
-                wins_by_player[winner] = wins_by_player.get(winner, 0) + 1
-
-            # Derive victory type per GAME_RECORD_SPEC.md
-            victory_type, stalemate_tiebreaker = derive_victory_type(game_state, max_moves)
-            victory_type_counts[victory_type] = victory_type_counts.get(victory_type, 0) + 1
-
-            # Track stalemate tiebreaker breakdown
-            if stalemate_tiebreaker:
-                stalemate_by_tiebreaker[stalemate_tiebreaker] = stalemate_by_tiebreaker.get(stalemate_tiebreaker, 0) + 1
-
-            # Derive effective game status for training data validity
-            # Games that exit with status "active" need a distinct status based on why they ended
-            effective_status = game_state.game_status
-            if effective_status == "active":
-                if game_timed_out:
-                    # Wall-clock timeout - game was forcibly stopped
-                    effective_status = "timeout"
-                elif victory_type == "timeout":
-                    # Hit max_moves limit without natural conclusion
-                    effective_status = "max_moves"
+                # Record result
+                winner = game_state.winner or 0
+                if winner == 0:
+                    draws += 1
                 else:
-                    # Other non-natural endings (stalemate resolved by tiebreaker, etc.)
-                    effective_status = "completed"
+                    wins_by_player[winner] = wins_by_player.get(winner, 0) + 1
 
-            record = {
-                # === Core game identifiers ===
-                "game_id": f"hybrid_{board_type}_{num_players}p_{game_idx}_{int(datetime.now().timestamp())}",
-                "board_type": board_type,  # square8, square19, hexagonal
-                "num_players": num_players,
-                # === Game outcome ===
-                "winner": winner,
-                "move_count": move_count,
-                "status": effective_status,  # completed, abandoned, etc.
-                "game_status": effective_status,  # Alias for compatibility
-                "victory_type": victory_type,  # territory, elimination, lps, stalemate, timeout
-                "stalemate_tiebreaker": stalemate_tiebreaker,  # territory, ring_elim, or None
-                "termination_reason": f"status:{effective_status}:{victory_type}",
-                # === Engine/opponent metadata ===
-                "engine_mode": engine_mode,  # Default engine mode (P1)
-                "player_engine_modes": {str(p): player_engine_modes[p] for p in range(1, num_players + 1)},  # Per-player engine modes
-                "is_asymmetric": is_asymmetric,  # Whether different players used different engines
-                "opponent_type": "selfplay" if not is_asymmetric else "ai_vs_ai",  # ai_vs_ai for asymmetric
-                "player_types": [player_engine_modes[p] for p in range(1, num_players + 1)],  # Engine type of each player
-                "mix_ratio": mix_ratio if engine_mode == "mixed" else None,
-                # === Training data (required for NPZ export) ===
-                "moves": moves_played,  # Full move history
-                "initial_state": initial_state_snapshot,  # For replay/reconstruction
-                # === Timing metadata ===
-                "game_time_seconds": game_time,
-                "timestamp": datetime.now().isoformat(),
-                "created_at": datetime.now().isoformat(),
-                # === Source tracking ===
-                "source": "run_hybrid_selfplay.py",
-                "device": str(device),
-            }
-            game_records.append(record)
-            f.write(json.dumps(record) + "\n")
-            # Flush immediately to minimize data loss on abnormal termination
-            f.flush()
+                # Derive victory type per GAME_RECORD_SPEC.md
+                victory_type, stalemate_tiebreaker = derive_victory_type(game_state, max_moves)
+                victory_type_counts[victory_type] = victory_type_counts.get(victory_type, 0) + 1
 
-            if replay_db is not None:
-                try:
-                    meta = {
-                        "source": "run_hybrid_selfplay.py",
-                        "engine_mode": engine_mode,
-                        "mix_ratio": mix_ratio if engine_mode == "mixed" else None,
-                        "device": str(device),
-                    }
-                    _ = record_completed_game_with_parity_check(
-                        db=replay_db,
-                        initial_state=initial_state_for_db,
-                        final_state=game_state,
-                        moves=moves_for_db,
-                        metadata=meta,
-                        game_id=str(record.get("game_id") or ""),
-                        parity_mode=parity_mode,
-                        store_history_entries=store_history_entries,
+                # Track stalemate tiebreaker breakdown
+                if stalemate_tiebreaker:
+                    stalemate_by_tiebreaker[stalemate_tiebreaker] = stalemate_by_tiebreaker.get(stalemate_tiebreaker, 0) + 1
+
+                # Derive effective game status for training data validity
+                # Games that exit with status "active" need a distinct status based on why they ended
+                effective_status = game_state.game_status
+                if effective_status == "active":
+                    if game_timed_out:
+                        # Wall-clock timeout - game was forcibly stopped
+                        effective_status = "timeout"
+                    elif victory_type == "timeout":
+                        # Hit max_moves limit without natural conclusion
+                        effective_status = "max_moves"
+                    else:
+                        # Other non-natural endings (stalemate resolved by tiebreaker, etc.)
+                        effective_status = "completed"
+
+                record = {
+                    # === Core game identifiers ===
+                    "game_id": f"hybrid_{board_type}_{num_players}p_{game_idx}_{int(datetime.now().timestamp())}",
+                    "board_type": board_type,  # square8, square19, hexagonal
+                    "num_players": num_players,
+                    # === Game outcome ===
+                    "winner": winner,
+                    "move_count": move_count,
+                    "status": effective_status,  # completed, abandoned, etc.
+                    "game_status": effective_status,  # Alias for compatibility
+                    "victory_type": victory_type,  # territory, elimination, lps, stalemate, timeout
+                    "stalemate_tiebreaker": stalemate_tiebreaker,  # territory, ring_elim, or None
+                    "termination_reason": f"status:{effective_status}:{victory_type}",
+                    # === Engine/opponent metadata ===
+                    "engine_mode": engine_mode,  # Default engine mode (P1)
+                    "player_engine_modes": {str(p): player_engine_modes[p] for p in range(1, num_players + 1)},  # Per-player engine modes
+                    "is_asymmetric": is_asymmetric,  # Whether different players used different engines
+                    "opponent_type": "selfplay" if not is_asymmetric else "ai_vs_ai",  # ai_vs_ai for asymmetric
+                    "player_types": [player_engine_modes[p] for p in range(1, num_players + 1)],  # Engine type of each player
+                    "mix_ratio": mix_ratio if engine_mode == "mixed" else None,
+                    # === Training data (required for NPZ export) ===
+                    "moves": moves_played,  # Full move history
+                    "initial_state": initial_state_snapshot,  # For replay/reconstruction
+                    # === Timing metadata ===
+                    "game_time_seconds": game_time,
+                    "timestamp": datetime.now().isoformat(),
+                    "created_at": datetime.now().isoformat(),
+                    # === Source tracking ===
+                    "source": "run_hybrid_selfplay.py",
+                    "device": str(device),
+                }
+                game_records.append(record)
+                f.write(json.dumps(record) + "\n")
+                # Flush immediately to minimize data loss on abnormal termination
+                f.flush()
+
+                if replay_db is not None:
+                    try:
+                        meta = {
+                            "source": "run_hybrid_selfplay.py",
+                            "engine_mode": engine_mode,
+                            "mix_ratio": mix_ratio if engine_mode == "mixed" else None,
+                            "device": str(device),
+                        }
+                        _ = record_completed_game_with_parity_check(
+                            db=replay_db,
+                            initial_state=initial_state_for_db,
+                            final_state=game_state,
+                            moves=moves_for_db,
+                            metadata=meta,
+                            game_id=str(record.get("game_id") or ""),
+                            parity_mode=parity_mode,
+                            store_history_entries=store_history_entries,
+                        )
+                        games_recorded += 1
+                    except ParityValidationError as exc:
+                        record_failures += 1
+                        logger.warning(f"[record-db] Parity divergence; skipping game {game_idx}: {exc}")
+                    except Exception as exc:
+                        record_failures += 1
+                        logger.warning(f"[record-db] Failed to record game {game_idx}: {type(exc).__name__}: {exc}")
+
+                # Clear move cache between games to prevent stale cache entries
+                # causing infinite loops (esp. for hex boards with larger state spaces)
+                GameEngine.clear_cache()
+
+                # Progress logging
+                if (game_idx + 1) % 10 == 0:
+                    elapsed = time.time() - start_time
+                    games_per_sec = (game_idx + 1) / elapsed
+                    eta = (num_games - game_idx - 1) / games_per_sec if games_per_sec > 0 else 0
+
+                    logger.info(
+                        f"  Game {game_idx + 1}/{num_games}: "
+                        f"{games_per_sec:.2f} g/s, ETA: {eta:.0f}s"
                     )
-                    games_recorded += 1
-                except ParityValidationError as exc:
-                    record_failures += 1
-                    logger.warning(f"[record-db] Parity divergence; skipping game {game_idx}: {exc}")
-                except Exception as exc:
-                    record_failures += 1
-                    logger.warning(f"[record-db] Failed to record game {game_idx}: {type(exc).__name__}: {exc}")
 
-            # Clear move cache between games to prevent stale cache entries
-            # causing infinite loops (esp. for hex boards with larger state spaces)
-            GameEngine.clear_cache()
-
-            # Progress logging
-            if (game_idx + 1) % 10 == 0:
-                elapsed = time.time() - start_time
-                games_per_sec = (game_idx + 1) / elapsed
-                eta = (num_games - game_idx - 1) / games_per_sec if games_per_sec > 0 else 0
-
-                logger.info(
-                    f"  Game {game_idx + 1}/{num_games}: "
-                    f"{games_per_sec:.2f} g/s, ETA: {eta:.0f}s"
-                )
-
-                # Update games completed for heartbeat
-                games_completed = game_idx + 1
+                    # Update games completed for heartbeat
+                    games_completed = game_idx + 1
 
     finally:
         heartbeat_stop.set()
