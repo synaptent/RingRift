@@ -54,10 +54,9 @@ class BoardGeometryCache:
         positions = []
 
         if self.board_type in ("hexagonal", "hex8"):
-            # Hex boards: size = radius + 1 (TS BOARD_CONFIGS). Radius = size - 1.
-            # HEX8: size=5 -> radius=4, HEXAGONAL: size=13 -> radius=12
-            # This matches board_manager.py is_valid_position and TS BOARD_CONFIGS.
-            radius = self.size - 1
+            # Hex size is bounding box = 2*radius + 1
+            # HEX8: size=9 -> radius=4, HEXAGONAL: size=25 -> radius=12
+            radius = (self.size - 1) // 2
             for x in range(-radius, radius + 1):
                 for y in range(-radius, radius + 1):
                     z = -x - y

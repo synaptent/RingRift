@@ -104,7 +104,7 @@ function computeSquareMovementGrid(board: BoardState): MovementGrid {
 }
 
 function computeHexMovementGrid(board: BoardState): MovementGrid {
-  const radius = board.size - 1; // size is the hex radius (e.g. 13 => radius 12)
+  const radius = (board.size - 1) / 2; // size is bounding box, radius = (size-1)/2
 
   interface RawCenter {
     key: string;

@@ -130,17 +130,9 @@ class BoardManager:
             # Compute z from x,y if not provided (hex constraint: x + y + z = 0)
             z = position.z if position.z is not None else -position.x - position.y
 
-            # Detect convention based on size value:
-            # - Convention A: size <= 13 means radius = size - 1
-            #   (HEXAGONAL: size=13 -> radius=12, HEX8: size=5 -> radius=4)
-            # - Convention B: size > 13 means radius = (size - 1) // 2
-            #   (HEXAGONAL: size=25 -> radius=12, HEX8: size=9 -> radius=4)
-            if size <= 13:
-                # Convention A: size = radius + 1
-                radius = size - 1
-            else:
-                # Convention B: size = 2*radius + 1
-                radius = (size - 1) // 2
+            # Hex size is now standardized as bounding box = 2*radius + 1
+            # (HEXAGONAL: size=25 -> radius=12, HEX8: size=9 -> radius=4)
+            radius = (size - 1) // 2
 
             return (abs(position.x) <= radius and
                     abs(position.y) <= radius and

@@ -223,20 +223,25 @@ def get_max_moves(board_type: str, num_players: int) -> int:
 
     Note: These limits are for script-side move counting. Each script move
     may generate multiple env moves (due to auto-bookkeeping), so these limits
-    should be ~1.5-2x the env's theoretical max to account for the multiplier.
+    should be ~2-3x the env's theoretical max to account for the multiplier.
 
-    For Gumbel games specifically, the env.max_moves is set to 1.5x theoretical
+    For Gumbel games specifically, the env.max_moves is set to 2x theoretical
     max, so these script limits provide additional headroom.
     """
     base = {
-        "square8": 600,   # Increased from 400 for Gumbel's slower progression
-        "square19": 2000,
-        "hex8": 500,      # Increased from 300
-        "hexagonal": 3000,
+        "square8": 800,   # 2x+ theoretical (600) for Gumbel's slower progression
+        "square19": 3000,
+        "hex8": 800,      # 2x+ theoretical
+        "hexagonal": 5000,
     }
     # More players = potentially longer games
     multiplier = 1.0 + (num_players - 2) * 0.25
-    return int(base.get(board_type, 600) * multiplier)
+    return int(base.get(board_type, 800) * multiplier)
+
+
+# Stalemate detection parameters
+STALEMATE_THRESHOLD = 30  # Consecutive moves without S-invariant progress
+EXPLORATION_NOISE_PROB = 0.05  # 5% chance of random move for exploration
 
 
 def create_gumbel_ai(
@@ -347,10 +352,14 @@ def generate_game(
     moves_data = []
     max_moves = config.max_moves or get_max_moves(config.board_type, config.num_players)
 
-    # S-invariant tracking for non-termination diagnosis
+    # S-invariant tracking for non-termination diagnosis and violation detection
     s_history = []
     initial_snapshot = compute_progress_snapshot(state)
     s_history.append(initial_snapshot['S'])
+    prev_s = initial_snapshot['S']
+    moves_without_s_progress = 0
+    s_violations = []  # Track any S-invariant violations
+    stalemate_detected = False
 
     move_count = 0
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
@@ -370,24 +379,31 @@ def generate_game(
             logger.warning(f"No legal moves at move {move_count}")
             break
 
-        # AI selects move (Gumbel MCTS search)
-        selected_move = ai.select_move(state)
-        if selected_move is None:
-            logger.warning(f"AI returned None move at move {move_count}")
-            break
-
-        # Validate selected move is legal; fall back to random if not
-        if selected_move not in legal_moves:
-            logger.warning(f"AI selected invalid move at move {move_count}, falling back to random")
+        # Exploration noise: occasionally pick random move to prevent ultra-defensive play
+        use_random = random.random() < EXPLORATION_NOISE_PROB
+        if use_random and len(legal_moves) > 1:
             selected_move = legal_moves[random.randint(0, len(legal_moves) - 1)]
+            mcts_policy = {}  # No MCTS policy for random moves
+            value = None
+        else:
+            # AI selects move (Gumbel MCTS search)
+            selected_move = ai.select_move(state)
+            if selected_move is None:
+                logger.warning(f"AI returned None move at move {move_count}")
+                break
 
-        # Extract MCTS policy distribution for training
-        mcts_policy = extract_policy_from_gumbel(ai, legal_moves)
+            # Validate selected move is legal; fall back to random if not
+            if selected_move not in legal_moves:
+                logger.warning(f"AI selected invalid move at move {move_count}, falling back to random")
+                selected_move = legal_moves[random.randint(0, len(legal_moves) - 1)]
 
-        # Extract value estimate if available
-        value = None
-        if hasattr(ai, '_last_root_value'):
-            value = ai._last_root_value
+            # Extract MCTS policy distribution for training
+            mcts_policy = extract_policy_from_gumbel(ai, legal_moves)
+
+            # Extract value estimate if available
+            value = None
+            if hasattr(ai, '_last_root_value'):
+                value = ai._last_root_value
 
         # Serialize move with MCTS info
         phase = (
@@ -405,9 +421,42 @@ def generate_game(
         state, _, done, _ = env.step(selected_move)
         move_count += 1
 
-        # Track S-invariant progression
+        # Track S-invariant progression and detect violations
         snapshot = compute_progress_snapshot(state)
-        s_history.append(snapshot['S'])
+        current_s = snapshot['S']
+        s_history.append(current_s)
+
+        # S-invariant violation detection: S should never decrease
+        if current_s < prev_s:
+            violation_info = {
+                'move': move_count,
+                'prev_s': prev_s,
+                'current_s': current_s,
+                'delta': current_s - prev_s,
+                'phase': state.current_phase.value,
+                'move_type': selected_move.type.value if hasattr(selected_move.type, 'value') else str(selected_move.type),
+            }
+            s_violations.append(violation_info)
+            logger.error(
+                f"S-INVARIANT VIOLATION at move {move_count}: S decreased from {prev_s} to {current_s} "
+                f"(delta={current_s - prev_s}), phase={state.current_phase.value}, "
+                f"move_type={violation_info['move_type']}"
+            )
+
+        # Stalemate detection: if S hasn't increased for STALEMATE_THRESHOLD moves
+        if current_s == prev_s:
+            moves_without_s_progress += 1
+            if moves_without_s_progress >= STALEMATE_THRESHOLD:
+                stalemate_detected = True
+                logger.warning(
+                    f"STALEMATE_DETECTED at move {move_count}: S={current_s} unchanged for "
+                    f"{moves_without_s_progress} consecutive moves. Forcing game end."
+                )
+                break
+        else:
+            moves_without_s_progress = 0
+
+        prev_s = current_s
 
         if done:
             break
@@ -417,10 +466,28 @@ def generate_game(
 
     # Determine winner
     winner = None
+    termination_reason = None
+
     if state.game_status == GameStatus.COMPLETED:
         winner = state.winner
+        termination_reason = "victory"
+    elif stalemate_detected:
+        # Stalemate: determine winner by tiebreaker (most rings remaining)
+        termination_reason = "stalemate"
+        rings_per_player = {}
+        for p in state.players:
+            rings_on_board = sum(1 for s in state.board.stacks.values() for r in s.rings if r == p.player_number)
+            rings_per_player[p.player_number] = rings_on_board + p.rings_in_hand
+
+        # Winner is player with most rings
+        if rings_per_player:
+            winner = max(rings_per_player, key=rings_per_player.get)
+            logger.info(
+                f"Stalemate resolved: winner={winner} (rings={rings_per_player})"
+            )
     else:
         # Game did not complete - log diagnostic info
+        termination_reason = "timeout"
         final_snapshot = compute_progress_snapshot(state)
         s_delta = s_history[-1] - s_history[0] if len(s_history) > 1 else 0
         s_rate = s_delta / move_count if move_count > 0 else 0
@@ -437,8 +504,16 @@ def generate_game(
             f"S={final_snapshot['S']} (m={final_snapshot['markers']}, "
             f"c={final_snapshot['collapsed']}, e={final_snapshot['eliminated']}), "
             f"S_rate={s_rate:.3f}/move, rings={rings_per_player}, "
-            f"phase={state.current_phase.value}"
+            f"phase={state.current_phase.value}, "
+            f"s_violations={len(s_violations)}, stalemate={stalemate_detected}"
         )
+
+        # Log any S-invariant violations
+        if s_violations:
+            logger.error(
+                f"S-INVARIANT VIOLATIONS in game {game_idx}: {len(s_violations)} violations detected. "
+                f"First violation: {s_violations[0]}"
+            )
 
     duration_ms = (time.time() - start_time) * 1000
 

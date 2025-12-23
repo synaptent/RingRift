@@ -195,8 +195,13 @@ def _check_can_move_after_placement(
     # So we check if OTHER positions are occupied
     is_occupied_check = state.stack_owner[game_idx_3d, check_y_safe, check_x_safe] != 0
 
-    # Cell is blocking if: out of bounds, collapsed, or occupied by another stack
-    is_blocking = out_of_bounds | is_collapsed_check | is_occupied_check
+    # BUG FIX 2025-12-22: Markers also block movement - you cannot land on a marker
+    # This was missing, causing dead-placement check to incorrectly allow placements
+    # when the only open directions had markers blocking them
+    has_marker = state.marker_owner[game_idx_3d, check_y_safe, check_x_safe] != 0
+
+    # Cell is blocking if: out of bounds, collapsed, occupied by stack, or has marker
+    is_blocking = out_of_bounds | is_collapsed_check | is_occupied_check | has_marker
 
     # Find first blocking distance for each (position, direction)
     has_any_blocker = is_blocking.any(dim=2)  # (N, 8)
@@ -270,6 +275,8 @@ def _check_can_capture_after_placement(
     stack_height_np = state.stack_height.cpu().numpy()
     cap_height_np = state.cap_height.cpu().numpy()
     is_collapsed_np = state.is_collapsed.cpu().numpy()
+    # BUG FIX 2025-12-22: Also check markers - they block capture paths and landings
+    marker_owner_np = state.marker_owner.cpu().numpy()
 
     game_indices_np = game_indices.cpu().numpy()
     y_np = y_positions.cpu().numpy()
@@ -302,6 +309,10 @@ def _check_can_capture_after_placement(
                 if is_collapsed_np[g, check_y, check_x]:
                     break
 
+                # BUG FIX 2025-12-22: Markers block the path to target
+                if marker_owner_np[g, check_y, check_x] != 0:
+                    break
+
                 cell_owner = stack_owner_np[g, check_y, check_x]
                 if cell_owner != 0:
                     # Found a stack - check if capturable
@@ -330,6 +341,10 @@ def _check_can_capture_after_placement(
                 if is_collapsed_np[g, landing_y, landing_x]:
                     break
 
+                # BUG FIX 2025-12-22: Cannot land on a marker
+                if marker_owner_np[g, landing_y, landing_x] != 0:
+                    break
+
                 # Check path from target to landing is clear
                 path_clear = True
                 for step in range(target_dist + 1, landing_dist):
@@ -339,6 +354,10 @@ def _check_can_capture_after_placement(
                         path_clear = False
                         break
                     if is_collapsed_np[g, check_y, check_x]:
+                        path_clear = False
+                        break
+                    # BUG FIX 2025-12-22: Markers block path from target to landing
+                    if marker_owner_np[g, check_y, check_x] != 0:
                         path_clear = False
                         break
 
