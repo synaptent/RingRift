@@ -11,8 +11,12 @@ import { SandboxTouchControlsPanel } from '../components/SandboxTouchControlsPan
 import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { ScenarioPickerModal } from '../components/ScenarioPickerModal';
 import { SelfPlayBrowser } from '../components/SelfPlayBrowser';
-import { EvaluationPanel } from '../components/EvaluationPanel';
 import { SaveStateDialog } from '../components/SaveStateDialog';
+import {
+  SandboxDevTools,
+  SandboxDevToolsHeaderButtons,
+  SandboxDevToolsStallWarningAction,
+} from '../components/SandboxDevTools';
 import { RingPlacementCountDialog } from '../components/RingPlacementCountDialog';
 import { RecoveryLineChoiceDialog } from '../components/RecoveryLineChoiceDialog';
 import { TerritoryRegionChoiceDialog } from '../components/TerritoryRegionChoiceDialog';
@@ -79,7 +83,6 @@ import {
   logSandboxScenarioCompleted,
 } from '../sandbox/sandboxRulesUxTelemetry';
 import { getGameOverBannerText } from '../utils/gameCopy';
-import { getSandboxAiDiagnostics } from '../sandbox/sandboxAiDiagnostics';
 import { useSandboxDiagnostics } from '../hooks/useSandboxDiagnostics';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useBoardOverlays } from '../hooks/useBoardViewProps';
@@ -2240,316 +2243,24 @@ export const SandboxGameHost: React.FC = () => {
                   </div>
 
                   {!isBeginnerMode && developerToolsEnabled && (
-                    <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <h2 className="font-semibold">AI Evaluation (sandbox)</h2>
-                        <button
-                          type="button"
-                          onClick={requestSandboxEvaluation}
-                          disabled={!sandboxEngine || !sandboxGameState || isSandboxAnalysisRunning}
-                          className="px-3 py-1 rounded-full border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
-                        >
-                          {isSandboxAnalysisRunning ? 'Evaluating…' : 'Request evaluation'}
-                        </button>
-                      </div>
-                      <EvaluationPanel
-                        evaluationHistory={sandboxEvaluationHistory}
-                        players={sandboxGameState?.players ?? []}
-                      />
-                      {sandboxEvaluationError && (
-                        <p
-                          className="text-xs text-amber-400"
-                          data-testid="sandbox-evaluation-error"
-                        >
-                          {sandboxEvaluationError}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {!isBeginnerMode && developerToolsEnabled && sandboxGameState && (
-                    <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <h2 className="font-semibold">AI Ladder Diagnostics (sandbox)</h2>
-                        <button
-                          type="button"
-                          onClick={diagnosticsActions.copyAiMeta}
-                          className="px-3 py-1 rounded-full border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-                        >
-                          Copy
-                        </button>
-                      </div>
-
-                      {(() => {
-                        const byPlayer = getSandboxAiDiagnostics();
-                        const aiPlayers = sandboxGameState.players.filter((p) => p.type === 'ai');
-
-                        if (aiPlayers.length === 0) {
-                          return (
-                            <p className="text-xs text-slate-400">No AI players in this sandbox.</p>
-                          );
-                        }
-
-                        return (
-                          <div className="space-y-2">
-                            {aiPlayers.map((player) => {
-                              const configuredDifficulty =
-                                config.aiDifficulties[player.playerNumber - 1] ??
-                                DEFAULT_AI_DIFFICULTY;
-                              const meta = byPlayer[player.playerNumber];
-                              const timeLabel =
-                                meta && typeof meta.timestamp === 'number'
-                                  ? new Date(meta.timestamp).toLocaleTimeString()
-                                  : '';
-
-                              return (
-                                <div
-                                  key={player.playerNumber}
-                                  className="rounded-xl border border-slate-700 bg-slate-950/40 p-3"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-xs font-semibold">
-                                      P{player.playerNumber} · D{configuredDifficulty}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500">{timeLabel}</span>
-                                  </div>
-
-                                  {!meta ? (
-                                    <p className="mt-2 text-[10px] text-slate-400">
-                                      No sandbox AI metadata recorded yet (trigger an AI turn).
-                                    </p>
-                                  ) : (
-                                    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                                      <span className="text-slate-400">Source</span>
-                                      <span className="text-slate-200">{meta.source}</span>
-                                      <span className="text-slate-400">AI Type</span>
-                                      <span className="text-slate-200">{meta.aiType ?? '—'}</span>
-                                      <span className="text-slate-400">useNeuralNet</span>
-                                      <span className="text-slate-200">
-                                        {meta.useNeuralNet === null ||
-                                        meta.useNeuralNet === undefined
-                                          ? '—'
-                                          : meta.useNeuralNet
-                                            ? 'true'
-                                            : 'false'}
-                                      </span>
-                                      <span className="text-slate-400">Heuristic Profile</span>
-                                      <span className="text-slate-200">
-                                        {meta.heuristicProfileId ?? '—'}
-                                      </span>
-                                      <span className="text-slate-400">NN Model</span>
-                                      <span className="text-slate-200">
-                                        {meta.nnModelId ?? '—'}
-                                      </span>
-                                      <span className="text-slate-400">NN Checkpoint</span>
-                                      <span className="text-slate-200">
-                                        {meta.nnCheckpoint ?? '—'}
-                                      </span>
-                                      <span className="text-slate-400">NNUE Checkpoint</span>
-                                      <span className="text-slate-200">
-                                        {meta.nnueCheckpoint ?? '—'}
-                                      </span>
-                                      {meta.error && (
-                                        <>
-                                          <span className="text-slate-400">Error</span>
-                                          <span className="text-amber-300">{meta.error}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {!isBeginnerMode && developerToolsEnabled && sandboxGameState && (
-                    <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <h2 className="font-semibold">AI Service Ladder Health</h2>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={aiTrackingActions.refreshLadderHealth}
-                            disabled={aiTrackingState.aiLadderHealthLoading}
-                            className="px-3 py-1 rounded-full border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
-                          >
-                            {aiTrackingState.aiLadderHealthLoading ? 'Loading…' : 'Refresh'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={aiTrackingActions.copyLadderHealth}
-                            disabled={!aiTrackingState.aiLadderHealth}
-                            className="px-3 py-1 rounded-full border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                      </div>
-
-                      {aiTrackingState.aiLadderHealthError && (
-                        <p
-                          className="text-xs text-amber-400"
-                          data-testid="sandbox-ai-ladder-health-error"
-                        >
-                          {aiTrackingState.aiLadderHealthError}
-                        </p>
-                      )}
-
-                      {!aiTrackingState.aiLadderHealth ? (
-                        <p className="text-xs text-slate-400">
-                          Click Refresh to query `/internal/ladder/health` from the AI service.
-                        </p>
-                      ) : (
-                        (() => {
-                          const asRecord = (value: unknown): Record<string, unknown> | null => {
-                            if (!value || typeof value !== 'object' || Array.isArray(value)) {
-                              return null;
-                            }
-                            return value as Record<string, unknown>;
-                          };
-
-                          const summary = asRecord(aiTrackingState.aiLadderHealth['summary']) ?? {};
-                          const tiersRaw = aiTrackingState.aiLadderHealth['tiers'];
-                          const tiers: unknown[] = Array.isArray(tiersRaw) ? tiersRaw : [];
-
-                          return (
-                            <div className="space-y-3">
-                              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                                <span className="text-slate-400">Missing heuristic profiles</span>
-                                <span className="text-slate-200">
-                                  {String(summary['missing_heuristic_profiles'] ?? '—')}
-                                </span>
-                                <span className="text-slate-400">Missing NNUE checkpoints</span>
-                                <span className="text-slate-200">
-                                  {String(summary['missing_nnue_checkpoints'] ?? '—')}
-                                </span>
-                                <span className="text-slate-400">Missing NN checkpoints</span>
-                                <span className="text-slate-200">
-                                  {String(summary['missing_neural_checkpoints'] ?? '—')}
-                                </span>
-                                <span className="text-slate-400">Overridden tiers</span>
-                                <span className="text-slate-200">
-                                  {String(summary['overridden_tiers'] ?? '—')}
-                                </span>
-                              </div>
-
-                              <div className="overflow-auto border border-slate-800 rounded-xl bg-slate-950/40">
-                                <table className="w-full text-[10px]">
-                                  <thead className="text-slate-400">
-                                    <tr className="border-b border-slate-800">
-                                      <th className="text-left font-semibold px-2 py-1">D</th>
-                                      <th className="text-left font-semibold px-2 py-1">AI</th>
-                                      <th className="text-left font-semibold px-2 py-1">NN</th>
-                                      <th className="text-left font-semibold px-2 py-1">
-                                        Heuristic
-                                      </th>
-                                      <th className="text-left font-semibold px-2 py-1">Model</th>
-                                      <th className="text-left font-semibold px-2 py-1">
-                                        Artifacts
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="text-slate-200">
-                                    {tiers.map((tierRaw, index) => {
-                                      const tier = asRecord(tierRaw) ?? {};
-
-                                      const difficulty =
-                                        typeof tier['difficulty'] === 'number'
-                                          ? tier['difficulty']
-                                          : undefined;
-                                      const aiType =
-                                        typeof tier['ai_type'] === 'string'
-                                          ? tier['ai_type']
-                                          : undefined;
-                                      const useNeuralNet =
-                                        typeof tier['use_neural_net'] === 'boolean'
-                                          ? tier['use_neural_net']
-                                          : undefined;
-                                      const heuristicProfile =
-                                        typeof tier['heuristic_profile_id'] === 'string'
-                                          ? tier['heuristic_profile_id']
-                                          : undefined;
-                                      const modelId =
-                                        typeof tier['model_id'] === 'string'
-                                          ? tier['model_id']
-                                          : undefined;
-
-                                      const artifacts = asRecord(tier['artifacts']) ?? {};
-
-                                      const heuristicProfileArtifact =
-                                        asRecord(artifacts['heuristic_profile']) ?? {};
-                                      const heuristicOk =
-                                        typeof heuristicProfileArtifact['available'] === 'boolean'
-                                          ? heuristicProfileArtifact['available']
-                                          : undefined;
-
-                                      const nnueArtifact = asRecord(artifacts['nnue']) ?? {};
-                                      const nnueFileArtifact = asRecord(nnueArtifact['file']) ?? {};
-                                      const nnueOk =
-                                        typeof nnueFileArtifact['exists'] === 'boolean'
-                                          ? nnueFileArtifact['exists']
-                                          : undefined;
-
-                                      const neuralNetArtifact =
-                                        asRecord(artifacts['neural_net']) ?? {};
-                                      const neuralNetChosen =
-                                        asRecord(neuralNetArtifact['chosen']) ?? {};
-                                      const nnOk =
-                                        typeof neuralNetChosen['exists'] === 'boolean'
-                                          ? neuralNetChosen['exists']
-                                          : undefined;
-
-                                      const artifactLabelParts: string[] = [];
-                                      if (typeof heuristicOk === 'boolean') {
-                                        artifactLabelParts.push(
-                                          `H:${heuristicOk ? 'ok' : 'missing'}`
-                                        );
-                                      }
-                                      if (typeof nnueOk === 'boolean') {
-                                        artifactLabelParts.push(
-                                          `NNUE:${nnueOk ? 'ok' : 'missing'}`
-                                        );
-                                      }
-                                      if (typeof nnOk === 'boolean') {
-                                        artifactLabelParts.push(`NN:${nnOk ? 'ok' : 'missing'}`);
-                                      }
-
-                                      return (
-                                        <tr
-                                          key={`${String(difficulty ?? 'unknown')}_${index}`}
-                                          className="border-b border-slate-900/60"
-                                        >
-                                          <td className="px-2 py-1">{difficulty}</td>
-                                          <td className="px-2 py-1">{aiType ?? '—'}</td>
-                                          <td className="px-2 py-1">
-                                            {useNeuralNet === true
-                                              ? 'yes'
-                                              : useNeuralNet === false
-                                                ? 'no'
-                                                : '—'}
-                                          </td>
-                                          <td className="px-2 py-1">{heuristicProfile ?? '—'}</td>
-                                          <td className="px-2 py-1">{modelId ?? '—'}</td>
-                                          <td className="px-2 py-1">
-                                            {artifactLabelParts.length > 0
-                                              ? artifactLabelParts.join(' ')
-                                              : '—'}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          );
-                        })()
-                      )}
-                    </div>
+                    <SandboxDevTools
+                      aiLadderHealth={aiTrackingState.aiLadderHealth}
+                      aiLadderHealthError={aiTrackingState.aiLadderHealthError}
+                      aiLadderHealthLoading={aiTrackingState.aiLadderHealthLoading}
+                      onRefreshLadderHealth={aiTrackingActions.refreshLadderHealth}
+                      onCopyLadderHealth={aiTrackingActions.copyLadderHealth}
+                      onCopyAiTrace={diagnosticsActions.copyAiTrace}
+                      onCopyAiMeta={diagnosticsActions.copyAiMeta}
+                      onExportScenario={diagnosticsActions.exportScenarioJson}
+                      onCopyTestFixture={diagnosticsActions.copyTestFixture}
+                      evaluationHistory={sandboxEvaluationHistory}
+                      evaluationError={sandboxEvaluationError}
+                      isEvaluating={isSandboxAnalysisRunning}
+                      onRequestEvaluation={requestSandboxEvaluation}
+                      gameState={sandboxGameState}
+                      sandboxEngine={sandboxEngine}
+                      aiDifficulties={config.aiDifficulties}
+                    />
                   )}
                 </div>
               )}

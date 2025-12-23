@@ -9,9 +9,9 @@ state evaluation.
 Available Evaluators:
 - MaterialEvaluator: Ring counts, stack heights, material balance
 - PositionalEvaluator: Territory control, center positions, connectivity
+- TacticalEvaluator: Captures, threats, vulnerability
 
 Future Evaluators (planned):
-- TacticalEvaluator: Captures, threats, vulnerability
 - StrategicEvaluator: Victory proximity, forced elimination risk
 - MobilityEvaluator: Movement options
 - LineStructureEvaluator: Line potential, marker connectivity
@@ -28,6 +28,11 @@ from .positional_evaluator import (
     PositionalScore,
     PositionalWeights,
 )
+from .tactical_evaluator import (
+    TacticalEvaluator,
+    TacticalScore,
+    TacticalWeights,
+)
 
 __all__ = [
     "MaterialEvaluator",
@@ -36,4 +41,7 @@ __all__ = [
     "PositionalEvaluator",
     "PositionalScore",
     "PositionalWeights",
+    "TacticalEvaluator",
+    "TacticalScore",
+    "TacticalWeights",
 ]

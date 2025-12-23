@@ -2988,13 +2988,17 @@ def train_model(
                             f"Check model weights and learning rate."
                         )
 
-                    policy_pred_max = policy_pred.abs().max().item()
-                    if policy_pred_max > 1e6:
-                        logger.warning(
-                            f"Extreme policy logits detected at batch {i}: "
-                            f"max_abs={policy_pred_max:.2e}, "
-                            f"range=[{policy_pred.min():.2e}, {policy_pred.max():.2e}]"
-                        )
+                    # Check for extreme logits, excluding intentional -1e9 masking for invalid hex cells
+                    valid_logits_mask = policy_pred > -1e8  # -1e9 is intentional masking
+                    if torch.any(valid_logits_mask):
+                        valid_logits = policy_pred[valid_logits_mask]
+                        policy_pred_max = valid_logits.abs().max().item()
+                        if policy_pred_max > 1e6:
+                            logger.warning(
+                                f"Extreme policy logits detected at batch {i}: "
+                                f"max_abs={policy_pred_max:.2e}, "
+                                f"valid_range=[{valid_logits.min():.2e}, {valid_logits.max():.2e}]"
+                            )
 
                     # Apply log_softmax to policy prediction for KLDivLoss
                     policy_log_probs = torch.log_softmax(policy_pred, dim=1)

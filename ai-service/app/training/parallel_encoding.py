@@ -116,6 +116,7 @@ class EncodedSample:
     phase: str
     perspective: int
     num_players: int
+    game_id: str = ""  # Added for NNUE compatibility
 
 
 @dataclass
@@ -275,6 +276,7 @@ def _encode_single_game(
                 phase=phase_str,
                 perspective=perspective,
                 num_players=n_players,
+                game_id=game_id,
             ))
 
         return GameEncodingResult(game_id=game_id, samples=samples)
@@ -567,7 +569,8 @@ def samples_to_arrays(
 
     Returns dict with keys:
         features, globals, values, values_mp, policy_indices, policy_values,
-        move_numbers, total_game_moves, phases, num_players
+        move_numbers, total_game_moves, phases, num_players,
+        player_numbers, game_ids (for NNUE compatibility)
     """
     if not samples:
         return {}
@@ -588,6 +591,9 @@ def samples_to_arrays(
     total_game_moves = np.array([s.total_moves for s in samples], dtype=np.int32)
     phases = np.array([s.phase for s in samples], dtype=object)
     num_players = np.array([s.num_players for s in samples], dtype=np.int32)
+    # NNUE-compatible fields
+    player_numbers = np.array([s.perspective for s in samples], dtype=np.int32)
+    game_ids = np.array([s.game_id for s in samples], dtype=object)
 
     return {
         "features": features,
@@ -600,6 +606,9 @@ def samples_to_arrays(
         "total_game_moves": total_game_moves,
         "phases": phases,
         "num_players": num_players,
+        # NNUE-compatible fields
+        "player_numbers": player_numbers,
+        "game_ids": game_ids,
     }
 
 

@@ -55,6 +55,53 @@ from app.ai.multi_opponent_fitness import (
     BASELINE_OPPONENTS,
 )
 
+# Optional FastAPI/Pydantic imports for worker mode
+try:
+    from pydantic import BaseModel
+
+    class TaskRequest(BaseModel):
+        """Request model for single-opponent evaluation."""
+        task_id: str
+        candidate_weights: dict[str, float]
+        baseline_weights: dict[str, float]
+        num_games: int = 50
+        board_size: int = 8
+        num_players: int = 2
+        max_moves: int = 2000
+
+    class TaskResponse(BaseModel):
+        """Response model for single-opponent evaluation."""
+        task_id: str
+        fitness: float
+        games_played: int
+        elapsed_seconds: float
+        error: str | None = None
+
+    class MultiOpponentRequest(BaseModel):
+        """Request model for multi-opponent evaluation."""
+        task_id: str
+        candidate_weights: dict[str, float]
+        games_per_opponent: int = 32
+        self_play_games: int = 24
+        min_weight: float = 0.4
+        board_size: int = 8
+        num_players: int = 2
+        max_moves: int = 200
+
+    class MultiOpponentResponse(BaseModel):
+        """Response model for multi-opponent evaluation."""
+        task_id: str
+        per_opponent: dict[str, float]
+        aggregate: float
+        self_play: float
+        games_played: int
+        elapsed_seconds: float
+        error: str | None = None
+
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+
 # Unified logging setup
 from scripts.lib.logging_config import setup_script_logging
 
@@ -176,33 +223,20 @@ def run_worker_server(port: int, board_size: int, num_players: int):
     """Run HTTP worker server for remote evaluation."""
     try:
         import uvicorn
-        from fastapi import FastAPI, Body
-        from pydantic import BaseModel
+        from fastapi import FastAPI
     except ImportError:
         logger.error("FastAPI/uvicorn not installed. Run: pip install fastapi uvicorn")
+        sys.exit(1)
+
+    if not PYDANTIC_AVAILABLE:
+        logger.error("Pydantic not installed. Run: pip install pydantic")
         sys.exit(1)
 
     app = FastAPI(title="GPU CMA-ES Worker")
     worker = GPUWorker(board_size=board_size, num_players=num_players)
 
-    class TaskRequest(BaseModel):
-        task_id: str
-        candidate_weights: dict[str, float]
-        baseline_weights: dict[str, float]
-        num_games: int = 50
-        board_size: int = 8
-        num_players: int = 2
-        max_moves: int = 2000
-
-    class TaskResponse(BaseModel):
-        task_id: str
-        fitness: float
-        games_played: int
-        elapsed_seconds: float
-        error: str | None = None
-
     @app.post("/evaluate", response_model=TaskResponse)
-    async def evaluate_task(request: TaskRequest = Body(...)):
+    async def evaluate_task(request: TaskRequest):
         task = EvalTask(
             task_id=request.task_id,
             candidate_weights=request.candidate_weights,
@@ -221,28 +255,8 @@ def run_worker_server(port: int, board_size: int, num_players: int):
             error=result.error,
         )
 
-    # Multi-opponent evaluation request/response models
-    class MultiOpponentRequest(BaseModel):
-        task_id: str
-        candidate_weights: dict[str, float]
-        games_per_opponent: int = 32
-        self_play_games: int = 24
-        min_weight: float = 0.4
-        board_size: int = 8
-        num_players: int = 2
-        max_moves: int = 200
-
-    class MultiOpponentResponse(BaseModel):
-        task_id: str
-        per_opponent: dict[str, float]
-        aggregate: float
-        self_play: float
-        games_played: int
-        elapsed_seconds: float
-        error: str | None = None
-
     @app.post("/evaluate_multi", response_model=MultiOpponentResponse)
-    async def evaluate_multi_task(request: MultiOpponentRequest = Body(...)):
+    async def evaluate_multi_task(request: MultiOpponentRequest):
         """Evaluate candidate against all baseline opponents."""
         start_time = time.time()
         try:

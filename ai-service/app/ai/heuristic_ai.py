@@ -124,6 +124,8 @@ from .evaluators import (
     MaterialWeights,
     PositionalEvaluator,
     PositionalWeights,
+    TacticalEvaluator,
+    TacticalWeights,
 )
 from .fast_geometry import FastGeometry
 from .heuristic_weights import HEURISTIC_WEIGHT_PROFILES
@@ -384,6 +386,9 @@ class HeuristicAI(BaseAI):
         # Initialize positional evaluator (lazily updated after weight profile)
         self._positional_evaluator: PositionalEvaluator | None = None
 
+        # Initialize tactical evaluator (lazily updated after weight profile)
+        self._tactical_evaluator: TacticalEvaluator | None = None
+
     def _apply_weight_profile(self) -> None:
         """Override evaluation weights for this instance from a profile.
 
@@ -476,6 +481,16 @@ class HeuristicAI(BaseAI):
                 fast_geo=self._fast_geo,
             )
         return self._positional_evaluator
+
+    @property
+    def tactical_evaluator(self) -> TacticalEvaluator:
+        """Lazily create tactical evaluator with current weights."""
+        if self._tactical_evaluator is None:
+            self._tactical_evaluator = TacticalEvaluator(
+                weights=TacticalWeights.from_heuristic_ai(self),
+                fast_geo=self._fast_geo,
+            )
+        return self._tactical_evaluator
 
     def _victory_proximity_base_for_player(
         self,
@@ -1185,34 +1200,15 @@ class HeuristicAI(BaseAI):
         )
 
     def _evaluate_opponent_threats(self, game_state: GameState) -> float:
-        """Evaluate opponent threats (stacks near our stacks)"""
-        score = 0.0
-        board = game_state.board
-        board_type = board.type
-        stacks = board.stacks
-        my_stacks = [s for s in stacks.values()
-                     if s.controlling_player == self.player_number]
+        """Evaluate opponent threats (stacks near our stacks).
 
-        for my_stack in my_stacks:
-            # Use fast key-based adjacency lookup
-            pos_key = my_stack.position.to_key()
-            adjacent_keys = self._get_adjacent_keys(pos_key, board_type)
-            for adj_key in adjacent_keys:
-                if adj_key in stacks:
-                    adj_stack = stacks[adj_key]
-                    if adj_stack.controlling_player != self.player_number:
-                        # Opponent stack adjacent to ours is a threat.
-                        # Capture power is based on cap height per compact
-                        # rules §10.1, so we compare using cap height here
-                        # rather than total stack height.
-                        threat_level = (
-                            adj_stack.cap_height - my_stack.cap_height
-                        )
-                        score -= (
-                            threat_level * self.WEIGHT_OPPONENT_THREAT * 0.5
-                        )
+        Delegates to TacticalEvaluator for consistent evaluation.
 
-        return score
+        v1.9: Delegates to TacticalEvaluator for decomposition.
+        """
+        return self.tactical_evaluator.evaluate_opponent_threats(
+            game_state, self.player_number
+        )
 
     def _evaluate_mobility(self, game_state: GameState) -> float:
         """Evaluate mobility (number of valid moves)"""
@@ -1641,58 +1637,26 @@ class HeuristicAI(BaseAI):
         return visible
 
     def _evaluate_vulnerability(self, game_state: GameState) -> float:
+        """Evaluate vulnerability of our stacks to overtaking captures.
+
+        Delegates to TacticalEvaluator for consistent evaluation.
+
+        v1.9: Delegates to TacticalEvaluator for decomposition.
         """
-        Evaluate vulnerability of our stacks to overtaking captures.
-        Considers relative cap heights of stacks in clear line of sight.
-        """
-        score = 0.0
-        my_stacks = [
-            s
-            for s in game_state.board.stacks.values()
-            if s.controlling_player == self.player_number
-        ]
-
-        for stack in my_stacks:
-            visible_stacks = self._get_visible_stacks(
-                stack.position,
-                game_state
-            )
-
-            for adj_stack in visible_stacks:
-                # Capture power is based on cap height per compact rules §10.1
-                if (adj_stack.controlling_player != self.player_number
-                        and adj_stack.cap_height > stack.cap_height):
-                    diff = adj_stack.cap_height - stack.cap_height
-                    score -= diff * 1.0
-
-        return score * self.WEIGHT_VULNERABILITY
+        return self.tactical_evaluator.evaluate_vulnerability(
+            game_state, self.player_number
+        )
 
     def _evaluate_overtake_potential(self, game_state: GameState) -> float:
+        """Evaluate our ability to overtake opponent stacks.
+
+        Delegates to TacticalEvaluator for consistent evaluation.
+
+        v1.9: Delegates to TacticalEvaluator for decomposition.
         """
-        Evaluate our ability to overtake opponent stacks.
-        Considers relative cap heights of stacks in clear line of sight.
-        """
-        score = 0.0
-        my_stacks = [
-            s
-            for s in game_state.board.stacks.values()
-            if s.controlling_player == self.player_number
-        ]
-
-        for stack in my_stacks:
-            visible_stacks = self._get_visible_stacks(
-                stack.position,
-                game_state
-            )
-
-            for adj_stack in visible_stacks:
-                # Capture power is based on cap height per compact rules §10.1
-                if (adj_stack.controlling_player != self.player_number
-                        and stack.cap_height > adj_stack.cap_height):
-                    diff = stack.cap_height - adj_stack.cap_height
-                    score += diff * 1.0
-
-        return score * self.WEIGHT_OVERTAKE_POTENTIAL
+        return self.tactical_evaluator.evaluate_overtake_potential(
+            game_state, self.player_number
+        )
 
     def _evaluate_territory_closure(self, game_state: GameState) -> float:
         """Evaluate how close we are to enclosing a territory.

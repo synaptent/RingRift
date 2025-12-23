@@ -230,11 +230,10 @@ def _find_regions_with_border_color(
     visited = np.zeros((board_size, board_size), dtype=np.bool_)
     regions = []
 
-    # Iterate x-outer, y-inner (column-first) to match CPU's iteration order
-    # CPU: for x in range(8): for y in range(8): Position(x=x, y=y)
-    # This is column-first: all rows in col 0, then col 1, etc.
-    for start_x in range(board_size):
-        for start_y in range(board_size):
+    # Iterate y-outer, x-inner (row-first) for GPU-native ordering
+    # Use BFS start position as representative for deterministic selection
+    for start_y in range(board_size):
+        for start_x in range(board_size):
             if visited[start_y, start_x] or not passable[start_y, start_x]:
                 continue
 
