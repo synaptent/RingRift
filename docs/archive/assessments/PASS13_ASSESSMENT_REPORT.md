@@ -3,7 +3,7 @@
 > **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
 
 **Assessment Date:** November 27, 2025
@@ -145,15 +145,15 @@ The following React test files already exist in `tests/unit/`:
 
 ### Current Documentation Issues
 
-| Document                                                        | Status     | Last Updated    | Issues                                   |
-| --------------------------------------------------------------- | ---------- | --------------- | ---------------------------------------- |
-| [`README.md`](../README.md)                                     | ✅ Current | Nov 26-27, 2025 | Minor: Remove Playwright workers default |
-| [`QUICKSTART.md`](../QUICKSTART.md)                             | ✅ Current | Nov 26-27, 2025 | None - comprehensive 685 lines           |
-| [`docs/API_REFERENCE.md`](API_REFERENCE.md)                     | ✅ Current | Nov 27, 2025    | None - well-structured                   |
-| [`docs/CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md)       | ✅ Current | Recent          | None - 1313 lines comprehensive          |
-| [`CONTRIBUTING.md`](../CONTRIBUTING.md)                         | ✅ Current | Nov 27, 2025    | None - 708 lines detailed                |
-| [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)   | ✅ Current | Nov 27, 2025    | None - updated with Phase 4 completion   |
-| [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) | ⚠️ Minor   | Nov 26, 2025    | Update test counts after Pass 12-13      |
+| Document                                                                                                                            | Status     | Last Updated    | Issues                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------- | ---------------------------------------- |
+| [`README.md`](../README.md)                                                                                                         | ✅ Current | Nov 26-27, 2025 | Minor: Remove Playwright workers default |
+| [`QUICKSTART.md`](../QUICKSTART.md)                                                                                                 | ✅ Current | Nov 26-27, 2025 | None - comprehensive 685 lines           |
+| [`docs/API_REFERENCE.md`](API_REFERENCE.md)                                                                                         | ✅ Current | Nov 27, 2025    | None - well-structured                   |
+| [`docs/CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md)                                                                           | ✅ Current | Recent          | None - 1313 lines comprehensive          |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md)                                                                                             | ✅ Current | Nov 27, 2025    | None - 708 lines detailed                |
+| [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)                                                                       | ✅ Current | Nov 27, 2025    | None - updated with Phase 4 completion   |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | ⚠️ Minor   | Nov 26, 2025    | Update test counts after Pass 12-13      |
 
 ### Stale Documents to Update
 

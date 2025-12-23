@@ -727,7 +727,7 @@ useGlobalGameShortcuts({
 - **AI system:** See `docs/architecture/AI_ARCHITECTURE.md` and `ai-service/README.md`
 - **Roadmap & priorities:** See `TODO.md` and `docs/planning/STRATEGIC_ROADMAP.md`
 - **Current bugs:** Check `KNOWN_ISSUES.md`
-- **Current implementation state:** Review `CURRENT_STATE_ASSESSMENT.md`
+- **Historical implementation state:** Review [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 
 ### Discussion
 

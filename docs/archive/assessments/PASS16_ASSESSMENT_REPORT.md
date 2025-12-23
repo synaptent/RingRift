@@ -3,7 +3,7 @@
 > **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
 
 > **Assessment Date:** 2025-11-28
@@ -11,7 +11,7 @@
 > **Assessor:** Architect mode – documentation, rules, AI, frontend, and SSOT review
 
 > **Doc Status (2025-11-28): Historical**
-> This report updates prior passes (PASS8–PASS15) using the consolidated shared engine and current coverage metrics from [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1). It identifies the current weakest area, the hardest outstanding problem, and defines remediation tasks for subsequent passes.
+> This report updates prior passes (PASS8–PASS15) using the consolidated shared engine and current coverage metrics from [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:1). It identifies the current weakest area, the hardest outstanding problem, and defines remediation tasks for subsequent passes.
 
 ---
 
@@ -23,7 +23,7 @@
   - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` now documents flags (`ORCHESTRATOR_ADAPTER_ENABLED`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE`, `ORCHESTRATOR_SHADOW_MODE_ENABLED`, `RINGRIFT_RULES_MODE`), “during incidents” posture, and CI profiles (orchestrator‑ON vs legacy/SHADOW diagnostics).
   - AI and game runbooks (`AI_ERRORS.md`, `AI_PERFORMANCE.md`, `AI_FALLBACK.md`, `AI_SERVICE_DOWN.md`, `GAME_HEALTH.md`, `GAME_PERFORMANCE.md`, `RULES_PARITY.md`) now consistently treat the shared TS engine + orchestrator as canonical, spell out when **not** to flip rules flags, and cross‑link to the rollout plan and `AI_ARCHITECTURE.md` §0 (AI incident overview).
   - Test meta-docs (`tests/README.md`, `tests/TEST_SUITE_PARITY_PLAN.md`) and archives (`archive/tests/**`, `ai-service/tests/archive/**`) clearly separate **canonical** `.shared`/contract/RulesMatrix suites from **diagnostic** trace/seed parity harnesses.
-- **Documentation & tests:** Core rules, AI, and architecture docs remain accurate overall. Spot-checks found **minor drift** in test-count and helper-status descriptions (notably the placement helpers section in [`docs/CANONICAL_ENGINE_API.md`](docs/CANONICAL_ENGINE_API.md:1) and historical counts in [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1)), but **no materially misleading semantics**. Coverage claims in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:236) match the current Jest and pytest suite structure.
+- **Documentation & tests:** Core rules, AI, and architecture docs remain accurate overall. Spot-checks found **minor drift** in test-count and helper-status descriptions (notably the placement helpers section in [`docs/CANONICAL_ENGINE_API.md`](docs/CANONICAL_ENGINE_API.md:1) and historical counts in [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1)), but **no materially misleading semantics**. Coverage claims in [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:236) match the current Jest and pytest suite structure.
 - **Frontend UX:** Board rendering and victory flows are now **highly accessible and polished**. [`BoardView.tsx`](src/client/components/BoardView.tsx:1) and [`VictoryModal.tsx`](src/client/components/VictoryModal.tsx:1) provide strong keyboard support, screen-reader hints, and motion/contrast safeguards via [`globals.css`](src/client/styles/globals.css:1). Remaining sub-4 areas are **host-level code quality and touch/mobile ergonomics**, not basic usability.
 - **Consolidation & SSOT:** Capture, movement, and placement semantics are **single-sourced in shared TS aggregates** – [`MovementAggregate`](src/shared/engine/aggregates/MovementAggregate.ts:1), [`CaptureAggregate`](src/shared/engine/aggregates/CaptureAggregate.ts:1), and [`PlacementAggregate`](src/shared/engine/aggregates/PlacementAggregate.ts:1) – with closely aligned Python analogues in [`capture_chain.py`](ai-service/app/rules/capture_chain.py:1) and [`placement.py`](ai-service/app/rules/placement.py:1). Backend [`RuleEngine`](src/server/game/RuleEngine.ts:1) and sandbox [`ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts:1) call these shared surfaces, and rules SSOT tooling such as [`rules-ssot-check.ts`](scripts/ssot/rules-ssot-check.ts:1) is wired into CI.
 
@@ -125,7 +125,7 @@ By contrast, the **frontend host architecture** still carries:
 
 - **Maintainability & iteration speed** – The current structure makes it harder to introduce new UX features (e.g. improved spectator tools, new board topologies, or tutorial flows) without touching `GamePage` in many places.
 - **Risk to onboarding contributors** – New developers face a steep learning curve to safely modify the main host components compared to more focused modules (rules aggregates, AI service, WebSocket server).
-- **UX polish backlog** – Some multiplayer UX goals in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:193) (spectator experience, reconnection UX, social features) are more expensive because of this concentration of responsibilities.
+- **UX polish backlog** – Some multiplayer UX goals in [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:193) (spectator experience, reconnection UX, social features) are more expensive because of this concentration of responsibilities.
 
 ---
 
@@ -139,7 +139,7 @@ The **canonical shared turn orchestrator** is implemented and widely integrated:
 - Backend adapter [`TurnEngineAdapter`](src/server/game/turn/TurnEngineAdapter.ts:1) and sandbox adapter [`SandboxOrchestratorAdapter`](src/client/sandbox/SandboxOrchestratorAdapter.ts:1) wrap the orchestrator for respective hosts.
 - Backend `RuleEngine` delegates core semantics to shared helpers and aggregates (placement, movement, capture) via calls such as [`applySimpleMovementAggregate()`](src/server/game/RuleEngine.ts:423) and [`applyCaptureAggregate()`](src/server/game/RuleEngine.ts:445).
 - Sandbox `ClientSandboxEngine` increasingly routes canonical move application through orchestrator-based flows in [`applyCanonicalMoveInternal()`](src/client/sandbox/ClientSandboxEngine.ts:3049), gated by `useOrchestratorAdapter`.
-- Contract-based parity tests and v2 test vectors in both TS and Python validate cross-language semantics, as summarised in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:71) and [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:50).
+- Contract-based parity tests and v2 test vectors in both TS and Python validate cross-language semantics, as summarised in [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:71) and [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:50).
 
 However, **production rollout is not yet fully complete**:
 
@@ -179,8 +179,8 @@ Spot-checks focused on documents either not deeply audited in earlier passes or 
 
 - **Status:** _Minor drift_
 - **Findings:**
-  - High-level goals (stable rules SSoT, AI integration, strong documentation, production readiness) remain well aligned with the current architecture and implementation described in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:26) and [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:30).
-  - Earlier test-count references (e.g. "1195+" TS tests) are now **underestimates** compared to current metrics reported in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:236), which lists **1629+** TS tests and **245** Python tests.
+  - High-level goals (stable rules SSoT, AI integration, strong documentation, production readiness) remain well aligned with the current architecture and implementation described in [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:26) and [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:30).
+  - Earlier test-count references (e.g. "1195+" TS tests) are now **underestimates** compared to current metrics reported in [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:236), which lists **1629+** TS tests and **245** Python tests.
 - **Recommendation:** Update numeric test-count examples to avoid confusion and point readers to `CURRENT_STATE_ASSESSMENT` as the live source of coverage counts.
 
 ### 5.2 `docs/STATE_MACHINES.md`
@@ -197,7 +197,7 @@ Spot-checks focused on documents either not deeply audited in earlier passes or 
 - **Findings:**
   - The document correctly positions the shared TS engine and orchestrator as the **lifecycle SSoT** and aligns with types under `src/shared/types/**` and `src/shared/engine/orchestration/types.ts`.
   - However, sections describing placement helpers still refer to them as **"design-time stubs"** and caution hosts not to depend on them until future phases complete.
-  - In reality, [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1) and its aggregate wrapper [`PlacementAggregate`](src/shared/engine/aggregates/PlacementAggregate.ts:1) are fully implemented and integrated, as confirmed by [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:57) and their dedicated test suites.
+  - In reality, [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1) and its aggregate wrapper [`PlacementAggregate`](src/shared/engine/aggregates/PlacementAggregate.ts:1) are fully implemented and integrated, as confirmed by [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:57) and their dedicated test suites.
 - **Recommendation:**
   - Update these sections to describe placement helpers as **canonical, production-backed helpers**, not stubs.
   - Cross-link directly to shared helper tests and contract vectors to reinforce SSOT status.
@@ -223,7 +223,7 @@ Spot-checks focused on documents either not deeply audited in earlier passes or 
 
 ### 5.6 Test suite and coverage claims
 
-- [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:236) lists **1629+** TS tests and **245** Python tests across 230+ files, with detailed counts per suite type (component, hooks, contexts, helpers, contract tests).
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md:236) lists **1629+** TS tests and **245** Python tests across 230+ files, with detailed counts per suite type (component, hooks, contexts, helpers, contract tests).
 - Workspace inspection confirms the presence of the referenced suites:
   - Shared engine and scenario tests under `tests/unit/**` and `tests/scenarios/**`.
   - Component and hooks tests for `BoardView`, view models, and state hooks.

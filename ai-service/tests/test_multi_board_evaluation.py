@@ -48,6 +48,7 @@ class MultiBoardEvaluationTest(unittest.TestCase):
         self.assertGreaterEqual(agg, 0.0)
         self.assertLessEqual(agg, 1.0)
 
+    # SKIP-REASON: KEEP-SKIPPED - slow integration test (full AI games), run locally with --timeout=300
     @pytest.mark.skip(
         reason="Slow integration test: plays full AI games across 3 board types. "
         "Run locally with: pytest tests/test_multi_board_evaluation.py -v --timeout=300"

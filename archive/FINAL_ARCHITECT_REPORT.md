@@ -224,17 +224,17 @@ All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and re
 
 **Canonical Documents** (Single Source of Truth):
 
-| Document                                                       | Role                          | Status            |
-| -------------------------------------------------------------- | ----------------------------- | ----------------- |
-| [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1)   | Authoritative rulebook        | ✅ Current        |
-| [`ringrift_compact_rules.md`](ringrift_compact_rules.md:1)     | Implementation spec           | ✅ Current        |
-| [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) | Factual implementation status | ✅ Updated Nov 22 |
-| [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1)   | System architecture & design  | ✅ Current        |
-| [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1)               | Phased development plan       | ✅ Updated Nov 22 |
-| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md:1)                         | P0/P1/P2 issue tracker        | ✅ Updated Nov 22 |
-| [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1)                   | AI system design & plans      | ✅ Updated Nov 22 |
-| [`QUICKSTART.md`](QUICKSTART.md:1)                             | Getting started guide         | ✅ Updated Nov 22 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md:1)                         | Contribution guidelines       | ✅ Current        |
+| Document                                                                                                                                                                       | Role                          | Status            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- | ----------------- |
+| [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1)                                                                                                                   | Authoritative rulebook        | ✅ Current        |
+| [`ringrift_compact_rules.md`](ringrift_compact_rules.md:1)                                                                                                                     | Implementation spec           | ✅ Current        |
+| [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) | Factual implementation status | ✅ Updated Nov 22 |
+| [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1)                                                                                                                   | System architecture & design  | ✅ Current        |
+| [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1)                                                                                                                               | Phased development plan       | ✅ Updated Nov 22 |
+| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md:1)                                                                                                                                         | P0/P1/P2 issue tracker        | ✅ Updated Nov 22 |
+| [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1)                                                                                                                                   | AI system design & plans      | ✅ Updated Nov 22 |
+| [`QUICKSTART.md`](QUICKSTART.md:1)                                                                                                                                             | Getting started guide         | ✅ Updated Nov 22 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md:1)                                                                                                                                         | Contribution guidelines       | ✅ Current        |
 
 ### 2.2 Documentation Changes Made
 
@@ -247,7 +247,7 @@ All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and re
    - Clarified development setup and sandbox usage
    - Added links to all canonical documents
 
-2. **CURRENT_STATE_ASSESSMENT.md** ([`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1)):
+2. **CURRENT_STATE_ASSESSMENT.md** ([[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1)):
    - Updated assessment date to November 22, 2025
    - Added RNG determinism system coverage
    - Updated AI integration status
@@ -1187,7 +1187,7 @@ Filed under [`deprecated/`](deprecated/) with strong deprecation banners:
 
 **Process**:
 
-- Update CURRENT_STATE_ASSESSMENT.md when features complete
+- Update docs/archive/historical/CURRENT_STATE_ASSESSMENT.md when features complete
 - Update KNOWN_ISSUES.md as issues resolve
 - Mark TODO.md tasks complete as they finish
 - Keep QUICKSTART.md aligned with UI changes
@@ -1396,7 +1396,7 @@ Any design change to line rewards or territory behaviour should be implemented i
 ├── QUICKSTART.md [Setup guide]
 │
 📁 Status & Planning (Canonical, Living)
-├── CURRENT_STATE_ASSESSMENT.md [Factual status]
+├── docs/archive/historical/CURRENT_STATE_ASSESSMENT.md [Factual status]
 ├── STRATEGIC_ROADMAP.md [Phased plan]
 ├── KNOWN_ISSUES.md [Issue tracker]
 ├── TODO.md [Task tracker - (not in initial audit)]
@@ -1852,7 +1852,7 @@ Risk levels:
 
 - **Rich type system and documentation**
   - Shared types file [`game.ts`](src/shared/types/game.ts:1) is effectively executable documentation of rules and phases.
-  - Detailed architecture docs: [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1), [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1), [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1).
+  - Detailed architecture docs: [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1), [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1), [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1).
 
 - **Separation of concerns within modules**
   - Rules validation in [`RuleEngine`](src/server/game/RuleEngine.ts:1) vs orchestration in [`GameEngine`](src/server/game/GameEngine.ts:1).
@@ -1885,7 +1885,7 @@ Risk levels:
 - **R2.1 – Curate and label documentation**
   - Move truly obsolete docs into an `archive/` directory and keep only:
     - [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1)
-    - [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1)
+    - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1)
     - [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1)
     - [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1)
     - Active P0/P1 lists (`KNOWN_ISSUES.md`, TODO/roadmap).
@@ -1993,7 +1993,7 @@ Risk levels:
 #### Gaps &amp; Risks
 
 1. **Scenario matrix not yet exhaustive**
-   - **Issue:** [`CURRENT_STATE_ASSESSMENT`](CURRENT_STATE_ASSESSMENT.md:135) notes that `RULES_SCENARIO_MATRIX` and FAQ coverage are still incomplete, particularly for composite examples and some FAQ Q1–Q24 diagrams. Some parity fixtures (`tests/fixtures/rules-parity/**`) are diagnostic, not all wired as hard CI gates.
+   - **Issue:** [`CURRENT_STATE_ASSESSMENT`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:135) notes that `RULES_SCENARIO_MATRIX` and FAQ coverage are still incomplete, particularly for composite examples and some FAQ Q1–Q24 diagrams. Some parity fixtures (`tests/fixtures/rules-parity/**`) are diagnostic, not all wired as hard CI gates.
    - **Why it matters:** Subtle, rare game states may still behave incorrectly or diverge between TS, sandbox, and Python engines.
    - **Risk level:** **P0**.
 
@@ -2427,7 +2427,7 @@ Risk levels:
 - Documentation:
   - Architecture and status:
     - [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1)
-    - [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1)
+    - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1)
     - [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1)
     - [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1)
   - Rules:

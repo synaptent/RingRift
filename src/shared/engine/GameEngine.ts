@@ -30,7 +30,7 @@ import { mutateProcessLine, mutateChooseLineReward } from './mutators/LineMutato
 import { mutateProcessTerritory, mutateEliminateStack } from './mutators/TerritoryMutator';
 import { mutateTurnChange, mutatePhaseChange } from './mutators/TurnMutator';
 import { findAllLines } from './lineDetection';
-import { findDisconnectedRegions } from './territoryDetection';
+import { getProcessableTerritoryRegions } from './territoryProcessing';
 import { enumerateCaptureMoves, CaptureBoardAdapters } from './captureLogic';
 import { isValidPosition } from './validators/utils';
 import { positionToString } from '../types/game';
@@ -176,12 +176,15 @@ export class GameEngine {
         };
         this.state = mutatePhaseChange(this.state, 'line_processing');
       } else {
-        // Check territory disconnection
-        const regions = findDisconnectedRegions(this.state.board);
-        if (regions.length > 0) {
+        // Check territory disconnection - filter to processable regions for this player
+        const processableRegions = getProcessableTerritoryRegions(this.state.board, {
+          player: action.playerId,
+          eliminationContext: 'territory',
+        });
+        if (processableRegions.length > 0) {
           // Populate territories map with disconnected regions
           const newTerritories = new Map(this.state.board.territories);
-          regions.forEach((region, index) => {
+          processableRegions.forEach((region, index) => {
             newTerritories.set(`disconnected-${index}`, region);
           });
 
@@ -249,11 +252,16 @@ export class GameEngine {
           };
           this.state = mutatePhaseChange(this.state, 'line_processing');
         } else {
-          // Check territory disconnection
-          const regions = findDisconnectedRegions(this.state.board);
-          if (regions.length > 0) {
+          // Check territory disconnection - filter to processable regions for this player
+          // This matches the orchestrator's behavior which only enters territory_processing
+          // if there are regions the player can actually process (has elimination target outside)
+          const processableRegions = getProcessableTerritoryRegions(this.state.board, {
+            player: action.playerId,
+            eliminationContext: 'territory',
+          });
+          if (processableRegions.length > 0) {
             const newTerritories = new Map(this.state.board.territories);
-            regions.forEach((region, index) => {
+            processableRegions.forEach((region, index) => {
               newTerritories.set(`disconnected-${index}`, region);
             });
 

@@ -4,7 +4,7 @@
 **Author:** Code Analysis  
 **Sources Analyzed:**
 
-- `KNOWN_ISSUES.md`, `TODO.md`, `CURRENT_STATE_ASSESSMENT.md`
+- `KNOWN_ISSUES.md`, `TODO.md`, [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 - `AI_IMPROVEMENT_BACKLOG.md`, `ai-service/AI_ASSESSMENT_REPORT.md`
 - `docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`, `docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`
 - `archive/RULES_STATIC_VERIFICATION.md`, `archive/RULES_DYNAMIC_VERIFICATION.md`

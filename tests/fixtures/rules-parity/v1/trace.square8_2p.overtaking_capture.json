@@ -109,10 +109,10 @@
       },
       "expected": {
         "tsValid": true,
-        "tsStateHash": "1:territory_processing:waiting:0#1:18:0:0|2:18:0:0#3,5:1:3:2#3,3:1#",
+        "tsStateHash": "2:ring_placement:waiting:0#1:18:0:0|2:18:0:0#3,5:1:3:2#3,3:1#",
         "tsS": 1
       },
-      "stateHash": "1:territory_processing:waiting:0#1:18:0:0|2:18:0:0#3,5:1:3:2#3,3:1#",
+      "stateHash": "2:ring_placement:waiting:0#1:18:0:0|2:18:0:0#3,5:1:3:2#3,3:1#",
       "sInvariant": 1
     }
   ]

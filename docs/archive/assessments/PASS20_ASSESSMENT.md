@@ -44,11 +44,11 @@ A review of [`jest-results.json`](../jest-results.json) reveals **72 failing tes
 
 ### 2.2 Stale Documents Needing Updates
 
-| Document                                                        | Last Updated      | Issues Found                                     |
-| :-------------------------------------------------------------- | :---------------- | :----------------------------------------------- |
-| [`TODO.md`](../TODO.md)                                         | November 30, 2025 | Test status claims unverified                    |
-| [`PASS19B_ASSESSMENT_REPORT.md`](PASS19B_ASSESSMENT_REPORT.md)  | 2025-11-30        | Claims "0 failed" but jest-results.json shows 72 |
-| [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) | Recent            | May need test health update                      |
+| Document                                                                                                                            | Last Updated      | Issues Found                                     |
+| :---------------------------------------------------------------------------------------------------------------------------------- | :---------------- | :----------------------------------------------- |
+| [`TODO.md`](../TODO.md)                                                                                                             | November 30, 2025 | Test status claims unverified                    |
+| [`PASS19B_ASSESSMENT_REPORT.md`](PASS19B_ASSESSMENT_REPORT.md)                                                                      | 2025-11-30        | Claims "0 failed" but jest-results.json shows 72 |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | Recent            | May need test health update                      |
 
 ### 2.3 Stale Information Identified
 

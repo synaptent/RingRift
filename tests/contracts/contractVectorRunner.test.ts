@@ -443,6 +443,7 @@ describe('Contract Test Vectors', () => {
     // SKIP 2025-12-06: Territory vectors have phase/move mismatches (eliminate_rings_from_stack
     // and choose_territory_option moves in wrong phases). Vector data needs regeneration.
     // See: docs/SKIPPED_TESTS_TRIAGE.md, PA-1 task
+    // SKIP-REASON: REWRITE - territory vectors need regeneration with multi-phase turn model (PA-1)
     it.skip('should pass all territory vectors', () => {
       for (const vector of vectors) {
         const result = runVector(vector);
@@ -501,6 +502,7 @@ describe('Contract Test Vectors', () => {
  * legacy orchestration and produce different phase sequences under FSM.
  * Enable once contract vectors are regenerated with FSM orchestration.
  */
+// SKIP-REASON: REWRITE - contract vectors generated with legacy orchestration; needs FSM regeneration
 describe.skip('Multi-step contract sequences', () => {
   const allVectors = loadAllVectors();
   const sequences = groupVectorsBySequenceTag(allVectors);
@@ -518,6 +520,7 @@ describe.skip('Multi-step contract sequences', () => {
     const hasSkippedVector = seqVectors.some((v) => (v as any).skip);
 
     if (hasSkippedVector) {
+      // SKIP-REASON: vector-dependent - vector has skip field pending implementation
       it.skip(`sequence ${sequenceId} is internally consistent across steps`, () => {
         // Skipped due to pending implementation
       });

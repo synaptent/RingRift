@@ -123,13 +123,13 @@ Total games=1, completed=0, maxTurns=1, invariantViolations=0
 
 ### 4.1 Docs Requiring Updates
 
-| Document                      | Issue                                       | Recommended Action                            |
-| ----------------------------- | ------------------------------------------- | --------------------------------------------- |
-| `CURRENT_STATE_ASSESSMENT.md` | Claims "all tests passing" as of 2025-11-27 | Add timestamp framing, note it's a snapshot   |
-| `CURRENT_RULES_STATE.md`      | Says "None critical" for known issues       | Update to reference host integration issues   |
-| `DOCUMENTATION_INDEX.md`      | Describes ANM as "highest-risk semantics"   | Update to reference PASS18A weakest aspect    |
-| `docs/INDEX.md`               | Points to ANM invariants as current focus   | Add note distinguishing historical vs current |
-| `PROJECT_GOALS.md` §3.4       | ✅ Already updated                          | Correctly frames host integration as focus    |
+| Document                                                                                 | Issue                                       | Recommended Action                            |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------- |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) | Claims "all tests passing" as of 2025-11-27 | Add timestamp framing, note it's a snapshot   |
+| `CURRENT_RULES_STATE.md`                                                                 | Says "None critical" for known issues       | Update to reference host integration issues   |
+| `DOCUMENTATION_INDEX.md`                                                                 | Describes ANM as "highest-risk semantics"   | Update to reference PASS18A weakest aspect    |
+| `docs/INDEX.md`                                                                          | Points to ANM invariants as current focus   | Add note distinguishing historical vs current |
+| `PROJECT_GOALS.md` §3.4                                                                  | ✅ Already updated                          | Correctly frames host integration as focus    |
 
 ### 4.2 Docs That Are Current
 
@@ -233,7 +233,7 @@ Per `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`:
 
 ### P18A.4 – Documentation Alignment (P1)
 
-- [x] **P18A.4-1**: Update `CURRENT_STATE_ASSESSMENT.md` with timestamp framing ✅ Completed 2025-11-30
+- [x] **P18A.4-1**: Update [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) with timestamp framing ✅ Completed 2025-11-30
 - [ ] **P18A.4-2**: Update `CURRENT_RULES_STATE.md` known issues section
 - [x] **P18A.4-3**: Update `DOCUMENTATION_INDEX.md` weakest-aspect pointer ✅ Completed 2025-11-30
 - [ ] **P18A.4-4**: Update `docs/INDEX.md` to distinguish historical vs current focus

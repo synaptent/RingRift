@@ -19,7 +19,7 @@
 ## 1. Source of truth and related documents
 
 - **Goals SSoT (this file):** Canonical statement of product experience goals and high-level technical objectives (engine SSOT, parity, SLOs). Use this document as the primary reference for _what success looks like_.
-- **Implementation status & metrics SSoT:** For current implementation status, test counts, and coverage metrics, defer to [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1). That file is the single source of truth for live numbers and status labels.
+- **Implementation status & metrics SSoT:** For current implementation status, test counts, and coverage metrics, defer to [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1). That file is the single source of truth for live numbers and status labels.
 - **Rules-specific status:** For rules-focused status and navigation across rules docs and verification/audit reports, see [`docs/rules/CURRENT_RULES_STATE.md`](docs/rules/CURRENT_RULES_STATE.md:1).
 - **Specialised goal surfaces (subordinate docs):**
   - [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1) – AI-specific goals, architecture, and training/improvement plans, all subordinate to the product/technical goals defined here.
@@ -59,7 +59,7 @@ Together, these goals define **how the game should feel**: simple to describe at
 
 ## 3. Core objectives for current phase (v1.0)
 
-> For the current v1.0 phase, these objectives describe what the project must deliver in terms of gameplay features, architecture, and quality. Read them together with [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) for the phased execution plan and [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) for factual implementation status.
+> For the current v1.0 phase, these objectives describe what the project must deliver in terms of gameplay features, architecture, and quality. Read them together with [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) for the phased execution plan and [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) for factual implementation status.
 
 ### 3.0 Core objectives summary
 
@@ -103,7 +103,7 @@ These objectives naturally cluster into four areas that later documents use for 
 
 | Objective                         | Description                                                                                                                                                                                                                                                                                                          | Rationale                                                     |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **Comprehensive test coverage**   | Extensive automated test suites across TypeScript and Python (unit, integration, scenario, parity, and E2E); see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) for live counts and coverage details.                                                                        | Confidence in correctness                                     |
+| **Comprehensive test coverage**   | Extensive automated test suites across TypeScript and Python (unit, integration, scenario, parity, and E2E); see [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) for live counts and coverage details.                                                | Confidence in correctness                                     |
 | **Rules/FAQ scenario matrix**     | Test cases derived directly from [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md:1) FAQ examples                                                                                                                                                                                                       | Ensures rules fidelity                                        |
 | **Contract testing**              | Cross-language parity validated by shared contract test vectors                                                                                                                                                                                                                                                      | Guarantees engine consistency                                 |
 | **Parity harnesses**              | Backend ↔ sandbox ↔ Python engine behavior validation                                                                                                                                                                                                                                                                | Catches divergence early                                      |
@@ -144,7 +144,7 @@ High-level risk framing and historical assessment for this area are summarised i
 
 ### 4.0 Release gate criteria (summary)
 
-v1.0 is considered ready to ship when all of the following are true (this is the goals-level definition; current measured status lives in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`):
+v1.0 is considered ready to ship when all of the following are true (this is the goals-level definition; current measured status lives in [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`):
 
 - **Rules and victory correctness** is rules-complete and parity/contract validated for the supported boards and player counts (see §3 and §6; rules authority remains [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1)).
 - **Performance SLOs** in §4.1 are met under production-scale load (details in `docs/testing/BASELINE_CAPACITY.md` and `docs/operations/SLO_VERIFICATION.md`).
@@ -168,20 +168,20 @@ These SLOs are the canonical targets for v1.0. Load-testing docs, alert threshol
 
 ### 4.2 Test and quality gates (v1.0)
 
-| Gate / metric             | Requirement              | Where to check current status                                                        |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------ |
-| **TypeScript tests**      | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
-| **Python tests**          | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
-| **Contract vectors**      | 100% TS↔Python parity    | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
-| **Coverage target**       | ≥80% lines overall       | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
-| **Rules scenario matrix** | All FAQ examples covered | `docs/rules/RULES_SCENARIO_MATRIX.md`                                                |
-| **Integration tests**     | Core workflows passing   | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| Gate / metric             | Requirement              | Where to check current status                                                                                |
+| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **TypeScript tests**      | All passing in CI lanes  | [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Python tests**          | All passing in CI lanes  | [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Contract vectors**      | 100% TS↔Python parity    | [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Coverage target**       | ≥80% lines overall       | [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Rules scenario matrix** | All FAQ examples covered | `docs/rules/RULES_SCENARIO_MATRIX.md`                                                                        |
+| **Integration tests**     | Core workflows passing   | [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
 
-> **Note:** Live test counts and coverage breakdowns are maintained in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:236). This document is **not** the single source of truth for those numbers; it records only the high-level requirements and a recent snapshot.
+> **Note:** Live test counts and coverage breakdowns are maintained in [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:236). This document is **not** the single source of truth for those numbers; it records only the high-level requirements and a recent snapshot.
 
 #### 4.2.1 Metrics & test suites (qualitative overview)
 
-To avoid duplicating live metrics, this section describes the **shape** of the test and CI surface; concrete counts and coverage percentages remain in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1).
+To avoid duplicating live metrics, this section describes the **shape** of the test and CI surface; concrete counts and coverage percentages remain in [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1).
 
 - **TypeScript suites:** Jest unit and integration tests for the shared engine, backend hosts, frontend client, and sandbox; Playwright E2E tests for core auth and gameplay flows.
 - **Python suites:** pytest suites for the AI service covering rules engine behaviour, parity tests, training/heuristic harnesses, and invariants.
@@ -189,7 +189,7 @@ To avoid duplicating live metrics, this section describes the **shape** of the t
 
 ### 4.3 Feature completion criteria
 
-These are **release gate criteria**, not a live progress checklist. For current status, see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1).
+These are **release gate criteria**, not a live progress checklist. For current status, see [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1).
 
 - [ ] All 24 FAQ scenarios from the rules document have corresponding tests
 - [ ] All three board types (8×8, 19×19, hex) fully playable end-to-end
@@ -208,15 +208,15 @@ Environment posture and rollout discipline are first-class parts of v1.0 readine
 - **Runbooks exist and have been exercised** for key operational failure modes (backup/restore, secrets rotation, AI service degradation, rollback).
 - **Rollout posture is documented** (environment presets, rollback strategy, and orchestrator-on invariants) in `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md` and `STRATEGIC_ROADMAP.md`.
 
-Detailed rollout tables, environment presets, and alert thresholds live in `STRATEGIC_ROADMAP.md`, `CURRENT_STATE_ASSESSMENT.md`, `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`, and `docs/operations/ALERTING_THRESHOLDS.md`.
+Detailed rollout tables, environment presets, and alert thresholds live in `STRATEGIC_ROADMAP.md`, `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`, `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`, and `docs/operations/ALERTING_THRESHOLDS.md`.
 
-For the current completion status of these gates, see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`.
+For the current completion status of these gates, see [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`.
 
 ---
 
 ## 5. Key risks, dependencies & assumptions
 
-This section captures goal-level risks and assumptions that shape scope and success criteria. Live issue tracking remains in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) and current measured status remains in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md).
+This section captures goal-level risks and assumptions that shape scope and success criteria. Live issue tracking remains in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) and current measured status remains in [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md).
 
 These goals assume the following technical and operational dependencies, which are defined in more detail in the referenced architecture and operations documents:
 
@@ -343,19 +343,19 @@ This goals document sits at the top of the planning stack for **project directio
 
 - [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1) (this file) defines the high-level product and technical goals, success criteria, and scope boundaries for the current phase.
 - [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) translates those goals into a phased implementation and SLO roadmap; when direction or success criteria change, update this file first and then adjust the roadmap.
-- [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) reports factual, code-verified implementation status relative to these goals and the roadmap; it does not define new goals.
-- [`docs/archive/FINAL_ARCHITECT_REPORT.md`](docs/archive/FINAL_ARCHITECT_REPORT.md:1) and other archived reports provide historical context; where they disagree with this document or the current roadmap/state assessment on direction, treat them as superseded.
+- [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) reports factual, code-verified implementation status relative to these goals and the roadmap; it does not define new goals.
+- [`archive/FINAL_ARCHITECT_REPORT.md`](archive/FINAL_ARCHITECT_REPORT.md:1) and other archived reports provide historical context; where they disagree with this document or the current roadmap/state assessment on direction, treat them as superseded.
 
 The tables below group key related documents by role so readers can quickly jump between **goals**, **plan**, and **current reality**.
 
 ### 9.1 Implementation & execution
 
-| Document                                                                               | Purpose                                   |
-| -------------------------------------------------------------------------------------- | ----------------------------------------- |
-| [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1)                         | Phased execution plan, SLOs, milestones   |
-| [`TODO.md`](TODO.md:1)                                                                 | Task-level tracking, priority assignments |
-| [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) | Code-verified implementation status       |
-| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md:1)                                                 | Active bugs and gaps with priorities      |
+| Document                                                                                                       | Purpose                                   |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1)                                                 | Phased execution plan, SLOs, milestones   |
+| [`TODO.md`](TODO.md:1)                                                                                         | Task-level tracking, priority assignments |
+| [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) | Code-verified implementation status       |
+| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md:1)                                                                         | Active bugs and gaps with priorities      |
 
 ### 9.2 Rules & design authority
 
@@ -368,16 +368,16 @@ The tables below group key related documents by role so readers can quickly jump
 
 ### 9.3 Architecture & technical
 
-| Document                                                                                         | Purpose                                                                                                       |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1)                                     | High-level system architecture review and historical remediation context subordinate to the goals in this doc |
-| [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md:1)       | Canonical Move/orchestrator/WebSocket lifecycle and engine public API that implements the rules engine goals  |
-| [`RULES_ENGINE_ARCHITECTURE.md`](docs/architecture/RULES_ENGINE_ARCHITECTURE.md:1)               | Detailed rules engine design and TS↔Python parity mapping                                                     |
-| [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md:1) | Module catalog for the shared TypeScript engine helpers, aggregates, and orchestrator                         |
-| [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md:1) | Aggregate-level design reference for the shared engine                                                        |
-| [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1)                   | Supported board topologies and geometry constraints                                                           |
-| [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1)                                   | AI service architecture, difficulty ladder, and training/parity plans subordinate to the goals defined here   |
-| [`src/shared/engine/orchestration/README.md`](src/shared/engine/orchestration/README.md:1)       | Turn orchestrator implementation guide                                                                        |
+| Document                                                                                           | Purpose                                                                                                       |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [`docs/archive/plans/ARCHITECTURE_ASSESSMENT.md`](docs/archive/plans/ARCHITECTURE_ASSESSMENT.md:1) | High-level system architecture review and historical remediation context subordinate to the goals in this doc |
+| [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md:1)         | Canonical Move/orchestrator/WebSocket lifecycle and engine public API that implements the rules engine goals  |
+| [`RULES_ENGINE_ARCHITECTURE.md`](docs/architecture/RULES_ENGINE_ARCHITECTURE.md:1)                 | Detailed rules engine design and TS↔Python parity mapping                                                     |
+| [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md:1)   | Module catalog for the shared TypeScript engine helpers, aggregates, and orchestrator                         |
+| [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md:1)   | Aggregate-level design reference for the shared engine                                                        |
+| [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1)                     | Supported board topologies and geometry constraints                                                           |
+| [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1)                                     | AI service architecture, difficulty ladder, and training/parity plans subordinate to the goals defined here   |
+| [`src/shared/engine/orchestration/README.md`](src/shared/engine/orchestration/README.md:1)         | Turn orchestrator implementation guide                                                                        |
 
 ### 9.4 Operations & development
 
@@ -395,7 +395,7 @@ The tables below group key related documents by role so readers can quickly jump
 This section records goal-level questions that are not fully specified by the current documentation and require explicit owner decisions. Until resolved, implementers should treat these as constraints on making irreversible changes, not as implicit commitments.
 
 1. **AI difficulty ladder positioning in v1.0 experience.**  
-   The current docs agree that the 1–10 difficulty ladder exists and that difficulties 7–10 are more experimental or advanced (see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) and [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1)), but they do not clearly state whether v1.0's primary experience should emphasise the beginner–intermediate band (1–6) in rated queues while keeping 7–10 as opt-in expert modes.
+   The current docs agree that the 1–10 difficulty ladder exists and that difficulties 7–10 are more experimental or advanced (see [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) and [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1)), but they do not clearly state whether v1.0's primary experience should emphasise the beginner–intermediate band (1–6) in rated queues while keeping 7–10 as opt-in expert modes.
    - **Option A:** Treat 1–6 as the canonical supported ladder for public/rated queues at v1.0, with 7–10 flagged as experimental or unrated.
    - **Option B:** Treat the full 1–10 ladder as in scope for rated play at v1.0, accepting higher variance in AI strength and latency at the top difficulties.
    - **Implication:** Affects UX copy, lobby defaults, and how strictly we gate SLOs and regression budgets for higher difficulties.
@@ -433,7 +433,7 @@ RingRift's design is guided by these core principles:
 
 | Version | Date       | Changes                                                                                                                                                                                   |
 | ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2025-11-26 | Initial creation consolidating goals from `README.md`, `STRATEGIC_ROADMAP.md`, `CURRENT_STATE_ASSESSMENT.md`, `TODO.md`, and `ringrift_complete_rules.md`                                 |
+| 1.0     | 2025-11-26 | Initial creation consolidating goals from `README.md`, `STRATEGIC_ROADMAP.md`, `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`, `TODO.md`, and `ringrift_complete_rules.md`         |
 | 1.1     | 2025-12-10 | Promoted to repo root as the canonical goals SSoT; clarified clustering of objectives; added explicit rules‑UX telemetry and AI training pipeline objectives; fixed several broken links. |
 
 ---

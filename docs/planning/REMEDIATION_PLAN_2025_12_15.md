@@ -8,7 +8,7 @@
 
 - [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md)
 - [`KNOWN_ISSUES.md`](../../KNOWN_ISSUES.md)
-- [`CURRENT_STATE_ASSESSMENT.md`](../../CURRENT_STATE_ASSESSMENT.md)
+- [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](../archive/historical/CURRENT_STATE_ASSESSMENT.md)
 - [`ai-service/TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md)
 - [`docs/ux/UX_RULES_TEACHING_GAP_ANALYSIS.md`](../ux/UX_RULES_TEACHING_GAP_ANALYSIS.md)
 
@@ -543,7 +543,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 
 **Deliverables:**
 
-- Updated `CURRENT_STATE_ASSESSMENT.md` with UX and AI status
+- Updated [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) with UX and AI status
 - Updated `KNOWN_ISSUES.md` closing resolved items
 - Updated `docs/ux/UX_RULES_TEACHING_GAP_ANALYSIS.md` with recovery gaps addressed
 - Release notes draft for v1.0 beta
@@ -681,13 +681,13 @@ P3-SUP-04:                                     [====]
 
 ### Priority 1: Frontend UX Polish - Success Criteria
 
-| Metric                | Target                | Measurement Method                           |
-| --------------------- | --------------------- | -------------------------------------------- |
-| Teaching Gap Closure  | 25/25 gaps addressed  | `UX_RULES_TEACHING_GAP_ANALYSIS.md` audit    |
-| Spectator UI Complete | 100% feature coverage | E2E test + manual review                     |
-| Sandbox Beginner Mode | Available and tested  | Feature toggle + user feedback               |
-| Mobile Compatibility  | All core flows work   | Playwright mobile tests + manual iOS/Android |
-| Component Score       | ≥4.0/5                | `CURRENT_STATE_ASSESSMENT.md` rating         |
+| Metric                | Target                | Measurement Method                                                                                              |
+| --------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Teaching Gap Closure  | 25/25 gaps addressed  | `UX_RULES_TEACHING_GAP_ANALYSIS.md` audit                                                                       |
+| Spectator UI Complete | 100% feature coverage | E2E test + manual review                                                                                        |
+| Sandbox Beginner Mode | Available and tested  | Feature toggle + user feedback                                                                                  |
+| Mobile Compatibility  | All core flows work   | Playwright mobile tests + manual iOS/Android                                                                    |
+| Component Score       | ≥4.0/5                | [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) rating |
 
 ### Priority 2: AI Training Pipeline - Success Criteria
 
@@ -741,4 +741,4 @@ The remediation is complete when:
 
 ---
 
-_This plan will be updated as work progresses. All changes should be reflected in `TODO.md` and `CURRENT_STATE_ASSESSMENT.md`._
+_This plan will be updated as work progresses. All changes should be reflected in `TODO.md` and [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)._

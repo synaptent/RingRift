@@ -36,12 +36,15 @@ const createPlayer = (playerNumber: number, options: Partial<Player> = {}): Play
 
 const createEmptyBoard = (size: number = 8): Board => ({
   size,
+  type: 'square8' as const,
   topology: 'square',
   cells: new Map(),
   stacks: new Map(),
   markers: new Map(),
   markerSpaces: [],
   collapsedSpaces: new Map(),
+  territories: new Map(),
+  formedLines: [],
   eliminatedRings: {},
 });
 

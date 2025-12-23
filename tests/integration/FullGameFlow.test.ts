@@ -40,6 +40,7 @@ jest.mock('../../src/server/services/AIServiceClient', () => ({
  *   npm test -- --testPathPattern="FullGameFlow" --no-coverage
  *   (Remember to remove describe.skip first)
  */
+// SKIP-REASON: KEEP-SKIPPED - heavy AI soak test (30+ sec), run via nightly orchestrator soak instead
 describe.skip('Full Game Flow Integration (AI Fallback)', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
   // Allow for long AI-vs-AI sequences; moves here are individual actions rather

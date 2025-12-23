@@ -325,8 +325,8 @@ Remaining priorities:
 **Update test coverage status:**
 
 ```markdown
-| **TypeScript tests** | All passing | ✅ 2,987 tests passing, ~130 skipped (see `CURRENT_STATE_ASSESSMENT.md`) |
-| **Python tests** | All passing | ✅ 836 tests passing (see `CURRENT_STATE_ASSESSMENT.md`) |
+| **TypeScript tests** | All passing | ✅ 2,987 tests passing, ~130 skipped (see [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)) |
+| **Python tests** | All passing | ✅ 836 tests passing (see [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)) |
 | **Contract vectors** | 100% parity | ✅ 49/49 passing, 0 mismatches |
 | **Coverage target** | 80% lines | 🟡 ~69% lines (improved from 65.55%), key contexts now covered |
 | **Rules scenario matrix** | All FAQ examples covered | 🟡 Coverage in progress (~18-20/24 scenarios) |
@@ -427,7 +427,7 @@ Line 23:
 
 **Documents Updated:**
 
-- `CURRENT_STATE_ASSESSMENT.md` - Updated with PASS20 completion status
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) - Updated with PASS20 completion status
 - `docs/PASS20_COMPLETION_SUMMARY.md` - Created comprehensive summary
 - `docs/PASS20_ASSESSMENT.md` - Created assessment report
 - `docs/TEST_CATEGORIES.md` - Created test categorization guide
@@ -460,7 +460,7 @@ Line 23:
 
 **Documents Updated:**
 
-- `CURRENT_STATE_ASSESSMENT.md` - Updated observability score, added PASS21 summary
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) - Updated observability score, added PASS21 summary
 - `STRATEGIC_ROADMAP.md` - Marked monitoring/load testing items complete
 - `TODO.md` - Marked Wave 5 complete, added Wave 6 (observability) and Wave 7 (validation)
 - `PROJECT_GOALS.md` - Updated production readiness criteria

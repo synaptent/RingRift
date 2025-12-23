@@ -93,6 +93,7 @@ class TestV2ArchitectureMPSCompatibility:
 class TestV2DeviceCompatibility:
     """Tests for V2 model device compatibility (MPS/CUDA/CPU)."""
 
+    # SKIP-REASON: hardware-dependent - requires Apple Silicon MPS backend
     @pytest.mark.skipif(
         not torch.backends.mps.is_available(),
         reason="MPS not available on this system"
@@ -118,6 +119,7 @@ class TestV2DeviceCompatibility:
         assert policy.device.type == 'mps'
         assert value.shape == (batch_size, 4)  # Multi-player value head
 
+    # SKIP-REASON: hardware-dependent - requires Apple Silicon MPS backend
     @pytest.mark.skipif(
         not torch.backends.mps.is_available(),
         reason="MPS not available on this system"

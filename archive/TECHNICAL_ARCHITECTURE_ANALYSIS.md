@@ -7,11 +7,11 @@
 > **For current architecture and plans, see:**
 >
 > - [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)
-> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+> - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 
 ⚠️ **UPDATED:** November 13, 2025 - **Implementation Status Assessment Added**
 
-> **Critical Update:** After comprehensive codebase analysis, significant implementation gaps have been identified. While the architecture and infrastructure are sound, the core game logic requires substantial work. See **Implementation Status** section below and [CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md) for complete details.
+> **Critical Update:** After comprehensive codebase analysis, significant implementation gaps have been identified. While the architecture and infrastructure are sound, the core game logic requires substantial work. See **Implementation Status** section below and [CURRENT_STATE_ASSESSMENT.md](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) for complete details.
 
 ## Executive Summary
 
@@ -504,7 +504,7 @@ spec:
 > current, code-verified picture (core TS engine ~70–75% complete,
 > WebSocket-backed backend play, Python AI integration for moves and
 > several PlayerChoices, and a basic React board/choice UI) is
-> maintained in [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md),
+> maintained in [docs/archive/historical/CURRENT_STATE_ASSESSMENT.md](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md),
 > [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md), and
 > [RINGRIFT_IMPROVEMENT_PLAN.md](./RINGRIFT_IMPROVEMENT_PLAN.md). Treat
 > those files as the primary source of truth for present-day status; the
@@ -564,7 +564,7 @@ spec:
 
 ### Revised Implementation Priority
 
-**See `CURRENT_STATE_ASSESSMENT.md`, `CODEBASE_EVALUATION.md`, and `TODO.md` for the up-to-date, code-verified implementation status; this section is preserved only as a historical snapshot.**
+**See [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md), `CODEBASE_EVALUATION.md`, and `TODO.md` for the up-to-date, code-verified implementation status; this section is preserved only as a historical snapshot.**
 
 **Immediate Priorities:**
 
@@ -590,7 +590,7 @@ spec:
 
 ### Phase 2: Core Features (Months 3-4) ⚠️ **BLOCKED - AWAITING PHASE 1**
 
-- [ ] Complete game logic implementation **← CRITICAL - SEE CURRENT_STATE_ASSESSMENT.md**
+- [ ] Complete game logic implementation **← CRITICAL - SEE docs/archive/historical/CURRENT_STATE_ASSESSMENT.md**
   - [ ] Marker system (not started)
   - [ ] Line formation (partial)
   - [ ] Territory disconnection (stub only)
@@ -658,7 +658,7 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 
 ### Documentation for Developers
 
-- **[CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md)** - Detailed gap analysis and roadmap
+- **[CURRENT_STATE_ASSESSMENT.md](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)** - Detailed gap analysis and roadmap
 - **[KNOWN_ISSUES.md](../KNOWN_ISSUES.md)** - Specific bugs and missing features
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development guidelines and priorities
 - **[TODO.md](./TODO.md)** - Task tracking and sprint planning

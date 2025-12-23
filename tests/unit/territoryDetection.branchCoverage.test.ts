@@ -58,12 +58,15 @@ function makeBoardState(overrides: Partial<BoardState> = {}): BoardState {
 // Helper to add a stack to the board
 function addStack(board: BoardState, position: Position, player: number, height = 1): void {
   const key = positionToString(position);
+  // RR-CANON-R142: rings array must include all ring owners for territory detection
+  // to correctly compute ActiveColors (all players with any ring on board)
+  const rings = Array(height).fill(player);
   board.stacks.set(key, {
     position,
     controllingPlayer: player,
     capHeight: height,
     stackHeight: height,
-    rings: [],
+    rings,
   } as RingStack);
 }
 

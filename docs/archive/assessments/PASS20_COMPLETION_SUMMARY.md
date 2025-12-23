@@ -113,12 +113,12 @@ PASS20 completed the orchestrator migration Phase 3 and stabilized the test suit
 
 ### Documentation Created/Updated
 
-| Document                                                                                      | Status     |
-| --------------------------------------------------------------------------------------------- | ---------- |
-| [`docs/TEST_CATEGORIES.md`](TEST_CATEGORIES.md)                                               | ✨ NEW     |
-| [`docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md`](ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md) | ✨ NEW     |
-| [`docs/PASS20_ASSESSMENT.md`](PASS20_ASSESSMENT.md)                                           | ✅ Updated |
-| [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)                               | ✅ Updated |
+| Document                                                                                                                            | Status     |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| [`docs/TEST_CATEGORIES.md`](TEST_CATEGORIES.md)                                                                                     | ✨ NEW     |
+| [`docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md`](ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md)                                       | ✨ NEW     |
+| [`docs/PASS20_ASSESSMENT.md`](PASS20_ASSESSMENT.md)                                                                                 | ✅ Updated |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | ✅ Updated |
 
 ---
 
@@ -220,13 +220,13 @@ Phase 4: Tier 2 Cleanup       ⬜ DEFERRED (post-MVP)
 
 ### Documentation Files
 
-| File                                             | Change Type     |
-| ------------------------------------------------ | --------------- |
-| `docs/TEST_CATEGORIES.md`                        | Created         |
-| `docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md` | Created         |
-| `docs/PASS20_ASSESSMENT.md`                      | Created/Updated |
-| `docs/PASS20_COMPLETION_SUMMARY.md`              | Created         |
-| `CURRENT_STATE_ASSESSMENT.md`                    | Updated         |
+| File                                                                                     | Change Type     |
+| ---------------------------------------------------------------------------------------- | --------------- |
+| `docs/TEST_CATEGORIES.md`                                                                | Created         |
+| `docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md`                                         | Created         |
+| `docs/PASS20_ASSESSMENT.md`                                                              | Created/Updated |
+| `docs/PASS20_COMPLETION_SUMMARY.md`                                                      | Created         |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) | Updated         |
 
 ### Deleted Files
 
@@ -255,5 +255,5 @@ The codebase is now in excellent shape for:
 - [`docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md`](ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md)
 - [`docs/TEST_CATEGORIES.md`](TEST_CATEGORIES.md)
 - [`docs/PASS20_ASSESSMENT.md`](PASS20_ASSESSMENT.md)
-- [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md)
 - [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md)

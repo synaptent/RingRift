@@ -156,7 +156,7 @@ PASS22 represents a **pragmatic subset** of the originally planned production po
    - Refreshed feature completion badges
    - Added PASS21 observability achievements
 
-2. **[`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)**
+2. **[`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md)**
    - PASS21 achievements recap (observability 2.5/5 → 4.5/5)
    - Context coverage improvements (GameContext 89.52%, SandboxContext 84.21%)
    - Component scores updated post-PASS21
@@ -650,7 +650,7 @@ All PASS22 objectives achieved within scope constraints. Deferred tasks have cle
 
 **Project Status:**
 
-- [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) - Current factual status
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) - Current factual status
 - [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) - Canonical goals and success criteria
 - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md) - Phased roadmap and SLOs
 

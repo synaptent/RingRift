@@ -19,25 +19,25 @@ This audit reviews all documentation against the codebase to ensure accuracy, el
 
 ### Root Directory Documentation (17 files - ✅ Within Target)
 
-| File                               | Purpose                       | Status                   | Recommendation               |
-| ---------------------------------- | ----------------------------- | ------------------------ | ---------------------------- |
-| `README.md`                        | Main entry point              | ✅ Active, comprehensive | Keep, update dates           |
-| `QUICKSTART.md`                    | Getting started guide         | ✅ Active                | Keep                         |
-| `CONTRIBUTING.md`                  | Contribution guidelines       | ✅ Active                | Keep                         |
-| `AI_ARCHITECTURE.md`               | AI Service architecture       | ✅ Active                | Keep                         |
-| `ARCHITECTURE_ASSESSMENT.md`       | Comprehensive arch review     | ✅ Active                | Keep                         |
-| `ARCHITECTURE_REMEDIATION_PLAN.md` | Architecture improvement plan | ⚠️ Partially complete    | Review implementation status |
-| `CURRENT_RULES_STATE.md`           | Rules implementation status   | ✅ Active                | Keep                         |
-| `CURRENT_STATE_ASSESSMENT.md`      | Code-verified status          | ✅ Active, canonical     | Keep                         |
-| `KNOWN_ISSUES.md`                  | Bug/gap tracker               | ✅ Active                | Keep                         |
-| `STRATEGIC_ROADMAP.md`             | Phased implementation plan    | ✅ Active                | Keep                         |
-| `TODO.md`                          | Task tracker                  | ✅ Active                | Keep                         |
-| `ringrift_complete_rules.md`       | Complete rulebook             | ✅ Active, canonical     | Keep                         |
-| `ringrift_compact_rules.md`        | Compact rules                 | ✅ Active, canonical     | Keep                         |
-| `RULES_CANONICAL_SPEC.md`          | Rules specification           | ✅ Active                | Keep                         |
-| `RULES_ENGINE_ARCHITECTURE.md`     | Rules engine arch             | ✅ Active                | Keep                         |
-| `RULES_IMPLEMENTATION_MAPPING.md`  | Rules → code mapping          | ✅ Active                | Keep                         |
-| `RULES_SCENARIO_MATRIX.md`         | Test scenario mapping         | ✅ Active                | Keep                         |
+| File                                                                                     | Purpose                       | Status                   | Recommendation               |
+| ---------------------------------------------------------------------------------------- | ----------------------------- | ------------------------ | ---------------------------- |
+| `README.md`                                                                              | Main entry point              | ✅ Active, comprehensive | Keep, update dates           |
+| `QUICKSTART.md`                                                                          | Getting started guide         | ✅ Active                | Keep                         |
+| `CONTRIBUTING.md`                                                                        | Contribution guidelines       | ✅ Active                | Keep                         |
+| `AI_ARCHITECTURE.md`                                                                     | AI Service architecture       | ✅ Active                | Keep                         |
+| `ARCHITECTURE_ASSESSMENT.md`                                                             | Comprehensive arch review     | ✅ Active                | Keep                         |
+| `ARCHITECTURE_REMEDIATION_PLAN.md`                                                       | Architecture improvement plan | ⚠️ Partially complete    | Review implementation status |
+| `CURRENT_RULES_STATE.md`                                                                 | Rules implementation status   | ✅ Active                | Keep                         |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) | Code-verified status          | ✅ Active, canonical     | Keep                         |
+| `KNOWN_ISSUES.md`                                                                        | Bug/gap tracker               | ✅ Active                | Keep                         |
+| `STRATEGIC_ROADMAP.md`                                                                   | Phased implementation plan    | ✅ Active                | Keep                         |
+| `TODO.md`                                                                                | Task tracker                  | ✅ Active                | Keep                         |
+| `ringrift_complete_rules.md`                                                             | Complete rulebook             | ✅ Active, canonical     | Keep                         |
+| `ringrift_compact_rules.md`                                                              | Compact rules                 | ✅ Active, canonical     | Keep                         |
+| `RULES_CANONICAL_SPEC.md`                                                                | Rules specification           | ✅ Active                | Keep                         |
+| `RULES_ENGINE_ARCHITECTURE.md`                                                           | Rules engine arch             | ✅ Active                | Keep                         |
+| `RULES_IMPLEMENTATION_MAPPING.md`                                                        | Rules → code mapping          | ✅ Active                | Keep                         |
+| `RULES_SCENARIO_MATRIX.md`                                                               | Test scenario mapping         | ✅ Active                | Keep                         |
 
 **Analysis:** Root documentation is well-organized and within target count. All files serve clear purposes and are actively maintained.
 
@@ -162,7 +162,7 @@ Contains superseded documents that should be reviewed:
    - No conflicts identified
 
 4. **Status Documentation:**
-   - `CURRENT_STATE_ASSESSMENT.md` is canonical for implementation status
+   - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) is canonical for implementation status
    - `CURRENT_RULES_STATE.md` focuses specifically on rules implementation
    - `KNOWN_ISSUES.md` tracks active bugs/gaps
    - `TODO.md` tracks task-level work
@@ -1015,7 +1015,7 @@ will cause CI to fail until the corresponding mappings/docs/tests are updated, e
 
 **Documents Updated:**
 
-- `CURRENT_STATE_ASSESSMENT.md` - Updated with PASS20 completion status
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) - Updated with PASS20 completion status
 - `docs/PASS20_COMPLETION_SUMMARY.md` - Created comprehensive summary
 - `docs/PASS20_ASSESSMENT.md` - Created assessment report
 - `docs/TEST_CATEGORIES.md` - Created test categorization guide
@@ -1049,7 +1049,7 @@ will cause CI to fail until the corresponding mappings/docs/tests are updated, e
 
 **Documents Updated:**
 
-- `CURRENT_STATE_ASSESSMENT.md` - Updated observability score, added PASS21 summary, updated component scores
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) - Updated observability score, added PASS21 summary, updated component scores
 - `STRATEGIC_ROADMAP.md` - Marked monitoring/load testing items complete, updated load scenarios
 - `TODO.md` - Marked Wave 5 complete, added Wave 6 (observability) and Wave 7 (validation)
 - `PROJECT_GOALS.md` - Updated production readiness criteria, marked environment rollout complete

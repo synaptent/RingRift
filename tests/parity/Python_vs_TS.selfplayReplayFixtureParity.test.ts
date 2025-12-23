@@ -90,6 +90,7 @@ function loadStateBundles(fixturesDir: string): Array<{ path: string; bundle: St
   return result;
 }
 
+// SKIP-REASON: KEEP-SKIPPED - parity infrastructure completion pending; CI stability preserved
 describe.skip('Python vs TS self-play replay parity (DB fixtures)', () => {
   const fixturesDir = path.join(__dirname, '../../ai-service/parity_fixtures');
 
@@ -101,6 +102,7 @@ describe.skip('Python vs TS self-play replay parity (DB fixtures)', () => {
   }
 
   if (fixtureFiles.length === 0) {
+    // SKIP-REASON: fixture-dependent - requires parity fixtures from check_ts_python_replay_parity.py
     test.skip('No parity fixtures found – run ai-service/scripts/check_ts_python_replay_parity.py with --emit-fixtures-dir first', () => {});
     return;
   }
@@ -265,6 +267,7 @@ describe('Python vs TS state bundle parity (full dual-state comparison)', () => 
   const bundles = loadStateBundles(fixturesDir);
 
   if (bundles.length === 0) {
+    // SKIP-REASON: fixture-dependent - requires state bundles from check_ts_python_replay_parity.py
     test.skip('No state bundles found – run check_ts_python_replay_parity.py with --emit-state-bundles first', () => {});
     return;
   }

@@ -4,13 +4,13 @@
 >
 > **For current status and plans, see:**
 >
-> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+> - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 > - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)
 
 **Created:** November 13, 2025
 **Purpose:** Comprehensive plan for implementing Square (8x8, 19x19) and Hexagonal board support
 
-> **Historical Snapshot (Deprecated):** This plan reflects design thinking as of November 2025, before the current `BoardManager` and board-type configuration were fully implemented and tested. The authoritative description of board behaviour and implementation status now lives in `CURRENT_STATE_ASSESSMENT.md`, `CODEBASE_EVALUATION.md`, and `TODO.md` at the repository root. Treat this file as historical context only; do not use it as a source of truth for current behaviour or tasks.
+> **Historical Snapshot (Deprecated):** This plan reflects design thinking as of November 2025, before the current `BoardManager` and board-type configuration were fully implemented and tested. The authoritative description of board behaviour and implementation status now lives in [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md), `CODEBASE_EVALUATION.md`, and `TODO.md` at the repository root. Treat this file as historical context only; do not use it as a source of truth for current behaviour or tasks.
 
 ---
 

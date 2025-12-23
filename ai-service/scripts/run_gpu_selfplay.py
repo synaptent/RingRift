@@ -126,6 +126,34 @@ DEFAULT_WEIGHTS = {
     "defensive_weight": 0.3,
 }
 
+# Persona Weights (full 45-weight profiles from heuristic_weights.py)
+# =============================================================================
+try:
+    from app.ai.heuristic_weights import (
+        HEURISTIC_V1_BALANCED,
+        HEURISTIC_V1_AGGRESSIVE,
+        HEURISTIC_V1_TERRITORIAL,
+        HEURISTIC_V1_DEFENSIVE,
+    )
+    PERSONA_WEIGHTS = {
+        "balanced": dict(HEURISTIC_V1_BALANCED),
+        "aggressive": dict(HEURISTIC_V1_AGGRESSIVE),
+        "territorial": dict(HEURISTIC_V1_TERRITORIAL),
+        "defensive": dict(HEURISTIC_V1_DEFENSIVE),
+    }
+    HAS_PERSONAS = True
+except ImportError:
+    logger.warning("Could not import persona weights from heuristic_weights.py, using defaults")
+    PERSONA_WEIGHTS = {
+        "balanced": DEFAULT_WEIGHTS.copy(),
+        "aggressive": DEFAULT_WEIGHTS.copy(),
+        "territorial": DEFAULT_WEIGHTS.copy(),
+        "defensive": DEFAULT_WEIGHTS.copy(),
+    }
+    HAS_PERSONAS = False
+
+ALL_PERSONAS = list(PERSONA_WEIGHTS.keys())
+
 
 def _parse_move(move_dict: dict[str, Any], move_number: int, timestamp: str) -> Move:
     """Parse a move dict into a Move object."""
@@ -508,9 +536,11 @@ class GPUSelfPlayGenerator:
         canonical_export: bool = False,
         snapshot_interval: int = 0,
         record_policy: bool = False,
+        persona_pool: list[str] | None = None,
     ):
         self.board_size = board_size
         self.num_players = num_players
+        self.persona_pool = persona_pool
         self.batch_size = batch_size
         self.max_moves = max_moves
         self.device = device or get_device()
@@ -583,6 +613,11 @@ class GPUSelfPlayGenerator:
             random_opening_moves=random_opening_moves,
             record_policy=record_policy,
         )
+
+        # Store persona pool for per-batch rotation (handled in generate_batch)
+        if persona_pool:
+            logger.info(f"Persona pool ENABLED: {persona_pool}")
+            logger.info("  Weights will rotate through personas per batch")
 
         # Log shadow validation status
         if shadow_validation:
@@ -679,7 +714,18 @@ class GPUSelfPlayGenerator:
 
         start = time.time()
         # Pass None for random mode (uniform random), weights for heuristic mode
-        weights_list = None if self.weights is None else [self.weights] * self.batch_size
+        # For persona pool, rotate through personas per batch for training diversity
+        if self.persona_pool:
+            # Rotate through personas using batch index
+            batch_idx = self.total_games // self.batch_size
+            persona_idx = batch_idx % len(self.persona_pool)
+            persona_name = self.persona_pool[persona_idx]
+            batch_weights = PERSONA_WEIGHTS.get(persona_name, PERSONA_WEIGHTS["balanced"]).copy()
+            weights_list = [batch_weights] * self.batch_size
+        elif self.weights is None:
+            weights_list = None  # Uniform random
+        else:
+            weights_list = [self.weights] * self.batch_size
 
         # Clear pending snapshots and create callback if snapshot_interval enabled
         self._pending_snapshots.clear()
@@ -1085,6 +1131,7 @@ def run_gpu_selfplay(
     canonical_export: bool = False,
     snapshot_interval: int = 0,
     record_policy: bool = False,
+    persona_pool: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -1209,7 +1256,11 @@ def run_gpu_selfplay(
         canonical_export=canonical_export,
         snapshot_interval=snapshot_interval,
         record_policy=record_policy,
+        persona_pool=persona_pool,
     )
+
+    if persona_pool:
+        logger.info(f"Persona pool: {persona_pool} (full 45-weight profiles)")
 
     if record_policy:
         if not use_heuristic_selection:
@@ -1318,6 +1369,25 @@ def main():
         help="Multiplicative noise (0.0-1.0) for heuristic weights diversity",
     )
     parser.add_argument(
+        "--persona",
+        type=str,
+        default=None,
+        choices=["balanced", "aggressive", "territorial", "defensive", "mixed"],
+        help="Use persona-based weights (full 45-weight profiles). 'mixed' rotates through all personas.",
+    )
+    parser.add_argument(
+        "--per-player-personas",
+        action="store_true",
+        help="Assign different personas to different players (enables varied strategy matchups)",
+    )
+    parser.add_argument(
+        "--personas",
+        type=str,
+        default=None,
+        help="Comma-separated list of personas to use (e.g., 'balanced,aggressive,defensive'). "
+             "Each game randomly samples a persona from this pool. Uses full 45-weight profiles.",
+    )
+    parser.add_argument(
         "--use-policy",
         action="store_true",
         help="Use policy network for move selection",
@@ -1423,6 +1493,9 @@ def main():
             "snapshot_interval": getattr(parsed, "snapshot_interval", 0),
             "snapshot_db": getattr(parsed, "snapshot_db", None),
             "record_policy": getattr(parsed, "record_policy", False),
+            "persona": getattr(parsed, "persona", None),
+            "personas": getattr(parsed, "personas", None),
+            "per_player_personas": getattr(parsed, "per_player_personas", False),
         },
     )
 
@@ -1462,6 +1535,9 @@ def main():
         "snapshot_interval": selfplay_config.extra_options["snapshot_interval"],
         "snapshot_db": selfplay_config.extra_options["snapshot_db"],
         "record_policy": selfplay_config.extra_options["record_policy"],
+        "persona": selfplay_config.extra_options["persona"],
+        "personas": selfplay_config.extra_options["personas"],
+        "per_player_personas": selfplay_config.extra_options["per_player_personas"],
     })()
 
     if args.benchmark_only:
@@ -1482,11 +1558,51 @@ def main():
             )
         return
 
-    # Load weights if specified
+    # Load weights - persona takes priority over file
+    # Priority: --personas > --persona mixed > --persona <single> > --weights-file
     weights = None
-    if args.weights_file and args.weights_profile:
+    persona_pool = None
+    persona = getattr(args, "persona", None)
+    personas_arg = getattr(args, "personas", None)
+    per_player_personas = getattr(args, "per_player_personas", False)
+
+    if personas_arg:
+        # --personas takes highest priority: comma-separated list of personas
+        persona_pool = [p.strip() for p in personas_arg.split(",") if p.strip()]
+        # Validate all personas exist
+        valid_personas = set(ALL_PERSONAS)
+        invalid = [p for p in persona_pool if p not in valid_personas]
+        if invalid:
+            logger.warning(f"Unknown personas ignored: {invalid}. Valid: {ALL_PERSONAS}")
+            persona_pool = [p for p in persona_pool if p in valid_personas]
+        if persona_pool:
+            weights = None  # Let ParallelGameRunner handle per-game weights from pool
+            logger.info(f"Using custom persona pool: {persona_pool}")
+            logger.info("  Each game samples a random persona (full 45-weight profiles)")
+            if not args.use_heuristic:
+                logger.info("Persona mode enables heuristic-based move selection")
+                args.use_heuristic = True
+    elif persona:
+        if persona == "mixed":
+            # For mixed mode, use persona_pool for per-game variety (full 45-weight profiles)
+            persona_pool = ALL_PERSONAS.copy()
+            weights = None  # Let ParallelGameRunner handle per-game weights from pool
+            logger.info(f"Using MIXED persona mode with persona_pool: {persona_pool}")
+            logger.info("  Each game samples a random persona (full 45-weight profiles)")
+        else:
+            # Single persona - use its full weights
+            weights = PERSONA_WEIGHTS.get(persona, PERSONA_WEIGHTS["balanced"]).copy()
+            logger.info(f"Using {persona} persona weights ({len(weights)} heuristic weights)")
+        # Persona implies heuristic selection
+        if not args.use_heuristic:
+            logger.info("Persona mode enables heuristic-based move selection")
+            args.use_heuristic = True
+    elif args.weights_file and args.weights_profile:
         weights = load_weights_from_profile(args.weights_file, args.weights_profile)
         logger.info(f"Loaded weights from {args.weights_file}:{args.weights_profile}")
+
+    if per_player_personas and persona:
+        logger.info("Per-player personas: ENABLED (each player uses different weights)")
 
     # Resource guard: Check disk/memory/GPU before starting (80% limits)
     # Also import graceful degradation functions for dynamic resource management
@@ -1603,6 +1719,7 @@ def main():
             canonical_export=args.canonical_export,
             snapshot_interval=args.snapshot_interval,
             record_policy=args.record_policy,
+            persona_pool=persona_pool,
         )
     finally:
         # Stop ramdrive syncer and perform final sync

@@ -615,13 +615,13 @@ To enable full evaluation parity:
 
 ## Related Documents
 
-| Document                             | Purpose                     |
-| ------------------------------------ | --------------------------- |
-| `GPU_PIPELINE_ROADMAP.md`            | Detailed technical roadmap  |
-| `GPU_ARCHITECTURE_SIMPLIFICATION.md` | Architecture cleanup status |
-| `RULES_CANONICAL_SPEC.md`            | Canonical rules SSOT        |
-| `CURRENT_STATE_ASSESSMENT.md`        | Project status snapshot     |
-| `TODO.md`                            | Task tracking               |
+| Document                                                     | Purpose                     |
+| ------------------------------------------------------------ | --------------------------- |
+| `GPU_PIPELINE_ROADMAP.md`                                    | Detailed technical roadmap  |
+| `GPU_ARCHITECTURE_SIMPLIFICATION.md`                         | Architecture cleanup status |
+| `RULES_CANONICAL_SPEC.md`                                    | Canonical rules SSOT        |
+| [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) | Project status snapshot     |
+| `TODO.md`                                                    | Task tracking               |
 
 ---
 

@@ -7,7 +7,7 @@ Last updated: 2025-11-30 (PASS18 in-progress).
 - Task: PASS18-ARCH-REASSESS – full-project reassessment of weakest aspect, hardest outstanding problem, and doc/test freshness after ANM/termination remediation.
 - Primary references so far:
   - [PROJECT_GOALS.md](PROJECT_GOALS.md:1)
-  - [CURRENT_STATE_ASSESSMENT.md](CURRENT_STATE_ASSESSMENT.md:1)
+  - [CURRENT_STATE_ASSESSMENT.md](../historical/CURRENT_STATE_ASSESSMENT.md:1)
   - [CURRENT_RULES_STATE.md](CURRENT_RULES_STATE.md:1)
   - [PASS16_ASSESSMENT_REPORT.md](docs/PASS16_ASSESSMENT_REPORT.md:1)
   - [PASS17_ASSESSMENT_REPORT.md](docs/PASS17_ASSESSMENT_REPORT.md:1)
@@ -83,7 +83,7 @@ Current leaning: **H1+H2 together** describe the hardest outstanding problem: ex
 
 ## 5. Documentation alignment notes (core docs audited so far)
 
-- **[CURRENT_STATE_ASSESSMENT.md](CURRENT_STATE_ASSESSMENT.md:1)**
+- **[CURRENT_STATE_ASSESSMENT.md](../historical/CURRENT_STATE_ASSESSMENT.md:1)**
   - Status: **Snapshot accurate as of 2025-11-27, but now stale w.r.t. local test results.**
   - Claims: "1629+ TS tests, 245 Python tests" and "TypeScript tests: 1629+ tests passing" with all core suites green.
   - Current local Jest run shows multiple failing TS suites in advanced capture/territory/parity/AI RNG areas, so these "all passing" statements are no longer factually correct for the current workspace.
@@ -349,4 +349,4 @@ Sources reviewed:
   - The implementation currently allows minor deviations in wording/structure as long as the key substrings are present, which matches the guidance in `SSOT_BANNER_GUIDE.md`.
 - PASS18 view:
   - SSoT banners are **consistently present** in the reviewed docs; this reduces the risk that future edits silently demote canonical semantics or architecture docs to “just another markdown”.
-  - For PASS18, the main alignment work is **semantic**: ensuring that the _content_ of these SSoT-aligned docs (especially `PROJECT_GOALS.md`, `CURRENT_STATE_ASSESSMENT.md`, `CURRENT_RULES_STATE.md`, and the indices) matches the latest weakest-aspect/hardest-problem framing and test reality, without weakening the SSoT structure itself.
+  - For PASS18, the main alignment work is **semantic**: ensuring that the _content_ of these SSoT-aligned docs (especially `PROJECT_GOALS.md`, [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md), `CURRENT_RULES_STATE.md`, and the indices) matches the latest weakest-aspect/hardest-problem framing and test reality, without weakening the SSoT structure itself.

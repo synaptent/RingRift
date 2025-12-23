@@ -214,7 +214,7 @@ test.describe('Visual Regression Tests', () => {
       if (hasTouchControls) {
         await expect(touchControls).toHaveScreenshot('sandbox-touch-controls.png');
       } else {
-        // Skip screenshot if not in local sandbox mode
+        // SKIP-REASON: environment-dependent - requires local sandbox mode with touch controls
         test.skip();
       }
     });
@@ -264,6 +264,7 @@ test.describe('Visual Regression Tests', () => {
   });
 
   test.describe('Victory Modal Screenshots', () => {
+    // SKIP-REASON: KEEP-SKIPPED - covered by scenario-driven E2E; keeping baseline suite backend-independent
     test.skip(
       'victory modal screenshots are covered by scenario-driven E2E runs; keeping the baseline suite backend-independent'
     );

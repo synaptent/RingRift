@@ -802,7 +802,7 @@ Measurable outcomes:
 
 - [`docs/PASS21_ASSESSMENT_REPORT.md`](PASS21_ASSESSMENT_REPORT.md) - Observability infrastructure
 - [`docs/PASS20_COMPLETION_SUMMARY.md`](PASS20_COMPLETION_SUMMARY.md) - Phase 3 completion
-- [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) - Current status snapshot
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) - Current status snapshot
 
 **Technical Foundation:**
 

@@ -653,6 +653,7 @@ describe('FSMAdapter - Branch Coverage', () => {
   // but there's a test environment issue. Coverage for this function is
   // adequately tested through integration with validateMoveWithFSM.
   // ===========================================================================
+  // SKIP-REASON: KEEP-SKIPPED - test env issue; validateEvent covered via validateMoveWithFSM integration
   describe.skip('validateEvent', () => {
     it('should validate PLACE_RING event in ring_placement phase', () => {
       const state = createTestGameState({ currentPhase: 'ring_placement', currentPlayer: 1 });

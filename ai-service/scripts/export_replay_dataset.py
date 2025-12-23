@@ -27,23 +27,30 @@ recorded games, with an outcome label derived from the final player ranking.
 
 Usage examples (from ai-service/):
 
-    # Basic: export square8 2p samples from a single DB
-    OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=. \\
-      python scripts/export_replay_dataset.py \\
+    # Basic: export square8 2p samples (parallel by default, uses CPU_COUNT-1 workers)
+    python scripts/export_replay_dataset.py \\
         --db data/games/selfplay_square8_2p.db \\
         --board-type square8 \\
         --num-players 2 \\
         --output data/training/from_replays.square8_2p.npz
 
-    # Quality-filtered export with rank-aware values
-    OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=. \\
-      python scripts/export_replay_dataset.py \\
+    # Quality-filtered export with explicit worker count
+    python scripts/export_replay_dataset.py \\
         --db data/games/selfplay_square8_3p.db \\
         --board-type square8 \\
         --num-players 3 \\
+        --workers 16 \\
         --require-completed \\
         --min-moves 20 \\
         --output data/training/from_replays.square8_3p.npz
+
+    # Single-threaded mode (for debugging or when parallel causes issues)
+    python scripts/export_replay_dataset.py \\
+        --db data/games/selfplay_square8_2p.db \\
+        --board-type square8 \\
+        --num-players 2 \\
+        --single-threaded \\
+        --output data/training/debug.npz
 
     # Incremental export with caching (skip if DBs unchanged)
     python scripts/export_replay_dataset.py \\
@@ -934,18 +941,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--parallel",
+        "--single-threaded",
         action="store_true",
         help=(
-            "Use parallel encoding with multiple CPU cores. "
-            "10-20x faster on multi-core systems. Recommended for large datasets."
+            "Disable parallel encoding and use single-threaded mode. "
+            "Default is parallel mode which is 10-20x faster on multi-core systems."
         ),
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=None,
-        help="Number of worker processes for parallel mode (default: CPU count - 1)",
+        help=(
+            "Number of worker processes for parallel mode (default: CPU count - 1). "
+            "Set to 1 for single-threaded mode (same as --single-threaded)."
+        ),
     )
     parser.add_argument(
         "--allow-noncanonical",
@@ -996,15 +1006,23 @@ def main(argv: list[str] | None = None) -> int:
         error_prefix="export-replay-dataset",
     )
 
-    # Use parallel export if requested
-    if args.parallel:
+    # Determine parallelism: default is parallel unless --single-threaded or --workers=1
+    use_parallel = not args.single_threaded and (args.workers is None or args.workers > 1)
+
+    # Use parallel export by default (10-20x faster on multi-core systems)
+    if use_parallel:
         from scripts.export_replay_dataset_parallel import export_parallel
-        export_parallel(
+        num_workers = args.workers
+        if num_workers is None:
+            import os
+            num_workers = max(1, (os.cpu_count() or 4) - 1)
+        print(f"[PARALLEL] Using {num_workers} worker processes for encoding")
+        result = export_parallel(
             db_paths=args.db_paths,
             board_type=board_type,
             num_players=args.num_players,
             output_path=args.output,
-            num_workers=args.workers,
+            num_workers=num_workers,
             encoder_version=args.encoder_version,
             history_length=args.history_length,
             feature_version=args.feature_version,
@@ -1018,7 +1036,10 @@ def main(argv: list[str] | None = None) -> int:
             use_cache=args.use_cache,
             force_export=args.force_export,
         )
-        return 0
+        return 0 if result else 1
+
+    # Single-threaded mode (legacy, for debugging or when parallelism causes issues)
+    print("[SINGLE-THREADED] Using sequential encoding (use --workers N for parallel mode)")
 
     # Check cache if enabled
     if args.use_cache:

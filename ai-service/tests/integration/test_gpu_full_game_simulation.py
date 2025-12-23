@@ -156,6 +156,7 @@ class TestFullGameSimulation:
                     victory_type in valid_victory_types
                 ), f"Game {g} has invalid victory type: {victory_type}"
 
+    # SKIP-REASON: KEEP-SKIPPED - known GPU runner invariant bug; cap_height can exceed stack_height
     @pytest.mark.skip(reason="Known issue: cap_height can exceed stack_height in GPU runner - needs investigation")
     def test_state_invariants_after_completion(self, device):
         """State invariants should hold after game completion."""

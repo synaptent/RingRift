@@ -416,6 +416,7 @@ class TestApplyPlacementMovesBatch:
         assert state.move_history[0, 0, 3].item() == 5  # x
 
 
+# SKIP-REASON: KEEP-SKIPPED - legacy functions removed; use vectorized implementations
 @pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
 class TestApplyPlacementLegacy:
     """Tests for _apply_placement_moves_batch_legacy."""
@@ -515,6 +516,7 @@ class TestApplyMovementMovesBatch:
         assert state.move_count[0].item() == 0
 
 
+# SKIP-REASON: KEEP-SKIPPED - legacy functions removed; use vectorized implementations
 @pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
 class TestApplyMovementLegacy:
     """Tests for _apply_movement_moves_batch_legacy."""
@@ -614,6 +616,7 @@ class TestApplyCaptureMovesBatch:
         assert state.move_history[0, 0, 3].item() == 2  # from_x
 
 
+# SKIP-REASON: KEEP-SKIPPED - legacy functions removed; use vectorized implementations
 @pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
 class TestApplyCaptureLegacy:
     """Tests for _apply_capture_moves_batch_legacy."""

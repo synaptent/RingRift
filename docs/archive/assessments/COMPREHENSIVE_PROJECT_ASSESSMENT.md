@@ -405,13 +405,13 @@ The following diagrams would improve architecture documentation:
 
 ## Appendix C: Related Documentation
 
-| Document                                                | Purpose                     |
-| ------------------------------------------------------- | --------------------------- |
-| `PROJECT_GOALS.md`                                      | Authoritative project goals |
-| `CURRENT_STATE_ASSESSMENT.md`                           | Implementation status       |
-| `STRATEGIC_ROADMAP.md`                                  | Phased execution plan       |
-| `docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md` | Engine consolidation        |
-| `docs/supplementary/TEST_SKIPPED_TRIAGE.md`             | Skipped test triage         |
+| Document                                                                                 | Purpose                     |
+| ---------------------------------------------------------------------------------------- | --------------------------- |
+| `PROJECT_GOALS.md`                                                                       | Authoritative project goals |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) | Implementation status       |
+| `STRATEGIC_ROADMAP.md`                                                                   | Phased execution plan       |
+| `docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md`                                  | Engine consolidation        |
+| `docs/supplementary/TEST_SKIPPED_TRIAGE.md`                                              | Skipped test triage         |
 
 ---
 

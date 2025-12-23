@@ -6,7 +6,7 @@
 > - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – Production rollout status (Phase 4 complete)
 > - `docs/RULES_SSOT_MAP.md` – Current host integration and SSOT boundaries
 > - `RULES_ENGINE_ARCHITECTURE.md` – Current architecture overview
-> - `CURRENT_STATE_ASSESSMENT.md` – Implementation status
+> - [`historical/CURRENT_STATE_ASSESSMENT.md`](historical/CURRENT_STATE_ASSESSMENT.md) – Implementation status
 >
 > **SSoT alignment:** This document is a derived architectural design over the **Rules/invariants semantics SSoT** and the **Canonical TS rules surface**:
 >

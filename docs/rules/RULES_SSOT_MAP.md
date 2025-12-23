@@ -4,7 +4,7 @@
 > **Role:** Derived overview for maintainers; does not introduce new rules semantics or APIs.  
 > **Upstream semantics SSoT:** [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md), `ringrift_complete_rules.md`, `ringrift_compact_rules.md`, and the shared TS engine + orchestrator under [`src/shared/engine`](src/shared/engine).  
 > **Upstream lifecycle/API SSoT:** [`docs/CANONICAL_ENGINE_API.md`](docs/CANONICAL_ENGINE_API.md), shared types in [`src/shared/types/game.ts`](src/shared/types/game.ts), orchestrator types in [`src/shared/engine/orchestration/types.ts`](src/shared/engine/orchestration/types.ts), and WebSocket contracts in [`src/shared/types/websocket.ts`](src/shared/types/websocket.ts) and [`src/shared/validation/websocketSchemas.ts`](src/shared/validation/websocketSchemas.ts).  
-> **Upstream implementation-status SSoT:** [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md).  
+> **Upstream implementation-status SSoT:** [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](../archive/historical/CURRENT_STATE_ASSESSMENT.md).  
 > **This doc:** Clarifies what is canonical vs historical/diagnostic for rules execution across TS backend, sandbox, and Python, and records known drift items for follow-up tasks.
 
 ---
@@ -70,7 +70,7 @@ The hierarchy below orders sources by normative authority. Higher bullets win on
 
 **7. Implementation status / meta-docs (status only, non-semantic)**
 
-- Implementation status and gaps: [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md).
+- Implementation status and gaps: [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
 - Rules implementation mapping and traceability: [`RULES_IMPLEMENTATION_MAPPING.md`](RULES_IMPLEMENTATION_MAPPING.md).
 - Historical and archival analyses under [`archive/`](archive/FINAL_RULES_AUDIT_REPORT.md:1).
 
@@ -233,7 +233,7 @@ The items below are **known inconsistencies or ambiguities** between docs, code,
    - _Follow-up:_ P17.3-ASK – Update that section to reference the existing runbook and align language with the rollout phases and SLOs in [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](docs/ORCHESTRATOR_ROLLOUT_PLAN.md:927).
 
 2. **Historical wording about backend adapter migration**
-   - [`docs/CANONICAL_ENGINE_API.md` §3.9.2](docs/CANONICAL_ENGINE_API.md:951) still describes the `TurnEngineAdapter` path as something that “will become the primary entry point as Phase 3 migration completes”, while [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §7.1](docs/ORCHESTRATOR_ROLLOUT_PLAN.md:793) and [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:30) already treat the orchestrator-backed adapter as the canonical backend path (with legacy pipelines quarantined).
+   - [`docs/CANONICAL_ENGINE_API.md` §3.9.2](docs/CANONICAL_ENGINE_API.md:951) still describes the `TurnEngineAdapter` path as something that “will become the primary entry point as Phase 3 migration completes”, while [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §7.1](docs/ORCHESTRATOR_ROLLOUT_PLAN.md:793) and [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](CURRENT_STATE_ASSESSMENT.md:30) already treat the orchestrator-backed adapter as the canonical backend path (with legacy pipelines quarantined).
    - _Follow-up:_ P17.3-ASK – Refresh wording in `CANONICAL_ENGINE_API` to describe `TurnEngineAdapter` / `processTurnAsync` as the **current** canonical backend integration path, and explicitly mark `RuleEngine.processMove` and the legacy `GameEngine` pipeline as diagnostics-only.
 
 3. **Partial-historical aggregate design doc vs implemented single-file aggregates**
@@ -253,7 +253,7 @@ The items below are **known inconsistencies or ambiguities** between docs, code,
    - _Follow-up:_ P17.3-ASK / P17.6-CODE – Decide whether to tighten Python type modelling for `VictoryReason`/`GameResult` and other noted gaps, or to explicitly document them as “intentionally simplified” with no behavioural impact, to avoid future confusion when evolving TS types.
 
 7. **Sandbox diagnostics vs canonical `/sandbox` flows**
-   - [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §7.2](docs/ORCHESTRATOR_ROLLOUT_PLAN.md:811) and [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:90) describe `/sandbox` as fully orchestrator-backed, while some older analyses and tests still treat legacy sandbox engines and helpers (`sandboxTerritoryEngine`, `sandboxLinesEngine`) as active components. Those modules have been removed or demoted, but a few doc references and archived tests remain.
+   - [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §7.2](docs/ORCHESTRATOR_ROLLOUT_PLAN.md:811) and [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](CURRENT_STATE_ASSESSMENT.md:90) describe `/sandbox` as fully orchestrator-backed, while some older analyses and tests still treat legacy sandbox engines and helpers (`sandboxTerritoryEngine`, `sandboxLinesEngine`) as active components. Those modules have been removed or demoted, but a few doc references and archived tests remain.
    - _Follow-up:_ P17.3-ASK / P17.6-CODE – Sweep docs and tests for references to removed sandbox engines, updating them to point at `ClientSandboxEngine` + `SandboxOrchestratorAdapter` and moving any remaining legacy tests into `archive/` with explicit SSOT banners.
 
 ---

@@ -3,7 +3,7 @@
 > **⚠️ SUPERSEDED BY PASS18B** – This assessment was superseded by PASS18B on November 30, 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS18B_ASSESSMENT_REPORT.md` – Most recent assessment pass
 > - `docs/PASS18A_ASSESSMENT_REPORT.md` – Intermediate assessment pass
 
@@ -94,7 +94,7 @@ Moving from "design complete" to "production reality" for the orchestrator-first
   - Now explicitly identifies **host integration & deep multi-engine parity** as the current highest-risk semantics area and orchestrator rollout as the hardest outstanding problem (see §3.4).
   - **PASS18 implication:** treat this as the SSoT for risk framing; any index or overview docs that still describe ANM/forced-elimination as the "current highest-risk" semantics area are stale and should be updated to match.
 
-- **`CURRENT_STATE_ASSESSMENT.md`:**
+- **[`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md):**
   - Claims "1629+ TS tests, 245 Python tests" and "TypeScript tests: 1629+ tests passing".
   - Current local Jest results show multiple failing TS suites in advanced capture, territory, parity, and AI RNG areas, so these "all passing" statements are only historically correct.
   - **Recommended action:** emphasise the assessment date and treat the numbers as a snapshot; point readers to CI dashboards or a light-weight `CURRENT_TEST_HEALTH` note for live status.

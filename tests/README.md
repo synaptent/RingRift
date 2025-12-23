@@ -289,7 +289,7 @@ diagnostic/extended profiles:
 
 In documentation:
 
-- **PASS19B_ASSESSMENT_REPORT.md** and **CURRENT_STATE_ASSESSMENT.md** report counts for the **CI‑gated** profile.
+- **PASS19B_ASSESSMENT_REPORT.md** and **docs/archive/historical/CURRENT_STATE_ASSESSMENT.md** report counts for the **CI‑gated** profile.
 - **PASS20_ASSESSMENT.md** and `jest-results.json` analyse the broader **extended/diagnostic** profile. When interpreting failures there, cross‑check `KNOWN_ISSUES.md` and `docs/PARITY_SEED_TRIAGE.md` to distinguish expected diagnostics from regressions.
 
 ### Mapping jest-results.json failures to TEST_CATEGORIES (P0-TEST-003)

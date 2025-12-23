@@ -5,7 +5,7 @@
 > **For current architecture and plans, see:**
 >
 > - [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)
-> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+> - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 
 ## Executive Summary
 

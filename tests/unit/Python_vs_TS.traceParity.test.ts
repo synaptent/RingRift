@@ -76,6 +76,7 @@ describe('Python vs TS Trace Parity', () => {
   }
 
   if (traceFiles.length === 0) {
+    // SKIP-REASON: vector-dependent - requires test vectors from generate_test_vectors.py
     test.skip('No test vectors found', () => {});
     return;
   }

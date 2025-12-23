@@ -2,13 +2,25 @@
 """
 Parallel export of training samples from GameReplayDB replays.
 
-This is a parallelized version of export_replay_dataset.py that uses
-ProcessPoolExecutor to encode games across multiple CPU cores.
+NOTE: This is now the default behavior in export_replay_dataset.py.
+You can use either script - export_replay_dataset.py now uses parallel
+encoding by default (use --single-threaded to disable).
+
+This module provides the ParallelEncoder class and export_parallel() function
+that are used by export_replay_dataset.py for its default parallel mode.
 
 Performance improvement: ~10-20x faster on multi-core systems.
 
-Usage:
-    PYTHONPATH=. python scripts/export_replay_dataset_parallel.py \\
+Recommended usage (via main script):
+    python scripts/export_replay_dataset.py \\
+        --db data/games/jsonl_aggregated.db \\
+        --board-type hexagonal \\
+        --num-players 2 \\
+        --output data/training/hex_2p_parallel.npz \\
+        --workers 16
+
+Direct usage (still supported):
+    python scripts/export_replay_dataset_parallel.py \\
         --db data/games/jsonl_aggregated.db \\
         --board-type hexagonal \\
         --num-players 2 \\

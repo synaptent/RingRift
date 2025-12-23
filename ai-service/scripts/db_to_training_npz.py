@@ -1,10 +1,20 @@
 #!/usr/bin/env python
 """Export training data from SQLite game databases to NPZ format.
 
+DEPRECATED: Use export_replay_dataset.py instead, which is faster (parallel by default)
+and has more features. This script is kept for legacy compatibility.
+
+Recommended:
+    python scripts/export_replay_dataset.py \
+        --db data/selfplay/hex8_policy_c/games.db \
+        --output data/training/hex8_2p_export.npz \
+        --board-type hex8 \
+        --num-players 2
+
 Uses GameReplayDB.get_state_at_move() to properly reconstruct states,
 then encodes them for neural network training.
 
-Usage:
+Legacy usage:
     python scripts/db_to_training_npz.py \
         --db data/selfplay/hex8_policy_c/games.db \
         --output data/training/hex8_2p_export.npz \
@@ -373,6 +383,16 @@ def export_db_to_npz(
 
 
 def main():
+    import warnings
+    warnings.warn(
+        "db_to_training_npz.py is deprecated. Use export_replay_dataset.py instead "
+        "(parallel by default, 10-20x faster).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    logger.warning(
+        "DEPRECATED: Use 'python scripts/export_replay_dataset.py' instead for faster parallel exports"
+    )
     parser = argparse.ArgumentParser(description="Export game DB to training NPZ")
     parser.add_argument("--db", type=str, required=True, help="Path to game database")
     parser.add_argument("--output", type=str, required=True, help="Output NPZ path")

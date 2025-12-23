@@ -4,7 +4,7 @@
 **Scope:** Server, client, shared engine, Python AI service, tests, and infrastructure
 
 > This document supersedes the historical analysis in `deprecated/CODEBASE_EVALUATION.md`.
-> For day‑to‑day status, see `CURRENT_STATE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, and `TODO.md`. This file provides a stable, high‑level evaluation
+> For day‑to‑day status, see [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md), `KNOWN_ISSUES.md`, and `TODO.md`. This file provides a stable, high‑level evaluation
 > of architecture, implementation quality, and strategic risks.
 
 ---
@@ -111,7 +111,7 @@ High‑level rating (current snapshot):
 
 - `ringrift_complete_rules.md` / `ringrift_compact_rules.md` and
   `docs/supplementary/RULES_TERMINATION_ANALYSIS.md` define the rules and S‑invariant precisely.
-- `CURRENT_STATE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, `STRATEGIC_ROADMAP.md`, and `TODO.md` are kept in sync with the code and tests.
+- [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md), `KNOWN_ISSUES.md`, `STRATEGIC_ROADMAP.md`, and `TODO.md` are kept in sync with the code and tests.
 - `RULES_SCENARIO_MATRIX.md` and `tests/README.md` map rules/FAQ sections to specific
   Jest suites.
 
@@ -180,7 +180,7 @@ These align with the execution tracks in `TODO.md` and `STRATEGIC_ROADMAP.md`.
 
 ## 📎 Relationship to Other Documents
 
-- `CURRENT_STATE_ASSESSMENT.md` – granular, code‑verified status by component.
+- [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) – granular, code‑verified status by component.
 - `KNOWN_ISSUES.md` – P0/P1 issues and gaps; should always be read together
   with this evaluation.
 - `STRATEGIC_ROADMAP.md` – phased roadmap from engine/AI beta to production.

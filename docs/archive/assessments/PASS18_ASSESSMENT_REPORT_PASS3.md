@@ -24,7 +24,7 @@
   - **Accessibility:** Confirmed 55 ARIA attributes across key components.
   - **Type Safety:** Maintained 0 TypeScript errors; identified remaining `any` casts.
   - **Test Health:** 2,670 tests passing (TS), 824 tests passing (Python).
-  - **Documentation:** Core docs (`PROJECT_GOALS.md`, `CURRENT_STATE_ASSESSMENT.md`) are being aligned to reflect the shift from Backend/Rules risks to Frontend/Maintenance tasks.
+  - **Documentation:** Core docs (`PROJECT_GOALS.md`, [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)) are being aligned to reflect the shift from Backend/Rules risks to Frontend/Maintenance tasks.
 
 ---
 

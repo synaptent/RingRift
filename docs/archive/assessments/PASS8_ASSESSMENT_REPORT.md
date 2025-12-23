@@ -3,7 +3,7 @@
 > **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
 
 > **Assessment Date:** 2025-11-27

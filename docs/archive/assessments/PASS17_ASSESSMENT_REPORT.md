@@ -3,7 +3,7 @@
 > **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
 
 > **Assessment Date:** 2025-11-30
@@ -13,7 +13,7 @@
 > This pass builds on PASS8–PASS16, the consolidated shared engine, and the
 > current status/roadmap docs:
 >
-> - `CURRENT_STATE_ASSESSMENT.md`
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)
 > - `STRATEGIC_ROADMAP.md`
 > - `TODO.md`
 > - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`
@@ -250,7 +250,7 @@ concrete follow‑ups rather than replacing their existing P0/P1 tracks.
 2. **P17.B – Orchestrator Rollout Execution (P0, Env/Ops)**
    - Document the **current** rollout phase per environment (even if only in
      an internal ops note) and cross‑link it from
-     `CURRENT_STATE_ASSESSMENT.md` / `WEAKNESS_ASSESSMENT_REPORT.md`.
+     [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) / `WEAKNESS_ASSESSMENT_REPORT.md`.
    - Run at least one full **Phase 1 – Staging orchestrator‑only** bake‑in
      window with SLOs monitored, and capture findings for future passes.
    - Plan and execute a controlled **Phase 2 – Production shadow** trial using

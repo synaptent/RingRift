@@ -7,7 +7,7 @@
 
 > **Doc Status (2025-12-01): Active (historical assessment)**  
 > Comprehensive assessment following PASS20 completion, identifying the project's weakest aspect, hardest unsolved problem, and critical gaps for production readiness.  
-> **Note:** Several observability gaps called out here (Grafana dashboards, k6 scenarios, monitoring profile defaults) were addressed during PASS21 and PASS22; see `CURRENT_STATE_ASSESSMENT.md` and `PASS22_COMPLETION_SUMMARY.md` for the up‑to‑date implementation status.
+> **Note:** Several observability gaps called out here (Grafana dashboards, k6 scenarios, monitoring profile defaults) were addressed during PASS21 and PASS22; see [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) and `PASS22_COMPLETION_SUMMARY.md` for the up‑to‑date implementation status.
 
 ---
 
@@ -73,7 +73,7 @@ It **completely lacks**:
 2. **Monitoring Stack Optional, Not Default (pre‑PASS21)**
    - At assessment time, Prometheus/Grafana ran under a `monitoring` profile in `docker-compose.yml` and had to be enabled explicitly via `docker compose --profile monitoring up`.
    - This meant monitoring was not part of the standard deployment workflow and operators could not observe system health without manual intervention.
-   - Subsequent passes (PASS21/PASS22) moved the monitoring stack toward the default posture described in `CURRENT_STATE_ASSESSMENT.md`.
+   - Subsequent passes (PASS21/PASS22) moved the monitoring stack toward the default posture described in [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md).
 
 3. **Load Testing Incomplete (pre‑k6 framework)**
    - At assessment time, only a minimal smoke test (`npm run load:orchestrator:smoke`) existed.
@@ -83,7 +83,7 @@ It **completely lacks**:
 4. **Operational Procedures Not Rehearsed**
    - `docs/runbooks/SECRETS_ROTATION_DRILL.md` - exists but status: "not yet exercised"
    - `docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md` - "not yet institutionalized"
-   - `CURRENT_STATE_ASSESSMENT.md:349-350`: Drills "documented, but have not yet been exercised as part of a formal security review"
+   - `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:349-350`: Drills "documented, but have not yet been exercised as part of a formal security review"
    - **No evidence** of:
      - Actual secret rotation execution
      - Database backup/restore validation
@@ -234,22 +234,22 @@ Deploying RingRift to production at the documented target scale (100+ concurrent
 
 ### 4.1 Documents Verified Accurate
 
-| Document                          | Last Updated | Verification Status                                   |
-| :-------------------------------- | :----------- | :---------------------------------------------------- |
-| `CURRENT_STATE_ASSESSMENT.md`     | 2025-12-01   | ✅ Accurate: test counts, component scores match code |
-| `PASS20_COMPLETION_SUMMARY.md`    | 2025-12-01   | ✅ Accurate: subtask completions verified             |
-| `PROJECT_GOALS.md`                | 2025-11-27   | ✅ Accurate: goals align with implementation          |
-| `KNOWN_ISSUES.md`                 | 2025-12-01   | ✅ Accurate: issues match actual code state           |
-| `TODO.md`                         | 2025-11-30   | ✅ Accurate: tracks match roadmap                     |
-| `docs/TEST_CATEGORIES.md`         | 2025-12-01   | ✅ Accurate: test categories match actual suites      |
-| `ARCHITECTURE_ASSESSMENT.md`      | 2025-11-27   | ✅ Accurate: architecture matches implementation      |
-| `WEAKNESS_ASSESSMENT_REPORT.md`   | 2025-12-01   | ✅ Accurate: historical assessments documented        |
-| `docs/SECURITY_THREAT_MODEL.md`   | 2025-11-27   | ✅ Accurate: threats/controls match code              |
-| `docs/DEPLOYMENT_REQUIREMENTS.md` | 2025-11-27   | ✅ Accurate: Docker configs match                     |
-| `src/server/config/env.ts`        | Current      | ✅ Accurate: schema validated against usage           |
-| `prisma/schema.prisma`            | Current      | ✅ Accurate: migrations align with schema             |
-| `package.json`                    | Current      | ✅ Accurate: scripts and deps verified                |
-| `ai-service/requirements.txt`     | Current      | ✅ Accurate: Python deps up-to-date                   |
+| Document                                                                                 | Last Updated | Verification Status                                   |
+| :--------------------------------------------------------------------------------------- | :----------- | :---------------------------------------------------- |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) | 2025-12-01   | ✅ Accurate: test counts, component scores match code |
+| `PASS20_COMPLETION_SUMMARY.md`                                                           | 2025-12-01   | ✅ Accurate: subtask completions verified             |
+| `PROJECT_GOALS.md`                                                                       | 2025-11-27   | ✅ Accurate: goals align with implementation          |
+| `KNOWN_ISSUES.md`                                                                        | 2025-12-01   | ✅ Accurate: issues match actual code state           |
+| `TODO.md`                                                                                | 2025-11-30   | ✅ Accurate: tracks match roadmap                     |
+| `docs/TEST_CATEGORIES.md`                                                                | 2025-12-01   | ✅ Accurate: test categories match actual suites      |
+| `ARCHITECTURE_ASSESSMENT.md`                                                             | 2025-11-27   | ✅ Accurate: architecture matches implementation      |
+| `WEAKNESS_ASSESSMENT_REPORT.md`                                                          | 2025-12-01   | ✅ Accurate: historical assessments documented        |
+| `docs/SECURITY_THREAT_MODEL.md`                                                          | 2025-11-27   | ✅ Accurate: threats/controls match code              |
+| `docs/DEPLOYMENT_REQUIREMENTS.md`                                                        | 2025-11-27   | ✅ Accurate: Docker configs match                     |
+| `src/server/config/env.ts`                                                               | Current      | ✅ Accurate: schema validated against usage           |
+| `prisma/schema.prisma`                                                                   | Current      | ✅ Accurate: migrations align with schema             |
+| `package.json`                                                                           | Current      | ✅ Accurate: scripts and deps verified                |
+| `ai-service/requirements.txt`                                                            | Current      | ✅ Accurate: Python deps up-to-date                   |
 
 ### 4.2 Documents with Inaccuracies
 
@@ -517,7 +517,7 @@ Deploying RingRift to production at the documented target scale (100+ concurrent
 
 - 🔴 **Secrets rotation drill not rehearsed** - Documented but never executed
 - 🔴 **Backup/restore drill not rehearsed** - Critical recovery path untested
-- 🟡 **No security review** - Drills "not yet been exercised as part of a formal security review" (CURRENT_STATE_ASSESSMENT.md:350)
+- 🟡 **No security review** - Drills "not yet been exercised as part of a formal security review" (../historical/CURRENT_STATE_ASSESSMENT.md:350)
 - 🟡 **Production secrets validation** - Placeholder rejection works but never tested in real deployment
 
 ### 7.5 Performance Bottlenecks
@@ -824,7 +824,7 @@ For detailed per-scenario PASS24.1 baselines and their relationship to P22.10, s
 
 - [`docs/PASS20_COMPLETION_SUMMARY.md`](PASS20_COMPLETION_SUMMARY.md) - Previous pass completion
 - [`docs/PASS20_ASSESSMENT.md`](PASS20_ASSESSMENT.md) - Previous assessment
-- [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) - Current project state
+- [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) - Current project state
 
 **Technical Foundation:**
 

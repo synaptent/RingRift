@@ -4,7 +4,7 @@
 > For current status, see:
 >
 > - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – Production rollout status (Phase 4 complete)
-> - `CURRENT_STATE_ASSESSMENT.md` – Implementation status
+> - [`historical/CURRENT_STATE_ASSESSMENT.md`](historical/CURRENT_STATE_ASSESSMENT.md) – Implementation status
 
 > **Doc Status (2025-11-30): Historical (completed migration report)**
 > **Role:** Historical report for the Phase 3 migration to the shared TS orchestrator adapter. This document captures intent, milestones, and operational constraints around the rollout of the canonical shared engine in both backend and sandbox hosts.

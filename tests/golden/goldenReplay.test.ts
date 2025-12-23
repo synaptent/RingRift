@@ -25,6 +25,7 @@ describe('Golden Replay Tests', () => {
 
   // Skip if no fixtures available yet
   if (goldenGames.length === 0) {
+    // SKIP-REASON: fixture-dependent - requires golden game fixtures from curation script
     it.skip('No golden game fixtures found - run curation script to generate', () => {
       // Placeholder test
     });

@@ -4,14 +4,14 @@
 >
 > **For current status and plans, see:**
 >
-> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+> - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 > - [`IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md)
 > - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)
 > - [`TODO.md`](../TODO.md)
 
 **Created: November 15, 2025 · Status Updated: November 16, 2025**
 
-> **Historical Note:** This document captures a snapshot of the end-to-end playability plan as of mid-November 2025. Many items described here have since been implemented or superseded. For canonical, up-to-date status and tasks, see `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `TODO.md`, `STRATEGIC_ROADMAP.md`, and `KNOWN_ISSUES.md`.
+> **Historical Note:** This document captures a snapshot of the end-to-end playability plan as of mid-November 2025. Many items described here have since been implemented or superseded. For canonical, up-to-date status and tasks, see [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md), `IMPLEMENTATION_STATUS.md`, `TODO.md`, `STRATEGIC_ROADMAP.md`, and `KNOWN_ISSUES.md`.
 
 ## Executive Summary
 
@@ -31,7 +31,7 @@ After analyzing the current codebase, RingRift is **remarkably close** to being 
 
 To keep this implementation plan aligned with the rest of the project, treat the following documents as the primary, code-verified sources of truth for current status and architecture:
 
-- `CURRENT_STATE_ASSESSMENT.md` – factual, code-verified snapshot of what works today
+- [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) – factual, code-verified snapshot of what works today
 - `KNOWN_ISSUES.md` – current bug/issue list, including P0/P1 priorities
 - `TODO.md` – phase- and task-oriented development plan with progress markers
 - `STRATEGIC_ROADMAP.md` – higher-level strategic phases and milestones
@@ -682,7 +682,7 @@ Use the following as a concise context block when spinning up a new task or agen
   - GamePage with two modes: backend game view (`/game/:gameId`) wired to WebSocket/PlayerChoice/AI, and a local sandbox entry that can create backend games or fall back to a local-only board.
   - ChoiceDialog and HUD-like side panels that expose selection info, player/AI profiles, status, and a basic event log.
 - **Docs & planning:**
-  - `CURRENT_STATE_ASSESSMENT.md` – factual description of what works now.
+  - [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) – factual description of what works now.
   - `KNOWN_ISSUES.md` – P0/P1 issues, now focused on test coverage, UX, and AI depth rather than missing mechanics.
   - `TODO.md` – phased development tasks, including PlayerChoice, chain captures, AI, WebSocket, sandbox, and HUD items.
   - `STRATEGIC_ROADMAP.md` – phased roadmap (testing/core logic → minimal UI → AI → polish → multiplayer).

@@ -1048,7 +1048,7 @@ Tasks that can proceed in parallel:
 ## Appendix A: Reference Documents
 
 - [`FINAL_ARCHITECT_REPORT.md`](FINAL_ARCHITECT_REPORT.md) - Architecture assessment
-- [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) - Implementation status
+- [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) - Implementation status
 - [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md) - Project roadmap
 - [`docs/SECURITY_THREAT_MODEL.md`](docs/SECURITY_THREAT_MODEL.md) - Security documentation
 - [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](docs/DATA_LIFECYCLE_AND_PRIVACY.md) - Data handling

@@ -3,7 +3,7 @@
 > **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
 
 > **Doc Status (2025-11-27): Historical**
@@ -20,18 +20,18 @@ Pass 14 audit reveals **documentation is largely accurate** with core technical 
 
 ### Audit Results by Document
 
-| Document                                                          | Status      | Issues Found                                                                                                                                        |
-| ----------------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`README.md`](../README.md)                                       | ⚠️ Minor    | Dead link to `deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`                                                                                      |
-| [`QUICKSTART.md`](../QUICKSTART.md)                               | ⚠️ Minor    | Dead links to `deprecated/` files                                                                                                                   |
-| [`CONTRIBUTING.md`](../CONTRIBUTING.md)                           | ⚠️ Minor    | References to `deprecated/` and `archive/` files                                                                                                    |
-| [`docs/API_REFERENCE.md`](API_REFERENCE.md)                       | ✅ Verified | All endpoints match [`auth.ts`](../src/server/routes/auth.ts), [`game.ts`](../src/server/routes/game.ts), [`user.ts`](../src/server/routes/user.ts) |
-| [`docs/CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md)         | ✅ Verified | 1313 lines, comprehensive and current                                                                                                               |
-| [`docs/ENVIRONMENT_VARIABLES.md`](ENVIRONMENT_VARIABLES.md)       | ✅ Verified | 952 lines, matches [`.env.example`](../.env.example)                                                                                                |
-| [`docs/MODULE_RESPONSIBILITIES.md`](MODULE_RESPONSIBILITIES.md)   | ✅ Verified | Current canonical layout documented                                                                                                                 |
-| [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)     | ✅ Accurate | Grade B+, updated Nov 27, 2025                                                                                                                      |
-| [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)   | ✅ Accurate | Updated Nov 27, 2025 with Pass 13                                                                                                                   |
-| [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md) | ✅ Accurate | 952 lines, comprehensive                                                                                                                            |
+| Document                                                                                                                            | Status      | Issues Found                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`README.md`](../README.md)                                                                                                         | ⚠️ Minor    | Dead link to `deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`                                                                                      |
+| [`QUICKSTART.md`](../QUICKSTART.md)                                                                                                 | ⚠️ Minor    | Dead links to `deprecated/` files                                                                                                                   |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md)                                                                                             | ⚠️ Minor    | References to `deprecated/` and `archive/` files                                                                                                    |
+| [`docs/API_REFERENCE.md`](API_REFERENCE.md)                                                                                         | ✅ Verified | All endpoints match [`auth.ts`](../src/server/routes/auth.ts), [`game.ts`](../src/server/routes/game.ts), [`user.ts`](../src/server/routes/user.ts) |
+| [`docs/CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md)                                                                           | ✅ Verified | 1313 lines, comprehensive and current                                                                                                               |
+| [`docs/ENVIRONMENT_VARIABLES.md`](ENVIRONMENT_VARIABLES.md)                                                                         | ✅ Verified | 952 lines, matches [`.env.example`](../.env.example)                                                                                                |
+| [`docs/MODULE_RESPONSIBILITIES.md`](MODULE_RESPONSIBILITIES.md)                                                                     | ✅ Verified | Current canonical layout documented                                                                                                                 |
+| [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)                                                                       | ✅ Accurate | Grade B+, updated Nov 27, 2025                                                                                                                      |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | ✅ Accurate | Updated Nov 27, 2025 with Pass 13                                                                                                                   |
+| [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md)                                                                   | ✅ Accurate | 952 lines, comprehensive                                                                                                                            |
 
 ### Critical Inaccuracies
 

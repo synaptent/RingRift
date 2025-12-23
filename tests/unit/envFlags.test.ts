@@ -121,6 +121,7 @@ describe('envFlags helpers', () => {
   //
   // STATUS: These tests are validated manually during deployment and remain
   // skipped in CI until a proper integration test harness is implemented.
+  // SKIP-REASON: env-isolation - Jest cannot modify NODE_ENV mid-test; requires process spawn harness
   it.skip('allows placeholder JWT secrets in development', async () => {
     process.env = {
       ...process.env,
@@ -139,6 +140,7 @@ describe('envFlags helpers', () => {
     );
   });
 
+  // SKIP-REASON: env-isolation - Jest cannot modify NODE_ENV mid-test; requires process spawn harness
   it.skip('accepts strong non-placeholder JWT secrets in production', async () => {
     process.env = {
       ...process.env,
@@ -157,6 +159,7 @@ describe('envFlags helpers', () => {
     expect(config.auth.jwtRefreshSecret).toBe('strong-refresh-secret-123');
   });
 
+  // SKIP-REASON: env-isolation - Jest cannot modify NODE_ENV mid-test; requires process spawn harness
   it.skip('rejects missing JWT secrets in production', async () => {
     process.env = {
       ...process.env,
@@ -174,6 +177,7 @@ describe('envFlags helpers', () => {
     );
   });
 
+  // SKIP-REASON: env-isolation - Jest cannot modify NODE_ENV mid-test; requires process spawn harness
   it.skip('rejects placeholder JWT secrets in production', async () => {
     process.env = {
       ...process.env,

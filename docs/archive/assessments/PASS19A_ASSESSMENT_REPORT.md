@@ -3,7 +3,7 @@
 > **⚠️ SUPERSEDED BY PASS19B** – This assessment was superseded by PASS19B on November 30, 2025.
 > For current project status, see:
 >
-> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) – Latest implementation status
 > - `docs/PASS19B_ASSESSMENT_REPORT.md` – Most recent assessment pass
 
 > **Assessment Date:** 2025-11-30

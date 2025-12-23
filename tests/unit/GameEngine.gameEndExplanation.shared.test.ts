@@ -490,12 +490,11 @@ describe('shared engine – GameEndExplanation wiring', () => {
       expect(victory.isGameOver).toBe(false);
     });
 
-    // TODO: This test expects territory_mini_regions detection which requires specific
-    // implementation in gameEndExplanation.ts. The detection logic needs to identify
-    // small isolated collapsed regions (≤4 cells) and set primaryConceptId accordingly.
-    // Skipped pending investigation of mini-region detection algorithm.
-    it.skip('handles Q23-style scenario with self-elimination prerequisite correctly', () => {
-      // This test mirrors the Q23 mini-region scenario from the rules
+    it('handles Q23-style scenario with self-elimination prerequisite correctly', () => {
+      // This test mirrors the Q23 scenario from the rules where a player achieves
+      // territory victory via a contiguous 5-cell region (meeting threshold of 5).
+      // A 5-cell contiguous region is NOT a mini-region (only regions ≤4 cells are),
+      // so this is a standard territory victory without mini-region flagging.
       const state = createTestGameState();
       const p1 = state.players[0];
 
@@ -506,7 +505,7 @@ describe('shared engine – GameEndExplanation wiring', () => {
       p1.territorySpaces = 8;
       state.players[1].territorySpaces = 2;
 
-      // Create a 2×2 mini-region at (2,2)–(3,3) plus one additional space
+      // Create a 2×2 region at (2,2)–(3,3) plus one additional space
       // This represents a Q23-style collapsed region with 5 spaces (meeting threshold)
       // Victory evaluation uses board.collapsedSpaces as the authoritative source
       addCollapsedSpace(state.board, { x: 2, y: 2 }, 1);
@@ -526,12 +525,13 @@ describe('shared engine – GameEndExplanation wiring', () => {
 
       const explanation = victory.gameEndExplanation!;
 
-      // Q23-style: small isolated region triggers mini-region detection
-      expect(explanation.primaryConceptId).toBe('territory_mini_regions');
-      expect(explanation.weirdStateContext).toBeDefined();
-      expect(explanation.weirdStateContext!.rulesContextTags).toContain('territory_mini_region');
-      expect(explanation.uxCopy.shortSummaryKey).toBe('game_end.territory_mini_region.short');
-      expect(explanation.uxCopy.detailedSummaryKey).toBe('game_end.territory_mini_region.detailed');
+      // 5-cell contiguous region exceeds mini-region threshold (≤4 cells),
+      // so this is a normal territory victory without weird-state context
+      expect(explanation.outcomeType).toBe('territory_control');
+      expect(explanation.victoryReasonCode).toBe('victory_territory_majority');
+      expect(explanation.primaryConceptId).toBeUndefined();
+      expect(explanation.weirdStateContext).toBeUndefined();
+      expect(explanation.uxCopy.shortSummaryKey).toBe('game_end.territory_control.short');
     });
   });
 });

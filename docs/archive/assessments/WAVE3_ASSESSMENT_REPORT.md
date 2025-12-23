@@ -23,12 +23,12 @@ Following the successful completion of Wave 2 remediation (18 subtasks addressin
 
 Project goals are documented in a clear hierarchy:
 
-| Document                                                        | Lines | Purpose                  | Status     |
-| --------------------------------------------------------------- | ----- | ------------------------ | ---------- |
-| [`PROJECT_GOALS.md`](../PROJECT_GOALS.md)                       | 464   | Canonical goals SSoT     | ✅ Current |
-| [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)               | ~600  | Phased roadmap with SLOs | ✅ Current |
-| [`README.md`](../README.md)                                     | ~300  | High-level overview      | ✅ Current |
-| [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) | ~500  | Implementation snapshot  | ✅ Current |
+| Document                                                                                                                            | Lines | Purpose                  | Status     |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------ | ---------- |
+| [`PROJECT_GOALS.md`](../PROJECT_GOALS.md)                                                                                           | 464   | Canonical goals SSoT     | ✅ Current |
+| [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)                                                                                   | ~600  | Phased roadmap with SLOs | ✅ Current |
+| [`README.md`](../README.md)                                                                                                         | ~300  | High-level overview      | ✅ Current |
+| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | ~500  | Implementation snapshot  | ✅ Current |
 
 **Key Goals from PROJECT_GOALS.md:**
 

@@ -2,9 +2,9 @@
 
 **Created:** December 3, 2025
 **Last Updated:** December 13, 2025 (Documentation Hygiene Pass)
-**Based on:** Full project review including TODO.md, KNOWN_ISSUES.md, STRATEGIC_ROADMAP.md, CURRENT_STATE_ASSESSMENT.md, PROJECT_GOALS.md
+**Based on:** Full project review including TODO.md, KNOWN_ISSUES.md, STRATEGIC_ROADMAP.md, docs/archive/historical/CURRENT_STATE_ASSESSMENT.md, PROJECT_GOALS.md
 
-> **Dec 13, 2025 Engine Review Summary:** Comprehensive architecture review confirms both TypeScript (A-) and Python (A) engines demonstrate excellent separation of concerns, strong canonical rules adherence, and mature parity testing. 81 contract vectors with 0 mismatches. Orchestrator at 100% rollout. See [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md#-engine-architecture--refactoring-status-dec-2025-review) for detailed findings.
+> **Dec 13, 2025 Engine Review Summary:** Comprehensive architecture review confirms both TypeScript (A-) and Python (A) engines demonstrate excellent separation of concerns, strong canonical rules adherence, and mature parity testing. 81 contract vectors with 0 mismatches. Orchestrator at 100% rollout. See [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](CURRENT_STATE_ASSESSMENT.md#-engine-architecture--refactoring-status-dec-2025-review) for detailed findings.
 
 ---
 
@@ -1138,15 +1138,15 @@ These metrics are an execution-focused view of the project-level success criteri
 
 ## Key Files & References
 
-| Document                            | Purpose                |
-| ----------------------------------- | ---------------------- |
-| `TODO.md`                           | Active task tracker    |
-| `KNOWN_ISSUES.md`                   | Current bugs (P0-P2)   |
-| `STRATEGIC_ROADMAP.md`              | Phased roadmap & SLOs  |
-| `CURRENT_STATE_ASSESSMENT.md`       | Implementation status  |
-| `docs/TEST_CATEGORIES.md`           | CI vs diagnostic tests |
-| `docs/PASS21_ASSESSMENT_REPORT.md`  | Latest assessment      |
-| `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` | Rollout phases         |
+| Document                                                                                                 | Purpose                |
+| -------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `TODO.md`                                                                                                | Active task tracker    |
+| `KNOWN_ISSUES.md`                                                                                        | Current bugs (P0-P2)   |
+| `STRATEGIC_ROADMAP.md`                                                                                   | Phased roadmap & SLOs  |
+| [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) | Implementation status  |
+| `docs/TEST_CATEGORIES.md`                                                                                | CI vs diagnostic tests |
+| `docs/PASS21_ASSESSMENT_REPORT.md`                                                                       | Latest assessment      |
+| `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`                                                                      | Rollout phases         |
 
 ---
 

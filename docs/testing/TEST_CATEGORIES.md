@@ -4,7 +4,7 @@
 >
 > **Purpose:** Define the different categories of tests in the RingRift project, explaining which tests fall into which category and what "all tests passing" means for CI vs development.
 >
-> **Related docs:** `tests/README.md`, `tests/TEST_LAYERS.md`, `tests/TEST_SUITE_PARITY_PLAN.md`, `KNOWN_ISSUES.md`, `CURRENT_STATE_ASSESSMENT.md`, `docs/PASS19B_ASSESSMENT_REPORT.md`, `docs/PASS20_ASSESSMENT.md`, `jest-results.json`
+> **Related docs:** `tests/README.md`, `tests/TEST_LAYERS.md`, `tests/TEST_SUITE_PARITY_PLAN.md`, `KNOWN_ISSUES.md`, [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), `docs/PASS19B_ASSESSMENT_REPORT.md`, `docs/PASS20_ASSESSMENT.md`, `jest-results.json`
 
 ## Overview
 
@@ -50,7 +50,7 @@ The RingRift test suite is organized into categories based on runtime requiremen
 
 #### 1.1 Orchestrator & Rules-Parity Lanes (CI-gated)
 
-These lanes are CI‑gated and focus on rules correctness and orchestrator/rules‑parity. They are part of the **CI profile** summarised in `CURRENT_STATE_ASSESSMENT.md` and `docs/PASS19B_ASSESSMENT_REPORT.md`.
+These lanes are CI‑gated and focus on rules correctness and orchestrator/rules‑parity. They are part of the **CI profile** summarised in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PASS19B_ASSESSMENT_REPORT.md`.
 
 **Commands:**
 
@@ -409,7 +409,7 @@ pytest tests/parity -q
 
 **Purpose:**
 
-- Ensure **49/49** v2 contract vectors pass identically in TS and Python (see `CURRENT_STATE_ASSESSMENT.md`, `docs/PASS18_REMEDIATION_PLAN.md`).
+- Ensure **49/49** v2 contract vectors pass identically in TS and Python (see [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), `docs/PASS18_REMEDIATION_PLAN.md`).
 - Backstop TS↔Python rules parity for movement, capture/chain_capture, forced_elimination, territory/territory_line endgames (including `near_victory_territory`), hex edge cases, and meta moves (`swap_sides`, multi‑phase turns).
 
 **Notes:**
@@ -551,12 +551,12 @@ When adding a new test file, determine its category:
 
 ## What "All Tests Passing" Means
 
-| Context           | Command                                                                             | Meaning                                                                                                                  |
-| ----------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| PR Gate           | `npm run test:ci`                                                                   | CI‑gated Jest suites (core + rules/parity lanes) pass                                                                    |
-| Full Jest (local) | `npm test` or `npm run test:all:quiet:log`                                          | Extended Jest profile (CI + diagnostic suites); see `jest-results.json` + `docs/PASS20_ASSESSMENT.md` for current status |
-| Release Gate      | `npm run test:ci && npm run test:e2e:smoke` (plus targeted parity/soak scripts)     | Core + key E2E/soak gates pass (see `CURRENT_STATE_ASSESSMENT.md`, `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`)                  |
-| Diagnostics       | `npm run test:diagnostics`, `npm run test:ts-parity`, `npm run test:ts-integration` | Heavy/parity suites pass (may have expected failures; see `KNOWN_ISSUES.md`)                                             |
+| Context           | Command                                                                             | Meaning                                                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR Gate           | `npm run test:ci`                                                                   | CI‑gated Jest suites (core + rules/parity lanes) pass                                                                                                                              |
+| Full Jest (local) | `npm test` or `npm run test:all:quiet:log`                                          | Extended Jest profile (CI + diagnostic suites); see `jest-results.json` + `docs/PASS20_ASSESSMENT.md` for current status                                                           |
+| Release Gate      | `npm run test:ci && npm run test:e2e:smoke` (plus targeted parity/soak scripts)     | Core + key E2E/soak gates pass (see [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`) |
+| Diagnostics       | `npm run test:diagnostics`, `npm run test:ts-parity`, `npm run test:ts-integration` | Heavy/parity suites pass (may have expected failures; see `KNOWN_ISSUES.md`)                                                                                                       |
 
 ---
 
@@ -567,6 +567,6 @@ When adding a new test file, determine its category:
 - [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md) - Parity test planning
 - [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) - Expected failures and diagnostics
 - [`docs/PARITY_SEED_TRIAGE.md`](./PARITY_SEED_TRIAGE.md) - Seed-specific debugging
-- [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md) - Canonical test counts and CI profile
+- [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](../archive/historical/CURRENT_STATE_ASSESSMENT.md) - Canonical test counts and CI profile
 - [`docs/PASS19B_ASSESSMENT_REPORT.md`](./PASS19B_ASSESSMENT_REPORT.md) - CI‑gated test health summary
 - [`docs/PASS20_ASSESSMENT.md`](./PASS20_ASSESSMENT.md) - Extended/diagnostic Jest profile analysis (including `jest-results.json`)

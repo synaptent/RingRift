@@ -11,9 +11,9 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 
 ## Context Snapshot (Overall Assessment)
 
-- **State:** Stable beta with consolidated orchestrator, strong TS-Python parity, and large test suites (`CURRENT_STATE_ASSESSMENT.md`).
+- **State:** Stable beta with consolidated orchestrator, strong TS-Python parity, and large test suites (historical snapshot: [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)).
 - **Primary risk:** Canonical large-board datasets (square19/hex) are still low-volume (3 + 1 games) because canonical selfplay soaks exit with returncode -15 (SIGTERM) before higher-volume runs complete.
-- **Quality gap:** Line coverage ~69% vs >=80% target and scenario matrix expansion still pending (`CURRENT_STATE_ASSESSMENT.md`, `PROJECT_GOALS.md`, `KNOWN_ISSUES.md`).
+- **Quality gap:** Line coverage ~69% vs >=80% target and scenario matrix expansion still pending (historical: [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), `PROJECT_GOALS.md`, `KNOWN_ISSUES.md`).
 - **UX/test polish:** Client coverage and weird-state UX/telemetry alignment are still P1 (`TODO.md`, `docs/UX_RULES_WEIRD_STATES_SPEC.md`).
 - **Data readiness:** Canonical square8 gate now passes; square19/hex still need successful gated runs (`ai-service/TRAINING_DATA_REGISTRY.md`).
 - **Documentation drift:** Core docs still reference `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, but those files are missing from the repo; update references or restore stubs.

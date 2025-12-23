@@ -1073,5 +1073,5 @@ convention fix was applied. Python allowed the move; TS rejected it.
 
 ---
 
-For a more narrative description of what works today vs what remains, see
-[CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md).
+For a historical snapshot of implementation status, see
+[`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md).

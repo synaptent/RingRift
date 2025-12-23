@@ -6,7 +6,7 @@
 >
 > **For current status and plans, see:**
 >
-> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+> - [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 > - [`IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md)
 > - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)
 > - [`TODO.md`](../TODO.md)
@@ -24,7 +24,7 @@
 
 This document is the **high-level improvement plan** for RingRift. For detailed status and task tracking, see:
 
-- **Current factual status:** `CURRENT_STATE_ASSESSMENT.md`
+- **Current factual status:** [`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)
 - **Strategic phases and milestones:** `STRATEGIC_ROADMAP.md`
 - **Granular tasks and progress:** `TODO.md`
 - **Issue list and priorities:** `KNOWN_ISSUES.md`

@@ -80,7 +80,7 @@ It is meant to evolve alongside:
 - `ringrift_compact_rules.md`
 - `archive/RULES_ANALYSIS_PHASE2.md`
 - `tests/README.md`
-- `CURRENT_STATE_ASSESSMENT.md` / `KNOWN_ISSUES.md`
+- [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) / `KNOWN_ISSUES.md`
 
 Status legend:
 

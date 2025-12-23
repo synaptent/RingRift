@@ -46,6 +46,7 @@ import {
  * while Sandbox now uses FSM by default. This causes phase desyncs.
  * Enable once Backend GameEngine is updated to use FSM.
  */
+// SKIP-REASON: KEEP-SKIPPED - backend/sandbox phase model mismatch; deep-seed stalls under investigation
 describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
   const boardTypes: BoardType[] = ['square8'];
   const playerCounts: number[] = [2, 3];
@@ -844,6 +845,7 @@ describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => 
   });
 
   // Skipped per TODO-AI-HEURISTIC-COVERAGE: deep-seed stalls under investigation
+  // SKIP-REASON: KEEP-SKIPPED - deep-seed stalls under investigation (TODO-AI-HEURISTIC-COVERAGE)
   test.skip('square8 with 2 AI players / seed=14: sandbox AI moves remain legal and not under-covered up to 2000 steps', async () => {
     const boardType: BoardType = 'square8';
     const numPlayers = 2;
@@ -991,6 +993,7 @@ describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => 
   });
 
   // Skipped per TODO-AI-HEURISTIC-COVERAGE: deep-seed stalls under investigation
+  // SKIP-REASON: KEEP-SKIPPED - deep-seed stalls under investigation (TODO-AI-HEURISTIC-COVERAGE)
   test.skip('square8 with 2 AI players / seed=5: sandbox AI moves remain legal and not under-covered up to 2000 steps', async () => {
     const boardType: BoardType = 'square8';
     const numPlayers = 2;
@@ -1098,6 +1101,7 @@ describe.skip('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => 
   // Optional diagnostic: backend movement set around the first movement-phase turn
   // for a specific seed. This is skipped by default to avoid noisy output in CI,
   // but can be enabled locally when investigating movement semantics.
+  // SKIP-REASON: diagnostic-only - for local debugging only, not CI
   test.skip('DIAGNOSTIC ONLY: backend movement moves at first movement-phase turn for square8 / 2p / seed=1', async () => {
     const boardType: BoardType = 'square8';
     const numPlayers = 2;

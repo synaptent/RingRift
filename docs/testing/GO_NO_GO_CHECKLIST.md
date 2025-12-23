@@ -7,7 +7,7 @@
 > - **SSoT alignment:** when any thresholds, SLOs, or goals mentioned here appear to disagree with their canonical definitions, treat the following as authoritative and update this checklist to match:
 >   - [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:1) – v1.0 goals, SLOs, and environment & rollout success criteria.
 >   - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:1) – phased execution plan and performance / scale SLO roadmap (including P‑01 load SLOs and pre‑launch performance gate).
->   - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:1) – factual implementation and test status (test counts, completed waves, health labels).
+>   - [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) – factual implementation and test status (test counts, completed waves, health labels).
 >   - [`ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:1) – canonical Prometheus alert rules, thresholds, and how they map to P‑01 SLOs and k6 scenarios.
 > - **SSoT tooling:**
 >   - `npm run ssot-check` → [`scripts/ssot/ssot-check.ts`](../scripts/ssot/ssot-check.ts:1) must be green for the candidate build; this guards docs/config SSoTs (including the docs banner and link checks this checklist relies on).
@@ -40,7 +40,7 @@ Fill this section for each checklist run.
 These gates ensure the orchestrator, shared rules engine, and cross‑language parity are green for the candidate build. They operationalise P0 “Architecture Production Hardening” and rules‑parity work described in:
 
 - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:184) (§“P0: Architecture Production Hardening”, “P0: Rules Fidelity & Parity”)
-- [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:229) (§“P0 – Production Hardening” and “P0 – Engine Parity & Rules Coverage”)
+- [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) (§“P0 – Production Hardening” and “P0 – Engine Parity & Rules Coverage”)
 
 ### Required
 
@@ -56,7 +56,7 @@ These gates ensure the orchestrator, shared rules engine, and cross‑language p
     - Optional local soak JSON summary under `results/` for the candidate image.
   - **References**
     - Orchestrator rollout posture and invariants: [`ORCHESTRATOR_ROLLOUT_PLAN.md`](./ORCHESTRATOR_ROLLOUT_PLAN.md:1), [`INVARIANTS_AND_PARITY_FRAMEWORK.md`](./rules/INVARIANTS_AND_PARITY_FRAMEWORK.md:1).
-    - Environment posture expectations: [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:229).
+    - Environment posture expectations: [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
 
 - [ ] **TS↔Python contract and parity tests are green**
   - **Automation / commands**
@@ -70,7 +70,7 @@ These gates ensure the orchestrator, shared rules engine, and cross‑language p
   - **Evidence**
     - Latest CI or local logs showing **100% pass** on contract vectors and parity metrics for the candidate build.
   - **References**
-    - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASS
+    - [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](../CURRENT_STATE_ASS
 
 ESSMENT.md:258) (§“P0 – Engine Parity & Rules Coverage”).
 
@@ -114,14 +114,14 @@ These gates ensure the multiplayer lifecycle (lobby, join/leave, reconnection, s
   - **Automation / commands**
     - CI jobs running at least:
       - Backend WebSocket + reconnection tests (e.g. `tests/unit/GameSession.reconnectFlow.test.ts`, WebSocket server tests) and
-      - E2E reconnection and timeout flows (e.g. `reconnection.simulation.test.ts`, `timeout-and-ratings.e2e.spec.ts`, `decision-phase-timeout.e2e.spec.ts`) as described in [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:283-293).
+      - E2E reconnection and timeout flows (e.g. `reconnection.simulation.test.ts`, `timeout-and-ratings.e2e.spec.ts`, `decision-phase-timeout.e2e.spec.ts`) as described in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
     - Local confirmation (optional for pre‑prod, recommended for first production launch):
       - `npm run test:integration`
       - `npm run test:e2e:smoke`
   - **Evidence**
-    - Links to green CI runs for the candidate commit that include the multiplayer / reconnection / spectator suites listed in [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:283-293).
+    - Links to green CI runs for the candidate commit that include the multiplayer / reconnection / spectator suites listed in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
   - **References**
-    - Multiplayer lifecycle and E2E coverage discussion in [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:281-296).
+    - Multiplayer lifecycle and E2E coverage discussion in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
     - v1.0 environment & rollout success criteria in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:195-230).
 
 ---
@@ -134,7 +134,7 @@ These gates ensure AI behaviour under normal conditions and under degradation ma
 
 - [ ] **AI integration, fallback, and concurrency tests are green**
   - **Automation / commands**
-    - Core TS unit / integration suites for AI boundary & fallback behaviour (as summarised in [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:182-197)) must be green in CI for the candidate build. At minimum this includes tests under:
+    - Core TS unit / integration suites for AI boundary & fallback behaviour (as summarised in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)) must be green in CI for the candidate build. At minimum this includes tests under:
       - `tests/unit/AIEngine.fallback.test.ts`
       - `tests/unit/AIServiceClient.concurrency.test.ts`
       - Other AI boundary tests referenced by [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md:1).
@@ -174,7 +174,7 @@ This gate ties the overall automated test surface and coverage targets to a sing
 - [ ] **All CI‑gated TypeScript and Python test suites are green for the candidate build**
   - **Automation / commands**
     - CI must successfully run the standard TS and Python suites summarised in:
-      - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:385-419) (§“Test Coverage Status” and “Test Categories”).
+      - [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) (§“Test Coverage Status” and “Test Categories”).
     - Local summary check (optional in CI, required for manual pre‑prod validation):
       - `./scripts/test-summary.sh` → [`scripts/test-summary.sh`](../scripts/test-summary.sh:1)  
         (summarises Jest and pytest status).
@@ -184,7 +184,7 @@ This gate ties the overall automated test surface and coverage targets to a sing
       - Python test suite green for `ai-service`.
     - Output from a recent `./scripts/test-summary.sh` run (or CI equivalent) attached to the release ticket.
   - **References**
-    - Test status and categories: [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:385-425).
+    - Test status and categories: [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
     - v1.0 test coverage requirements: [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).
 
 - [ ] **Coverage meets or exceeds v1.0 targets**
@@ -198,7 +198,7 @@ This gate ties the overall automated test surface and coverage targets to a sing
       - Overall coverage and key contexts meet or exceed the v1.0 targets defined in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).  
         (Do **not** change those targets here; this checklist only checks whether they are met.)
   - **References**
-    - Coverage status and targets: [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:385-419), [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).
+    - Coverage status and targets: [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).
 
 ---
 
@@ -414,7 +414,7 @@ These gates ensure that all planning/SSoT documents that define “production‑
   - **Checks**
     - [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:1) (goals SSoT) accurately reflects the v1.0 objectives and success criteria being used for this launch.
     - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:1) (roadmap & SLOs) is updated where necessary to match any agreed changes in direction or SLOs (without modifying the canonical SLO values in this checklist).
-    - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:1) has been refreshed recently enough that its test counts, health labels, and wave completion statuses match the code that is actually being deployed.
+    - [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) has been refreshed recently enough that its test counts, health labels, and wave completion statuses match the code that is actually being deployed.
   - **Evidence**
     - Review notes or PR references showing these docs were checked / updated as part of the release preparation.
 

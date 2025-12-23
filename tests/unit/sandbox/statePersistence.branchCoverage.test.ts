@@ -208,12 +208,14 @@ describe('statePersistence', () => {
   // These functions rely on DOM APIs (createElement, URL.createObjectURL, etc.)
   // that don't exist or work differently in Node.js
   describe('exportScenarioToFile', () => {
+    // SKIP-REASON: browser-only - requires DOM APIs (createElement, URL.createObjectURL)
     it.skip('creates download link with sanitized filename (browser-only)', () => {
       // This test requires browser DOM APIs
     });
   });
 
   describe('exportGameStateToFile', () => {
+    // SKIP-REASON: browser-only - requires DOM APIs (createElement, URL.createObjectURL)
     it.skip('exports game state with given name (browser-only)', () => {
       // This test requires browser DOM APIs
     });
@@ -307,6 +309,7 @@ describe('statePersistence', () => {
 
   // Skip File-based import tests in Node environment
   // File.text() is a browser API that doesn't work the same in Node.js
+  // SKIP-REASON: browser-only - requires File.text() browser API
   describe('importScenarioFromFile', () => {
     it.skip('throws on invalid JSON (browser-only)', () => {});
     it.skip('throws on non-object data (browser-only)', () => {});
@@ -323,6 +326,7 @@ describe('statePersistence', () => {
     it.skip('handles missing optional fields (browser-only)', () => {});
   });
 
+  // SKIP-REASON: browser-only - requires File.text() browser API
   describe('importAndSaveScenarioFromFile', () => {
     it.skip('imports and saves valid scenario (browser-only)', () => {});
   });

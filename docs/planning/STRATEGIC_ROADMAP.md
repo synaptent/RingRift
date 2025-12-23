@@ -20,7 +20,7 @@
 - ✅ Canonical turn orchestrator in `src/shared/engine/orchestration/`
 - ✅ Backend and sandbox adapters for gradual rollout
 - ✅ Contract testing framework with 100% Python parity on 81 test vectors
-- ✅ Extensive TypeScript and Python test suites validating rules, hosts, AI integration, and E2E flows (for up-to-date test counts and coverage metrics, see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1))
+- ✅ Extensive TypeScript and Python test suites validating rules, hosts, AI integration, and E2E flows (for up-to-date test counts and coverage metrics, see [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md))
 
 **Goal:** Production-Ready Multiplayer Game
 **Timeline:** See [`PASS18C_ASSESSMENT_REPORT.md`](docs/archive/assessments/PASS18C_ASSESSMENT_REPORT.md) for concrete blockers and remediation plan

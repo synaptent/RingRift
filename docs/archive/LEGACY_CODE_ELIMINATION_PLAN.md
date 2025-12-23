@@ -4,7 +4,7 @@
 > For current status, see:
 >
 > - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – Production rollout status
-> - `CURRENT_STATE_ASSESSMENT.md` – Implementation status
+> - [`historical/CURRENT_STATE_ASSESSMENT.md`](historical/CURRENT_STATE_ASSESSMENT.md) – Implementation status
 > - `TODO.md` – Wave 5.4 (legacy cleanup) for remaining items
 
 > **Phase 5.4 Deliverable** - Architecture Remediation Plan

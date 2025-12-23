@@ -147,6 +147,8 @@ class ParallelGameRunner:
         noise_scale: float = 0.1,
         random_opening_moves: int = 0,
         record_policy: bool = False,
+        persona_pool: list[str] | None = None,
+        per_player_personas: list[str] | None = None,
     ):
         """Initialize parallel game runner.
 
@@ -185,6 +187,18 @@ class ParallelGameRunner:
             record_policy: When True, record policy distributions (move scores and
                        probabilities) for each move. This enables capturing policy
                        targets during GPU selfplay for training. Default False.
+            persona_pool: List of heuristic persona IDs to use for training variety.
+                       Each game randomly samples a persona from this pool.
+                       Valid IDs: "balanced", "aggressive", "territorial", "defensive".
+                       If None, uses board-specific default weights.
+                       Example: ["balanced", "aggressive", "defensive"] creates games
+                       with 3 different play styles for more diverse training data.
+            per_player_personas: List of persona IDs, one per player position.
+                       Enables different play styles for different players in the same game.
+                       Length must match num_players. Takes precedence over persona_pool.
+                       Example for 2-player: ["aggressive", "defensive"] makes P1 aggressive
+                       and P2 defensive in all games. For variety, combine with weight_noise.
+                       Example for 4-player: ["aggressive", "balanced", "territorial", "defensive"]
         """
         self.batch_size = batch_size
         self.board_size = board_size
@@ -197,6 +211,14 @@ class ParallelGameRunner:
         self.noise_scale = noise_scale
         self.random_opening_moves = random_opening_moves
         self.record_policy = record_policy
+        self.persona_pool = persona_pool
+        self.per_player_personas = per_player_personas
+        # Validate per_player_personas length if provided
+        if per_player_personas is not None and len(per_player_personas) != num_players:
+            raise ValueError(
+                f"per_player_personas length ({len(per_player_personas)}) must match "
+                f"num_players ({num_players})"
+            )
         self.use_policy_selection = False
         self.policy_model: RingRiftNNUEWithPolicy | None = None
         # Policy recording buffer: {game_idx: [(move_num, policy_dict), ...]}
@@ -406,6 +428,7 @@ class ParallelGameRunner:
         self,
         moves: BatchMoves,
         active_mask: torch.Tensor,
+        weights_list: list[dict[str, float]] | None = None,
     ) -> torch.Tensor:
         """Select moves using configured selection strategy.
 
@@ -420,6 +443,12 @@ class ParallelGameRunner:
 
         When self.record_policy is True and heuristic selection is used,
         policy data is captured and stored in self._pending_policy.
+
+        Args:
+            moves: BatchMoves containing flattened moves for all games
+            active_mask: (batch_size,) bool tensor of games to process
+            weights_list: Optional per-game weights for heuristic selection
+                         (already resolved to current player's weights)
         """
         # Check if any games are in opening phase (need random selection)
         if self.random_opening_moves > 0:
@@ -443,10 +472,10 @@ class ParallelGameRunner:
                 elif self.use_heuristic_selection:
                     if self.record_policy:
                         return self._select_moves_with_policy_recording(
-                            moves, active_mask, temperature=elevated_temp
+                            moves, active_mask, temperature=elevated_temp, weights_list=weights_list
                         )
                     return select_moves_heuristic(
-                        moves, self.state, active_mask, temperature=elevated_temp
+                        moves, self.state, active_mask, weights_list=weights_list, temperature=elevated_temp
                     )
                 else:
                     return select_moves_vectorized(
@@ -459,10 +488,10 @@ class ParallelGameRunner:
         elif self.use_heuristic_selection:
             if self.record_policy:
                 return self._select_moves_with_policy_recording(
-                    moves, active_mask, temperature=self.temperature
+                    moves, active_mask, temperature=self.temperature, weights_list=weights_list
                 )
             return select_moves_heuristic(
-                moves, self.state, active_mask, temperature=self.temperature
+                moves, self.state, active_mask, weights_list=weights_list, temperature=self.temperature
             )
         else:
             return select_moves_vectorized(
@@ -474,6 +503,7 @@ class ParallelGameRunner:
         moves: BatchMoves,
         active_mask: torch.Tensor,
         temperature: float = 1.0,
+        weights_list: list[dict[str, float]] | None = None,
     ) -> torch.Tensor:
         """Select moves with heuristic scoring and record policy data.
 
@@ -485,12 +515,13 @@ class ParallelGameRunner:
             moves: BatchMoves containing flattened moves
             active_mask: (batch_size,) bool tensor of active games
             temperature: Softmax temperature
+            weights_list: Optional per-game weights for heuristic selection
 
         Returns:
             (batch_size,) tensor of selected local move indices
         """
         selected, policy_data = select_moves_heuristic_with_policy(
-            moves, self.state, active_mask, temperature=temperature
+            moves, self.state, active_mask, weights_list=weights_list, temperature=temperature
         )
 
         # Store policy data for each active game
@@ -878,7 +909,7 @@ class ParallelGameRunner:
     @torch.no_grad()
     def run_games(
         self,
-        weights_list: list[dict[str, float]] | None = None,
+        weights_list: list[list[dict[str, float]]] | None = None,
         max_moves: int = 10000,
         callback: Callable[[int, BatchGameState], None] | None = None,
         snapshot_interval: int = 0,
@@ -1043,7 +1074,7 @@ class ParallelGameRunner:
         if self.state_validator:
             self.state_validator.reset_stats()
 
-    def _step_games(self, weights_list: list[dict[str, float]]) -> None:
+    def _step_games(self, weights_list: list[list[dict[str, float]]]) -> None:
         """Execute one phase step for all active games using full rules FSM.
 
         Phase flow per turn (per RR-CANON):
@@ -1541,7 +1572,7 @@ class ParallelGameRunner:
     def _step_placement_phase(
         self,
         mask: torch.Tensor,
-        weights_list: list[dict[str, float]],
+        weights_list: list[list[dict[str, float]]],
     ) -> None:
         """Handle RING_PLACEMENT phase for games in mask.
 
@@ -1599,8 +1630,9 @@ class ParallelGameRunner:
             self._validate_placement_moves_sample(moves, games_with_rings)
 
             if moves.total_moves > 0:
-                # Use configured move selection strategy
-                selected = self._select_moves(moves, games_with_rings)
+                # Use configured move selection strategy with per-game weights
+                per_game_weights = self.get_weights_for_current_players(weights_list)
+                selected = self._select_moves(moves, games_with_rings, per_game_weights)
                 apply_placement_moves_batch(self.state, selected, moves)
 
                 # December 2025: Track real action for forced elimination detection
@@ -1696,7 +1728,7 @@ class ParallelGameRunner:
     def _step_movement_phase(
         self,
         mask: torch.Tensor,
-        weights_list: list[dict[str, float]],
+        weights_list: list[list[dict[str, float]]],
     ) -> None:
         """Handle MOVEMENT phase for games in mask.
 
@@ -1732,7 +1764,8 @@ class ParallelGameRunner:
 
             # Apply recovery moves using configured selection strategy
             if games_with_recovery.any():
-                selected_recovery = self._select_moves(recovery_moves, games_with_recovery)
+                per_game_weights = self.get_weights_for_current_players(weights_list)
+                selected_recovery = self._select_moves(recovery_moves, games_with_recovery, per_game_weights)
                 apply_recovery_moves_vectorized(
                     self.state, selected_recovery, recovery_moves, games_with_recovery
                 )
@@ -1812,7 +1845,8 @@ class ParallelGameRunner:
             games_constrained_captures = games_with_captures & has_must_move_constraint
 
             if games_unconstrained_captures.any():
-                selected_captures = self._select_moves(capture_moves, games_unconstrained_captures)
+                per_game_weights = self.get_weights_for_current_players(weights_list)
+                selected_captures = self._select_moves(capture_moves, games_unconstrained_captures, per_game_weights)
                 apply_capture_moves_batch(
                     self.state, selected_captures, capture_moves
                 )
@@ -1920,7 +1954,8 @@ class ParallelGameRunner:
 
             # Apply movement moves for games without captures
             if games_movement_only.any():
-                selected_movements = self._select_moves(movement_moves, games_movement_only)
+                per_game_weights = self.get_weights_for_current_players(weights_list)
+                selected_movements = self._select_moves(movement_moves, games_movement_only, per_game_weights)
 
                 # Extract landing positions BEFORE applying (needed for post-movement capture check)
                 movement_game_indices = torch.where(games_movement_only)[0]
@@ -2946,7 +2981,7 @@ class ParallelGameRunner:
     def _select_best_moves(
         self,
         moves: BatchMoves,
-        weights_list: list[dict[str, float]],
+        weights_list: list[list[dict[str, float]]],
         active_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Select the best move for each game using heuristic evaluation.
@@ -3232,19 +3267,142 @@ class ParallelGameRunner:
             noisy_weights[key] = value * noise_factor
         return noisy_weights
 
-    def _generate_weights_list(self) -> list[dict[str, float]]:
-        """Generate per-game weights with optional noise.
+    def _resolve_persona_weights(self, persona_id: str) -> dict[str, float]:
+        """Resolve a persona ID to its weight dictionary.
+
+        Args:
+            persona_id: Short name ("aggressive") or full ID ("heuristic_v1_aggressive")
 
         Returns:
-            List of weight dictionaries, one per game in batch.
+            Weight dictionary for the persona, or default weights if not found.
         """
+        from .heuristic_weights import get_weights
+
+        # Support both short names and full IDs
+        full_id = persona_id
+        if not persona_id.startswith("heuristic_"):
+            full_id = f"heuristic_v1_{persona_id}"
+
+        persona_weights = get_weights(full_id)
+        if not persona_weights:
+            logger.warning(f"Persona '{persona_id}' not found, using default")
+            return self._default_weights()
+        return persona_weights
+
+    def _generate_weights_list(self) -> list[list[dict[str, float]]]:
+        """Generate per-game, per-player weights with optional noise and persona variety.
+
+        Weight generation priority:
+        1. per_player_personas: Fixed persona per player position (e.g., P1=aggressive, P2=defensive)
+        2. persona_pool: Random persona sampling per game (same for all players in that game)
+        3. Default: Board-specific optimized weights
+
+        Returns:
+            2D list of weight dictionaries: [game_idx][player_idx] -> weights
+            Shape: (batch_size, num_players)
+        """
+        import random
+
+        weights_list: list[list[dict[str, float]]] = []
+
+        # Priority 1: Per-player personas (fixed persona per player position)
+        if self.per_player_personas:
+            # Resolve each player's persona to weights
+            player_weights = [
+                self._resolve_persona_weights(pid) for pid in self.per_player_personas
+            ]
+
+            for _ in range(self.batch_size):
+                game_weights = []
+                for player_idx in range(self.num_players):
+                    pw = player_weights[player_idx].copy()
+                    # Apply noise if configured
+                    if self.weight_noise > 0:
+                        pw = self._apply_weight_noise(pw)
+                    game_weights.append(pw)
+                weights_list.append(game_weights)
+
+            return weights_list
+
+        # Priority 2: Persona pool (random per game, same for all players)
+        if self.persona_pool:
+            for _ in range(self.batch_size):
+                # Sample a persona for this game
+                persona_id = random.choice(self.persona_pool)
+                persona_weights = self._resolve_persona_weights(persona_id)
+
+                # Apply noise if configured
+                if self.weight_noise > 0:
+                    persona_weights = self._apply_weight_noise(persona_weights)
+
+                # All players in this game use the same weights
+                weights_list.append([persona_weights] * self.num_players)
+
+            return weights_list
+
+        # Priority 3: Default weights
         base_weights = self._default_weights()
+
         if self.weight_noise <= 0:
-            # No noise - all games use same weights
-            return [base_weights] * self.batch_size
+            # No noise - all games and players use same weights
+            player_weights = [base_weights] * self.num_players
+            return [player_weights] * self.batch_size
         else:
-            # Each game gets unique noisy weights
-            return [self._apply_weight_noise(base_weights) for _ in range(self.batch_size)]
+            # Each game gets unique noisy weights (same for all players in game)
+            for _ in range(self.batch_size):
+                noisy = self._apply_weight_noise(base_weights)
+                weights_list.append([noisy] * self.num_players)
+            return weights_list
+
+    def get_weights_for_current_players(
+        self, weights_list: list[list[dict[str, float]]]
+    ) -> list[dict[str, float]]:
+        """Get weights for the current player of each game.
+
+        Args:
+            weights_list: 2D weights [game][player]
+
+        Returns:
+            List of weight dicts, one per game, for that game's current player.
+        """
+        current_players = self.state.current_player.cpu().numpy()
+        return [
+            weights_list[game_idx][int(current_players[game_idx]) - 1]  # Players are 1-indexed
+            for game_idx in range(self.batch_size)
+        ]
+
+    @staticmethod
+    def get_available_personas() -> list[str]:
+        """Get list of available persona IDs for training variety.
+
+        These personas represent different play styles:
+        - balanced: Well-rounded, optimized via CMA-ES
+        - aggressive: Favors captures and elimination
+        - territorial: Emphasizes space control and markers
+        - defensive: Prioritizes safety and flexibility
+
+        Returns:
+            List of persona ID strings that can be used in persona_pool.
+        """
+        return ["balanced", "aggressive", "territorial", "defensive"]
+
+    @staticmethod
+    def get_all_persona_profiles() -> dict[str, dict[str, float]]:
+        """Get all persona profiles with their full weight dictionaries.
+
+        Useful for understanding what each persona emphasizes.
+
+        Returns:
+            Dict mapping persona ID to weight dictionary.
+        """
+        from .heuristic_weights import HEURISTIC_WEIGHT_PROFILES
+
+        personas = {}
+        for short_name in ParallelGameRunner.get_available_personas():
+            full_id = f"heuristic_v1_{short_name}"
+            if full_id in HEURISTIC_WEIGHT_PROFILES:
+                personas[short_name] = HEURISTIC_WEIGHT_PROFILES[full_id]
+        return personas
 
     def get_stats(self) -> dict[str, float]:
         """Get performance statistics."""

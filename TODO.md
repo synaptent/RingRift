@@ -35,7 +35,7 @@ All 6 training decision systems now integrated with `UnifiedSignalComputer`:
 
 ## Document Role
 
-This is the canonical high-level task/backlog tracker. For rules semantics, defer to `RULES_CANONICAL_SPEC.md`. For implementation status, see `CURRENT_STATE_ASSESSMENT.md`.
+This is the canonical high-level task/backlog tracker. For rules semantics, defer to `RULES_CANONICAL_SPEC.md`. For historical implementation status reference, see [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md).
 
 **Priority Levels:**
 
@@ -703,7 +703,7 @@ Results in `ai-service/logs/lps_ablation/lps_ablation_*.json`
 
 ### 4.1 Keep Updated
 
-- [ ] `CURRENT_STATE_ASSESSMENT.md` – Implementation status
+- [ ] `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md` – Historical implementation status snapshot
 - [ ] `docs/planning/STRATEGIC_ROADMAP.md` – Phased roadmap
 - [ ] `KNOWN_ISSUES.md` – P0/P1 issues
 - [ ] `tests/README.md` – Test categories
@@ -736,13 +736,13 @@ Detailed historical information for completed waves is preserved in:
 
 ## Related Documentation
 
-| Document                             | Purpose                                 |
-| ------------------------------------ | --------------------------------------- |
-| `CURRENT_STATE_ASSESSMENT.md`        | Implementation status snapshot          |
-| `docs/planning/STRATEGIC_ROADMAP.md` | Phased roadmap to MVP                   |
-| `KNOWN_ISSUES.md`                    | P0/P1 issues and gaps                   |
-| `RULES_CANONICAL_SPEC.md`            | Rules semantics SSoT                    |
-| `docs/testing/TEST_CATEGORIES.md`    | Test organization guide                 |
-| `DOCUMENTATION_INDEX.md`             | Full docs map                           |
-| `ai-service/docs/UNIFIED_AI_LOOP.md` | Unified AI self-improvement loop        |
-| `ai-service/deploy/README.md`        | Deployment scripts and systemd services |
+| Document                                              | Purpose                                   |
+| ----------------------------------------------------- | ----------------------------------------- |
+| `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md` | Historical implementation status snapshot |
+| `docs/planning/STRATEGIC_ROADMAP.md`                  | Phased roadmap to MVP                     |
+| `KNOWN_ISSUES.md`                                     | P0/P1 issues and gaps                     |
+| `RULES_CANONICAL_SPEC.md`                             | Rules semantics SSoT                      |
+| `docs/testing/TEST_CATEGORIES.md`                     | Test organization guide                   |
+| `DOCUMENTATION_INDEX.md`                              | Full docs map                             |
+| `ai-service/docs/UNIFIED_AI_LOOP.md`                  | Unified AI self-improvement loop          |
+| `ai-service/deploy/README.md`                         | Deployment scripts and systemd services   |

@@ -181,7 +181,7 @@ After running this checklist for a new HUD change:
   - [ ] Tooltip content that becomes stale when rules logic changes.
   - [ ] Layout problems (clipping, overlap) at common resolutions.
   - [ ] Spectator HUD states that are confusing or misleading.
-- [ ] If all checks pass, note the date and commit hash in `CURRENT_STATE_ASSESSMENT.md` or your release notes so you have a historical point where HUD UX was validated.
+- [ ] If all checks pass, note the date and commit hash in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md) or your release notes so you have a historical point where HUD UX was validated.
 
 This file is intentionally **manual and high‑level**. It should evolve as new HUD features land (e.g. time‑pressure cues, onboarding coachmarks) so that each new UX slice also carries a clear QA ritual.
 

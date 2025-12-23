@@ -169,11 +169,34 @@ def select_moves_vectorized(
     return selected
 
 
+# Key mappings from full profile format to simplified keys
+# Full profiles use WEIGHT_* keys, simplified uses lowercase keys
+_FULL_PROFILE_KEY_MAP = {
+    "center": "WEIGHT_CENTER_CONTROL",
+    "capture_value": "WEIGHT_OVERTAKE_POTENTIAL",
+    "adjacency": "WEIGHT_ADJACENCY",
+    "line_potential": "WEIGHT_LINE_POTENTIAL",
+    "noise": None,  # No equivalent in full profiles
+}
+
+
+def _get_weight(weights: dict, key: str, default: float) -> float:
+    """Get weight from dict supporting both simplified and full profile formats."""
+    # Try simplified key first
+    if key in weights:
+        return weights[key]
+    # Map to full profile key
+    full_key = _FULL_PROFILE_KEY_MAP.get(key)
+    if full_key and full_key in weights:
+        return weights[full_key]
+    return default
+
+
 def select_moves_heuristic(
     moves: BatchMoves,
     state: BatchGameState,
     active_mask: torch.Tensor,
-    weights: dict[str, float] | None = None,
+    weights_list: list[dict[str, float]] | None = None,
     temperature: float = 1.0,
 ) -> torch.Tensor:
     """Select one move per game using heuristic scoring.
@@ -194,7 +217,8 @@ def select_moves_heuristic(
         moves: BatchMoves containing flattened moves for all games
         state: BatchGameState for feature extraction
         active_mask: (batch_size,) bool tensor of games to process
-        weights: Optional weight dict for feature importance
+        weights_list: Optional per-game weights list for feature importance
+                     (one dict per game, already resolved to current player's weights)
         temperature: Softmax temperature (higher = more random)
 
     Returns:
@@ -211,14 +235,53 @@ def select_moves_heuristic(
         return selected
 
     # Default weights for heuristic features
-    if weights is None:
-        weights = {
-            "center": 3.0,
-            "capture_value": 5.0,
-            "adjacency": 2.0,
-            "line_potential": 1.5,
-            "noise": 1.0,
-        }
+    default_weights = {
+        "center": 3.0,
+        "capture_value": 5.0,
+        "adjacency": 2.0,
+        "line_potential": 1.5,
+        "noise": 1.0,
+    }
+
+    # Build per-game weight tensors for vectorized scoring
+    game_idx = moves.game_idx.long()
+
+    if weights_list is not None:
+        # Per-game weights: create tensors indexed by game using _get_weight helper
+        # to support both simplified keys and full profile WEIGHT_* keys
+        center_weights = torch.tensor(
+            [_get_weight(weights_list[g], "center", 3.0) for g in range(batch_size)],
+            device=device
+        )
+        capture_weights = torch.tensor(
+            [_get_weight(weights_list[g], "capture_value", 5.0) for g in range(batch_size)],
+            device=device
+        )
+        adjacency_weights = torch.tensor(
+            [_get_weight(weights_list[g], "adjacency", 2.0) for g in range(batch_size)],
+            device=device
+        )
+        line_weights = torch.tensor(
+            [_get_weight(weights_list[g], "line_potential", 1.5) for g in range(batch_size)],
+            device=device
+        )
+        noise_weights = torch.tensor(
+            [_get_weight(weights_list[g], "noise", 1.0) for g in range(batch_size)],
+            device=device
+        )
+        # Index by game to get per-move weights
+        center_weight_per_move = center_weights[game_idx]
+        capture_weight_per_move = capture_weights[game_idx]
+        adjacency_weight_per_move = adjacency_weights[game_idx]
+        line_weight_per_move = line_weights[game_idx]
+        noise_weight_per_move = noise_weights[game_idx]
+    else:
+        # Uniform weights across all moves
+        center_weight_per_move = default_weights["center"]
+        capture_weight_per_move = default_weights["capture_value"]
+        adjacency_weight_per_move = default_weights["adjacency"]
+        line_weight_per_move = default_weights["line_potential"]
+        noise_weight_per_move = default_weights["noise"]
 
     center = board_size // 2
     max_dist = center * 2.0
@@ -228,11 +291,10 @@ def select_moves_heuristic(
         (moves.to_y.float() - center).abs() +
         (moves.to_x.float() - center).abs()
     )
-    center_score = (max_dist - dist_to_center) * weights.get("center", 3.0)
+    center_score = (max_dist - dist_to_center) * center_weight_per_move
 
     # === Feature 2: Capture value (for capture moves) ===
     # Look up target stack height at destination
-    game_idx = moves.game_idx.long()
     to_y = moves.to_y.long()
     to_x = moves.to_x.long()
 
@@ -241,7 +303,7 @@ def select_moves_heuristic(
     is_capture = moves.move_type == MoveType.CAPTURE
     capture_score = torch.where(
         is_capture,
-        target_heights * weights.get("capture_value", 5.0),
+        target_heights * capture_weight_per_move,
         torch.zeros_like(target_heights)
     )
 
@@ -262,7 +324,7 @@ def select_moves_heuristic(
     adj_right = so_padded[game_idx, to_y + 1, to_x + 2] == current_players.float()
 
     adjacent_count = adj_up.float() + adj_down.float() + adj_left.float() + adj_right.float()
-    adjacency_score = adjacent_count * weights.get("adjacency", 2.0)
+    adjacency_score = adjacent_count * adjacency_weight_per_move
 
     # === Feature 4: Line potential (simplified) ===
     # Check for 2+ in a row potential at destination
@@ -285,10 +347,10 @@ def select_moves_heuristic(
     v_down = own_stacks_padded[move_idx, to_y + 2, to_x + 1]
     v_line = v_up + v_down
 
-    line_score = (h_line + v_line) * weights.get("line_potential", 1.5)
+    line_score = (h_line + v_line) * line_weight_per_move
 
     # === Combine all scores ===
-    noise = torch.rand(moves.total_moves, device=device) * weights.get("noise", 1.0)
+    noise = torch.rand(moves.total_moves, device=device) * noise_weight_per_move
     scores = center_score + capture_score + adjacency_score + line_score + noise
 
     # Use the same segment-wise softmax sampling as select_moves_vectorized
@@ -444,7 +506,7 @@ def select_moves_heuristic_with_policy(
     moves: "BatchMoves",
     state: "BatchGameState",
     active_mask: torch.Tensor,
-    weights: dict[str, float] | None = None,
+    weights_list: list[dict[str, float]] | None = None,
     temperature: float = 1.0,
 ) -> tuple[torch.Tensor, PolicyData]:
     """Select moves using heuristic scoring and return full policy distribution.
@@ -457,7 +519,8 @@ def select_moves_heuristic_with_policy(
         moves: BatchMoves containing flattened moves for all games
         state: BatchGameState for feature extraction
         active_mask: (batch_size,) bool tensor of games to process
-        weights: Optional weight dict for feature importance
+        weights_list: Optional per-game weights list for feature importance
+                     (one dict per game, already resolved to current player's weights)
         temperature: Softmax temperature (higher = more random)
 
     Returns:
@@ -490,14 +553,53 @@ def select_moves_heuristic_with_policy(
         return selected, empty_policy
 
     # Default weights for heuristic features
-    if weights is None:
-        weights = {
-            "center": 3.0,
-            "capture_value": 5.0,
-            "adjacency": 2.0,
-            "line_potential": 1.5,
-            "noise": 1.0,
-        }
+    default_weights = {
+        "center": 3.0,
+        "capture_value": 5.0,
+        "adjacency": 2.0,
+        "line_potential": 1.5,
+        "noise": 1.0,
+    }
+
+    # Build per-game weight tensors for vectorized scoring
+    game_idx = moves.game_idx.long()
+
+    if weights_list is not None:
+        # Per-game weights: create tensors indexed by game using _get_weight helper
+        # to support both simplified keys and full profile WEIGHT_* keys
+        center_weights = torch.tensor(
+            [_get_weight(weights_list[g], "center", 3.0) for g in range(batch_size)],
+            device=device
+        )
+        capture_weights = torch.tensor(
+            [_get_weight(weights_list[g], "capture_value", 5.0) for g in range(batch_size)],
+            device=device
+        )
+        adjacency_weights = torch.tensor(
+            [_get_weight(weights_list[g], "adjacency", 2.0) for g in range(batch_size)],
+            device=device
+        )
+        line_weights = torch.tensor(
+            [_get_weight(weights_list[g], "line_potential", 1.5) for g in range(batch_size)],
+            device=device
+        )
+        noise_weights = torch.tensor(
+            [_get_weight(weights_list[g], "noise", 1.0) for g in range(batch_size)],
+            device=device
+        )
+        # Index by game to get per-move weights
+        center_weight_per_move = center_weights[game_idx]
+        capture_weight_per_move = capture_weights[game_idx]
+        adjacency_weight_per_move = adjacency_weights[game_idx]
+        line_weight_per_move = line_weights[game_idx]
+        noise_weight_per_move = noise_weights[game_idx]
+    else:
+        # Uniform weights across all moves
+        center_weight_per_move = default_weights["center"]
+        capture_weight_per_move = default_weights["capture_value"]
+        adjacency_weight_per_move = default_weights["adjacency"]
+        line_weight_per_move = default_weights["line_potential"]
+        noise_weight_per_move = default_weights["noise"]
 
     center = board_size // 2
     max_dist = center * 2.0
@@ -507,10 +609,9 @@ def select_moves_heuristic_with_policy(
         (moves.to_y.float() - center).abs() +
         (moves.to_x.float() - center).abs()
     )
-    center_score = (max_dist - dist_to_center) * weights.get("center", 3.0)
+    center_score = (max_dist - dist_to_center) * center_weight_per_move
 
     # === Feature 2: Capture value (for capture moves) ===
-    game_idx = moves.game_idx.long()
     to_y = moves.to_y.long()
     to_x = moves.to_x.long()
 
@@ -518,7 +619,7 @@ def select_moves_heuristic_with_policy(
     is_capture = moves.move_type == MoveType.CAPTURE
     capture_score = torch.where(
         is_capture,
-        target_heights * weights.get("capture_value", 5.0),
+        target_heights * capture_weight_per_move,
         torch.zeros_like(target_heights)
     )
 
@@ -534,7 +635,7 @@ def select_moves_heuristic_with_policy(
     adj_right = so_padded[game_idx, to_y + 1, to_x + 2] == current_players.float()
 
     adjacent_count = adj_up.float() + adj_down.float() + adj_left.float() + adj_right.float()
-    adjacency_score = adjacent_count * weights.get("adjacency", 2.0)
+    adjacency_score = adjacent_count * adjacency_weight_per_move
 
     # === Feature 4: Line potential ===
     own_stacks = (state.stack_owner[game_idx] == current_players.view(-1, 1, 1))
@@ -550,13 +651,13 @@ def select_moves_heuristic_with_policy(
     v_down = own_stacks_padded[move_idx, to_y + 2, to_x + 1]
     v_line = v_up + v_down
 
-    line_score = (h_line + v_line) * weights.get("line_potential", 1.5)
+    line_score = (h_line + v_line) * line_weight_per_move
 
     # === Combine all scores (without noise for policy - noise added separately) ===
     base_scores = center_score + capture_score + adjacency_score + line_score
 
     # Add noise for selection but keep base_scores for policy
-    noise = torch.rand(moves.total_moves, device=device) * weights.get("noise", 1.0)
+    noise = torch.rand(moves.total_moves, device=device) * noise_weight_per_move
     scores = base_scores + noise
 
     # Segment-wise softmax

@@ -25,7 +25,7 @@ This document defines the orchestrator-first rollout strategy and legacy rules s
 
 - Rules semantics are single-sourced in the shared TS engine under `src/shared/engine/**` (helpers → aggregates → turn orchestrator → contracts) as documented in `docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md` and `docs/RULES_ENGINE_SURFACE_AUDIT.md`.
 - The Python rules engine under `ai-service/app/rules/**` is a parity and contract mirror, not an independent SSOT.
-- Orchestrator adapters exist for both backend and sandbox hosts and are wired into CI and runbooks as described in `CURRENT_STATE_ASSESSMENT.md`, `WEAKNESS_ASSESSMENT_REPORT.md`, and `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`.
+- Orchestrator adapters exist for both backend and sandbox hosts and are wired into CI and runbooks as described in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), `WEAKNESS_ASSESSMENT_REPORT.md`, and `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`.
 
 The goals of this plan are to:
 

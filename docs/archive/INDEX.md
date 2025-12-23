@@ -5,7 +5,7 @@
 ## Quick Guide
 
 - **Looking for current docs?** See [DOCUMENTATION_INDEX.md](../../DOCUMENTATION_INDEX.md)
-- **Need the latest status?** See [CURRENT_STATE_ASSESSMENT.md](../../CURRENT_STATE_ASSESSMENT.md)
+- **Need the latest status?** See [CURRENT_STATE_ASSESSMENT.md](historical/CURRENT_STATE_ASSESSMENT.md)
 - **Looking for an incident?** See [docs/incidents/INDEX.md](../incidents/INDEX.md)
 
 ---
@@ -67,6 +67,6 @@ If you need to understand historical decisions:
 All archived documents have been marked with `⚠️ HISTORICAL` banners indicating they are no longer the source of truth. Current authoritative documents are:
 
 - Rules: [RULES_CANONICAL_SPEC.md](../../RULES_CANONICAL_SPEC.md)
-- Status: [CURRENT_STATE_ASSESSMENT.md](../../CURRENT_STATE_ASSESSMENT.md)
+- Status: [CURRENT_STATE_ASSESSMENT.md](historical/CURRENT_STATE_ASSESSMENT.md)
 - Goals: [PROJECT_GOALS.md](../../PROJECT_GOALS.md)
 - API: [docs/architecture/CANONICAL_ENGINE_API.md](../architecture/CANONICAL_ENGINE_API.md)
