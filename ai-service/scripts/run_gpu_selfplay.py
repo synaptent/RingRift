@@ -1111,9 +1111,11 @@ def run_gpu_selfplay(
     if max_moves == 500:  # Default value - auto-adjust
         max_moves_table = {
             # (board_type, num_players): max_moves
-            ("square8", 2): 500,
-            ("square8", 3): 800,
-            ("square8", 4): 1200,
+            # S-invariant guarantees termination within ~164 turns for square8 2p
+            # Each turn has multiple phase actions, so allow ~6x headroom
+            ("square8", 2): 1000,
+            ("square8", 3): 1200,
+            ("square8", 4): 1600,
             ("square19", 2): 1200,
             ("square19", 3): 1600,
             ("square19", 4): 2000,

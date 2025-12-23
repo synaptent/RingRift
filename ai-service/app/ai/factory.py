@@ -259,6 +259,16 @@ CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
         "profile_id": "v3-improved-mcts-20-experimental",
         "use_neural_net": True,
     },
+    21: {
+        # GMO-Gumbel: GMO value network with Gumbel MCTS search
+        # Combines GMO's gradient-based evaluation with Gumbel's efficient search
+        # For fair comparison with CNN + Gumbel MCTS at same search budget
+        "ai_type": AIType.GMO_GUMBEL,
+        "randomness": 0.0,
+        "think_time_ms": 3000,
+        "profile_id": "v3-gmo-gumbel-21-experimental",
+        "use_neural_net": True,
+    },
 }
 
 # Overrides for 3-4 player games where MaxN/BRS outperform Minimax
@@ -384,6 +394,7 @@ DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     18: "Experimental - GMO v2 (attention + ensemble optimization)",
     19: "Experimental - GMO v2 Explorer (high exploration variant)",
     20: "Experimental - Improved MCTS (PUCT + progressive widening + transposition)",
+    21: "Experimental - GMO-Gumbel (GMO value network + Gumbel MCTS search)",
 }
 
 # Board types considered "large" (Minimax too slow)
@@ -660,6 +671,9 @@ class AIFactory:
         elif ai_type == AIType.GMO_MCTS:
             from app.ai.gmo_mcts_hybrid import GMOMCTSHybrid
             ai_class = GMOMCTSHybrid
+        elif ai_type == AIType.GMO_GUMBEL:
+            from app.ai.gmo_gumbel_hybrid import GumbelMCTSGMOAI
+            ai_class = GumbelMCTSGMOAI
         elif ai_type == AIType.IG_GMO:
             from app.ai.ig_gmo import IGGMO
             ai_class = IGGMO
@@ -963,6 +977,28 @@ class AIFactory:
             from app.ai.gmo_mcts_hybrid import GMOMCTSConfig, GMOMCTSHybrid
             hybrid_config = GMOMCTSConfig(num_simulations=num_simulations, device="cpu")
             return GMOMCTSHybrid(player_number, config, hybrid_config=hybrid_config)
+
+        # GMO-Gumbel Hybrid (GMO value network + Gumbel MCTS search)
+        # Must check before "gmo" since "gmo_gumbel" starts with "gmo_"
+        if agent_key == "gmo_gumbel" or agent_key.startswith("gmo_gumbel_"):
+            # Parse optional budget: gmo_gumbel_150, gmo_gumbel_200, etc.
+            simulation_budget = 150
+            if "_" in agent_key and agent_key != "gmo_gumbel":
+                try:
+                    parts = agent_key.split("_")
+                    if len(parts) >= 3:
+                        simulation_budget = int(parts[2])
+                except (ValueError, IndexError):
+                    pass
+
+            config = AIConfig(
+                difficulty=8,
+                rng_seed=rng_seed,
+                nn_model_id=nn_model_id,
+            )
+            from app.ai.gmo_gumbel_hybrid import GMOGumbelConfig, GumbelMCTSGMOAI
+            gumbel_config = GMOGumbelConfig(simulation_budget=simulation_budget, device="cpu")
+            return GumbelMCTSGMOAI(player_number, config, gumbel_config=gumbel_config)
 
         # GMO AI (Gradient Move Optimization - entropy-guided gradient ascent)
         if agent_key == "gmo" or agent_key.startswith("gmo_"):

@@ -60,7 +60,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Default algorithms for Phase 2 testing
-PHASE2_ALGORITHMS = ["gumbel_mcts", "mcts", "descent"]
+PHASE2_ALGORITHMS = ["gumbel_mcts", "mcts", "descent", "gmo_gumbel"]
 
 # Baseline composite IDs (pinned ratings)
 BASELINE_COMPOSITE_IDS = {
@@ -568,19 +568,29 @@ class CompositeGauntlet:
                     return None
             return None
 
-        # For other AI types, try to create appropriate AI
-        # This is a simplified version - full implementation would
-        # instantiate MCTS, Gumbel, Descent, etc.
-        if nn_path:
-            try:
-                return self._PolicyOnlyAI(
-                    player_number=player_number,
-                    config=config,
-                    board_type=board_type_enum,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to create AI: {e}")
-                return None
+        # Use AIFactory for proper AI creation
+        try:
+            from app.ai.factory import AIFactory
+            return AIFactory.create_for_tournament(
+                agent_id=ai_type,
+                player_number=player_number,
+                board_type=self.board_type,
+                num_players=self.num_players,
+                nn_model_id=model_id,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create {ai_type} AI via factory: {e}")
+            # Fallback to PolicyOnlyAI if available
+            if nn_path:
+                try:
+                    return self._PolicyOnlyAI(
+                        player_number=player_number,
+                        config=config,
+                        board_type=board_type_enum,
+                    )
+                except Exception as e2:
+                    logger.warning(f"Fallback to policy_only also failed: {e2}")
+                    return None
 
         return None
 

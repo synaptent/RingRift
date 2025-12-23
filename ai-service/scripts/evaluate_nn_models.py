@@ -161,6 +161,29 @@ def create_ai(
         config = AIConfig(difficulty=7, think_time=10000, use_neural_net=False)
         return AIFactory.create(AIType.MCTS, player_number=player_number, config=config)
 
+    elif model_type == "gmo_gumbel":
+        # GMO + Gumbel MCTS hybrid
+        from app.ai.gmo_gumbel_hybrid import GMOGumbelConfig, GumbelMCTSGMOAI
+        gumbel_config = GMOGumbelConfig(device=device, simulation_budget=150)
+        ai = GumbelMCTSGMOAI(
+            player_number=player_number,
+            config=AIConfig(difficulty=8),
+            gumbel_config=gumbel_config,
+        )
+        if checkpoint_path:
+            ai.load_gmo_checkpoint(checkpoint_path)
+        return ai
+
+    elif model_type == "gumbel_mcts":
+        # Standard Gumbel MCTS with CNN
+        from app.ai.gumbel_mcts_ai import GumbelMCTSAI
+        config = AIConfig(
+            difficulty=8,
+            nn_model_id=checkpoint_path,
+            gumbel_simulation_budget=150,
+        )
+        return GumbelMCTSAI(player_number, config, BoardType.SQUARE8)
+
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 

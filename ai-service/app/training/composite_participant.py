@@ -96,6 +96,10 @@ STANDARD_ALGORITHM_CONFIGS: dict[str, dict[str, Any]] = {
         "optim_steps": 50,
         "learning_rate": 0.1,
     },
+    "gmo_gumbel": {
+        "budget": 150,
+        "m": 16,
+    },
 }
 
 # Config hash key mapping (config parameter → hash prefix)
@@ -180,6 +184,7 @@ def encode_config_hash(config: dict[str, Any], ai_type: str) -> str:
         "policy_only": ["temperature"],
         "ebmo": ["direct_eval", "optim_steps", "num_restarts"],
         "gmo": ["optim_steps", "learning_rate"],
+        "gmo_gumbel": ["budget", "m"],
         "random": ["difficulty"],
         "heuristic": ["difficulty"],
     }

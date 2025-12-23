@@ -474,6 +474,7 @@ class UnifiedScheduler:
         cfg = job.config
 
         if job.job_type == JobType.SELFPLAY:
+            output_dir = f"data/selfplay/unified_{job.id}"
             return (
                 f"python3 scripts/run_self_play_soak.py "
                 f"--board-type {cfg.get('board_type', 'square8')} "
@@ -481,6 +482,8 @@ class UnifiedScheduler:
                 f"--num-games {cfg.get('num_games', 1000)} "
                 f"--engine-mode {cfg.get('engine_mode', 'mixed')} "
                 f"--difficulty-band canonical "
+                f"--record-db {output_dir}/games.db "
+                f"--log-jsonl {output_dir}/games.jsonl "
                 f"--streaming-record"
             )
 

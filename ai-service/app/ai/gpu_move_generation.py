@@ -287,7 +287,12 @@ def _check_can_capture_after_placement(
         from_y = int(y_np[i])
         from_x = int(x_np[i])
         my_height = int(heights_np[i])
-        my_cap = my_height  # After placement, cap = full height
+        # BUG FIX: After placement, cap is NOT necessarily the full height.
+        # Per RR-CANON-R082, when placing on an existing stack, the new cap
+        # is only the rings we just placed (always 1 in GPU model).
+        # When placing on empty cell, cap = placement count (also 1 in GPU).
+        # So cap after single-ring placement is always 1.
+        my_cap = 1
         player = int(players_np[i])
 
         for dy, dx in directions:
