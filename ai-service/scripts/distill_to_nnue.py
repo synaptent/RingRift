@@ -590,7 +590,7 @@ def main() -> None:
     parser.add_argument(
         "--board-type",
         type=str,
-        choices=["square8", "square19", "hexagonal"],
+        choices=["square8", "square19", "hexagonal", "hex8"],
         default="square8",
         help="Board type for the models (default: square8).",
     )
