@@ -3075,6 +3075,7 @@ class P2POrchestrator:
             import shutil
             usage = shutil.disk_usage(self.ringrift_path)
             result["disk_percent"] = 100.0 * usage.used / usage.total
+            result["disk_free_gb"] = usage.free / (1024**3)
 
             # GPU (NVIDIA) - handle multi-GPU by averaging
             try:
@@ -3111,6 +3112,30 @@ class P2POrchestrator:
             logger.info(f"Resource check error: {e}")
 
         return result
+
+    def _check_nfs_accessible(self) -> bool:
+        """Check if NFS mount is accessible.
+
+        Tests common NFS mount points for accessibility.
+        Returns True if NFS is accessible, False otherwise.
+        """
+        nfs_paths = [
+            Path("/mnt/nfs/ringrift"),
+            Path("/home/shared/ringrift"),
+            Path(os.environ.get("RINGRIFT_NFS_PATH", "/mnt/nfs/ringrift")),
+        ]
+
+        for nfs_path in nfs_paths:
+            try:
+                if nfs_path.exists() and nfs_path.is_dir():
+                    # Try to list directory (actual access check)
+                    list(nfs_path.iterdir())[:1]
+                    return True
+            except Exception:
+                continue
+
+        # NFS not found or not accessible
+        return False
 
     def _detect_local_external_work(self) -> dict[str, bool]:
         """Detect external work running on this node (not tracked by P2P orchestrator).
@@ -7506,6 +7531,96 @@ class P2POrchestrator:
             return web.json_response(response)
         except Exception as e:
             return web.json_response({"error": str(e), "healthy": False}, status=500)
+
+    async def handle_cluster_health(self, request: web.Request) -> web.Response:
+        """Aggregate health status from all cluster nodes (leader-only).
+
+        Phase 6: Health broadcasting - leader aggregates peer health data
+        and reports unhealthy nodes for monitoring and alerting.
+        """
+        try:
+            if not self._is_leader():
+                return await self._proxy_to_leader(request)
+
+            self._update_self_info()
+
+            # Collect health from all peers
+            unhealthy_nodes = []
+            code_version_mismatches = []
+            disk_warnings = []
+            memory_warnings = []
+            nfs_issues = []
+
+            my_version = self.build_version
+
+            with self.peers_lock:
+                peers_snapshot = list(self.peers.values())
+
+            for peer in peers_snapshot:
+                # Check for health issues
+                issues = peer.get_health_issues()
+                if issues:
+                    unhealthy_nodes.append({
+                        "node_id": peer.node_id,
+                        "issues": [{"code": code, "description": desc} for code, desc in issues],
+                    })
+
+                # Check code version mismatch
+                if peer.code_version and peer.code_version != my_version:
+                    code_version_mismatches.append({
+                        "node_id": peer.node_id,
+                        "version": peer.code_version,
+                        "leader_version": my_version,
+                    })
+
+                # Check disk warnings
+                if peer.disk_percent >= 85:
+                    disk_warnings.append({
+                        "node_id": peer.node_id,
+                        "disk_percent": peer.disk_percent,
+                        "disk_free_gb": peer.disk_free_gb,
+                    })
+
+                # Check memory warnings
+                if peer.memory_percent >= 85:
+                    memory_warnings.append({
+                        "node_id": peer.node_id,
+                        "memory_percent": peer.memory_percent,
+                    })
+
+                # Check NFS issues
+                if not peer.nfs_accessible:
+                    nfs_issues.append({
+                        "node_id": peer.node_id,
+                    })
+
+            # Calculate cluster health summary
+            total_nodes = len(peers_snapshot) + 1  # Include self
+            healthy_nodes = total_nodes - len(unhealthy_nodes)
+            cluster_health_pct = (healthy_nodes / total_nodes * 100) if total_nodes > 0 else 0
+
+            return web.json_response({
+                "success": True,
+                "timestamp": time.time(),
+                "leader_id": self.node_id,
+                "leader_version": my_version,
+                "cluster_health": {
+                    "total_nodes": total_nodes,
+                    "healthy_nodes": healthy_nodes,
+                    "unhealthy_nodes": len(unhealthy_nodes),
+                    "health_percent": cluster_health_pct,
+                },
+                "issues": {
+                    "unhealthy_nodes": unhealthy_nodes,
+                    "code_version_mismatches": code_version_mismatches,
+                    "disk_warnings": disk_warnings,
+                    "memory_warnings": memory_warnings,
+                    "nfs_issues": nfs_issues,
+                },
+            })
+        except Exception as e:
+            logger.error(f"Cluster health check error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
 
     # ============================================
     # Relay/Hub Handlers for NAT-blocked nodes
@@ -20433,6 +20548,18 @@ print(json.dumps({{
         self.self_info.tournament_running = external.get('tournament_running', False)
         self.self_info.data_merge_running = external.get('data_merge_running', False)
 
+        # Phase 6: Health broadcasting - additional health metrics
+        self.self_info.nfs_accessible = self._check_nfs_accessible()
+        self.self_info.code_version = self.build_version
+        self.self_info.errors_last_hour = getattr(self, '_error_count_last_hour', 0)
+        self.self_info.disk_free_gb = usage.get("disk_free_gb", 0.0)
+        self.self_info.active_job_count = (
+            selfplay + training +
+            (1 if self.self_info.cmaes_running else 0) +
+            (1 if self.self_info.gauntlet_running else 0) +
+            (1 if self.self_info.tournament_running else 0)
+        )
+
         # Report to unified resource optimizer for cluster-wide coordination
         if HAS_NEW_COORDINATION:
             try:
@@ -27742,6 +27869,7 @@ print(json.dumps({{
         app.router.add_post('/reduce_selfplay', self.handle_reduce_selfplay)
         app.router.add_post('/selfplay/start', self.handle_selfplay_start)  # GPU selfplay dispatch endpoint
         app.router.add_get('/health', self.handle_health)
+        app.router.add_get('/cluster/health', self.handle_cluster_health)
         app.router.add_get('/git/status', self.handle_git_status)
         app.router.add_post('/git/update', self.handle_git_update)
 
@@ -27907,6 +28035,17 @@ print(json.dumps({{
 
         runner = web.AppRunner(app)
         await runner.setup()
+
+        # Verify NFS sync before starting (prevents import errors from stale code)
+        try:
+            from scripts.verify_nfs_sync import verify_before_startup
+            if not verify_before_startup():
+                logger.warning("NFS sync verification found mismatches - check logs for details")
+        except ImportError:
+            logger.debug("NFS sync verification not available")
+        except Exception as e:
+            logger.warning(f"NFS sync verification failed: {e}")
+
         # Increase backlog to handle burst of connections from many nodes
         # Default is ~128, which can overflow when many vast nodes heartbeat simultaneously
         site = web.TCPSite(runner, self.host, self.port, reuse_address=True, backlog=1024)

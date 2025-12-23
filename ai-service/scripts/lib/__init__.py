@@ -292,6 +292,13 @@ from scripts.lib.hosts import (
     get_p2p_voters,
 )
 
+from scripts.lib.unified_cluster_config import (
+    NodeConfig,
+    UnifiedClusterConfig,
+    get_cluster_config,
+    reload_cluster_config,
+)
+
 __all__ = [
     # paths
     "AI_SERVICE_ROOT",
@@ -510,4 +517,9 @@ __all__ = [
     "wait_for_process_exit",
     "with_timeout",
     "write_jsonl_lines",
+    # unified_cluster_config
+    "NodeConfig",
+    "UnifiedClusterConfig",
+    "get_cluster_config",
+    "reload_cluster_config",
 ]

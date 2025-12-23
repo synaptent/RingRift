@@ -55,6 +55,7 @@ import torch
 
 from app.ai.gpu_batch import get_device
 from app.ai.gpu_canonical_export import (
+    _canvas_to_cube_coords,
     convert_gpu_move_to_canonical,
     gpu_move_type_to_canonical,
     gpu_phase_to_canonical,
@@ -855,12 +856,13 @@ class GPUSelfPlayGenerator:
                                 "moveNumber": move_idx + 1,  # 1-indexed for NNUE training compatibility
                             }
                             # Add position fields if present (convert tuples to dicts)
+                            # For hex boards, convert canvas coords to cube coords
                             from_pos = raw_move.get("from_pos")
                             to_pos = raw_move.get("to_pos")
                             if from_pos and isinstance(from_pos, tuple):
-                                canonical_move["from"] = {"x": from_pos[1], "y": from_pos[0]}
+                                canonical_move["from"] = _canvas_to_cube_coords(from_pos[0], from_pos[1], board_type_str)
                             if to_pos and isinstance(to_pos, tuple):
-                                canonical_move["to"] = {"x": to_pos[1], "y": to_pos[0]}
+                                canonical_move["to"] = _canvas_to_cube_coords(to_pos[0], to_pos[1], board_type_str)
                                 # Add captureTarget for capture moves
                                 # captureTarget is the position of the captured stack, which is
                                 # one step before the landing position along the move direction
@@ -873,7 +875,7 @@ class GPUSelfPlayGenerator:
                                     # The captured stack is one step back from landing
                                     target_y = to_y - dy
                                     target_x = to_x - dx
-                                    canonical_move["captureTarget"] = {"x": target_x, "y": target_y}
+                                    canonical_move["captureTarget"] = _canvas_to_cube_coords(target_y, target_x, board_type_str)
                             canonical_moves.append(canonical_move)
                         moves_for_record = canonical_moves
 

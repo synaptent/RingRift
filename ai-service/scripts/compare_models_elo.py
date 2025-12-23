@@ -13,6 +13,12 @@ Usage:
         --games 100 \\
         --board-type square8 --num-players 2
 
+    # Compare model vs heuristic baseline
+    python scripts/compare_models_elo.py \\
+        --model-a models/nnue/new_model.pt \\
+        --model-b heuristic \\
+        --games 50 --quick
+
     # Quick comparison (fewer games)
     python scripts/compare_models_elo.py --model-a new.pt --model-b best.pt --games 20 --quick
 """
@@ -22,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import multiprocessing
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -29,6 +36,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+# Use 'spawn' context for CUDA compatibility
+# This avoids "Cannot re-initialize CUDA in forked subprocess" errors
+MP_CONTEXT = multiprocessing.get_context("spawn")
 
 # Add project root
 SCRIPT_DIR = Path(__file__).parent
@@ -166,7 +177,15 @@ def play_single_game(
     loader = UnifiedModelLoader()
 
     def create_ai(model_path: str, player: int) -> UniversalAI | HeuristicAI:
-        """Create AI from model path using unified loader."""
+        """Create AI from model path using unified loader.
+
+        Supports special keyword 'heuristic' for pure rule-based baseline.
+        """
+        # Handle special "heuristic" keyword for baseline comparison
+        if model_path.lower() == "heuristic":
+            config = AIConfig(difficulty=5, board_type=bt)
+            return HeuristicAI(player_number=player, config=config)
+
         try:
             loaded = loader.load(
                 model_path,
@@ -310,7 +329,7 @@ class ModelComparator:
         """Run games in parallel."""
         results: list[MatchResult] = []
 
-        with ProcessPoolExecutor(max_workers=self.parallel_games) as executor:
+        with ProcessPoolExecutor(max_workers=self.parallel_games, mp_context=MP_CONTEXT) as executor:
             futures = {
                 executor.submit(
                     play_single_game,
@@ -510,12 +529,12 @@ Examples:
     parser.add_argument(
         "--model-a",
         required=True,
-        help="Path to model A",
+        help="Path to model A (or 'heuristic' for rule-based baseline)",
     )
     parser.add_argument(
         "--model-b",
         required=True,
-        help="Path to model B (baseline)",
+        help="Path to model B (baseline), or 'heuristic' for rule-based baseline",
     )
     parser.add_argument(
         "--board-type",
@@ -582,15 +601,15 @@ def main() -> int:
         json_logs=args.json_logs,
     )
 
-    # Validate model paths
-    model_a = Path(args.model_a)
-    model_b = Path(args.model_b)
+    # Validate model paths (skip for special "heuristic" keyword)
+    model_a = args.model_a
+    model_b = args.model_b
 
-    if not model_a.exists():
+    if model_a.lower() != "heuristic" and not Path(model_a).exists():
         logger.error(f"Model A not found: {model_a}")
         return 1
 
-    if not model_b.exists():
+    if model_b.lower() != "heuristic" and not Path(model_b).exists():
         logger.error(f"Model B not found: {model_b}")
         return 1
 
@@ -605,8 +624,8 @@ def main() -> int:
 
     # Run comparison
     comparator = ModelComparator(
-        model_a_path=str(model_a),
-        model_b_path=str(model_b),
+        model_a_path=model_a,
+        model_b_path=model_b,
         board_type=args.board_type,
         num_players=args.num_players,
         mcts_simulations=mcts_sims,

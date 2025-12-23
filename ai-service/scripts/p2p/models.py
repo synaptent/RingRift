@@ -77,6 +77,12 @@ class NodeInfo:
     gauntlet_running: bool = False
     tournament_running: bool = False
     data_merge_running: bool = False
+    # Phase 6: Health broadcasting - comprehensive health metrics for leader aggregation
+    nfs_accessible: bool = True
+    code_version: str = ""  # Git commit hash for version mismatch detection
+    errors_last_hour: int = 0  # Error count for anomaly detection
+    disk_free_gb: float = 0.0  # Absolute free disk space
+    active_job_count: int = 0  # Total active jobs (selfplay + training + external)
 
     def is_alive(self) -> bool:
         """Check if node is considered alive based on last heartbeat."""
@@ -154,6 +160,51 @@ class NodeInfo:
             return False
         # Check for CPU-bound external work
         return self.cmaes_running or self.gauntlet_running or self.tournament_running
+
+    def get_health_issues(self) -> list[tuple[str, str]]:
+        """Get list of health issues for this node.
+
+        Returns:
+            List of (issue_code, description) tuples for any detected issues.
+            Empty list means node is healthy.
+        """
+        issues = []
+
+        # Check disk
+        if self.disk_percent >= 95:
+            issues.append(("disk_critical", f"Disk at {self.disk_percent:.0f}%"))
+        elif self.disk_percent >= DISK_WARNING_THRESHOLD:
+            issues.append(("disk_warning", f"Disk at {self.disk_percent:.0f}%"))
+
+        # Check memory
+        if self.memory_percent >= 95:
+            issues.append(("memory_critical", f"Memory at {self.memory_percent:.0f}%"))
+        elif self.memory_percent >= MEMORY_WARNING_THRESHOLD:
+            issues.append(("memory_warning", f"Memory at {self.memory_percent:.0f}%"))
+
+        # Check NFS
+        if not self.nfs_accessible:
+            issues.append(("nfs_unavailable", "NFS mount not accessible"))
+
+        # Check errors
+        if self.errors_last_hour >= 50:
+            issues.append(("high_errors", f"{self.errors_last_hour} errors in last hour"))
+        elif self.errors_last_hour >= 10:
+            issues.append(("moderate_errors", f"{self.errors_last_hour} errors in last hour"))
+
+        # Check OOM
+        if self.oom_events > 0:
+            issues.append(("oom_events", f"{self.oom_events} OOM events"))
+
+        # Check if retired
+        if self.retired:
+            issues.append(("retired", "Node is retired"))
+
+        # Check connection failures
+        if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            issues.append(("unreachable", f"{self.consecutive_failures} consecutive failures"))
+
+        return issues
 
     def should_retry(self) -> bool:
         """Check if we should retry connecting to a failed node."""
@@ -283,6 +334,12 @@ class NodeInfo:
         d.setdefault('gauntlet_running', False)
         d.setdefault('tournament_running', False)
         d.setdefault('data_merge_running', False)
+        # Phase 6: Health broadcasting fields
+        d.setdefault('nfs_accessible', True)
+        d.setdefault('code_version', '')
+        d.setdefault('errors_last_hour', 0)
+        d.setdefault('disk_free_gb', 0.0)
+        d.setdefault('active_job_count', 0)
         # Ignore unknown keys for rolling upgrades.
         allowed = {f.name for f in dataclass_fields(cls)}
         d = {k: v for k, v in d.items() if k in allowed}

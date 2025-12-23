@@ -98,6 +98,38 @@ _GPU_TO_CANONICAL_PHASE = {
 # =============================================================================
 
 
+def _canvas_to_cube_coords(row: int, col: int, board_type: str) -> dict[str, int]:
+    """Convert canvas coordinates to cube coordinates for hex boards.
+
+    GPU stores positions as canvas coords (row, col) in [0, board_size).
+    Canonical hex format uses cube coords (x, y, z) where x+y+z=0.
+
+    Args:
+        row: Canvas row coordinate (Y in tensor)
+        col: Canvas column coordinate (X in tensor)
+        board_type: Board type string
+
+    Returns:
+        Position dict with x, y (and z for hex boards)
+    """
+    if board_type in ("hexagonal", "hex8"):
+        # Determine board size and radius from board type
+        if board_type == "hexagonal":
+            board_size = 25
+        else:  # hex8
+            board_size = 9
+        radius = (board_size - 1) // 2
+
+        # Convert canvas to cube coords
+        cube_x = col - radius
+        cube_y = row - radius
+        cube_z = -cube_x - cube_y
+        return {"x": cube_x, "y": cube_y, "z": cube_z}
+    else:
+        # Square boards: canvas coords are the canonical coords
+        return {"x": col, "y": row}
+
+
 def gpu_move_type_to_canonical(gpu_move_type: int) -> str:
     """Convert GPU MoveType integer to canonical move type string.
 
@@ -168,16 +200,16 @@ def convert_gpu_move_to_canonical(
         "phase": canonical_phase,
     }
 
-    # Add position fields if valid
+    # Add position fields if valid, converting to cube coords for hex boards
     if from_y >= 0 and from_x >= 0:
-        move["from"] = {"x": from_x, "y": from_y}
+        move["from"] = _canvas_to_cube_coords(from_y, from_x, board_type)
 
     if to_y >= 0 and to_x >= 0:
-        move["to"] = {"x": to_x, "y": to_y}
+        move["to"] = _canvas_to_cube_coords(to_y, to_x, board_type)
 
     # Add capture_target for capture moves (December 2025)
     if capture_target_y >= 0 and capture_target_x >= 0:
-        move["captureTarget"] = {"x": capture_target_x, "y": capture_target_y}
+        move["captureTarget"] = _canvas_to_cube_coords(capture_target_y, capture_target_x, board_type)
 
     return move
 
