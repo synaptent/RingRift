@@ -40,8 +40,9 @@ class BoardGeometry:
                         neighbors.append(Position(x=nx, y=ny))
 
         elif board_type in (BoardType.HEX8, BoardType.HEXAGONAL):
-            # For hex boards: size = radius + 1 (TS BOARD_CONFIGS), so radius = size - 1
-            radius = board_size - 1
+            # For hex boards: size = 2*radius + 1 (bounding box), so radius = (size - 1) // 2
+            # HEXAGONAL: size=25, radius=12; HEX8: size=9, radius=4
+            radius = (board_size - 1) // 2
             directions = [
                 (1, 0, -1), (-1, 0, 1),
                 (0, 1, -1), (0, -1, 1),
@@ -136,8 +137,9 @@ class BoardGeometry:
             # Use board_size parameter from BOARD_CONFIGS
             return 0 <= pos.x < board_size and 0 <= pos.y < board_size
         elif board_type in (BoardType.HEX8, BoardType.HEXAGONAL):
-            # For hex boards: size = radius + 1 (TS BOARD_CONFIGS), so radius = size - 1
-            radius = board_size - 1
+            # For hex boards: size = 2*radius + 1 (bounding box), so radius = (size - 1) // 2
+            # HEXAGONAL: size=25, radius=12; HEX8: size=9, radius=4
+            radius = (board_size - 1) // 2
             z = pos.z if pos.z is not None else -pos.x - pos.y
             return (abs(pos.x) <= radius and
                     abs(pos.y) <= radius and
