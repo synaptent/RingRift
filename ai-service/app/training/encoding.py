@@ -1125,6 +1125,24 @@ class HexStateEncoderV3:
 
         return features, globals_vec
 
+    def encode(self, state: GameState) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Encode state with frame stacking for inference.
+
+        Since the model expects history-stacked features (64 channels = 16 × 4),
+        but inference only has the current state, we replicate the current
+        frame to fill all history slots. This is a reasonable approximation
+        for single-frame inference.
+
+        Returns:
+            - stacked_features: shape (64, H, W) - 4 copies of current frame
+            - global_features: shape (20,)
+        """
+        features, globals_vec = self.encode_state(state)
+        # Stack current frame 4 times to match training format (history_length=3)
+        stacked = np.concatenate([features] * 4, axis=0)
+        return stacked, globals_vec
+
     def encode_with_history(
         self,
         state: GameState,

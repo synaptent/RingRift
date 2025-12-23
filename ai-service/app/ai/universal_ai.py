@@ -106,20 +106,31 @@ class UniversalAI(BaseAI):
         self._encoder = None
 
     def _get_encoder(self):
-        """Get the appropriate feature encoder for this board type."""
+        """Get the appropriate feature encoder for this board type and model architecture."""
         if self._encoder is not None:
             return self._encoder
 
         try:
             if self.board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
-                from app.ai.neural_net.hex_encoding import HexEncoder
+                # Use model architecture to determine encoder version
+                arch = self.loaded_model.architecture if self.loaded_model else None
 
-                self._encoder = HexEncoder(self.board_type)
+                if arch in (ModelArchitecture.HEX_V3, ModelArchitecture.HEX_V3_LITE):
+                    from app.training.encoding import HexStateEncoderV3
+
+                    # V3 encoder needs board_size
+                    board_size = 9 if self.board_type == BoardType.HEX8 else 25
+                    self._encoder = HexStateEncoderV3(board_size=board_size)
+                else:
+                    from app.training.encoding import HexStateEncoder
+
+                    self._encoder = HexStateEncoder(self.board_type)
             else:
-                from app.ai.neural_net.square_encoding import SquareEncoder
+                from app.training.encoding import SquareStateEncoder
 
-                self._encoder = SquareEncoder(self.board_type)
-        except ImportError:
+                self._encoder = SquareStateEncoder(self.board_type)
+        except ImportError as e:
+            logger.warning(f"Failed to import encoder: {e}, using fallback")
             # Fallback to legacy encoder
             from app.ai.features import FeatureExtractor
 
@@ -267,10 +278,23 @@ class UniversalAI(BaseAI):
                 x = torch.tensor(features, dtype=torch.float32, device=device).unsqueeze(
                     0
                 )
+                g = torch.tensor(globals_vec, dtype=torch.float32, device=device).unsqueeze(
+                    0
+                )
 
                 # Handle different model signatures
                 if hasattr(model, "forward"):
-                    output = model(x)
+                    # Check if model expects globals (Hex/CNN v2+ models)
+                    import inspect
+                    sig = inspect.signature(model.forward)
+                    params = list(sig.parameters.keys())
+
+                    if len(params) >= 2 and params[1] in ('globals', 'globals_vec', 'g'):
+                        # Model expects globals as second argument
+                        output = model(x, g)
+                    else:
+                        # Legacy model without globals
+                        output = model(x)
 
                     if isinstance(output, tuple) and len(output) >= 2:
                         value, policy = output[0], output[1]
