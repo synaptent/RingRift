@@ -32,12 +32,12 @@ vulture==2.14
 
 # Core ML/Data Science libraries (Intel-compatible versions)
 numpy==1.26.4
-scipy==1.12.0
+scipy==1.15.3
 scikit-learn==1.6.1
 
 # Deep Learning (Intel-compatible versions)
-torch==2.2.2
-torchvision==0.17.2
+torch==2.9.1
+torchvision==0.24.1
 
 # TensorBoard
 tensorboard==2.18.0
