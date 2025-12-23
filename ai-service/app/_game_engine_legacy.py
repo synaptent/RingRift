@@ -821,6 +821,22 @@ class GameEngine:
                 new_state.current_phase = GamePhase.TERRITORY_PROCESSING
                 new_state.current_player = move.player
                 return new_state
+            # RR-PARITY-FIX (Dec 2025): Handle eliminate_rings_from_stack from early phases
+            # This can happen when recording has line/territory elimination but Python
+            # hasn't transitioned to the expected phase yet
+            if mtype == MoveType.ELIMINATE_RINGS_FROM_STACK:
+                # Determine target phase based on pending state
+                pending_line = getattr(game_state, 'pending_line_reward_elimination', False)
+                if pending_line:
+                    new_state = game_state.model_copy()
+                    new_state.current_phase = GamePhase.LINE_PROCESSING
+                    new_state.current_player = move.player
+                    return new_state
+                else:
+                    new_state = game_state.model_copy()
+                    new_state.current_phase = GamePhase.TERRITORY_PROCESSING
+                    new_state.current_player = move.player
+                    return new_state
 
         # Case 1: In line_processing but move is a territory action
         if phase == GamePhase.LINE_PROCESSING and mtype in territory_moves:

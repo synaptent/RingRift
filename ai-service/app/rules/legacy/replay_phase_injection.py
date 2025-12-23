@@ -83,6 +83,27 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
 
     _injection_calls += 1
 
+    # Get the next move type for early detection
+    next_type = (
+        next_move.type.value
+        if hasattr(next_move.type, "value")
+        else str(next_move.type)
+    )
+
+    # EARLY EXIT: If next_move is already a bookkeeping move, skip injection entirely.
+    # GPU selfplay JSONL has complete bookkeeping moves - don't inject duplicates.
+    # Rely on trace_mode=True in apply_move() for phase coercion instead.
+    BOOKKEEPING_MOVES = {
+        "no_placement_action", "skip_placement",
+        "no_movement_action",
+        "no_line_action",
+        "no_territory_action", "skip_territory_processing",
+        "skip_capture",
+    }
+    if next_type in BOOKKEEPING_MOVES:
+        # Bookkeeping move already in recording - don't inject, let apply_move handle it
+        return state
+
     # Log deprecation warning once per session
     if not _warned:
         logger.warning(
@@ -105,12 +126,7 @@ def auto_inject_before_move(state: "GameState", next_move: "Move") -> "GameState
             else str(state.current_phase)
         )
 
-        # Get the next move type for phase coercion checks
-        next_type = (
-            next_move.type.value
-            if hasattr(next_move.type, "value")
-            else str(next_move.type)
-        )
+        # next_type already computed at function start for early bookkeeping detection
 
         # swap_sides is a ring_placement-only meta-move; avoid injecting
         # no-op phase transitions around it and let phase validation handle

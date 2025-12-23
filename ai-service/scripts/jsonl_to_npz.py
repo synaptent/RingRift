@@ -83,7 +83,6 @@ from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_b
 from app.game_engine import GameEngine
 from app.models import AIConfig, BoardType, GameState, Move, MoveType, Position
 from app.rules.global_actions import apply_forced_elimination_for_player
-from app.rules.legacy.replay_phase_injection import auto_inject_before_move
 from app.rules.serialization import deserialize_game_state
 from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 
@@ -410,22 +409,16 @@ def _process_gpu_selfplay_record(
                 history_frames.append(base_features)
                 if len(history_frames) > history_length + 1:
                     history_frames.pop(0)
-                # Use legacy phase injection (handles GPU selfplay format)
-                import warnings
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", DeprecationWarning)
-                    current_state = auto_inject_before_move(current_state, move)
+                # GPU selfplay JSONL has complete bookkeeping moves - apply directly
+                # trace_mode=True handles any phase coercion needed
                 current_state = GameEngine.apply_move(current_state, move, trace_mode=True)
             except Exception:
                 break  # Stop on error
             continue
 
         try:
-            # Use legacy phase injection (handles GPU selfplay format)
-            import warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                current_state = auto_inject_before_move(current_state, move)
+            # GPU selfplay JSONL has complete bookkeeping moves - no injection needed
+            # trace_mode=True handles any phase coercion when applying moves
 
             # Encode state with history BEFORE applying the move
             stacked, globals_vec = encode_state_with_history(
@@ -1094,13 +1087,6 @@ def process_jsonl_file(
                 moves_succeeded = 0
                 for move in moves:
                     try:
-                        # Handle GPU selfplay simplified format:
-                        # Use legacy phase injection before applying the recorded move
-                        if gpu_selfplay_mode:
-                            import warnings
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore", DeprecationWarning)
-                                final_state = auto_inject_before_move(final_state, move)
                         final_state = GameEngine.apply_move(final_state, move, trace_mode=gpu_selfplay_mode)
                         moves_succeeded += 1
                     except Exception:
@@ -1130,12 +1116,6 @@ def process_jsonl_file(
                         history_frames.append(base_features)
                         if len(history_frames) > history_length + 1:
                             history_frames.pop(0)
-                        # Handle GPU selfplay simplified format
-                        if gpu_selfplay_mode:
-                            import warnings
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore", DeprecationWarning)
-                                current_state = auto_inject_before_move(current_state, move)
                         current_state = GameEngine.apply_move(current_state, move, trace_mode=gpu_selfplay_mode)
                         continue
 
@@ -1184,12 +1164,6 @@ def process_jsonl_file(
                     stats.positions_extracted += 1
 
                     # Apply move for next iteration
-                    # Handle GPU selfplay simplified format
-                    if gpu_selfplay_mode:
-                        import warnings
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore", DeprecationWarning)
-                            current_state = auto_inject_before_move(current_state, move)
                     current_state = GameEngine.apply_move(current_state, move, trace_mode=gpu_selfplay_mode)
 
                 games_in_file += 1

@@ -249,6 +249,8 @@ class DistillationDataset(IterableDataset):
                             break
                         yield sample
                         positions_yielded += 1
+                        if positions_yielded % 100 == 0:
+                            logger.info(f"Sampled {positions_yielded} positions")
 
             except Exception as e:
                 logger.error(f"Error processing {db_path}: {e}")

@@ -191,19 +191,27 @@ def serialize_player(player: Player) -> dict[str, Any]:
 
 
 def deserialize_player(data: dict[str, Any], index: int) -> Player:
-    """Deserialize a Player from JSON dict."""
-    player_number = data.get("playerNumber", index + 1)
+    """Deserialize a Player from JSON dict.
+
+    Supports both camelCase (TypeScript) and snake_case (Python) field names.
+    """
+    # Support both camelCase and snake_case field names
+    player_number = data.get("playerNumber") or data.get("player_number", index + 1)
+    rings_in_hand = data.get("ringsInHand") or data.get("rings_in_hand", 18)
+    eliminated_rings = data.get("eliminatedRings") or data.get("eliminated_rings", 0)
+    territory_spaces = data.get("territorySpaces") or data.get("territory_spaces", 0)
+
     return Player(
         id=str(player_number),
-        username=f"Player{player_number}",
-        type="human",
+        username=data.get("username", f"Player{player_number}"),
+        type=data.get("type", "human"),
         playerNumber=player_number,
-        isReady=True,
-        timeRemaining=600000,
-        aiDifficulty=None,
-        ringsInHand=data.get("ringsInHand", 18),
-        eliminatedRings=data.get("eliminatedRings", 0),
-        territorySpaces=data.get("territorySpaces", 0),
+        isReady=data.get("isReady", data.get("is_ready", True)),
+        timeRemaining=data.get("timeRemaining", data.get("time_remaining", 600000)),
+        aiDifficulty=data.get("aiDifficulty", data.get("ai_difficulty")),
+        ringsInHand=rings_in_hand,
+        eliminatedRings=eliminated_rings,
+        territorySpaces=territory_spaces,
     )
 
 
