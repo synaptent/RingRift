@@ -1367,6 +1367,8 @@ Completed full integration of shadow validation into the game runner:
 | 2025-12-11 | 2.1     | P4 & A1 completed: FSM phase batching, CPU oracle mode (StateValidator), MPS compatibility                                                                                                                                       |
 | 2025-12-11 | 2.2     | I3 documented: Full 45-weight eval exists but deferred; Architecture review completed                                                                                                                                            |
 | 2025-12-17 | 2.3     | **GPU Kernel Optimization**: Fixed "false parallelism" in gpu_kernels.py via batched CPU transfers (~80K sync points → 2)                                                                                                        |
+| 2025-12-23 | 2.4     | **Parity Bug Fixes**: Fixed placement cap computation (`my_cap = my_height` → `my_cap = 1`), territory re-detection active player check, PyTorch 2.0.1 compatibility (`.any(dim=(1,2))` → `.flatten(1).any(dim=1)`)              |
+| 2025-12-23 | 2.5     | **10K Parity Test**: Running on vast-4x5090-new (384 cores, 4x RTX 5090). At 80%: 7997/8000 passed (99.96%). 3 edge case failures under investigation.                                                                           |
 
 ---
 

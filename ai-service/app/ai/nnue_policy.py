@@ -2253,9 +2253,47 @@ class NNUEPolicyDataset(Dataset):
         return samples
 
     def _extract_from_db(self, db_path: str) -> list[NNUEPolicySample]:
-        """Extract samples from a single database via game replay."""
+        """Extract samples from a single database via game replay.
+
+        Handles GPU selfplay data by synthesizing bookkeeping moves on-the-fly.
+        GPU selfplay records simplified moves (place_ring, move_stack, capture)
+        without intermediate phase-handling moves. This method uses the same
+        phase synthesis logic as parity testing to bridge the gap.
+        """
+        from ..game_engine import GameEngine
         from ..models import GameState, Move
         from ..rules.default_engine import DefaultRulesEngine
+
+        def _advance_to_phase(state: GameState, target_phase_str: str, max_steps: int = 50) -> GameState:
+            """Advance state through bookkeeping phases until target phase is reached.
+
+            GPU selfplay records phases in a different order than CPU engine transitions.
+            This function uses the same approach as import_gpu_selfplay_to_db.py to
+            bridge the gap: synthesize bookkeeping moves until the CPU state matches
+            the recorded GPU phase.
+            """
+            from ..models.core import GamePhase
+
+            try:
+                target = GamePhase(target_phase_str)
+            except ValueError:
+                return state  # Unknown phase, return as-is
+
+            for _ in range(max_steps):
+                if state.current_phase == target:
+                    return state
+                if state.game_status.value != "active":
+                    return state
+
+                req = GameEngine.get_phase_requirement(state, state.current_player)
+                if req is not None:
+                    synth = GameEngine.synthesize_bookkeeping_move(req, state)
+                    if synth is not None:
+                        state = GameEngine.apply_move(state, synth)
+                        continue
+                # No bookkeeping available, can't advance further
+                break
+            return state
 
         samples: list[NNUEPolicySample] = []
         conn = sqlite3.connect(db_path)
@@ -2328,9 +2366,9 @@ class NNUEPolicyDataset(Dataset):
             except Exception:
                 continue
 
-            # Get all moves
+            # Get all moves with phase information
             cursor.execute(
-                "SELECT move_number, move_json FROM game_moves WHERE game_id = ? ORDER BY move_number",
+                "SELECT move_number, phase, move_type, move_json FROM game_moves WHERE game_id = ? ORDER BY move_number",
                 (game_id,)
             )
             moves = cursor.fetchall()
@@ -2341,10 +2379,22 @@ class NNUEPolicyDataset(Dataset):
             # Replay and sample
             for move_row in moves:
                 move_number = move_row['move_number']
+                recorded_phase = move_row['phase']
+                move_type = move_row['move_type']
                 move_json_str = move_row['move_json']
 
-                # Sample every Nth position
-                if move_number % self.config.sample_every_n_moves == 0:
+                # Advance state to match the recorded phase
+                # GPU selfplay records phases in a different order than CPU expects
+                try:
+                    state = _advance_to_phase(state, recorded_phase)
+                except Exception:
+                    break  # Can't continue if phase advancement fails
+
+                # Skip bookkeeping moves for sampling (not decision points)
+                is_bookkeeping = move_type and move_type.startswith('no_')
+
+                # Sample every Nth position, but only for substantive moves
+                if move_number % self.config.sample_every_n_moves == 0 and not is_bookkeeping:
                     current_player = state.current_player or 1
 
                     # Calculate value

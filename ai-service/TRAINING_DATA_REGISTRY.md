@@ -16,33 +16,33 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database                    | Board Type | Players | Status        | Gate Summary                          | Notes                                                                |
-| --------------------------- | ---------- | ------- | ------------- | ------------------------------------- | -------------------------------------------------------------------- |
-| `canonical_square8_2p.db`   | square8    | 2       | **canonical** | db_health.canonical_square8_2p.json   | 43 games, 100% parity verified (2025-12-22)                          |
-| `canonical_square8_3p.db`   | square8    | 3       | **canonical** | db_health.canonical_square8_3p.json   | 21 games, 100% parity verified (2025-12-22)                          |
-| `canonical_square8_4p.db`   | square8    | 4       | **canonical** | db_health.canonical_square8_4p.json   | 5 games, 100% parity verified (2025-12-22)                           |
-| `canonical_square19_2p.db`  | square19   | 2       | **canonical** | db_health.canonical_square19_2p.json  | 24 games, 100% parity verified (2025-12-22)                          |
-| `canonical_square19_3p.db`  | square19   | 3       | **canonical** | db_health.canonical_square19_3p.json  | 5 games, 100% parity verified (2025-12-22)                           |
-| `canonical_square19_4p.db`  | square19   | 4       | **canonical** | db_health.canonical_square19_4p.json  | 3 games, 100% parity verified (2025-12-22)                           |
-| `canonical_hex8_2p.db`      | hex8       | 2       | **canonical** | db_health.canonical_hex8_2p.json      | 10 games, 100% parity verified (2025-12-22)                          |
-| `canonical_hex8_3p.db`      | hex8       | 3       | **canonical** | db_health.canonical_hex8_3p.json      | 5 games, 100% parity verified (2025-12-22)                           |
-| `canonical_hex8_4p.db`      | hex8       | 4       | **canonical** | db_health.canonical_hex8_4p.json      | 5 games, 100% parity verified (2025-12-22)                           |
-| `canonical_hexagonal_2p.db` | hexagonal  | 2       | **canonical** | db_health.canonical_hexagonal_2p.json | 34 games, 100% parity verified (2025-12-22). HEX-PARITY-02 RESOLVED. |
-| `canonical_hexagonal_3p.db` | hexagonal  | 3       | **canonical** | db_health.canonical_hexagonal_3p.json | 5 games, 100% parity verified (2025-12-22)                           |
-| `canonical_hexagonal_4p.db` | hexagonal  | 4       | **canonical** | db_health.canonical_hexagonal_4p.json | 3 games, 100% parity verified (2025-12-22)                           |
+| Database                    | Board Type | Players | Status        | Gate Summary                          | Notes                                                                 |
+| --------------------------- | ---------- | ------- | ------------- | ------------------------------------- | --------------------------------------------------------------------- |
+| `canonical_square8_2p.db`   | square8    | 2       | **canonical** | db_health.canonical_square8_2p.json   | 1,152 games, 100% parity verified (2025-12-23)                        |
+| `canonical_square8_3p.db`   | square8    | 3       | **canonical** | db_health.canonical_square8_3p.json   | 67 games, 100% parity verified (2025-12-23)                           |
+| `canonical_square8_4p.db`   | square8    | 4       | **canonical** | db_health.canonical_square8_4p.json   | 11,514 games, 100% parity verified (2025-12-23)                       |
+| `canonical_square19_2p.db`  | square19   | 2       | **canonical** | db_health.canonical_square19_2p.json  | 56 games, 100% parity verified (2025-12-23)                           |
+| `canonical_square19_3p.db`  | square19   | 3       | **canonical** | db_health.canonical_square19_3p.json  | 126 games, 100% parity verified (2025-12-23)                          |
+| `canonical_square19_4p.db`  | square19   | 4       | **canonical** | db_health.canonical_square19_4p.json  | 16 games, 100% parity verified (2025-12-23)                           |
+| `canonical_hex8_2p.db`      | hex8       | 2       | **canonical** | db_health.canonical_hex8_2p.json      | 295 games, 100% parity verified (2025-12-23)                          |
+| `canonical_hex8_3p.db`      | hex8       | 3       | **canonical** | db_health.canonical_hex8_3p.json      | 528 games, 100% parity verified (2025-12-23)                          |
+| `canonical_hex8_4p.db`      | hex8       | 4       | **canonical** | db_health.canonical_hex8_4p.json      | 1,284 games, 100% parity verified (2025-12-23)                        |
+| `canonical_hexagonal_2p.db` | hexagonal  | 2       | **canonical** | db_health.canonical_hexagonal_2p.json | 112 games, 100% parity verified (2025-12-23). HEX-PARITY-02 RESOLVED. |
+| `canonical_hexagonal_3p.db` | hexagonal  | 3       | **canonical** | db_health.canonical_hexagonal_3p.json | 61 games, 100% parity verified (2025-12-23)                           |
+| `canonical_hexagonal_4p.db` | hexagonal  | 4       | **canonical** | db_health.canonical_hexagonal_4p.json | 10 games, 100% parity verified (2025-12-23)                           |
 
 The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (`square8`, `square19`, and `hexagonal`), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
 
-### Coverage Matrix (2025-12-22)
+### Coverage Matrix (2025-12-23)
 
 Target: All 12 combinations (4 board types × 3 player counts) with canonical training data.
 
-| Board     | 2P            | 3P            | 4P           |
-| --------- | ------------- | ------------- | ------------ |
-| square8   | ⚠️ small (43) | ⚠️ small (21) | ⚠️ small (5) |
-| square19  | ⚠️ small (24) | ⚠️ small (5)  | ⚠️ small (3) |
-| hex8      | ⚠️ small (10) | ⚠️ small (5)  | ⚠️ small (5) |
-| hexagonal | ⚠️ small (34) | ⚠️ small (5)  | ⚠️ small (3) |
+| Board     | 2P             | 3P             | 4P            |
+| --------- | -------------- | -------------- | ------------- |
+| square8   | ✅ 1,152       | ⚠️ small (67)  | ✅ 11,514     |
+| square19  | ⚠️ small (56)  | ⚠️ small (126) | ⚠️ small (16) |
+| hex8      | ✅ 295         | ✅ 528         | ✅ 1,284      |
+| hexagonal | ⚠️ small (112) | ⚠️ small (61)  | ⚠️ small (10) |
 
 Legend:
 

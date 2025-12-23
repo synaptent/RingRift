@@ -175,7 +175,7 @@ class UniversalAI(BaseAI):
         device = self.loaded_model.device
         board_type = self.board_type
 
-        original_evaluate = minimax.evaluate_mutable
+        original_evaluate = minimax._evaluate_mutable
 
         def custom_evaluate(state: "MutableGameState") -> float:
             try:
@@ -193,7 +193,7 @@ class UniversalAI(BaseAI):
             except Exception:
                 return original_evaluate(state)
 
-        minimax.evaluate_mutable = custom_evaluate
+        minimax._evaluate_mutable = custom_evaluate
 
         return minimax.select_move(game_state)
 

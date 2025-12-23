@@ -977,9 +977,10 @@ def _infer_board_size(board: BoardState | GameState) -> int:
 
     For SQUARE8: 8
     For SQUARE19: 19
-    For HEXAGONAL: 2 * radius + 1, where radius = board.size - 1
+    For HEXAGONAL: 25 (handles both bounding box and legacy conventions)
+    For HEX8: 9 (handles both bounding box and legacy conventions)
 
-    The returned value is the height/width of the (10, board_size, board_size)
+    The returned value is the height/width of the (C, board_size, board_size)
     feature planes used by the CNN. Raises if the logical size exceeds MAX_N
     for square boards.
     """
@@ -994,11 +995,20 @@ def _infer_board_size(board: BoardState | GameState) -> int:
     if board_type == BoardType.SQUARE19:
         return 19
     if board_type == BoardType.HEXAGONAL:
-        radius = board.size - 1  # board.size=13 → radius=12
-        return 2 * radius + 1    # → bounding box = 25
+        # BOARD_CONFIGS uses bounding box directly (size=25 for radius=12 hex).
+        # Handle both conventions for backwards compatibility:
+        # - New: size=25 (bounding box) → return directly
+        # - Legacy: size=13 (radius+1) → calculate bounding box = 2*(13-1)+1 = 25
+        if board.size >= 25:
+            return board.size  # Already bounding box
+        radius = board.size - 1
+        return 2 * radius + 1
     if board_type == BoardType.HEX8:
-        radius = board.size - 1  # board.size=5 → radius=4
-        return 2 * radius + 1    # → bounding box = 9
+        # Similar handling: size=9 (bounding box) vs size=5 (radius+1)
+        if board.size >= 9:
+            return board.size  # Already bounding box
+        radius = board.size - 1
+        return 2 * radius + 1
 
     # Defensive fallback: use board.size but guard against unsupported sizes
     size = getattr(board, "size", 8)
@@ -1027,10 +1037,11 @@ def _to_canonical_xy(board: BoardState, pos: Position) -> tuple[int, int]:
 
     For SQUARE8/SQUARE19: return (pos.x, pos.y) directly.
 
-    For HEXAGONAL:
+    For HEXAGONAL/HEX8:
       - Interpret pos.(x,y,z) as cube/axial coords where x,y lie in
         [-radius, radius].
-      - Let radius = board.size - 1.
+      - Compute radius from board.size (handling both bounding box and
+        legacy conventions).
       - Map x → cx = x + radius, y → cy = y + radius.
       - Return (cx, cy).
     """
@@ -1042,7 +1053,14 @@ def _to_canonical_xy(board: BoardState, pos: Position) -> tuple[int, int]:
     if board.type in (BoardType.HEXAGONAL, BoardType.HEX8):
         # Hex boards use cube coordinates where x,y in [-radius, radius]
         # Map to bounding box [0, 2*radius+1) via cx = x + radius
-        radius = board.size - 1  # HEXAGONAL: 12, HEX8: 4
+        # Handle both conventions for board.size:
+        # - New: size=25/9 (bounding box) → radius = (size-1)//2 = 12/4
+        # - Legacy: size=13/5 (radius+1) → radius = size-1 = 12/4
+        expected_bbox = 25 if board.type == BoardType.HEXAGONAL else 9
+        if board.size >= expected_bbox:
+            radius = (board.size - 1) // 2  # New: size=25 → radius=12
+        else:
+            radius = board.size - 1  # Legacy: size=13 → radius=12
         cx = pos.x + radius
         cy = pos.y + radius
         return cx, cy
@@ -1062,8 +1080,8 @@ def _from_canonical_xy(
     Returns a Position instance whose coordinates lie on this board, or None
     if (cx, cy) is outside [0, board_size) × [0, board_size).
 
-    For HEXAGONAL:
-      - radius = board.size - 1
+    For HEXAGONAL/HEX8:
+      - Compute radius from board.size (handling both conventions)
       - x = cx - radius, y = cy - radius, z = -x - y
     """
     board_size = _infer_board_size(board)
@@ -1076,7 +1094,14 @@ def _from_canonical_xy(
     if board.type in (BoardType.HEXAGONAL, BoardType.HEX8):
         # Inverse of _to_canonical_xy for hex boards
         # Map from bounding box [0, 2*radius+1) back to cube coords [-radius, radius]
-        radius = board.size - 1  # HEXAGONAL: 12, HEX8: 4
+        # Handle both conventions for board.size:
+        # - New: size=25/9 (bounding box) → radius = (size-1)//2 = 12/4
+        # - Legacy: size=13/5 (radius+1) → radius = size-1 = 12/4
+        expected_bbox = 25 if board.type == BoardType.HEXAGONAL else 9
+        if board.size >= expected_bbox:
+            radius = (board.size - 1) // 2  # New: size=25 → radius=12
+        else:
+            radius = board.size - 1  # Legacy: size=13 → radius=12
         x = cx - radius
         y = cy - radius
         z = -x - y

@@ -662,13 +662,33 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
     if move_type in gpu_type_map:
         move_type = gpu_type_map[move_type]
 
+    # Parse positions
+    from_pos = parse_position(move_dict.get("from_pos") or move_dict.get("from"))
+    to_pos = parse_position(move_dict.get("to_pos") or move_dict.get("to"))
+    capture_target = parse_position(move_dict.get("captureTarget") or move_dict.get("capture_target"))
+
+    # Infer capture_target for capture moves if missing (GPU selfplay may not record it)
+    # The capture target is the midpoint between from and to (the stack being jumped over)
+    capture_move_types = (
+        "overtaking_capture",
+        "continue_capture_segment",
+        "chain_capture",
+    )
+    if move_type in capture_move_types and capture_target is None and from_pos and to_pos:
+        mid_x = (from_pos.x + to_pos.x) // 2
+        mid_y = (from_pos.y + to_pos.y) // 2
+        mid_z = None
+        if from_pos.z is not None and to_pos.z is not None:
+            mid_z = (from_pos.z + to_pos.z) // 2
+        capture_target = Position(x=mid_x, y=mid_y, z=mid_z)
+
     return Move(
         id=move_dict.get("id", "imported"),
         type=move_type,
         player=move_dict.get("player", 1),
-        from_pos=parse_position(move_dict.get("from_pos") or move_dict.get("from")),
-        to=parse_position(move_dict.get("to_pos") or move_dict.get("to")),
-        capture_target=parse_position(move_dict.get("captureTarget") or move_dict.get("capture_target")),
+        from_pos=from_pos,
+        to=to_pos,
+        capture_target=capture_target,
         captured_stacks=move_dict.get("captured_stacks"),
         capture_chain=move_dict.get("capture_chain"),
         overtaken_rings=move_dict.get("overtaken_rings"),

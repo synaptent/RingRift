@@ -151,11 +151,53 @@ def get_personas_for_config(
     return personas
 
 
+def weights_to_selection_features(weights: dict[str, float]) -> dict[str, float]:
+    """Convert full 45-weight profile to move selection feature weights.
+
+    Maps strategic weight profiles (aggressive, territorial, etc.) to
+    move selection features that influence which moves are chosen.
+
+    The mapping captures strategic intent:
+    - Aggressive: higher capture_value, lower adjacency
+    - Territorial: higher adjacency/line_potential, lower capture_value
+    - Defensive: balanced with higher noise for safety
+    - Balanced: moderate all values
+    """
+    # Extract key weights that influence move selection
+    stack_control = weights.get("WEIGHT_STACK_CONTROL", 9.39)
+    territory = weights.get("WEIGHT_TERRITORY", 8.66)
+    center = weights.get("WEIGHT_CENTER_CONTROL", 2.28)
+    line_potential = weights.get("WEIGHT_LINE_POTENTIAL", 7.24)
+    adjacency = weights.get("WEIGHT_ADJACENCY", 1.57)
+    elim_rings = weights.get("WEIGHT_ELIMINATED_RINGS", 13.12)
+    overtake = weights.get("WEIGHT_OVERTAKE_POTENTIAL", 5.96)
+
+    # Normalize to reasonable feature weight ranges (0.5-8.0)
+    # Higher stack_control/elim/overtake => more aggressive (higher capture value)
+    aggression = (stack_control + elim_rings + overtake) / 30.0
+    # Higher territory/adjacency => more territorial (higher adjacency bonus)
+    territorial = (territory + adjacency + line_potential) / 20.0
+
+    return {
+        "center": max(0.5, min(5.0, center)),
+        "capture_value": max(1.0, min(8.0, aggression * 6.0)),
+        "adjacency": max(0.5, min(5.0, territorial * 3.0)),
+        "line_potential": max(0.5, min(4.0, line_potential / 3.0)),
+        "noise": 1.0,  # Keep some stochasticity
+    }
+
+
 class TournamentGameRunner(ParallelGameRunner):
     """Extended ParallelGameRunner with per-player weight support.
 
     This class enables running games where different players use different
     heuristic weight profiles, which is essential for tournament comparisons.
+
+    Key differences from base ParallelGameRunner:
+    - Stores a weight_bank of all persona profiles
+    - Tracks player_persona_idx mapping players to personas
+    - Overrides _select_moves to use per-game weights
+    - Converts full 45-weight profiles to move selection features
     """
 
     def __init__(
@@ -179,6 +221,9 @@ class TournamentGameRunner(ParallelGameRunner):
             player_persona_idx: (batch_size, num_players) tensor mapping
                                player -> index into weight_bank
         """
+        # Force heuristic selection for tournaments
+        kwargs['use_heuristic_selection'] = True
+
         super().__init__(
             batch_size=batch_size,
             board_size=board_size,
@@ -189,6 +234,14 @@ class TournamentGameRunner(ParallelGameRunner):
 
         self.weight_bank = weight_bank or [dict(HEURISTIC_V1_BALANCED)]
         self.player_persona_idx = player_persona_idx
+
+        # Pre-compute selection features for each persona in weight_bank
+        self.selection_features_bank = [
+            weights_to_selection_features(w) for w in self.weight_bank
+        ]
+
+        # Cache for current weights (updated each step)
+        self._current_selection_features: list[dict[str, float]] | None = None
 
     def _get_weights_for_current_players(self) -> list[dict[str, float]]:
         """Get the weight dict for each game's current player."""
@@ -209,6 +262,166 @@ class TournamentGameRunner(ParallelGameRunner):
                 weights_list.append(self.weight_bank[0])
 
         return weights_list
+
+    def _get_selection_features_for_current_players(self) -> list[dict[str, float]]:
+        """Get the move selection features for each game's current player."""
+        if self.player_persona_idx is None:
+            return [self.selection_features_bank[0]] * self.batch_size
+
+        features_list = []
+        current_players = self.state.current_player.cpu().tolist()
+        player_idx = self.player_persona_idx.cpu().tolist()
+
+        for g in range(self.batch_size):
+            p = current_players[g]
+            if p > 0 and p <= self.num_players:
+                persona_idx = player_idx[g][p - 1]
+                features_list.append(self.selection_features_bank[persona_idx])
+            else:
+                features_list.append(self.selection_features_bank[0])
+
+        return features_list
+
+    def _select_moves_with_per_game_weights(
+        self,
+        moves,
+        active_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Select moves using per-game weights from the current player's persona.
+
+        This is a specialized version of _select_moves that uses different
+        selection feature weights for each game based on the current player's
+        assigned persona.
+        """
+        from app.ai.gpu_selection import select_moves_heuristic
+        from app.ai.gpu_game_types import MoveType
+
+        device = self.device
+        batch_size = self.batch_size
+        board_size = self.board_size
+
+        # Initialize output
+        selected = torch.full((batch_size,), -1, dtype=torch.int64, device=device)
+
+        if moves.total_moves == 0:
+            return selected
+
+        # Get per-game selection features
+        features_list = self._get_selection_features_for_current_players()
+
+        center = board_size // 2
+        max_dist = center * 2.0
+
+        # Extract move data
+        game_idx = moves.game_idx.long()
+        to_y = moves.to_y.long()
+        to_x = moves.to_x.long()
+
+        # Compute base features (same for all moves)
+        dist_to_center = (
+            (moves.to_y.float() - center).abs() +
+            (moves.to_x.float() - center).abs()
+        )
+
+        # Target heights for capture scoring
+        target_heights = self.state.stack_height[game_idx, to_y, to_x].float()
+        is_capture = moves.move_type == MoveType.CAPTURE
+
+        # Adjacency computation
+        current_players = self.state.current_player[game_idx]
+        so_padded = torch.nn.functional.pad(
+            self.state.stack_owner.float(), (1, 1, 1, 1), value=0
+        )
+        adj_up = so_padded[game_idx, to_y, to_x + 1] == current_players.float()
+        adj_down = so_padded[game_idx, to_y + 2, to_x + 1] == current_players.float()
+        adj_left = so_padded[game_idx, to_y + 1, to_x] == current_players.float()
+        adj_right = so_padded[game_idx, to_y + 1, to_x + 2] == current_players.float()
+        adjacent_count = adj_up.float() + adj_down.float() + adj_left.float() + adj_right.float()
+
+        # Line potential
+        own_stacks = (self.state.stack_owner[game_idx] == current_players.view(-1, 1, 1))
+        own_stacks_padded = torch.nn.functional.pad(own_stacks.float(), (1, 1, 1, 1), value=0)
+        move_idx = torch.arange(moves.total_moves, device=device)
+        h_left = own_stacks_padded[move_idx, to_y + 1, to_x]
+        h_right = own_stacks_padded[move_idx, to_y + 1, to_x + 2]
+        v_up = own_stacks_padded[move_idx, to_y, to_x + 1]
+        v_down = own_stacks_padded[move_idx, to_y + 2, to_x + 1]
+        line_count = h_left + h_right + v_up + v_down
+
+        # Now apply per-game weights to compute final scores
+        # Create per-move weight tensors by looking up each move's game's weights
+        center_weights = torch.zeros(moves.total_moves, device=device)
+        capture_weights = torch.zeros(moves.total_moves, device=device)
+        adjacency_weights = torch.zeros(moves.total_moves, device=device)
+        line_weights = torch.zeros(moves.total_moves, device=device)
+
+        # Build weight tensors from per-game features
+        game_idx_cpu = game_idx.cpu().tolist()
+        center_w = [features_list[g].get("center", 3.0) for g in game_idx_cpu]
+        capture_w = [features_list[g].get("capture_value", 5.0) for g in game_idx_cpu]
+        adj_w = [features_list[g].get("adjacency", 2.0) for g in game_idx_cpu]
+        line_w = [features_list[g].get("line_potential", 1.5) for g in game_idx_cpu]
+
+        center_weights = torch.tensor(center_w, device=device, dtype=torch.float32)
+        capture_weights = torch.tensor(capture_w, device=device, dtype=torch.float32)
+        adjacency_weights = torch.tensor(adj_w, device=device, dtype=torch.float32)
+        line_weights = torch.tensor(line_w, device=device, dtype=torch.float32)
+
+        # Compute weighted scores
+        center_score = (max_dist - dist_to_center) * center_weights
+        capture_score = torch.where(
+            is_capture,
+            target_heights * capture_weights,
+            torch.zeros_like(target_heights)
+        )
+        adjacency_score = adjacent_count * adjacency_weights
+        line_score = line_count * line_weights
+        noise = torch.rand(moves.total_moves, device=device)
+
+        scores = center_score + capture_score + adjacency_score + line_score + noise
+
+        # Segment-wise softmax sampling
+        neg_inf = torch.full((batch_size,), float('-inf'), device=device)
+        max_per_game = neg_inf.scatter_reduce(0, game_idx, scores, reduce='amax')
+        scores_stable = scores - max_per_game[game_idx]
+        exp_scores = torch.exp(scores_stable / self.temperature)
+
+        sum_per_game = torch.zeros(batch_size, device=device)
+        sum_per_game.scatter_add_(0, game_idx, exp_scores)
+
+        probs = exp_scores / (sum_per_game[game_idx] + 1e-10)
+
+        # Multinomial sampling per segment
+        cumsum_probs = torch.cumsum(probs, dim=0)
+        game_starts = torch.zeros(batch_size, dtype=torch.long, device=device)
+        game_starts[1:] = torch.searchsorted(game_idx, torch.arange(1, batch_size, device=device))
+
+        rand_vals = torch.rand(batch_size, device=device)
+
+        for g in torch.where(active_mask & (moves.moves_per_game > 0))[0].tolist():
+            start = game_starts[g].item()
+            count = moves.moves_per_game[g].item()
+            if count == 0:
+                continue
+
+            seg_cumsum = cumsum_probs[start:start+count]
+            if start > 0:
+                seg_cumsum = seg_cumsum - cumsum_probs[start - 1]
+            seg_cumsum = seg_cumsum / (seg_cumsum[-1] + 1e-10)
+
+            local_idx = torch.searchsorted(seg_cumsum, rand_vals[g]).clamp(0, count - 1)
+            selected[g] = local_idx
+
+        return selected
+
+    def _select_moves(
+        self,
+        moves,
+        active_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Override base _select_moves to use per-game weights."""
+        # Use our per-game weighted selection
+        return self._select_moves_with_per_game_weights(moves, active_mask)
 
     def run_tournament_games(
         self,

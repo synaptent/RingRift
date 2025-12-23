@@ -171,9 +171,14 @@ def _parse_move(move_dict: dict[str, Any], move_number: int, timestamp: str) -> 
     to_pos = Position(x=to_dict["x"], y=to_dict["y"], z=to_dict.get("z")) if to_dict else None
     capture_target = Position(x=capture_dict["x"], y=capture_dict["y"], z=capture_dict.get("z")) if capture_dict else None
 
-    # For overtaking captures, compute capture_target if not provided
+    # For all capture types, compute capture_target if not provided
     # The capture target is the midpoint between from and to (the stack being jumped over)
-    if move_type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT) and capture_target is None and from_pos and to_pos:
+    capture_move_types = (
+        MoveType.OVERTAKING_CAPTURE,
+        MoveType.CONTINUE_CAPTURE_SEGMENT,
+        MoveType.CHAIN_CAPTURE,
+    )
+    if move_type in capture_move_types and capture_target is None and from_pos and to_pos:
         mid_x = (from_pos.x + to_pos.x) // 2
         mid_y = (from_pos.y + to_pos.y) // 2
         capture_target = Position(x=mid_x, y=mid_y)
