@@ -126,7 +126,7 @@ class SlurmJob:
     # Script configuration
     script_path: str | None = None
     command: str | None = None  # Alternative to script_path
-    working_dir: str = "/lambda/nfs/RingRift/ai-service"
+    working_dir: str = "/home/ubuntu/ringrift/ai-service"  # Use local storage, not NFS
 
     # Environment
     env_vars: dict[str, str] = field(default_factory=dict)
@@ -210,7 +210,7 @@ SLURM_MANAGED_PATTERNS = [
 # Slurm controller configuration
 SLURM_CONTROLLER_HOST = os.getenv("SLURM_CONTROLLER_HOST", "100.78.101.123")
 SLURM_CONTROLLER_USER = os.getenv("SLURM_CONTROLLER_USER", "ubuntu")
-SLURM_NFS_BASE = os.getenv("SLURM_NFS_BASE", "/lambda/nfs/RingRift/ai-service")
+SLURM_NFS_BASE = os.getenv("SLURM_NFS_BASE", "/home/ubuntu/ringrift/ai-service")  # Use local storage
 
 
 class SlurmBackend:

@@ -387,31 +387,31 @@ def import_to_database(
                 snapshot_interval=0,  # Disable snapshots to skip move application
             )
 
-            # Store trajectory snapshots if present (from GPU selfplay with --snapshot-interval)
+            # Collect trajectory snapshots for batch insert (from GPU selfplay with --snapshot-interval)
             trajectory_snapshots = record.get("trajectory_snapshots", [])
-            snapshots_stored = 0
+            game_snapshots = []
             for snap in trajectory_snapshots:
                 try:
                     move_number = snap.get("move_number", 0)
                     state_json = snap.get("state")
                     if state_json:
-                        # Parse state JSON and store
+                        # Parse state JSON
                         if isinstance(state_json, str):
                             state_data = json.loads(state_json)
                         else:
                             state_data = state_json
                         snapshot_state = GameState.model_validate(state_data)
-                        db._store_snapshot(
-                            game_id=record["game_id"],
-                            move_number=move_number,
-                            state=snapshot_state,
-                        )
-                        snapshots_stored += 1
+                        game_snapshots.append((record["game_id"], move_number, snapshot_state))
                 except Exception as snap_e:
-                    logger.debug(f"Failed to store snapshot at move {snap.get('move_number', '?')}: {snap_e}")
+                    logger.debug(f"Failed to parse snapshot at move {snap.get('move_number', '?')}: {snap_e}")
 
-            if snapshots_stored > 0:
-                stats["snapshots_stored"] += snapshots_stored
+            # Batch insert all snapshots for this game
+            if game_snapshots:
+                try:
+                    stored = db._store_snapshots_batch(game_snapshots)
+                    stats["snapshots_stored"] += stored
+                except Exception as batch_e:
+                    logger.debug(f"Failed to batch store {len(game_snapshots)} snapshots: {batch_e}")
 
             stats["imported"] += 1
 

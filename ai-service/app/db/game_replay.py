@@ -2331,6 +2331,40 @@ class GameReplayDB:
             (game_id, move_number, json_str, hash_value),
         )
 
+    def _store_snapshots_batch(
+        self,
+        snapshots: list[tuple[str, int, GameState]],
+    ) -> int:
+        """Store multiple snapshots in a single transaction using executemany.
+
+        Args:
+            snapshots: List of (game_id, move_number, state) tuples
+
+        Returns:
+            Number of snapshots stored
+        """
+        if not snapshots:
+            return 0
+
+        # Pre-serialize all states
+        batch_data = []
+        for game_id, move_number, state in snapshots:
+            json_str = _serialize_state(state)
+            hash_value = _compute_state_hash(state)
+            batch_data.append((game_id, move_number, json_str, hash_value))
+
+        with self._get_conn() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO game_state_snapshots
+                (game_id, move_number, state_json, compressed, state_hash)
+                VALUES (?, ?, ?, 0, ?)
+                """,
+                batch_data,
+            )
+
+        return len(batch_data)
+
     def _store_history_entry(
         self,
         game_id: str,
