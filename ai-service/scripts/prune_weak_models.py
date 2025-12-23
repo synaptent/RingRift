@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""Prune weak models based on gauntlet results.
+"""Prune weak models based on Elo ratings from unified database.
 
-Removes models that score below a threshold in the baseline gauntlet,
+Removes models that have Elo below a threshold and sufficient games played,
 keeping only competitive models to reduce disk usage and speed up evaluation.
 
 Usage:
     python scripts/prune_weak_models.py --dry-run           # Preview deletions
     python scripts/prune_weak_models.py --prune             # Actually delete
-    python scripts/prune_weak_models.py --threshold 0.6     # Custom threshold
+    python scripts/prune_weak_models.py --elo-threshold 1200  # Custom Elo threshold
+    python scripts/prune_weak_models.py --min-games 50      # Require more games for pruning
 """
 
 import argparse
 import json
 import shutil
+import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
 
 AI_SERVICE_ROOT = Path(__file__).parent.parent
 MODELS_DIR = AI_SERVICE_ROOT / "models"
-RESULTS_FILE = AI_SERVICE_ROOT / "data" / "aggregated_gauntlet_results.json"
+ELO_DB = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 BACKUP_DIR = AI_SERVICE_ROOT / "models" / "_pruned_backup"
 PRUNE_LOG = AI_SERVICE_ROOT / "data" / "prune_log.json"
 
@@ -29,25 +31,39 @@ PROTECTED_PATTERNS = [
     "nnue_policy_",
     "nn_baseline",
     "_baseline",
+    "baseline_",
 ]
 
-# Default score threshold (models below this get pruned)
-DEFAULT_THRESHOLD = 0.5
+# Default thresholds
+DEFAULT_ELO_THRESHOLD = 1200  # Elo below this = weak
+DEFAULT_MIN_GAMES = 30        # Need enough games for reliable rating
 
 
-def load_gauntlet_results() -> dict[str, float]:
-    """Load model scores from aggregated results."""
-    scores = {}
+def load_elo_ratings() -> dict[str, dict]:
+    """Load model Elo ratings from unified database."""
+    ratings = {}
 
-    if RESULTS_FILE.exists():
-        with open(RESULTS_FILE) as f:
-            data = json.load(f)
-            for result in data.get("results", []):
-                name = result.get("name", "")
-                score = result.get("avg_score", 0)
-                scores[name] = score
+    if not ELO_DB.exists():
+        return ratings
 
-    return scores
+    conn = sqlite3.connect(str(ELO_DB))
+    try:
+        cur = conn.cursor()
+        # Get the best rating for each model (across board types)
+        cur.execute("""
+            SELECT participant_id, MAX(rating), SUM(games_played)
+            FROM elo_ratings
+            GROUP BY participant_id
+        """)
+        for row in cur.fetchall():
+            ratings[row[0]] = {
+                "elo": row[1],
+                "games": row[2],
+            }
+    finally:
+        conn.close()
+
+    return ratings
 
 
 def is_protected(model_name: str) -> bool:
@@ -55,8 +71,12 @@ def is_protected(model_name: str) -> bool:
     return any(pattern in model_name for pattern in PROTECTED_PATTERNS)
 
 
-def find_models_to_prune(scores: dict[str, float], threshold: float) -> list[Path]:
-    """Find model files that should be pruned."""
+def find_models_to_prune(
+    ratings: dict[str, dict],
+    elo_threshold: float,
+    min_games: int
+) -> list[tuple[Path, dict]]:
+    """Find model files that should be pruned based on Elo ratings."""
     to_prune = []
 
     for model_file in MODELS_DIR.glob("*.pth"):
@@ -66,11 +86,12 @@ def find_models_to_prune(scores: dict[str, float], threshold: float) -> list[Pat
         if is_protected(name):
             continue
 
-        # Check if we have a score for this model
-        score = scores.get(name)
+        # Check if we have ratings for this model
+        info = ratings.get(name)
 
-        if score is not None and score < threshold:
-            to_prune.append(model_file)
+        # Only prune if: has rating, enough games, and below threshold
+        if info and info["games"] >= min_games and info["elo"] < elo_threshold:
+            to_prune.append((model_file, info))
 
     return to_prune
 

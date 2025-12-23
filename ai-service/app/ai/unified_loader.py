@@ -177,6 +177,13 @@ def detect_architecture(state_dict: dict[str, Any]) -> ModelArchitecture:
                 else:
                     arch = ModelArchitecture.CNN_V2
 
+            # Refine CNN_V2 -> CNN_V4 detection
+            # V4 models have attention blocks (keys containing "attn" or "attention")
+            if arch == ModelArchitecture.CNN_V2:
+                has_attention = any("attn" in k or "attention" in k for k in keys)
+                if has_attention:
+                    arch = ModelArchitecture.CNN_V4
+
             return arch
 
     return ModelArchitecture.UNKNOWN
@@ -267,7 +274,13 @@ def infer_config_from_checkpoint(
                 config.hex_radius = 12
 
     # Infer num_players from value head output
-    if "value_fc2.weight" in state_dict:
+    # V4 has 3-layer value head: fc1 -> fc2 -> fc3 (output)
+    # V2/V3 has 2-layer value head: fc1 -> fc2 (output)
+    if "value_fc3.weight" in state_dict:
+        # V4 model: fc3 outputs to num_players
+        config.num_players = state_dict["value_fc3.weight"].shape[0]
+    elif "value_fc2.weight" in state_dict:
+        # V2/V3 model: fc2 outputs to num_players
         config.num_players = state_dict["value_fc2.weight"].shape[0]
 
     # NNUE-specific: hidden_dim from accumulator
@@ -574,6 +587,9 @@ class UnifiedModelLoader:
         elif architecture == ModelArchitecture.CNN_V4:
             from app.ai.neural_net.square_architectures import RingRiftCNN_v4
 
+            # V4 has different constructor signature than V2/V3:
+            # - No policy_intermediate (uses fixed spatial policy)
+            # - Has initial_kernel_size, num_attention_heads, dropout
             return RingRiftCNN_v4(
                 board_size=board_size,
                 in_channels=config.input_channels,
@@ -583,7 +599,6 @@ class UnifiedModelLoader:
                 history_length=config.history_length,
                 num_players=config.num_players,
                 policy_size=config.policy_size,
-                policy_intermediate=config.policy_intermediate,
                 value_intermediate=config.value_intermediate,
             )
 

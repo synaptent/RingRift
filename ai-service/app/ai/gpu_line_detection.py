@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from .gpu_game_types import DetectedLine, get_required_line_length
+from .gpu_move_generation import compute_cap_from_ring_stack
 
 if TYPE_CHECKING:
     from .gpu_parallel_games import BatchGameState
@@ -361,21 +362,21 @@ def _eliminate_one_ring_from_any_stack(
             new_owner = 1 if player == 2 else 2
         state.stack_owner[game_idx, y, x] = new_owner
 
-        # Find the new ring_under_cap by checking buried_at for other players
+        # BUG FIX 2025-12-22: Use compute_cap_from_ring_stack for accurate cap computation
+        # The ring_stack tensor tracks full ring composition, so we can compute the correct
+        # cap_height by counting consecutive same-color rings from the top.
+        # This fixes the issue where buried_at wasn't properly updated during captures.
+        new_cap = compute_cap_from_ring_stack(state, game_idx, y, x)
+        state.cap_height[game_idx, y, x] = new_cap
+
+        # Find the new ring_under_cap from ring_stack (more reliable than buried_at)
         new_ring_under = 0
-        for p in range(1, state.num_players + 1):
-            if p != new_owner and state.buried_at[game_idx, p, y, x].item() > 0:
-                new_ring_under = p
+        for i in range(new_height - 1, -1, -1):  # Walk from top to bottom
+            ring_owner = int(state.ring_stack[game_idx, y, x, i].item())
+            if ring_owner != new_owner and ring_owner > 0:
+                new_ring_under = ring_owner
                 break
         state.ring_under_cap[game_idx, y, x] = new_ring_under
-
-        # BUG FIX 2025-12-21: cap_height depends on whether there are opponent rings below
-        # If new_ring_under > 0, there's an opponent ring below, so cap = 1
-        # If new_ring_under == 0, all remaining rings are new owner's color, so cap = new_height
-        if new_ring_under > 0:
-            state.cap_height[game_idx, y, x] = 1
-        else:
-            state.cap_height[game_idx, y, x] = new_height
 
         # If new owner had buried ring here, it's now exposed as cap - decrement tracking
         buried_count = state.buried_at[game_idx, new_owner, y, x].item()

@@ -102,9 +102,11 @@ def _parse_board(board: str) -> BoardType:
         return BoardType.SQUARE8
     if b in {"square19", "sq19"}:
         return BoardType.SQUARE19
+    if b in {"hex8"}:
+        return BoardType.HEX8
     if b in {"hexagonal", "hex"}:
         return BoardType.HEXAGONAL
-    raise SystemExit(f"Unsupported board {board!r}; valid options: square8, square19, hexagonal")
+    raise SystemExit(f"Unsupported board {board!r}; valid options: square8, square19, hex8, hexagonal")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -119,8 +121,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--board",
         default="square8",
-        choices=["square8", "sq8", "square19", "sq19", "hexagonal", "hex"],
-        help=("Board identifier: square8, square19, or hexagonal."),
+        choices=["square8", "sq8", "square19", "sq19", "hex8", "hexagonal", "hex"],
+        help=("Board identifier: square8, square19, hex8, or hexagonal."),
     )
     parser.add_argument(
         "--num-players",
@@ -411,7 +413,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.use_optimized_hyperparams:
         try:
             from app.config.hyperparameters import get_hyperparameters, is_optimized
-            board_name = args.board.replace("sq8", "square8").replace("sq19", "square19").replace("hex", "hexagonal")
+            # Map short names to canonical names, but keep hex8 as-is
+            board_name = args.board
+            if board_name == "sq8":
+                board_name = "square8"
+            elif board_name == "sq19":
+                board_name = "square19"
+            elif board_name == "hex":
+                board_name = "hexagonal"
+            # hex8 stays as hex8
             hp = get_hyperparameters(board_name, num_players)
             optimized = is_optimized(board_name, num_players)
             hp_source = "optimized" if optimized else "defaults"

@@ -2219,7 +2219,7 @@ class ParallelGameRunner:
                 candidate_regions.extend(regions)
 
             # Check for color-disconnected regions the player can claim
-            for region, border_player in candidate_regions:
+            for region, border_player, _start_pos in candidate_regions:
                 if not _is_color_disconnected(self.state, g, region):
                     continue
 
@@ -2984,7 +2984,60 @@ class ParallelGameRunner:
         state.game_status[is_stalemate] = GameStatus.COMPLETED
 
     def _default_weights(self) -> dict[str, float]:
-        """Default heuristic weights."""
+        """Load best heuristic weights for this board configuration.
+
+        Priority order:
+        1. Registry weights (PRODUCTION stage) - from CMA-ES optimization
+        2. Registry weights (STAGING stage) - from recent CMA-ES runs
+        3. Board-specific profile from heuristic_weights.py
+        4. Fallback minimal weights
+
+        This enables the positive feedback training loop:
+        CMA-ES → Registry → Selfplay → Better training data → NN improves
+        """
+        # Determine board type for registry lookup
+        board_type = self.board_type or "square8"
+        if self.board_size == 19:
+            board_type = "square19"
+        elif self.board_size == 8 and board_type not in ("square8", "hex8"):
+            board_type = "square8"
+
+        # Try to load from model registry (CMA-ES optimized weights)
+        try:
+            from app.training.cmaes_registry_integration import (
+                load_heuristic_weights_from_registry,
+            )
+
+            # Try production first, then staging
+            for stage in ("production", "staging"):
+                weights = load_heuristic_weights_from_registry(
+                    board_type=board_type,
+                    num_players=self.num_players,
+                    stage=stage,
+                )
+                if weights:
+                    logger.info(
+                        f"Loaded {stage} weights from registry for "
+                        f"{board_type}_{self.num_players}p"
+                    )
+                    return weights
+        except Exception as e:
+            logger.debug(f"Registry weight loading failed: {e}")
+
+        # Fall back to board-specific profile from heuristic_weights.py
+        try:
+            from .heuristic_weights import get_weights_for_board
+
+            weights = get_weights_for_board(board_type, self.num_players)
+            if weights:
+                logger.debug(
+                    f"Using profile weights for {board_type}_{self.num_players}p"
+                )
+                return weights
+        except Exception as e:
+            logger.debug(f"Profile weight loading failed: {e}")
+
+        # Final fallback - minimal weights (evaluate_positions_batch fills defaults)
         return {
             "stack_count": 1.0,
             "territory_count": 2.0,

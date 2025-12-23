@@ -250,7 +250,9 @@ def _find_regions_with_border_color(
                         queue.append((ny, nx))
 
             if region:
-                regions.append((region, border_color))
+                # Use min(region) as deterministic representative for consistent behavior
+                rep = min(region)  # (y, x) tuple
+                regions.append((region, border_color, rep))
 
     return regions
 
@@ -505,17 +507,18 @@ def compute_territory_batch(
 
         # Find candidate regions for each marker color acting as barrier
         # This matches CPU's iteration through marker_colors
-        candidate_regions: list[tuple[set[tuple[int, int]], int]] = []
+        # Each region is (cells, border_color, start_pos) where start_pos is the region representative
+        candidate_regions: list[tuple[set[tuple[int, int]], int, tuple[int, int]]] = []
         for border_color in marker_colors:
             regions_with_border = _find_regions_with_border_color(state, g, border_color)
             candidate_regions.extend(regions_with_border)
 
         # Filter to color-disconnected regions
         # A region is color-disconnected if RegionColors < ActiveColors (strict subset)
-        eligible_regions: list[tuple[set[tuple[int, int]], int]] = []
-        for region, border_player in candidate_regions:
+        eligible_regions: list[tuple[set[tuple[int, int]], int, tuple[int, int]]] = []
+        for region, border_player, start_pos in candidate_regions:
             if _is_color_disconnected(state, g, region):
-                eligible_regions.append((region, border_player))
+                eligible_regions.append((region, border_player, start_pos))
 
         # If no eligible regions, no territory processing
         if not eligible_regions:
@@ -529,9 +532,9 @@ def compute_territory_batch(
         for _iteration in range(max_iterations):
             found_processable = False
 
-            for region, border_player in eligible_regions:
-                # Use first cell as representative to avoid re-processing same region
-                rep = min(region)  # deterministic representative
+            for region, border_player, start_pos in eligible_regions:
+                # Use BFS start position as representative (matches CPU's spaces[0])
+                rep = start_pos
                 if rep in processed_representatives:
                     continue
 
@@ -754,9 +757,9 @@ def compute_territory_batch(
                 candidate_regions.extend(regions_with_border)
 
             eligible_regions = []
-            for region, border_player in candidate_regions:
+            for region, border_player, start_pos in candidate_regions:
                 if _is_color_disconnected(state, g, region):
-                    eligible_regions.append((region, border_player))
+                    eligible_regions.append((region, border_player, start_pos))
 
     return territory_moves, region_positions
 

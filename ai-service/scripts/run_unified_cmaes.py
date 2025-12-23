@@ -1545,6 +1545,53 @@ Examples:
         logger.info(f"  ... and {len(changes) - 10} more weights")
         logger.info("=" * 70)
 
+        # Register to model registry for positive feedback training loop
+        if REGISTRY_AVAILABLE and best_fitness > 0.5:
+            try:
+                # Save weights to file for registry
+                output_dir = Path(config.output_dir)
+                weights_path = output_dir / "optimized_weights.json"
+                save_weights_to_file(
+                    best_weights,
+                    str(weights_path),
+                    {
+                        "board_type": config.board_type,
+                        "num_players": config.num_players,
+                        "fitness": best_fitness,
+                        "generations": config.generations,
+                    },
+                )
+
+                # Register to model registry (auto-promotes to staging if improved)
+                model_id, version = register_cmaes_result(
+                    weights_path=weights_path,
+                    board_type=config.board_type,
+                    num_players=config.num_players,
+                    fitness=best_fitness,
+                    generation=config.generations,
+                    cmaes_config={
+                        "population_size": config.population_size,
+                        "sigma": config.sigma,
+                        "games_per_eval": config.games_per_eval,
+                        "backend": config.backend,
+                    },
+                    auto_promote=True,
+                    min_fitness_improvement=0.02,
+                )
+                logger.info(
+                    f"Registered to model registry: {model_id}:v{version}"
+                )
+                logger.info(
+                    "Selfplay workers will automatically use these weights "
+                    "for stronger training games!"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to register to model registry: {e}")
+        elif not REGISTRY_AVAILABLE:
+            logger.info(
+                "Model registry not available - weights saved to file only"
+            )
+
 
 if __name__ == "__main__":
     main()
