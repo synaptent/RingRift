@@ -104,6 +104,31 @@ def get_recovery_manager():
     """DEPRECATED: Use get_health_manager() instead."""
     return get_health_manager()
 
+# Job Reaper Daemon (leader-only, kills stuck jobs and reassigns work)
+_job_reaper = None
+def get_job_reaper(work_queue=None, ssh_config=None):
+    """Get the job reaper singleton (lazy load).
+
+    The JobReaperDaemon enforces job timeouts by:
+    1. Detecting jobs past their timeout
+    2. Killing stuck processes via SSH
+    3. Marking jobs as TIMEOUT
+    4. Reassigning failed work to other nodes
+    5. Blacklisting nodes that repeatedly fail
+    """
+    global _job_reaper
+    if _job_reaper is None and work_queue is not None:
+        try:
+            from app.coordination.job_reaper import JobReaperDaemon
+            _job_reaper = JobReaperDaemon(
+                work_queue=work_queue,
+                ssh_config=ssh_config,
+            )
+        except ImportError as e:
+            logger.warning(f"JobReaperDaemon not available: {e}")
+            _job_reaper = None
+    return _job_reaper
+
 def get_predictive_alerts():
     """Get the predictive alerts manager (lazy load)."""
     global _predictive_alerts
@@ -17817,6 +17842,88 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 logger.error(f"Self-healing loop error: {e}")
                 await asyncio.sleep(HEALING_INTERVAL)
 
+    async def _job_reaper_loop(self):
+        """Background loop for job timeout enforcement (leader-only).
+
+        The JobReaperDaemon provides:
+        1. Detection of jobs that exceeded their timeout
+        2. SSH-based process termination on remote nodes
+        3. Marking timed-out jobs in the work queue
+        4. Automatic reassignment of failed work
+        5. Temporary blacklisting of repeatedly failing nodes
+        """
+        await asyncio.sleep(60)  # Initial delay
+
+        logger.info("Job reaper loop starting...")
+
+        while self.running:
+            try:
+                # Only leader runs the job reaper
+                if self.role != NodeRole.LEADER:
+                    await asyncio.sleep(30)
+                    continue
+
+                # Get work queue
+                wq = get_work_queue()
+                if wq is None:
+                    await asyncio.sleep(30)
+                    continue
+
+                # Get SSH config from cluster configuration
+                ssh_config = self._get_ssh_config_for_reaper()
+
+                # Get or create job reaper
+                reaper = get_job_reaper(work_queue=wq, ssh_config=ssh_config)
+                if reaper is None:
+                    logger.debug("JobReaperDaemon not available")
+                    await asyncio.sleep(60)
+                    continue
+
+                # Run one iteration of the reaper (it handles its own sleeping)
+                if not reaper.running:
+                    # Start the reaper - it will run its own loop
+                    logger.info("Starting JobReaperDaemon")
+                    asyncio.create_task(reaper.run())
+
+                # Check reaper stats periodically
+                stats = reaper.get_stats()
+                if stats.get("jobs_reaped", 0) > 0 or stats.get("jobs_reassigned", 0) > 0:
+                    logger.info(
+                        f"JobReaper stats: reaped={stats['jobs_reaped']}, "
+                        f"reassigned={stats['jobs_reassigned']}, "
+                        f"blacklisted={stats['currently_blacklisted']}"
+                    )
+
+                await asyncio.sleep(60)  # Check every minute
+
+            except Exception as e:
+                logger.error(f"Job reaper loop error: {e}")
+                await asyncio.sleep(60)
+
+    def _get_ssh_config_for_reaper(self) -> dict[str, Any]:
+        """Get SSH configuration for the job reaper from cluster config."""
+        ssh_config = {}
+        try:
+            # Try to load from cluster_nodes.yaml
+            config_path = Path(self.ringrift_path) / "ai-service" / "config" / "cluster_nodes.yaml"
+            if config_path.exists():
+                import yaml
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+
+                for node_id, node_cfg in config.get("nodes", {}).items():
+                    ssh = node_cfg.get("ssh", {})
+                    if ssh:
+                        ssh_config[node_id] = {
+                            "host": ssh.get("host", node_id),
+                            "user": ssh.get("user", "ubuntu"),
+                            "key": ssh.get("key", ""),
+                        }
+        except Exception as e:
+            logger.debug(f"Error loading SSH config for reaper: {e}")
+
+        return ssh_config
+
     async def _validation_loop(self):
         """Background loop for automatic model validation.
 
@@ -27870,6 +27977,9 @@ print(json.dumps({{
         # Self-healing loop: recover stuck jobs and unhealthy nodes
         tasks.append(asyncio.create_task(self._self_healing_loop()))
 
+        # Job reaper loop: enforce job timeouts with SSH kill and work reassignment (leader-only)
+        tasks.append(asyncio.create_task(self._job_reaper_loop()))
+
         # Validation loop: auto-queue validation for newly trained models
         tasks.append(asyncio.create_task(self._validation_loop()))
 
@@ -27921,6 +28031,8 @@ def main():
                         help="Storage type: 'disk', 'ramdrive' (/dev/shm), or 'auto' (detect based on RAM/disk)")
     parser.add_argument("--sync-to-disk-interval", type=int, default=300,
                         help="When using ramdrive, sync to disk every N seconds (0 = no sync, default: 300)")
+    parser.add_argument("--supervised", action="store_true",
+                        help="Running under cluster_supervisor.py - disable self-restart logic")
 
     args = parser.parse_args()
 

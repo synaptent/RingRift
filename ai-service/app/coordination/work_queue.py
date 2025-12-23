@@ -513,6 +513,12 @@ class WorkQueue:
                 if capabilities and work_type not in capabilities:
                     continue
 
+                # Check if this node is excluded (set by JobReaperDaemon for failed nodes)
+                excluded_nodes = item.config.get("_excluded_nodes", [])
+                if node_id in excluded_nodes:
+                    logger.debug(f"Node {node_id} excluded from {item.work_id}")
+                    continue
+
                 # Check policy
                 if self.policy_manager and not self.policy_manager.is_work_allowed(node_id, work_type):
                     logger.debug(f"Policy denies {work_type} on {node_id}")
@@ -829,6 +835,126 @@ class WorkQueue:
                 1 for item in self.items.values()
                 if item.status in (WorkStatus.CLAIMED, WorkStatus.RUNNING)
             )
+
+    # =========================================================================
+    # Job Reaper Support Methods
+    # =========================================================================
+
+    def get_running_items(self) -> list[dict[str, Any]]:
+        """Get all running work items with full details.
+
+        Used by JobReaperDaemon to check for timed-out jobs.
+
+        Returns:
+            List of running work items as dicts with timing info
+        """
+        with self.lock:
+            running = []
+            for item in self.items.values():
+                if item.status in (WorkStatus.CLAIMED, WorkStatus.RUNNING):
+                    d = item.to_dict()
+                    # Add extra fields for reaper
+                    d["started_at"] = item.started_at or item.claimed_at
+                    d["pid"] = item.config.get("pid")  # If tracked
+                    running.append(d)
+            return running
+
+    def timeout_work(self, work_id: str) -> bool:
+        """Mark a specific work item as timed out.
+
+        Used by JobReaperDaemon when it detects a stuck job.
+        Does NOT automatically retry - that's handled by reset_for_retry().
+
+        Args:
+            work_id: ID of the work item to timeout
+
+        Returns:
+            True if item was marked as timeout, False otherwise
+        """
+        with self.lock:
+            item = self.items.get(work_id)
+            if not item:
+                return False
+
+            if item.status not in (WorkStatus.CLAIMED, WorkStatus.RUNNING):
+                return False
+
+            item.status = WorkStatus.TIMEOUT
+            item.completed_at = time.time()
+            item.error = "Job timed out - killed by reaper"
+            self.stats["total_timeout"] += 1
+            self._save_item(item)
+            self._save_stats()
+
+            logger.warning(f"Work {work_id} marked as TIMEOUT by reaper")
+
+        # Notify (outside lock)
+        self.notifier.on_work_timeout(item, permanent=True)
+        return True
+
+    def get_retriable_items(self, max_attempts: int = 3) -> list[dict[str, Any]]:
+        """Get failed/timed-out items that can be retried.
+
+        Used by JobReaperDaemon for automatic job reassignment.
+
+        Args:
+            max_attempts: Maximum attempts before giving up
+
+        Returns:
+            List of retriable work items as dicts
+        """
+        with self.lock:
+            retriable = []
+            for item in self.items.values():
+                if item.status in (WorkStatus.FAILED, WorkStatus.TIMEOUT):
+                    if item.attempts < max_attempts:
+                        d = item.to_dict()
+                        d["failed_node"] = item.claimed_by
+                        retriable.append(d)
+            return retriable
+
+    def reset_for_retry(
+        self,
+        work_id: str,
+        excluded_nodes: list[str] | None = None,
+    ) -> bool:
+        """Reset a failed/timed-out work item for retry.
+
+        Used by JobReaperDaemon for automatic job reassignment.
+        The excluded_nodes list prevents reassignment to nodes that failed.
+
+        Args:
+            work_id: ID of the work item to reset
+            excluded_nodes: Nodes that should not claim this work
+
+        Returns:
+            True if item was reset, False otherwise
+        """
+        with self.lock:
+            item = self.items.get(work_id)
+            if not item:
+                return False
+
+            if item.status not in (WorkStatus.FAILED, WorkStatus.TIMEOUT):
+                return False
+
+            # Store excluded nodes in config for claim_work to check
+            if excluded_nodes:
+                item.config["_excluded_nodes"] = list(excluded_nodes)
+
+            # Reset for retry
+            item.status = WorkStatus.PENDING
+            item.claimed_by = ""
+            item.claimed_at = 0.0
+            item.started_at = 0.0
+            # Don't reset attempts - that tracks total tries
+            self._save_item(item)
+
+            logger.info(
+                f"Work {work_id} reset for retry (attempt {item.attempts + 1}), "
+                f"excluding nodes: {excluded_nodes or []}"
+            )
+            return True
 
     def ensure_work_available(self, num_idle_nodes: int, max_batch: int = 10) -> int:
         """Ensure queue has enough work for idle nodes.

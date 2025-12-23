@@ -1,0 +1,42 @@
+[Unit]
+Description=RingRift Cluster Supervisor
+Documentation=https://github.com/your-org/ringrift
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
+Environment="PATH=/home/ubuntu/ringrift/ai-service/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python scripts/cluster_supervisor.py --verbose
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart configuration
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Watchdog configuration (supervisor should ping every 30s, timeout at 60s)
+WatchdogSec=60
+
+# Resource limits
+MemoryMax=2G
+TasksMax=100
+
+# Logging
+StandardOutput=append:/home/ubuntu/ringrift/ai-service/logs/supervisor.log
+StandardError=append:/home/ubuntu/ringrift/ai-service/logs/supervisor.log
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/ringrift
+ReadWritePaths=/tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

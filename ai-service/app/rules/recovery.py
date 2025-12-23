@@ -172,13 +172,81 @@ def _get_moore_directions(board_type: BoardType) -> list[tuple[int, int, int | N
         return directions
 
 
+def _get_position_keys_for_lookup(pos: Position, board_type: BoardType) -> list[str]:
+    """
+    Get all possible key formats for a position to handle hex parity.
+
+    RR-PARITY-FIX-2025-12-22: For hex boards, markers may be stored with
+    "x,y,z" or "x,y" key format. Try both to match TypeScript behavior.
+
+    Args:
+        pos: Position to get keys for
+        board_type: Board type to determine if hex fallback needed
+
+    Returns:
+        List of key strings to try (primary first, then alternates)
+    """
+    primary_key = pos.to_key()
+    keys = [primary_key]
+
+    is_hex = board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
+    if is_hex:
+        parts = primary_key.split(",")
+        if len(parts) == 3:
+            # Primary was "x,y,z", also try "x,y"
+            short_key = f"{parts[0]},{parts[1]}"
+            keys.append(short_key)
+        elif len(parts) == 2:
+            # Primary was "x,y", also try "x,y,z"
+            z = -int(parts[0]) - int(parts[1])
+            full_key = f"{parts[0]},{parts[1]},{z}"
+            keys.append(full_key)
+
+    return keys
+
+
+def _get_marker_with_fallback(
+    board: BoardState,
+    pos: Position,
+) -> MarkerInfo | None:
+    """
+    Get marker at position, trying alternate key formats for hex boards.
+
+    RR-PARITY-FIX-2025-12-22: Mirrors TypeScript getMarker() fallback logic.
+    """
+    keys = _get_position_keys_for_lookup(pos, board.type)
+    for key in keys:
+        marker = board.markers.get(key)
+        if marker is not None:
+            return marker
+    return None
+
+
 def _add_direction(pos: Position, direction: tuple[int, int, int | None], scale: int = 1) -> Position:
-    """Add a direction vector to a position."""
+    """Add a direction vector to a position.
+
+    RR-PARITY-FIX-2025-12-22: For hex boards, if pos.z is None but direction
+    has a z component (hex direction), compute z from the cube coordinate
+    constraint x + y + z = 0.
+    """
     new_x = pos.x + direction[0] * scale
     new_y = pos.y + direction[1] * scale
     new_z = None
-    if pos.z is not None and direction[2] is not None:
-        new_z = pos.z + direction[2] * scale
+
+    if direction[2] is not None:
+        # This is a hex direction with z component
+        if pos.z is not None:
+            # Position has z, add normally
+            new_z = pos.z + direction[2] * scale
+        else:
+            # Position missing z - compute from cube constraint x + y + z = 0
+            # First infer original z, then add direction
+            inferred_z = -pos.x - pos.y
+            new_z = inferred_z + direction[2] * scale
+    elif pos.z is not None:
+        # Position has z but direction doesn't (non-hex direction)
+        new_z = pos.z
+
     return Position(x=new_x, y=new_y, z=new_z)
 
 
@@ -243,6 +311,8 @@ def _count_markers_in_line_through(
     in the given direction, returning the count and positions.
 
     Mirrors the TS findLineInDirection logic but returns a tuple.
+
+    RR-PARITY-FIX-2025-12-22: Uses _get_marker_with_fallback for hex key parity.
     """
     positions = [marker_pos]
 
@@ -257,7 +327,7 @@ def _count_markers_in_line_through(
         if BoardManager.get_stack(next_pos, board) is not None:
             break
 
-        marker = board.markers.get(next_pos.to_key())
+        marker = _get_marker_with_fallback(board, next_pos)
         if marker is None or marker.player != player:
             break
 
@@ -282,7 +352,7 @@ def _count_markers_in_line_through(
         if BoardManager.get_stack(prev_pos, board) is not None:
             break
 
-        marker = board.markers.get(prev_pos.to_key())
+        marker = _get_marker_with_fallback(board, prev_pos)
         if marker is None or marker.player != player:
             break
 
@@ -302,6 +372,8 @@ def _would_complete_line_at(
     Check if placing a marker at to_pos would complete a line of at least line_length.
 
     Returns (completes_line, markers_count, line_positions).
+
+    RR-PARITY-FIX-2025-12-22: Uses _get_marker_with_fallback for hex key parity.
     """
     # Simulate the marker being at to_pos for line checking
     # We'll create a virtual marker map for checking
@@ -323,7 +395,7 @@ def _would_complete_line_at(
             if BoardManager.get_stack(next_pos, board) is not None:
                 break
 
-            marker = board.markers.get(next_pos.to_key())
+            marker = _get_marker_with_fallback(board, next_pos)
             if marker is None or marker.player != player:
                 break
 
@@ -346,7 +418,7 @@ def _would_complete_line_at(
             if BoardManager.get_stack(prev_pos, board) is not None:
                 break
 
-            marker = board.markers.get(prev_pos.to_key())
+            marker = _get_marker_with_fallback(board, prev_pos)
             if marker is None or marker.player != player:
                 break
 

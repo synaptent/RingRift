@@ -371,8 +371,10 @@ def _build_model_id(
         prefix = "sq8"
     elif board_type == BoardType.SQUARE19:
         prefix = "sq19"
+    elif board_type == BoardType.HEX8:
+        prefix = "hex8"
     elif board_type == BoardType.HEXAGONAL:
-        prefix = "hex"
+        prefix = "hexagonal"
     else:
         prefix = "unknown"
 

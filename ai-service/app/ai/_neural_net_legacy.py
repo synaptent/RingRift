@@ -4253,8 +4253,11 @@ class NeuralNetAI(BaseAI):
             )
         elif model_class_name in hex_model_classes:
             cls = hex_model_classes[model_class_name]
-            # Hex models use different in_channels: v3=16, v2=10
-            hex_in_channels = in_channels_override or (16 if "v3" in model_class_name else 10)
+            # Hex models expect TOTAL in_channels (not base), infer from conv1 if available
+            if conv1_weight is not None and hasattr(conv1_weight, "shape"):
+                hex_in_channels = int(conv1_weight.shape[1])  # Total channels from checkpoint
+            else:
+                hex_in_channels = in_channels_override or (64 if "v3" in model_class_name else 40)
             self.model = cls(
                 board_size=self.board_size,
                 in_channels=hex_in_channels,
