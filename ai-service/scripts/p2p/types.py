@@ -17,9 +17,10 @@ class NodeRole(str, Enum):
 class JobType(str, Enum):
     """Types of jobs nodes can run."""
     SELFPLAY = "selfplay"
-    GPU_SELFPLAY = "gpu_selfplay"  # GPU-accelerated parallel selfplay (pure GPU, experimental)
+    GPU_SELFPLAY = "gpu_selfplay"  # GPU-accelerated parallel selfplay (pure GPU, high parity 2025-12)
     HYBRID_SELFPLAY = "hybrid_selfplay"  # Hybrid CPU/GPU selfplay (100% rule fidelity, GPU-accelerated eval)
     CPU_SELFPLAY = "cpu_selfplay"  # Pure CPU selfplay to utilize excess CPU on high-CPU/low-VRAM nodes
+    GUMBEL_SELFPLAY = "gumbel_selfplay"  # Gumbel MCTS with NN policy for high-quality training data
     TRAINING = "training"
     CMAES = "cmaes"
     # Distributed job types

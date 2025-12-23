@@ -3218,7 +3218,7 @@ class P2POrchestrator:
                 if not _pid_alive(pid):
                     stale_job_ids.append(job_id)
                     continue
-                if job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY):
+                if job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY):
                     selfplay_pids.add(str(pid))
                 elif job.job_type == JobType.TRAINING:
                     training_pids.add(str(pid))
@@ -13139,7 +13139,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             jobs_to_stop = []
             with self.jobs_lock:
                 for job_id, job in self.local_jobs.items():
-                    if (job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY)
+                    if (job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY)
                         and getattr(job, 'board_type', None) == board_type
                         and getattr(job, 'num_players', None) == num_players
                         and job.status == "running"):
@@ -13434,7 +13434,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             # Job counts
             with self.jobs_lock:
                 selfplay_jobs = len([j for j in self.local_jobs.values()
-                                    if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY)
+                                    if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY)
                                     and j.status == "running"])
                 training_jobs = len([j for j in self.local_jobs.values()
                                     if j.job_type == JobType.TRAINING and j.status == "running"])
@@ -15323,7 +15323,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             with self.jobs_lock:
                 selfplay_jobs = len([j for j in self.local_jobs.values()
-                                    if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY)
+                                    if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY)
                                     and j.status == "running"])
 
             nodes.append({
@@ -16527,7 +16527,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             with self.jobs_lock:
                 active_selfplay = len([j for j in self.local_jobs.values()
-                                      if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY)
+                                      if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY)
                                       and j.status == "running"])
 
             autoscale["current_state"] = {
@@ -26211,11 +26211,16 @@ print(json.dumps({{
                         job_type = JobType.CPU_SELFPLAY
                         task_type_str = "CPU-only (hybrid mode)"
                     elif node.has_gpu and is_high_end_gpu and not is_apple_gpu and not gpu_seems_unavailable:
-                        # High-end CUDA GPUs: Use GPU_SELFPLAY for maximum throughput
+                        # High-end CUDA GPUs: Mix of GPU_SELFPLAY (volume) and GUMBEL_SELFPLAY (quality)
                         # GPU selfplay now has high parity with CPU rules (2025-12 upgrade)
-                        # This achieves 10-100x speedup with full GPU parallelization
-                        job_type = JobType.GPU_SELFPLAY
-                        task_type_str = "GPU (high-parity)"
+                        # Use Gumbel MCTS ~20% of time for high-quality training data (self-improvement loop)
+                        import random
+                        if random.random() < 0.2:  # 20% chance for Gumbel MCTS (quality)
+                            job_type = JobType.GUMBEL_SELFPLAY
+                            task_type_str = "GUMBEL (high-quality)"
+                        else:  # 80% for GPU selfplay (volume)
+                            job_type = JobType.GPU_SELFPLAY
+                            task_type_str = "GPU (high-parity)"
                     elif node.has_gpu and not is_apple_gpu and not gpu_seems_unavailable:
                         # Mid-tier GPUs: Use hybrid (CPU rules + GPU eval)
                         job_type = JobType.HYBRID_SELFPLAY
@@ -26379,7 +26384,7 @@ print(json.dumps({{
                 (job_id, job)
                 for job_id, job in self.local_jobs.items()
                 if job.status == "running"
-                and job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY)
+                and job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY)
             ]
 
         if selfplay_before <= target and len(running) <= target:
@@ -26515,7 +26520,7 @@ print(json.dumps({{
             pids_to_kill: set[int] = set()
             with self.jobs_lock:
                 for job_id, job in self.local_jobs.items():
-                    if job.job_type not in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY):
+                    if job.job_type not in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY):
                         continue
                     jobs_to_clear.append(job_id)
                     if job.pid:
@@ -27090,6 +27095,125 @@ print(json.dumps({{
                     self.local_jobs[job_id] = job
 
                 logger.info(f"Started HYBRID selfplay job {job_id} (PID {proc.pid})")
+                self._save_state()
+                return job
+
+            elif job_type == JobType.GUMBEL_SELFPLAY:
+                # High-quality Gumbel MCTS selfplay with NN policy for self-improvement training
+                # Uses generate_gumbel_selfplay.py with proper MCTS simulation budget
+
+                # Games and simulation budget based on board type
+                num_games = 50  # Lower volume, higher quality
+                simulation_budget = 150
+                if board_type == "square19":
+                    num_games = 25
+                    simulation_budget = 200  # More search for larger board
+                elif board_type in ("hex", "hexagonal", "hex8"):
+                    num_games = 40
+                    simulation_budget = 150
+
+                output_dir = Path(
+                    self.ringrift_path,
+                    "ai-service",
+                    "data",
+                    "selfplay",
+                    "gumbel",
+                    f"{board_type}_{num_players}p",
+                    job_id,
+                )
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                # Normalize board type for gumbel script
+                board_arg = {
+                    "hex": "hexagonal",
+                    "hex8": "hex8",
+                }.get(board_type, board_type)
+
+                # Use venv python if available
+                venv_python = Path(self.ringrift_path, "ai-service", "venv", "bin", "python")
+                python_exec = str(venv_python) if venv_python.exists() else "python3"
+
+                cmd = [
+                    python_exec,
+                    f"{self.ringrift_path}/ai-service/scripts/generate_gumbel_selfplay.py",
+                    "--board", board_arg,
+                    "--num-players", str(num_players),
+                    "--num-games", str(num_games),
+                    "--simulation-budget", str(simulation_budget),
+                    "--output-dir", str(output_dir),
+                    "--db", str(output_dir / "games.db"),
+                    "--seed", str(int(time.time() * 1000) % 2**31),
+                    "--allow-fresh-weights",  # Allow running even without trained model
+                ]
+
+                # Start process with GPU environment
+                env = os.environ.copy()
+                env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
+
+                if cuda_visible_devices is not None and str(cuda_visible_devices).strip():
+                    env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
+                elif "CUDA_VISIBLE_DEVICES" not in env:
+                    gpu_count = 0
+                    try:
+                        out = subprocess.run(
+                            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if out.returncode == 0 and out.stdout.strip():
+                            gpu_count = len([line for line in out.stdout.splitlines() if line.strip()])
+                    except Exception:
+                        gpu_count = 0
+
+                    if gpu_count > 0:
+                        with self.jobs_lock:
+                            running_gumbel_jobs = sum(
+                                1
+                                for j in self.local_jobs.values()
+                                if j.job_type == JobType.GUMBEL_SELFPLAY and j.status == "running"
+                            )
+                        env["CUDA_VISIBLE_DEVICES"] = str(running_gumbel_jobs % gpu_count)
+                    else:
+                        env["CUDA_VISIBLE_DEVICES"] = "0"
+
+                # SAFEGUARD: Final check before spawning
+                can_spawn, spawn_reason = self._can_spawn_process(f"gumbel-selfplay-{board_type}-{num_players}p")
+                if not can_spawn:
+                    logger.info(f"BLOCKED gumbel selfplay spawn: {spawn_reason}")
+                    return None
+
+                log_handle = open(output_dir / "gumbel_run.log", "a")
+                try:
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=log_handle,
+                        stderr=subprocess.STDOUT,
+                        env=env,
+                        cwd=self.ringrift_path,
+                    )
+                    self._record_spawn()
+                finally:
+                    log_handle.close()
+
+                job = ClusterJob(
+                    job_id=job_id,
+                    job_type=job_type,
+                    node_id=self.node_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    engine_mode="gumbel-mcts",
+                    pid=proc.pid,
+                    started_at=time.time(),
+                    status="running",
+                )
+
+                with self.jobs_lock:
+                    self.local_jobs[job_id] = job
+
+                logger.info(f"Started GUMBEL selfplay job {job_id} (PID {proc.pid}, sims={simulation_budget})")
                 self._save_state()
                 return job
 
