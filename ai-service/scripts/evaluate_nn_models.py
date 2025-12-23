@@ -137,6 +137,30 @@ def create_ai(
             model_path=checkpoint_path,
         )
 
+    elif model_type == "cnn":
+        # Standalone CNN/NNUE neural network (no MCTS)
+        from app.ai._neural_net_legacy import NeuralNetAI
+        config = AIConfig(difficulty=6, nn_model_id=checkpoint_path)
+        return NeuralNetAI(
+            player_number=player_number,
+            config=config,
+            board_type=BoardType.SQUARE8,
+        )
+
+    elif model_type == "mcts_d5":
+        # MCTS depth 5 without neural net
+        from app.ai.factory import AIFactory
+        from app.models import AIType
+        config = AIConfig(difficulty=5, think_time=5000, use_neural_net=False)
+        return AIFactory.create(AIType.MCTS, player_number=player_number, config=config)
+
+    elif model_type == "mcts_d7":
+        # MCTS depth 7 without neural net
+        from app.ai.factory import AIFactory
+        from app.models import AIType
+        config = AIConfig(difficulty=7, think_time=10000, use_neural_net=False)
+        return AIFactory.create(AIType.MCTS, player_number=player_number, config=config)
+
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 

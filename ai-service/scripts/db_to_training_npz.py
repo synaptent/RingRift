@@ -187,12 +187,25 @@ def export_db_to_npz(
     columns = {row[1] for row in cursor.fetchall()}
     moves_col = "total_moves" if "total_moves" in columns else "move_count"
 
+    # Build filter query for board type and num players
+    filter_conditions = [f"winner IS NOT NULL", f"{moves_col} > 10"]
+    filter_params = []
+
+    if board_type:
+        filter_conditions.append("board_type = ?")
+        filter_params.append(board_type)
+
+    if num_players:
+        filter_conditions.append("num_players = ?")
+        filter_params.append(num_players)
+
+    where_clause = " AND ".join(filter_conditions)
     cursor.execute(f"""
         SELECT game_id, winner, {moves_col}
         FROM games
-        WHERE winner IS NOT NULL AND {moves_col} > 10
+        WHERE {where_clause}
         ORDER BY game_id
-    """)
+    """, filter_params)
     games = cursor.fetchall()
     conn.close()
 

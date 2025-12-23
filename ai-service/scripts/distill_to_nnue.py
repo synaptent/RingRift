@@ -615,6 +615,12 @@ def main() -> None:
         default=None,
         help="Path to TRAINING_DATA_REGISTRY.md (defaults to repo root).",
     )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to existing NNUE checkpoint to resume training from.",
+    )
 
     args = parser.parse_args()
 
@@ -685,6 +691,13 @@ def main() -> None:
     logger.info("Creating student NNUE model...")
     student_model = RingRiftNNUE(board_type=board_type)
     logger.info(f"NNUE feature dim: {get_feature_dim(board_type)}")
+
+    # Load existing checkpoint if resuming
+    if args.resume:
+        logger.info(f"Resuming from checkpoint: {args.resume}")
+        checkpoint = torch.load(args.resume, map_location=device)
+        student_model.load_state_dict(checkpoint["model_state_dict"])
+        logger.info(f"Loaded NNUE weights from {args.resume}")
 
     # Run distillation
     logger.info("Starting distillation training...")
