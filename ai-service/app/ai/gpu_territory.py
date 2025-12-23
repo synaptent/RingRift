@@ -742,6 +742,13 @@ def compute_territory_batch(
             is_collapsed_np = state.is_collapsed[g].cpu().numpy()
             marker_owner_np = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
 
+            # CPU parity: Check if we still have 2+ active players
+            # Territory detection requires at least 2 active players (matches CPU early exit)
+            active_mask = (stack_owner_np > 0) & (stack_height_np > 0)
+            active_players = set(stack_owner_np[active_mask].tolist())
+            if len(active_players) <= 1:
+                break  # No more territory processing possible
+
             # Recompute marker colors and candidate regions
             marker_colors = set()
             if marker_owner_np is not None:

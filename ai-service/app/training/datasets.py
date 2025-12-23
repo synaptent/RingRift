@@ -85,6 +85,8 @@ class RingRiftDataset(Dataset):
         self.length = 0
         # Memory-mapped file object (np.lib.npyio.NpzFile) or in-memory dict
         self.data = None
+        # Track if policy data is available (value-only datasets won't have it)
+        self.has_policy = True
         # Optional metadata inferred from the underlying npz file to aid
         # future multi-board training tooling.
         self.spatial_shape = None  # (H, W) of feature maps, if known
@@ -117,11 +119,19 @@ class RingRiftDataset(Dataset):
                 if 'features' in self.data:
                     total_samples = len(self.data['values'])
 
-                    # Optionally filter out samples with empty policies
-                    # (terminal states). When disabled, training will
-                    # mask policy loss for those samples instead.
-                    policy_indices_arr = self.data['policy_indices']
-                    if self.filter_empty_policies:
+                    # Check if policy data is available (value-only datasets won't have it)
+                    self.has_policy = 'policy_indices' in self.data and 'policy_values' in self.data
+                    if not self.has_policy:
+                        logger.info(
+                            f"No policy data in {data_path} - value-only training mode"
+                        )
+                        # For value-only training, all samples are valid
+                        self.valid_indices = list(range(total_samples))
+                    elif self.filter_empty_policies:
+                        # Optionally filter out samples with empty policies
+                        # (terminal states). When disabled, training will
+                        # mask policy loss for those samples instead.
+                        policy_indices_arr = self.data['policy_indices']
                         self.valid_indices = [
                             i for i in range(total_samples)
                             if len(policy_indices_arr[i]) > 0
@@ -351,8 +361,13 @@ class RingRiftDataset(Dataset):
         # memory depending on how the npz was written. For very large datasets
         # a CSR-style encoding would be preferable, but for now we assume the
         # object array fits in memory or is handled by OS paging.
-        policy_indices = self.data['policy_indices'][actual_idx]
-        policy_values = self.data['policy_values'][actual_idx]
+        # Handle value-only datasets (no policy data)
+        if self.has_policy:
+            policy_indices = self.data['policy_indices'][actual_idx]
+            policy_values = self.data['policy_values'][actual_idx]
+        else:
+            policy_indices = np.array([], dtype=np.int32)
+            policy_values = np.array([], dtype=np.float32)
 
         # Apply hex symmetry augmentation on-the-fly if enabled
         # This expands effective dataset size by 12x without extra memory
@@ -366,14 +381,15 @@ class RingRiftDataset(Dataset):
                     features, transform_id
                 )
 
-                # Transform sparse policy
-                indices_arr = np.asarray(policy_indices, dtype=np.int32)
-                values_arr = np.asarray(policy_values, dtype=np.float32)
-                policy_indices, policy_values = (
-                    self.hex_transform.transform_sparse_policy(
-                        indices_arr, values_arr, transform_id
+                # Transform sparse policy (only if we have policy data)
+                if self.has_policy and len(policy_indices) > 0:
+                    indices_arr = np.asarray(policy_indices, dtype=np.int32)
+                    values_arr = np.asarray(policy_values, dtype=np.float32)
+                    policy_indices, policy_values = (
+                        self.hex_transform.transform_sparse_policy(
+                            indices_arr, values_arr, transform_id
+                        )
                     )
-                )
 
         # Reconstruct dense policy vector on-the-fly.
         # When empty policies are allowed, the vector may remain all zeros.

@@ -6704,7 +6704,7 @@ class HexNeuralNet_v4(nn.Module):
         hex_radius: int = 12,
         num_ring_counts: int = 3,  # Ring count options (1, 2, 3)
         num_directions: int = NUM_HEX_DIRS,  # 6 hex directions
-        max_distance: int = HEX_MAX_DIST,  # 24 distance buckets
+        max_distance: int | None = None,  # Auto-detect based on board_size
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -6716,11 +6716,17 @@ class HexNeuralNet_v4(nn.Module):
         self.num_players = num_players
         self.dropout_rate = dropout
 
+        # Auto-detect max_distance based on board size:
+        # - hex8 (board_size=9): max_distance = 8
+        # - hexagonal (board_size=25): max_distance = 24
+        if max_distance is None:
+            max_distance = board_size - 1  # e.g., 9-1=8 for hex8, 25-1=24 for hexagonal
+        self.max_distance = max_distance
+
         # Spatial policy dimensions
         self.num_ring_counts = num_ring_counts
         self.num_directions = num_directions
-        self.max_distance = max_distance
-        self.movement_channels = num_directions * max_distance  # 6 × 24 = 144
+        self.movement_channels = num_directions * max_distance  # 6 × 8 = 48 for hex8, 6 × 24 = 144 for hexagonal
 
         # Pre-compute hex validity mask
         self.register_buffer("hex_mask", create_hex_mask(hex_radius, board_size))
@@ -6771,20 +6777,29 @@ class HexNeuralNet_v4(nn.Module):
         """
         Pre-compute index tensors for scattering spatial logits into flat policy.
 
-        Placement indexing: idx = y * W * 3 + x * 3 + ring_count
-        Movement indexing: idx = HEX_MOVEMENT_BASE + y * W * 6 * 24 + x * 6 * 24 + dir * 24 + (dist - 1)
+        Hex8 (board_size=9):
+          - Placement: 9 × 9 × 3 = 243
+          - Movement base: 243
+          - Movement: 9 × 9 × 6 × 8 = 3888
+        Hexagonal (board_size=25):
+          - Placement: 25 × 25 × 3 = 1875
+          - Movement base: 1875 (HEX_MOVEMENT_BASE)
+          - Movement: 25 × 25 × 6 × 24 = 90000
         """
         H, W = board_size, board_size
 
-        # Placement indices: [3, H, W] → flat index in [0, 1874]
+        # Compute placement span based on actual board size
+        placement_span = H * W * self.num_ring_counts
+
+        # Placement indices: [3, H, W] → flat index in [0, placement_span-1]
         placement_idx = torch.zeros(self.num_ring_counts, H, W, dtype=torch.long)
         for y in range(H):
             for x in range(W):
                 for r in range(self.num_ring_counts):
-                    placement_idx[r, y, x] = y * W * 3 + x * 3 + r
+                    placement_idx[r, y, x] = y * W * self.num_ring_counts + x * self.num_ring_counts + r
         self.register_buffer("placement_idx", placement_idx)
 
-        # Movement indices: [144, H, W] → flat index in [1875, 91874]
+        # Movement indices: [movement_channels, H, W] → flat index in [placement_span, ...]
         movement_idx = torch.zeros(self.movement_channels, H, W, dtype=torch.long)
         for y in range(H):
             for x in range(W):
@@ -6792,7 +6807,7 @@ class HexNeuralNet_v4(nn.Module):
                     for dist_minus_1 in range(self.max_distance):
                         channel = d * self.max_distance + dist_minus_1
                         flat_idx = (
-                            HEX_MOVEMENT_BASE
+                            placement_span  # Movement base = after placements
                             + y * W * self.num_directions * self.max_distance
                             + x * self.num_directions * self.max_distance
                             + d * self.max_distance
@@ -6800,6 +6815,10 @@ class HexNeuralNet_v4(nn.Module):
                         )
                         movement_idx[channel, y, x] = flat_idx
         self.register_buffer("movement_idx", movement_idx)
+
+        # Store special base index for use in forward pass
+        movement_span = H * W * self.num_directions * self.max_distance
+        self.special_base = placement_span + movement_span
 
     def _masked_global_avg_pool(
         self,
@@ -6873,8 +6892,8 @@ class HexNeuralNet_v4(nn.Module):
                 else:
                     policy[b].scatter_(0, mv_idx[c], mv_flat[b, c])
 
-        # Add special action logit at the end
-        policy[:, HEX_SPECIAL_BASE] = special_logits.squeeze(-1)
+        # Add special action logit at the computed special_base index
+        policy[:, self.special_base] = special_logits.squeeze(-1)
 
         return policy
 

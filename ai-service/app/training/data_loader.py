@@ -169,6 +169,13 @@ class FileHandle:
                 f"Detected v2 multi-player format (max_players={self._max_players})"
             )
 
+        # Detect if policy data is available (value-only datasets won't have it)
+        self._has_policy = 'policy_indices' in self._data and 'policy_values' in self._data
+        if not self._has_policy:
+            logger.info(
+                f"No policy data in {self.path} - value-only training mode"
+            )
+
         logger.debug(
             f"Opened {self.path}: {len(self._valid_indices)} valid samples "
             f"out of {self._total_samples} total"
@@ -188,6 +195,11 @@ class FileHandle:
     def max_players(self) -> int:
         """Maximum players in multi-player value vectors (default: 4)."""
         return self._max_players
+
+    @property
+    def has_policy(self) -> bool:
+        """Whether this file contains policy data (policy_indices/policy_values)."""
+        return self._has_policy
 
     def get_victory_type_weights(self) -> np.ndarray | None:
         """
@@ -250,23 +262,33 @@ class FileHandle:
             features = np.array(self._data['features'][actual_idx])
             globals_vec = np.array(self._data['globals'][actual_idx])
             value = float(self._data['values'][actual_idx])
-            policy_indices = np.asarray(
-                self._data['policy_indices'][actual_idx]
-            )
-            policy_values = np.asarray(
-                self._data['policy_values'][actual_idx]
-            )
+            # Handle missing policy data (value-only training)
+            if self._has_policy:
+                policy_indices = np.asarray(
+                    self._data['policy_indices'][actual_idx]
+                )
+                policy_values = np.asarray(
+                    self._data['policy_values'][actual_idx]
+                )
+            else:
+                policy_indices = np.array([], dtype=np.int32)
+                policy_values = np.array([], dtype=np.float32)
         else:
             # HDF5 access
             features = np.array(self._data['features'][actual_idx])
             globals_vec = np.array(self._data['globals'][actual_idx])
             value = float(self._data['values'][actual_idx])
-            policy_indices = np.asarray(
-                self._data['policy_indices'][actual_idx]
-            )
-            policy_values = np.asarray(
-                self._data['policy_values'][actual_idx]
-            )
+            # Handle missing policy data (value-only training)
+            if self._has_policy:
+                policy_indices = np.asarray(
+                    self._data['policy_indices'][actual_idx]
+                )
+                policy_values = np.asarray(
+                    self._data['policy_values'][actual_idx]
+                )
+            else:
+                policy_indices = np.array([], dtype=np.int32)
+                policy_values = np.array([], dtype=np.float32)
 
         return features, globals_vec, value, policy_indices, policy_values
 
@@ -307,12 +329,17 @@ class FileHandle:
                     np.array(self._data['globals'][idx])
                 )
                 values_list.append(float(self._data['values'][idx]))
-                policy_indices_list.append(
-                    np.asarray(self._data['policy_indices'][idx])
-                )
-                policy_values_list.append(
-                    np.asarray(self._data['policy_values'][idx])
-                )
+                # Handle missing policy data (value-only training)
+                if self._has_policy:
+                    policy_indices_list.append(
+                        np.asarray(self._data['policy_indices'][idx])
+                    )
+                    policy_values_list.append(
+                        np.asarray(self._data['policy_values'][idx])
+                    )
+                else:
+                    policy_indices_list.append(np.array([], dtype=np.int32))
+                    policy_values_list.append(np.array([], dtype=np.float32))
 
             features_batch = np.stack(features_list, axis=0)
             globals_batch = np.stack(globals_list, axis=0)
@@ -335,14 +362,19 @@ class FileHandle:
                 dtype=np.float32
             )[reorder]
 
-            policy_indices_list = [
-                np.asarray(self._data['policy_indices'][int(i)])
-                for i in actual_indices
-            ]
-            policy_values_list = [
-                np.asarray(self._data['policy_values'][int(i)])
-                for i in actual_indices
-            ]
+            # Handle missing policy data (value-only training)
+            if self._has_policy:
+                policy_indices_list = [
+                    np.asarray(self._data['policy_indices'][int(i)])
+                    for i in actual_indices
+                ]
+                policy_values_list = [
+                    np.asarray(self._data['policy_values'][int(i)])
+                    for i in actual_indices
+                ]
+            else:
+                policy_indices_list = [np.array([], dtype=np.int32) for _ in actual_indices]
+                policy_values_list = [np.array([], dtype=np.float32) for _ in actual_indices]
 
         return (
             features_batch,
@@ -572,6 +604,17 @@ class StreamingDataLoader:
         if not self._file_handles:
             return False
         return all(fh.has_multi_player_values for fh in self._file_handles)
+
+    @property
+    def has_policy(self) -> bool:
+        """
+        Whether any loaded file contains policy data.
+
+        Returns True only if ALL files have policy data (for value-only training detection).
+        """
+        if not self._file_handles:
+            return True  # Assume policy by default
+        return all(fh.has_policy for fh in self._file_handles)
 
     @property
     def max_players(self) -> int:

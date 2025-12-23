@@ -1770,6 +1770,7 @@ def train_model(
     val_sampler = None
     allow_empty_policies = bool(getattr(config, "allow_empty_policies", False))
     filter_empty_policies = not allow_empty_policies
+    value_only_training = False  # Set True if dataset has no policy data
 
     # Auto-detect large datasets and switch to streaming mode to prevent OOM
     if not use_streaming:
@@ -2105,6 +2106,18 @@ def train_model(
                 "Multi-player training requested but streaming dataset lacks values_mp."
             )
 
+        # Check for value-only training (no policy data)
+        if not train_streaming_loader.has_policy:
+            if not distributed or is_main_process():
+                logger.info(
+                    "Dataset has no policy data - enabling value-only training mode "
+                    "(policy_weight=0). Policy head will not be trained."
+                )
+            config.policy_weight = 0.0
+            value_only_training = True
+        else:
+            value_only_training = False
+
         train_sampler = None
         train_size = train_samples
         val_size = val_samples
@@ -2166,6 +2179,18 @@ def train_model(
             raise ValueError(
                 "Multi-player training requested but dataset lacks values_mp."
             )
+
+        # Check for value-only training (no policy data)
+        if not getattr(full_dataset, "has_policy", True):
+            if not distributed or is_main_process():
+                logger.info(
+                    "Dataset has no policy data - enabling value-only training mode "
+                    "(policy_weight=0). Policy head will not be trained."
+                )
+            config.policy_weight = 0.0
+            value_only_training = True
+        else:
+            value_only_training = False
 
         # Log spatial shape if available
         shape = getattr(full_dataset, "spatial_shape", None)
