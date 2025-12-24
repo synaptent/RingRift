@@ -54,6 +54,7 @@ try:
     from app.distributed.data_events import (
         DataEvent,
         DataEventType,
+        EventBus,
         get_event_bus as get_data_event_bus,
     )
     HAS_DATA_EVENTS = True
@@ -61,6 +62,7 @@ except ImportError:
     HAS_DATA_EVENTS = False
     DataEventType = None
     DataEvent = None
+    EventBus = None
 
 try:
     from app.coordination.stage_events import (
@@ -594,6 +596,7 @@ __all__ = [
     # Re-exports from data_events for backward compatibility
     "DataEvent",
     "DataEventType",
+    "EventBus",
     "get_event_bus",
     # Re-exports from stage_events for migration
     "StageEvent",
