@@ -319,7 +319,7 @@ class TrainingConfig:
     selfplay_move_temp_threshold: int = 30  # Use higher temp for first N moves
     selfplay_opening_temperature: float = 1.5  # Temperature for opening moves
     # Gumbel-MCTS specific parameters
-    gumbel_simulations: int = 64  # Simulations per move for Gumbel-MCTS
+    gumbel_simulations: int = 800  # Simulations per move for Gumbel-MCTS (AlphaZero standard)
     gumbel_top_k: int = 16  # Top-k actions for sequential halving
     # Value calibration tracking
     track_calibration: bool = True  # Track value head calibration metrics

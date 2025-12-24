@@ -354,6 +354,7 @@ def export_replay_dataset_multi(
     total_game_moves_list: list[int] = []
     phases_list: list[str] = []
     victory_types_list: list[str] = []  # For victory-type-balanced sampling
+    engine_modes_list: list[str] = []  # For source-based sample weighting (Gumbel 3x weight)
 
     # Track seen game_ids for deduplication across databases
     seen_game_ids: set = set()
@@ -465,6 +466,24 @@ def export_replay_dataset_multi(
                 victory_type = "timeout"
             else:
                 victory_type = "other"
+
+            # Extract engine mode from source for sample weighting
+            # Gumbel MCTS games get higher weight in training
+            source_raw = str(meta.get("source", "") or "")
+            if "gumbel" in source_raw.lower():
+                engine_mode = "gumbel_mcts"
+            elif "mcts" in source_raw.lower():
+                engine_mode = "mcts"
+            elif "policy" in source_raw.lower():
+                engine_mode = "policy_only"
+            elif "descent" in source_raw.lower():
+                engine_mode = "descent"
+            elif "heuristic" in source_raw.lower():
+                engine_mode = "heuristic"
+            elif "gpu" in source_raw.lower():
+                engine_mode = "heuristic"  # GPU selfplay uses heuristic
+            else:
+                engine_mode = "unknown"
 
             total_moves = meta.get("total_moves")
             if total_moves is None:
@@ -620,6 +639,7 @@ def export_replay_dataset_multi(
                 total_game_moves_list.append(total_moves)
                 phases_list.append(phase_str)
                 victory_types_list.append(victory_type)
+                engine_modes_list.append(engine_mode)
 
             samples_added = len(features_list) - samples_before
             if samples_added > 0:
@@ -653,6 +673,7 @@ def export_replay_dataset_multi(
     total_game_moves_arr = np.array(total_game_moves_list, dtype=np.int32)
     phases_arr = np.array(phases_list, dtype=object)
     victory_types_arr = np.array(victory_types_list, dtype=object)  # For balanced sampling
+    engine_modes_arr = np.array(engine_modes_list, dtype=object)  # For source-based sample weighting
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
@@ -730,6 +751,7 @@ def export_replay_dataset_multi(
         "total_game_moves": total_game_moves_arr,
         "phases": phases_arr,
         "victory_types": victory_types_arr,  # For victory-type-balanced sampling
+        "engine_modes": engine_modes_arr,  # For source-based sample weighting (Gumbel 3x weight)
         # Phase 5 Metadata: Additional fields for training compatibility validation
         "encoder_type": np.asarray(encoder_type_str),
         "policy_size": np.asarray(int(policy_size)),
@@ -742,8 +764,16 @@ def export_replay_dataset_multi(
 
     np.savez_compressed(output_path, **save_kwargs)
 
+    # Log engine mode distribution for sample weighting visibility
+    from collections import Counter
+    mode_counts = Counter(engine_modes_list)
+    total_samples = len(engine_modes_list)
+    gumbel_count = mode_counts.get("gumbel_mcts", 0) + mode_counts.get("mcts", 0)
+    gumbel_pct = 100 * gumbel_count / total_samples if total_samples > 0 else 0
+
     print(f"Exported {features_arr.shape[0]} samples from {games_processed} games "
           f"({games_deduplicated} deduplicated) into {output_path}")
+    print(f"Engine modes: {dict(mode_counts)} | Gumbel/MCTS: {gumbel_pct:.1f}% (3x weight in training)")
 
 
 def export_replay_dataset(

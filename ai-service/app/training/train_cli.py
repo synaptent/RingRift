@@ -215,8 +215,9 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         '--sampling-weights', type=str, default='uniform',
-        choices=['uniform', 'recency', 'policy_entropy'],
-        help='Sample weighting strategy'
+        choices=['uniform', 'recency', 'policy_entropy', 'late_game', 'source', 'combined_source'],
+        help='Sample weighting strategy. Use "source" for Gumbel 3x weight, '
+             '"combined_source" for combined late_game + phase + source weighting (recommended)'
     )
 
     # Distributed training

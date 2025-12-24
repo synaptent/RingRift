@@ -616,6 +616,9 @@ class WeightedRingRiftDataset(RingRiftDataset):
             - 'late_game': Higher weight for late-game positions
             - 'phase_emphasis': Higher weight for decision phases
             - 'combined': Combines late_game and phase_emphasis
+            - 'source': Weight by data source quality (Gumbel 3x, MCTS 3x, policy 1.5x)
+            - 'combined_source': Combines late_game, phase_emphasis, AND source weighting
+                Recommended for AlphaZero-style training with mixed data sources.
     """
 
     # Phase weights for phase_emphasis and combined strategies
@@ -739,6 +742,68 @@ class WeightedRingRiftDataset(RingRiftDataset):
                 if phase_available:
                     phase = str(phases[orig_idx])
                     weight *= self.PHASE_WEIGHTS.get(phase, 1.0)
+
+                weights[i] = weight
+
+        elif self.weighting == 'source':
+            # Weight by data source quality - Gumbel MCTS games get 3x weight
+            # This prioritizes high-quality NN+MCTS data for self-improvement
+            engine_modes = None
+            if self.data is not None and 'engine_modes' in self.data:
+                engine_modes = self.data['engine_modes']
+
+            if engine_modes is not None:
+                from app.training.source_weighting import get_quality_tier
+                for i, orig_idx in enumerate(self.valid_indices):
+                    mode = str(engine_modes[orig_idx])
+                    tier = get_quality_tier(mode)
+                    if tier == 'high':
+                        weights[i] = 3.0  # Gumbel/MCTS
+                    elif tier == 'medium':
+                        weights[i] = 1.5  # Policy-only/descent
+                    else:
+                        weights[i] = 1.0  # Heuristic/unknown
+            else:
+                logger.warning(
+                    "source weighting requested but engine_modes not in dataset. "
+                    "Using uniform weights."
+                )
+
+        elif self.weighting == 'combined_source':
+            # Combine late_game, phase_emphasis, AND source weighting
+            late_game_available = (
+                move_numbers is not None and total_game_moves is not None
+            )
+            phase_available = phases is not None
+            engine_modes = None
+            if self.data is not None and 'engine_modes' in self.data:
+                engine_modes = self.data['engine_modes']
+
+            from app.training.source_weighting import get_quality_tier
+
+            for i, orig_idx in enumerate(self.valid_indices):
+                weight = 1.0
+
+                # Late game factor
+                if late_game_available:
+                    move_num = move_numbers[orig_idx]
+                    total = max(total_game_moves[orig_idx], 1)
+                    progress = move_num / total
+                    weight *= (0.5 + 0.5 * progress)
+
+                # Phase factor
+                if phase_available:
+                    phase = str(phases[orig_idx])
+                    weight *= self.PHASE_WEIGHTS.get(phase, 1.0)
+
+                # Source quality factor (Gumbel 3x)
+                if engine_modes is not None:
+                    mode = str(engine_modes[orig_idx])
+                    tier = get_quality_tier(mode)
+                    if tier == 'high':
+                        weight *= 3.0
+                    elif tier == 'medium':
+                        weight *= 1.5
 
                 weights[i] = weight
 
