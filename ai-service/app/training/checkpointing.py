@@ -47,11 +47,20 @@ import copy
 import logging
 import os
 import signal
+import warnings
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+
+warnings.warn(
+    "app.training.checkpointing is deprecated and scheduled for removal in Q2 2026. "
+    "Use app.training.checkpoint_unified instead. "
+    "See the module docstring for migration instructions.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Use centralized executor pool (December 2025)
 try:

@@ -747,6 +747,8 @@ def train_model(
     lr_finder_min: float = 1e-7,
     lr_finder_max: float = 1.0,
     lr_finder_iterations: int = 100,
+    # GNN support (2025-12)
+    model_type: str = "cnn",  # "cnn", "gnn", or "hybrid"
 ):
     """
     Train the RingRift neural network model.
@@ -1625,7 +1627,27 @@ def train_model(
         )
 
     # Initialize model based on board type and multi-player mode
-    if use_hex_v4:
+    # GNN/Hybrid models use model_factory for unified creation
+    if model_type in ("gnn", "hybrid"):
+        from app.ai.neural_net.model_factory import create_model_for_board, HAS_GNN
+        if not HAS_GNN:
+            raise ImportError(
+                f"Model type '{model_type}' requires PyTorch Geometric. "
+                "Install with: pip install torch-geometric torch-scatter torch-sparse"
+            )
+        gnn_num_players = MAX_PLAYERS if multi_player else num_players
+        model = create_model_for_board(
+            board_type=config.board_type,
+            memory_tier=model_type,
+            num_players=gnn_num_players,
+        )
+        if not distributed or is_main_process():
+            param_count = sum(p.numel() for p in model.parameters())
+            logger.info(
+                f"Initialized {model_type.upper()} model for {config.board_type.name}: "
+                f"{param_count:,} parameters"
+            )
+    elif use_hex_v4:
         # HexNeuralNet_v4 for hexagonal boards with NAS-optimized attention
         # V4 uses 16 base channels * (history_length + 1) frames = 64 channels
         model = HexNeuralNet_v4(

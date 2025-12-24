@@ -443,6 +443,87 @@ def cmd_compare(args):
     return 0
 
 
+def cmd_dashboard(args):
+    """Show a rich dashboard of the model registry state."""
+    registry = get_registry(args.registry_dir)
+
+    # Header
+    print("\n" + "=" * 60)
+    print("        RingRift Model Registry Dashboard")
+    print("=" * 60)
+
+    # Production models
+    prod_models = registry.list_models(stage=ModelStage.PRODUCTION)
+    print(f"\n{'PRODUCTION':<15} ({len(prod_models)} models)")
+    print("-" * 50)
+    if prod_models:
+        for m in prod_models:
+            metrics = m.get("metrics", {})
+            elo = metrics.get("elo", "N/A")
+            elo_str = f"{elo:.0f}" if isinstance(elo, (int, float)) else elo
+            config = m.get("config", {})
+            board = config.get("board_type", "?")
+            players = config.get("num_players", "?")
+            print(f"  {m['model_id']:<25} Elo: {elo_str:<6} ({board}_{players}p)")
+    else:
+        print("  No production models")
+
+    # Staging models
+    staging_models = registry.list_models(stage=ModelStage.STAGING)
+    print(f"\n{'STAGING':<15} ({len(staging_models)} models)")
+    print("-" * 50)
+    if staging_models:
+        for m in staging_models[:5]:  # Show top 5
+            metrics = m.get("metrics", {})
+            games = metrics.get("games_played", 0)
+            print(f"  {m['model_id']:<25} Games: {games}")
+        if len(staging_models) > 5:
+            print(f"  ... and {len(staging_models) - 5} more")
+    else:
+        print("  No staging models")
+
+    # Development models (count only)
+    dev_models = registry.list_models(stage=ModelStage.DEVELOPMENT)
+    archived_models = registry.list_models(stage=ModelStage.ARCHIVED)
+
+    print(f"\n{'DEVELOPMENT':<15} {len(dev_models)} models awaiting evaluation")
+    print(f"{'ARCHIVED':<15} {len(archived_models)} models")
+
+    # Total count
+    total = len(prod_models) + len(staging_models) + len(dev_models) + len(archived_models)
+    print(f"\n{'TOTAL':<15} {total} model versions in registry")
+
+    # Recent activity (if available)
+    print("\n" + "=" * 60)
+
+    return 0
+
+
+def cmd_cleanup(args):
+    """Run the archival policy to clean up old models."""
+    import subprocess
+
+    daemon_script = Path(__file__).parent / "model_archival_daemon.py"
+
+    if not daemon_script.exists():
+        print(f"Error: Archival daemon not found at {daemon_script}")
+        return 1
+
+    cmd = ["python", str(daemon_script)]
+
+    if args.execute:
+        cmd.append("--execute")
+    else:
+        cmd.append("--dry-run")
+
+    if args.max_age:
+        cmd.extend(["--max-age-days", str(args.max_age)])
+
+    print(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    return result.returncode
+
+
 def cmd_stats(args):
     """Show registry statistics."""
     registry = get_registry(args.registry_dir)
@@ -556,6 +637,14 @@ def main():
     # stats command
     subparsers.add_parser("stats", help="Show registry statistics")
 
+    # dashboard command
+    subparsers.add_parser("dashboard", help="Show rich dashboard of registry state")
+
+    # cleanup command
+    cleanup_parser = subparsers.add_parser("cleanup", help="Run archival policy to clean up old models")
+    cleanup_parser.add_argument("--execute", action="store_true", help="Execute cleanup (default is dry-run)")
+    cleanup_parser.add_argument("--max-age", type=int, help="Max age in days for archival")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -573,6 +662,8 @@ def main():
         "history": cmd_history,
         "compare": cmd_compare,
         "stats": cmd_stats,
+        "dashboard": cmd_dashboard,
+        "cleanup": cmd_cleanup,
     }
 
     handler = commands.get(args.command)

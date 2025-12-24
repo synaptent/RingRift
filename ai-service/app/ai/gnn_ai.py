@@ -32,6 +32,8 @@ import torch.nn.functional as F
 
 from app.models import AIConfig, BoardType
 from app.game_engine import GameEngine
+from app.ai.canonical_move_encoding import encode_move_for_board
+from app.ai.neural_net.graph_encoding import board_to_graph, board_to_graph_hex
 
 if TYPE_CHECKING:
     from app.models import GameState, Move
@@ -108,74 +110,29 @@ class GNNAI:
         )
 
     def _state_to_graph(self, state: "GameState") -> "Data":
-        """Convert game state to graph format for GNN."""
-        board = state.board
-        node_features = []
-        pos_to_idx = {}
-        idx_to_pos = {}
+        """Convert game state to graph format for GNN.
 
-        # Build node features from board cells
-        if hasattr(board, 'cells'):
-            for pos, cell in board.cells.items():
-                idx = len(pos_to_idx)
-                pos_to_idx[pos] = idx
-                idx_to_pos[idx] = pos
+        Automatically detects board type and uses the appropriate encoding:
+        - board_to_graph() for square boards (4-connectivity)
+        - board_to_graph_hex() for hex boards (6-connectivity)
+        """
+        board_type = getattr(state.board, 'type', BoardType.HEX8)
 
-                # 32-dim node features
-                feat = np.zeros(32, dtype=np.float32)
-
-                # Basic cell info
-                feat[0] = 1.0  # Valid cell indicator
-                feat[1] = cell.stack_height / 5.0 if hasattr(cell, 'stack_height') else 0
-
-                # Ownership
-                if hasattr(cell, 'owner') and cell.owner is not None:
-                    if cell.owner == self.player_number:
-                        feat[2] = 1.0  # Own cell
-                    else:
-                        feat[3] = 1.0  # Opponent cell
-                        feat[4 + (cell.owner - 1) % 3] = 1.0  # Which opponent
-
-                # Markers
-                if hasattr(cell, 'has_marker') and cell.has_marker:
-                    feat[8] = 1.0
-
-                # Stack composition (simplified)
-                if hasattr(cell, 'pieces'):
-                    for i, piece in enumerate(cell.pieces[:4]):
-                        if piece.owner == self.player_number:
-                            feat[10 + i] = 1.0
-                        else:
-                            feat[14 + i] = 1.0
-
-                node_features.append(feat)
+        # Square boards use 4-connectivity
+        if board_type in (BoardType.SQUARE8, BoardType.SQUARE19):
+            board_size = 8 if board_type == BoardType.SQUARE8 else 19
+            node_features, edge_index, _ = board_to_graph(
+                state, self.player_number, board_size=board_size, node_feature_dim=32
+            )
+        # Hex boards use 6-connectivity
         else:
-            # Fallback for empty/invalid board
-            feat = np.zeros(32, dtype=np.float32)
-            feat[0] = 1.0
-            node_features.append(feat)
-            pos_to_idx[(0, 0)] = 0
-            idx_to_pos[0] = (0, 0)
-
-        node_features = np.stack(node_features)
-
-        # Build edges (6-connectivity for hex)
-        edges = []
-        hex_dirs = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)]
-
-        for pos, idx in pos_to_idx.items():
-            for dx, dy in hex_dirs:
-                neighbor = (pos[0] + dx, pos[1] + dy)
-                if neighbor in pos_to_idx:
-                    edges.append([idx, pos_to_idx[neighbor]])
-
-        if not edges:
-            edges = [[0, 0]]  # Self-loop fallback
-
-        edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
+            radius = 4 if board_type == BoardType.HEX8 else 12
+            node_features, edge_index, _ = board_to_graph_hex(
+                state, self.player_number, radius=radius, node_feature_dim=32
+            )
 
         return Data(
-            x=torch.tensor(node_features, dtype=torch.float32).to(self.device),
+            x=node_features.to(self.device),
             edge_index=edge_index.to(self.device),
         )
 
@@ -183,43 +140,27 @@ class GNNAI:
         """Extract global features from game state."""
         features = np.zeros(20, dtype=np.float32)
 
-        # Turn information
-        features[0] = state.turn_number / 100.0
+        # Turn information (use move_history length as proxy for turn)
+        turn_number = len(state.move_history) if hasattr(state, 'move_history') else 0
+        features[0] = turn_number / 100.0
         features[1] = self.player_number / 4.0
-        features[2] = state.current_player / 4.0
+        features[2] = (state.current_player or 1) / 4.0
 
         # Game phase
-        if hasattr(state, 'phase'):
-            phase_idx = {"setup": 0, "play": 1, "scoring": 2}.get(
-                state.phase.value if hasattr(state.phase, 'value') else str(state.phase),
-                1
+        if hasattr(state, 'current_phase') and state.current_phase:
+            phase_str = str(state.current_phase.value if hasattr(state.current_phase, 'value') else state.current_phase)
+            phase_idx = {"setup": 0, "play": 1, "scoring": 2, "placement": 1, "movement": 1}.get(
+                phase_str.lower(), 1
             )
             features[3 + phase_idx] = 1.0
 
-        # Player resources (if available)
-        if hasattr(state, 'players'):
+        # Player resources
+        if hasattr(state, 'players') and state.players:
             for i, player in enumerate(state.players[:4]):
                 if hasattr(player, 'rings_remaining'):
-                    features[7 + i] = player.rings_remaining / 10.0
+                    features[7 + i] = (player.rings_remaining or 0) / 10.0
 
         return features
-
-    def _decode_action(self, action_idx: int, state: "GameState") -> "Move | None":
-        """Decode action index to Move object.
-
-        This is a simplified decoder - full implementation would match
-        the encoding used in training data export.
-        """
-        legal_moves = GameEngine.get_valid_moves(state, self.player_number)
-        if not legal_moves:
-            return None
-
-        # For now, use action_idx to weight selection among legal moves
-        # Full implementation would have proper action space mapping
-        if action_idx < len(legal_moves):
-            return legal_moves[action_idx]
-
-        return legal_moves[action_idx % len(legal_moves)]
 
     def select_move(self, state: "GameState") -> "Move | None":
         """Select move using GNN policy.
@@ -261,16 +202,41 @@ class GNNAI:
         logits = policy_logits[0] / self.temperature
         probs = F.softmax(logits, dim=-1).cpu().numpy()
 
-        # For now, select from legal moves weighted by policy probs
-        # Full implementation would properly decode action indices
         if len(legal_moves) == 1:
             return legal_moves[0]
 
-        # Weighted random selection among legal moves
-        weights = probs[:len(legal_moves)]
-        weights = weights / (weights.sum() + 1e-8)
-        idx = np.random.choice(len(legal_moves), p=weights)
-        return legal_moves[idx]
+        # Get probability for each legal move using canonical encoding
+        move_probs = []
+        valid_moves = []
+        for move in legal_moves:
+            action_idx = encode_move_for_board(move, state)
+            if action_idx >= 0 and action_idx < len(probs):
+                move_probs.append(probs[action_idx])
+                valid_moves.append(move)
+            else:
+                # Fallback: assign small probability for moves we can't encode
+                move_probs.append(1e-6)
+                valid_moves.append(move)
+
+        if not valid_moves:
+            return legal_moves[0]
+
+        # Normalize and select
+        weights = np.array(move_probs, dtype=np.float64)
+        weights_sum = weights.sum()
+
+        if weights_sum < 1e-10:
+            # All probabilities are essentially zero - fall back to uniform
+            logger.warning("GNN policy has near-zero probability for all moves, using uniform sampling")
+            idx = np.random.randint(len(valid_moves))
+        else:
+            weights = weights / weights_sum
+            # Clip and renormalize to avoid numerical issues
+            weights = np.clip(weights, 0, 1)
+            weights = weights / weights.sum()
+            idx = np.random.choice(len(valid_moves), p=weights)
+
+        return valid_moves[idx]
 
     def get_move(self, state: "GameState") -> "Move | None":
         """Alias for select_move."""

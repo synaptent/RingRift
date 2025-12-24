@@ -161,6 +161,11 @@ class SelfplayConfig:
     nn_batch_timeout_ms: int = 50
     nn_max_batch_size: int = 256
 
+    # Neural network usage
+    use_neural_net: bool = False
+    prefer_nnue: bool = True
+    nn_model_id: str | None = None
+
     # Shadow validation (for quality checking)
     shadow_validation: bool = False
     shadow_sample_rate: float = 0.05

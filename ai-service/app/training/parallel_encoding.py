@@ -255,6 +255,17 @@ def _encode_single_game(
         if compute_final_state:
             final_state = current_state
 
+        # Set winner on final_state from game_data if available
+        # (GameEngine.apply_move doesn't auto-detect game end and set winner)
+        winner_from_db = game_data.get("winner")
+        if final_state is not None and winner_from_db is not None:
+            # Create a copy with winner set (pydantic frozen model)
+            final_state = final_state.model_copy(update={"winner": winner_from_db})
+
+        # Skip games without valid winner - these produce value=0 which corrupts training
+        if final_state is None or getattr(final_state, "winner", None) is None:
+            return GameEncodingResult(game_id=game_id, samples=[])
+
         # Now compute values using final_state
         values_vec = np.zeros(4, dtype=np.float32)
         if final_state:

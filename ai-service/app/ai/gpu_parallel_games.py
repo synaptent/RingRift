@@ -1716,6 +1716,8 @@ class ParallelGameRunner:
 
         Args:
             mask: Games where skip_placement should be recorded
+
+        December 2025: Vectorized to avoid per-game .item() calls.
         """
         from .gpu_game_types import MoveType
 
@@ -1724,25 +1726,29 @@ class ParallelGameRunner:
             return
 
         game_indices = torch.where(active_mask)[0]
+        move_counts = self.state.move_count[game_indices]
         players = self.state.current_player[game_indices]
 
-        for i, g in enumerate(game_indices.tolist()):
-            move_count = int(self.state.move_count[g].item())
-            if move_count >= self.state.max_history_moves:
-                continue
+        # Filter games where move_count < max_history_moves (vectorized)
+        valid_mask = move_counts < self.state.max_history_moves
+        if not valid_mask.any():
+            return
 
-            player = int(players[i].item())
+        valid_games = game_indices[valid_mask]
+        valid_move_counts = move_counts[valid_mask].long()
+        valid_players = players[valid_mask]
 
-            # Record skip_placement (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
-            self.state.move_history[g, move_count, 0] = MoveType.SKIP_PLACEMENT
-            self.state.move_history[g, move_count, 1] = player
-            self.state.move_history[g, move_count, 2] = -1  # No position for skip
-            self.state.move_history[g, move_count, 3] = -1
-            self.state.move_history[g, move_count, 4] = -1
-            self.state.move_history[g, move_count, 5] = -1
-            self.state.move_history[g, move_count, 6] = GamePhase.RING_PLACEMENT
+        # Vectorized move history update using advanced indexing
+        # move_history shape: (num_games, max_history_moves, 7)
+        self.state.move_history[valid_games, valid_move_counts, 0] = MoveType.SKIP_PLACEMENT
+        self.state.move_history[valid_games, valid_move_counts, 1] = valid_players
+        self.state.move_history[valid_games, valid_move_counts, 2] = -1  # No position for skip
+        self.state.move_history[valid_games, valid_move_counts, 3] = -1
+        self.state.move_history[valid_games, valid_move_counts, 4] = -1
+        self.state.move_history[valid_games, valid_move_counts, 5] = -1
+        self.state.move_history[valid_games, valid_move_counts, 6] = GamePhase.RING_PLACEMENT
 
-            self.state.move_count[g] += 1
+        self.state.move_count[valid_games] += 1
 
     def _record_skip_capture_moves(self, mask: torch.Tensor) -> None:
         """Record skip_capture moves for canonical compliance.
@@ -1752,6 +1758,7 @@ class ParallelGameRunner:
         transitioning to line_processing.
 
         December 2025: Added for GPU/CPU phase machine parity.
+        December 2025: Vectorized to avoid per-game .item() calls.
 
         Args:
             mask: Games where skip_capture should be recorded
@@ -1763,26 +1770,30 @@ class ParallelGameRunner:
             return
 
         game_indices = torch.where(active_mask)[0]
+        move_counts = self.state.move_count[game_indices]
         players = self.state.current_player[game_indices]
 
-        for i, g in enumerate(game_indices.tolist()):
-            move_count = int(self.state.move_count[g].item())
-            if move_count >= self.state.max_history_moves:
-                continue
+        # Filter games where move_count < max_history_moves (vectorized)
+        valid_mask = move_counts < self.state.max_history_moves
+        if not valid_mask.any():
+            return
 
-            player = int(players[i].item())
+        valid_games = game_indices[valid_mask]
+        valid_move_counts = move_counts[valid_mask].long()
+        valid_players = players[valid_mask]
 
-            # Record skip_capture (7 columns: move_type, player, from_y, from_x, to_y, to_x, phase)
-            self.state.move_history[g, move_count, 0] = MoveType.SKIP_CAPTURE
-            self.state.move_history[g, move_count, 1] = player
-            self.state.move_history[g, move_count, 2] = -1  # No position for skip
-            self.state.move_history[g, move_count, 3] = -1
-            self.state.move_history[g, move_count, 4] = -1
-            self.state.move_history[g, move_count, 5] = -1
-            # Use CAPTURE phase for skip_capture (chain_capture would also be valid)
-            self.state.move_history[g, move_count, 6] = GamePhase.CAPTURE
+        # Vectorized move history update using advanced indexing
+        # move_history shape: (num_games, max_history_moves, 7)
+        self.state.move_history[valid_games, valid_move_counts, 0] = MoveType.SKIP_CAPTURE
+        self.state.move_history[valid_games, valid_move_counts, 1] = valid_players
+        self.state.move_history[valid_games, valid_move_counts, 2] = -1  # No position for skip
+        self.state.move_history[valid_games, valid_move_counts, 3] = -1
+        self.state.move_history[valid_games, valid_move_counts, 4] = -1
+        self.state.move_history[valid_games, valid_move_counts, 5] = -1
+        # Use CAPTURE phase for skip_capture (chain_capture would also be valid)
+        self.state.move_history[valid_games, valid_move_counts, 6] = GamePhase.CAPTURE
 
-            self.state.move_count[g] += 1
+        self.state.move_count[valid_games] += 1
 
     def _step_movement_phase(
         self,

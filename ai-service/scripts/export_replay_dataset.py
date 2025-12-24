@@ -1179,6 +1179,43 @@ def main(argv: list[str] | None = None) -> int:
     if not db_paths:
         raise ValueError("Either --db or --use-discovery must be specified")
 
+    # Pre-export validation: Check each database for games with move data
+    # This prevents silent export failures from databases without move data
+    from app.training.data_quality import validate_database_for_export
+
+    print("\n[PRE-EXPORT VALIDATION] Checking databases for move data...")
+    valid_db_paths = []
+    for db_path in db_paths:
+        valid, msg = validate_database_for_export(
+            db_path,
+            board_type=args.board_type,
+            num_players=args.num_players,
+        )
+        if not valid:
+            print(f"  SKIP: {os.path.basename(db_path)}")
+            print(f"        {msg}")
+        else:
+            if "WARNING" in msg:
+                print(f"  WARN: {os.path.basename(db_path)}")
+                print(f"        {msg}")
+            else:
+                print(f"  OK:   {os.path.basename(db_path)}")
+            valid_db_paths.append(db_path)
+
+    if not valid_db_paths:
+        print("\n[ERROR] No valid databases found for export!")
+        print("All databases either have no games or no move data in game_moves table.")
+        print("\nCommon causes:")
+        print("  1. JSONL-to-DB import didn't populate game_moves table")
+        print("  2. Selfplay ran without move recording")
+        print("\nTo fix, re-run selfplay with proper move recording, or use")
+        print("scripts/jsonl_to_npz.py to convert JSONL directly to NPZ format.")
+        return 1
+
+    # Update db_paths to only include valid databases
+    db_paths = valid_db_paths
+    print(f"[PRE-EXPORT VALIDATION] {len(db_paths)} database(s) passed validation\n")
+
     _enforce_canonical_db_policy(
         db_paths,
         args.output,

@@ -1,12 +1,20 @@
 #!/usr/bin/env python
-"""Convert JSONL game records to SQLite DB format.
+"""Convert JSONL game records to SQLite DB format (STATISTICS ONLY).
+
+⚠️  WARNING: This script creates MINIMAL databases suitable only for
+    statistics and game counting. The output CANNOT be used for:
+    - Training data export (export_replay_dataset.py)
+    - Game replay
+    - Any operation requiring move data
+
+    For training data, use one of these instead:
+    - scripts/jsonl_to_npz.py (JSONL -> NPZ directly, recommended)
+    - scripts/aggregate_jsonl_to_db.py (JSONL -> full DB with moves)
 
 This script converts lightweight JSONL game records (from run_hybrid_selfplay.py)
-to the SQLite DB format used by GameReplayDB and the merge script.
-
-Since JSONL records only contain metadata (no state snapshots or moves),
-the resulting DB will have minimal game entries suitable for statistics
-but not full replay.
+to the SQLite DB format. Since JSONL records only contain metadata (no state
+snapshots or moves), the resulting DB will have minimal game entries suitable
+for statistics but not full replay.
 
 Usage:
     python scripts/jsonl_to_db.py --input games.jsonl --output games.db
@@ -124,7 +132,16 @@ def convert_jsonl_to_db(input_path: str, output_path: str) -> int:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert JSONL game records to SQLite DB format"
+        description="Convert JSONL game records to SQLite DB format (STATISTICS ONLY)",
+        epilog="""
+⚠️  WARNING: Output databases from this script CANNOT be used for training!
+    They contain only game metadata, not move data.
+
+    For training data, use one of these instead:
+    - scripts/jsonl_to_npz.py (JSONL -> NPZ directly, recommended)
+    - scripts/aggregate_jsonl_to_db.py (JSONL -> full DB with moves)
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--input", "-i", required=True,
@@ -134,8 +151,26 @@ def main():
         "--output", "-o", required=True,
         help="Output SQLite DB path"
     )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true",
+        help="Suppress warning message"
+    )
 
     args = parser.parse_args()
+
+    # Print prominent warning unless suppressed
+    if not args.quiet:
+        print("=" * 70, file=sys.stderr)
+        print("⚠️  WARNING: This script creates STATISTICS-ONLY databases!", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("   Output CANNOT be used for training data export.", file=sys.stderr)
+        print("   The game_moves table will be EMPTY.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("   For training data, use one of these instead:", file=sys.stderr)
+        print("   - scripts/jsonl_to_npz.py (JSONL -> NPZ directly)", file=sys.stderr)
+        print("   - scripts/aggregate_jsonl_to_db.py (JSONL -> full DB)", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print("", file=sys.stderr)
 
     count = convert_jsonl_to_db(args.input, args.output)
     sys.exit(0 if count > 0 else 1)

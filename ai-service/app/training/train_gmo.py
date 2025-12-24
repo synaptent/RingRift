@@ -452,6 +452,7 @@ def train_gmo(
     eval_interval: int = 5,
     device_str: str = "cpu",
     augment: bool = False,
+    board_type: str = "square8",
 ) -> None:
     """Train GMO networks.
 
@@ -464,6 +465,8 @@ def train_gmo(
         max_samples: Maximum training samples (None for all)
         eval_interval: Epochs between evaluations
         device_str: Device to use ("cpu", "cuda", "mps")
+        augment: Whether to use data augmentation
+        board_type: Board type (square8, square19, hexagonal, hex8)
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(device_str)
@@ -496,7 +499,7 @@ def train_gmo(
         move_encoder=move_encoder,
         max_samples=max_samples,
         augment=augment,
-        board_type="square8",  # TODO: make configurable
+        board_type=board_type,
     )
 
     # Split into train/val
@@ -646,6 +649,13 @@ def main() -> None:
         default="cpu",
         choices=["cpu", "cuda", "mps"],
     )
+    parser.add_argument(
+        "--board-type",
+        type=str,
+        default="square8",
+        choices=["square8", "square19", "hexagonal", "hex8"],
+        help="Board type for training",
+    )
     parser.add_argument("--verbose", action="store_true")
 
     args = parser.parse_args()
@@ -668,6 +678,7 @@ def main() -> None:
         eval_interval=args.eval_interval,
         device_str=args.device,
         augment=args.augment,
+        board_type=args.board_type,
     )
 
 

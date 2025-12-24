@@ -567,21 +567,35 @@ def main() -> None:
     # Route to GNN/hybrid training if model-type specified (2025-12)
     model_type = getattr(args, 'model_type', 'cnn')
     if model_type in ('gnn', 'hybrid'):
-        from app.training.train_gnn_policy import train_gnn_policy
-        logger.info(f"[TrainCLI] Using GNN training pipeline (model_type={model_type})")
-        train_gnn_policy(
-            data_path=data_path,
-            board_type=config.board_type.value if hasattr(config.board_type, 'value') else config.board_type,
-            num_players=args.num_players,
-            model_variant=model_type,  # 'gnn' or 'hybrid'
-            epochs=config.epochs_per_iter,
-            batch_size=config.batch_size,
-            learning_rate=config.learning_rate,
-            save_path=save_path,
-            checkpoint_dir=args.checkpoint_dir,
-            resume_path=args.resume,
-            early_stopping_patience=args.early_stopping_patience,
-        )
+        import subprocess
+        import sys
+
+        logger.info(f"[TrainCLI] Routing to GNN training pipeline (model_type={model_type})")
+
+        board_type_str = config.board_type.value if hasattr(config.board_type, 'value') else str(config.board_type)
+
+        # Determine output directory from save_path
+        save_dir = str(Path(save_path).parent) if save_path else f"models/gnn_{board_type_str}_{args.num_players}p"
+
+        # Build command for GNN training script
+        cmd = [
+            sys.executable, "-m", "app.training.train_gnn_policy",
+            "--data-path", data_path,
+            "--board-type", board_type_str,
+            "--output-dir", save_dir,
+            "--epochs", str(config.epochs_per_iter),
+            "--batch-size", str(config.batch_size),
+            "--lr", str(config.learning_rate),
+        ]
+
+        logger.info(f"[TrainCLI] Executing: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=False)
+
+        if result.returncode != 0:
+            logger.error(f"[TrainCLI] GNN training failed with exit code {result.returncode}")
+            sys.exit(result.returncode)
+
+        logger.info("[TrainCLI] GNN training completed successfully")
         return
 
     # Run CNN training
@@ -635,6 +649,8 @@ def main() -> None:
         enable_graceful_shutdown=not getattr(args, 'disable_graceful_shutdown', False),
         # Regularization (2025-12)
         dropout=getattr(args, 'dropout', 0.08),
+        # GNN support (2025-12)
+        model_type=getattr(args, 'model_type', 'cnn'),
     )
 
 

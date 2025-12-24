@@ -707,6 +707,9 @@ class AIFactory:
         elif ai_type == AIType.GNN:
             from app.ai.gnn_ai import GNNAI
             ai_class = GNNAI
+        elif ai_type == AIType.HYBRID:
+            from app.ai.hybrid_ai import HybridAI
+            ai_class = HybridAI
         else:
             raise ValueError(f"Unsupported AI type: {ai_type}")
 
@@ -1084,6 +1087,25 @@ class AIFactory:
             )
             from app.ai.gnn_ai import GNNAI
             return GNNAI(player_number, config, model_path=model_path)
+
+        # Hybrid CNN-GNN AI (combines CNN local patterns with GNN connectivity)
+        if agent_key == "hybrid" or agent_key.startswith("hybrid_"):
+            model_path = "models/hybrid_hex8_2p/hybrid_policy_best.pt"  # Default
+            if "_" in agent_lower and agent_lower != "hybrid":
+                try:
+                    parts = agent_lower.split("_", 1)
+                    if len(parts) > 1:
+                        model_path = parts[1]
+                except (ValueError, IndexError):
+                    pass
+
+            config = AIConfig(
+                difficulty=6,
+                rng_seed=rng_seed,
+                nn_model_id=nn_model_id,
+            )
+            from app.ai.hybrid_ai import HybridAI
+            return HybridAI(player_number, config, model_path=model_path)
 
         # Improved MCTS AI (advanced MCTS with PUCT, progressive widening, etc.)
         if agent_key == "improved_mcts" or agent_key.startswith("improved_mcts_"):

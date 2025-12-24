@@ -93,7 +93,10 @@ except ImportError:
     get_event_bus = None  # type: ignore
 
 # NFS path for cluster-wide coordination (Lambda GH200 nodes)
-NFS_COORDINATION_PATH = Path("/lambda/nfs/RingRift/coordination")
+# Configurable via RINGRIFT_NFS_COORDINATION_PATH environment variable
+NFS_COORDINATION_PATH = Path(
+    os.environ.get("RINGRIFT_NFS_COORDINATION_PATH", "/lambda/nfs/RingRift/coordination")
+)
 LOCAL_COORDINATION_PATH = DATA_DIR / "coordination"
 
 # Import centralized timeout thresholds

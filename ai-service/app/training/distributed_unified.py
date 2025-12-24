@@ -67,6 +67,24 @@ def _get_torch_distributed():
     return torch, _dist, _DDP
 
 
+def _auto_detect_backend() -> str:
+    """Auto-detect the best distributed backend.
+
+    Uses RINGRIFT_DISTRIBUTED_BACKEND env var if set,
+    otherwise auto-detects based on CUDA availability.
+
+    Returns:
+        "nccl" for GPU training, "gloo" for CPU training.
+    """
+    env_backend = os.environ.get("RINGRIFT_DISTRIBUTED_BACKEND")
+    if env_backend:
+        return env_backend.lower()
+
+    # Auto-detect: use nccl if CUDA available, gloo otherwise
+    torch = get_torch()
+    return "nccl" if torch.cuda.is_available() else "gloo"
+
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -81,7 +99,8 @@ class UnifiedDistributedConfig:
     world_size: int = 1
     rank: int = 0
     local_rank: int = 0
-    backend: str = "nccl"  # "nccl" for GPU, "gloo" for CPU
+    # Backend: "nccl" for GPU, "gloo" for CPU. Set RINGRIFT_DISTRIBUTED_BACKEND to override.
+    backend: str = ""  # Empty string triggers auto-detection
     master_addr: str = "localhost"
     master_port: int = 29500
     init_method: str = "env://"
@@ -115,6 +134,11 @@ class UnifiedDistributedConfig:
 
     # Logging
     log_interval: int = 100
+
+    def __post_init__(self):
+        """Auto-detect backend if not specified."""
+        if not self.backend:
+            self.backend = _auto_detect_backend()
 
 
 @dataclass

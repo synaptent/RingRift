@@ -73,6 +73,7 @@ class EventDrivenSelfplay:
         num_players: int = 2,
         batch_size: int = 16,
         mcts_sims: int = 800,
+        max_moves: int = 500,
         output_dir: str | Path = "data/selfplay/event_driven",
         prefer_nnue: bool = True,
         use_gpu_mcts: bool = False,
@@ -86,6 +87,7 @@ class EventDrivenSelfplay:
             num_players: Number of players (2, 3, or 4)
             batch_size: Number of games to run in parallel
             mcts_sims: MCTS simulation budget per move
+            max_moves: Maximum moves per game before termination
             output_dir: Directory for game output
             prefer_nnue: Prefer NNUE models over policy/value nets
             use_gpu_mcts: Use GPU-accelerated MultiTreeMCTS (Phase 3)
@@ -96,6 +98,7 @@ class EventDrivenSelfplay:
         self.num_players = num_players
         self.batch_size = batch_size
         self.mcts_sims = mcts_sims
+        self.max_moves = max_moves
         self.output_dir = Path(output_dir)
         self.prefer_nnue = prefer_nnue
         self.use_gpu_mcts = use_gpu_mcts
@@ -369,7 +372,7 @@ class EventDrivenSelfplay:
         # Track game progress
         game_moves: list[list] = [[] for _ in range(batch_size)]
         active_mask = [True] * batch_size
-        max_moves = 500
+        max_moves = self.max_moves
 
         # Run all games in parallel
         while any(active_mask):
@@ -458,7 +461,7 @@ class EventDrivenSelfplay:
         for i, initial_state in enumerate(game_states):
             game_state = initial_state
             moves = []
-            max_moves = 500  # TODO: Make configurable
+            max_moves = self.max_moves
 
             while game_state.game_status == "active" and len(moves) < max_moves:
                 # Get move

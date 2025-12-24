@@ -167,6 +167,7 @@ class AIType(str, Enum):
     IMPROVED_MCTS = "improved_mcts"  # Advanced MCTS with PUCT, progressive widening, transposition tables
     HYBRID_NN = "hybrid_nn"  # Fast heuristic + NN value ranking (5-10x faster than full MCTS)
     GNN = "gnn"  # Graph Neural Network policy (message passing for territory connectivity)
+    HYBRID = "hybrid"  # Hybrid CNN-GNN policy (CNN patterns + GNN connectivity)
 
 
 class Position(BaseModel):

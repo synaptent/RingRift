@@ -332,6 +332,105 @@ class DatabaseQualityChecker:
             logger.error(f"Integrity check failed: {e}")
             return False
 
+    def check_games_with_moves(self, db_path: str | Path) -> tuple[bool, dict[str, Any]]:
+        """Check if games have move data in game_moves table.
+
+        This is CRITICAL for training data export - games without moves in
+        the game_moves table will produce zero training samples, causing
+        silent export failures.
+
+        Args:
+            db_path: Path to SQLite database
+
+        Returns:
+            Tuple of (passes_check, stats_dict) where stats_dict contains:
+            - total_games: Total games in database
+            - games_with_moves: Games that have entries in game_moves table
+            - games_without_moves: Games missing from game_moves table
+            - coverage_percent: Percentage of games with moves
+            - issue: Description of issue if check fails (None if passes)
+        """
+        db_path = Path(db_path)
+        stats: dict[str, Any] = {
+            "total_games": 0,
+            "games_with_moves": 0,
+            "games_without_moves": 0,
+            "coverage_percent": 0.0,
+            "issue": None,
+        }
+
+        if not db_path.exists():
+            stats["issue"] = f"Database not found: {db_path}"
+            return False, stats
+
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10.0)
+            cursor = conn.cursor()
+
+            # Check if game_moves table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
+            )
+            if not cursor.fetchone():
+                stats["issue"] = "No game_moves table in database"
+                conn.close()
+                return False, stats
+
+            # Count total games
+            cursor.execute("SELECT COUNT(*) FROM games")
+            total_games = cursor.fetchone()[0]
+            stats["total_games"] = total_games
+
+            if total_games == 0:
+                stats["issue"] = "Database contains no games"
+                conn.close()
+                return False, stats
+
+            # Count games that have at least one move in game_moves
+            cursor.execute("""
+                SELECT COUNT(DISTINCT g.game_id)
+                FROM games g
+                WHERE EXISTS (
+                    SELECT 1 FROM game_moves m WHERE m.game_id = g.game_id
+                )
+            """)
+            games_with_moves = cursor.fetchone()[0]
+            stats["games_with_moves"] = games_with_moves
+            stats["games_without_moves"] = total_games - games_with_moves
+            stats["coverage_percent"] = 100.0 * games_with_moves / total_games
+
+            conn.close()
+
+            # Fail if coverage is below threshold (10% = critical failure)
+            if stats["coverage_percent"] < 10.0:
+                stats["issue"] = (
+                    f"CRITICAL: Only {stats['coverage_percent']:.1f}% of games have move data "
+                    f"({games_with_moves}/{total_games}). Training export will fail silently!"
+                )
+                logger.error(stats["issue"])
+                return False, stats
+
+            # Warn if coverage is below 90%
+            if stats["coverage_percent"] < 90.0:
+                stats["issue"] = (
+                    f"WARNING: Only {stats['coverage_percent']:.1f}% of games have move data "
+                    f"({games_with_moves}/{total_games}). Some games may have been imported "
+                    "incorrectly (e.g., JSONL without move extraction)."
+                )
+                logger.warning(stats["issue"])
+                return False, stats
+
+            logger.info(
+                f"Games with moves: {games_with_moves}/{total_games} "
+                f"({stats['coverage_percent']:.1f}%)"
+            )
+            return True, stats
+
+        except Exception as e:
+            stats["issue"] = f"Failed to check games with moves: {e}"
+            logger.error(stats["issue"])
+            return False, stats
+
     def check_game_quality(self, db_path: str | Path) -> bool:
         """Analyze game quality metrics.
 
@@ -480,6 +579,27 @@ class DatabaseQualityChecker:
             integrity_score = 100 if self.check_data_integrity(db_path) else 50
             quality_score = 100 if self.check_game_quality(db_path) else 70
 
+            # CRITICAL: Check for games with move data (export will fail silently without this)
+            moves_ok, moves_stats = self.check_games_with_moves(db_path)
+            if moves_stats["issue"]:
+                report.issues.append(moves_stats["issue"])
+            if not moves_ok:
+                if moves_stats["coverage_percent"] < 10.0:
+                    report.recommendations.append(
+                        "CRITICAL: Database has almost no move data! "
+                        "Re-run selfplay with proper move recording, or fix JSONL-to-DB import."
+                    )
+                else:
+                    report.recommendations.append(
+                        "Some games are missing move data. Check data import pipeline."
+                    )
+
+            # Score based on move coverage (0-100)
+            moves_score = int(moves_stats["coverage_percent"])
+            report.metadata["games_with_moves"] = moves_stats["games_with_moves"]
+            report.metadata["games_without_moves"] = moves_stats["games_without_moves"]
+            report.metadata["move_coverage_percent"] = moves_stats["coverage_percent"]
+
             # Completeness score
             completeness_score = 100
             if report.total_games > 0:
@@ -495,18 +615,21 @@ class DatabaseQualityChecker:
                     )
 
             # Overall quality score (weighted average)
+            # Move coverage is given high weight because exports fail without it
             weights = {
-                "schema": 0.2,
-                "integrity": 0.3,
-                "quality": 0.3,
-                "completeness": 0.2,
+                "schema": 0.15,
+                "integrity": 0.25,
+                "quality": 0.20,
+                "completeness": 0.15,
+                "moves": 0.25,  # High weight - critical for training export
             }
 
             overall = (
                 schema_score * weights["schema"] +
                 integrity_score * weights["integrity"] +
                 quality_score * weights["quality"] +
-                completeness_score * weights["completeness"]
+                completeness_score * weights["completeness"] +
+                moves_score * weights["moves"]
             ) / 100.0
 
             report.quality_score = overall
@@ -530,6 +653,7 @@ class DatabaseQualityChecker:
             report.metadata["schema_valid"] = schema_score == 100
             report.metadata["integrity_valid"] = integrity_score == 100
             report.metadata["quality_valid"] = quality_score == 100
+            report.metadata["moves_valid"] = moves_ok
 
             # Generate recommendations based on score
             if report.quality_score < 0.5:
@@ -552,6 +676,98 @@ class DatabaseQualityChecker:
             report.quality_score = 0.0
 
         return report
+
+
+# =============================================================================
+# Pre-Export Validation
+# =============================================================================
+
+
+def validate_database_for_export(
+    db_path: str | Path,
+    board_type: str | None = None,
+    num_players: int | None = None,
+    min_coverage_percent: float = 10.0,
+    warn_coverage_percent: float = 90.0,
+) -> tuple[bool, str]:
+    """Validate a database is suitable for training data export.
+
+    This is a convenience function for the export pipeline that checks
+    the most critical issues that would cause silent export failures.
+
+    Args:
+        db_path: Path to SQLite database
+        board_type: Optional board type filter
+        num_players: Optional player count filter
+        min_coverage_percent: Fail if move coverage is below this (default 10%)
+        warn_coverage_percent: Warn if move coverage is below this (default 90%)
+
+    Returns:
+        Tuple of (is_valid, message) where:
+        - is_valid: True if database is suitable for export
+        - message: Description of validation result
+
+    Example:
+        valid, msg = validate_database_for_export("selfplay.db", "square8", 2)
+        if not valid:
+            print(f"Export blocked: {msg}")
+            sys.exit(1)
+    """
+    db_path = Path(db_path)
+
+    if not db_path.exists():
+        return False, f"Database not found: {db_path}"
+
+    checker = DatabaseQualityChecker()
+
+    # Check for games with move data (critical for export)
+    moves_ok, moves_stats = checker.check_games_with_moves(db_path)
+
+    if moves_stats["total_games"] == 0:
+        return False, "Database contains no games"
+
+    coverage = moves_stats["coverage_percent"]
+    games_with = moves_stats["games_with_moves"]
+    total = moves_stats["total_games"]
+
+    if coverage < min_coverage_percent:
+        return False, (
+            f"CRITICAL: Only {coverage:.1f}% of games have move data "
+            f"({games_with}/{total}). Export would produce zero samples. "
+            f"This usually means JSONL-to-DB import failed to populate game_moves table."
+        )
+
+    # Check for games matching the requested config
+    if board_type and num_players:
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10.0)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM games g
+                WHERE g.board_type = ?
+                  AND g.num_players = ?
+                  AND EXISTS (SELECT 1 FROM game_moves m WHERE m.game_id = g.game_id)
+            """, (board_type, num_players))
+            matching_games = cursor.fetchone()[0]
+            conn.close()
+
+            if matching_games == 0:
+                return False, (
+                    f"No {board_type} {num_players}p games with move data found. "
+                    f"Database has {total} total games but none match this config."
+                )
+        except Exception as e:
+            return False, f"Failed to query database: {e}"
+
+    # Warn if coverage is low but above threshold
+    if coverage < warn_coverage_percent:
+        return True, (
+            f"WARNING: Only {coverage:.1f}% of games have move data "
+            f"({games_with}/{total}). Export will proceed but some games will be skipped."
+        )
+
+    return True, f"Database OK: {games_with}/{total} games ({coverage:.1f}%) have move data"
 
 
 # =============================================================================

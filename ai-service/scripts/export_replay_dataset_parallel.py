@@ -122,11 +122,14 @@ def load_games_from_db(
 
             # Don't replay here - let workers compute final_state during encoding
             # This is the key optimization that makes loading fast
+            # IMPORTANT: Pass winner from DB metadata so workers can set it on final_state
+            # (GameEngine.apply_move doesn't detect game end and set winner automatically)
             games.append({
                 "game_id": game_id,
                 "initial_state": initial_state,
                 "moves": moves,
                 "final_state": None,  # Computed by worker
+                "winner": meta.get("winner"),  # From DB - used for value computation
             })
 
             total_loaded += 1
