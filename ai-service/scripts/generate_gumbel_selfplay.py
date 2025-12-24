@@ -165,8 +165,8 @@ class GumbelSelfplayConfig:
     nn_model_id: str = ""  # Empty = use default for board
     use_gpu: bool = True
     allow_fresh_weights: bool = False  # Allow random weights if no checkpoint
-    # TODO: Re-enable when GPU tree phase bugs are fixed (RR-GPU-TREE-001)
-    use_gpu_tree: bool = False  # GPU tree has phase/move invariant violations
+    # GPU tree provides 10-20x speedup for MCTS search
+    use_gpu_tree: bool = True  # RR-GPU-TREE-001: defensive validation added
 
     def get_temperature_for_move(self, move_number: int) -> float:
         """Get temperature for a specific move number.

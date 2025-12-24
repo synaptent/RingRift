@@ -6919,7 +6919,7 @@ class P2POrchestrator:
             job_type = JobType(data.get("job_type", "selfplay"))
             board_type = data.get("board_type", "square8")
             num_players = data.get("num_players", 2)
-            engine_mode = data.get("engine_mode", "descent-only")
+            engine_mode = data.get("engine_mode", "gumbel-mcts")  # GPU-accelerated default
             job_id = data.get("job_id")
             cuda_visible_devices = data.get("cuda_visible_devices")
 
@@ -25125,7 +25125,7 @@ print(json.dumps({{
                             JobType.HYBRID_SELFPLAY,
                             board_type=config["board_type"],
                             num_players=config["num_players"],
-                            engine_mode=config.get("engine_mode", "descent-only"),
+                            engine_mode=config.get("engine_mode", "gumbel-mcts"),  # GPU-accelerated
                         )
                         if job:
                             changes += 1
@@ -26846,7 +26846,7 @@ print(json.dumps({{
         job_type: JobType,
         board_type: str = "square8",
         num_players: int = 2,
-        engine_mode: str = "descent-only",
+        engine_mode: str = "gumbel-mcts",  # GPU-accelerated Gumbel MCTS
         job_id: str | None = None,
         cuda_visible_devices: str | None = None,
         export_params: dict[str, Any] | None = None,
@@ -27174,8 +27174,8 @@ print(json.dumps({{
                 finally:
                     log_handle.close()
 
-                # Note: Using 'mcts' as default engine mode for GPU selfplay
-                gpu_engine_mode = "mcts"
+                # Use gumbel-mcts for GPU selfplay (177x speedup with GPU tree)
+                gpu_engine_mode = "gumbel-mcts"
                 batch_size = games_per_matchup
 
                 job = ClusterJob(
@@ -27381,9 +27381,7 @@ print(json.dumps({{
                     "--db", str(output_dir / "games.db"),
                     "--seed", str(int(time.time() * 1000) % 2**31),
                     "--allow-fresh-weights",  # Allow running even without trained model
-                    # TODO: Re-enable when GPU tree phase bugs are fixed (RR-GPU-TREE-001)
-                    # GPU tree has phase/move invariant violations during MCTS simulation
-                    # "--use-gpu-tree",  # 170x speedup with GPU tensor tree MCTS
+                    "--use-gpu-tree",  # 170x speedup with GPU tensor tree MCTS (RR-GPU-TREE-001 fixed)
                 ]
 
                 # Start process with GPU environment
