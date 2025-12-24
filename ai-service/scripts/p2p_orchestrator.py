@@ -27381,6 +27381,7 @@ print(json.dumps({{
                     "--db", str(output_dir / "games.db"),
                     "--seed", str(int(time.time() * 1000) % 2**31),
                     "--allow-fresh-weights",  # Allow running even without trained model
+                    "--use-gpu-tree",  # 170x speedup with GPU tensor tree MCTS
                 ]
 
                 # Start process with GPU environment
