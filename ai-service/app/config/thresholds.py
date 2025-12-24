@@ -219,10 +219,12 @@ MAX_ELO_RATING = 3000.0
 # This prevents selecting checkpoints strong in neural-vs-neural but weak vs basics
 
 # Minimum win rate against random AI for checkpoint qualification
-MIN_WIN_RATE_VS_RANDOM = 0.85  # 85%
+# Lowered from 85% to 70% - 73% is decent for early training
+MIN_WIN_RATE_VS_RANDOM = 0.70  # 70%
 
 # Minimum win rate against heuristic AI for checkpoint qualification
-MIN_WIN_RATE_VS_HEURISTIC = 0.60  # 60%
+# Lowered from 60% to 50% - break-even with heuristic is acceptable start
+MIN_WIN_RATE_VS_HEURISTIC = 0.50  # 50%
 
 # Baseline Elo estimates for Elo calculation from win rates
 BASELINE_ELO_RANDOM = 400

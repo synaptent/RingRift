@@ -960,7 +960,8 @@ class AIFactory:
         # Must check before "gmo" since "gmo_mcts" starts with "gmo_"
         if agent_key == "gmo_mcts" or agent_key.startswith("gmo_mcts_"):
             # Parse optional simulation count: gmo_mcts_100, gmo_mcts_200, etc.
-            num_simulations = 100
+            # Default 800 sims for AlphaZero-quality training (was 100)
+            num_simulations = 800
             if "_" in agent_key and agent_key != "gmo_mcts":
                 try:
                     parts = agent_key.split("_")
@@ -982,7 +983,8 @@ class AIFactory:
         # Must check before "gmo" since "gmo_gumbel" starts with "gmo_"
         if agent_key == "gmo_gumbel" or agent_key.startswith("gmo_gumbel_"):
             # Parse optional budget: gmo_gumbel_150, gmo_gumbel_200, etc.
-            simulation_budget = 150
+            # Default 800 sims for AlphaZero-quality training (was 150)
+            simulation_budget = 800
             if "_" in agent_key and agent_key != "gmo_gumbel":
                 try:
                     parts = agent_key.split("_")

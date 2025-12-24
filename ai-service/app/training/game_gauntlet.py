@@ -47,6 +47,7 @@ GameStatus: Any = None
 HeuristicAI: Any = None
 RandomAI: Any = None
 PolicyOnlyAI: Any = None
+UniversalAI: Any = None
 create_initial_state: Any = None
 DefaultRulesEngine: Any = None
 
@@ -58,12 +59,13 @@ def _ensure_game_modules():
         return
 
     global BoardType, AIType, AIConfig, GameStatus
-    global HeuristicAI, RandomAI, PolicyOnlyAI
+    global HeuristicAI, RandomAI, PolicyOnlyAI, UniversalAI
     global create_initial_state, DefaultRulesEngine
 
     from app.ai.heuristic_ai import HeuristicAI
     from app.ai.policy_only_ai import PolicyOnlyAI
     from app.ai.random_ai import RandomAI
+    from app.ai.universal_ai import UniversalAI
     from app.models import AIConfig, AIType, BoardType, GameStatus
     from app.rules.default_engine import DefaultRulesEngine
     from app.training.generate_data import create_initial_state
@@ -209,20 +211,46 @@ def create_neural_ai(
         ai_rng_seed = (game_seed * 104729 + player * 7919) & 0xFFFFFFFF
 
     if model_path is not None:
-        # Normalize model path: nn_model_id expects just the model name
-        # without directory prefix or extension, OR an absolute path
-        model_id = str(model_path)
         from pathlib import Path
-        path_obj = Path(model_id)
+        path_obj = Path(model_path)
 
-        # If it's a relative path like "models/foo.pth", extract just the stem
-        # But if it's absolute, keep it as-is for explicit checkpoint loading
+        # Try UniversalAI.from_checkpoint first for proper architecture inference
+        # This handles checkpoints with different architectures (num_filters, num_res_blocks)
+        try:
+            # Resolve to absolute path if needed
+            if not path_obj.is_absolute():
+                # Check common locations
+                for prefix in [Path("."), Path("models"), Path("models/checkpoints")]:
+                    candidate = prefix / model_path
+                    if candidate.exists():
+                        path_obj = candidate
+                        break
+                # Also check with .pth extension
+                if not path_obj.exists() and not str(path_obj).endswith(".pth"):
+                    for prefix in [Path("."), Path("models"), Path("models/checkpoints")]:
+                        candidate = prefix / f"{model_path}.pth"
+                        if candidate.exists():
+                            path_obj = candidate
+                            break
+
+            if path_obj.exists():
+                return UniversalAI.from_checkpoint(
+                    str(path_obj),
+                    player_number=player,
+                    board_type=board_type,
+                    num_players=2,  # Gauntlet uses 2-player games
+                    temperature=temperature,
+                )
+        except Exception as e:
+            logger.warning(f"UniversalAI.from_checkpoint failed: {e}, falling back to PolicyOnlyAI")
+
+        # Fallback to legacy loading via PolicyOnlyAI
+        model_id = str(model_path)
         if not path_obj.is_absolute():
-            # Strip common prefixes and .pth extension
             if model_id.startswith("models/"):
-                model_id = model_id[7:]  # Remove "models/" prefix
+                model_id = model_id[7:]
             if model_id.endswith(".pth"):
-                model_id = model_id[:-4]  # Remove ".pth" suffix
+                model_id = model_id[:-4]
 
         config = AIConfig(
             ai_type=AIType.POLICY_ONLY,

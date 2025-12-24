@@ -60,6 +60,7 @@ def _infer_num_players(game_state: GameState) -> int:
 
 if TYPE_CHECKING:
     import torch
+    from .tensor_gumbel_tree import GPUGumbelMCTS
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +315,18 @@ class GumbelMCTSAI(BaseAI):
                 ) from e
             logger.warning(f"GumbelMCTSAI: failed to load neural net ({e})")
             self.neural_net = None
+
+        # GPU Tree-based Gumbel MCTS (experimental - for 10-20x speedup)
+        # When enabled, uses fully GPU-accelerated tree search instead of
+        # Python-based Sequential Halving. See tensor_gumbel_tree.py.
+        self._use_gpu_tree: bool = getattr(config, 'use_gpu_tree', False)
+        self._gpu_gumbel_mcts: "GPUGumbelMCTS | None" = None  # Lazy initialized
+
+        if self._use_gpu_tree:
+            logger.info(
+                f"GumbelMCTSAI(player={player_number}): GPU tree mode enabled "
+                f"(target 10-20x speedup)"
+            )
 
     def _get_value_head(self, game_state: GameState) -> int | None:
         """Get the value head index for multi-player games.
@@ -596,6 +609,16 @@ class GumbelMCTSAI(BaseAI):
         Returns:
             Best move according to search.
         """
+        # Use GPU tree-based search if enabled (experimental 10-20x speedup)
+        if self._use_gpu_tree:
+            try:
+                return self._gumbel_mcts_search_gpu_tree(game_state, valid_moves)
+            except Exception as e:
+                logger.warning(
+                    f"GPU tree search failed, falling back to CPU: {e}"
+                )
+                # Fall through to CPU implementation
+
         # Get policy logits from neural network
         policy_logits = self._get_policy_logits(game_state, valid_moves)
 
@@ -615,6 +638,67 @@ class GumbelMCTSAI(BaseAI):
         self._last_search_actions = actions
 
         return best_action.move
+
+    def _gumbel_mcts_search_gpu_tree(
+        self,
+        game_state: GameState,
+        valid_moves: list[Move],
+    ) -> Move:
+        """Run GPU tree-based Gumbel MCTS search.
+
+        This method uses fully GPU-accelerated tensor tree operations
+        for 10-20x speedup over the Python-based Sequential Halving.
+
+        Args:
+            game_state: Current game state.
+            valid_moves: List of valid moves.
+
+        Returns:
+            Best move according to GPU tree search.
+        """
+        from .tensor_gumbel_tree import GPUGumbelMCTS, GPUGumbelMCTSConfig
+
+        # Lazy initialize GPU Gumbel MCTS
+        if self._gpu_gumbel_mcts is None:
+            config = GPUGumbelMCTSConfig(
+                num_sampled_actions=self.num_sampled_actions,
+                simulation_budget=max(self.simulation_budget, 800),
+                max_nodes=1024,
+                max_actions=min(256, len(valid_moves) * 2),
+                max_rollout_depth=10,
+                use_nn_rollout=False,  # Use fast GPU heuristic
+                device="cuda" if self._gpu_available else "cpu",
+            )
+            self._gpu_gumbel_mcts = GPUGumbelMCTS(config)
+            logger.info(
+                f"GumbelMCTSAI: initialized GPU tree search "
+                f"(budget={config.simulation_budget}, device={config.device})"
+            )
+
+        # Run GPU tree search
+        best_move, policy_dict = self._gpu_gumbel_mcts.search(
+            game_state,
+            self.neural_net,
+            valid_moves,
+        )
+
+        # Convert policy dict to GumbelAction list for training data extraction
+        # (maintains compatibility with existing training data extraction)
+        self._last_search_actions = []
+        for move in valid_moves:
+            move_key = self._gpu_gumbel_mcts._move_to_key(move)
+            prob = policy_dict.get(move_key, 0.0)
+            action = GumbelAction(
+                move=move,
+                policy_logit=np.log(max(prob, 1e-10)),
+                gumbel_noise=0.0,
+                perturbed_value=0.0,
+                visit_count=int(prob * self.simulation_budget),
+                total_value=0.0,
+            )
+            self._last_search_actions.append(action)
+
+        return best_move
 
     def _get_policy_logits(
         self,
@@ -1564,3 +1648,93 @@ class GumbelMCTSAI(BaseAI):
             f"model={self.config.nn_model_id}, "
             f"gpu={gpu_status})"
         )
+
+
+def create_gumbel_mcts(
+    board_type: str | BoardType,
+    num_players: int = 2,
+    num_sampled_actions: int = 16,
+    simulation_budget: int = 800,
+    neural_net: NeuralNetAI | None = None,
+    player_number: int = 1,
+    gpu_simulation: bool = False,
+    model_path: str | None = None,
+) -> GumbelMCTSAI:
+    """Factory function to create Gumbel MCTS with optional GPU acceleration.
+
+    This is the recommended way to create a Gumbel MCTS instance. It provides:
+    - Easy configuration with sensible defaults
+    - Optional GPU simulation acceleration (2-3x speedup)
+    - Automatic neural network loading from path
+
+    Args:
+        board_type: Board type string ("square8", "hex8", etc.) or enum.
+        num_players: Number of players (2, 3, or 4).
+        num_sampled_actions: K for Gumbel-Top-K sampling (default 16).
+        simulation_budget: Total simulations per move (default 800).
+        neural_net: Pre-loaded neural network, or None to create fresh.
+        player_number: Player number this AI represents.
+        gpu_simulation: Enable GPU simulation acceleration.
+                       When True, uses GumbelMCTSGPU for faster playouts.
+        model_path: Path to model file for neural network.
+
+    Returns:
+        GumbelMCTSAI instance (or GumbelMCTSGPU if gpu_simulation=True).
+
+    Example:
+        # Standard MCTS with GPU NN batching
+        mcts = create_gumbel_mcts("square8", num_players=2)
+
+        # Full GPU acceleration for maximum speed
+        mcts = create_gumbel_mcts(
+            "square8",
+            num_players=2,
+            gpu_simulation=True,
+            simulation_budget=800,
+        )
+    """
+    from ..models import AIConfig, AIType
+
+    if isinstance(board_type, str):
+        board_type_map = {
+            "square8": BoardType.SQUARE8,
+            "square19": BoardType.SQUARE19,
+            "hex8": BoardType.HEX8,
+            "hex": BoardType.HEXAGONAL,
+            "hexagonal": BoardType.HEXAGONAL,
+        }
+        board_type_enum = board_type_map.get(board_type.lower(), BoardType.SQUARE8)
+    else:
+        board_type_enum = board_type
+
+    config = AIConfig(
+        ai_type=AIType.GUMBEL_MCTS,
+        difficulty=7,
+        gumbel_num_sampled_actions=num_sampled_actions,
+        gumbel_simulation_budget=simulation_budget,
+        nn_model_id=model_path,
+        allow_fresh_weights=True,  # Don't fail if no model
+    )
+
+    if gpu_simulation:
+        # Use GPU-accelerated version with full GPU simulation
+        from .gumbel_mcts_gpu import GumbelMCTSGPU
+
+        mcts = GumbelMCTSGPU(
+            player_number=player_number,
+            config=config,
+            board_type=board_type_enum,
+            neural_net=neural_net,
+            gpu_simulation=True,
+        )
+    else:
+        # Standard MCTS with GPU NN batching only
+        mcts = GumbelMCTSAI(
+            player_number=player_number,
+            config=config,
+            board_type=board_type_enum,
+        )
+        if neural_net is not None:
+            mcts.neural_net = neural_net
+
+    return mcts

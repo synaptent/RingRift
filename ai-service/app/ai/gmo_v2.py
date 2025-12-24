@@ -660,7 +660,11 @@ class GMOv2AI(BaseAI):
             return value.item()
 
     def load_checkpoint(self, checkpoint_path: str) -> None:
-        """Load trained model from checkpoint."""
+        """Load trained model from checkpoint.
+
+        Handles both the standard gmo_v2.py architecture and the simpler
+        architecture used by train_gmo_v2.py training script.
+        """
         checkpoint = safe_load_checkpoint(
             checkpoint_path,
             map_location=self.device,
@@ -672,10 +676,74 @@ class GMOv2AI(BaseAI):
         if "move_encoder" in checkpoint:
             self.move_encoder.load_state_dict(checkpoint["move_encoder"])
         if "value_net" in checkpoint:
-            self.value_net.load_state_dict(checkpoint["value_net"])
+            value_net_state = checkpoint["value_net"]
+
+            # Check if this is from train_gmo_v2.py (uses 'net' instead of 'joint_encoder')
+            if any(k.startswith("net.") for k in value_net_state.keys()):
+                logger.info("Detected train_gmo_v2.py checkpoint format, adapting...")
+                # Rebuild value_net with compatible architecture
+                self.value_net = self._create_train_compatible_value_net(value_net_state)
+            else:
+                self.value_net.load_state_dict(value_net_state)
 
         self._is_trained = True
         logger.info(f"Loaded GMO v2 checkpoint from {checkpoint_path}")
+
+    def _create_train_compatible_value_net(
+        self, state_dict: dict[str, torch.Tensor]
+    ) -> nn.Module:
+        """Create a value net compatible with train_gmo_v2.py checkpoint.
+
+        The training script uses a simpler architecture:
+        - net: Sequential(Linear, ReLU, Dropout, Linear, ReLU, Dropout)
+        - value_head: Linear
+        - log_var_head: Linear
+        """
+        # Infer dimensions from state dict
+        hidden_dim = state_dict["net.0.weight"].shape[0]  # 512
+        state_move_dim = state_dict["net.0.weight"].shape[1]  # 512 (256+256)
+
+        class TrainCompatValueNet(nn.Module):
+            """Value net matching train_gmo_v2.py architecture."""
+
+            def __init__(self, hidden_dim: int):
+                super().__init__()
+                self.net = nn.Sequential(
+                    nn.Linear(state_move_dim, hidden_dim),
+                    nn.ReLU(),
+                    nn.Dropout(0.15),
+                    nn.Linear(hidden_dim, hidden_dim // 2),
+                    nn.ReLU(),
+                    nn.Dropout(0.15),
+                )
+                self.value_head = nn.Linear(hidden_dim // 2, 1)
+                self.log_var_head = nn.Linear(hidden_dim // 2, 1)
+
+            def forward(
+                self, state_embed: torch.Tensor, move_embed: torch.Tensor
+            ) -> tuple[torch.Tensor, torch.Tensor]:
+                combined = torch.cat([state_embed, move_embed], dim=-1)
+                h = self.net(combined)
+                value = self.value_head(h).squeeze(-1)
+                log_var = self.log_var_head(h).squeeze(-1)
+                return value, log_var
+
+            def project_to_moves(
+                self,
+                optimized_embed: torch.Tensor,
+                legal_move_embeds: torch.Tensor,
+            ) -> torch.Tensor:
+                """Project optimized embedding to move scores via cosine similarity."""
+                return F.cosine_similarity(
+                    optimized_embed.unsqueeze(0),
+                    legal_move_embeds,
+                    dim=-1,
+                )
+
+        net = TrainCompatValueNet(hidden_dim)
+        net.load_state_dict(state_dict)
+        net.to(self.device)
+        return net
 
     def save_checkpoint(self, checkpoint_path: str) -> None:
         """Save model to checkpoint."""

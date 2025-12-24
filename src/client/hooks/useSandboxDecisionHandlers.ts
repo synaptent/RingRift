@@ -1,0 +1,315 @@
+/**
+ * useSandboxDecisionHandlers Hook
+ *
+ * Handles player choice decisions in sandbox mode, including:
+ * - Ring elimination choices
+ * - Territory region order choices
+ * - Capture direction choices
+ *
+ * Extracted from useSandboxInteractions to reduce complexity.
+ */
+
+import { useState, useRef, useCallback } from 'react';
+import type { Position, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
+import { positionsEqual } from '../../shared/types/game';
+import { useSandbox } from '../contexts/SandboxContext';
+
+export interface UseSandboxDecisionHandlersOptions {
+  choiceResolverRef: React.MutableRefObject<
+    ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
+  >;
+  maybeRunSandboxAiIfNeeded: () => void;
+  bumpSandboxTurn: () => void;
+}
+
+export interface TerritoryRegionPromptState {
+  options: Array<{
+    regionId: string;
+    size: number;
+    representativePosition: Position;
+    moveId: string;
+  }>;
+  clickedPosition: Position;
+}
+
+export interface UseSandboxDecisionHandlersReturn {
+  /** Territory region disambiguation prompt state */
+  territoryRegionPrompt: TerritoryRegionPromptState | null;
+  /** Close the territory region prompt */
+  closeTerritoryRegionPrompt: () => void;
+  /** Confirm a territory region selection */
+  confirmTerritoryRegionPrompt: (selectedOption: {
+    regionId: string;
+    size: number;
+    representativePosition: Position;
+    moveId: string;
+  }) => void;
+  /** Recovery choice prompt open state */
+  recoveryChoicePromptOpen: boolean;
+  /** Resolve a recovery choice (option1, option2, or null to cancel) */
+  resolveRecoveryChoice: (choice: 'option1' | 'option2' | null) => void;
+  /** Request a recovery choice from the user */
+  requestRecoveryChoice: () => Promise<'option1' | 'option2' | null>;
+  /** Handle a cell click that might be a decision selection, returns true if handled */
+  handleDecisionClick: (pos: Position) => boolean;
+}
+
+/**
+ * Hook for handling player choice decisions in sandbox mode.
+ */
+export function useSandboxDecisionHandlers({
+  choiceResolverRef,
+  maybeRunSandboxAiIfNeeded,
+  bumpSandboxTurn,
+}: UseSandboxDecisionHandlersOptions): UseSandboxDecisionHandlersReturn {
+  const {
+    sandboxEngine,
+    sandboxPendingChoice,
+    setSandboxPendingChoice,
+    sandboxCaptureChoice,
+    setSandboxCaptureChoice,
+    setSandboxCaptureTargets,
+    setSandboxStateVersion,
+  } = useSandbox();
+
+  const [recoveryChoicePromptOpen, setRecoveryChoicePromptOpen] = useState(false);
+  const recoveryChoiceResolverRef = useRef<((choice: 'option1' | 'option2' | null) => void) | null>(
+    null
+  );
+
+  const [territoryRegionPrompt, setTerritoryRegionPrompt] =
+    useState<TerritoryRegionPromptState | null>(null);
+
+  const requestRecoveryChoice = useCallback(
+    () =>
+      new Promise<'option1' | 'option2' | null>((resolve) => {
+        recoveryChoiceResolverRef.current = resolve;
+        setRecoveryChoicePromptOpen(true);
+      }),
+    []
+  );
+
+  const resolveRecoveryChoice = useCallback((choice: 'option1' | 'option2' | null) => {
+    recoveryChoiceResolverRef.current?.(choice);
+    recoveryChoiceResolverRef.current = null;
+    setRecoveryChoicePromptOpen(false);
+  }, []);
+
+  const closeTerritoryRegionPrompt = useCallback(() => {
+    setTerritoryRegionPrompt(null);
+  }, []);
+
+  const confirmTerritoryRegionPrompt = useCallback(
+    (selectedOption: {
+      regionId: string;
+      size: number;
+      representativePosition: Position;
+      moveId: string;
+    }) => {
+      if (!sandboxPendingChoice || sandboxPendingChoice.type !== 'region_order') {
+        setTerritoryRegionPrompt(null);
+        return;
+      }
+
+      const currentChoice = sandboxPendingChoice;
+      const resolver = choiceResolverRef.current;
+      if (resolver) {
+        resolver({
+          choiceId: currentChoice.id,
+          playerNumber: currentChoice.playerNumber,
+          choiceType: currentChoice.type,
+          selectedOption,
+        } as PlayerChoiceResponseFor<PlayerChoice>);
+      }
+      choiceResolverRef.current = null;
+      setTerritoryRegionPrompt(null);
+      window.setTimeout(() => {
+        setSandboxPendingChoice(null);
+        setSandboxStateVersion((v) => v + 1);
+        maybeRunSandboxAiIfNeeded();
+      }, 0);
+    },
+    [
+      sandboxPendingChoice,
+      choiceResolverRef,
+      setSandboxPendingChoice,
+      setSandboxStateVersion,
+      maybeRunSandboxAiIfNeeded,
+    ]
+  );
+
+  /**
+   * Handle a cell click that might be selecting a decision option.
+   * Returns true if the click was handled as a decision, false otherwise.
+   */
+  const handleDecisionClick = useCallback(
+    (pos: Position): boolean => {
+      // Handle region_order choice
+      if (sandboxPendingChoice && sandboxPendingChoice.type === 'region_order') {
+        const currentChoice = sandboxPendingChoice;
+        const options = (currentChoice.options ?? []) as Array<{
+          regionId: string;
+          size: number;
+          representativePosition: Position;
+          moveId: string;
+        }>;
+
+        if (options.length === 0) {
+          return true; // Handled but nothing to do
+        }
+
+        const engine = sandboxEngine;
+        const state = engine?.getGameState();
+        const territories = state?.board.territories;
+
+        if (!engine || !state || !territories || territories.size === 0) {
+          return true;
+        }
+
+        // Identify which territory region(s) contain the clicked cell
+        const clickedRegionIds: string[] = [];
+        territories.forEach((territory, regionId) => {
+          const spaces = territory.spaces ?? [];
+          if (spaces.some((space) => positionsEqual(space, pos))) {
+            clickedRegionIds.push(regionId);
+          }
+        });
+
+        // Find all options whose regions contain the clicked cell.
+        const matchingOptions = options.filter((opt) => clickedRegionIds.includes(opt.regionId));
+
+        // If multiple regions overlap at this cell, show disambiguation prompt
+        if (matchingOptions.length > 1) {
+          setTerritoryRegionPrompt({
+            options: matchingOptions,
+            clickedPosition: pos,
+          });
+          return true;
+        }
+
+        let selectedOption: (typeof options)[number] | undefined =
+          matchingOptions.length === 1 ? matchingOptions[0] : undefined;
+
+        // Fallback: representative-position heuristic
+        if (!selectedOption) {
+          territories.forEach((territory, regionId) => {
+            if (selectedOption) return;
+            const spaces = territory.spaces ?? [];
+            const containsClick = spaces.some((space) => positionsEqual(space, pos));
+            if (!containsClick) return;
+
+            const hasRepresentative = spaces.some((space) =>
+              options.some((opt) => positionsEqual(opt.representativePosition, space))
+            );
+            if (hasRepresentative) {
+              selectedOption = options.find((opt) =>
+                spaces.some((space) => positionsEqual(space, opt.representativePosition))
+              );
+            } else {
+              selectedOption = options.find((opt) => opt.regionId === regionId);
+            }
+          });
+        }
+
+        if (selectedOption) {
+          const resolver = choiceResolverRef.current;
+          if (resolver) {
+            resolver({
+              choiceId: currentChoice.id,
+              playerNumber: currentChoice.playerNumber,
+              choiceType: currentChoice.type,
+              selectedOption,
+            } as PlayerChoiceResponseFor<PlayerChoice>);
+          }
+          choiceResolverRef.current = null;
+          window.setTimeout(() => {
+            setSandboxPendingChoice(null);
+            setSandboxStateVersion((v) => v + 1);
+            maybeRunSandboxAiIfNeeded();
+          }, 0);
+        }
+        return true;
+      }
+
+      // Handle ring_elimination choice
+      if (sandboxPendingChoice && sandboxPendingChoice.type === 'ring_elimination') {
+        const currentChoice = sandboxPendingChoice;
+        const options = (currentChoice.options ?? []) as Array<{ stackPosition: Position }>;
+        const matching = options.find((opt) => positionsEqual(opt.stackPosition, pos));
+
+        if (matching) {
+          const resolver = choiceResolverRef.current;
+          if (resolver) {
+            resolver({
+              choiceId: currentChoice.id,
+              playerNumber: currentChoice.playerNumber,
+              choiceType: currentChoice.type,
+              selectedOption: matching,
+            } as PlayerChoiceResponseFor<PlayerChoice>);
+          }
+          choiceResolverRef.current = null;
+          window.setTimeout(() => {
+            setSandboxPendingChoice(null);
+            setSandboxStateVersion((v) => v + 1);
+            maybeRunSandboxAiIfNeeded();
+          }, 0);
+        }
+        return true;
+      }
+
+      // Handle capture_direction choice
+      if (sandboxCaptureChoice && sandboxCaptureChoice.type === 'capture_direction') {
+        const currentChoice = sandboxCaptureChoice;
+        const options = (currentChoice.options ?? []) as Array<{ landingPosition: Position }>;
+        const matching = options.find((opt) => positionsEqual(opt.landingPosition, pos));
+
+        if (matching) {
+          const resolver = choiceResolverRef.current;
+          if (resolver) {
+            resolver({
+              choiceId: currentChoice.id,
+              playerNumber: currentChoice.playerNumber,
+              choiceType: currentChoice.type,
+              selectedOption: matching,
+            } as PlayerChoiceResponseFor<PlayerChoice>);
+          }
+          choiceResolverRef.current = null;
+          setSandboxCaptureChoice(null);
+          setSandboxCaptureTargets([]);
+
+          window.setTimeout(() => {
+            bumpSandboxTurn();
+            maybeRunSandboxAiIfNeeded();
+          }, 0);
+        }
+        return true;
+      }
+
+      return false;
+    },
+    [
+      sandboxEngine,
+      sandboxPendingChoice,
+      sandboxCaptureChoice,
+      choiceResolverRef,
+      setSandboxPendingChoice,
+      setSandboxCaptureChoice,
+      setSandboxCaptureTargets,
+      setSandboxStateVersion,
+      maybeRunSandboxAiIfNeeded,
+      bumpSandboxTurn,
+    ]
+  );
+
+  return {
+    territoryRegionPrompt,
+    closeTerritoryRegionPrompt,
+    confirmTerritoryRegionPrompt,
+    recoveryChoicePromptOpen,
+    resolveRecoveryChoice,
+    requestRecoveryChoice,
+    handleDecisionClick,
+  };
+}
+
+export default useSandboxDecisionHandlers;

@@ -420,6 +420,8 @@ class RingRiftCNN_v3(nn.Module):
         num_line_dirs: int = NUM_LINE_DIRS,
         territory_size_buckets: int = TERRITORY_SIZE_BUCKETS,
         territory_max_players: int = TERRITORY_MAX_PLAYERS,
+        # Backward compatibility: accept but ignore legacy params
+        policy_intermediate: int | None = None,  # Deprecated in v3.1.0
     ) -> None:
         super().__init__()
         self.board_size = board_size

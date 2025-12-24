@@ -1181,8 +1181,8 @@ if HAS_PROMETHEUS:
         'Maximum training iteration by config',
         ['config']
     )
-    MODEL_PROMOTIONS = _safe_gauge(
-        'ringrift_model_promotions_total',
+    MODEL_PROMOTIONS_GAUGE = _safe_gauge(
+        'ringrift_model_promotions_gauge',
         'Total model promotions (gauge for dashboard)',
         []
     )
@@ -3060,6 +3060,11 @@ class UnifiedAILoop:
             self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_cluster_deploy)
             print("[UnifiedLoop] Cluster deployment subscription initialized for promoted models")
 
+        # Hot model swap for GPU selfplay - reload models without restart
+        if self.local_selfplay is not None:
+            self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_model_hot_swap)
+            print("[UnifiedLoop] Model hot-swap subscription initialized for GPU selfplay")
+
         # Unified loop extensions - advanced training components (Dec 2025)
         # Integrates: calibration, temperature scheduling, plateau detection, benchmarks
         self.extensions: UnifiedLoopExtensions | None = None
@@ -3467,7 +3472,7 @@ class UnifiedAILoop:
                 MODELS_BY_VERSION.labels(version=version).set(count)
 
             # Update model promotions gauge from state counter
-            MODEL_PROMOTIONS.set(self.state.total_promotions)
+            MODEL_PROMOTIONS_GAUGE.set(self.state.total_promotions)
 
             # Update Elo and win rates from Elo database via centralized service
             if get_elo_service is not None:
@@ -4183,6 +4188,85 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[ClusterDeploy] Error deploying model: {e}")
+
+    async def _on_promotion_for_model_hot_swap(self, event: DataEvent):
+        """Hot-swap promoted models in active GPU selfplay runners.
+
+        When a model is promoted, this handler reloads it into any running
+        GPU selfplay runners without requiring a restart.
+        """
+        try:
+            payload = event.payload
+            model_path = payload.get('model_path')
+            config_key = payload.get('config')
+            model_id = payload.get('model_id')
+            success = payload.get('success', True)
+
+            # Only hot-swap on successful promotion
+            if not success:
+                return
+
+            # Need local selfplay generator with GPU runner
+            if self.local_selfplay is None:
+                return
+
+            # Parse config key to get board_type and num_players
+            if config_key:
+                parts = config_key.split('_')
+                if len(parts) >= 2:
+                    board_type = parts[0]
+                    num_players = int(parts[1].replace('p', ''))
+                else:
+                    return
+            else:
+                return
+
+            # Get model path if not provided - check standard locations
+            if not model_path:
+                for model_type in ['nnue', 'neural_net']:
+                    candidate = AI_SERVICE_ROOT / "models" / model_type / f"nnue_{board_type}_{num_players}p.pt"
+                    if candidate.exists():
+                        model_path = str(candidate)
+                        break
+                    # Also check best model naming
+                    candidate = AI_SERVICE_ROOT / "models" / model_type / f"{board_type}_{num_players}p_best.pt"
+                    if candidate.exists():
+                        model_path = str(candidate)
+                        break
+
+            if not model_path or not Path(model_path).exists():
+                if self.config.verbose:
+                    print(f"[HotSwap] No model path found for {config_key}, skipping")
+                return
+
+            # Check if we have an active GPU runner for this config
+            gpu_runner = getattr(self.local_selfplay, '_gpu_runner', None)
+            if gpu_runner is None:
+                if self.config.verbose:
+                    print(f"[HotSwap] No active GPU runner, skipping hot-swap")
+                return
+
+            # Check if runner matches this config
+            runner_board = getattr(gpu_runner, 'board_type', None)
+            runner_players = getattr(gpu_runner, 'num_players', None)
+            if runner_board != board_type or runner_players != num_players:
+                if self.config.verbose:
+                    print(f"[HotSwap] Runner config mismatch: "
+                          f"{runner_board}_{runner_players}p vs {config_key}")
+                return
+
+            # Hot-reload the model
+            if hasattr(gpu_runner, 'reload_policy_model'):
+                if gpu_runner.reload_policy_model(model_path):
+                    print(f"[HotSwap] Successfully hot-swapped model for {config_key}")
+                    print(f"[HotSwap]   Path: {model_path}")
+                else:
+                    print(f"[HotSwap] Failed to hot-swap model for {config_key}")
+            else:
+                print(f"[HotSwap] GPU runner doesn't support hot-reload")
+
+        except Exception as e:
+            print(f"[HotSwap] Error hot-swapping model: {e}")
 
     async def _on_new_games_available(self, event: DataEvent):
         """Handle new games available from selfplay - check if training should be triggered.

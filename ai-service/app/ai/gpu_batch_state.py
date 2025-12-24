@@ -319,6 +319,163 @@ class BatchGameState:
 
         return state
 
+    def clone(self) -> "BatchGameState":
+        """Create a deep copy of this BatchGameState.
+
+        All tensors are cloned to new memory, allowing independent modification.
+        This is essential for MCTS tree branch simulation.
+
+        Returns:
+            New BatchGameState with copied tensors
+        """
+        return BatchGameState(
+            # Board state
+            stack_owner=self.stack_owner.clone(),
+            stack_height=self.stack_height.clone(),
+            cap_height=self.cap_height.clone(),
+            ring_under_cap=self.ring_under_cap.clone(),
+            ring_stack=self.ring_stack.clone(),
+            marker_owner=self.marker_owner.clone(),
+            territory_owner=self.territory_owner.clone(),
+            is_collapsed=self.is_collapsed.clone(),
+
+            # Player state
+            rings_in_hand=self.rings_in_hand.clone(),
+            territory_count=self.territory_count.clone(),
+            is_eliminated=self.is_eliminated.clone(),
+            eliminated_rings=self.eliminated_rings.clone(),
+            buried_rings=self.buried_rings.clone(),
+            rings_caused_eliminated=self.rings_caused_eliminated.clone(),
+
+            # Game metadata
+            current_player=self.current_player.clone(),
+            current_phase=self.current_phase.clone(),
+            move_count=self.move_count.clone(),
+            game_status=self.game_status.clone(),
+            winner=self.winner.clone(),
+            swap_offered=self.swap_offered.clone(),
+
+            # Movement constraints
+            must_move_from_y=self.must_move_from_y.clone(),
+            must_move_from_x=self.must_move_from_x.clone(),
+
+            # Capture chain tracking
+            in_capture_chain=self.in_capture_chain.clone(),
+            capture_chain_depth=self.capture_chain_depth.clone(),
+
+            # Forced elimination
+            turn_had_real_action=self.turn_had_real_action.clone(),
+
+            # Pending line elimination
+            pending_line_elimination=self.pending_line_elimination.clone(),
+
+            # Buried ring tracking
+            buried_at=self.buried_at.clone(),
+
+            # LPS tracking
+            lps_round_index=self.lps_round_index.clone(),
+            lps_current_round_first_player=self.lps_current_round_first_player.clone(),
+            lps_current_round_seen_mask=self.lps_current_round_seen_mask.clone(),
+            lps_current_round_real_action_mask=self.lps_current_round_real_action_mask.clone(),
+            lps_exclusive_player_for_completed_round=self.lps_exclusive_player_for_completed_round.clone(),
+            lps_consecutive_exclusive_rounds=self.lps_consecutive_exclusive_rounds.clone(),
+            lps_consecutive_exclusive_player=self.lps_consecutive_exclusive_player.clone(),
+
+            # Move history
+            move_history=self.move_history.clone(),
+            max_history_moves=self.max_history_moves,
+
+            # LPS configuration
+            lps_rounds_required=self.lps_rounds_required,
+
+            # Configuration
+            device=self.device,
+            batch_size=self.batch_size,
+            board_size=self.board_size,
+            num_players=self.num_players,
+        )
+
+    def expand_to_batch(self, n_copies: int) -> "BatchGameState":
+        """Expand single game state to a batch of n_copies identical states.
+
+        Useful for MCTS when simulating multiple rollouts from the same position.
+
+        Args:
+            n_copies: Number of copies to create
+
+        Returns:
+            BatchGameState with batch_size = n_copies, all identical to self[0]
+        """
+        if self.batch_size != 1:
+            raise ValueError(f"expand_to_batch requires batch_size=1, got {self.batch_size}")
+
+        return BatchGameState(
+            # Board state - expand along batch dimension
+            stack_owner=self.stack_owner.expand(n_copies, -1, -1).clone(),
+            stack_height=self.stack_height.expand(n_copies, -1, -1).clone(),
+            cap_height=self.cap_height.expand(n_copies, -1, -1).clone(),
+            ring_under_cap=self.ring_under_cap.expand(n_copies, -1, -1).clone(),
+            ring_stack=self.ring_stack.expand(n_copies, -1, -1, -1).clone(),
+            marker_owner=self.marker_owner.expand(n_copies, -1, -1).clone(),
+            territory_owner=self.territory_owner.expand(n_copies, -1, -1).clone(),
+            is_collapsed=self.is_collapsed.expand(n_copies, -1, -1).clone(),
+
+            # Player state
+            rings_in_hand=self.rings_in_hand.expand(n_copies, -1).clone(),
+            territory_count=self.territory_count.expand(n_copies, -1).clone(),
+            is_eliminated=self.is_eliminated.expand(n_copies, -1).clone(),
+            eliminated_rings=self.eliminated_rings.expand(n_copies, -1).clone(),
+            buried_rings=self.buried_rings.expand(n_copies, -1).clone(),
+            rings_caused_eliminated=self.rings_caused_eliminated.expand(n_copies, -1).clone(),
+
+            # Game metadata
+            current_player=self.current_player.expand(n_copies).clone(),
+            current_phase=self.current_phase.expand(n_copies).clone(),
+            move_count=self.move_count.expand(n_copies).clone(),
+            game_status=self.game_status.expand(n_copies).clone(),
+            winner=self.winner.expand(n_copies).clone(),
+            swap_offered=self.swap_offered.expand(n_copies).clone(),
+
+            # Movement constraints
+            must_move_from_y=self.must_move_from_y.expand(n_copies).clone(),
+            must_move_from_x=self.must_move_from_x.expand(n_copies).clone(),
+
+            # Capture chain tracking
+            in_capture_chain=self.in_capture_chain.expand(n_copies).clone(),
+            capture_chain_depth=self.capture_chain_depth.expand(n_copies).clone(),
+
+            # Forced elimination
+            turn_had_real_action=self.turn_had_real_action.expand(n_copies).clone(),
+
+            # Pending line elimination
+            pending_line_elimination=self.pending_line_elimination.expand(n_copies).clone(),
+
+            # Buried ring tracking
+            buried_at=self.buried_at.expand(n_copies, -1, -1, -1).clone(),
+
+            # LPS tracking
+            lps_round_index=self.lps_round_index.expand(n_copies).clone(),
+            lps_current_round_first_player=self.lps_current_round_first_player.expand(n_copies).clone(),
+            lps_current_round_seen_mask=self.lps_current_round_seen_mask.expand(n_copies, -1).clone(),
+            lps_current_round_real_action_mask=self.lps_current_round_real_action_mask.expand(n_copies, -1).clone(),
+            lps_exclusive_player_for_completed_round=self.lps_exclusive_player_for_completed_round.expand(n_copies).clone(),
+            lps_consecutive_exclusive_rounds=self.lps_consecutive_exclusive_rounds.expand(n_copies).clone(),
+            lps_consecutive_exclusive_player=self.lps_consecutive_exclusive_player.expand(n_copies).clone(),
+
+            # Move history
+            move_history=self.move_history.expand(n_copies, -1, -1).clone(),
+            max_history_moves=self.max_history_moves,
+
+            # LPS configuration
+            lps_rounds_required=self.lps_rounds_required,
+
+            # Configuration
+            device=self.device,
+            batch_size=n_copies,
+            board_size=self.board_size,
+            num_players=self.num_players,
+        )
+
     @classmethod
     def from_single_game(
         cls,

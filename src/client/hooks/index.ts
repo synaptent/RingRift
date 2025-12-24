@@ -183,6 +183,34 @@ export {
   type BoardViewPropsResult,
 } from './useBoardViewProps';
 
+export { useSandboxInteractions } from './useSandboxInteractions';
+
+export {
+  useSandboxAILoop,
+  type UseSandboxAILoopOptions,
+  type UseSandboxAILoopReturn,
+} from './useSandboxAILoop';
+
+export {
+  useSandboxDecisionHandlers,
+  type UseSandboxDecisionHandlersOptions,
+  type UseSandboxDecisionHandlersReturn,
+  type TerritoryRegionPromptState,
+} from './useSandboxDecisionHandlers';
+
+export {
+  useSandboxRingPlacement,
+  type RingPlacementCountPromptState,
+  type UseSandboxRingPlacementOptions,
+  type UseSandboxRingPlacementReturn,
+} from './useSandboxRingPlacement';
+
+export {
+  useSandboxMoveHandlers,
+  type UseSandboxMoveHandlersOptions,
+  type UseSandboxMoveHandlersReturn,
+} from './useSandboxMoveHandlers';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Timer/Countdown Hooks
 // ═══════════════════════════════════════════════════════════════════════════

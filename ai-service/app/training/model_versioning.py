@@ -637,13 +637,32 @@ class ModelVersionManager:
             os.sync()
 
             # Validate the saved file before finalizing
-            try:
-                test_load = safe_load_checkpoint(temp_path, map_location='cpu', warn_on_unsafe=False)
-                if test_load is None or self.STATE_DICT_KEY not in test_load:
-                    raise ValueError("Saved checkpoint is invalid or missing state_dict")
-            except Exception as e:
+            # Use retry logic for NFS where file may not be immediately readable
+            max_retries = 3
+            retry_delay = 1.0  # seconds
+            last_error = None
+
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        import time
+                        time.sleep(retry_delay * attempt)  # Exponential backoff
+                        os.sync()  # Re-sync before retry
+
+                    test_load = safe_load_checkpoint(temp_path, map_location='cpu', warn_on_unsafe=False)
+                    if test_load is None or self.STATE_DICT_KEY not in test_load:
+                        raise ValueError("Saved checkpoint is invalid or missing state_dict")
+                    last_error = None
+                    break  # Success
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Checkpoint validation attempt {attempt + 1} failed, retrying: {e}")
+                    continue
+
+            if last_error is not None:
                 temp_path.unlink(missing_ok=True)
-                raise RuntimeError(f"Post-save validation failed: {e}")
+                raise RuntimeError(f"Post-save validation failed after {max_retries} attempts: {last_error}")
 
             # Atomic rename to final path
             temp_path.rename(path_obj)

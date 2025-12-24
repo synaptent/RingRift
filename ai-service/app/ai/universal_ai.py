@@ -63,7 +63,7 @@ class UniversalAI(BaseAI):
         board_type: BoardType | None = None,
         num_players: int = 2,
         use_mcts: bool = False,
-        mcts_simulations: int = 100,
+        mcts_simulations: int = 800,  # AlphaZero-quality (was 100)
         policy_temperature: float = 0.1,
     ):
         """Initialize the UniversalAI.
