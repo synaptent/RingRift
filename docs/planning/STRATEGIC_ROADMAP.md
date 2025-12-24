@@ -90,7 +90,7 @@
 
 - **Engine/host lifecycle clarity:** Treat backend (`GameEngine` / `RuleEngine`),
   client sandbox (`ClientSandboxEngine`), and Python
-  (`ai-service/app/game_engine.py`) strictly as adapters over the shared
+  (`ai-service/app/game_engine/__init__.py`) strictly as adapters over the shared
   orchestrator/aggregates for advanced phases (`chain_capture`,
   `line_processing`, `territory_processing`, explicit self‑elimination). Any
   remaining host‑level rules logic should either call shared helpers or be
@@ -201,7 +201,7 @@ These metrics restate and operationalise the v1.0 success criteria defined in [`
 
 - [ ] **Canonical replay/data gate (DB + goldens)** – Regenerate canonical DBs via `ai-service/scripts/generate_canonical_selfplay.py` (start with `canonical_square8_2p.db`), archive parity/history gate summaries alongside the DBs, refresh the CI golden replay pack, and update `ai-service/TRAINING_DATA_REGISTRY.md` after gating.
 
-- [ ] **Strengthen TS↔Python parity for territory detection and processing** – Expand parity suites to cover a matrix of board types and region patterns across [`src/shared/engine/territoryDetection.ts`](src/shared/engine/territoryDetection.ts:1), [`src/shared/engine/territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1), and the Python rules stack in [`ai-service/app/game_engine.py`](ai-service/app/game_engine.py:1) and [`ai-service/app/board_manager.py`](ai-service/app/board_manager.py:1). Include fixtures derived from [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md:1) and existing Jest territory tests such as [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1) and [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1). **Owner modes:** Debug (test design) + Code (implementation).
+- [ ] **Strengthen TS↔Python parity for territory detection and processing** – Expand parity suites to cover a matrix of board types and region patterns across [`src/shared/engine/territoryDetection.ts`](src/shared/engine/territoryDetection.ts:1), [`src/shared/engine/territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1), and the Python rules stack in [`ai-service/app/game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1) and [`ai-service/app/board_manager.py`](ai-service/app/board_manager.py:1). Include fixtures derived from [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md:1) and existing Jest territory tests such as [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1) and [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1). **Owner modes:** Debug (test design) + Code (implementation).
 
 - [ ] **Parity for territory decision enumeration and forced-elimination sequences** – Ensure that all territory-related `PlayerChoice` surfaces and generated territory-processing moves (claims, region order, explicit self-elimination, host-level forced elimination) stay in lockstep between TS and Python. Leverage python‑mode parity traces (`RINGRIFT_RULES_MODE=python` in diagnostic runs) and extend parity diagnostics in [`src/server/utils/rulesParityMetrics.ts`](src/server/utils/rulesParityMetrics.ts:1). **Owner modes:** Debug + Code.
 

@@ -62,7 +62,7 @@ The `ai-service` module is operationally stable, with a functional FastAPI serve
 
 ### 3.2 Game Engine (Python)
 
-The `ai-service` maintains its own Python implementation of the game rules (`app/game_engine.py`) separate from the main TypeScript server.
+The `ai-service` maintains its own Python implementation of the game rules (`app/game_engine/__init__.py`) separate from the main TypeScript server.
 
 - **Compliance:**
   - **Placement:** Correctly implements "no-dead-placement" rule.

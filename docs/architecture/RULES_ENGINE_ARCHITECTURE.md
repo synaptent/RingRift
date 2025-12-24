@@ -19,7 +19,7 @@
 
 - Canonical rules semantics SSoT is the written spec in `RULES_CANONICAL_SPEC.md` together with `../rules/COMPLETE_RULES.md` / `../rules/COMPACT_RULES.md`. The **shared TypeScript engine** under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts: `schemas.ts`, `serialization.ts`, `testVectorGenerator.ts` + v2 vectors under `tests/fixtures/contract-vectors/v2/`) is the primary executable derivation of that spec and must be kept in lockstep with the canonical rules.
 - Move/decision/WebSocket lifecycle semantics are documented in `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).
-- Backend (`GameEngine`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this rules SSoT; they must remain parity-validated against the canonical rules spec + shared engine but are not independent sources of rules semantics.
+- Backend (`GameEngine`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine/__init__.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this rules SSoT; they must remain parity-validated against the canonical rules spec + shared engine but are not independent sources of rules semantics.
 - Sections describing Python mutator-first refactors and future rollout phases should be read as **aspirational design** layered on top of the canonical rules SSoT (canonical rules spec plus shared TS engine), not as a redefinition of rules semantics.
 
 This document defines the architecture of the Python rules engine within the AI service, its relationship to the canonical TypeScript engine, and the strategy for rolling it out as a parity-validated host over the canonical TypeScript engine in online validation flows.
@@ -34,7 +34,7 @@ RingRift maintains two implementations of the game rules with a new canonical or
 
 1.  **TypeScript Engine (Canonical):** Located in `src/shared/engine/`. Used by the Node.js backend (`GameEngine.ts`) and the client sandbox (`ClientSandboxEngine.ts`). This is the current source of truth.
 2.  **Canonical Turn Orchestrator (NEW):** Located in `src/shared/engine/orchestration/`. Provides a single entry point (`processTurn()`) that orchestrates all domain aggregates in a deterministic sequence. Backend and sandbox adapters delegate to this layer.
-3.  **Python Engine (AI/Shadow):** Located in `ai-service/app/game_engine.py`. Used for AI search/evaluation and currently being rolled out as a shadow validator for the backend. Contract tests ensure cross-language parity.
+3.  **Python Engine (AI/Shadow):** Located in `ai-service/app/game_engine/__init__.py`. Used for AI search/evaluation and currently being rolled out as a shadow validator for the backend. Contract tests ensure cross-language parity.
 
 ### Shared Rules Implementation
 
@@ -245,7 +245,7 @@ truth:
 
 ### Python Engine Structure
 
-- [`ai-service/app/game_engine.py`](ai-service/app/game_engine.py:1): Core host adapter exposing:
+- [`ai-service/app/game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1): Core host adapter exposing:
   - `get_valid_moves(state, player)` – **interactive-only** legal moves for the current phase (no auto `NO_*_ACTION` or forced-elimination moves).
   - `get_phase_requirement(state, player)` – phase-level requirements when no interactive moves exist (e.g., `NO_*_ACTION_REQUIRED`, `FORCED_ELIMINATION_REQUIRED`).
   - `synthesize_bookkeeping_move(requirement, state)` – host-level helper to construct canonical `NO_*_ACTION` / `FORCED_ELIMINATION` moves from a `PhaseRequirement`.
@@ -341,7 +341,7 @@ The canonical **multi-phase turn sequence** (ring_placement → movement / captu
           - The ACTIVE_NO_MOVES safeguard and resolver (`resolveBlockedStateForCurrentPlayerForTesting`) for rare blocked states.
     - These methods must remain aligned with the shared TS orchestrator and the RR‑CANON‑R208/R209 phase ordering; the backend is not allowed to introduce divergent multi-phase semantics.
 
-  - **Python AI-service GameEngine (`ai-service/app/game_engine.py`).**
+  - **Python AI-service GameEngine (`ai-service/app/game_engine/__init__.py`).**
     - Mirrors the same multi-phase sequence as a host adapter over Python models:
       - `GameEngine.get_valid_moves(state, player_number)`:
         - Dispatches to `_get_ring_placement_moves`, `_get_movement_moves`, `_get_capture_moves`, `_get_line_processing_moves`, `_get_territory_processing_moves`, and `_get_forced_elimination_moves` based on `current_phase`.
@@ -884,12 +884,12 @@ wrapped by backend, sandbox, and Python engines.
     `PlacementContext`.
 - Python usage:
   - `_create_hypothetical_board_with_placement` in
-    `ai-service/app/game_engine.py` mirrors
+    `ai-service/app/game_engine/__init__.py` mirrors
     `createHypotheticalBoardWithPlacement` from `sandboxPlacement.ts`, taking
     a `BoardState`, position, player, and placement count and returning a
     hypothetical post-placement board.
   - `_has_any_movement_or_capture_after_hypothetical_placement` in
-    `ai-service/app/game_engine.py` constructs a temporary `GameState` in the
+    `ai-service/app/game_engine/__init__.py` constructs a temporary `GameState` in the
     `MOVEMENT` phase, fixes `must_move_from_stack_key` to the placed stack,
     seeds a synthetic `place_ring` move into `move_history`, and then reuses
     `_get_movement_moves` and `_get_capture_moves` to answer the same

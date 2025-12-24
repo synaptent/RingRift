@@ -166,6 +166,9 @@ class SelfplayConfig:
     max_parallel_per_host: int = 2
     difficulty_band: str = "light"  # "light", "canonical", etc.
 
+    # Pipeline automation (2025-12)
+    emit_pipeline_events: bool = False  # Emit SELFPLAY_COMPLETE for auto-trigger pipeline
+
     # Additional engine-specific options
     extra_options: dict[str, Any] = field(default_factory=dict)
 
@@ -536,6 +539,15 @@ def create_argument_parser(
         help="Source identifier for metadata",
     )
 
+    # Pipeline automation (2025-12)
+    pipeline_group = parser.add_argument_group("Pipeline Automation")
+    pipeline_group.add_argument(
+        "--emit-pipeline-events",
+        action="store_true",
+        help="Emit pipeline events (SELFPLAY_COMPLETE) for auto-trigger pipeline. "
+             "Use with train_cli.py --enable-pipeline-auto-trigger for full automation.",
+    )
+
     return parser
 
 
@@ -612,6 +624,8 @@ def parse_selfplay_args(
         hosts=getattr(parsed, "hosts", None),
         max_parallel_per_host=getattr(parsed, "max_parallel_per_host", 2),
         difficulty_band=getattr(parsed, "difficulty_band", "light"),
+        # Pipeline automation
+        emit_pipeline_events=getattr(parsed, "emit_pipeline_events", False),
     )
 
     return config

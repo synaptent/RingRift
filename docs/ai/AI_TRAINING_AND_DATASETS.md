@@ -20,10 +20,10 @@ This document is the canonical reference for the current **offline training and 
 
 All training entrypoints reuse the same Python rules stack as the live AI service:
 
-- Python rules engine (host implementation mirroring the TS shared engine): [`GameEngine`](../ai-service/app/game_engine.py).
+- Python rules engine (host implementation mirroring the TS shared engine): [`GameEngine`](../ai-service/app/game_engine/__init__.py).
 - Board helpers and disconnected-region detection: [`BoardManager`](../ai-service/app/board_manager.py) and [`BoardManager.find_disconnected_regions()`](../ai-service/app/board_manager.py).
 - Rules façade and mutators: [`DefaultRulesEngine`](../ai-service/app/rules/default_engine.py) and [`TerritoryMutator`](../ai-service/app/rules/mutators/territory.py).
-- RL-style environment wrapper: [`RingRiftEnv`](../ai-service/app/training/env.py), which internally calls [`create_initial_state()`](../ai-service/app/training/generate_data.py), [`GameEngine.get_valid_moves()`](../ai-service/app/game_engine.py), and [`GameEngine.apply_move()`](../ai-service/app/game_engine.py).
+- RL-style environment wrapper: [`RingRiftEnv`](../ai-service/app/training/env.py), which internally calls [`create_initial_state()`](../ai-service/app/training/generate_data.py), [`GameEngine.get_valid_moves()`](../ai-service/app/game_engine/__init__.py), and [`GameEngine.apply_move()`](../ai-service/app/game_engine/__init__.py).
 
 **Rules SSoT and parity safeguards:**
 
@@ -83,7 +83,7 @@ Again, point any backend-client experiments at `http://localhost:8001` via `AI_S
 
 The legacy NN-style self-play generator lives in [`generate_dataset()`](../ai-service/app/training/generate_data.py). It uses:
 
-- [`RingRiftEnv`](../ai-service/app/training/env.py) backed by the Python [`GameEngine`](../ai-service/app/game_engine.py).
+- [`RingRiftEnv`](../ai-service/app/training/env.py) backed by the Python [`GameEngine`](../ai-service/app/game_engine/__init__.py).
 - [`DescentAI`](../ai-service/app/ai/descent_ai.py) (and its neural network, when configured) for tree search.
 - Feature extraction and action encoding from the NN stack under `ai-service/app/ai/`.
 
@@ -484,7 +484,7 @@ The `ringsPerPlayer` cap applies only to **own-colour rings** in play, not captu
 
 - **Canonical helper** ([`rules/core.py`](../ai-service/app/rules/core.py)): The `count_rings_in_play_for_player()` function correctly counts only rings where `ring_owner == player_number`, plus `rings_in_hand`.
 
-- **Move generation** ([`game_engine.py`](../ai-service/app/game_engine.py)): Ring placement validation uses `count_rings_in_play_for_player()` to enforce the per-player cap correctly.
+- **Move generation** ([`game_engine/__init__.py`](../ai-service/app/game_engine/__init__.py)): Ring placement validation uses `count_rings_in_play_for_player()` to enforce the per-player cap correctly.
 
 - **State encoding**: The neural network encoding in [`neural_net.py`](../ai-service/app/ai/neural_net.py) includes:
   - Stack heights (normalized) for my/opponent stacks (channels 0/1)
@@ -507,8 +507,8 @@ The alignment tests in [`test_training_lps_alignment.py`](../ai-service/tests/te
 
 The territory generator is deliberately wired to the **same canonical rules logic** used by live games and TS parity fixtures:
 
-- All move legality and state transitions come from Python [`GameEngine.get_valid_moves()`](../ai-service/app/game_engine.py) and [`GameEngine.apply_move()`](../ai-service/app/game_engine.py), which in turn mirror the TS shared engine modules such as [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts), and [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts).
-- The rules façade [`DefaultRulesEngine`](../ai-service/app/rules/default_engine.py) and [`TerritoryMutator`](../ai-service/app/rules/mutators/territory.py) enforce **shadow contracts** against [`GameEngine.apply_move()`](../ai-service/app/game_engine.py) for territory moves, with a targeted escape hatch when host-level forced elimination for the next player occurs (see [`docs/incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md)).
+- All move legality and state transitions come from Python [`GameEngine.get_valid_moves()`](../ai-service/app/game_engine/__init__.py) and [`GameEngine.apply_move()`](../ai-service/app/game_engine/__init__.py), which in turn mirror the TS shared engine modules such as [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts), and [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts).
+- The rules façade [`DefaultRulesEngine`](../ai-service/app/rules/default_engine.py) and [`TerritoryMutator`](../ai-service/app/rules/mutators/territory.py) enforce **shadow contracts** against [`GameEngine.apply_move()`](../ai-service/app/game_engine/__init__.py) for territory moves, with a targeted escape hatch when host-level forced elimination for the next player occurs (see [`docs/incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md)).
 - The CLI smoke test [`test_generate_territory_dataset_mixed_smoke`](../ai-service/tests/test_generate_territory_dataset_smoke.py) is the end-to-end guard that exercises the module in `engine_mode="mixed"`, asserts no `TerritoryMutator diverged from GameEngine.apply_move` messages appear on stderr, and verifies that a non-empty JSONL file is produced.
 
 For a deeper discussion of how TS and Python engines are kept in sync (trace parity, mutator equivalence tests, and shadow modes), see [`RULES_ENGINE_ARCHITECTURE.md`](../../RULES_ENGINE_ARCHITECTURE.md) and the incident report in [`docs/incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).

@@ -283,6 +283,13 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Disable graceful shutdown handling'
     )
 
+    # Pipeline automation (2025-12)
+    parser.add_argument(
+        '--enable-pipeline-auto-trigger', action='store_true',
+        help='Enable automatic triggering of pipeline stages (sync → export → train → evaluate → promote). '
+             'Requires bootstrap_coordination() to be called. Also respects COORDINATOR_AUTO_TRIGGER_PIPELINE env var.'
+    )
+
     # Regularization (2025-12)
     parser.add_argument(
         '--dropout', type=float, default=0.08,
@@ -385,6 +392,24 @@ def main() -> None:
     from app.training.train import run_cmaes_heuristic_optimization, train_model
 
     args = parse_args()
+
+    # Initialize pipeline auto-trigger if requested (2025-12)
+    # This wires up the coordination infrastructure for automatic stage progression
+    if getattr(args, 'enable_pipeline_auto_trigger', False):
+        try:
+            from app.coordination.coordination_bootstrap import bootstrap_coordination
+            bootstrap_result = bootstrap_coordination(pipeline_auto_trigger=True)
+            logger.info(
+                f"[TrainCLI] Pipeline auto-trigger enabled. "
+                f"Initialized {len([v for v in bootstrap_result.values() if v])} coordinators."
+            )
+        except ImportError:
+            logger.warning(
+                "[TrainCLI] --enable-pipeline-auto-trigger requires app.coordination module. "
+                "Continuing without pipeline automation."
+            )
+        except Exception as e:
+            logger.warning(f"[TrainCLI] Failed to enable pipeline auto-trigger: {e}")
 
     # Load config file if provided (overrides individual arguments)
     if args.config:

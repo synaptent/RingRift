@@ -38,6 +38,6 @@ unless those env vars are already set.
 
 - If divergence is in phase ordering or FE/no-action semantics, update both:
   - `src/shared/engine/**`
-  - `ai-service/app/game_engine.py`
+  - `ai-service/app/game_engine/__init__.py`
   - `ai-service/app/rules/history_contract.py`
   - 관련 tests and docs.

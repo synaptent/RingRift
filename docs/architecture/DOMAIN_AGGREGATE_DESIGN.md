@@ -1359,7 +1359,7 @@ The aggregate design here feeds into the **canonical orchestrator layer**, which
 - `orchestration/phaseStateMachine.ts` – phase transition logic.
 - `orchestration/types.ts` – `ProcessTurnResult`, `PendingDecision`, `DecisionType`, `VictoryState`, etc.
 
-Host adapters (backend `TurnEngineAdapter`, sandbox `SandboxOrchestratorAdapter`, Python `game_engine.py`) consume the orchestrator and expose **Move-centric** APIs. For the end-to-end Move/decision/WebSocket lifecycle, defer to:
+Host adapters (backend `TurnEngineAdapter`, sandbox `SandboxOrchestratorAdapter`, Python `game_engine/__init__.py`) consume the orchestrator and expose **Move-centric** APIs. For the end-to-end Move/decision/WebSocket lifecycle, defer to:
 
 - `docs/CANONICAL_ENGINE_API.md` (Move lifecycle SSoT).
 

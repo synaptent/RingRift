@@ -24,7 +24,7 @@ When enabled, every state produced by `GameEngine.apply_move` must satisfy:
 > - any interactive move returned by `GameEngine.get_valid_moves(...)` for the current phase (placements, movements, captures, line/territory decisions), **or**
 > - at least one forced-elimination move from `_get_forced_elimination_moves(...)` when the player is blocked but still controls stacks.
 
-Implementation (Python): `GameEngine._assert_active_player_has_legal_action` in [`ai-service/app/game_engine.py`](../ai-service/app/game_engine.py).
+Implementation (Python): `GameEngine._assert_active_player_has_legal_action` in [`ai-service/app/game_engine/__init__.py`](../ai-service/app/game_engine/__init__.py).
 
 Violations are logged under:
 

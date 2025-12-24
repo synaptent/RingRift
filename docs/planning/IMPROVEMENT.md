@@ -753,7 +753,7 @@ The shared rules engine has supported 3-4 players since initial implementation:
   - `VictoryAggregate.ts`: Last Player Standing (LPS) logic handles 3-4 player elimination correctly
   - `heuristicEvaluation.ts`: Position evaluation accounts for 3+ player threat assessment
 - [x] Python AI engine matches TypeScript multi-player semantics
-  - `ai-service/app/game_engine.py`: Full 3-4 player support
+  - `ai-service/app/game_engine/__init__.py`: Full 3-4 player support
   - `ai-service/app/rules/core.py`: Turn cycling and phase transitions for variable player counts
 - [x] Swap/pie rule correctly disabled for 3-4 player games
   - `swapSidesHelpers.ts`: `isSwapSidesAvailable()` returns false if `state.players.length !== 2`

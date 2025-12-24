@@ -8,7 +8,7 @@
 > - **Monitoring SSoT:** Prometheus alert rules in `monitoring/prometheus/alerts.yml` (group `rules-parity`, alerts `RulesParityValidationMismatch`, `RulesParityHashMismatch`, `RulesParityGameStatusMismatch`) and scrape configuration in `monitoring/prometheus/prometheus.yml`.
 > - **Canonical rules semantics:** Shared TypeScript engine helpers, aggregates, and orchestrator under `src/shared/engine/**`, plus contracts and v2 contract vectors in `src/shared/engine/contracts/**` and `tests/fixtures/contract-vectors/v2/**`.
 > - **Parity metrics & logging:** `rulesParityMetrics` and `logRulesMismatch` in `src/server/utils/rulesParityMetrics.ts`, and the `RulesBackendFacade` / `PythonRulesClient` parity harness in `src/server/game/RulesBackendFacade.ts` and `src/server/services/PythonRulesClient.ts`.
-> - **Python rules implementation:** Canonical Python rules engine in `ai-service/app/game_engine.py` and the derived/parity-focused modules under `ai-service/app/rules/**` (`default_engine.py`, `validators/*.py`, `mutators/*.py`).
+> - **Python rules implementation:** Canonical Python rules engine in `ai-service/app/game_engine/__init__.py` and the derived/parity-focused modules under `ai-service/app/rules/**` (`default_engine.py`, `validators/*.py`, `mutators/*.py`).
 > - **Parity specs & plans:** `docs/PYTHON_PARITY_REQUIREMENTS.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `RULES_ENGINE_SURFACE_AUDIT.md`, `docs/PARITY_SEED_TRIAGE.md`, `docs/STRICT_INVARIANT_SOAKS.md`, and `tests/TEST_SUITE_PARITY_PLAN.md`.
 >
 > **Precedence:**
@@ -125,7 +125,7 @@ Quickly review whether any of the following changed in the relevant environment 
 
 - Shared TS rules engine (`src/shared/engine/**`).
 - Game engine / orchestrator integration (`src/server/game/GameEngine.ts`, `RuleEngine.ts`, `RulesBackendFacade.ts`, `turnOrchestrator.ts`, state machines in `src/shared/stateMachines/**`).
-- Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/**`).
+- Python rules engine (`ai-service/app/game_engine/__init__.py`, `ai-service/app/rules/**`).
 - Orchestrator and rules flags (`ORCHESTRATOR_ADAPTER_ENABLED`, `RINGRIFT_RULES_MODE`) per `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`.
 
 If there were no changes in any of these areas, triage should include **environment drift** (older image deployed in some clusters, partial rollouts, stale parity fixtures) as a possible cause.
@@ -244,7 +244,7 @@ Once you know the domain and suspect side:
   - Orchestrator and state machines in `src/shared/engine/orchestration/**`, `src/shared/stateMachines/**`.
 
 - **Python side:**
-  - Rules engine core: `ai-service/app/game_engine.py`, `ai-service/app/board_manager.py`.
+  - Rules engine core: `ai-service/app/game_engine/__init__.py`, `ai-service/app/board_manager.py`.
   - Parity-focused implementation: `ai-service/app/rules/core.py`, `default_engine.py`, `validators/*.py`, `mutators/*.py`.
 
 Use the parity matrices in `docs/PYTHON_PARITY_REQUIREMENTS.md` to see exactly which TS functions are mirrored by which Python functions.
@@ -260,7 +260,7 @@ Use the parity matrices in `docs/PYTHON_PARITY_REQUIREMENTS.md` to see exactly w
 Typical steps when TS behaviour is deemed correct and Python is at fault:
 
 1. **Update Python rules implementation:**
-   - Adjust the relevant function(s) in `ai-service/app/game_engine.py`, `ai-service/app/board_manager.py`, or `ai-service/app/rules/**` to match TS behaviour.
+   - Adjust the relevant function(s) in `ai-service/app/game_engine/__init__.py`, `ai-service/app/board_manager.py`, or `ai-service/app/rules/**` to match TS behaviour.
    - Keep changes local to the specific domain (placement, movement, capture, line, territory, victory) where possible.
 
 2. **Extend/adjust tests and fixtures:**

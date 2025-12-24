@@ -116,6 +116,41 @@ def get_runner_for_config(config: SelfplayConfig) -> SelfplayRunner:
         return HeuristicSelfplayRunner(config)
 
 
+def emit_selfplay_complete_event(config: SelfplayConfig, stats: RunStats) -> None:
+    """Emit SELFPLAY_COMPLETE event for pipeline automation.
+
+    Args:
+        config: Selfplay configuration
+        stats: Run statistics
+    """
+    try:
+        from app.coordination.event_router import get_router
+        from app.coordination.stage_events import StageEvent
+
+        router = get_router()
+        router.publish(
+            event_type=StageEvent.SELFPLAY_COMPLETE,
+            payload={
+                "config_key": config.config_key,
+                "board_type": config.board_type,
+                "num_players": config.num_players,
+                "games_completed": stats.games_completed,
+                "total_samples": stats.total_samples,
+                "database_path": config.record_db,
+                "duration_seconds": stats.elapsed_seconds,
+            },
+            source="selfplay_cli",
+        )
+        logger.info(f"[Pipeline] Emitted SELFPLAY_COMPLETE event for {config.config_key}")
+    except ImportError:
+        logger.warning(
+            "[Pipeline] Could not emit SELFPLAY_COMPLETE event - "
+            "coordination module not available"
+        )
+    except Exception as e:
+        logger.warning(f"[Pipeline] Failed to emit SELFPLAY_COMPLETE event: {e}")
+
+
 def main():
     """Main entry point for unified selfplay CLI."""
     # Parse args using unified config
@@ -135,6 +170,8 @@ def main():
         logger.info(f"Output: {config.output_dir}")
     if config.record_db:
         logger.info(f"Database: {config.record_db}")
+    if config.emit_pipeline_events:
+        logger.info("Pipeline events: ENABLED")
     logger.info("=" * 60)
 
     # Get appropriate runner
@@ -163,6 +200,10 @@ def main():
                 logger.info(f"  Player {player}: {wins} ({pct:.1f}%)")
 
         logger.info("=" * 60)
+
+        # Emit pipeline event if requested
+        if config.emit_pipeline_events and stats.games_completed > 0:
+            emit_selfplay_complete_event(config, stats)
 
         # Return success if games completed
         return 0 if stats.games_completed > 0 else 1

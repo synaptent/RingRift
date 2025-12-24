@@ -59,11 +59,11 @@ curl -s http://localhost:8001/health | jq
 
 ### Environment Files
 
-| Environment | Base Config        | Override                   | Env File        |
-| ----------- | ------------------ | -------------------------- | --------------- |
-| Development | docker-compose.yml | -                          | .env            |
-| Staging     | docker-compose.yml | docker-compose.staging.yml | .env.staging    |
-| Production  | docker-compose.yml | docker-compose.prod.yml    | secrets manager |
+| Environment | Base Config        | Override                      | Env File        |
+| ----------- | ------------------ | ----------------------------- | --------------- |
+| Development | docker-compose.yml | -                             | .env            |
+| Staging     | docker-compose.yml | docker-compose.staging.yml    | .env.staging    |
+| Production  | docker-compose.yml | docker-compose.production.yml | secrets manager |
 
 ## Related Documentation
 

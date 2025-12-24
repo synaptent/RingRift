@@ -5,11 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-A Python-based AI microservice that powers the intelligent opponents in RingRift. From casual players learning the ropes to experts seeking a challenge, this service provides an 11-level difficulty ladder with AI ranging from random moves to neural network-guided search.
+A Python-based AI microservice that powers the intelligent opponents in RingRift. From casual players learning the ropes to experts seeking a challenge, this service provides a 10-level difficulty ladder (1-10) with AI ranging from random moves to neural network-guided search.
 
 ## What's Inside
 
-- **11 Difficulty Levels** — Random (D1) → Heuristic (D2) → Minimax (D3-4) → MCTS (D5-8) → Descent (D9-10) → Ultimate (D11)
+- **10 Difficulty Levels** — Random (D1) → Heuristic (D2) → Minimax (D3-4) → MCTS (D5-8) → Descent (D9-10)
 - **Neural Network Integration** — ResNet-style CNNs with policy/value heads for position evaluation
 - **Distributed Training** — Self-play generation, Elo tracking, and model promotion across GPU clusters
 - **P2P Orchestration** — Automatic cluster coordination with leader election and health monitoring
@@ -73,6 +73,31 @@ curl -X POST http://localhost:8001/ai/evaluate \
   }'
 ```
 
+### Player Choice Decisions
+
+The AI service can also resolve player-choice prompts emitted by the engine:
+
+```
+POST /ai/choice/line_reward_option
+POST /ai/choice/ring_elimination
+POST /ai/choice/region_order
+POST /ai/choice/line_order
+POST /ai/choice/capture_direction
+```
+
+Each endpoint accepts `{ game_state?, player_number, difficulty, ai_type?, options: [...] }`
+(camelCase aliases also accepted) and returns `{ selectedOption, aiType, difficulty }`.
+
+```bash
+curl -X POST http://localhost:8001/ai/choice/line_reward_option \
+  -H "Content-Type: application/json" \
+  -d '{
+    "player_number": 1,
+    "difficulty": 5,
+    "options": ["option_1_collapse_all_and_eliminate", "option_2_min_collapse_no_elimination"]
+  }'
+```
+
 ### Health Check
 
 ```bash
@@ -81,20 +106,22 @@ curl http://localhost:8001/health
 
 ## The Difficulty Ladder
 
-| Level | AI Type     | Description                             | Think Time |
-| ----- | ----------- | --------------------------------------- | ---------- |
-| 1     | Random      | Random valid moves                      | 150ms      |
-| 2     | Heuristic   | 45+ weighted factors (CMA-ES optimized) | 200ms      |
-| 3     | Minimax     | Alpha-beta search, heuristic eval       | 1.8s       |
-| 4     | Minimax     | Alpha-beta + NNUE neural eval           | 2.8s       |
-| 5     | Descent     | Descent search + neural guidance        | 4.0s       |
-| 6     | Descent     | Descent + neural (larger budget)        | 5.5s       |
-| 7-8   | MCTS        | MCTS with neural value/policy guidance  | 7.5-9.6s   |
-| 9-10  | Gumbel MCTS | Maximum strength Gumbel MCTS            | 12.6-16s   |
-| 11    | Ultimate    | Extended Gumbel MCTS (60s think time)   | 60s        |
+| Level | AI Type   | Description                             | Think Time |
+| ----- | --------- | --------------------------------------- | ---------- |
+| 1     | Random    | Random valid moves                      | 150ms      |
+| 2     | Heuristic | 45+ weighted factors (CMA-ES optimized) | 200ms      |
+| 3     | Minimax   | Alpha-beta search, heuristic eval       | 1.8s       |
+| 4     | Minimax   | Alpha-beta + NNUE neural eval           | 2.8s       |
+| 5     | MCTS      | Heuristic rollouts (no neural)          | 4.0s       |
+| 6     | MCTS      | Neural value/policy guidance            | 5.5s       |
+| 7     | MCTS      | Neural guidance (higher budget)         | 7.5s       |
+| 8     | MCTS      | Neural guidance (large budget)          | 9.6s       |
+| 9     | Descent   | Descent/UBFM with neural guidance       | 12.6s      |
+| 10    | Descent   | Strongest Descent configuration         | 16s        |
 
-> **Note:** For large boards (square19, hexagonal), D3-4 use Descent + NN instead of Minimax (too slow).
+> **Note:** Ladder tiers are board-aware; for square19/hexagonal, D3-6 use Descent + NN (minimax/MCTS too slow), and D9-10 use Gumbel MCTS per `app/config/ladder_config.py`.
 > **Experimental tiers:** EBMO, GMO, and IG-GMO are research AIs and are not part of the ladder. Use `AIFactory.create(AIType.IG_GMO, ...)` or tournament agent IDs like `ig_gmo` to run them.
+> **Internal tiers:** D11+ profiles exist for training/benchmarks but are not exposed by the public API (1-10 only).
 
 ## Board Support
 
@@ -111,7 +138,7 @@ curl http://localhost:8001/health
 ai-service/
 ├── app/
 │   ├── main.py              # FastAPI entry point
-│   ├── game_engine.py       # Python rules engine (TS parity)
+│   ├── game_engine/         # Python rules engine (TS parity)
 │   ├── ai/                  # AI implementations
 │   │   ├── random_ai.py     # D1: Random moves
 │   │   ├── heuristic_ai.py  # D2: Weighted evaluation
@@ -369,7 +396,7 @@ The service enforces 80% max utilization to prevent system overload:
 
 ### Slow AI responses
 
-- Higher difficulties take longer (D10 = 16s, D11 = 24s)
+- Higher difficulties take longer (D9 ≈ 12.6s, D10 ≈ 16s)
 - Check CPU/GPU resources
 - Consider running on GPU for neural network evaluation
 

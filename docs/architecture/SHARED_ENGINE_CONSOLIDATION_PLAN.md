@@ -16,7 +16,7 @@
 
 ## Executive Summary
 
-This plan consolidates RingRift's rules logic into a single canonical engine in [`src/shared/engine`](src/shared/engine/) with thin adapters for the backend, sandbox, and Python AI service. It targets removal of ~3,800 lines of duplicated placement, movement, capture, line, territory, lifecycle, and victory logic across [`GameEngine.ts`](src/server/game/GameEngine.ts), [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), and [`game_engine.py`](ai-service/app/game_engine.py) while preserving strict TS–Python parity and 90%+ test coverage. The phases below are ordered by dependency so that lower-level mechanics (capture chains, movement, placement) are stabilized first, then higher-level flows (lines, territory, lifecycle, victory) and host adapters.
+This plan consolidates RingRift's rules logic into a single canonical engine in [`src/shared/engine`](src/shared/engine/) with thin adapters for the backend, sandbox, and Python AI service. It targets removal of ~3,800 lines of duplicated placement, movement, capture, line, territory, lifecycle, and victory logic across [`GameEngine.ts`](src/server/game/GameEngine.ts), [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), and [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py) while preserving strict TS–Python parity and 90%+ test coverage. The phases below are ordered by dependency so that lower-level mechanics (capture chains, movement, placement) are stabilized first, then higher-level flows (lines, territory, lifecycle, victory) and host adapters.
 
 ## Current State Analysis
 
@@ -24,22 +24,22 @@ This plan consolidates RingRift's rules logic into a single canonical engine in 
 
 The tables below classify duplication by logic category, not by file. "Lines" is an approximate total of duplicated rule logic across backend, sandbox, and Python implementations for that category. Prior analysis (Pass 15) estimated ~3,800 lines of meaningful duplication; the numbers here are rounded to keep the total near that figure.
 
-| Logic Category       | Backend File(s)                                                                                                                                                                                                                                                   | Sandbox File(s)                                                                                                                                                                                             | Python File(s)                                                                                                                                                                                                                                    | Lines (Dup Logic) | Priority |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------- |
-| Placement            | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), `src/server/game/rules/placement*.ts` (legacy where present)                                                                                                  | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxPlacement.ts`](src/client/sandbox/sandboxPlacement.ts)                                                                      | [`game_engine.py`](ai-service/app/game_engine.py), [`validators/placement.py`](ai-service/app/rules/validators/placement.py), [`mutators/placement.py`](ai-service/app/rules/mutators/placement.py)                                               | ~500              | P1       |
-| Movement             | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), [`BoardManager.ts`](src/server/game/BoardManager.ts), `src/server/game/rules/movement*.ts`                                                                    | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxMovement.ts`](src/client/sandbox/sandboxMovement.ts)                                                                        | [`game_engine.py`](ai-service/app/game_engine.py), [`mutators/movement.py`](ai-service/app/rules/mutators/movement.py), [`validators/movement.py`](ai-service/app/rules/validators/movement.py)                                                   | ~700              | P1       |
-| Capture (incl chain) | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), `src/server/game/rules/capture*.ts` (legacy), [`aggregates/CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts) integration code on server | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxCaptures.ts`](src/client/sandbox/sandboxCaptures.ts)                                                                        | [`game_engine.py`](ai-service/app/game_engine.py), [`mutators/capture.py`](ai-service/app/rules/mutators/capture.py), [`validators/capture.py`](ai-service/app/rules/validators/capture.py)                                                       | ~900              | P1       |
-| Line Processing      | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), `src/server/game/rules/lineProcessing.ts` (legacy), server-side history and cap-elimination glue                                                              | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxLines.ts`](src/client/sandbox/sandboxLines.ts)                                                                              | [`game_engine.py`](ai-service/app/game_engine.py), [`mutators/line.py`](ai-service/app/rules/mutators/line.py), [`validators/line.py`](ai-service/app/rules/validators/line.py), Python line reward and collapse logic                            | ~550              | P1       |
-| Territory Processing | [`GameEngine.ts`](src/server/game/GameEngine.ts), `src/server/game/rules/territoryProcessing.ts` (legacy), backend-specific Q23 gating and elimination bookkeeping                                                                                                | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts) (disconnected-region gating, Q23 wrapper, explicit elimination flow), [`sandboxTerritory.ts`](src/client/sandbox/sandboxTerritory.ts) | [`game_engine.py`](ai-service/app/game_engine.py), [`mutators/territory.py`](ai-service/app/rules/mutators/territory.py), [`validators/territory.py`](ai-service/app/rules/validators/territory.py), internal Q23 and region-claim implementation | ~600              | P1       |
-| Turn Lifecycle       | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`TurnEngine.ts`](src/server/game/turn/TurnEngine.ts), `src/server/game/rules/*.ts` phase glue, backend LPS and forced-elimination logic                                                                        | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts) (sandbox LPS bookkeeping and forced-elimination orchestration)                                                                        | [`game_engine.py`](ai-service/app/game_engine.py) phase update and end-turn helpers, forced-elimination helpers, LPS tracking and round index logic                                                                                               | ~350              | P2       |
-| Victory Detection    | [`RuleEngine.ts`](src/server/game/RuleEngine.ts) victory wrapper around shared evaluator, older backend-only checks in [`GameEngine.ts`](src/server/game/GameEngine.ts)                                                                                           | [`sandboxGameEnd.ts`](src/client/sandbox/sandboxGameEnd.ts), victory and stalemate resolution helpers, sandbox-specific normalisation of phases                                                             | [`game_engine.py`](ai-service/app/game_engine.py) `_check_victory` and tie-breaker implementation                                                                                                                                                 | ~200              | P2       |
+| Logic Category       | Backend File(s)                                                                                                                                                                                                                                                   | Sandbox File(s)                                                                                                                                                                                             | Python File(s)                                                                                                                                                                                                                                                      | Lines (Dup Logic) | Priority |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------- |
+| Placement            | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), `src/server/game/rules/placement*.ts` (legacy where present)                                                                                                  | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxPlacement.ts`](src/client/sandbox/sandboxPlacement.ts)                                                                      | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), [`validators/placement.py`](ai-service/app/rules/validators/placement.py), [`mutators/placement.py`](ai-service/app/rules/mutators/placement.py)                                               | ~500              | P1       |
+| Movement             | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), [`BoardManager.ts`](src/server/game/BoardManager.ts), `src/server/game/rules/movement*.ts`                                                                    | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxMovement.ts`](src/client/sandbox/sandboxMovement.ts)                                                                        | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), [`mutators/movement.py`](ai-service/app/rules/mutators/movement.py), [`validators/movement.py`](ai-service/app/rules/validators/movement.py)                                                   | ~700              | P1       |
+| Capture (incl chain) | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), `src/server/game/rules/capture*.ts` (legacy), [`aggregates/CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts) integration code on server | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxCaptures.ts`](src/client/sandbox/sandboxCaptures.ts)                                                                        | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), [`mutators/capture.py`](ai-service/app/rules/mutators/capture.py), [`validators/capture.py`](ai-service/app/rules/validators/capture.py)                                                       | ~900              | P1       |
+| Line Processing      | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`RuleEngine.ts`](src/server/game/RuleEngine.ts), `src/server/game/rules/lineProcessing.ts` (legacy), server-side history and cap-elimination glue                                                              | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts), [`sandboxLines.ts`](src/client/sandbox/sandboxLines.ts)                                                                              | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), [`mutators/line.py`](ai-service/app/rules/mutators/line.py), [`validators/line.py`](ai-service/app/rules/validators/line.py), Python line reward and collapse logic                            | ~550              | P1       |
+| Territory Processing | [`GameEngine.ts`](src/server/game/GameEngine.ts), `src/server/game/rules/territoryProcessing.ts` (legacy), backend-specific Q23 gating and elimination bookkeeping                                                                                                | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts) (disconnected-region gating, Q23 wrapper, explicit elimination flow), [`sandboxTerritory.ts`](src/client/sandbox/sandboxTerritory.ts) | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), [`mutators/territory.py`](ai-service/app/rules/mutators/territory.py), [`validators/territory.py`](ai-service/app/rules/validators/territory.py), internal Q23 and region-claim implementation | ~600              | P1       |
+| Turn Lifecycle       | [`GameEngine.ts`](src/server/game/GameEngine.ts), [`TurnEngine.ts`](src/server/game/turn/TurnEngine.ts), `src/server/game/rules/*.ts` phase glue, backend LPS and forced-elimination logic                                                                        | [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts) (sandbox LPS bookkeeping and forced-elimination orchestration)                                                                        | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py) phase update and end-turn helpers, forced-elimination helpers, LPS tracking and round index logic                                                                                               | ~350              | P2       |
+| Victory Detection    | [`RuleEngine.ts`](src/server/game/RuleEngine.ts) victory wrapper around shared evaluator, older backend-only checks in [`GameEngine.ts`](src/server/game/GameEngine.ts)                                                                                           | [`sandboxGameEnd.ts`](src/client/sandbox/sandboxGameEnd.ts), victory and stalemate resolution helpers, sandbox-specific normalisation of phases                                                             | [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py) `_check_victory` and tie-breaker implementation                                                                                                                                                 | ~200              | P2       |
 
 **Total Duplicate Lines (approx):** ~3,800
 
 Notes:
 
 - Many of these modules already _call_ shared helpers (for example, backend and sandbox both use shared placement and capture validators), but still contain duplicated orchestration and bookkeeping that should move into canonical aggregates or a shared orchestrator.
-- Python currently reimplements large portions of shared core semantics (movement geometry, capture reachability, territory processing, line collapse, and LPS) inside [`game_engine.py`](ai-service/app/game_engine.py) and `ai-service/app/rules/mutators/*.py`.
+- Python currently reimplements large portions of shared core semantics (movement geometry, capture reachability, territory processing, line collapse, and LPS) inside [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py) and `ai-service/app/rules/mutators/*.py`.
 
 ### Already Consolidated (Reference)
 
@@ -141,7 +141,7 @@ Safe consolidation order implied by these graphs:
 **Deliverables:**
 
 - Capture chain architecture addendum in design doc.
-- Updated comments in [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts) and Python docstrings in [`game_engine.py`](ai-service/app/game_engine.py).
+- Updated comments in [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts) and Python docstrings in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py).
 
 ### P1.2: Shared Capture Chain Core Implementation
 
@@ -271,7 +271,7 @@ Together, these changes ensure that TS capture semantics (enumeration, validatio
 **Acceptance Criteria:**
 
 - [x] Sandbox capture helpers [`sandboxCaptures.ts`](src/client/sandbox/sandboxCaptures.ts:1) use TS capture core for reachability decisions where possible (or share common helpers with backend).
-- [x] Python capture methods in [`game_engine.py`](ai-service/app/game_engine.py:1) (`_get_capture_moves`, `_apply_chain_capture`) are reviewed and documented against the canonical capture-chain spec, with any deviations surfaced via tests.
+- [x] Python capture methods in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1) (`_get_capture_moves`, `_apply_chain_capture`) are reviewed and documented against the canonical capture-chain spec, with any deviations surfaced via tests.
 - [x] Chain-capture parity tests in [`test_chain_capture_parity.py`](ai-service/tests/parity/test_chain_capture_parity.py:1) remain green.
 
 **Deliverables:**
@@ -369,10 +369,10 @@ Together with the backend wiring in P1.3, these changes make `CaptureAggregate` 
 
 #### P1.4 Implementation Note (Python capture parity, 2025‑11‑28)
 
-On the Python side, chain‑capture semantics are implemented in [`GameEngine`](ai-service/app/game_engine.py:1) and validated against the TS SSoT via dedicated parity tests:
+On the Python side, chain‑capture semantics are implemented in [`GameEngine`](ai-service/app/game_engine/__init__.py:1) and validated against the TS SSoT via dedicated parity tests:
 
 - **Capture enumeration:**
-  - [`GameEngine._get_capture_moves`](ai-service/app/game_engine.py:1595) ray‑walks from an attacker in each movement direction to find candidate targets and landings, then validates each `(from, target, landing)` triple via an internal `_validate_capture_segment_on_board` helper.
+  - [`GameEngine._get_capture_moves`](ai-service/app/game_engine/__init__.py:1595) ray‑walks from an attacker in each movement direction to find candidate targets and landings, then validates each `(from, target, landing)` triple via an internal `_validate_capture_segment_on_board` helper.
   - `_validate_capture_segment_on_board` is a direct Python analogue of TS [`validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:367), enforcing:
     - On‑board positions for `from`, `target`, `landing` using `BoardManager.is_valid_position`.
     - `attacker.capHeight >= target.capHeight` (own‑stack captures allowed).
@@ -383,7 +383,7 @@ On the Python side, chain‑capture semantics are implemented in [`GameEngine`](
   - Aggregate availability checks (`_has_valid_captures`, `_has_valid_actions`, `_has_real_action_for_player`) are built on `_get_capture_moves`, mirroring the TS last‑player‑standing and forced‑elimination predicates.
 
 - **Capture application and chain state:**
-  - `_apply_chain_capture` (see [`GameEngine._apply_chain_capture`](ai-service/app/game_engine.py:2557)) mirrors TS [`mutateCapture`](src/shared/engine/aggregates/CaptureAggregate.ts:632) and the chain state helpers in `CaptureAggregate`:
+  - `_apply_chain_capture` (see [`GameEngine._apply_chain_capture`](ai-service/app/game_engine/__init__.py:2557)) mirrors TS [`mutateCapture`](src/shared/engine/aggregates/CaptureAggregate.ts:632) and the chain state helpers in `CaptureAggregate`:
     - Removes the attacker stack from `from` and places a departure marker.
     - Processes markers along `from→target→landing`, flipping opponent markers and collapsing own markers into territory.
     - Transfers the captured top ring from the target stack to the bottom of the attacker’s ring list and recomputes `stackHeight`, `capHeight`, and `controllingPlayer`.
@@ -431,7 +431,7 @@ Formal legality (all board types) is:
   - Contains no stack.
   - May contain any marker (own or opponent). Landing on a marker incurs a cap-elimination cost per RR-CANON-R091/R092, R101/R102.
 
-These conditions are enforced in TS via [`validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:367), and in Python via [`GameEngine._validate_capture_segment_on_board_for_reachability`](ai-service/app/game_engine.py:1091).
+These conditions are enforced in TS via [`validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:367), and in Python via [`GameEngine._validate_capture_segment_on_board_for_reachability`](ai-service/app/game_engine/__init__.py:1091).
 
 **Application semantics** of a single legal segment (from [`RR-CANON-R102`](RULES_CANONICAL_SPEC.md:307)):
 
@@ -444,7 +444,7 @@ These conditions are enforced in TS via [`validateCaptureSegmentOnBoard`](src/sh
 5. Place the updated attacker stack at `landing` (after clearing any marker there to maintain stack/marker exclusivity).
 6. If the landing cell held a P marker, remove that marker and immediately eliminate the **top ring** of the landing stack, crediting the elimination to P.
 
-These semantics are implemented in TS via [`mutateCapture`](src/shared/engine/aggregates/CaptureAggregate.ts:632) and in Python via [`GameEngine._apply_chain_capture`](ai-service/app/game_engine.py:2557).
+These semantics are implemented in TS via [`mutateCapture`](src/shared/engine/aggregates/CaptureAggregate.ts:632) and in Python via [`GameEngine._apply_chain_capture`](ai-service/app/game_engine/__init__.py:2557).
 
 #### 2. Capture chains, state, and visited positions
 
@@ -477,7 +477,7 @@ For **enumeration** purposes, a lighter snapshot [`ChainCaptureStateSnapshot`](s
 - `currentPosition`: next segment origin.
 - `capturedThisChain: Position[]`: list of target positions already captured in this chain (stringified via `positionToString`).
 
-In Python, [`ChainCaptureState`](ai-service/app/models.py:1) mirrors the TS shape and is maintained by [`GameEngine._apply_chain_capture`](ai-service/app/game_engine.py:2557).
+In Python, [`ChainCaptureState`](ai-service/app/models.py:1) mirrors the TS shape and is maintained by [`GameEngine._apply_chain_capture`](ai-service/app/game_engine/__init__.py:2557).
 
 **Visited-set semantics (normative vs implementation):**
 
@@ -500,7 +500,7 @@ They are **not** used to constrain what the rules consider a legal chain.
 - The player chooses exactly one; the resulting partial chain is extended by one segment.
 - Different choices can lead to different subsequent availability of captures, lines, or territory.
 
-The semantic model therefore treats a full chain as a **path** in a tree whose edges are segments and whose branching factor is “number of legal segments from the current position”. This is reflected in TS by [`enumerateChainCaptureSegments`](src/shared/engine/aggregates/CaptureAggregate.ts:535) and in Python by [`GameEngine._get_capture_moves`](ai-service/app/game_engine.py:1595) when `game_state.chain_capture_state` is set.
+The semantic model therefore treats a full chain as a **path** in a tree whose edges are segments and whose branching factor is “number of legal segments from the current position”. This is reflected in TS by [`enumerateChainCaptureSegments`](src/shared/engine/aggregates/CaptureAggregate.ts:535) and in Python by [`GameEngine._get_capture_moves`](ai-service/app/game_engine/__init__.py:1595) when `game_state.chain_capture_state` is set.
 
 **Termination conditions for a chain:**
 
@@ -533,7 +533,7 @@ At the start of P's **movement/capture** step (after any mandatory or chosen pla
   - If `hasAnyNonCaptureMovement === false` and `hasAnyCapture === false` but P controls at least one stack: P must perform a **forced elimination** per [`RR-CANON-R100`](RULES_CANONICAL_SPEC.md:280) (eliminate an entire cap from a controlled stack).
   - If P controls no stacks and has no placements, they are temporarily inactive for that turn (see [`RR-CANON-R072`](RULES_CANONICAL_SPEC.md:193) and [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:437)).
 
-In TS, the global “does this player have any capture options?” predicate is implemented via shared helpers such as [`core.hasAnyLegalMoveOrCaptureFromOnBoard`](src/shared/engine/core.ts:367) and [`CaptureAggregate.enumerateAllCaptureMoves`](src/shared/engine/aggregates/CaptureAggregate.ts:498), and is used by the turn logic in [`TurnEngine.hasValidCaptures`](src/server/game/turn/TurnEngine.ts:1) and [`TurnEngine.hasValidActions`](src/server/game/turn/TurnEngine.ts:1). Python mirrors this via [`GameEngine._has_valid_captures`](ai-service/app/game_engine.py:1847) and [`GameEngine._has_valid_actions`](ai-service/app/game_engine.py:1855).
+In TS, the global “does this player have any capture options?” predicate is implemented via shared helpers such as [`core.hasAnyLegalMoveOrCaptureFromOnBoard`](src/shared/engine/core.ts:367) and [`CaptureAggregate.enumerateAllCaptureMoves`](src/shared/engine/aggregates/CaptureAggregate.ts:498), and is used by the turn logic in [`TurnEngine.hasValidCaptures`](src/server/game/turn/TurnEngine.ts:1) and [`TurnEngine.hasValidActions`](src/server/game/turn/TurnEngine.ts:1). Python mirrors this via [`GameEngine._has_valid_captures`](ai-service/app/game_engine/__init__.py:1847) and [`GameEngine._has_valid_actions`](ai-service/app/game_engine/__init__.py:1855).
 
 #### 4. Cycles and visited-set policy
 
@@ -578,7 +578,7 @@ Capture-chain semantics are identical across board types; only geometry changes.
     - Not collapsed.
     - Stack-free.
     - Markers are allowed as intermediates.
-  - Implemented in TS by [`validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:367) and in Python by `_validate_capture_segment_on_board_for_reachability` in [`GameEngine`](ai-service/app/game_engine.py:1091).
+  - Implemented in TS by [`validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:367) and in Python by `_validate_capture_segment_on_board_for_reachability` in [`GameEngine`](ai-service/app/game_engine/__init__.py:1091).
 - **Markers and collapsed spaces**:
   - Marker path-effects and landing-on-own-marker elimination do **not** depend on board type, only on path cells. The same marker semantics apply on square and hex boards.
 
@@ -942,7 +942,7 @@ Python already defines [`ChainCaptureState`](ai-service/app/models.py:1); hosts 
     - Constructs a default snapshot and delegates to `enumerate_chain_capture_segments_py`.
     - Returns `must_continue` and `available_continuations`.
 
-These functions will replace the inline enumeration logic currently in [`GameEngine._get_capture_moves`](ai-service/app/game_engine.py:1595), which should be reduced to a host adapter that:
+These functions will replace the inline enumeration logic currently in [`GameEngine._get_capture_moves`](ai-service/app/game_engine/__init__.py:1595), which should be reduced to a host adapter that:
 
 - Identifies the current attacker position (from `chain_capture_state` or last move).
 - Delegates segment enumeration to `enumerate_chain_capture_segments_py`.
@@ -957,8 +957,8 @@ These functions will replace the inline enumeration logic currently in [`GameEng
     - Purely applies a single capture segment to a **copy** of `state`, mirroring TS [`applyCaptureSegment`](src/shared/engine/aggregates/CaptureAggregate.ts:844).
     - Reuses:
       - [`BoardManager`](ai-service/app/board_manager.py:1) for stack/marker writes.
-      - [`GameEngine._process_markers_along_path`](ai-service/app/game_engine.py:971) for marker semantics.
-      - [`GameEngine._eliminate_top_ring_at`](ai-service/app/game_engine.py:1019) for landing-on-own-marker elimination.
+      - [`GameEngine._process_markers_along_path`](ai-service/app/game_engine/__init__.py:971) for marker semantics.
+      - [`GameEngine._eliminate_top_ring_at`](ai-service/app/game_engine/__init__.py:1019) for landing-on-own-marker elimination.
     - Computes `chainContinuationRequired` using `get_chain_capture_continuation_info_py` on the resulting state.
 
 - [`apply_capture_py()`](ai-service/app/rules/core.py:246)
@@ -1011,13 +1011,13 @@ The table below maps **current engine entry points** to the new canonical APIs d
 
 #### Python (ai-service)
 
-| Concern                                  | Current entry point                                                                                                                                                                                                             | Mapping to canonical API                                                                                                                                                                                                          | Behaviour notes                                                                                                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Capture validation                       | [`CaptureValidator.validate`](ai-service/app/rules/validators/capture.py:7)                                                                                                                                                     | Continue enforcing phase/turn/must-move checks, but delegate segment legality to shared functions (either `_validate_capture_segment_on_board_for_reachability` or the new `enumerate_capture_moves_py` for reachability checks). | No intended behaviour change; this just clarifies that geometry rules must remain centralised.                                                              |
-| Capture enumeration                      | [`GameEngine._get_capture_moves`](ai-service/app/game_engine.py:1595)                                                                                                                                                           | Reduce to a thin adapter over [`enumerate_chain_capture_segments_py`](ai-service/app/rules/core.py:246), using `chain_capture_state` (if present) or last move's `to` field to select `current_position`.                         | This removes the local ray-walk implementation and ensures TS–Python parity for capture reachability.                                                       |
-| Single-segment application               | [`GameEngine._apply_chain_capture`](ai-service/app/game_engine.py:2557)                                                                                                                                                         | Internally call [`apply_capture_segment_py`](ai-service/app/rules/core.py:246) or `apply_capture_py`, keeping hash and logging semantics local to `GameEngine`.                                                                   | Behaviour is already intended to match TS; any remaining edge cases (e.g. landing on opponent markers) will be aligned with TS during migration.            |
-| Mutator entry point                      | [`CaptureMutator.apply`](ai-service/app/rules/mutators/capture.py:6)                                                                                                                                                            | Delegate to `apply_capture_py` (or, during an intermediate phase, to `GameEngine.apply_move` which itself uses the canonical helpers).                                                                                            | No semantic change; this just removes duplication of capture application logic.                                                                             |
-| Forced-capture-only / forced elimination | [`GameEngine._has_valid_captures`](ai-service/app/game_engine.py:1847), [`GameEngine._has_valid_actions`](ai-service/app/game_engine.py:1855), [`GameEngine._get_forced_elimination_moves`](ai-service/app/game_engine.py:1952) | Ensure `has_valid_captures` uses `enumerate_chain_capture_segments_py` (or `enumerate_capture_moves_py`) for consistency with TS.                                                                                                 | Behaviour should remain the same; this task explicitly documents that forced elimination is only entered when **no** capture (or other real action) exists. |
+| Concern                                  | Current entry point                                                                                                                                                                                                                                        | Mapping to canonical API                                                                                                                                                                                                          | Behaviour notes                                                                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capture validation                       | [`CaptureValidator.validate`](ai-service/app/rules/validators/capture.py:7)                                                                                                                                                                                | Continue enforcing phase/turn/must-move checks, but delegate segment legality to shared functions (either `_validate_capture_segment_on_board_for_reachability` or the new `enumerate_capture_moves_py` for reachability checks). | No intended behaviour change; this just clarifies that geometry rules must remain centralised.                                                              |
+| Capture enumeration                      | [`GameEngine._get_capture_moves`](ai-service/app/game_engine/__init__.py:1595)                                                                                                                                                                             | Reduce to a thin adapter over [`enumerate_chain_capture_segments_py`](ai-service/app/rules/core.py:246), using `chain_capture_state` (if present) or last move's `to` field to select `current_position`.                         | This removes the local ray-walk implementation and ensures TS–Python parity for capture reachability.                                                       |
+| Single-segment application               | [`GameEngine._apply_chain_capture`](ai-service/app/game_engine/__init__.py:2557)                                                                                                                                                                           | Internally call [`apply_capture_segment_py`](ai-service/app/rules/core.py:246) or `apply_capture_py`, keeping hash and logging semantics local to `GameEngine`.                                                                   | Behaviour is already intended to match TS; any remaining edge cases (e.g. landing on opponent markers) will be aligned with TS during migration.            |
+| Mutator entry point                      | [`CaptureMutator.apply`](ai-service/app/rules/mutators/capture.py:6)                                                                                                                                                                                       | Delegate to `apply_capture_py` (or, during an intermediate phase, to `GameEngine.apply_move` which itself uses the canonical helpers).                                                                                            | No semantic change; this just removes duplication of capture application logic.                                                                             |
+| Forced-capture-only / forced elimination | [`GameEngine._has_valid_captures`](ai-service/app/game_engine/__init__.py:1847), [`GameEngine._has_valid_actions`](ai-service/app/game_engine/__init__.py:1855), [`GameEngine._get_forced_elimination_moves`](ai-service/app/game_engine/__init__.py:1952) | Ensure `has_valid_captures` uses `enumerate_chain_capture_segments_py` (or `enumerate_capture_moves_py`) for consistency with TS.                                                                                                 | Behaviour should remain the same; this task explicitly documents that forced elimination is only entered when **no** capture (or other real action) exists. |
 
 No behavioural changes are **intentionally** introduced by this migration; any differences discovered by:
 
@@ -1036,12 +1036,12 @@ must be treated as either:
 
 **Agent:** Architect
 
-**Input Dependencies:** P1.\*, shared placement helpers in [`core.ts`](src/shared/engine/core.ts) and TS placement aggregate, Python helpers in [`core.py`](ai-service/app/rules/core.py) and [`game_engine.py`](ai-service/app/game_engine.py)
+**Input Dependencies:** P1.\*, shared placement helpers in [`core.ts`](src/shared/engine/core.ts) and TS placement aggregate, Python helpers in [`core.py`](ai-service/app/rules/core.py) and [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py)
 
 **Acceptance Criteria:**
 
 - [x] Single documented algorithm for no-dead-placement, describing how hypothetical placement + future movement/capture from the placed stack must be evaluated. See **Section 6.2 "Shared No-Dead-Placement Core"** in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1) for the canonical description and host mappings.
-- [x] Mapping from TS placement aggregate and backend [`RuleEngine.ts`](src/server/game/RuleEngine.ts) behavior to Python's `_get_ring_placement_moves` and `_has_any_movement_or_capture_after_hypothetical_placement` in [`game_engine.py`](ai-service/app/game_engine.py), as documented in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1).
+- [x] Mapping from TS placement aggregate and backend [`RuleEngine.ts`](src/server/game/RuleEngine.ts) behavior to Python's `_get_ring_placement_moves` and `_has_any_movement_or_capture_after_hypothetical_placement` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), as documented in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1).
 - [ ] Alignment confirmed via a small set of cross-language test vectors focused on placements near board edges, next to collapsed spaces, and on tall stacks.
 
 **Deliverables:**
@@ -1059,7 +1059,7 @@ must be treated as either:
 
 - [x] Movement enumeration in backend [`RuleEngine.ts`](src/server/game/RuleEngine.ts) and sandbox movement helpers ([`sandboxMovement.ts`](src/client/sandbox/sandboxMovement.ts)) rely exclusively on shared, canonical movement helpers (MovementAggregate / `movementLogic`), rather than host-local geometry. Hosts construct lightweight board views and delegate to shared enumerators.
 - [x] Path-blocking and straight-line constraints (orthogonal/diagonal for square, axial for hex) are expressed only in shared code; host engines do not duplicate geometry checks. Backend `TurnEngine.hasValidMovements()` and sandbox gating both determine movement availability via `RuleEngine.getValidMoves` / shared enumerators instead of bespoke BFS.
-- [ ] Python non-capture movement helpers (`_get_movement_moves` and `_is_path_clear_for_movement` in [`game_engine.py`](ai-service/app/game_engine.py)) match the TS semantics per contract vectors for mixed stacks, markers along paths, and long-distance moves.
+- [ ] Python non-capture movement helpers (`_get_movement_moves` and `_is_path_clear_for_movement` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py)) match the TS semantics per contract vectors for mixed stacks, markers along paths, and long-distance moves.
 - [ ] 90%+ coverage on MovementAggregate and path helpers in TS tests.
 
 **Deliverables:**
@@ -1091,7 +1091,7 @@ must be treated as either:
 
 ### Placement Canonical Semantics & APIs (P2.1-ARCH Output)
 
-This section captures the **single source of truth** for ring placement semantics and placement APIs across all hosts. It is grounded in [`RR-CANON-R020`](RULES_CANONICAL_SPEC.md:71), [`RR-CANON-R070–R072`](RULES_CANONICAL_SPEC.md:191), [`RR-CANON-R080–R082`](RULES_CANONICAL_SPEC.md:221), [`RR-CANON-R090–R092`](RULES_CANONICAL_SPEC.md:244), [`RR-CANON-R100`](RULES_CANONICAL_SPEC.md:280), and [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:438), together with the shared no-dead-placement core described in [`RULES_ENGINE_ARCHITECTURE.md` §6.2](RULES_ENGINE_ARCHITECTURE.md:752). It reconciles existing TS behaviour in [`PlacementAggregate.ts`](src/shared/engine/aggregates/PlacementAggregate.ts:1), [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1), backend [`RuleEngine.ts`](src/server/game/RuleEngine.ts:1) / [`GameEngine.ts`](src/server/game/GameEngine.ts:1), sandbox [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1) / [`sandboxPlacement.ts`](src/client/sandbox/sandboxPlacement.ts:1), and Python behaviour in [`game_engine.py`](ai-service/app/game_engine.py:1), [`validators/placement.py`](ai-service/app/rules/validators/placement.py:1), and [`mutators/placement.py`](ai-service/app/rules/mutators/placement.py:1).
+This section captures the **single source of truth** for ring placement semantics and placement APIs across all hosts. It is grounded in [`RR-CANON-R020`](RULES_CANONICAL_SPEC.md:71), [`RR-CANON-R070–R072`](RULES_CANONICAL_SPEC.md:191), [`RR-CANON-R080–R082`](RULES_CANONICAL_SPEC.md:221), [`RR-CANON-R090–R092`](RULES_CANONICAL_SPEC.md:244), [`RR-CANON-R100`](RULES_CANONICAL_SPEC.md:280), and [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:438), together with the shared no-dead-placement core described in [`RULES_ENGINE_ARCHITECTURE.md` §6.2](RULES_ENGINE_ARCHITECTURE.md:752). It reconciles existing TS behaviour in [`PlacementAggregate.ts`](src/shared/engine/aggregates/PlacementAggregate.ts:1), [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1), backend [`RuleEngine.ts`](src/server/game/RuleEngine.ts:1) / [`GameEngine.ts`](src/server/game/GameEngine.ts:1), sandbox [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1) / [`sandboxPlacement.ts`](src/client/sandbox/sandboxPlacement.ts:1), and Python behaviour in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1), [`validators/placement.py`](ai-service/app/rules/validators/placement.py:1), and [`mutators/placement.py`](ai-service/app/rules/mutators/placement.py:1).
 
 #### 1. Overview & Goals
 
@@ -1162,7 +1162,7 @@ For any candidate `place_ring` move by player P into position `to` with `count �
   - Legal placement is:
     - `place_ring` with `count ∈ {1,2,3}` onto an empty cell.
     - In TS, this is validated by [`validatePlacementOnBoard()`](src/shared/engine/aggregates/PlacementAggregate.ts:1) using a [`PlacementContext`](src/shared/engine/aggregates/PlacementAggregate.ts:1).
-    - In Python, by `_get_ring_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1471) which enumerates `PLACE_RING` moves with allowed counts.
+    - In Python, by `_get_ring_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1471) which enumerates `PLACE_RING` moves with allowed counts.
   - Application semantics:
     - A new stack is created at `to` with `count` rings of P's colour at the top (and hence all of them).
     - `controllingPlayer` becomes P, `stackHeight = count`, `capHeight = count`.
@@ -1172,7 +1172,7 @@ For any candidate `place_ring` move by player P into position `to` with `count �
   - Application semantics:
     - Add exactly one P-colour ring **on top** of the existing ring list.
     - Recompute `controllingPlayer`, `stackHeight`, and `capHeight` according to [`RR-CANON-R022`](RULES_CANONICAL_SPEC.md:88).
-    - This is implemented in TS by [`applyPlacementOnBoard()`](src/shared/engine/aggregates/PlacementAggregate.ts:1) and in Python by `_apply_place_ring` in [`game_engine.py`](ai-service/app/game_engine.py:2216).
+    - This is implemented in TS by [`applyPlacementOnBoard()`](src/shared/engine/aggregates/PlacementAggregate.ts:1) and in Python by `_apply_place_ring` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:2216).
 - **Global own-colour caps:**
   - For each placement, P must satisfy [`RR-CANON-R020`](RULES_CANONICAL_SPEC.md:71):
     - After placement, the total number of rings of P's colour **in play** (in stacks anywhere on the board, plus in hand) must be ≤ `ringsPerPlayer[boardType]`.
@@ -1182,7 +1182,7 @@ For any candidate `place_ring` move by player P into position `to` with `count �
       - Current `ringsInHand[P]` and (optionally) a precomputed count of P-colour rings on board.
     - [`PlacementAggregate.validatePlacementOnBoard()`](src/shared/engine/aggregates/PlacementAggregate.ts:1) rejects placements that would exceed the cap.
   - In Python:
-    - `_estimate_rings_per_player` and `_count_rings_of_player_on_board` in [`game_engine.py`](ai-service/app/game_engine.py:1) implement equivalent checks in `_get_ring_placement_moves`.
+    - `_estimate_rings_per_player` and `_count_rings_of_player_on_board` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1) implement equivalent checks in `_get_ring_placement_moves`.
 
 ##### 2.4 Markers, Territory & board types
 
@@ -1216,7 +1216,7 @@ Board-type differences (square vs hex) affect only movement geometry used by NDP
   - Placement usage:
     - [`PlacementAggregate.validatePlacementOnBoard()`](src/shared/engine/aggregates/PlacementAggregate.ts:1) constructs a **hypothetical board** with the placement applied and calls `hasAnyLegalMoveOrCaptureFromOnBoard` at `to`.
     - If it returns `false`, the placement is rejected as "dead".
-- **Python analogue** – `_create_hypothetical_board_with_placement` and `_has_any_movement_or_capture_after_hypothetical_placement` in [`game_engine.py`](ai-service/app/game_engine.py:919):
+- **Python analogue** – `_create_hypothetical_board_with_placement` and `_has_any_movement_or_capture_after_hypothetical_placement` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:919):
   - `_create_hypothetical_board_with_placement`:
     - Clones the board and applies the candidate placement (empty vs stacked semantics).
   - `_has_any_movement_or_capture_after_hypothetical_placement`:
@@ -1253,7 +1253,7 @@ Board-type differences (square vs hex) affect only movement geometry used by NDP
       - Hosts **must not** rely on `skip_placement` being exposed when `ringsInHand == 0`.
       - Backend and Python rules services should continue to follow the canonical conditions above.
 - **Python behaviour:**
-  - `_get_skip_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1):
+  - `_get_skip_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1):
     - Enumerates a single `SKIP_PLACEMENT` move exactly under the canonical conditions.
   - [`PlacementValidator.validate()`](ai-service/app/rules/validators/placement.py:1):
     - Delegates skip-placement legality to `_get_skip_placement_moves`.
@@ -1268,7 +1268,7 @@ Board-type differences (square vs hex) affect only movement geometry used by NDP
   - At the start of P's action for a turn (after any mandatory placement has been applied), compute:
     - `hasValidPlacements` – using canonical placement enumerators:
       - TS: [`PlacementAggregate.enumeratePlacementPositions()`](src/shared/engine/aggregates/PlacementAggregate.ts:1) or equivalent host wrapper used by [`TurnLogicDelegates.hasAnyPlacement`](src/shared/engine/turnLogic.ts:132).
-      - Python: `_get_ring_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1471), wrapped by `_has_valid_placements`.
+      - Python: `_get_ring_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1471), wrapped by `_has_valid_placements`.
     - `hasValidMovement` – any legal non-capture moves from stacks.
     - `hasValidCaptures` – any overtaking capture moves from stacks.
   - If P controls at least one stack and
@@ -1289,7 +1289,7 @@ Board-type differences (square vs hex) affect only movement geometry used by NDP
   - Forced eliminations are not real actions; skip-placement is not a real action.
   - Engine-level LPS helpers:
     - TS backend: `hasAnyRealActionForPlayer` in [`GameEngine.ts`](src/server/game/GameEngine.ts:1) and LPS helpers in [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132).
-    - Python: `_has_real_action_for_player` and LPS logic in `_check_victory` in [`game_engine.py`](ai-service/app/game_engine.py:1).
+    - Python: `_has_real_action_for_player` and LPS logic in `_check_victory` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1).
   - These helpers must base their "real action" checks on the same canonical placement and movement/capture enumerators described above.
 
 #### 3. Worked Examples
@@ -1529,12 +1529,12 @@ Proposed dataclasses (Pythonic analogues of §4.1):
     - `def validate_placement_on_board_py(board, pos, requested_count, ctx: PlacementContextPy) -> PlacementValidationResultPy: ...`
   - Behaviour:
     - Performs structural and cap checks equivalent to [`validatePlacementOnBoard()`](src/shared/engine/aggregates/PlacementAggregate.ts:1).
-    - Uses `_create_hypothetical_board_with_placement` and `_has_any_movement_or_capture_after_hypothetical_placement` from [`game_engine.py`](ai-service/app/game_engine.py:919) to enforce NDP.
+    - Uses `_create_hypothetical_board_with_placement` and `_has_any_movement_or_capture_after_hypothetical_placement` from [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:919) to enforce NDP.
 - [`enumerate_placement_moves_py()`](ai-service/app/rules/placement.py:1)
   - Signature (conceptual):
     - `def enumerate_placement_moves_py(state: GameState, player: int) -> list[Move]: ...`
   - Behaviour:
-    - Wraps `_get_ring_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1471) and returns a list of `Move` objects of type `PLACE_RING`.
+    - Wraps `_get_ring_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1471) and returns a list of `Move` objects of type `PLACE_RING`.
     - Intended for:
       - AI search.
       - Forced-elimination gating.
@@ -1543,7 +1543,7 @@ Proposed dataclasses (Pythonic analogues of §4.1):
   - Signature (conceptual):
     - `def evaluate_skip_placement_eligibility_py(state: GameState, player: int) -> SkipPlacementEligibilityResultPy: ...`
   - Behaviour:
-    - Wraps `_get_skip_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1):
+    - Wraps `_get_skip_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1):
       - `canSkip` is true iff `_get_skip_placement_moves` returns a non-empty list.
       - `reason` is derived from the canonical conditions in §2.6.
 
@@ -1553,7 +1553,7 @@ Proposed dataclasses (Pythonic analogues of §4.1):
   - Signature (conceptual):
     - `def apply_place_ring_py(state: GameState, move: Move) -> GameState: ...`
   - Behaviour:
-    - Thin wrapper around `_apply_place_ring` in [`game_engine.py`](ai-service/app/game_engine.py:2216).
+    - Thin wrapper around `_apply_place_ring` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:2216).
     - Applies the placement, decrements `rings_in_hand`, and returns the new state.
 - Integration points:
   - [`PlacementValidator`](ai-service/app/rules/validators/placement.py:1):
@@ -1589,13 +1589,13 @@ The table below maps major placement-related entry points to the canonical APIs 
 
 ##### Python (ai-service)
 
-| Concern                          | Current entry point                                                                   | Mapping to canonical API                                                                                                                                                              | Behaviour notes                                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Placement move enumeration       | `_get_ring_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1471) | Treat as the canonical implementation underlying [`enumerate_placement_moves_py()`](ai-service/app/rules/placement.py:1).                                                             | No change in behaviour; this spec formalises its role as the Python placement SSoT.                  |
-| Skip-placement enumeration       | `_get_skip_placement_moves` in [`game_engine.py`](ai-service/app/game_engine.py:1)    | Treat as the canonical implementation underlying [`evaluate_skip_placement_eligibility_py()`](ai-service/app/rules/placement.py:1).                                                   | Confirms alignment with RR-CANON-R080; no changes needed.                                            |
-| Placement validation entry point | [`PlacementValidator.validate`](ai-service/app/rules/validators/placement.py:1)       | Delegate structural, cap, and NDP checks to [`validate_placement_on_board_py()`](ai-service/app/rules/placement.py:1); keep phase/turn/must-move checks locally.                      | Tightens validator behaviour to match TS; per-player caps become explicitly enforced here.           |
-| Placement mutator entry point    | [`PlacementMutator.apply`](ai-service/app/rules/mutators/placement.py:1)              | Thin wrapper over [`apply_place_ring_py()`](ai-service/app/rules/placement.py:1) and, indirectly, `_apply_place_ring` in [`game_engine.py`](ai-service/app/game_engine.py:2216).      | Behaviour remains the same; the façade just clarifies the semantic boundary.                         |
-| Forced-elimination gating        | `_has_valid_placements` in [`game_engine.py`](ai-service/app/game_engine.py:1)        | Implement via [`enumerate_placement_moves_py()`](ai-service/app/rules/placement.py:1) (or `_get_ring_placement_moves`) so that "no legal placements" is defined consistently with TS. | Ensures forced elimination in Python uses the same notion of "legal placement" as TS, including NDP. |
+| Concern                          | Current entry point                                                                                     | Mapping to canonical API                                                                                                                                                                           | Behaviour notes                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Placement move enumeration       | `_get_ring_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1471) | Treat as the canonical implementation underlying [`enumerate_placement_moves_py()`](ai-service/app/rules/placement.py:1).                                                                          | No change in behaviour; this spec formalises its role as the Python placement SSoT.                  |
+| Skip-placement enumeration       | `_get_skip_placement_moves` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1)    | Treat as the canonical implementation underlying [`evaluate_skip_placement_eligibility_py()`](ai-service/app/rules/placement.py:1).                                                                | Confirms alignment with RR-CANON-R080; no changes needed.                                            |
+| Placement validation entry point | [`PlacementValidator.validate`](ai-service/app/rules/validators/placement.py:1)                         | Delegate structural, cap, and NDP checks to [`validate_placement_on_board_py()`](ai-service/app/rules/placement.py:1); keep phase/turn/must-move checks locally.                                   | Tightens validator behaviour to match TS; per-player caps become explicitly enforced here.           |
+| Placement mutator entry point    | [`PlacementMutator.apply`](ai-service/app/rules/mutators/placement.py:1)                                | Thin wrapper over [`apply_place_ring_py()`](ai-service/app/rules/placement.py:1) and, indirectly, `_apply_place_ring` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:2216). | Behaviour remains the same; the façade just clarifies the semantic boundary.                         |
+| Forced-elimination gating        | `_has_valid_placements` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1)        | Implement via [`enumerate_placement_moves_py()`](ai-service/app/rules/placement.py:1) (or `_get_ring_placement_moves`) so that "no legal placements" is defined consistently with TS.              | Ensures forced elimination in Python uses the same notion of "legal placement" as TS, including NDP. |
 
 #### 7. Documented Deviations & Behaviour Changes
 
@@ -1640,13 +1640,13 @@ These deviations and clarifications are considered part of the canonical placeme
 
 **Agent:** Architect
 
-**Input Dependencies:** P2.\*, existing [`lineDetection.ts`](src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts), Python line helpers in [`game_engine.py`](ai-service/app/game_engine.py) and `ai-service/app/rules/mutators/line.py`
+**Input Dependencies:** P2.\*, existing [`lineDetection.ts`](src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts), Python line helpers in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py) and `ai-service/app/rules/mutators/line.py`
 
 **Acceptance Criteria:**
 
 - [ ] A single documented definition of "valid line" (directions, minimum length by board type, disqualifying content such as stacks or collapsed spaces) with examples for each board type.
 - [ ] Line decision model standardized: "process line" and "choose reward" decisions, including default behaviors for overlength lines in auto-play contexts.
-- [ ] Mapping written from TS line decisions to Python `_get_line_processing_moves` and `_apply_line_formation` in [`game_engine.py`](ai-service/app/game_engine.py), highlighting any currently differing behaviors (e.g. elimination side-effects, territory counters).
+- [ ] Mapping written from TS line decisions to Python `_get_line_processing_moves` and `_apply_line_formation` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py), highlighting any currently differing behaviors (e.g. elimination side-effects, territory counters).
 
 **Deliverables:**
 
@@ -1680,7 +1680,7 @@ These deviations and clarifications are considered part of the canonical placeme
 **Acceptance Criteria:**
 
 - [ ] Backend and sandbox territory region detection and Q23 gating both funnel through shared helpers (`filterProcessableTerritoryRegions`, `applyTerritoryRegion`, and decision helpers), with host-specific code limited to interaction and history.
-- [ ] Python territory logic (`_get_territory_processing_moves`, `_apply_territory_claim`, `_can_process_disconnected_region` in [`game_engine.py`](ai-service/app/game_engine.py) and `mutators/territory.py`) is verified against TS via contract vectors for simple regions, complex regions, and Q23 edge cases.
+- [ ] Python territory logic (`_get_territory_processing_moves`, `_apply_territory_claim`, `_can_process_disconnected_region` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py) and `mutators/territory.py`) is verified against TS via contract vectors for simple regions, complex regions, and Q23 edge cases.
 - [ ] All territory-related tests (e.g. `tests/unit/GameEngine.territoryDisconnection.test.ts`, `tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts`, `ai-service/tests/test_territory_forced_elimination_divergence.py`) pass and show converging behavior across engines.
 
 **Deliverables:**
@@ -1699,7 +1699,7 @@ These deviations and clarifications are considered part of the canonical placeme
 **Acceptance Criteria:**
 
 - [ ] Fully specified state machine for phase transitions (ring_placement, movement, capture, chain_capture, line_processing, territory_processing, terminal states), including forced elimination points and chain-capture handling.
-- [ ] Documented mapping from backend turn lifecycle (in [`GameEngine.ts`](src/server/game/GameEngine.ts) and [`TurnEngine.ts`](src/server/game/turn/TurnEngine.ts)), sandbox lifecycle (in [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts)), and Python lifecycle (`_update_phase`, `_end_turn` in [`game_engine.py`](ai-service/app/game_engine.py)) to the canonical state machine.
+- [ ] Documented mapping from backend turn lifecycle (in [`GameEngine.ts`](src/server/game/GameEngine.ts) and [`TurnEngine.ts`](src/server/game/turn/TurnEngine.ts)), sandbox lifecycle (in [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts)), and Python lifecycle (`_update_phase`, `_end_turn` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py)) to the canonical state machine.
 - [ ] Identification of any edge cases currently handled differently (e.g. capturing then immediate forced elimination vs next-turn-only).
 
 **Deliverables:**
@@ -1718,7 +1718,7 @@ These deviations and clarifications are considered part of the canonical placeme
 - [ ] Shared turn orchestrator explicitly owns LPS round tracking and forced-elimination gating, rather than duplicating in backend/sandbox/Python.
 - [ ] Backend LPS helpers and forced-elimination flows in [`GameEngine.ts`](src/server/game/GameEngine.ts) and [`TurnEngine.ts`](src/server/game/turn/TurnEngine.ts) are slim wrappers around shared logic.
 - [ ] Sandbox LPS bookkeeping (`_updateLpsRoundTrackingForCurrentPlayer`, `_lps*` fields in [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts)) is either removed or trivially delegated to the shared orchestrator via [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts).
-- [ ] Python LPS helpers (`_has_real_action_for_player`, `_update_lps_round_tracking_for_current_player`, LPS portion of `_check_victory` in [`game_engine.py`](ai-service/app/game_engine.py)) are aligned with canonical definitions via contract tests.
+- [ ] Python LPS helpers (`_has_real_action_for_player`, `_update_lps_round_tracking_for_current_player`, LPS portion of `_check_victory` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py)) are aligned with canonical definitions via contract tests.
 - [ ] Existing invariant tests (`ai-service/tests/invariants/test_active_no_moves_*`, strict no-move invariant in Python, any TS invariant soak tests in `STRICT_INVARIANT_SOAKS.md`) pass.
 
 **Deliverables:**
@@ -1750,7 +1750,7 @@ These deviations and clarifications are considered part of the canonical placeme
 
 **Agent:** Architect
 
-**Input Dependencies:** P1–P4, [`VictoryAggregate.ts`](src/shared/engine/aggregates/VictoryAggregate.ts), Python `_check_victory` in [`game_engine.py`](ai-service/app/game_engine.py)
+**Input Dependencies:** P1–P4, [`VictoryAggregate.ts`](src/shared/engine/aggregates/VictoryAggregate.ts), Python `_check_victory` in [`game_engine/__init__.py`](ai-service/app/game_engine/__init__.py)
 
 **Acceptance Criteria:**
 

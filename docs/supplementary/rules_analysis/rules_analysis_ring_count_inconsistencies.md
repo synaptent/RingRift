@@ -40,7 +40,7 @@ Primary rulebook references reflect **18 / 72 / 96**:
   - hex8: 18
   - square19: 72
   - hexagonal: 96
-- **`ai-service/app/game_engine.py`** reads ring caps from `app.rules.core.BOARD_CONFIGS` for TS-aligned semantics.
+- **`ai-service/app/game_engine/__init__.py`** reads ring caps from `app.rules.core.BOARD_CONFIGS` for TS-aligned semantics.
 
 ### 4. Test Fixtures & Analysis Docs
 

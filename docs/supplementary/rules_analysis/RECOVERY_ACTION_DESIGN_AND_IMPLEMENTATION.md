@@ -336,7 +336,7 @@ The following files contain recovery action implementation and should be extract
 | ------------------------------------------- | ----------- | -------------------------- |
 | `src/shared/engine/fsm/FSMAdapter.ts`       | Modified    | Recovery phase integration |
 | `src/shared/engine/fsm/TurnStateMachine.ts` | Modified    | Recovery state transitions |
-| `ai-service/app/game_engine.py`             | Modified    | Python engine integration  |
+| `ai-service/app/game_engine/__init__.py`    | Modified    | Python engine integration  |
 | `tests/unit/fsm/TurnStateMachine.test.ts`   | Modified    | FSM tests for recovery     |
 | `tests/utils/fixtures.ts`                   | Modified    | Test fixtures              |
 

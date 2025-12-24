@@ -87,7 +87,7 @@ class BoardState(BaseModel):
 
 ### 1.3 Current apply_move Bottleneck
 
-From [`ai-service/app/game_engine.py:117-268`](../app/game_engine.py:117):
+From [`ai-service/app/game_engine/__init__.py:117-268`](../app/game_engine/__init__.py:117):
 
 ```python
 def apply_move(game_state: GameState, move: Move) -> GameState:
@@ -1041,7 +1041,7 @@ The pattern is now enabled by default via `AIConfig.use_incremental_search`.
 ## 11. References
 
 - [`ai-service/app/models/core.py`](../app/models/core.py) - GameState, BoardState, Move definitions
-- [`ai-service/app/game_engine.py`](../app/game_engine.py) - Current apply_move implementation
+- [`ai-service/app/game_engine/__init__.py`](../app/game_engine/__init__.py) - Current apply_move implementation
 - [`ai-service/app/ai/minimax_ai.py`](../app/ai/minimax_ai.py) - Primary consumer (lines 137-141 bottleneck)
 - [`ai-service/app/ai/mcts_ai.py`](../app/ai/mcts_ai.py) - Secondary consumer
 - [`ai-service/app/ai/zobrist.py`](../app/ai/zobrist.py) - Zobrist hash implementation

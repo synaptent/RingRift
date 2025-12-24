@@ -515,7 +515,7 @@ The dedicated parity CI gate runs on PRs that modify:
 - `src/shared/engine/**` (TS engine)
 - `src/client/sandbox/**` (TS sandbox)
 - `ai-service/app/rules/**` (Python rules)
-- `ai-service/app/game_engine.py` (Python engine)
+- `ai-service/app/game_engine/__init__.py` (Python engine)
 - `ai-service/app/db/game_replay.py` (Python replay DB)
 - Canonical databases and parity scripts
 

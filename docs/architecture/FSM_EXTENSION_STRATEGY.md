@@ -44,7 +44,7 @@ This document tracks the FSM extension roadmap, now largely complete.
 | ------------------------------------------------------ | -------------------------------------------------- |
 | `src/shared/engine/orchestration/phaseStateMachine.ts` | Legacy phase transition helpers (being superseded) |
 | `ai-service/app/rules/history_contract.py`             | Python phase↔move contract (must mirror FSM)       |
-| `ai-service/app/game_engine.py`                        | Python GameEngine (parity target)                  |
+| `ai-service/app/game_engine/__init__.py`               | Python GameEngine (parity target)                  |
 
 ---
 
@@ -115,16 +115,16 @@ This document tracks the FSM extension roadmap, now largely complete.
 
 **Goal:** Align Python phase machine to TS FSM transitions exactly.
 
-| Task                                          | Status  | Files                            |
-| --------------------------------------------- | ------- | -------------------------------- |
-| Mirror FSM transition table in Python         | ✅ Done | `ai-service/app/rules/fsm.py`    |
-| Add `FSMDecisionSurface` equivalent in Python | ✅ Done | `ai-service/app/rules/fsm.py`    |
-| Add `FSMOrchestrationResult` in Python        | ✅ Done | `ai-service/app/rules/fsm.py`    |
-| Add `compute_fsm_orchestration()` function    | ✅ Done | `ai-service/app/rules/fsm.py`    |
-| Add `compare_fsm_with_legacy()` function      | ✅ Done | `ai-service/app/rules/fsm.py`    |
-| Update Python FSM parity tests                | ✅ Done | `tests/rules/test_fsm_parity.py` |
-| Graduate Python FSM as canonical              | ✅ Done | `ai-service/app/rules/fsm.py`    |
-| Wire `GameEngine._update_phase` to FSM        | ✅ Done | `ai-service/app/game_engine.py`  |
+| Task                                          | Status  | Files                                    |
+| --------------------------------------------- | ------- | ---------------------------------------- |
+| Mirror FSM transition table in Python         | ✅ Done | `ai-service/app/rules/fsm.py`            |
+| Add `FSMDecisionSurface` equivalent in Python | ✅ Done | `ai-service/app/rules/fsm.py`            |
+| Add `FSMOrchestrationResult` in Python        | ✅ Done | `ai-service/app/rules/fsm.py`            |
+| Add `compute_fsm_orchestration()` function    | ✅ Done | `ai-service/app/rules/fsm.py`            |
+| Add `compare_fsm_with_legacy()` function      | ✅ Done | `ai-service/app/rules/fsm.py`            |
+| Update Python FSM parity tests                | ✅ Done | `tests/rules/test_fsm_parity.py`         |
+| Graduate Python FSM as canonical              | ✅ Done | `ai-service/app/rules/fsm.py`            |
+| Wire `GameEngine._update_phase` to FSM        | ✅ Done | `ai-service/app/game_engine/__init__.py` |
 
 **Outcome:**
 

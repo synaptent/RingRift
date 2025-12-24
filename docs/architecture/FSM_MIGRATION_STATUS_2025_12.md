@@ -73,7 +73,7 @@
 #### Python Parity
 
 - `ai-service/app/rules/fsm.py` - Python FSM implementation
-- `ai-service/app/game_engine.py` - `_update_phase` uses FSM
+- `ai-service/app/game_engine/__init__.py` - `_update_phase` uses FSM
 - 28 Python FSM parity tests passing
 
 #### Testing Infrastructure
@@ -200,7 +200,7 @@ graph TB
 
     subgraph "Python Parity"
         PFSM[fsm.py<br/>Python FSM mirror]
-        PGE[game_engine.py<br/>_update_phase]
+        PGE[game_engine/__init__.py<br/>_update_phase]
         PFSM --> PGE
     end
 

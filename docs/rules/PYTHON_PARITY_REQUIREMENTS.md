@@ -126,23 +126,23 @@ AI‑only concern.
 
 ### 2.1 Core Utilities
 
-| TS Function                                                             | TS File   | Python Function                                                                                  | Python File        | Parity Status | Notes                |
-| ----------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------ | ------------------ | ------------- | -------------------- |
-| [`calculateCapHeight()`](../src/shared/engine/core.ts)                  | `core.ts` | [`calculate_cap_height()`](../ai-service/app/rules/core.py:58)                                   | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`calculateDistance()`](../src/shared/engine/core.ts)                   | `core.ts` | [`calculate_distance()`](../ai-service/app/rules/core.py:76)                                     | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`getPathPositions()`](../src/shared/engine/core.ts)                    | `core.ts` | [`get_path_positions()`](../ai-service/app/rules/core.py:94)                                     | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`hashGameState()`](../src/shared/engine/core.ts)                       | `core.ts` | [`hash_game_state()`](../ai-service/app/rules/core.py:208)                                       | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`summarizeBoard()`](../src/shared/engine/core.ts)                      | `core.ts` | [`summarize_board()`](../ai-service/app/rules/core.py:127)                                       | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`computeProgressSnapshot()`](../src/shared/engine/core.ts)             | `core.ts` | [`compute_progress_snapshot()`](../ai-service/app/rules/core.py:157)                             | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`countRingsInPlayForPlayer()`](../src/shared/engine/core.ts)           | `core.ts` | [`count_rings_in_play_for_player()`](../ai-service/app/rules/core.py:179)                        | `core.py`          | ✅ MATCHED    | Direct port          |
-| [`countRingsOnBoardForPlayer()`](../src/shared/engine/core.ts)          | `core.ts` | -                                                                                                | -                  | ⚠️ MISSING    | Computed inline      |
-| [`getMovementDirectionsForBoardType()`](../src/shared/engine/core.ts)   | `core.ts` | [`_get_all_directions()`](../ai-service/app/board_manager.py)                                    | `board_manager.py` | ✅ MATCHED    | Different location   |
-| [`applyMarkerEffectsAlongPathOnBoard()`](../src/shared/engine/core.ts)  | `core.ts` | [`_process_markers_along_path()`](../ai-service/app/game_engine.py:971)                          | `game_engine.py`   | ✅ MATCHED    | Different name       |
-| [`hasAnyLegalMoveOrCaptureFromOnBoard()`](../src/shared/engine/core.ts) | `core.ts` | [`_has_any_legal_move_or_capture_from_on_board()`](../ai-service/app/game_engine.py:1205)        | `game_engine.py`   | ✅ MATCHED    | Direct port          |
-| [`validateCaptureSegmentOnBoard()`](../src/shared/engine/core.ts)       | `core.ts` | [`_validate_capture_segment_on_board_for_reachability()`](../ai-service/app/game_engine.py:1090) | `game_engine.py`   | ✅ MATCHED    | Different name       |
-| `positionToString()`                                                    | `game.ts` | [`Position.to_key()`](../ai-service/app/models.py)                                               | `models.py`        | ✅ MATCHED    | Method style         |
-| `stringToPosition()`                                                    | `game.ts` | -                                                                                                | -                  | ⚠️ MISSING    | Not needed in Python |
-| `positionsEqual()`                                                      | `game.ts` | `==` operator                                                                                    | -                  | ✅ MATCHED    | Via Pydantic         |
+| TS Function                                                             | TS File   | Python Function                                                                                           | Python File               | Parity Status | Notes                |
+| ----------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------- | ------------------------- | ------------- | -------------------- |
+| [`calculateCapHeight()`](../src/shared/engine/core.ts)                  | `core.ts` | [`calculate_cap_height()`](../ai-service/app/rules/core.py:58)                                            | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`calculateDistance()`](../src/shared/engine/core.ts)                   | `core.ts` | [`calculate_distance()`](../ai-service/app/rules/core.py:76)                                              | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`getPathPositions()`](../src/shared/engine/core.ts)                    | `core.ts` | [`get_path_positions()`](../ai-service/app/rules/core.py:94)                                              | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`hashGameState()`](../src/shared/engine/core.ts)                       | `core.ts` | [`hash_game_state()`](../ai-service/app/rules/core.py:208)                                                | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`summarizeBoard()`](../src/shared/engine/core.ts)                      | `core.ts` | [`summarize_board()`](../ai-service/app/rules/core.py:127)                                                | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`computeProgressSnapshot()`](../src/shared/engine/core.ts)             | `core.ts` | [`compute_progress_snapshot()`](../ai-service/app/rules/core.py:157)                                      | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`countRingsInPlayForPlayer()`](../src/shared/engine/core.ts)           | `core.ts` | [`count_rings_in_play_for_player()`](../ai-service/app/rules/core.py:179)                                 | `core.py`                 | ✅ MATCHED    | Direct port          |
+| [`countRingsOnBoardForPlayer()`](../src/shared/engine/core.ts)          | `core.ts` | -                                                                                                         | -                         | ⚠️ MISSING    | Computed inline      |
+| [`getMovementDirectionsForBoardType()`](../src/shared/engine/core.ts)   | `core.ts` | [`_get_all_directions()`](../ai-service/app/board_manager.py)                                             | `board_manager.py`        | ✅ MATCHED    | Different location   |
+| [`applyMarkerEffectsAlongPathOnBoard()`](../src/shared/engine/core.ts)  | `core.ts` | [`_process_markers_along_path()`](../ai-service/app/game_engine/__init__.py:971)                          | `game_engine/__init__.py` | ✅ MATCHED    | Different name       |
+| [`hasAnyLegalMoveOrCaptureFromOnBoard()`](../src/shared/engine/core.ts) | `core.ts` | [`_has_any_legal_move_or_capture_from_on_board()`](../ai-service/app/game_engine/__init__.py:1205)        | `game_engine/__init__.py` | ✅ MATCHED    | Direct port          |
+| [`validateCaptureSegmentOnBoard()`](../src/shared/engine/core.ts)       | `core.ts` | [`_validate_capture_segment_on_board_for_reachability()`](../ai-service/app/game_engine/__init__.py:1090) | `game_engine/__init__.py` | ✅ MATCHED    | Different name       |
+| `positionToString()`                                                    | `game.ts` | [`Position.to_key()`](../ai-service/app/models.py)                                                        | `models.py`               | ✅ MATCHED    | Method style         |
+| `stringToPosition()`                                                    | `game.ts` | -                                                                                                         | -                         | ⚠️ MISSING    | Not needed in Python |
+| `positionsEqual()`                                                      | `game.ts` | `==` operator                                                                                             | -                         | ✅ MATCHED    | Via Pydantic         |
 
 ### 2.2 Placement Domain
 
@@ -150,57 +150,57 @@ AI‑only concern.
 | ------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------ | ------------------------- | ------------- | --------------- |
 | [`validatePlacementOnBoard()`](../src/shared/engine/validators/PlacementValidator.ts) | `PlacementValidator.ts` | [`PlacementValidator.validate()`](../ai-service/app/rules/validators/placement.py:7) | `validators/placement.py` | ✅ MATCHED    | Reimplemented   |
 | [`validatePlacement()`](../src/shared/engine/validators/PlacementValidator.ts)        | `PlacementValidator.ts` | [`PlacementValidator.validate()`](../ai-service/app/rules/validators/placement.py:7) | `validators/placement.py` | ✅ MATCHED    | Combined        |
-| [`validateSkipPlacement()`](../src/shared/engine/validators/PlacementValidator.ts)    | `PlacementValidator.ts` | [`_get_skip_placement_moves()`](../ai-service/app/game_engine.py:1407)               | `game_engine.py`          | ✅ MATCHED    | Via enumeration |
-| [`applyPlacementMove()`](../src/shared/engine/placementHelpers.ts)                    | `placementHelpers.ts`   | [`GameEngine._apply_place_ring()`](../ai-service/app/game_engine.py:2306)            | `game_engine.py`          | ✅ MATCHED    | Different name  |
-| [`evaluateSkipPlacementEligibility()`](../src/shared/engine/placementHelpers.ts)      | `placementHelpers.ts`   | [`_get_skip_placement_moves()`](../ai-service/app/game_engine.py:1407)               | `game_engine.py`          | ✅ MATCHED    | Combined        |
+| [`validateSkipPlacement()`](../src/shared/engine/validators/PlacementValidator.ts)    | `PlacementValidator.ts` | [`_get_skip_placement_moves()`](../ai-service/app/game_engine/__init__.py:1407)      | `game_engine/__init__.py` | ✅ MATCHED    | Via enumeration |
+| [`applyPlacementMove()`](../src/shared/engine/placementHelpers.ts)                    | `placementHelpers.ts`   | [`GameEngine._apply_place_ring()`](../ai-service/app/game_engine/__init__.py:2306)   | `game_engine/__init__.py` | ✅ MATCHED    | Different name  |
+| [`evaluateSkipPlacementEligibility()`](../src/shared/engine/placementHelpers.ts)      | `placementHelpers.ts`   | [`_get_skip_placement_moves()`](../ai-service/app/game_engine/__init__.py:1407)      | `game_engine/__init__.py` | ✅ MATCHED    | Combined        |
 
 ### 2.3 Movement Domain
 
-| TS Function                                                                      | TS File                | Python Function                                                                    | Python File              | Parity Status | Notes          |
-| -------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------- | ------------------------ | ------------- | -------------- |
-| [`enumerateSimpleMoveTargetsFromStack()`](../src/shared/engine/movementLogic.ts) | `movementLogic.ts`     | [`_get_movement_moves()`](../ai-service/app/game_engine.py:2183)                   | `game_engine.py`         | ✅ MATCHED    | Returns Move[] |
-| [`validateMovement()`](../src/shared/engine/validators/MovementValidator.ts)     | `MovementValidator.ts` | [`MovementValidator.validate()`](../ai-service/app/rules/validators/movement.py:8) | `validators/movement.py` | ✅ MATCHED    | Reimplemented  |
+| TS Function                                                                      | TS File                | Python Function                                                                    | Python File               | Parity Status | Notes          |
+| -------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------- | ------------------------- | ------------- | -------------- |
+| [`enumerateSimpleMoveTargetsFromStack()`](../src/shared/engine/movementLogic.ts) | `movementLogic.ts`     | [`_get_movement_moves()`](../ai-service/app/game_engine/__init__.py:2183)          | `game_engine/__init__.py` | ✅ MATCHED    | Returns Move[] |
+| [`validateMovement()`](../src/shared/engine/validators/MovementValidator.ts)     | `MovementValidator.ts` | [`MovementValidator.validate()`](../ai-service/app/rules/validators/movement.py:8) | `validators/movement.py`  | ✅ MATCHED    | Reimplemented  |
 
 ### 2.4 Capture Domain
 
-| TS Function                                                                | TS File               | Python Function                                                                  | Python File             | Parity Status | Notes         |
-| -------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------- | ----------------------- | ------------- | ------------- |
-| [`enumerateCaptureMoves()`](../src/shared/engine/captureLogic.ts)          | `captureLogic.ts`     | [`_get_capture_moves()`](../ai-service/app/game_engine.py:1594)                  | `game_engine.py`        | ✅ MATCHED    | Direct port   |
-| [`validateCapture()`](../src/shared/engine/validators/CaptureValidator.ts) | `CaptureValidator.ts` | [`CaptureValidator.validate()`](../ai-service/app/rules/validators/capture.py:8) | `validators/capture.py` | ✅ MATCHED    | Reimplemented |
+| TS Function                                                                | TS File               | Python Function                                                                  | Python File               | Parity Status | Notes         |
+| -------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------- | ------------------------- | ------------- | ------------- |
+| [`enumerateCaptureMoves()`](../src/shared/engine/captureLogic.ts)          | `captureLogic.ts`     | [`_get_capture_moves()`](../ai-service/app/game_engine/__init__.py:1594)         | `game_engine/__init__.py` | ✅ MATCHED    | Direct port   |
+| [`validateCapture()`](../src/shared/engine/validators/CaptureValidator.ts) | `CaptureValidator.ts` | [`CaptureValidator.validate()`](../ai-service/app/rules/validators/capture.py:8) | `validators/capture.py`   | ✅ MATCHED    | Reimplemented |
 
 ### 2.5 Line Domain
 
-| TS Function                                                                       | TS File                  | Python Function                                                               | Python File        | Parity Status | Notes              |
-| --------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- | ------------------ | ------------- | ------------------ |
-| [`findAllLines()`](../src/shared/engine/lineDetection.ts)                         | `lineDetection.ts`       | [`BoardManager.find_all_lines()`](../ai-service/app/board_manager.py)         | `board_manager.py` | ✅ MATCHED    | Different location |
-| [`findLinesForPlayer()`](../src/shared/engine/lineDetection.ts)                   | `lineDetection.ts`       | Filtered from `find_all_lines()`                                              | `board_manager.py` | ✅ MATCHED    | Inline filter      |
-| [`enumerateProcessLineMoves()`](../src/shared/engine/lineDecisionHelpers.ts)      | `lineDecisionHelpers.ts` | [`_get_line_processing_moves()`](../ai-service/app/game_engine.py:2022)       | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`enumerateChooseLineRewardMoves()`](../src/shared/engine/lineDecisionHelpers.ts) | `lineDecisionHelpers.ts` | [`_get_line_processing_moves()`](../ai-service/app/game_engine.py:2022)       | `game_engine.py`   | ⚠️ PARTIAL    | Combined           |
-| [`applyProcessLineDecision()`](../src/shared/engine/lineDecisionHelpers.ts)       | `lineDecisionHelpers.ts` | [`GameEngine._apply_line_formation()`](../ai-service/app/game_engine.py:2788) | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`applyChooseLineRewardDecision()`](../src/shared/engine/lineDecisionHelpers.ts)  | `lineDecisionHelpers.ts` | [`GameEngine._apply_line_formation()`](../ai-service/app/game_engine.py:2788) | `game_engine.py`   | ✅ MATCHED    | Combined           |
+| TS Function                                                                       | TS File                  | Python Function                                                                        | Python File               | Parity Status | Notes              |
+| --------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------- | ------------------------- | ------------- | ------------------ |
+| [`findAllLines()`](../src/shared/engine/lineDetection.ts)                         | `lineDetection.ts`       | [`BoardManager.find_all_lines()`](../ai-service/app/board_manager.py)                  | `board_manager.py`        | ✅ MATCHED    | Different location |
+| [`findLinesForPlayer()`](../src/shared/engine/lineDetection.ts)                   | `lineDetection.ts`       | Filtered from `find_all_lines()`                                                       | `board_manager.py`        | ✅ MATCHED    | Inline filter      |
+| [`enumerateProcessLineMoves()`](../src/shared/engine/lineDecisionHelpers.ts)      | `lineDecisionHelpers.ts` | [`_get_line_processing_moves()`](../ai-service/app/game_engine/__init__.py:2022)       | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`enumerateChooseLineRewardMoves()`](../src/shared/engine/lineDecisionHelpers.ts) | `lineDecisionHelpers.ts` | [`_get_line_processing_moves()`](../ai-service/app/game_engine/__init__.py:2022)       | `game_engine/__init__.py` | ⚠️ PARTIAL    | Combined           |
+| [`applyProcessLineDecision()`](../src/shared/engine/lineDecisionHelpers.ts)       | `lineDecisionHelpers.ts` | [`GameEngine._apply_line_formation()`](../ai-service/app/game_engine/__init__.py:2788) | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`applyChooseLineRewardDecision()`](../src/shared/engine/lineDecisionHelpers.ts)  | `lineDecisionHelpers.ts` | [`GameEngine._apply_line_formation()`](../ai-service/app/game_engine/__init__.py:2788) | `game_engine/__init__.py` | ✅ MATCHED    | Combined           |
 
 ### 2.6 Territory Domain
 
-| TS Function                                                                                  | TS File                       | Python Function                                                                    | Python File        | Parity Status | Notes              |
-| -------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------- | ------------------ | ------------- | ------------------ |
-| [`findDisconnectedRegions()`](../src/shared/engine/territoryDetection.ts)                    | `territoryDetection.ts`       | [`BoardManager.find_disconnected_regions()`](../ai-service/app/board_manager.py)   | `board_manager.py` | ✅ MATCHED    | Different location |
-| [`canProcessTerritoryRegion()`](../src/shared/engine/territoryProcessing.ts)                 | `territoryProcessing.ts`      | [`_can_process_disconnected_region()`](../ai-service/app/game_engine.py:2160)      | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`filterProcessableTerritoryRegions()`](../src/shared/engine/territoryProcessing.ts)         | `territoryProcessing.ts`      | Inline in `_get_territory_processing_moves()`                                      | `game_engine.py`   | ✅ MATCHED    | Inline             |
-| [`getProcessableTerritoryRegions()`](../src/shared/engine/territoryProcessing.ts)            | `territoryProcessing.ts`      | Inline in `_get_territory_processing_moves()`                                      | `game_engine.py`   | ✅ MATCHED    | Inline             |
-| [`applyTerritoryRegion()`](../src/shared/engine/territoryProcessing.ts)                      | `territoryProcessing.ts`      | [`GameEngine._apply_territory_claim()`](../ai-service/app/game_engine.py:2894)     | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`enumerateProcessTerritoryRegionMoves()`](../src/shared/engine/territoryDecisionHelpers.ts) | `territoryDecisionHelpers.ts` | [`_get_territory_processing_moves()`](../ai-service/app/game_engine.py:2082)       | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`enumerateTerritoryEliminationMoves()`](../src/shared/engine/territoryDecisionHelpers.ts)   | `territoryDecisionHelpers.ts` | [`_get_territory_processing_moves()`](../ai-service/app/game_engine.py:2082)       | `game_engine.py`   | ✅ MATCHED    | Combined           |
-| [`applyProcessTerritoryRegionDecision()`](../src/shared/engine/territoryDecisionHelpers.ts)  | `territoryDecisionHelpers.ts` | [`GameEngine._apply_territory_claim()`](../ai-service/app/game_engine.py:2894)     | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`applyEliminateRingsFromStackDecision()`](../src/shared/engine/territoryDecisionHelpers.ts) | `territoryDecisionHelpers.ts` | [`GameEngine._apply_forced_elimination()`](../ai-service/app/game_engine.py:3164)  | `game_engine.py`   | ✅ MATCHED    | Different name     |
-| [`getBorderMarkerPositionsForRegion()`](../src/shared/engine/territoryBorders.ts)            | `territoryBorders.ts`         | [`BoardManager.get_border_marker_positions()`](../ai-service/app/board_manager.py) | `board_manager.py` | ✅ MATCHED    | Different location |
+| TS Function                                                                                  | TS File                       | Python Function                                                                            | Python File               | Parity Status | Notes              |
+| -------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------ | ------------------------- | ------------- | ------------------ |
+| [`findDisconnectedRegions()`](../src/shared/engine/territoryDetection.ts)                    | `territoryDetection.ts`       | [`BoardManager.find_disconnected_regions()`](../ai-service/app/board_manager.py)           | `board_manager.py`        | ✅ MATCHED    | Different location |
+| [`canProcessTerritoryRegion()`](../src/shared/engine/territoryProcessing.ts)                 | `territoryProcessing.ts`      | [`_can_process_disconnected_region()`](../ai-service/app/game_engine/__init__.py:2160)     | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`filterProcessableTerritoryRegions()`](../src/shared/engine/territoryProcessing.ts)         | `territoryProcessing.ts`      | Inline in `_get_territory_processing_moves()`                                              | `game_engine/__init__.py` | ✅ MATCHED    | Inline             |
+| [`getProcessableTerritoryRegions()`](../src/shared/engine/territoryProcessing.ts)            | `territoryProcessing.ts`      | Inline in `_get_territory_processing_moves()`                                              | `game_engine/__init__.py` | ✅ MATCHED    | Inline             |
+| [`applyTerritoryRegion()`](../src/shared/engine/territoryProcessing.ts)                      | `territoryProcessing.ts`      | [`GameEngine._apply_territory_claim()`](../ai-service/app/game_engine/__init__.py:2894)    | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`enumerateProcessTerritoryRegionMoves()`](../src/shared/engine/territoryDecisionHelpers.ts) | `territoryDecisionHelpers.ts` | [`_get_territory_processing_moves()`](../ai-service/app/game_engine/__init__.py:2082)      | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`enumerateTerritoryEliminationMoves()`](../src/shared/engine/territoryDecisionHelpers.ts)   | `territoryDecisionHelpers.ts` | [`_get_territory_processing_moves()`](../ai-service/app/game_engine/__init__.py:2082)      | `game_engine/__init__.py` | ✅ MATCHED    | Combined           |
+| [`applyProcessTerritoryRegionDecision()`](../src/shared/engine/territoryDecisionHelpers.ts)  | `territoryDecisionHelpers.ts` | [`GameEngine._apply_territory_claim()`](../ai-service/app/game_engine/__init__.py:2894)    | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`applyEliminateRingsFromStackDecision()`](../src/shared/engine/territoryDecisionHelpers.ts) | `territoryDecisionHelpers.ts` | [`GameEngine._apply_forced_elimination()`](../ai-service/app/game_engine/__init__.py:3164) | `game_engine/__init__.py` | ✅ MATCHED    | Different name     |
+| [`getBorderMarkerPositionsForRegion()`](../src/shared/engine/territoryBorders.ts)            | `territoryBorders.ts`         | [`BoardManager.get_border_marker_positions()`](../ai-service/app/board_manager.py)         | `board_manager.py`        | ✅ MATCHED    | Different location |
 
 ### 2.7 Victory Domain
 
-| TS Function                                                                         | TS File               | Python Function                                                           | Python File      | Parity Status | Notes                               |
-| ----------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------- | ---------------- | ------------- | ----------------------------------- |
-| [`evaluateVictory()`](../src/shared/engine/aggregates/VictoryAggregate.ts)          | `VictoryAggregate.ts` | [`GameEngine._check_victory()`](../ai-service/app/game_engine.py:269)     | `game_engine.py` | ✅ MATCHED    | Different name                      |
-| [`getLastActor()`](../src/shared/engine/aggregates/VictoryAggregate.ts)             | `VictoryAggregate.ts` | Inline in `_check_victory()`                                              | `game_engine.py` | ✅ MATCHED    | Inline                              |
-| [`countTotalRingsForPlayer()`](../src/shared/engine/aggregates/VictoryAggregate.ts) | `VictoryAggregate.ts` | [`count_rings_in_play_for_player()`](../ai-service/app/game_engine.py:98) | `game_engine.py` | ✅ MATCHED    | Added Dec 2025 for Early LPS parity |
+| TS Function                                                                         | TS File               | Python Function                                                                    | Python File               | Parity Status | Notes                               |
+| ----------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------- | ------------------------- | ------------- | ----------------------------------- |
+| [`evaluateVictory()`](../src/shared/engine/aggregates/VictoryAggregate.ts)          | `VictoryAggregate.ts` | [`GameEngine._check_victory()`](../ai-service/app/game_engine/__init__.py:269)     | `game_engine/__init__.py` | ✅ MATCHED    | Different name                      |
+| [`getLastActor()`](../src/shared/engine/aggregates/VictoryAggregate.ts)             | `VictoryAggregate.ts` | Inline in `_check_victory()`                                                       | `game_engine/__init__.py` | ✅ MATCHED    | Inline                              |
+| [`countTotalRingsForPlayer()`](../src/shared/engine/aggregates/VictoryAggregate.ts) | `VictoryAggregate.ts` | [`count_rings_in_play_for_player()`](../ai-service/app/game_engine/__init__.py:98) | `game_engine/__init__.py` | ✅ MATCHED    | Added Dec 2025 for Early LPS parity |
 
 > **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now in `VictoryAggregate.ts`.
 
@@ -213,9 +213,9 @@ AI‑only concern.
 
 ### 2.8 Turn Management
 
-| TS Function                                                  | TS File        | Python Function                                                      | Python File      | Parity Status | Notes                       |
-| ------------------------------------------------------------ | -------------- | -------------------------------------------------------------------- | ---------------- | ------------- | --------------------------- |
-| [`advanceTurnAndPhase()`](../src/shared/engine/turnLogic.ts) | `turnLogic.ts` | [`GameEngine._update_phase()`](../ai-service/app/game_engine.py:440) | `game_engine.py` | ✅ MATCHED    | Combined with `_end_turn()` |
+| TS Function                                                  | TS File        | Python Function                                                               | Python File               | Parity Status | Notes                       |
+| ------------------------------------------------------------ | -------------- | ----------------------------------------------------------------------------- | ------------------------- | ------------- | --------------------------- |
+| [`advanceTurnAndPhase()`](../src/shared/engine/turnLogic.ts) | `turnLogic.ts` | [`GameEngine._update_phase()`](../ai-service/app/game_engine/__init__.py:440) | `game_engine/__init__.py` | ✅ MATCHED    | Combined with `_end_turn()` |
 
 ### 2.9 Mutators
 
@@ -301,7 +301,7 @@ AI‑only concern.
 
 ### 4.1 Capture Enumeration Parity
 
-**Critical Requirement:** [`enumerateCaptureMoves()`](../src/shared/engine/captureLogic.ts) and [`GameEngine._get_capture_moves()`](../ai-service/app/game_engine.py:1594) must produce identical sets of legal capture moves.
+**Critical Requirement:** [`enumerateCaptureMoves()`](../src/shared/engine/captureLogic.ts) and [`GameEngine._get_capture_moves()`](../ai-service/app/game_engine/__init__.py:1594) must produce identical sets of legal capture moves.
 
 **Verification Points:**
 
@@ -366,7 +366,7 @@ AI‑only concern.
 
 ### 4.5 Victory Evaluation Parity
 
-**Critical Requirement:** [`evaluateVictory()`](../src/shared/engine/victoryLogic.ts) and [`GameEngine._check_victory()`](../ai-service/app/game_engine.py:269) must produce identical results.
+**Critical Requirement:** [`evaluateVictory()`](../src/shared/engine/victoryLogic.ts) and [`GameEngine._check_victory()`](../ai-service/app/game_engine/__init__.py:269) must produce identical results.
 
 **Verification Points:**
 
@@ -594,10 +594,10 @@ For each TypeScript engine change:
 
 ### Python Game Engine (`ai-service/app/`)
 
-| File               | Lines  | Purpose                |
-| ------------------ | ------ | ---------------------- |
-| `game_engine.py`   | ~3,186 | Canonical Python rules |
-| `board_manager.py` | ~600   | Board state operations |
+| File                      | Lines  | Purpose                |
+| ------------------------- | ------ | ---------------------- |
+| `game_engine/__init__.py` | ~3,186 | Canonical Python rules |
+| `board_manager.py`        | ~600   | Board state operations |
 
 ---
 

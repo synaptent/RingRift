@@ -352,6 +352,12 @@ class DataPipelineOrchestrator:
         self._resource_constraints: dict[str, dict] = {}  # resource_type -> constraint_info
         self._backpressure_active: bool = False
 
+        # ClusterMonitor caching (December 2025 - performance fix)
+        self._cluster_monitor: Any = None
+        self._cluster_monitor_last_check: float = 0.0
+        self._cluster_monitor_ttl: float = 30.0  # Cache for 30 seconds
+        self._last_constraint_emit: dict[str, float] = {}  # Dedup event emission
+
     def subscribe_to_events(self) -> bool:
         """Subscribe to pipeline stage events.
 
@@ -939,12 +945,19 @@ class DataPipelineOrchestrator:
             min_free_disk_gb: Minimum free disk space required
 
         December 2025: Added to integrate cluster status with training decisions.
+        Uses cached ClusterMonitor with TTL to avoid expensive SSH reconnections.
         """
         try:
             from app.distributed.cluster_monitor import ClusterMonitor
 
-            monitor = ClusterMonitor()
-            status = monitor.get_cluster_status(
+            # Use cached ClusterMonitor with TTL (December 2025 - performance fix)
+            now = time.time()
+            if (self._cluster_monitor is None or
+                now - self._cluster_monitor_last_check > self._cluster_monitor_ttl):
+                self._cluster_monitor = ClusterMonitor()
+                self._cluster_monitor_last_check = now
+
+            status = self._cluster_monitor.get_cluster_status(
                 include_game_counts=False,
                 include_training_status=True,
                 include_disk_usage=True,
@@ -989,7 +1002,17 @@ class DataPipelineOrchestrator:
             return True
 
     def _emit_resource_constraint(self, constraint_type: str, value: float) -> None:
-        """Emit RESOURCE_CONSTRAINT_DETECTED event."""
+        """Emit RESOURCE_CONSTRAINT_DETECTED event with deduplication.
+
+        December 2025: Added cooldown to prevent event spam during sustained constraints.
+        """
+        # Deduplicate: Don't emit same constraint type within 60 seconds
+        now = time.time()
+        last_emit = self._last_constraint_emit.get(constraint_type, 0)
+        if now - last_emit < 60.0:
+            return
+        self._last_constraint_emit[constraint_type] = now
+
         try:
             from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
 
@@ -998,7 +1021,7 @@ class DataPipelineOrchestrator:
                 payload={
                     "constraint_type": constraint_type,
                     "value": value,
-                    "timestamp": time.time(),
+                    "timestamp": now,
                     "source": "data_pipeline_orchestrator",
                 },
                 source="data_pipeline_orchestrator",

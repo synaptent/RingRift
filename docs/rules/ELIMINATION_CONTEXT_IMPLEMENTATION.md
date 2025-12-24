@@ -42,9 +42,9 @@ The elimination cost for processing lines vs territories differs:
 
 ### Python Implementation
 
-| Component  | File                                      | Status      | Notes                     |
-| ---------- | ----------------------------------------- | ----------- | ------------------------- |
-| GameEngine | `ai-service/app/game_engine.py:4003-4008` | ✅ Complete | Already had correct logic |
+| Component  | File                                               | Status      | Notes                     |
+| ---------- | -------------------------------------------------- | ----------- | ------------------------- |
+| GameEngine | `ai-service/app/game_engine/__init__.py:4003-4008` | ✅ Complete | Already had correct logic |
 
 ---
 

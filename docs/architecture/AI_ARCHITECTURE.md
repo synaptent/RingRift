@@ -154,22 +154,22 @@ At runtime there are three tightly coupled layers that share the **same rules se
 
 - **Python Rules Engine and mutators (AI Service)**
   - The Python AI Service embeds a Rules Engine that mirrors the shared TS engine:
-    - Canonical Python engine orchestration: [`GameEngine`](ai-service/app/game_engine.py).
+    - Canonical Python engine orchestration: [`GameEngine`](ai-service/app/game_engine/__init__.py).
     - Board-level helpers (including disconnected-region detection): [`BoardManager.find_disconnected_regions()`](ai-service/app/board_manager.py).
     - Rules façade and shadow-contract mutators: [`DefaultRulesEngine`](ai-service/app/rules/default_engine.py), [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py) and the other mutators under `ai-service/app/rules/mutators/`.
   - [`PythonRulesClient`](src/server/services/PythonRulesClient.ts) exposes this engine to the TS backend via `/rules/evaluate_move`, and [`RulesBackendFacade`](src/server/game/RulesBackendFacade.ts) decides whether to treat the Python engine as **shadow** (parity only) or **authoritative** (`RINGRIFT_RULES_MODE`).
   - Territory semantics are deliberately wired to mirror the TS shared helpers:
     - TS geometry and region detection: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts) ↔ Python [`BoardManager.find_disconnected_regions`](ai-service/app/board_manager.py).
-    - TS region application and Q23 outside-stack prerequisite: [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts) and [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts) ↔ Python [`GameEngine._apply_territory_claim()`](ai-service/app/game_engine.py).
-    - Explicit Territory self-elimination decisions: TS [`enumerateTerritoryEliminationMoves()`](src/shared/engine/territoryDecisionHelpers.ts) ↔ Python [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py) and [`GameEngine._apply_forced_elimination()`](ai-service/app/game_engine.py).
+    - TS region application and Q23 outside-stack prerequisite: [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts) and [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts) ↔ Python [`GameEngine._apply_territory_claim()`](ai-service/app/game_engine/__init__.py).
+    - Explicit Territory self-elimination decisions: TS [`enumerateTerritoryEliminationMoves()`](src/shared/engine/territoryDecisionHelpers.ts) ↔ Python [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py) and [`GameEngine._apply_forced_elimination()`](ai-service/app/game_engine/__init__.py).
 
 - **Training and dataset-generation pipelines (Python)**
 - - General self-play dataset generation (policy/value, NN-style) is implemented in [`generate_data.py`](ai-service/app/training/generate_data.py) using:
--     - The same Python [`GameEngine`](ai-service/app/game_engine.py) and [`RingRiftEnv`](ai-service/app/training/env.py) used by online AI search.
+-     - The same Python [`GameEngine`](ai-service/app/game_engine/__init__.py) and [`RingRiftEnv`](ai-service/app/training/env.py) used by online AI search.
 -     - `DescentAI` and the neural network encoders from `ai-service/app/ai/`.
 - - The **Territory/combined-margin dataset generator** for heuristic training is implemented in [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py):
 -     - Builds a fresh `GameState` via [`RingRiftEnv`](ai-service/app/training/env.py) (which in turn uses [`create_initial_state()`](ai-service/app/training/generate_data.py)).
--     - Uses [`GameEngine.get_valid_moves()`](ai-service/app/game_engine.py) and [`GameEngine.apply_move()`](ai-service/app/game_engine.py) as the single source of rules for self-play.
+-     - Uses [`GameEngine.get_valid_moves()`](ai-service/app/game_engine/__init__.py) and [`GameEngine.apply_move()`](ai-service/app/game_engine/__init__.py) as the single source of rules for self-play.
 -     - Serialises **pre-move** snapshots of the Python `GameState` along each trajectory with per-player scalar targets derived from the final board via [`_final_combined_margin()`](ai-service/app/training/generate_territory_dataset.py).
 -     - Emits one JSONL record per `(state, player)` with `game_state`, `player_number`, `target`, `time_weight`, and engine/AI metadata (`engine_mode`, `num_players`, `ai_type_pN`, `ai_difficulty_pN`).
 - - Training jobs and the live AI/Rules Service therefore share:

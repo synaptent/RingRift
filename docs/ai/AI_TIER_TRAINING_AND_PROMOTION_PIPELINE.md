@@ -72,7 +72,7 @@ Pipeline invariants:
   - `num_players=2`.
   - `reward_mode="terminal"` for gating and perf benchmarks.
 - `max_moves` defaults to 200 for Square-8 2-player, consistent with [`python.make_env`](ai-service/app/training/env.py:221) and [`python.get_theoretical_max_moves`](ai-service/app/training/env.py:55).
-- Rules semantics are provided by [`python.DefaultRulesEngine`](ai-service/app/rules/default_engine.py:1) and [`python.GameEngine`](ai-service/app/game_engine.py:1); both are already wired through the env.
+- Rules semantics are provided by [`python.DefaultRulesEngine`](ai-service/app/rules/default_engine.py:1) and [`python.GameEngine`](ai-service/app/game_engine/__init__.py:1); both are already wired through the env.
 
 ### 2.2 Difficulty ladder and online integration
 

@@ -4,7 +4,7 @@
 **Status:** Fixed and guarded by tests  
 **Affected area:** Python rules engine shadow contracts, territory-processing moves, territory dataset generator
 
-This document records the incident where the Python [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py:6) diverged from the canonical [`GameEngine.apply_move()`](ai-service/app/game_engine.py:117) during territory-processing, causing crashes in the **territory dataset generator** CLI when running in mixed-engine mode.
+This document records the incident where the Python [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py:6) diverged from the canonical [`GameEngine.apply_move()`](ai-service/app/game_engine/__init__.py:117) during territory-processing, causing crashes in the **territory dataset generator** CLI when running in mixed-engine mode.
 
 ---
 
@@ -37,7 +37,7 @@ for territory-processing move: board.stacks mismatch
 
 Key characteristics:
 
-- The crash occurred during internal shadow-contract checks in [`DefaultRulesEngine`](ai-service/app/rules/default_engine.py:23), not in the canonical [`GameEngine.apply_move()`](ai-service/app/game_engine.py:117) result.
+- The crash occurred during internal shadow-contract checks in [`DefaultRulesEngine`](ai-service/app/rules/default_engine.py:23), not in the canonical [`GameEngine.apply_move()`](ai-service/app/game_engine/__init__.py:117) result.
 - The mismatch was specifically reported on `board.stacks` for an `ELIMINATE_RINGS_FROM_STACK` territory-processing move.
 - When this runtime error surfaced inside the dataset generator, the CLI process exited non‑zero and no JSONL output was produced (or it was truncated).
 
@@ -76,7 +76,7 @@ At the level of game rules and phases, the problematic sequence is:
 2. There are **no further disconnected regions** that satisfy the self-elimination prerequisite (Q23) for `P1`, but `P1` still controls at least one stack.
 3. The territory-processing decision surface exposes **explicit self-elimination moves**:
    - In TS, via `eliminate_rings_from_stack` moves enumerated by [`enumerateTerritoryEliminationMoves()`](src/shared/engine/territoryDecisionHelpers.ts:402).
-   - In Python, via `ELIMINATE_RINGS_FROM_STACK` moves enumerated by [`GameEngine._get_territory_processing_moves()`](ai-service/app/game_engine.py:1905).
+   - In Python, via `ELIMINATE_RINGS_FROM_STACK` moves enumerated by [`GameEngine._get_territory_processing_moves()`](ai-service/app/game_engine/__init__.py:1905).
 4. `P1` chooses to eliminate from their own stack at `5,5`, paying the self-elimination cost required by Q23.
 5. After applying this move, turn logic **advances to the next player**. If that next player (`P2`) controls stacks but has:
    - no legal placements,
@@ -94,27 +94,27 @@ In other words:
 
 #### Canonical engine path (Python)
 
-1. The canonical engine [`GameEngine`](ai-service/app/game_engine.py:33) enumerates territory decisions via:
-   - Region and elimination enumeration: [`_get_territory_processing_moves()`](ai-service/app/game_engine.py:1905).
+1. The canonical engine [`GameEngine`](ai-service/app/game_engine/__init__.py:33) enumerates territory decisions via:
+   - Region and elimination enumeration: [`_get_territory_processing_moves()`](ai-service/app/game_engine/__init__.py:1905).
    - For `ELIMINATE_RINGS_FROM_STACK`:
      - The move id is of the form `eliminate-{pos.to_key()}`.
-     - The move is applied inside [`GameEngine.apply_move()`](ai-service/app/game_engine.py:117), which delegates to [`GameEngine._apply_forced_elimination()`](ai-service/app/game_engine.py:2988) when `move.type == MoveType.ELIMINATE_RINGS_FROM_STACK`.
+     - The move is applied inside [`GameEngine.apply_move()`](ai-service/app/game_engine/__init__.py:117), which delegates to [`GameEngine._apply_forced_elimination()`](ai-service/app/game_engine/__init__.py:2988) when `move.type == MoveType.ELIMINATE_RINGS_FROM_STACK`.
 
-2. After applying the explicit elimination, [`GameEngine._update_phase()`](ai-service/app/game_engine.py:471) is invoked:
-   - For `MoveType.ELIMINATE_RINGS_FROM_STACK`, `_update_phase` calls [`GameEngine._end_turn()`](ai-service/app/game_engine.py:624) directly:
-     - See the explicit branch at [`_update_phase` lines handling `ELIMINATE_RINGS_FROM_STACK`](ai-service/app/game_engine.py:563).
+2. After applying the explicit elimination, [`GameEngine._update_phase()`](ai-service/app/game_engine/__init__.py:471) is invoked:
+   - For `MoveType.ELIMINATE_RINGS_FROM_STACK`, `_update_phase` calls [`GameEngine._end_turn()`](ai-service/app/game_engine/__init__.py:624) directly:
+     - See the explicit branch at [`_update_phase` lines handling `ELIMINATE_RINGS_FROM_STACK`](ai-service/app/game_engine/__init__.py:563).
 
-3. Inside [`_end_turn`](ai-service/app/game_engine.py:624):
+3. Inside [`_end_turn`](ai-service/app/game_engine/__init__.py:624):
    - The turn rotates to the next player in table order.
    - For each candidate next player:
      - Computes whether the player has stacks (`BoardManager.get_player_stacks`).
-     - Computes whether the player has any legal placements/movements/captures via [`_has_valid_actions()`](ai-service/app/game_engine.py:1758).
-   - If the next player controls at least one stack but has **no legal actions**, `_end_turn` calls [`_perform_forced_elimination_for_player()`](ai-service/app/game_engine.py:1817).
+     - Computes whether the player has any legal placements/movements/captures via [`_has_valid_actions()`](ai-service/app/game_engine/__init__.py:1758).
+   - If the next player controls at least one stack but has **no legal actions**, `_end_turn` calls [`_perform_forced_elimination_for_player()`](ai-service/app/game_engine/__init__.py:1817).
 
-4. [`_perform_forced_elimination_for_player`](ai-service/app/game_engine.py:1817):
-   - Enumerates forced elimination moves via [`_get_forced_elimination_moves()`](ai-service/app/game_engine.py:1775).
-   - Applies the first such move via [`_apply_forced_elimination()`](ai-service/app/game_engine.py:2988).
-   - Calls [`_check_victory()`](ai-service/app/game_engine.py:334) to see if victory thresholds have been reached.
+4. [`_perform_forced_elimination_for_player`](ai-service/app/game_engine/__init__.py:1817):
+   - Enumerates forced elimination moves via [`_get_forced_elimination_moves()`](ai-service/app/game_engine/__init__.py:1775).
+   - Applies the first such move via [`_apply_forced_elimination()`](ai-service/app/game_engine/__init__.py:2988).
+   - Calls [`_check_victory()`](ai-service/app/game_engine/__init__.py:334) to see if victory thresholds have been reached.
 
 Resulting behaviour in the synthetic test case:
 
@@ -140,7 +140,7 @@ Resulting behaviour in the synthetic test case:
           state.last_move_at = move.timestamp
   ```
 
-  Critically, it does **not** call [`GameEngine._update_phase()`](ai-service/app/game_engine.py:471) or [`GameEngine._end_turn()`](ai-service/app/game_engine.py:624). It only applies the **explicit** elimination step.
+  Critically, it does **not** call [`GameEngine._update_phase()`](ai-service/app/game_engine/__init__.py:471) or [`GameEngine._end_turn()`](ai-service/app/game_engine/__init__.py:624). It only applies the **explicit** elimination step.
 
 - [`DefaultRulesEngine.apply_move()`](ai-service/app/rules/default_engine.py:285) maintains per-move **shadow contracts** for mutators:
   - For territory moves:
@@ -160,7 +160,7 @@ Resulting behaviour in the synthetic test case:
         # collapsed_spaces, eliminated_rings, and players ...
     ```
 
-  - `next_via_engine` is the canonical result from [`GameEngine.apply_move(state, move)`](ai-service/app/game_engine.py:117), which includes:
+  - `next_via_engine` is the canonical result from [`GameEngine.apply_move(state, move)`](ai-service/app/game_engine/__init__.py:117), which includes:
     - The explicit elimination, and
     - Any host-level forced elimination performed during `_end_turn`.
 
@@ -219,8 +219,8 @@ This behaviour is directly analogous to the **movement escape hatch** earlier in
 
 The mutator-first orchestration path in [`_apply_move_with_mutators`](ai-service/app/rules/default_engine.py:147):
 
-- Uses the same [`GameEngine._apply_forced_elimination`](ai-service/app/game_engine.py:2988) helper as the canonical engine when processing `ELIMINATE_RINGS_FROM_STACK` and `FORCED_ELIMINATION` moves.
-- Explicitly calls [`GameEngine._update_phase()`](ai-service/app/game_engine.py:471) and `GameEngine._check_victory()` on the mutator-driven state.
+- Uses the same [`GameEngine._apply_forced_elimination`](ai-service/app/game_engine/__init__.py:2988) helper as the canonical engine when processing `ELIMINATE_RINGS_FROM_STACK` and `FORCED_ELIMINATION` moves.
+- Explicitly calls [`GameEngine._update_phase()`](ai-service/app/game_engine/__init__.py:471) and `GameEngine._check_victory()` on the mutator-driven state.
 - Compares the **full resulting state** against `next_via_engine` (board, players, `current_player`, `current_phase`, `game_status`, `chain_capture_state`, `must_move_from_stack_key`).
 
 Because mutator-first orchestration already mirrors the turn/phase and forced-elimination logic, it **does not need** the same escape hatch. Any divergence there remains a hard error.
@@ -293,7 +293,7 @@ This test reproduces the historical failure mode (a crash in mixed mode) and now
 The fix is also validated indirectly by the broader parity and mutator equivalence tests documented in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:180), including:
 
 - Python vs TS trace fixtures:
-  - [`ai-service/tests/parity/test_rules_parity_fixtures.py`](ai-service/tests/parity/test_rules_parity_fixtures.py:1) ensures [`GameEngine.apply_move`](ai-service/app/game_engine.py:117) matches TS trace fixtures (hash + S-invariant parity).
+  - [`ai-service/tests/parity/test_rules_parity_fixtures.py`](ai-service/tests/parity/test_rules_parity_fixtures.py:1) ensures [`GameEngine.apply_move`](ai-service/app/game_engine/__init__.py:117) matches TS trace fixtures (hash + S-invariant parity).
   - Additional tests ensure [`DefaultRulesEngine.apply_move`](ai-service/app/rules/default_engine.py:285) remains in full-state lockstep with `GameEngine.apply_move` for all moves in the traces.
 - Mutator-first scenario tests:
   - [`ai-service/tests/rules/test_default_engine_mutator_first_scenarios.py`](ai-service/tests/rules/test_default_engine_mutator_first_scenarios.py:1) exercises `mutator_first=True` scenarios, including synthetic territory-processing setups, and asserts equality with the canonical engine.
@@ -325,7 +325,7 @@ The escape hatch fixes the immediate crash and correctly models host-level force
 
 - Strengthening TS↔Python parity for territory decision helpers and forced-elimination sequences:
   - TS: [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1), [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
-  - Python: [`BoardManager.find_disconnected_regions`](ai-service/app/board_manager.py:171), [`GameEngine._apply_territory_claim`](ai-service/app/game_engine.py:2718), [`GameEngine._perform_forced_elimination_for_player`](ai-service/app/game_engine.py:1817).
+  - Python: [`BoardManager.find_disconnected_regions`](ai-service/app/board_manager.py:171), [`GameEngine._apply_territory_claim`](ai-service/app/game_engine/__init__.py:2718), [`GameEngine._perform_forced_elimination_for_player`](ai-service/app/game_engine/__init__.py:1817).
 - Adding property-based tests around territory invariants and forced-elimination behaviour in both TS and Python.
 - Introducing dataset-level validation for the combined-margin territory dataset to catch impossible or inconsistent `(territory_margin, elim_margin)` combinations early.
 

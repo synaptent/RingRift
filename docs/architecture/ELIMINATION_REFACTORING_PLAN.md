@@ -233,7 +233,7 @@ Mirror TypeScript structure in:
 
 - [ ] `territory.py`
 - [ ] `recovery.py`
-- [ ] `game_engine.py`
+- [ ] `game_engine/__init__.py`
 - [ ] `mutable_state.py`
 
 ## Phase 6: Fix Hex Parity

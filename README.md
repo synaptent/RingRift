@@ -111,15 +111,16 @@ uvicorn app.main:app --port 8001 --reload
 
 ## Features
 
-| Feature             | Description                                                            |
-| ------------------- | ---------------------------------------------------------------------- |
-| **Multiple Boards** | 8×8 square, 19×19 square, hex8 (61 spaces), and hexagonal (469 spaces) |
-| **2-4 Players**     | Any combination of humans and AI                                       |
-| **10 AI Levels**    | From random moves to neural network-guided search                      |
-| **Real-time Play**  | WebSocket-based with live state sync                                   |
-| **Rating System**   | Elo-based rankings and leaderboards                                    |
-| **Replay System**   | Watch and analyze completed games                                      |
-| **Spectator Mode**  | Watch ongoing games                                                    |
+| Feature                | Description                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| **Multiple Boards**    | 8×8 square, 19×19 square, hex8 (61 spaces), and hexagonal (469 spaces)                  |
+| **2-4 Players**        | Any combination of humans and AI                                                        |
+| **10 AI Levels**       | From random moves to neural network-guided search                                       |
+| **Real-time Play**     | WebSocket-based with live state sync                                                    |
+| **Rating System**      | Elo-based rankings and leaderboards                                                     |
+| **Replay System**      | Watch and analyze completed games                                                       |
+| **Sandbox & Teaching** | Public sandbox mode with curated scenarios, teaching overlays, and optional diagnostics |
+| **Spectator Mode**     | Watch ongoing games                                                                     |
 
 ---
 
@@ -151,7 +152,7 @@ uvicorn app.main:app --port 8001 --reload
 
 The game logic lives in a canonical TypeScript engine with Python parity:
 
-- **Single Source of Truth**: `src/shared/engine/` — 69 files, 8 canonical phases
+- **Single Source of Truth**: `src/shared/engine/` — 77 files, 7 canonical turn phases + terminal `game_over`
 - **Cross-language Parity**: 90 contract vectors ensure TS↔Python match exactly
 - **Domain Aggregates**: Placement, Movement, Capture, Line, Territory, Victory
 
@@ -173,9 +174,9 @@ npm run test:orchestrator-parity
 
 | Metric           | Value               |
 | ---------------- | ------------------- |
-| TypeScript tests | 10,177 (595 suites) |
+| TypeScript tests | 10,249 (597 suites) |
 | Python tests     | 1,824               |
-| Contract vectors | 85 (100% parity)    |
+| Contract vectors | 90 (100% parity)    |
 | Line coverage    | ~69%                |
 
 ---
@@ -221,7 +222,7 @@ GET  /api/users/leaderboard # Rankings
 
 ```bash
 npm run build
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.production.yml up -d
 ```
 
 The Docker stack includes: app, nginx, postgres, redis, ai-service, prometheus, grafana.

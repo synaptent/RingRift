@@ -104,7 +104,7 @@ The canonical spec (RR‑CANON‑R073/R078 note) defines `skip_capture` as an ex
 **Expected implementation scope**
 
 - `ai-service/app/models/core.py`: add `MoveType.SKIP_CAPTURE`.
-- `ai-service/app/game_engine.py` + `ai-service/app/rules/phase_machine.py`: accept and apply `skip_capture` as a no‑board‑change move that transitions `capture → line_processing`.
+- `ai-service/app/game_engine/__init__.py` + `ai-service/app/rules/phase_machine.py`: accept and apply `skip_capture` as a no‑board‑change move that transitions `capture → line_processing`.
 - Pytest: add a focused test that ensures `skip_capture` is legal/handled when the phase machine is in `capture`.
 
 **Acceptance criteria**

@@ -78,7 +78,7 @@ Spot-check confirms the executable configs match the docs:
 - `TerritoryAggregate.ts` header comments - updated to match canonical spec
 - `EliminationAggregate.ts` - actual implementation already correct (allowing height-1)
 - `territoryProcessing.ts` comments - already correct
-- `game_engine.py` and `gpu_parallel_games.py` - already correct
+- `game_engine/__init__.py` and `gpu_parallel_games.py` - already correct
 - 25+ additional code comments, test fixtures, and documentation files updated
 
 **Fix applied:** Updated all stale references to align with RR-CANON-R022/R145. All controlled stacks (including height-1 standalone rings) are now consistently documented as eligible for territory processing across all rules docs, code comments, and user-facing content.

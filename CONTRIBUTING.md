@@ -762,9 +762,9 @@ useGlobalGameShortcuts({
 
 **Quality Gates:**
 
-- All 2,987+ TypeScript tests passing
+- All 10,249+ TypeScript tests passing
 - All 1,824+ Python tests passing
-- 81 contract vectors at 100% parity
+- 90 contract vectors at 100% parity
 - No P0 bugs open
 - Load test SLOs met with headroom
 

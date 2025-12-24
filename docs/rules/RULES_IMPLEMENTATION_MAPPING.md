@@ -4,7 +4,7 @@
 >
 > - **Rules/invariants semantics SSoT:** `../../RULES_CANONICAL_SPEC.md` (RR‑CANON rules), COMPLETE_RULES.md` / COMPACT_RULES.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`).
 > - **Lifecycle/API SSoT:** `../architecture/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) for the executable Move + decision + WebSocket lifecycle.
-> - **Precedence:** Backend (`GameEngine` + `TurnEngineAdapter` over the shared orchestrator, with `BoardManager`), client sandbox (`ClientSandboxEngine` + `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. Legacy backend helpers in `RuleEngine.ts` are treated as **diagnostics-only** orchestration wrappers and must not be considered canonical execution paths. If this document ever contradicts the rules spec, shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this mapping must be updated to match.
+> - **Precedence:** Backend (`GameEngine` + `TurnEngineAdapter` over the shared orchestrator, with `BoardManager`), client sandbox (`ClientSandboxEngine` + `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine/__init__.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. Legacy backend helpers in `RuleEngine.ts` are treated as **diagnostics-only** orchestration wrappers and must not be considered canonical execution paths. If this document ever contradicts the rules spec, shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this mapping must be updated to match.
 >
 > This file is for traceability (rules ↔ implementation/tests), not a standalone semantics SSoT.
 >
@@ -14,7 +14,7 @@
 
 - Rules/invariants semantics SSoT lives in `../../RULES_CANONICAL_SPEC.md` (RR‑CANON rules) + the shared TypeScript rules engine under `src/shared/engine/` (helpers → aggregates → orchestrator → contracts).
 - Move/decision/WebSocket lifecycle semantics SSoT lives in `../architecture/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).
-- Backend (`GameEngine` hosting `TurnEngineAdapter` over the shared orchestrator, with `BoardManager`), client sandbox (`ClientSandboxEngine` + `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT and are validated via shared tests, contract vectors, and parity suites. Legacy backend orchestration helpers in `RuleEngine.ts` are retained for diagnostics/parity only and are not part of the canonical production path.
+- Backend (`GameEngine` hosting `TurnEngineAdapter` over the shared orchestrator, with `BoardManager`), client sandbox (`ClientSandboxEngine` + `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine/__init__.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT and are validated via shared tests, contract vectors, and parity suites. Legacy backend orchestration helpers in `RuleEngine.ts` are retained for diagnostics/parity only and are not part of the canonical production path.
 
 This document maps the canonical RingRift rules in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md) to the current implementation and tests, and provides the inverse view from implementation components back to canonical rules.
 
@@ -39,9 +39,9 @@ catalogue.
 - **RR-CANON-R073** (mandatory phase transitions): TS `src/shared/engine/orchestration/turnOrchestrator.ts` + `src/shared/engine/orchestration/phaseStateMachine.ts`; Python `ai-service/app/rules/phase_machine.py`.
 - **RR-CANON-R074** (record all actions/skips): TS move recording + decision moves in `src/shared/types/game.ts` and orchestrator decisions; Python canonical contract `ai-service/app/rules/history_contract.py` (write-time enforcement via `ai-service/app/db/game_replay.py`).
 - **RR-CANON-R075** (canonical replay semantics / no silent transitions): TS `src/shared/engine/phaseValidation.ts` + `tests/unit/PhaseRecording.invariant.test.ts`; Python `ai-service/app/rules/history_contract.py` + `ai-service/app/rules/history_validation.py`.
-- **RR-CANON-R076** (core rules vs host layer boundaries): see `../architecture/CANONICAL_ENGINE_API.md` + `src/shared/engine/**` vs hosts (`src/server/game/**`, `src/client/sandbox/**`, `ai-service/app/game_engine.py`).
-- **RR-CANON-R093** (post-movement capture eligibility from landing position only): TS capture enumeration in `src/shared/engine/aggregates/CaptureAggregate.ts`; Python capture enumeration in `ai-service/app/game_engine.py`.
-- **RR-CANON-R110, RR-CANON-R111, RR-CANON-R112, RR-CANON-R113, RR-CANON-R114, RR-CANON-R115** (recovery eligibility, slide, success criteria, extraction, cascade + recording): TS `src/shared/engine/aggregates/RecoveryAggregate.ts` + `src/shared/engine/lpsTracking.ts`; Python `ai-service/app/rules/global_actions.py` + recovery logic in `ai-service/app/game_engine.py`.
+- **RR-CANON-R076** (core rules vs host layer boundaries): see `../architecture/CANONICAL_ENGINE_API.md` + `src/shared/engine/**` vs hosts (`src/server/game/**`, `src/client/sandbox/**`, `ai-service/app/game_engine/__init__.py`).
+- **RR-CANON-R093** (post-movement capture eligibility from landing position only): TS capture enumeration in `src/shared/engine/aggregates/CaptureAggregate.ts`; Python capture enumeration in `ai-service/app/game_engine/__init__.py`.
+- **RR-CANON-R110, RR-CANON-R111, RR-CANON-R112, RR-CANON-R113, RR-CANON-R114, RR-CANON-R115** (recovery eligibility, slide, success criteria, extraction, cascade + recording): TS `src/shared/engine/aggregates/RecoveryAggregate.ts` + `src/shared/engine/lpsTracking.ts`; Python `ai-service/app/rules/global_actions.py` + recovery logic in `ai-service/app/game_engine/__init__.py`.
 - **RR-CANON-R130** (line reward semantics referenced by recovery): TS `src/shared/engine/aggregates/LineAggregate.ts`; contract vectors under `tests/fixtures/contract-vectors/v2/line_processing.vectors.json`.
 - **RR-CANON-R175, RR-CANON-R176, RR-CANON-R177, RR-CANON-R178, RR-CANON-R179** (turn-material / elimination + ranking algorithm): TS elimination + ranking via `src/shared/engine/playerStateHelpers.ts` + victory evaluation; Python equivalents in `ai-service/app/rules/core.py` and `ai-service/app/rules/default_engine.py`.
 - **RR-CANON-R208–R209** (multi-phase line→territory sequencing + chain-capture boundaries): TS orchestrator (`src/shared/engine/orchestration/turnOrchestrator.ts`) + FSM adapter (`src/shared/engine/fsm/FSMAdapter.ts`); Python `ai-service/app/rules/phase_machine.py` and FSM orchestration `ai-service/app/rules/fsm.py`.
@@ -84,7 +84,7 @@ Frameworks and libraries that materially affect rules behaviour:
   - Canonical sandbox harness in [`TypeScript.ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts:137).
   - Pure helper engines for movement, capture, lines, territory, turn, and victory in `src/client/sandbox/sandbox*.ts`.
 - The **Python rules service** is intended to be semantically equivalent to the TS shared engine, with systematic parity checks and S‑invariant comparison via:
-  - [`Python.game_engine`](ai-service/app/game_engine.py:1) (high-level engine).
+  - [`Python.game_engine`](ai-service/app/game_engine/__init__.py:1) (high-level engine).
   - [`TypeScript.PythonRulesClient`](src/server/services/PythonRulesClient.ts:33) and [`TypeScript.RulesBackendFacade`](src/server/game/RulesBackendFacade.ts:54).
 
 ### 1.2 Major subsystems and entry points
@@ -586,7 +586,7 @@ Status legend:
 - **Primary implementation**
   - ANM detection via `hasValidMoves(state)` in the orchestrator; if false for the current player when `gameStatus == ACTIVE`, the orchestrator applies forced elimination or terminates the game.
   - Invariant checks in [`TypeScript.turnLogic.advanceTurnAndPhase`](src/shared/engine/turnLogic.ts:135) delegates that ensure no player is left without legal actions.
-  - Python ANM checks in `ai-service/app/game_engine.py` via `has_valid_moves()` and forced-elimination gating.
+  - Python ANM checks in `ai-service/app/game_engine/__init__.py` via `has_valid_moves()` and forced-elimination gating.
 - **Supporting / tests**
   - `INV-ACTIVE-NO-MOVES` invariant enforced by orchestrator soaks (`scripts/run-orchestrator-soak.ts`).
   - ANM regression tests in `ai-service/tests/invariants/test_anm_and_termination_invariants.py`.

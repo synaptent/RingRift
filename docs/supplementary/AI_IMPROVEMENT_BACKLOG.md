@@ -132,7 +132,7 @@ Canonical mapping (see `AI_ARCHITECTURE.md` §1.2):
 
 ## 3. Rules Parity (Python ↔ TypeScript)
 
-**Goal:** Python rules engine (`ai-service/app/game_engine.py`) is a 1:1 semantic match to the TypeScript rules, including edge cases, so training and analysis are spec-accurate.
+**Goal:** Python rules engine (`ai-service/app/game_engine/__init__.py`) is a 1:1 semantic match to the TypeScript rules, including edge cases, so training and analysis are spec-accurate.
 
 ### 3.1 Stalemate, global stalemate & tie-breakers
 

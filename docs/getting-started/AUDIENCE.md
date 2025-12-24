@@ -25,7 +25,7 @@ RingRift offers a novel environment for AI research:
 - **Cross-language parity** — identical rules in TypeScript and Python (90 contract vectors)
 - **Explicit decision points** — no hidden auto-execution; all choices are surfaced
 - **AlphaZero-style training pipeline** — distributed self-play with neural network evaluation
-- **Multiple board sizes** — 8×8 (64), 19×19 (361), hexagonal (469) for varying complexity
+- **Multiple board sizes** — 8×8 (64), hex8 (61), 19×19 (361), hexagonal (469) for varying complexity
 
 ### Software Engineers
 

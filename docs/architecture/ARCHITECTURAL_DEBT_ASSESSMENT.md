@@ -108,9 +108,9 @@ Three different implementations of "has any action?" predicates:
 | `src/shared/engine/turnDelegateHelpers.ts`  | `hasAnyPlacementForPlayer` | ✅ CANONICAL (TS)        |
 | `src/server/game/turn/TurnEngine.ts`        | `hasValidMovements`        | ✅ REMOVED - uses shared |
 | `src/client/sandbox/ClientSandboxEngine.ts` | Various                    | ✅ WIRED - uses shared   |
-| `ai-service/app/game_engine.py`             | `_has_valid_placements`    | ✅ PARITY (Python)       |
-| `ai-service/app/game_engine.py`             | `_has_valid_movements`     | ✅ PARITY (Python)       |
-| `ai-service/app/game_engine.py`             | `_has_valid_captures`      | ✅ PARITY (Python)       |
+| `ai-service/app/game_engine/__init__.py`    | `_has_valid_placements`    | ✅ PARITY (Python)       |
+| `ai-service/app/game_engine/__init__.py`    | `_has_valid_movements`     | ✅ PARITY (Python)       |
+| `ai-service/app/game_engine/__init__.py`    | `_has_valid_captures`      | ✅ PARITY (Python)       |
 
 ### Resolution Plan
 

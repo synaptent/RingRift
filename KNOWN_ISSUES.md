@@ -64,7 +64,7 @@ The remaining gap is limited to legacy/non-interactive backend paths that still 
 **Status:** Core logic and FAQ-aligned scenario suites exist; remaining work is incremental edge-case coverage and diagnostic harness tuning.
 **Details:** Complex chain patterns such as 180-degree reversals, cyclic loops, strategic chain-ending choices, and zig-zag sequences are now covered by targeted scenario tests (for example `GameEngine.cyclicCapture.scenarios.test.ts`, `GameEngine.cyclicCapture.hex.scenarios.test.ts`, and `tests/scenarios/ComplexChainCaptures.test.ts`). The residual risk is limited to additional exotic geometries and the performance characteristics of deep diagnostic search harnesses (for example the skipped `GameEngine.cyclicCapture.hex.height3.test.ts` sandbox search), rather than a lack of tests for the core rules semantics.
 
-**Python Parity Fix (2025-12-03):** Contract vector `chain_capture.5_plus_targets.extended_path` previously failed due to `resolve_chain_captures` selecting a different valid chain path than the expected sequence. Fixed by updating `resolve_chain_captures` to use `expectedChainSequence` from contract vectors when provided, ensuring tests follow the exact path specified in the vector. All 81 contract vectors (v2) now pass at 100% parity.
+**Python Parity Fix (2025-12-03):** Contract vector `chain_capture.5_plus_targets.extended_path` previously failed due to `resolve_chain_captures` selecting a different valid chain path than the expected sequence. Fixed by updating `resolve_chain_captures` to use `expectedChainSequence` from contract vectors when provided, ensuring tests follow the exact path specified in the vector. All 90 contract vectors (v2) now pass at 100% parity.
 
 ### P0.3 – Incomplete Scenario Test Coverage for Rules & FAQ
 
@@ -881,7 +881,7 @@ These issues have been addressed but are kept here for context:
     explicitly marked as mismatch (not when early victory was acceptably detected)
 
   **Validation:** All canonical parity tests pass:
-  - 48 contract vectors passed (36 skipped for multi-phase orchestrator tests)
+  - 48 contract vectors passed (36 skipped for multi-phase orchestrator tests; current v2 total = 90)
   - 9+ selfplay games replayed with 0 semantic divergences
   - Early victory game (ed1d7d1e) correctly terminates at k=117 with matching state hash
 

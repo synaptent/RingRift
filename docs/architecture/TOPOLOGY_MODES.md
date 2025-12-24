@@ -171,7 +171,7 @@ These direction helpers are used by:
   - `ClientSandboxEngine.ts` and helpers (`sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxTerritory.ts`) build board views and delegates to shared engine functions.
 - Python (`ai-service/app`):
   - `board_manager.py` exposes direction lists, path helpers, and on-board checks.
-  - `game_engine.py` uses those helpers for movement, capture, placement, and territory logic.
+  - `game_engine/__init__.py` uses those helpers for movement, capture, placement, and territory logic.
 
 > When changing topology-related behaviour (directions, distance, paths), update the shared TS helpers first, then ensure all hosts/adapters call those helpers or their Python equivalents, and finally update or add tests in the parity and scenario suites referenced above.
 

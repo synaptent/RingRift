@@ -107,6 +107,10 @@ class CurriculumFeedback:
         # Cached metrics per config
         self._config_metrics: dict[str, ConfigMetrics] = {}
 
+        # Current curriculum weights per config (December 2025)
+        # Updated by record_promotion() and get_curriculum_weights()
+        self._current_weights: dict[str, float] = {}
+
         # Last update time for change detection
         self._last_update_time: float = 0
 

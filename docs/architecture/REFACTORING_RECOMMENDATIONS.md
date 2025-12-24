@@ -61,7 +61,7 @@ The debugging session showed this repeated pattern:
 
 | Layer             | File                                       | Role                                                   |
 | ----------------- | ------------------------------------------ | ------------------------------------------------------ |
-| Core Engine       | `ai-service/app/game_engine.py`            | `get_phase_requirement`, `synthesize_bookkeeping_move` |
+| Core Engine       | `ai-service/app/game_engine/__init__.py`   | `get_phase_requirement`, `synthesize_bookkeeping_move` |
 | Phase Machine     | `ai-service/app/rules/phase_machine.py`    | Phase transitions, `_on_line_processing_complete`      |
 | Rules Engine Host | `ai-service/app/rules/default_engine.py`   | `get_valid_moves` with forced bookkeeping mode         |
 | DB Replay         | `ai-service/app/db/game_replay.py`         | `_auto_inject_no_action_moves` for replay              |
@@ -215,7 +215,7 @@ class CanonicalSelfPlayRunner:
 
 | Task | File                            | Description                                   |
 | ---- | ------------------------------- | --------------------------------------------- |
-| 1.1  | `app/game_engine.py`            | Add `apply_move_with_bookkeeping()` method    |
+| 1.1  | `app/game_engine/__init__.py`   | Add `apply_move_with_bookkeeping()` method    |
 | 1.2  | `app/rules/default_engine.py`   | Remove defensive bookkeeping synthesis        |
 | 1.3  | `scripts/run_self_play_soak.py` | Use `apply_move_with_bookkeeping()`           |
 | 1.4  | Tests                           | Add unit tests for bookkeeping auto-injection |

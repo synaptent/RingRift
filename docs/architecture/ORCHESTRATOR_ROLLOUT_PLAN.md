@@ -131,7 +131,7 @@ They are **not** allowed as alternative production turn-processing pipelines onc
   - Sandbox helpers under `src/client/sandbox/**` (movement, captures, territory, lines, victory, AI, game-end) – now predominantly UX/diagnostics wrappers over shared aggregates.
 
 - Python rules/AI mirror:
-  - `GameEngine` in [`ai-service/app/game_engine.py`](../ai-service/app/game_engine.py:1) and rule modules under `ai-service/app/rules/**` implement a parity-checked Python port of the TS rules engine.
+  - `GameEngine` in [`ai-service/app/game_engine/__init__.py`](../ai-service/app/game_engine/__init__.py:1) and rule modules under `ai-service/app/rules/**` implement a parity-checked Python port of the TS rules engine.
   - Parity and contract tests under `ai-service/tests/**` and `tests/parity/**` validate that Python behaviour matches the TS SSOT.
   - Python code is **not** a semantics SSOT; any divergence must be fixed by updating Python to match the TS shared engine and contracts.
 

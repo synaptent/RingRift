@@ -91,7 +91,7 @@ Notes:
    - Update API/architecture docs (e.g. `docs/architecture/CANONICAL_ENGINE_API.md`, `docs/architecture/RULES_ENGINE_ARCHITECTURE.md`) to match.
 
 2. **Python engine parity alignment**
-   - Update `ai-service/app/game_engine.py` to **emit** canonical choice moves:
+   - Update `ai-service/app/game_engine/__init__.py` to **emit** canonical choice moves:
      - `choose_line_option` (instead of legacy `choose_line_reward`)
      - `choose_territory_option` (instead of legacy `process_territory_region`)
    - Keep legacy aliases accepted for replay only.

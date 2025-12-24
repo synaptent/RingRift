@@ -90,6 +90,52 @@ ssh -i ~/.ssh/id_cluster ubuntu@100.123.183.70 \
    > logs/train.log 2>&1 &"
 ```
 
+### Automated Training Pipeline (NEW Dec 2025)
+
+One-command training loop that automatically chains: selfplay → sync → export → train → evaluate → promote
+
+```bash
+# Basic usage - runs full pipeline
+python scripts/run_training_loop.py \
+  --board-type hex8 --num-players 2 \
+  --selfplay-games 1000
+
+# Full options with auto-promotion
+python scripts/run_training_loop.py \
+  --board-type hex8 --num-players 2 \
+  --selfplay-games 1000 \
+  --engine gumbel-mcts \
+  --training-epochs 50 \
+  --auto-promote
+
+# Trigger pipeline on existing data (skip selfplay)
+python scripts/run_training_loop.py \
+  --board-type hex8 --num-players 2 \
+  --skip-selfplay
+```
+
+**Alternative: Manual Pipeline with Flags**
+
+```bash
+# Selfplay with pipeline event emission
+python scripts/selfplay.py \
+  --board hex8 --num-players 2 \
+  --engine gumbel \
+  --emit-pipeline-events
+
+# Training with auto-trigger
+python -m app.training.train \
+  --board-type hex8 --num-players 2 \
+  --enable-pipeline-auto-trigger
+```
+
+**Environment Variable Alternative**
+
+```bash
+export COORDINATOR_AUTO_TRIGGER_PIPELINE=true
+python -m app.training.train --board-type hex8 --num-players 2 ...
+```
+
 ### Transfer Learning (2p → 4p)
 
 ```bash

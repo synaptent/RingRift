@@ -4,7 +4,7 @@
 
 - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md` together with `COMPLETE_RULES.md` / `COMPACT_RULES.md` as the single source of truth for RingRift rules and invariants, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → turn orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`) as their primary executable implementation. This combined spec + implementation is the **Rules/invariants semantics SSoT** for RingRift.
   > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) for the executable Move + orchestrator + WebSocket lifecycle.
-  > - **Precedence:** Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this audit ever conflicts with the shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this document must be updated to match.
+  > - **Precedence:** Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine/__init__.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this audit ever conflicts with the shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this document must be updated to match.
   >
   > This file inventories and critiques surfaces around the canonical TS rules engine; it is not itself a semantics SSoT.
 
@@ -12,7 +12,7 @@
 
 - Canonical rules semantics SSoT is the written rules spec (`RULES_CANONICAL_SPEC.md` + complete/compact rules) together with its **shared TypeScript engine** implementation under `src/shared/engine/`, specifically: helpers → domain aggregates → turn orchestrator → contracts (`schemas.ts`, `serialization.ts`, `testVectorGenerator.ts` + v2 vectors under `tests/fixtures/contract-vectors/v2/`).
 - Move/decision/WebSocket lifecycle semantics are documented in `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).
-- Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT. This audit treats them as consumers of the shared engine, not as independent rules engines.
+- Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine/__init__.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT. This audit treats them as consumers of the shared engine, not as independent rules engines.
 - Sections that describe a fully-populated TS `validators/*` / `mutators/*` tree should be read as **semantic boundary diagrams** and partially historical; the implemented canonical surface is helpers + aggregates + orchestrator + contracts.
 
 **Task:** T1-W1-A  
@@ -49,7 +49,7 @@ This section names the **only modules that are allowed to encode rules semantics
 | **Server Game**    | `src/server/game/turn/TurnEngine.ts` / `TurnEngineAdapter.ts`                       | Backend turn engine façade                | ⚠️ Only integration logic          | Shared turn orchestrator + state machines      | Diverge phase/turn semantics from shared `turnLogic`                          |
 | **Client Sandbox** | `src/client/sandbox/ClientSandboxEngine.ts`                                         | Client host over shared engine            | ⚠️ Only glue + UI orchestration    | Shared engine (`src/shared/engine/**`)         | Encode new rules; change legal moves independent of shared engine             |
 | **Client Sandbox** | `src/client/sandbox/SandboxOrchestratorAdapter.ts`                                  | Sandbox turn orchestration adapter        | ⚠️ Only integration logic          | Shared orchestrator + board helpers            | Drift from backend turn/phase semantics                                       |
-| **Python Host**    | `ai-service/app/game_engine.py`                                                     | Python host adapter for rules             | ⚠️ Transitional                    | Python rules mirror of shared engine types     | Become a second “canonical” rules engine; diverge from shared TS semantics    |
+| **Python Host**    | `ai-service/app/game_engine/__init__.py`                                            | Python host adapter for rules             | ⚠️ Transitional                    | Python rules mirror of shared engine types     | Become a second “canonical” rules engine; diverge from shared TS semantics    |
 | **Python Rules**   | `ai-service/app/rules/**`                                                           | Python port for training/evaluation       | ⚠️ Only as documented mirror       | Canonical TS specs; contract vectors           | Be used as the source of truth for live game semantics                        |
 | **Orchestrators**  | `src/server/game/GameSession.ts`, `src/server/game/ai/**`, state machines           | Session/AI orchestration                  | ❌ No                              | Shared engine + contracts + validation schemas | Decide legal moves or phases directly                                         |
 | **UI/Frontend**    | `src/client/components/**`, `src/client/adapters/**`, `src/client/sandbox/**`       | Presentation, view models, local sandbox  | ❌ No                              | Shared types/VMs; sandbox/host façades         | Change rules; filter or mutate legal moves outside orchestrator/validators    |
@@ -67,7 +67,7 @@ Before introducing or changing rules behaviour:
    - For any change in the shared engine, audit:
      - `src/server/game/GameEngine.ts` / `RuleEngine.ts`
      - `src/client/sandbox/ClientSandboxEngine.ts` / `SandboxOrchestratorAdapter.ts`
-     - `ai-service/app/game_engine.py` / `ai-service/app/rules/**`
+     - `ai-service/app/game_engine/__init__.py` / `ai-service/app/rules/**`
    - Ensure they **call into** the updated shared functions instead of adding new branching rules locally.
 3. **Update contract tests:**
    - Add or update contract vectors / parity tests using:
@@ -425,7 +425,7 @@ graph TB
         PY_Core[core.py]
         PY_Geometry[geometry.py]
         PY_Engine[default_engine.py]
-        PY_GameEngine[game_engine.py]
+        PY_GameEngine[game_engine/__init__.py]
         PY_Validators[validators/]
         PY_Mutators[mutators/]
     end

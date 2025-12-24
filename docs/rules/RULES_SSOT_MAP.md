@@ -59,7 +59,7 @@ The hierarchy below orders sources by normative authority. Higher bullets win on
 
 **5. Python mirror and contract tests (derived mirror over TS engine)**
 
-- Python game engine and board utilities: [`ai-service/app/game_engine.py`](ai-service/app/game_engine.py:1), [`ai-service/app/board_manager.py`](ai-service/app/board_manager.py:1).
+- Python game engine and board utilities: [`ai-service/app/game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1), [`ai-service/app/board_manager.py`](ai-service/app/board_manager.py:1).
 - Python rules modules (validators/mutators and helpers): [`ai-service/app/rules/*.py`](ai-service/app/rules/core.py:1), [`ai-service/app/rules/mutators/*.py`](ai-service/app/rules/mutators/capture.py:1), [`ai-service/app/rules/validators/*.py`](ai-service/app/rules/validators/territory.py:1).
 - Python default engine wrapper and shadow contracts: [`ai-service/app/rules/default_engine.py`](ai-service/app/rules/default_engine.py:1).
 - Contract and parity tests (TS ↔ Python): [`tests/contracts/contractVectorRunner.test.ts`](tests/contracts/contractVectorRunner.test.ts:1) and [`ai-service/tests/contracts/test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py:1), plus broader parity suites documented in [`docs/PYTHON_PARITY_REQUIREMENTS.md`](docs/PYTHON_PARITY_REQUIREMENTS.md).
@@ -180,7 +180,7 @@ The Python implementation is a **parity-validated mirror and host** over the TS 
 
 **Architecture overview**
 
-- Canonical Python rules engine: [`ai-service/app/game_engine.py`](ai-service/app/game_engine.py:1).
+- Canonical Python rules engine: [`ai-service/app/game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1).
   - Implements move generation (`get_valid_moves`) and application (`apply_move`) for all phases, mirroring TS shared engine semantics for geometry, placement, movement, capture chains, lines, territory (including Q23), forced elimination, and victory/LPS.
   - Enforces strict no-move invariants when enabled, as documented in [`docs/STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md:11).
 - Python rules modules: [`ai-service/app/rules/core.py`](ai-service/app/rules/core.py:1), mutators under [`ai-service/app/rules/mutators`](ai-service/app/rules/mutators/placement.py:1), validators under [`ai-service/app/rules/validators`](ai-service/app/rules/validators/territory.py:1).
@@ -200,7 +200,7 @@ The Python implementation is a **parity-validated mirror and host** over the TS 
 
 - In any behavioural disagreement between TS and Python engines (contract vectors, parity fixtures, or orchestrator soaks):
   - The TS shared engine + orchestrator is authoritative.
-  - Python code (`game_engine.py`, validators/mutators, training env) must be updated to match TS, with additional contract vectors or regression tests as needed.
+  - Python code (`game_engine/__init__.py`, validators/mutators, training env) must be updated to match TS, with additional contract vectors or regression tests as needed.
 - This precedence is explicit in [`docs/PYTHON_PARITY_REQUIREMENTS.md`](docs/PYTHON_PARITY_REQUIREMENTS.md:3) and [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:31).
 
 ---
@@ -428,7 +428,7 @@ Python rules engine implementation (parity mirror, not SSOT).
   - `ai-service/app/rules/*.py`
   - `ai-service/app/rules/mutators/*.py`
   - `ai-service/app/rules/validators/*.py`
-  - `ai-service/app/game_engine.py`
+  - `ai-service/app/game_engine/__init__.py`
 - **Validation requirement:** Python rules modifications require all Python tests and contract parity to pass.
 
 ### 8.3 Automated Protection Mechanisms

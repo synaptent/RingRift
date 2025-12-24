@@ -130,10 +130,10 @@ Additional rules‑UX and onboarding specs:
 
 ### Python Rules Engine
 
-| Module                          | Purpose              |
-| ------------------------------- | -------------------- |
-| `ai-service/app/game_engine.py` | Python game engine   |
-| `ai-service/app/rules/`         | Python rules modules |
+| Module                                   | Purpose              |
+| ---------------------------------------- | -------------------- |
+| `ai-service/app/game_engine/__init__.py` | Python game engine   |
+| `ai-service/app/rules/`                  | Python rules modules |
 
 ---
 

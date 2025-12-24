@@ -449,7 +449,7 @@ ai2 = DescentAI(2, AIConfig(rngSeed=config.seed + 1))
 
 ### Priority 5: Incremental Zobrist Hash Maintenance (Medium Impact, Medium Effort)
 
-**Current State:** [`apply_move()`](app/game_engine.py) creates new states but doesn't always pre-compute Zobrist hash.
+**Current State:** [`apply_move()`](app/game_engine/__init__.py) creates new states but doesn't always pre-compute Zobrist hash.
 
 **Proposed Solution:**
 
@@ -1547,7 +1547,7 @@ the turn begins in `ring_placement` with a forced no-op (`ringsInHand == 0`).
 and add a regression test that constructs an ANM `ring_placement` boundary where
 P1 has real actions (movement/capture) and others do not.
 
-- File modified: `app/game_engine.py`
+- File modified: `app/game_engine/__init__.py`
 - Test updated: `tests/test_lps_and_ring_caps.py`
 - Related rules doc clarification: `docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md` (ANM‑SCEN‑07)
 

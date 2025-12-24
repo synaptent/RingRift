@@ -14,10 +14,10 @@ This document provides detailed, step-by-step action plans for all identified im
 
 - **2-4 players**, zero randomness, perfect information
 - **Three victory paths**: Ring elimination, territory control, Last Player Standing
-- **Multiple boards**: 8×8 square (64), 19×19 square (361), hexagonal (469)
+- **Multiple boards**: 8×8 square (64), 19×19 square (361), hex8 (61), hexagonal (469)
 - **Tech stack**: React + Express + WebSockets + PostgreSQL/Redis + Python AI service
 - **AI**: 10-level difficulty ladder (Random → Heuristic → Minimax → MCTS → AlphaZero-style Descent)
-- **Testing**: 10,177 TypeScript tests, 1,824 Python tests, 90 contract vectors (100% parity)
+- **Testing**: 10,249 TypeScript tests, 1,824 Python tests, 90 contract vectors (100% parity)
 
 **Current Status**: Stable Beta — production validation in progress, focus on scaling tests, security hardening, UX polish. Hosted demo live at ringrift.ai, v0.1.0-beta released.
 
@@ -1781,7 +1781,7 @@ RingRift v0.1.0-beta - Abstract Strategy Game
 Features:
 - Complete rules engine (TS + Python parity)
 - 10-level AI difficulty ladder
-- Multiple board sizes (8x8, 19x19, hex)
+- Multiple board sizes (8x8, 19x19, hex8, hexagonal)
 - Real-time multiplayer with WebSocket
 - Spectator mode and replay system
 

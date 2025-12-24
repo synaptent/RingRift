@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Game Engine**
 
-- Complete implementation of all 8 canonical game phases
-- Support for 3 board types: 8×8 square, 19×19 square, and hexagonal (469 spaces)
+- Complete implementation of all 7 canonical turn phases (+ terminal `game_over`)
+- Support for 4 board types: 8×8 square, 19×19 square, hex8 (61 spaces), and hexagonal (469 spaces)
 - Support for 2-4 players with any mix of humans and AI
 - Ring stacking mechanics with capture chains
 - Line formation and territory processing
@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Infrastructure**
 
 - TypeScript shared engine (single source of truth)
-- Python AI service with rules parity (81 contract vectors, 100% match)
+- Python AI service with rules parity (90 contract vectors, 100% match)
 - PostgreSQL database with Prisma ORM
 - Redis for session management and caching
 - Docker Compose for local development and production
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical Notes
 
-- 10,177 TypeScript tests across 595 suites
+- 10,249 TypeScript tests across 597 suites
 - 1,824 Python tests
 - ~69% line coverage
 - Canonical rules IDs (RR-CANON-RXXX) for formal verification

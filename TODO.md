@@ -65,10 +65,10 @@ This is the canonical high-level task/backlog tracker. For rules semantics, defe
 
 ### Current Architecture
 
-- **TypeScript:** 6 domain aggregates, canonical orchestrator at 100%
+- **TypeScript:** 8 domain aggregates, canonical orchestrator at 100%
 - **Python:** 3-layer design, 1,824 tests passing
-- **Cross-language:** 81 contract vectors with 0 mismatches
-- **Phases:** 8 canonical phases including `game_over` terminal phase
+- **Cross-language:** 90 contract vectors with 0 mismatches
+- **Phases:** 7 canonical turn phases + terminal `game_over`
 
 ## Immediate Handoffs (Jan 2026)
 
