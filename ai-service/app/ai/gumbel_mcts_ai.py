@@ -79,75 +79,20 @@ _GPU_TREE_SHADOW_RATE = float(os.environ.get("RINGRIFT_GPU_TREE_SHADOW_RATE", "0
 # and typically [-1000, 1000] for non-terminal positions
 _HEURISTIC_NORMALIZATION_SCALE = 1000.0
 
+# Import unified data structures from gumbel_common
+# Re-exported here for backward compatibility with existing imports
+from .gumbel_common import (
+    GumbelAction,
+    GumbelNode,
+    LeafEvalRequest,
+    GUMBEL_DEFAULT_BUDGET,
+    GUMBEL_DEFAULT_K,
+    GUMBEL_DEFAULT_C_VISIT,
+    GUMBEL_DEFAULT_C_PUCT,
+)
 
-@dataclass
-class GumbelAction:
-    """Represents an action with its Gumbel-perturbed value and statistics."""
-
-    move: Move
-    policy_logit: float  # Raw log-probability from NN
-    gumbel_noise: float  # Gumbel(0,1) noise sample
-    perturbed_value: float  # logit + gumbel (for initial ranking)
-    visit_count: int = 0
-    total_value: float = 0.0  # Sum of values from simulations
-
-    @property
-    def mean_value(self) -> float:
-        """Mean value from simulations (Q-value)."""
-        if self.visit_count == 0:
-            return 0.0
-        return self.total_value / self.visit_count
-
-    def completed_q(self, max_visits: int, c_visit: float = 50.0) -> float:
-        """Compute the completed Q-value for action selection.
-
-        This accounts for visit count asymmetry by mixing the empirical
-        Q-value with a prior-based completion.
-
-        Args:
-            max_visits: Maximum visit count among all actions.
-            c_visit: Mixing coefficient for visit completion.
-
-        Returns:
-            Completed Q-value estimate.
-        """
-        if self.visit_count == 0:
-            # Use prior value (normalized policy logit as proxy)
-            return self.policy_logit / 10.0  # Scale to reasonable range
-
-        # Mix empirical Q with prior based on visit ratio
-        self.visit_count / (max_visits + 1e-8)
-        mix = c_visit / (c_visit + max_visits)
-        return (1 - mix) * self.mean_value + mix * (self.policy_logit / 10.0)
-
-
-@dataclass
-class GumbelNode:
-    """Lightweight node for Gumbel MCTS tree traversal."""
-
-    move: Move | None = None
-    parent: GumbelNode | None = None
-    children: dict[str, GumbelNode] = field(default_factory=dict)
-    visit_count: int = 0
-    total_value: float = 0.0
-    prior: float = 0.0
-    to_move_is_root: bool = True
-
-    @property
-    def mean_value(self) -> float:
-        """Mean value (Q-value) for this node."""
-        if self.visit_count == 0:
-            return 0.0
-        return self.total_value / self.visit_count
-
-
-@dataclass
-class LeafEvalRequest:
-    """Pending leaf evaluation for batch processing."""
-    game_state: GameState
-    is_opponent_perspective: bool
-    action_idx: int
-    simulation_idx: int
+# Note: GumbelAction, GumbelNode, LeafEvalRequest are now defined in gumbel_common.py
+# Import them from there for new code. Imports from this module still work for compatibility.
 
 
 class LeafEvaluationBuffer:

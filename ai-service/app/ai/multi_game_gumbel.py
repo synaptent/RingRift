@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 
+from app.ai.gumbel_common import GumbelAction
 from app.models import (
     AIConfig,
     BoardType,
@@ -45,31 +46,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class GumbelAction:
-    """Candidate action with Gumbel statistics."""
-    move: Move
-    gumbel_score: float
-    visit_count: int = 0
-    total_value: float = 0.0
-
-    @property
-    def mean_value(self) -> float:
-        if self.visit_count == 0:
-            return 0.0
-        return self.total_value / self.visit_count
-
-    def completed_q(self, max_visits: int) -> float:
-        """Completed Q-value for action selection."""
-        if self.visit_count == 0:
-            return self.gumbel_score
-        return self.mean_value + self.gumbel_score
+# This module uses GumbelAction from gumbel_common.py with use_simple_additive=True
+# for the completed_q calculation, trading accuracy for throughput in batch scenarios.
 
 
 @dataclass
-class GameSearchState:
-    """Search state for a single game in multi-game runner."""
+class MultiGameSearchState:
+    """Search state for a single game in multi-game runner.
+
+    This extends the search-only GameSearchState from gumbel_common.py
+    with full game lifecycle tracking (moves_played, winner, etc.).
+    """
     game_idx: int
     game_state: MutableGameState
     current_player: int
@@ -81,6 +68,10 @@ class GameSearchState:
     winner: int | None = None
     moves_played: list[dict] = field(default_factory=list)
     initial_state_serialized: dict | None = None  # For training data export
+
+
+# Backward compatibility alias
+GameSearchState = MultiGameSearchState
 
 
 @dataclass
@@ -319,7 +310,7 @@ class MultiGameGumbelRunner:
                 if len(game.remaining_actions) > 1:
                     max_visits = max(a.visit_count for a in game.remaining_actions)
                     game.remaining_actions.sort(
-                        key=lambda a: a.completed_q(max_visits),
+                        key=lambda a: a.completed_q(max_visits, use_simple_additive=True),
                         reverse=True
                     )
                     game.remaining_actions = game.remaining_actions[:max(1, len(game.remaining_actions) // 2)]
@@ -336,7 +327,7 @@ class MultiGameGumbelRunner:
 
         if len(legal_moves) == 1:
             # Only one move - no search needed
-            game.actions = [GumbelAction(move=legal_moves[0], gumbel_score=0.0)]
+            game.actions = [GumbelAction.from_gumbel_score(legal_moves[0], 0.0)]
             game.remaining_actions = game.actions
             return
 
@@ -370,7 +361,7 @@ class MultiGameGumbelRunner:
             gumbel = -np.log(-np.log(np.random.uniform() + 1e-10) + 1e-10)
             score = logit + gumbel
 
-            actions.append(GumbelAction(move=move, gumbel_score=score))
+            actions.append(GumbelAction.from_gumbel_score(move, score))
 
         # Sort by Gumbel score and take top-K
         actions.sort(key=lambda a: a.gumbel_score, reverse=True)

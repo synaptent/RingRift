@@ -516,6 +516,60 @@ def _move_type_from_str(type_str: str) -> MoveType | None:
         return None
 
 
+def _parse_mcts_policy_key(key: str, board) -> Move | None:
+    """Parse MCTS policy key back into a Move object.
+
+    Key formats:
+    - "place_ring_x,y" -> placement at (x,y)
+    - "move_stack_x1,y1_x2,y2" -> movement from (x1,y1) to (x2,y2)
+    - Other move types follow similar patterns
+    """
+    parts = key.split("_")
+    if len(parts) < 2:
+        return None
+
+    # Determine move type from prefix
+    if key.startswith("place_ring_"):
+        pos_str = key[len("place_ring_"):]
+        x, y = map(int, pos_str.split(","))
+        return Move(
+            type=MoveType.PLACE_RING,
+            to=Position(x=x, y=y),
+            player=1,  # Player will be ignored for encoding
+        )
+    elif key.startswith("move_stack_"):
+        rest = key[len("move_stack_"):]
+        from_to = rest.split("_")
+        if len(from_to) >= 2:
+            from_x, from_y = map(int, from_to[0].split(","))
+            to_x, to_y = map(int, from_to[1].split(","))
+            return Move(
+                type=MoveType.MOVE_STACK,
+                from_pos=Position(x=from_x, y=from_y),
+                to=Position(x=to_x, y=to_y),
+                player=1,
+            )
+    elif key.startswith("line_formation_"):
+        rest = key[len("line_formation_"):]
+        x, y = map(int, rest.split(","))
+        return Move(
+            type=MoveType.LINE_FORMATION,
+            to=Position(x=x, y=y),
+            player=1,
+        )
+    elif key.startswith("territory_claim_"):
+        rest = key[len("territory_claim_"):]
+        x, y = map(int, rest.split(","))
+        return Move(
+            type=MoveType.TERRITORY_CLAIM,
+            to=Position(x=x, y=y),
+            player=1,
+        )
+
+    # Try generic parsing for other move types
+    return None
+
+
 class HexEncoderWrapper:
     """Wrapper for HexStateEncoder/V3 to provide _extract_features interface."""
 
@@ -1226,9 +1280,9 @@ def process_jsonl_file(
                 else:
                     initial_state = deserialize_game_state(initial_state_dict)
 
-                # Parse moves
+                # Parse moves (keep original dicts for mcts_policy soft targets)
                 moves = [parse_move(m) for m in moves_list]
-                len(moves)
+                move_dicts = moves_list  # Keep original for mcts_policy
 
                 # Replay game and extract features
                 current_state = initial_state
@@ -1258,7 +1312,7 @@ def process_jsonl_file(
                 )
 
                 # Only process up to moves_succeeded moves
-                for move_idx, move in enumerate(moves[:moves_succeeded]):
+                for move_idx, (move, move_dict) in enumerate(zip(moves[:moves_succeeded], move_dicts[:moves_succeeded])):
                     # Get move type for phase completion
                     move_type_for_phase = move.type if isinstance(move.type, MoveType) else _move_type_from_str(str(move.type))
 
@@ -1302,14 +1356,47 @@ def process_jsonl_file(
                         else str(current_state.current_phase)
                     )
 
+                    # Check for mcts_policy soft targets
+                    mcts_policy = move_dict.get("mcts_policy") if isinstance(move_dict, dict) else None
+                    if mcts_policy and len(mcts_policy) > 1:
+                        # Use soft targets from MCTS visit distribution
+                        soft_indices = []
+                        soft_values = []
+                        for key, prob in mcts_policy.items():
+                            if prob > 0:
+                                # Parse key to get move, encode to action index
+                                try:
+                                    soft_move = _parse_mcts_policy_key(key, current_state.board)
+                                    if soft_move:
+                                        soft_idx = encode_move_for_board(soft_move, current_state.board)
+                                        if soft_idx != INVALID_MOVE_INDEX:
+                                            soft_indices.append(soft_idx)
+                                            soft_values.append(float(prob))
+                                except Exception:
+                                    pass
+
+                        if soft_indices:
+                            policy_idx = np.array(soft_indices, dtype=np.int32)
+                            policy_val = np.array(soft_values, dtype=np.float32)
+                            # Normalize probabilities
+                            policy_val = policy_val / policy_val.sum()
+                        else:
+                            # Fallback to hard target
+                            policy_idx = np.array([action_idx], dtype=np.int32)
+                            policy_val = np.array([1.0], dtype=np.float32)
+                    else:
+                        # Hard target: single action with probability 1.0
+                        policy_idx = np.array([action_idx], dtype=np.int32)
+                        policy_val = np.array([1.0], dtype=np.float32)
+
                     # Store sample
                     features_list.append(stacked)
                     globals_list.append(globals_vec)
                     values_list.append(float(value))
                     values_mp_list.append(values_vec.copy())
                     num_players_list.append(num_players)
-                    policy_indices_list.append(np.array([action_idx], dtype=np.int32))
-                    policy_values_list.append(np.array([1.0], dtype=np.float32))
+                    policy_indices_list.append(policy_idx)
+                    policy_values_list.append(policy_val)
                     move_numbers_list.append(move_idx)
                     total_game_moves_list.append(moves_succeeded)
                     phases_list.append(phase_str)

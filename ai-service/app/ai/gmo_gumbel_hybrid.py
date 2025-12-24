@@ -40,34 +40,9 @@ from ..models import AIConfig, BoardType, GameState, Move
 from ..rules.mutable_state import MutableGameState
 from .base import BaseAI
 from .gmo_ai import GMOAI, GMOConfig, estimate_uncertainty
+from .gumbel_common import GumbelAction  # Unified data structure
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class GumbelAction:
-    """Represents an action with Gumbel-perturbed value and statistics."""
-    move: Move
-    policy_logit: float
-    gumbel_noise: float
-    perturbed_value: float
-    visit_count: int = 0
-    total_value: float = 0.0
-
-    @property
-    def mean_value(self) -> float:
-        """Mean value from simulations (Q-value)."""
-        if self.visit_count == 0:
-            return 0.0
-        return self.total_value / self.visit_count
-
-    def completed_q(self, max_visits: int, c_visit: float = 50.0) -> float:
-        """Compute completed Q-value for action selection."""
-        if self.visit_count == 0:
-            return self.policy_logit / 10.0
-
-        mix = c_visit / (c_visit + max_visits)
-        return (1 - mix) * self.mean_value + mix * (self.policy_logit / 10.0)
 
 
 @dataclass
