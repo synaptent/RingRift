@@ -661,6 +661,7 @@ def run_evaluation(
     player2_type: str,
     num_games: int,
     board_type: BoardType,
+    num_players: int,
     seed: int | None,
     checkpoint_path: str | None,
     checkpoint_path2: str | None,
@@ -676,6 +677,7 @@ def run_evaluation(
         player2_type: Type of AI for player 2
         num_games: Number of games to play
         board_type: Board type to use
+        num_players: Number of players (2, 3, or 4). Must match checkpoint config.
         seed: Random seed for reproducibility
         checkpoint_path: Path to neural network checkpoint for player 1
         checkpoint_path2: Path to neural network checkpoint for player 2
@@ -717,7 +719,7 @@ def run_evaluation(
     # Create environment via canonical factory
     env_config = TrainingEnvConfig(
         board_type=board_type,
-        num_players=2,
+        num_players=num_players,
         max_moves=max_moves_per_game,
         reward_mode="terminal",
     )
@@ -1068,6 +1070,14 @@ Supported AI Types:
         help="Board type to use (default: square8)",
     )
 
+    parser.add_argument(
+        "--num-players",
+        type=int,
+        choices=[2, 3, 4],
+        default=2,
+        help="Number of players (default: 2). Must match checkpoint training config.",
+    )
+
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
 
     parser.add_argument("--output", type=str, default=None, help="Output JSON file path for results")
@@ -1112,7 +1122,7 @@ def main() -> int:
     board_type = BOARD_TYPE_MAP[args.board]
 
     print(f"\nStarting evaluation: {args.player1} vs {args.player2}")
-    print(f"Games: {args.games}, Board: {args.board}, Seed: {args.seed}")
+    print(f"Games: {args.games}, Board: {args.board}, Players: {args.num_players}, Seed: {args.seed}")
     if args.checkpoint:
         print(f"P1 checkpoint: {args.checkpoint}")
     if args.checkpoint2:
@@ -1124,6 +1134,7 @@ def main() -> int:
         player2_type=args.player2,
         num_games=args.games,
         board_type=board_type,
+        num_players=args.num_players,
         seed=args.seed,
         checkpoint_path=args.checkpoint,
         checkpoint_path2=args.checkpoint2,
