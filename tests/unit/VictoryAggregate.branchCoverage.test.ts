@@ -147,10 +147,12 @@ describe('VictoryAggregate branch coverage', () => {
 
         const result = evaluateVictory(state);
 
-        expect(result.isGameOver).toBe(true);
-        expect(result.winner).toBe(1);
-        expect(result.reason).toBe('ring_elimination');
-        expect(result.handCountsAsEliminated).toBe(false);
+        expect(result).toMatchObject({
+          isGameOver: true,
+          winner: 1,
+          reason: 'ring_elimination',
+          handCountsAsEliminated: false,
+        });
       });
     });
 
@@ -167,10 +169,12 @@ describe('VictoryAggregate branch coverage', () => {
 
         const result = evaluateVictory(state);
 
-        expect(result.isGameOver).toBe(true);
-        expect(result.winner).toBe(1);
-        expect(result.reason).toBe('territory_control');
-        expect(result.handCountsAsEliminated).toBe(false);
+        expect(result).toMatchObject({
+          isGameOver: true,
+          winner: 1,
+          reason: 'territory_control',
+          handCountsAsEliminated: false,
+        });
       });
     });
 
@@ -384,9 +388,11 @@ describe('VictoryAggregate branch coverage', () => {
 
       const result = checkLastPlayerStanding(state);
 
-      expect(result).not.toBeNull();
-      expect(result!.winner).toBe(1);
-      expect(result!.reason).toBe('last_player_standing');
+      expect(result).toMatchObject({
+        isGameOver: true,
+        winner: 1,
+        reason: 'last_player_standing',
+      });
     });
 
     it('counts rings in hand', () => {
@@ -427,9 +433,11 @@ describe('VictoryAggregate branch coverage', () => {
 
       const result = checkScoreThreshold(state);
 
-      expect(result).not.toBeNull();
-      expect(result!.winner).toBe(1);
-      expect(result!.reason).toBe('ring_elimination');
+      expect(result).toMatchObject({
+        isGameOver: true,
+        winner: 1,
+        reason: 'ring_elimination',
+      });
     });
 
     it('returns territory control winner', () => {
@@ -444,9 +452,11 @@ describe('VictoryAggregate branch coverage', () => {
 
       const result = checkScoreThreshold(state);
 
-      expect(result).not.toBeNull();
-      expect(result!.winner).toBe(1);
-      expect(result!.reason).toBe('territory_control');
+      expect(result).toMatchObject({
+        isGameOver: true,
+        winner: 1,
+        reason: 'territory_control',
+      });
     });
   });
 

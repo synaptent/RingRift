@@ -48,6 +48,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Unified game discovery - finds all game databases across all storage patterns
+try:
+    from app.utils.game_discovery import GameDiscovery, count_games_for_config
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+    count_games_for_config = None
+
 # All board/player configurations
 CONFIGS = [
     ("square8", 2), ("square8", 3), ("square8", 4),
@@ -130,6 +139,19 @@ def count_games(db_path: Path) -> int:
     except Exception as e:
         logger.warning(f"Failed to count games in {db_path}: {e}")
         return 0
+
+
+def count_games_for_config_all_sources(board: str, players: int) -> int:
+    """Count games for a config across ALL databases using unified discovery.
+
+    This finds games in central DBs, selfplay DBs, P2P DBs, etc.
+    """
+    if HAS_GAME_DISCOVERY:
+        return count_games_for_config(board, players, PROJECT_ROOT)
+    else:
+        # Fallback to canonical DB only
+        db_path = PROJECT_ROOT / "data" / "games" / f"canonical_{board}_{players}p.db"
+        return count_games(db_path)
 
 
 def check_canonical_gate(db_path: Path) -> bool:

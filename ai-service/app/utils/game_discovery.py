@@ -67,6 +67,7 @@ class DatabaseInfo:
     game_count: int = 0
     is_central: bool = False  # Central DBs contain multiple board types
     source_pattern: str = ""  # Which pattern matched this DB
+    config_counts: dict[tuple[str, int], int] = field(default_factory=dict)  # For central DBs
 
 
 @dataclass
@@ -341,13 +342,18 @@ class GameDiscovery:
             board_type = board_type or inferred[0]
             num_players = num_players or inferred[1]
 
-        # Get game count
+        # Get game count and config breakdown
         game_count = 0
-        if board_type and num_players and not is_central:
+        config_counts: dict[tuple[str, int], int] = {}
+
+        if is_central:
+            # For central DBs, get breakdown by config
+            config_counts = self._get_config_counts_dict(path)
+            game_count = sum(config_counts.values())
+        elif board_type and num_players:
             game_count = self._count_games_in_db(path, board_type, num_players)
-        elif is_central:
-            # For central DBs, count all games
-            game_count = self._count_all_games(path)
+            if game_count > 0:
+                config_counts[(board_type, num_players)] = game_count
 
         return DatabaseInfo(
             path=path,
@@ -356,6 +362,7 @@ class GameDiscovery:
             game_count=game_count,
             is_central=is_central,
             source_pattern=source_pattern,
+            config_counts=config_counts,
         )
 
     def _infer_config_from_path(self, path: Path) -> tuple[str | None, int | None]:
@@ -421,7 +428,12 @@ class GameDiscovery:
             return 0
 
     def _get_config_counts(self, db_path: Path) -> dict[str, int]:
-        """Get game counts broken down by board_type and num_players."""
+        """Get game counts broken down by board_type and num_players (string keys)."""
+        counts_dict = self._get_config_counts_dict(db_path)
+        return {f"{bt}_{np}p": count for (bt, np), count in counts_dict.items()}
+
+    def _get_config_counts_dict(self, db_path: Path) -> dict[tuple[str, int], int]:
+        """Get game counts broken down by board_type and num_players (tuple keys)."""
         if not db_path.exists():
             return {}
 
@@ -436,8 +448,7 @@ class GameDiscovery:
             for row in cursor.fetchall():
                 board_type, num_players, count = row
                 if board_type and num_players:
-                    config_key = f"{board_type}_{num_players}p"
-                    results[config_key] = count
+                    results[(board_type, num_players)] = count
             conn.close()
             return results
         except Exception as e:
@@ -463,6 +474,309 @@ def get_game_counts_summary(root_path: Path | str | None = None) -> dict[str, in
     return GameDiscovery(root_path).count_games_by_config().by_config
 
 
+class RemoteGameDiscovery:
+    """Discover games on remote hosts via SSH.
+
+    Usage:
+        remote = RemoteGameDiscovery()
+        counts = remote.get_cluster_game_counts()
+        print(counts)
+        # {'lambda-gh200-a': {'hex8_2p': 35000, ...}, ...}
+    """
+
+    # Class-level cache for remote results
+    _remote_cache: dict[str, tuple[dict[str, int], float]] = {}
+    _cache_ttl: float = 300.0  # 5 minutes
+
+    def __init__(self, hosts_config_path: Path | str | None = None, cache_ttl: float | None = None):
+        """Initialize remote discovery.
+
+        Args:
+            hosts_config_path: Path to distributed_hosts.yaml
+            cache_ttl: Cache TTL in seconds (default: 300, set to 0 to disable caching)
+        """
+        if cache_ttl is not None:
+            self._cache_ttl = cache_ttl
+
+        if hosts_config_path is None:
+            # Auto-detect
+            candidates = [
+                Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml",
+                Path.cwd() / "config" / "distributed_hosts.yaml",
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    hosts_config_path = candidate
+                    break
+
+        self.hosts_config_path = Path(hosts_config_path) if hosts_config_path else None
+        self._hosts: dict = {}
+        self._load_hosts()
+
+    def _load_hosts(self):
+        """Load hosts from config file."""
+        if not self.hosts_config_path or not self.hosts_config_path.exists():
+            return
+
+        try:
+            import yaml
+            with open(self.hosts_config_path) as f:
+                config = yaml.safe_load(f) or {}
+            self._hosts = config.get("hosts", {})
+        except Exception:
+            pass
+
+    def get_active_hosts(self) -> list[str]:
+        """Get list of active host names."""
+        return [
+            name for name, info in self._hosts.items()
+            if info.get("status") in ("ready", "active")
+        ]
+
+    def get_remote_game_counts(
+        self,
+        host_name: str,
+        timeout: int = 30,
+        use_cache: bool = True,
+    ) -> dict[str, int]:
+        """Get game counts from a remote host via SSH.
+
+        Args:
+            host_name: Name of the host in distributed_hosts.yaml
+            timeout: SSH timeout in seconds
+            use_cache: If True, use cached results if available and not expired
+
+        Returns:
+            Dict mapping config (e.g., 'hex8_2p') to game count
+        """
+        import subprocess
+        import time
+
+        # Check cache
+        if use_cache and self._cache_ttl > 0:
+            cached = self._remote_cache.get(host_name)
+            if cached:
+                cached_counts, cached_time = cached
+                if time.time() - cached_time < self._cache_ttl:
+                    logger.debug(f"Using cached results for {host_name}")
+                    return cached_counts
+
+        host_info = self._hosts.get(host_name, {})
+        if not host_info:
+            return {}
+
+        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
+        ssh_user = host_info.get("ssh_user", "ubuntu")
+        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
+        ringrift_path = host_info.get("ringrift_path", "~/ringrift/ai-service")
+
+        # Run game discovery on remote host
+        cmd = [
+            "ssh",
+            "-i", os.path.expanduser(ssh_key),
+            "-o", f"ConnectTimeout={timeout}",
+            "-o", "StrictHostKeyChecking=no",
+            f"{ssh_user}@{ssh_host}",
+            f"cd {ringrift_path} && python3 -c \"from app.utils.game_discovery import get_game_counts_summary; import json; print(json.dumps(get_game_counts_summary()))\" 2>/dev/null",
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+            if result.returncode == 0:
+                import json
+                # Parse JSON from output (handle welcome messages)
+                for line in result.stdout.strip().split("\n"):
+                    line = line.strip()
+                    if line.startswith("{"):
+                        counts = json.loads(line)
+                        # Cache the result
+                        if self._cache_ttl > 0:
+                            self._remote_cache[host_name] = (counts, time.time())
+                        return counts
+            return {}
+        except Exception:
+            return {}
+
+    def clear_cache(self, host_name: str | None = None):
+        """Clear cached remote results.
+
+        Args:
+            host_name: Specific host to clear, or None to clear all
+        """
+        if host_name:
+            self._remote_cache.pop(host_name, None)
+        else:
+            self._remote_cache.clear()
+
+    def get_cluster_game_counts(
+        self,
+        hosts: list[str] | None = None,
+        parallel: bool = True,
+    ) -> dict[str, dict[str, int]]:
+        """Get game counts from all cluster hosts.
+
+        Args:
+            hosts: List of host names to query (default: all active hosts)
+            parallel: Query hosts in parallel
+
+        Returns:
+            Dict mapping host_name to {config: count} dict
+        """
+        if hosts is None:
+            hosts = self.get_active_hosts()
+
+        results = {}
+
+        if parallel:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {
+                    executor.submit(self.get_remote_game_counts, host): host
+                    for host in hosts
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    host = futures[future]
+                    try:
+                        results[host] = future.result()
+                    except Exception:
+                        results[host] = {}
+        else:
+            for host in hosts:
+                results[host] = self.get_remote_game_counts(host)
+
+        return results
+
+    def get_cluster_total_by_config(self) -> dict[str, int]:
+        """Get total game counts across all hosts, grouped by config."""
+        cluster_counts = self.get_cluster_game_counts()
+        totals: dict[str, int] = {}
+
+        for host_counts in cluster_counts.values():
+            for config, count in host_counts.items():
+                totals[config] = totals.get(config, 0) + count
+
+        return totals
+
+
+def run_diagnostics(discovery: GameDiscovery) -> None:
+    """Run comprehensive diagnostics on game discovery."""
+    print("\n" + "=" * 70)
+    print("GAME DISCOVERY DIAGNOSTICS")
+    print("=" * 70)
+
+    print(f"\nRoot path: {discovery.root_path}")
+    print(f"Root exists: {discovery.root_path.exists()}")
+
+    # Check each pattern
+    print("\n" + "-" * 70)
+    print("PATTERN ANALYSIS")
+    print("-" * 70)
+
+    patterns_found = 0
+    patterns_empty = 0
+    all_dbs_by_pattern: dict[str, list[DatabaseInfo]] = {}
+
+    for pattern, is_central in GameDiscovery.DB_PATTERNS:
+        # Expand the pattern for each board type
+        if "{board_type}" in pattern:
+            for bt in ALL_BOARD_TYPES:
+                for np in ALL_PLAYER_COUNTS:
+                    expanded = pattern.format(board_type=bt, num_players=np)
+                    matches = list(discovery._glob_pattern(expanded, is_central, bt, np, pattern))
+                    if matches:
+                        patterns_found += 1
+                        key = f"{pattern} [{bt}_{np}p]"
+                        all_dbs_by_pattern[key] = matches
+                        print(f"  [OK] {expanded}")
+                        for db in matches:
+                            print(f"       -> {db.path.name}: {db.game_count:,} games")
+        else:
+            matches = list(discovery._glob_pattern(pattern, is_central, None, None, pattern))
+            if matches:
+                patterns_found += 1
+                all_dbs_by_pattern[pattern] = matches
+                print(f"  [OK] {pattern}")
+                for db in matches:
+                    print(f"       -> {db.path.name}: {db.game_count:,} games")
+            else:
+                patterns_empty += 1
+                full_path = discovery.root_path / pattern.split("*")[0].rstrip("/")
+                exists = full_path.exists() if "*" not in str(full_path) else "N/A"
+                print(f"  [--] {pattern} (parent exists: {exists})")
+
+    # Summary by config
+    print("\n" + "-" * 70)
+    print("COVERAGE BY CONFIGURATION")
+    print("-" * 70)
+
+    counts = discovery.count_games_by_config()
+    for bt in ALL_BOARD_TYPES:
+        for np in ALL_PLAYER_COUNTS:
+            config = f"{bt}_{np}p"
+            count = counts.by_config.get(config, 0)
+            if count > 0:
+                status = "OK"
+            else:
+                status = "MISSING"
+            print(f"  [{status:7}] {config:20} {count:>10,} games")
+
+    # Potential issues
+    print("\n" + "-" * 70)
+    print("POTENTIAL ISSUES")
+    print("-" * 70)
+
+    issues = []
+    # Check for configs with no data
+    for bt in ALL_BOARD_TYPES:
+        for np in ALL_PLAYER_COUNTS:
+            config = f"{bt}_{np}p"
+            if counts.by_config.get(config, 0) == 0:
+                issues.append(f"No games found for {config}")
+
+    # Check for directories that might contain undiscovered databases
+    potential_dirs = [
+        "data/games",
+        "data/selfplay",
+        "data/training",
+    ]
+    for dir_path in potential_dirs:
+        full_path = discovery.root_path / dir_path
+        if full_path.exists():
+            for db_file in full_path.rglob("*.db"):
+                # Check if this DB was discovered
+                found = any(
+                    db.path == db_file
+                    for dbs in all_dbs_by_pattern.values()
+                    for db in dbs
+                )
+                if not found:
+                    # Check if it has games
+                    try:
+                        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=2.0)
+                        cursor = conn.execute("SELECT COUNT(*) FROM games")
+                        game_count = cursor.fetchone()[0]
+                        conn.close()
+                        if game_count > 0:
+                            issues.append(f"Undiscovered DB with {game_count:,} games: {db_file}")
+                    except Exception:
+                        pass
+
+    if issues:
+        for issue in issues:
+            print(f"  - {issue}")
+    else:
+        print("  No issues found!")
+
+    print("\n" + "-" * 70)
+    print("SUMMARY")
+    print("-" * 70)
+    print(f"  Databases found: {counts.databases_found}")
+    print(f"  Total games: {counts.total:,}")
+    print(f"  Patterns with matches: {patterns_found}")
+    print(f"  Patterns without matches: {patterns_empty}")
+    print("=" * 70)
+
+
 # CLI for testing
 if __name__ == "__main__":
     import argparse
@@ -476,31 +790,61 @@ if __name__ == "__main__":
         "--num-players", type=int, help="Filter by number of players"
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--cluster", action="store_true", help="Query all cluster hosts")
+    parser.add_argument("--diagnose", action="store_true", help="Run discovery diagnostics")
+    parser.add_argument("--no-cache", action="store_true", help="Disable caching for cluster queries")
     args = parser.parse_args()
 
-    discovery = GameDiscovery(args.root)
+    if args.diagnose:
+        discovery = GameDiscovery(args.root)
+        run_diagnostics(discovery)
+    elif args.cluster:
+        print("\nQuerying cluster hosts...")
+        cache_ttl = 0 if args.no_cache else 300
+        remote = RemoteGameDiscovery(cache_ttl=cache_ttl)
+        cluster_counts = remote.get_cluster_game_counts()
 
-    if args.board_type and args.num_players:
-        dbs = discovery.find_databases_for_config(args.board_type, args.num_players)
-        print(f"\nDatabases for {args.board_type} {args.num_players}p:")
-        total = 0
-        for db in dbs:
-            print(f"  {db.path}: {db.game_count:,} games")
-            total += db.game_count
-        print(f"\nTotal: {total:,} games")
+        print("\nGame counts by host:")
+        print("=" * 60)
+        for host, counts in sorted(cluster_counts.items()):
+            if counts:
+                total = sum(counts.values())
+                print(f"\n{host}: {total:,} total games")
+                for config, count in sorted(counts.items()):
+                    print(f"  {config}: {count:,}")
+            else:
+                print(f"\n{host}: (unreachable)")
+
+        print("\n" + "=" * 60)
+        totals = remote.get_cluster_total_by_config()
+        print(f"\nCluster totals ({len([h for h in cluster_counts.values() if h])} hosts reachable):")
+        for config, count in sorted(totals.items()):
+            print(f"  {config}: {count:,}")
+        print(f"\nGrand total: {sum(totals.values()):,} games")
     else:
-        counts = discovery.count_games_by_config()
-        print(f"\nGame counts by configuration ({counts.databases_found} databases):")
-        print("-" * 50)
-        for config, count in sorted(counts.by_config.items()):
-            print(f"  {config}: {count:,} games")
-        print("-" * 50)
-        print(f"Total: {counts.total:,} games")
+        discovery = GameDiscovery(args.root)
 
-        if args.verbose:
-            print("\n\nAll databases found:")
-            for db in discovery.find_all_databases():
-                print(f"  {db.path}")
-                print(f"    Pattern: {db.source_pattern}")
-                print(f"    Games: {db.game_count:,}")
-                print()
+        if args.board_type and args.num_players:
+            dbs = discovery.find_databases_for_config(args.board_type, args.num_players)
+            print(f"\nDatabases for {args.board_type} {args.num_players}p:")
+            total = 0
+            for db in dbs:
+                print(f"  {db.path}: {db.game_count:,} games")
+                total += db.game_count
+            print(f"\nTotal: {total:,} games")
+        else:
+            counts = discovery.count_games_by_config()
+            print(f"\nGame counts by configuration ({counts.databases_found} databases):")
+            print("-" * 50)
+            for config, count in sorted(counts.by_config.items()):
+                print(f"  {config}: {count:,} games")
+            print("-" * 50)
+            print(f"Total: {counts.total:,} games")
+
+            if args.verbose:
+                print("\n\nAll databases found:")
+                for db in discovery.find_all_databases():
+                    print(f"  {db.path}")
+                    print(f"    Pattern: {db.source_pattern}")
+                    print(f"    Games: {db.game_count:,}")
+                    print()

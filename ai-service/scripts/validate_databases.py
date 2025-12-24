@@ -24,6 +24,14 @@ SCRIPT_DIR = Path(__file__).parent
 AI_SERVICE_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(AI_SERVICE_DIR))
 
+# Unified game discovery
+try:
+    from app.utils.game_discovery import GameDiscovery
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+
 
 def validate_db_basic(db_path: str) -> tuple[int | None, str]:
     """
@@ -148,11 +156,15 @@ def scan_directory(
     check_structure: bool = False,
     delete_failing: bool = False,
     dry_run: bool = True,
-    verbose: bool = False
+    verbose: bool = False,
+    use_discovery: bool = False,
 ) -> tuple[list, list]:
     """
     Scan directory for databases and validate them.
     Returns (all_results, failing_dbs).
+
+    If use_discovery=True, uses unified GameDiscovery to find all databases
+    across all storage patterns (not just the specified path).
     """
     results = []
     failing_dbs = []
@@ -160,7 +172,12 @@ def scan_directory(
 
     db_files = []
     base = Path(base_path)
-    if base.is_file():
+
+    if use_discovery and HAS_GAME_DISCOVERY:
+        print("Using unified GameDiscovery to find all databases...")
+        discovery = GameDiscovery()
+        db_files = [db_info.path for db_info in discovery.find_all_databases()]
+    elif base.is_file():
         db_files = [base]
     else:
         db_files = sorted(base.rglob("*.db"))
@@ -261,6 +278,8 @@ TypeScript tools: npx ts-node scripts/selfplay-db-ts-replay.ts --db <path>
                         help="Actually delete (without this, --delete is a dry run)")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Show status for all databases, not just failing ones")
+    parser.add_argument("--use-discovery", action="store_true",
+                        help="Use unified GameDiscovery to find all databases across all storage patterns")
     args = parser.parse_args()
 
     dry_run = not args.force
@@ -270,7 +289,8 @@ TypeScript tools: npx ts-node scripts/selfplay-db-ts-replay.ts --db <path>
         check_structure=args.check_structure,
         delete_failing=args.delete,
         dry_run=dry_run,
-        verbose=args.verbose
+        verbose=args.verbose,
+        use_discovery=args.use_discovery,
     )
 
     # Exit with error code if there are failing databases

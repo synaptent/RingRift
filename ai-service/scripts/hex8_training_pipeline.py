@@ -390,10 +390,30 @@ def consolidate_databases(db_paths: list[Path], output_path: Path) -> int:
         try:
             src_conn = sqlite3.connect(str(db_path))
 
+            # Check which columns exist in source database
+            cursor = src_conn.execute("PRAGMA table_info(games)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            # Build SELECT based on available columns
+            select_cols = ["game_id", "board_type", "num_players", "winner"]
+            if "num_moves" in columns:
+                select_cols.append("num_moves")
+            else:
+                select_cols.append("0 as num_moves")  # Default value
+            if "created_at" in columns:
+                select_cols.append("created_at")
+            else:
+                select_cols.append("NULL as created_at")
+            if "completed_at" in columns:
+                select_cols.append("completed_at")
+            else:
+                select_cols.append("NULL as completed_at")
+
+            select_sql = ", ".join(select_cols)
+
             # Copy only hex8/hexagonal games
             games = src_conn.execute(
-                "SELECT game_id, board_type, num_players, winner, num_moves, "
-                "created_at, completed_at FROM games WHERE winner IS NOT NULL "
+                f"SELECT {select_sql} FROM games WHERE winner IS NOT NULL "
                 "AND board_type IN (?, ?)",
                 HEX8_BOARD_TYPES,
             ).fetchall()
@@ -408,27 +428,31 @@ def consolidate_databases(db_paths: list[Path], output_path: Path) -> int:
                 except sqlite3.IntegrityError:
                     pass  # Duplicate game_id
 
-            # Copy moves for included games
-            game_ids = [g[0] for g in games]
-            for game_id in game_ids:
-                moves = src_conn.execute(
-                    "SELECT game_id, move_number, player, move_type, from_pos, "
-                    "to_pos, placement_count, state_before, state_after "
-                    "FROM moves WHERE game_id = ?",
-                    (game_id,),
-                ).fetchall()
+            # Check if moves table exists and copy moves for included games
+            cursor = src_conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='moves'")
+            has_moves_table = cursor.fetchone() is not None
 
-                for move in moves:
-                    try:
-                        conn.execute(
-                            "INSERT INTO moves (game_id, move_number, player, move_type, "
-                            "from_pos, to_pos, placement_count, state_before, state_after) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                            move,
-                        )
-                        total_moves += 1
-                    except Exception:
-                        pass
+            if has_moves_table:
+                game_ids = [g[0] for g in games]
+                for game_id in game_ids:
+                    moves = src_conn.execute(
+                        "SELECT game_id, move_number, player, move_type, from_pos, "
+                        "to_pos, placement_count, state_before, state_after "
+                        "FROM moves WHERE game_id = ?",
+                        (game_id,),
+                    ).fetchall()
+
+                    for move in moves:
+                        try:
+                            conn.execute(
+                                "INSERT INTO moves (game_id, move_number, player, move_type, "
+                                "from_pos, to_pos, placement_count, state_before, state_after) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                move,
+                            )
+                            total_moves += 1
+                        except Exception:
+                            pass
 
             src_conn.close()
             logger.info(f"  -> Added {len(games)} hex8 games from {source_name}")

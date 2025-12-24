@@ -345,19 +345,23 @@ describe('phaseStateMachine', () => {
 
       const state = createTurnProcessingState(gameState, move);
 
-      expect(state.gameState).toBe(gameState);
-      expect(state.originalMove).toBe(move);
-      expect(state.perTurnFlags.hasPlacedThisTurn).toBe(false);
-      expect(state.perTurnFlags.mustMoveFromStackKey).toBeUndefined();
-      expect(state.perTurnFlags.eliminationRewardPending).toBe(false);
-      expect(state.perTurnFlags.eliminationRewardCount).toBe(0);
-      expect(state.pendingLines).toEqual([]);
-      expect(state.pendingRegions).toEqual([]);
-      expect(state.chainCaptureInProgress).toBe(false);
-      expect(state.chainCapturePosition).toBeUndefined();
-      expect(state.events).toEqual([]);
+      expect(state).toMatchObject({
+        gameState: gameState,
+        originalMove: move,
+        perTurnFlags: {
+          hasPlacedThisTurn: false,
+          mustMoveFromStackKey: undefined,
+          eliminationRewardPending: false,
+          eliminationRewardCount: 0,
+        },
+        pendingLines: [],
+        pendingRegions: [],
+        chainCaptureInProgress: false,
+        chainCapturePosition: undefined,
+        events: [],
+        startTime: expect.any(Number),
+      });
       expect(state.phasesTraversed).toContain(gameState.currentPhase);
-      expect(typeof state.startTime).toBe('number');
     });
   });
 

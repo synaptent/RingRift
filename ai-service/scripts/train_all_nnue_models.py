@@ -48,6 +48,15 @@ from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("train_all_nnue_models")
 
+# Unified game discovery - finds all game databases across all storage patterns
+try:
+    from app.utils.game_discovery import GameDiscovery, count_games_for_config
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+    count_games_for_config = None
+
 
 @dataclass
 class TrainingConfig:
@@ -109,13 +118,28 @@ def get_game_counts(db_paths: list[str]) -> dict[tuple[str, int], int]:
 def find_databases(data_dir: str = "data/games", include_noncanonical: bool = False) -> list[str]:
     """Find all SQLite game databases in the data directory.
 
+    Uses unified GameDiscovery to find databases across all storage patterns,
+    not just the specified directory.
+
     Args:
-        data_dir: Directory containing game databases
+        data_dir: Directory containing game databases (used as fallback)
         include_noncanonical: If True, include databases with known parity failures
 
     Returns:
         List of database paths
     """
+    # Use unified GameDiscovery if available
+    if HAS_GAME_DISCOVERY:
+        logger.info("Using unified GameDiscovery to find all databases...")
+        discovery = GameDiscovery()
+        db_paths = []
+        for db_info in discovery.find_all_databases():
+            if db_info.game_count > 0:
+                db_paths.append(str(db_info.path))
+        logger.info(f"Found {len(db_paths)} databases via GameDiscovery")
+        return db_paths
+
+    # Fallback to manual discovery
     # Import parity exclusions
     try:
         from app.training.parity_exclusions import should_exclude_database

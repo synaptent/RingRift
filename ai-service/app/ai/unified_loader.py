@@ -576,6 +576,8 @@ class UnifiedModelLoader:
                 RingRiftCNN_v3_Lite,
             )
 
+            # V3 uses spatial policy heads (like V4), not FC policy heads
+            # so it doesn't use policy_intermediate
             cls = RingRiftCNN_v3_Lite if config.is_lite_variant else RingRiftCNN_v3
             return cls(
                 board_size=board_size,
@@ -586,7 +588,6 @@ class UnifiedModelLoader:
                 history_length=config.history_length,
                 num_players=config.num_players,
                 policy_size=config.policy_size,
-                policy_intermediate=config.policy_intermediate,
                 value_intermediate=config.value_intermediate,
             )
 
@@ -615,11 +616,14 @@ class UnifiedModelLoader:
             )
 
             cls = HexNeuralNet_v2_Lite if config.is_lite_variant else HexNeuralNet_v2
+            # V2 uses board_size (2*hex_radius+1) as the primary spatial dimension
+            hex_board_size = 2 * config.hex_radius + 1
             # Hex models use total input channels (base * (history+1))
             total_in_channels = config.input_channels
             if config.history_length > 0:
                 total_in_channels = config.input_channels * (config.history_length + 1)
             return cls(
+                board_size=hex_board_size,
                 hex_radius=config.hex_radius,
                 in_channels=total_in_channels,
                 global_features=config.global_features,

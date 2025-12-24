@@ -24,6 +24,14 @@ import contextlib
 
 from app.utils.paths import AI_SERVICE_ROOT
 
+# Unified game discovery - finds all game databases across all storage patterns
+try:
+    from app.utils.game_discovery import GameDiscovery
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+
 # Resource checking
 try:
     from scripts.p2p.constants import MAX_DISK_USAGE_PERCENT
@@ -414,21 +422,31 @@ class StreamingDataCollector:
         await self._sync_selfplay_jsonl(host)
 
     def compute_quality_stats(self, sample_size: int = 500) -> dict[str, Any]:
-        """Compute data quality statistics from synced databases.
+        """Compute data quality statistics from all available databases.
+
+        Uses unified GameDiscovery to find databases across all storage patterns,
+        not just the synced directory.
 
         Returns:
             Dictionary with draw_rate, timeout_rate, game_lengths, etc.
         """
-        synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
-        if not synced_dir.exists():
-            return {"draw_rate": 0, "timeout_rate": 0, "game_lengths": []}
-
         total_games = 0
         draws = 0
         timeouts = 0
         game_lengths = []
 
-        for db_path in synced_dir.rglob("*.db"):
+        # Use unified GameDiscovery if available
+        if HAS_GAME_DISCOVERY:
+            discovery = GameDiscovery()
+            db_paths = [db_info.path for db_info in discovery.find_all_databases()]
+        else:
+            # Fallback to synced directory only
+            synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
+            if not synced_dir.exists():
+                return {"draw_rate": 0, "timeout_rate": 0, "game_lengths": []}
+            db_paths = list(synced_dir.rglob("*.db"))
+
+        for db_path in db_paths:
             try:
                 conn = sqlite3.connect(str(db_path))
                 conn.row_factory = sqlite3.Row

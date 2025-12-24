@@ -29,11 +29,39 @@ from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("aggregate_cluster_data")
 
+# Unified game discovery
+try:
+    from app.utils.game_discovery import GameDiscovery
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+
 
 def discover_databases(selfplay_dir: Path) -> dict[str, list[Path]]:
-    """Discover all cluster databases grouped by board type."""
+    """Discover all databases grouped by board type.
+
+    Uses unified GameDiscovery if available, falls back to legacy cluster-only scan.
+    """
     databases: dict[str, list[Path]] = defaultdict(list)
 
+    # Use unified GameDiscovery if available
+    if HAS_GAME_DISCOVERY:
+        logger.info("Using unified GameDiscovery...")
+        discovery = GameDiscovery()
+        for db_info in discovery.find_all_databases():
+            if db_info.game_count == 0:
+                continue
+            # Group by board_type + num_players
+            for (board_type, num_players), count in db_info.config_counts.items():
+                if count > 0:
+                    key = f"{board_type}_{num_players}p"
+                    if db_info.path not in databases[key]:
+                        databases[key].append(db_info.path)
+        return databases
+
+    # Fallback: Legacy cluster-only discovery
+    logger.info("Falling back to legacy cluster discovery...")
     for cluster_dir in sorted(selfplay_dir.iterdir()):
         if not cluster_dir.name.startswith("cluster_100."):
             continue

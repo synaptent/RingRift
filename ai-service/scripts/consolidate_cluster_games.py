@@ -46,6 +46,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Unified game discovery - finds all game databases across all storage patterns
+try:
+    from app.utils.game_discovery import GameDiscovery
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+
 # Default data directories
 DATA_DIR = PROJECT_ROOT / "data"
 GAMES_DIR = DATA_DIR / "games"
@@ -190,13 +198,39 @@ def sync_to_cluster(source_db: Path, nodes: list[str] | None = None) -> dict:
 
 
 def find_source_databases(games_dir: Path) -> list[Path]:
-    """Find source databases to merge."""
-    sources = []
+    """Find source databases to merge.
 
+    Uses unified GameDiscovery to find ALL databases across all storage patterns,
+    not just the hardcoded MERGE_SOURCES list.
+    """
+    sources = []
+    seen_paths: set[Path] = set()
+
+    # Use unified GameDiscovery if available (preferred method)
+    if HAS_GAME_DISCOVERY:
+        logger.info("Using unified GameDiscovery to find all source databases...")
+        discovery = GameDiscovery(PROJECT_ROOT)
+
+        for db_info in discovery.find_all_databases():
+            # Skip the target database
+            if db_info.path.name == TARGET_DB:
+                continue
+            # Skip empty databases
+            if db_info.game_count == 0:
+                continue
+            if db_info.path not in seen_paths:
+                sources.append(db_info.path)
+                seen_paths.add(db_info.path)
+                logger.info(f"Found via discovery: {db_info.path} ({db_info.game_count:,} games)")
+
+        return sources
+
+    # Fallback to hardcoded sources
     for db_name in MERGE_SOURCES:
         db_path = games_dir / db_name
-        if db_path.exists():
+        if db_path.exists() and db_path not in seen_paths:
             sources.append(db_path)
+            seen_paths.add(db_path)
             logger.info(f"Found source: {db_path}")
 
     # Also look for any other potential sources
@@ -207,13 +241,15 @@ def find_source_databases(games_dir: Path) -> list[Path]:
         # Skip glob patterns or special files
         if "*" in name or name.startswith("."):
             continue
-        if db_file in sources:
+        if db_file in seen_paths:
             continue
         if name.startswith("canonical_"):
             sources.append(db_file)
+            seen_paths.add(db_file)
             logger.info(f"Found canonical source: {db_file}")
         elif "tournament" in name:
             sources.append(db_file)
+            seen_paths.add(db_file)
             logger.info(f"Found tournament source: {db_file}")
 
     return sources

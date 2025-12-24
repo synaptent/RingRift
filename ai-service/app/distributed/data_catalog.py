@@ -76,6 +76,15 @@ except ImportError:
     DataManifest = None
     GameQualityMetadata = None
 
+# Unified game discovery - finds all game databases across all storage patterns
+try:
+    from app.utils.game_discovery import GameDiscovery, DatabaseInfo
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+    DatabaseInfo = None
+
 
 @dataclass
 class DataSource:
@@ -104,6 +113,31 @@ class CatalogStats:
     avg_quality_score: float = 0.0
     high_quality_games: int = 0  # Quality >= 0.5
     board_type_distribution: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class TrainingSourceRecommendation:
+    """A recommended training data source with scoring details."""
+    path: Path
+    game_count: int
+    board_type: str | None
+    num_players: int | None
+    score: float
+    host_origin: str
+    reasons: list[str] = field(default_factory=list)
+    is_primary: bool = False  # True if this is a primary recommendation
+
+
+@dataclass
+class TrainingSourceSuggestion:
+    """Complete training source suggestion with recommendations and summary."""
+    board_type: str
+    num_players: int
+    recommendations: list[TrainingSourceRecommendation]
+    total_games_available: int
+    games_needed: int
+    coverage_percent: float
+    warnings: list[str] = field(default_factory=list)
 
 
 class DataCatalog:
@@ -174,6 +208,9 @@ class DataCatalog:
     def discover_data_sources(self, force: bool = False) -> list[DataSource]:
         """Discover all available data sources.
 
+        Uses unified GameDiscovery if available for comprehensive discovery
+        across all storage patterns (central DBs, selfplay dirs, p2p dirs, etc.).
+
         Args:
             force: Force re-discovery even if cache is fresh
 
@@ -186,7 +223,63 @@ class DataCatalog:
 
         self._sources.clear()
 
-        # Discover local game directories
+        # Use unified GameDiscovery if available (preferred method)
+        if HAS_GAME_DISCOVERY:
+            self._discover_via_game_discovery()
+        else:
+            # Fallback to manual discovery
+            self._discover_manually()
+
+        self._last_discovery = now
+        logger.info(f"Discovered {len(self._sources)} data sources")
+
+        return list(self._sources.values())
+
+    def _discover_via_game_discovery(self) -> None:
+        """Discover data sources using unified GameDiscovery.
+
+        This method finds ALL databases across all storage patterns:
+        - Central databases (selfplay.db, jsonl_aggregated.db)
+        - Per-config databases
+        - Tournament databases
+        - Canonical selfplay databases
+        - P2P selfplay databases
+        - And more...
+        """
+        discovery = GameDiscovery()
+        local_source_type = "nfs" if self._provider and self._provider.has_shared_storage else "local"
+
+        for db_info in discovery.find_all_databases():
+            try:
+                source = DataSource(
+                    name=db_info.path.name,
+                    path=db_info.path,
+                    source_type=local_source_type,
+                    host_origin=self.node_id,
+                    game_count=db_info.game_count,
+                    total_size_bytes=db_info.path.stat().st_size if db_info.path.exists() else 0,
+                    last_modified=db_info.path.stat().st_mtime if db_info.path.exists() else 0.0,
+                    is_available=True,
+                    board_types={db_info.board_type} if db_info.board_type else set(),
+                    player_counts={db_info.num_players} if db_info.num_players else set(),
+                )
+                if source.game_count > 0:
+                    self._sources[str(db_info.path)] = source
+            except Exception as e:
+                logger.debug(f"Failed to create source from {db_info.path}: {e}")
+
+        # Also discover synced data from other hosts
+        if self.sync_dir.exists():
+            for host_dir in self.sync_dir.iterdir():
+                if host_dir.is_dir():
+                    self._discover_directory(
+                        host_dir,
+                        source_type="synced",
+                        host_origin=host_dir.name,
+                    )
+
+    def _discover_manually(self) -> None:
+        """Fallback manual discovery when GameDiscovery is not available."""
         local_source_type = "nfs" if self._provider and self._provider.has_shared_storage else "local"
         for game_dir in self.local_game_dirs:
             self._discover_directory(game_dir, source_type=local_source_type, host_origin=self.node_id)
@@ -200,11 +293,6 @@ class DataCatalog:
                         source_type="synced",
                         host_origin=host_dir.name,
                     )
-
-        self._last_discovery = now
-        logger.info(f"Discovered {len(self._sources)} data sources")
-
-        return list(self._sources.values())
 
     def _discover_directory(
         self,
@@ -539,6 +627,151 @@ class DataCatalog:
                 total_games += source.game_count
 
         return [s.path for s in selected]
+
+    def suggest_best_training_sources(
+        self,
+        board_type: str,
+        num_players: int,
+        target_games: int = 50000,
+        min_quality: float = 0.0,
+    ) -> TrainingSourceSuggestion:
+        """Get intelligent training source suggestions with scoring and explanations.
+
+        This method provides detailed recommendations for which databases to use
+        for training, including:
+        - Scoring based on quality, recency, and game count
+        - Reasons why each source was selected
+        - Warnings about potential issues
+        - Coverage analysis
+
+        Args:
+            board_type: Board type to train (e.g., 'hex8', 'square8')
+            num_players: Number of players (2, 3, or 4)
+            target_games: Target number of games for training
+            min_quality: Minimum quality score threshold
+
+        Returns:
+            TrainingSourceSuggestion with ranked recommendations
+        """
+        self.discover_data_sources()
+
+        # Find matching sources
+        candidates: list[tuple[DataSource, float, list[str]]] = []
+        now = time.time()
+
+        for source in self._sources.values():
+            # Check if source has matching config
+            if board_type not in source.board_types:
+                continue
+            if num_players not in source.player_counts:
+                continue
+            if source.avg_quality_score < min_quality:
+                continue
+            if source.game_count == 0:
+                continue
+
+            # Calculate score and reasons
+            score = 0.0
+            reasons = []
+
+            # Quality component (0-40 points)
+            quality_score = source.avg_quality_score * 40
+            score += quality_score
+            if source.avg_quality_score > 0.7:
+                reasons.append(f"High quality ({source.avg_quality_score:.2f})")
+            elif source.avg_quality_score > 0.3:
+                reasons.append(f"Medium quality ({source.avg_quality_score:.2f})")
+
+            # Game count component (0-30 points, logarithmic)
+            import math
+            if source.game_count > 0:
+                count_score = min(30, math.log10(source.game_count) * 10)
+                score += count_score
+                if source.game_count > 10000:
+                    reasons.append(f"Large dataset ({source.game_count:,} games)")
+                elif source.game_count > 1000:
+                    reasons.append(f"Good dataset ({source.game_count:,} games)")
+
+            # Recency component (0-20 points)
+            age_days = (now - source.last_modified) / 86400
+            if age_days < 1:
+                score += 20
+                reasons.append("Very recent (<1 day)")
+            elif age_days < 7:
+                score += 15
+                reasons.append("Recent (<7 days)")
+            elif age_days < 30:
+                score += 10
+            elif age_days < 90:
+                score += 5
+
+            # Source type bonus (0-10 points)
+            if source.source_type == "local":
+                score += 10
+                reasons.append("Local source (fast access)")
+            elif source.source_type == "nfs":
+                score += 8
+                reasons.append("NFS shared storage")
+            elif source.source_type == "synced":
+                score += 5
+
+            candidates.append((source, score, reasons))
+
+        # Sort by score
+        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        # Build recommendations
+        recommendations = []
+        total_available = 0
+        selected_games = 0
+
+        for i, (source, score, reasons) in enumerate(candidates):
+            total_available += source.game_count
+
+            is_primary = i < 3 or selected_games < target_games
+
+            rec = TrainingSourceRecommendation(
+                path=source.path,
+                game_count=source.game_count,
+                board_type=board_type,
+                num_players=num_players,
+                score=score,
+                host_origin=source.host_origin,
+                reasons=reasons,
+                is_primary=is_primary,
+            )
+            recommendations.append(rec)
+
+            if is_primary:
+                selected_games += source.game_count
+
+        # Generate warnings
+        warnings = []
+        if total_available == 0:
+            warnings.append(f"No data found for {board_type}_{num_players}p")
+        elif total_available < target_games:
+            warnings.append(
+                f"Only {total_available:,} games available "
+                f"(target: {target_games:,})"
+            )
+
+        if len(recommendations) == 0:
+            warnings.append("No suitable training sources found")
+        elif len(recommendations) == 1:
+            warnings.append("Only one source available - consider data augmentation")
+
+        # Calculate coverage
+        coverage = min(100.0, (total_available / target_games) * 100) if target_games > 0 else 100.0
+
+        return TrainingSourceSuggestion(
+            board_type=board_type,
+            num_players=num_players,
+            recommendations=recommendations,
+            total_games_available=total_available,
+            games_needed=target_games,
+            coverage_percent=coverage,
+            warnings=warnings,
+        )
 
 
 # Singleton instance

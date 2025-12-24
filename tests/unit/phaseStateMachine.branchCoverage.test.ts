@@ -811,19 +811,23 @@ describe('phaseStateMachine branch coverage', () => {
 
       const result = createTurnProcessingState(gameState, move);
 
-      expect(result.gameState).toBe(gameState);
-      expect(result.originalMove).toBe(move);
-      expect(result.perTurnFlags.hasPlacedThisTurn).toBe(false);
-      expect(result.perTurnFlags.mustMoveFromStackKey).toBeUndefined();
-      expect(result.perTurnFlags.eliminationRewardPending).toBe(false);
-      expect(result.perTurnFlags.eliminationRewardCount).toBe(0);
-      expect(result.pendingLines).toEqual([]);
-      expect(result.pendingRegions).toEqual([]);
-      expect(result.chainCaptureInProgress).toBe(false);
-      expect(result.chainCapturePosition).toBeUndefined();
-      expect(result.events).toEqual([]);
-      expect(result.phasesTraversed).toEqual(['ring_placement']);
-      expect(result.startTime).toBeDefined();
+      expect(result).toMatchObject({
+        gameState: gameState,
+        originalMove: move,
+        perTurnFlags: {
+          hasPlacedThisTurn: false,
+          mustMoveFromStackKey: undefined,
+          eliminationRewardPending: false,
+          eliminationRewardCount: 0,
+        },
+        pendingLines: [],
+        pendingRegions: [],
+        chainCaptureInProgress: false,
+        chainCapturePosition: undefined,
+        events: [],
+        phasesTraversed: ['ring_placement'],
+        startTime: expect.any(Number),
+      });
     });
   });
 });

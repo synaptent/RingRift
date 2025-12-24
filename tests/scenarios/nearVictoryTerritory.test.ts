@@ -37,10 +37,20 @@ describe('Near-victory territory scenarios', () => {
       });
 
       it('should create a valid game state', () => {
-        expect(fixture.gameState).toBeDefined();
-        expect(fixture.gameState.board).toBeDefined();
+        expect(fixture.gameState).toMatchObject({
+          board: expect.objectContaining({
+            stacks: expect.any(Map),
+            collapsedSpaces: expect.any(Map),
+            territories: expect.any(Map),
+          }),
+          players: expect.arrayContaining([
+            expect.objectContaining({ playerNumber: 1 }),
+            expect.objectContaining({ playerNumber: 2 }),
+          ]),
+          boardType: boardType,
+          gameStatus: 'active',
+        });
         expect(fixture.gameState.players).toHaveLength(2);
-        expect(fixture.gameState.boardType).toBe(boardType);
       });
 
       it('should set Player 1 territory spaces just below victory threshold', () => {
@@ -63,7 +73,10 @@ describe('Near-victory territory scenarios', () => {
         const pendingDecision = (fixture.gameState as unknown as Record<string, unknown>)
           .pendingTerritoryDecision as { territories: string[]; currentIndex: number } | undefined;
 
-        expect(pendingDecision).toBeDefined();
+        expect(pendingDecision).toMatchObject({
+          territories: expect.any(Array),
+          currentIndex: expect.any(Number),
+        });
         expect(pendingDecision?.territories).toHaveLength(1);
       });
 
@@ -73,10 +86,15 @@ describe('Near-victory territory scenarios', () => {
       });
 
       it('should have a valid winning move defined', () => {
-        expect(fixture.winningMove).toBeDefined();
-        expect(fixture.winningMove.type).toBe('choose_territory_option');
-        expect(fixture.winningMove.player).toBe(1);
-        expect(fixture.winningMove.disconnectedRegions).toBeDefined();
+        expect(fixture.winningMove).toMatchObject({
+          type: 'choose_territory_option',
+          player: 1,
+          disconnectedRegions: expect.arrayContaining([
+            expect.objectContaining({
+              spaces: expect.any(Array),
+            }),
+          ]),
+        });
         expect(fixture.winningMove.disconnectedRegions).toHaveLength(1);
       });
 
@@ -131,9 +149,12 @@ describe('Near-victory territory scenarios', () => {
       // Now verify victory is detected
       const result = evaluateVictory(state);
 
-      expect(result.isGameOver).toBe(true);
-      expect(result.winner).toBe(1);
-      expect(result.reason).toBe('territory_control');
+      expect(result).toMatchObject({
+        isGameOver: true,
+        winner: 1,
+        reason: 'territory_control',
+        handCountsAsEliminated: expect.any(Boolean),
+      });
 
       // S-invariant delta should equal the number of newly collapsed
       // spaces in this curated near-victory scenario.
@@ -174,7 +195,10 @@ describe('Near-victory territory scenarios', () => {
       expect(territories.size).toBeGreaterThan(0);
 
       const region = Array.from(territories.values())[0];
-      expect(region).toBeDefined();
+      expect(region).toMatchObject({
+        spaces: expect.any(Array),
+        controllingPlayer: expect.any(Number),
+      });
       expect(region!.spaces.length).toBeGreaterThan(1);
     });
 
@@ -199,9 +223,11 @@ describe('Near-victory territory scenarios', () => {
       // Verify victory is detected
       const result = evaluateVictory(state);
 
-      expect(result.isGameOver).toBe(true);
-      expect(result.winner).toBe(1);
-      expect(result.reason).toBe('territory_control');
+      expect(result).toMatchObject({
+        isGameOver: true,
+        winner: 1,
+        reason: 'territory_control',
+      });
     });
   });
 
@@ -214,17 +240,32 @@ describe('Near-victory territory scenarios', () => {
       const fixture = createNearVictoryTerritoryFixture();
       const serialized = serializeNearVictoryTerritoryFixture(fixture);
 
-      expect(serialized.gameState).toBeDefined();
-      expect(serialized.winningMove).toBeDefined();
+      expect(serialized).toMatchObject({
+        gameState: expect.objectContaining({
+          currentPhase: 'territory_processing',
+          boardType: expect.any(String),
+        }),
+        winningMove: expect.objectContaining({
+          type: 'choose_territory_option',
+          player: expect.any(Number),
+        }),
+      });
 
       // Verify it can be stringified (valid JSON)
       const jsonString = JSON.stringify(serialized);
       expect(typeof jsonString).toBe('string');
+      expect(jsonString.length).toBeGreaterThan(100); // Non-trivial content
 
-      // Verify it can be parsed back
+      // Verify it can be parsed back with structural validation
       const parsed = JSON.parse(jsonString);
-      expect(parsed.gameState.currentPhase).toBe('territory_processing');
-      expect(parsed.winningMove.type).toBe('choose_territory_option');
+      expect(parsed).toMatchObject({
+        gameState: expect.objectContaining({
+          currentPhase: 'territory_processing',
+        }),
+        winningMove: expect.objectContaining({
+          type: 'choose_territory_option',
+        }),
+      });
     });
   });
 

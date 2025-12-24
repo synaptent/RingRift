@@ -308,16 +308,23 @@ describe('Contract Test Vectors', () => {
     it('should have valid vector structure', () => {
       const vectors = loadAllVectors();
       for (const vector of vectors) {
-        expect(vector.id).toBeDefined();
-        expect(vector.category).toBeDefined();
-        expect(vector.input).toBeDefined();
-        expect(vector.input.state).toBeDefined();
+        // Validate each vector has required structural properties
+        expect(vector).toMatchObject({
+          id: expect.any(String),
+          category: expect.any(String),
+          input: expect.objectContaining({
+            state: expect.any(Object),
+          }),
+          expectedOutput: expect.objectContaining({
+            status: expect.stringMatching(/^(complete|awaiting_decision)$/),
+          }),
+          tags: expect.any(Array),
+        });
+
         // Vectors may use 'move' or 'initialMove' (for multi-step sequences)
         const hasMove =
           vector.input.move !== undefined || (vector.input as any).initialMove !== undefined;
         expect(hasMove).toBe(true);
-        expect(vector.expectedOutput).toBeDefined();
-        expect(vector.expectedOutput.status).toMatch(/^(complete|awaiting_decision)$/);
       }
     });
   });

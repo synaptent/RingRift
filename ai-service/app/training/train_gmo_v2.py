@@ -198,56 +198,73 @@ def train_epoch(
     dataloader: DataLoader,
     optimizer: optim.Optimizer,
     device: torch.device,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> float:
-    """Train for one epoch."""
+    """Train for one epoch with batched processing and optional AMP."""
     state_encoder.train()
     move_encoder.train()
     value_net.train()
 
     total_loss = 0.0
     num_batches = 0
+    use_amp = scaler is not None
 
     for state_features, move_embeds, outcomes in tqdm(dataloader, desc="Training"):
-        state_features = state_features.to(device)
-        move_embeds = move_embeds.to(device)
-        outcomes = outcomes.to(device)
+        state_features = state_features.to(device, non_blocking=True)
+        move_embeds = move_embeds.to(device, non_blocking=True)
+        outcomes = outcomes.to(device, non_blocking=True)
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
-        # Process through attention encoder
-        batch_size = state_features.size(0)
-        state_embeds_list = []
-        for i in range(batch_size):
-            # Input projection
-            x = state_encoder.input_proj(state_features[i].unsqueeze(0))
-            positions = torch.arange(
-                state_encoder.num_positions, device=device
+        with torch.amp.autocast('cuda', enabled=use_amp):
+            # BATCHED attention encoder processing (not per-sample!)
+            batch_size = state_features.size(0)
+
+            # Input projection for entire batch
+            x = state_encoder.input_proj(state_features)  # (B, num_positions, embed_dim)
+
+            # Position embeddings (broadcast to batch)
+            positions = torch.arange(state_encoder.num_positions, device=device)
+            pos_embed = state_encoder.position_embed(positions).unsqueeze(0)  # (1, num_pos, embed)
+            x = x + pos_embed  # Broadcasting adds to all batch items
+
+            # Transformer processes full batch
+            x = state_encoder.transformer(x)  # (B, num_positions, embed_dim)
+
+            # Global pooling
+            x = x.transpose(1, 2)  # (B, embed_dim, num_positions)
+            x = state_encoder.global_pool(x).squeeze(-1)  # (B, embed_dim)
+
+            # Output projection
+            state_embeds = state_encoder.output_proj(x)  # (B, state_dim)
+
+            # Forward through value network
+            pred_values, pred_log_vars = value_net(state_embeds, move_embeds)
+
+            # Compute loss
+            loss = nll_loss_with_uncertainty(pred_values, pred_log_vars, outcomes)
+
+        # Backward with optional mixed precision
+        if use_amp:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(
+                list(state_encoder.parameters()) +
+                list(move_encoder.parameters()) +
+                list(value_net.parameters()),
+                max_norm=1.0,
             )
-            pos_embed = state_encoder.position_embed(positions).unsqueeze(0)
-            x = x + pos_embed
-            x = state_encoder.transformer(x)
-            x = x.transpose(1, 2)
-            x = state_encoder.global_pool(x).squeeze(-1)
-            x = state_encoder.output_proj(x)
-            state_embeds_list.append(x)
-
-        state_embeds = torch.cat(state_embeds_list, dim=0)
-
-        # Forward through value network
-        pred_values, pred_log_vars = value_net(state_embeds, move_embeds)
-
-        # Compute loss
-        loss = nll_loss_with_uncertainty(pred_values, pred_log_vars, outcomes)
-
-        # Backward with gradient clipping
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            list(state_encoder.parameters()) +
-            list(move_encoder.parameters()) +
-            list(value_net.parameters()),
-            max_norm=1.0,
-        )
-        optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(state_encoder.parameters()) +
+                list(move_encoder.parameters()) +
+                list(value_net.parameters()),
+                max_norm=1.0,
+            )
+            optimizer.step()
 
         total_loss += loss.item()
         num_batches += 1
@@ -262,7 +279,7 @@ def evaluate_epoch(
     dataloader: DataLoader,
     device: torch.device,
 ) -> tuple[float, float]:
-    """Evaluate on validation set."""
+    """Evaluate on validation set with batched processing."""
     state_encoder.eval()
     move_encoder.eval()
     value_net.eval()
@@ -273,27 +290,19 @@ def evaluate_epoch(
 
     with torch.no_grad():
         for state_features, move_embeds, outcomes in dataloader:
-            state_features = state_features.to(device)
-            move_embeds = move_embeds.to(device)
-            outcomes = outcomes.to(device)
+            state_features = state_features.to(device, non_blocking=True)
+            move_embeds = move_embeds.to(device, non_blocking=True)
+            outcomes = outcomes.to(device, non_blocking=True)
 
-            # Process through attention encoder
-            batch_size = state_features.size(0)
-            state_embeds_list = []
-            for i in range(batch_size):
-                x = state_encoder.input_proj(state_features[i].unsqueeze(0))
-                positions = torch.arange(
-                    state_encoder.num_positions, device=device
-                )
-                pos_embed = state_encoder.position_embed(positions).unsqueeze(0)
-                x = x + pos_embed
-                x = state_encoder.transformer(x)
-                x = x.transpose(1, 2)
-                x = state_encoder.global_pool(x).squeeze(-1)
-                x = state_encoder.output_proj(x)
-                state_embeds_list.append(x)
-
-            state_embeds = torch.cat(state_embeds_list, dim=0)
+            # BATCHED attention encoder processing
+            x = state_encoder.input_proj(state_features)
+            positions = torch.arange(state_encoder.num_positions, device=device)
+            pos_embed = state_encoder.position_embed(positions).unsqueeze(0)
+            x = x + pos_embed
+            x = state_encoder.transformer(x)
+            x = x.transpose(1, 2)
+            x = state_encoder.global_pool(x).squeeze(-1)
+            state_embeds = state_encoder.output_proj(x)
 
             pred_values, pred_log_vars = value_net(state_embeds, move_embeds)
             loss = nll_loss_with_uncertainty(pred_values, pred_log_vars, outcomes)
@@ -369,17 +378,27 @@ def train_gmo_v2(
         dataset, [train_size, val_size]
     )
 
+    # Determine num_workers based on device
+    num_workers = 8 if device.type == "cuda" else 0
+    pin_memory = device.type == "cuda"
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         collate_fn=collate_fn,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
         collate_fn=collate_fn,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
     # Optimizer with regularization
@@ -396,6 +415,9 @@ def train_gmo_v2(
         optimizer, T_0=10, T_mult=2
     )
 
+    # AMP scaler for mixed precision training on CUDA
+    scaler = torch.amp.GradScaler('cuda') if device.type == "cuda" else None
+
     # Training loop with early stopping
     best_val_loss = float("inf")
     epochs_without_improvement = 0
@@ -404,7 +426,7 @@ def train_gmo_v2(
     for epoch in range(num_epochs):
         train_loss = train_epoch(
             state_encoder, move_encoder, value_net,
-            train_loader, optimizer, device
+            train_loader, optimizer, device, scaler
         )
 
         val_loss, val_acc = evaluate_epoch(
