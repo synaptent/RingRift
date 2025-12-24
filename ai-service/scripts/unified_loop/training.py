@@ -1337,7 +1337,7 @@ class TrainingScheduler:
             return False
 
         # Circuit breaker check - avoid spawning if too many recent failures (2025-12)
-        if self._circuit_breaker and not self._circuit_breaker.can_proceed("training_spawn"):
+        if self._circuit_breaker and not self._circuit_breaker.can_execute("training_spawn"):
             print("[Training] BLOCKED by circuit breaker: training spawn circuit OPEN (too many recent failures)")
             if HAS_PROMETHEUS:
                 DATA_QUALITY_BLOCKED_TRAINING.labels(reason="circuit_breaker_open").inc()
