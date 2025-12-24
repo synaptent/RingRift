@@ -26447,12 +26447,13 @@ print(json.dumps({{
                     elif node.has_gpu and is_high_end_gpu and not is_apple_gpu and not gpu_seems_unavailable:
                         # High-end CUDA GPUs: Mix of GPU_SELFPLAY (volume) and GUMBEL_SELFPLAY (quality)
                         # GPU selfplay now has high parity with CPU rules (2025-12 upgrade)
-                        # Use Gumbel MCTS ~20% of time for high-quality training data (self-improvement loop)
+                        # Use Gumbel MCTS ~50% of time for high-quality training data (self-improvement loop)
+                        # Increased from 20% to close the training loop - AlphaZero needs NN+MCTS data
                         import random
-                        if random.random() < 0.2:  # 20% chance for Gumbel MCTS (quality)
+                        if random.random() < 0.5:  # 50% chance for Gumbel MCTS (quality) - was 20%
                             job_type = JobType.GUMBEL_SELFPLAY
                             task_type_str = "GUMBEL (high-quality)"
-                        else:  # 80% for GPU selfplay (volume)
+                        else:  # 50% for GPU selfplay (volume)
                             job_type = JobType.GPU_SELFPLAY
                             task_type_str = "GPU (high-parity)"
                     elif node.has_gpu and not is_apple_gpu and not gpu_seems_unavailable:
@@ -27335,16 +27336,18 @@ print(json.dumps({{
             elif job_type == JobType.GUMBEL_SELFPLAY:
                 # High-quality Gumbel MCTS selfplay with NN policy for self-improvement training
                 # Uses generate_gumbel_selfplay.py with proper MCTS simulation budget
+                # AlphaZero used 800 sims - we use 400-600 for balance of quality and throughput
 
                 # Games and simulation budget based on board type
-                num_games = 50  # Lower volume, higher quality
-                simulation_budget = 150
+                # Higher simulation budget = better quality moves = better training signal
+                num_games = 30  # Reduced for higher sim budget
+                simulation_budget = 400  # Increased from 150 for AlphaZero-quality moves
                 if board_type == "square19":
-                    num_games = 25
-                    simulation_budget = 200  # More search for larger board
+                    num_games = 15
+                    simulation_budget = 600  # More search for larger board
                 elif board_type in ("hex", "hexagonal", "hex8"):
-                    num_games = 40
-                    simulation_budget = 150
+                    num_games = 25
+                    simulation_budget = 400
 
                 output_dir = Path(
                     self.ringrift_path,
