@@ -87,6 +87,14 @@ from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move, Position
 from app.training.canonical_sources import enforce_canonical_sources
 
+# Unified game discovery
+try:
+    from app.utils.game_discovery import GameDiscovery
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    GameDiscovery = None
+
 
 def _normalize_hex_board_size(board: "BoardState") -> "BoardState":
     """Normalize hex board size from legacy Convention A to Convention B.
@@ -800,11 +808,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         action="append",
         dest="db_paths",
-        required=True,
         help=(
             "Path to a GameReplayDB SQLite file. Can be specified multiple times "
             "for multi-source export with automatic deduplication by game_id. "
-            "Example: --db db1.db --db db2.db"
+            "Example: --db db1.db --db db2.db. "
+            "Required unless --use-discovery is specified."
+        ),
+    )
+    parser.add_argument(
+        "--use-discovery",
+        action="store_true",
+        help=(
+            "Use unified GameDiscovery to automatically find all databases "
+            "for the specified board-type and num-players. "
+            "When enabled, --db is optional."
         ),
     )
     parser.add_argument(
@@ -1015,15 +1032,36 @@ def main(argv: list[str] | None = None) -> int:
     if args.sample_every < 1:
         raise ValueError("--sample-every must be >= 1")
 
+    # Handle database discovery
+    db_paths = args.db_paths or []
+
+    if args.use_discovery:
+        if not HAS_GAME_DISCOVERY:
+            raise RuntimeError("--use-discovery requires GameDiscovery module")
+        print(f"[DISCOVERY] Finding databases for {args.board_type} {args.num_players}p...")
+        discovery = GameDiscovery()
+        discovered_dbs = discovery.find_databases_for_config(args.board_type, args.num_players)
+        for db_info in discovered_dbs:
+            if db_info.game_count > 0 and str(db_info.path) not in db_paths:
+                db_paths.append(str(db_info.path))
+                print(f"  Found: {db_info.path} ({db_info.game_count:,} games)")
+        if not db_paths:
+            print("[DISCOVERY] No databases found for this configuration")
+            return 1
+        print(f"[DISCOVERY] Total: {len(db_paths)} databases")
+
+    if not db_paths:
+        raise ValueError("Either --db or --use-discovery must be specified")
+
     _enforce_canonical_db_policy(
-        args.db_paths,
+        db_paths,
         args.output,
         allow_noncanonical=bool(args.allow_noncanonical),
     )
     # Use central canonical source validation
     allowed_statuses = ["canonical", "pending_gate"] if args.allow_pending_gate else ["canonical"]
     enforce_canonical_sources(
-        [Path(p) for p in args.db_paths],
+        [Path(p) for p in db_paths],
         registry_path=Path(args.registry) if args.registry else None,
         allowed_statuses=allowed_statuses,
         allow_noncanonical=bool(args.allow_noncanonical),
@@ -1042,7 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
             num_workers = max(1, (os.cpu_count() or 4) - 1)
         print(f"[PARALLEL] Using {num_workers} worker processes for encoding")
         result = export_parallel(
-            db_paths=args.db_paths,
+            db_paths=db_paths,
             board_type=board_type,
             num_players=args.num_players,
             output_path=args.output,
@@ -1069,7 +1107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.use_cache:
         cache = get_export_cache()
         if not cache.needs_export(
-            db_paths=args.db_paths,
+            db_paths=db_paths,
             output_path=args.output,
             board_type=args.board_type,
             num_players=args.num_players,
@@ -1095,7 +1133,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Use multi-source export with deduplication
     export_replay_dataset_multi(
-        db_paths=args.db_paths,
+        db_paths=db_paths,
         board_type=board_type,
         num_players=args.num_players,
         output_path=args.output,
@@ -1129,7 +1167,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
         cache.record_export(
-            db_paths=args.db_paths,
+            db_paths=db_paths,
             output_path=args.output,
             board_type=args.board_type,
             num_players=args.num_players,

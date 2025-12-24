@@ -33,7 +33,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 
 // SLO definitions with environment-specific overrides
 interface SLODefinition {
@@ -507,16 +506,21 @@ function evaluateSLO(key: string, definition: SLODefinition, metrics: ExtractedM
     margin = ((definition.target - actual) / definition.target) * 100;
   }
 
-  return {
+  const result: SLOResult = {
     name: definition.name,
     target: definition.target,
     actual: Math.round(actual * 1000) / 1000, // Round to 3 decimal places
     unit: definition.unit,
     passed,
     priority: definition.priority,
-    note,
     margin: Math.round(margin * 10) / 10,
   };
+
+  if (note !== undefined) {
+    result.note = note;
+  }
+
+  return result;
 }
 
 function generateReport(

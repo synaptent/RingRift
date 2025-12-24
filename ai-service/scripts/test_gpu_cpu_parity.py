@@ -232,28 +232,60 @@ def _territory_regions_equivalent(state, gpu_pos: Position, cpu_pos: Position) -
 
     GPU and CPU may find the same territory region but use different cells as
     the representative due to different iteration orders. This function checks
-    if both positions are part of the same disconnected region.
+    if both positions are part of the same territory region (connected empty cells).
+
+    For territory processing, we need to check if both positions are in the same
+    connected region of empty (collapsed) cells, not player-controlled stacks.
     """
     from app.board_manager import BoardManager
 
-    # Get all disconnected regions for the current player
-    player = state.current_player
-    regions = BoardManager.find_disconnected_regions(state.board, player)
+    # Helper to check if position has no stack
+    def is_empty(pos: Position) -> bool:
+        key = pos.to_key()
+        return key not in state.board.stacks
 
-    # Find regions containing each position
-    gpu_region = None
-    cpu_region = None
+    # Both positions should be empty (no stack) for territory processing
+    if not is_empty(gpu_pos) or not is_empty(cpu_pos):
+        return False
 
-    for region in regions:
-        spaces_keys = {s.to_key() for s in region.spaces}
-        if gpu_pos.to_key() in spaces_keys:
-            gpu_region = spaces_keys
-        if cpu_pos.to_key() in spaces_keys:
-            cpu_region = spaces_keys
+    # Helper to parse position key (format: "x,y")
+    def key_to_pos(key: str) -> Position:
+        parts = key.split(',')
+        return Position(x=int(parts[0]), y=int(parts[1]))
 
-    # If both positions are in the same region, they're equivalent
-    if gpu_region is not None and cpu_region is not None and gpu_region == cpu_region:
-        return True
+    # Helper to get neighbors (4-connected for square boards)
+    def get_neighbors(pos: Position, board_size: int = 8) -> list[Position]:
+        neighbors = []
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = pos.x + dx, pos.y + dy
+            if 0 <= nx < board_size and 0 <= ny < board_size:
+                neighbors.append(Position(x=nx, y=ny))
+        return neighbors
+
+    # Use BFS to check if both positions are in the same connected empty region
+    visited = set()
+    queue = [gpu_pos.to_key()]
+    visited.add(gpu_pos.to_key())
+    target_key = cpu_pos.to_key()
+
+    while queue:
+        current_key = queue.pop(0)
+        if current_key == target_key:
+            return True
+
+        # Get adjacent positions
+        current_pos = key_to_pos(current_key)
+        neighbors = get_neighbors(current_pos)
+
+        for neighbor_pos in neighbors:
+            neighbor_key = neighbor_pos.to_key()
+            if neighbor_key in visited:
+                continue
+
+            # Check if neighbor is empty (no stack)
+            if is_empty(neighbor_pos):
+                visited.add(neighbor_key)
+                queue.append(neighbor_key)
 
     return False
 

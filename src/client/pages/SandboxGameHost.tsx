@@ -12,11 +12,7 @@ import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { ScenarioPickerModal } from '../components/ScenarioPickerModal';
 import { SelfPlayBrowser } from '../components/SelfPlayBrowser';
 import { SaveStateDialog } from '../components/SaveStateDialog';
-import {
-  SandboxDevTools,
-  SandboxDevToolsHeaderButtons,
-  SandboxDevToolsStallWarningAction,
-} from '../components/SandboxDevTools';
+import { SandboxDevTools } from '../components/SandboxDevTools';
 import { RingPlacementCountDialog } from '../components/RingPlacementCountDialog';
 import { RecoveryLineChoiceDialog } from '../components/RecoveryLineChoiceDialog';
 import { TerritoryRegionChoiceDialog } from '../components/TerritoryRegionChoiceDialog';
@@ -25,6 +21,7 @@ import { Button } from '../components/ui/Button';
 import { ReplayPanel } from '../components/ReplayPanel';
 import { HistoryPlaybackPanel } from '../components/HistoryPlaybackPanel';
 import { OnboardingModal } from '../components/OnboardingModal';
+import { SandboxBoardSection, SandboxGameSidebar } from '../components/sandbox';
 import { useFirstTimePlayer } from '../hooks/useFirstTimePlayer';
 import {
   SandboxGameConfig,

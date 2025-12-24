@@ -524,14 +524,19 @@ class HexEncoderWrapper:
         self.board_size = board_size
 
     def _extract_features(self, state: GameState):
-        """Extract features using the hex encoder's encode method.
+        """Extract BASE features using the hex encoder's encode_state method.
 
-        HexStateEncoder (V2) has encode(), HexStateEncoderV3 has encode_state().
+        IMPORTANT: Must use encode_state() to get base channels (16 for V3, 10 for V2).
+        Do NOT use encode() as that returns pre-stacked features (64 for V3)
+        which would be stacked again by encode_state_with_history, causing 4x bloat.
+
+        HexStateEncoder (V2) has encode(), HexStateEncoderV3 has both encode() and encode_state().
         """
-        if hasattr(self._encoder, 'encode'):
-            return self._encoder.encode(state)
-        elif hasattr(self._encoder, 'encode_state'):
+        # Prefer encode_state() to get base (unstacked) features
+        if hasattr(self._encoder, 'encode_state'):
             return self._encoder.encode_state(state)
+        elif hasattr(self._encoder, 'encode'):
+            return self._encoder.encode(state)
         else:
             raise AttributeError(f"Encoder {type(self._encoder).__name__} has no encode or encode_state method")
 

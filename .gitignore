@@ -269,6 +269,10 @@ data/games/
 
 # Load test result summaries
 results/load/
+results/slo-gate/
+
+# Config backup files
+ai-service/config/*.yaml.bak*
 
 # SQLite WAL temp files
 *.db-shm
