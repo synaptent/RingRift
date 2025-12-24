@@ -251,17 +251,21 @@ def create_ai(
     mm_depth: int = 3,
     cmaes_path: str | None = None,
     game_seed: int | None = None,
+    num_players: int = 2,
 ) -> BaseAI:
     """Create an AI instance based on the specified type.
 
     Args:
         ai_type: Type of AI to create
         player_num: Player number (1 or 2)
+        board_type: Board type for the game
         checkpoint: Path to neural network checkpoint
         mm_depth: Search depth for minimax AI
         cmaes_path: Path to CMA-ES optimized weights file
         game_seed: Unique seed for this game instance to ensure stochastic AIs
                    (like RandomAI) behave differently in each game.
+        num_players: Number of players in the game (2, 3, or 4). Used for
+                    pre-flight validation of neural network checkpoints.
 
     Returns:
         BaseAI instance
@@ -348,6 +352,26 @@ def create_ai(
                     else:
                         ckpt = os.path.join(checkpoints_dir, checkpoints[-1])
 
+        # PRE-FLIGHT VALIDATION: Check checkpoint compatibility BEFORE loading
+        # This prevents silent fallback to fresh weights with meaningless results
+        if ckpt and os.path.exists(ckpt):
+            from app.training.model_versioning import (
+                validate_checkpoint_for_evaluation,
+                CheckpointConfigError,
+            )
+            try:
+                board_type_str = board_type.value if hasattr(board_type, 'value') else str(board_type)
+                valid, warning = validate_checkpoint_for_evaluation(ckpt, board_type_str, num_players)
+                if warning:
+                    print(f"WARNING: {warning}")
+            except CheckpointConfigError as e:
+                # Re-raise with clear message - NO silent fallback!
+                raise RuntimeError(
+                    f"Checkpoint incompatible with evaluation config:\n{e}\n\n"
+                    f"IMPORTANT: Silent fallback to fresh weights is DISABLED to "
+                    f"prevent meaningless evaluation results. Use a compatible checkpoint."
+                ) from e
+
         config = AIConfig(
             difficulty=5,
             think_time=0,
@@ -369,13 +393,20 @@ def create_ai(
                 ai.neural_net._ensure_model_initialized(board_type)
                 print(f"Loaded checkpoint: {ckpt}")
             except RuntimeError as e:
-                # Handle shape mismatch (checkpoint for different board type)
+                # NO SILENT FALLBACK - fail explicitly with informative error
                 if "size mismatch" in str(e) or "shape" in str(e).lower():
-                    print(f"Checkpoint {ckpt} incompatible with {board_type}, using fresh weights")
-                    # Reinitialize with fresh weights
-                    config.allow_fresh_weights = True
-                    ai = DescentAI(player_num, config)
-                    ai.neural_net._ensure_model_initialized(board_type)
+                    raise RuntimeError(
+                        f"Checkpoint {ckpt} is incompatible with evaluation config:\n"
+                        f"  Board type: {board_type}\n"
+                        f"  Num players: {num_players}\n"
+                        f"  Error: {e}\n"
+                        f"\n"
+                        f"This checkpoint was likely trained for a different board_type "
+                        f"or num_players configuration. Use a compatible checkpoint.\n"
+                        f"\n"
+                        f"IMPORTANT: Silent fallback to fresh weights is DISABLED to "
+                        f"prevent meaningless evaluation results."
+                    ) from e
                 else:
                     raise RuntimeError(f"Failed to load checkpoint {ckpt}: {e}") from e
 
@@ -725,6 +756,7 @@ def run_evaluation(
                 minimax_depth,
                 cmaes_weights_path,
                 game_seed,
+                num_players=env_config.num_players,
             )
             ai_p2 = create_ai(
                 player2_type,
@@ -734,6 +766,7 @@ def run_evaluation(
                 minimax_depth,
                 cmaes_weights_path,
                 game_seed,
+                num_players=env_config.num_players,
             )
             p1_is_player1_type = True
         else:
@@ -748,6 +781,7 @@ def run_evaluation(
                 minimax_depth,
                 cmaes_weights_path,
                 game_seed,
+                num_players=env_config.num_players,
             )
             ai_p2 = create_ai(
                 player1_type,
@@ -757,6 +791,7 @@ def run_evaluation(
                 minimax_depth,
                 cmaes_weights_path,
                 game_seed,
+                num_players=env_config.num_players,
             )
             p1_is_player1_type = False
 

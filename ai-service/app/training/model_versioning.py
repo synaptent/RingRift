@@ -156,6 +156,41 @@ class ConfigMismatchError(ModelVersioningError):
         super().__init__(message)
 
 
+class CheckpointConfigError(ModelVersioningError):
+    """Raised when checkpoint config doesn't match requested evaluation config.
+
+    This error is raised during pre-flight validation when attempting to load
+    a checkpoint that was trained for a different configuration (e.g., different
+    board_type or num_players).
+    """
+
+    def __init__(
+        self,
+        checkpoint_path: str,
+        expected_config: dict[str, Any],
+        checkpoint_config: dict[str, Any],
+        mismatches: dict[str, tuple[Any, Any]],
+    ):
+        self.checkpoint_path = checkpoint_path
+        self.expected_config = expected_config
+        self.checkpoint_config = checkpoint_config
+        self.mismatches = mismatches
+
+        mismatch_details = "\n".join(
+            f"    {key}: expected={expected}, checkpoint has={actual}"
+            for key, (expected, actual) in mismatches.items()
+        )
+        message = (
+            f"Checkpoint configuration mismatch!\n"
+            f"  Checkpoint: {checkpoint_path}\n"
+            f"  Mismatches:\n{mismatch_details}\n"
+            f"\n"
+            f"The checkpoint was trained for a different configuration.\n"
+            f"Use a compatible checkpoint or train a new model for this config."
+        )
+        super().__init__(message)
+
+
 # =============================================================================
 # Metadata
 # =============================================================================
@@ -854,7 +889,11 @@ class ModelVersionManager:
 
         # Critical keys that affect tensor shapes and feature compatibility
         critical_keys = {
-            'board_size', 'total_in_channels', 'in_channels',
+            # Configuration keys (MUST match exactly)
+            'board_type', 'board_size', 'num_players',
+            # Input shape keys
+            'total_in_channels', 'in_channels',
+            # Architecture parameters
             'num_filters', 'num_res_blocks', 'num_blocks', 'policy_size',
             'global_features', 'feature_version',  # feature_version affects encoding
             # Hex model critical keys (v3/v4)
@@ -1318,3 +1357,85 @@ def get_checkpoint_info(checkpoint_path: str) -> dict[str, Any]:
                 info["critical_shapes"][key] = list(state_dict[key].shape)
 
     return info
+
+
+def validate_checkpoint_for_evaluation(
+    checkpoint_path: str,
+    board_type: str,
+    num_players: int,
+) -> tuple[bool, str | None]:
+    """
+    Pre-flight validation that a checkpoint is compatible with evaluation config.
+
+    This function reads ONLY checkpoint metadata (not full weights) and validates
+    that board_type and num_players match the requested evaluation configuration.
+    This prevents loading a model trained for a different configuration and
+    getting meaningless evaluation results.
+
+    Args:
+        checkpoint_path: Path to the checkpoint file.
+        board_type: Expected board type (e.g., "square8", "hex8", "hexagonal").
+        num_players: Expected number of players (2, 3, or 4).
+
+    Returns:
+        Tuple of (is_valid, warning_message).
+        - If valid: (True, None) or (True, warning_message) for legacy checkpoints.
+        - If invalid: raises CheckpointConfigError.
+
+    Raises:
+        CheckpointConfigError: If checkpoint config doesn't match expected config.
+        FileNotFoundError: If checkpoint file doesn't exist.
+
+    Example:
+        >>> validate_checkpoint_for_evaluation("models/sq8_4p.pth", "square8", 2)
+        CheckpointConfigError: Checkpoint configuration mismatch!
+          Checkpoint: models/sq8_4p.pth
+          Mismatches:
+            num_players: expected=2, checkpoint has=4
+
+        >>> validate_checkpoint_for_evaluation("models/sq8_2p.pth", "square8", 2)
+        (True, None)
+    """
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    manager = ModelVersionManager()
+
+    try:
+        metadata = manager.get_metadata(checkpoint_path)
+    except LegacyCheckpointError:
+        # Legacy checkpoint without metadata - cannot validate, return warning
+        warning = (
+            f"WARNING: Legacy checkpoint {checkpoint_path} has no metadata. "
+            f"Cannot verify board_type/num_players compatibility. "
+            f"Consider migrating with migrate_legacy_checkpoint()."
+        )
+        logger.warning(warning)
+        return True, warning
+
+    config = metadata.config
+    mismatches: dict[str, tuple[Any, Any]] = {}
+
+    # Check board_type
+    ckpt_board_type = config.get("board_type")
+    if ckpt_board_type and ckpt_board_type != board_type:
+        mismatches["board_type"] = (board_type, ckpt_board_type)
+
+    # Check num_players - CRITICAL for model architecture
+    ckpt_num_players = config.get("num_players")
+    if ckpt_num_players and ckpt_num_players != num_players:
+        mismatches["num_players"] = (num_players, ckpt_num_players)
+
+    if mismatches:
+        raise CheckpointConfigError(
+            checkpoint_path=checkpoint_path,
+            expected_config={"board_type": board_type, "num_players": num_players},
+            checkpoint_config=config,
+            mismatches=mismatches,
+        )
+
+    logger.info(
+        f"Checkpoint validation passed: {checkpoint_path} "
+        f"(board_type={board_type}, num_players={num_players})"
+    )
+    return True, None
