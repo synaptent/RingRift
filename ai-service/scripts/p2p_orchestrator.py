@@ -27336,18 +27336,18 @@ print(json.dumps({{
             elif job_type == JobType.GUMBEL_SELFPLAY:
                 # High-quality Gumbel MCTS selfplay with NN policy for self-improvement training
                 # Uses generate_gumbel_selfplay.py with proper MCTS simulation budget
-                # AlphaZero used 800 sims - we use 400-600 for balance of quality and throughput
+                # AlphaZero used 800 sims - we match this for maximum move quality
 
                 # Games and simulation budget based on board type
-                # Higher simulation budget = better quality moves = better training signal
-                num_games = 30  # Reduced for higher sim budget
-                simulation_budget = 400  # Increased from 150 for AlphaZero-quality moves
+                # 800 sims = AlphaZero standard for high-quality training data
+                num_games = 20  # Reduced for 800-sim budget
+                simulation_budget = 800  # AlphaZero standard
                 if board_type == "square19":
-                    num_games = 15
-                    simulation_budget = 600  # More search for larger board
+                    num_games = 10  # Fewer games for large board
+                    simulation_budget = 800
                 elif board_type in ("hex", "hexagonal", "hex8"):
-                    num_games = 25
-                    simulation_budget = 400
+                    num_games = 20
+                    simulation_budget = 800
 
                 output_dir = Path(
                     self.ringrift_path,
