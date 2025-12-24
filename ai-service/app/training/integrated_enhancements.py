@@ -170,6 +170,12 @@ class IntegratedEnhancementsConfig:
     reanalysis_interval_steps: int = 2000  # Trigger more frequently for faster iteration
     reanalysis_batch_size: int = 1000
     reanalysis_min_elo_delta: int = 15  # Very low threshold for aggressive reanalysis (+40-120 Elo)
+    # MCTS-based reanalysis (Phase 4): Higher-quality soft targets via GPU Gumbel MCTS
+    reanalysis_use_mcts: bool = True  # Use GPU Gumbel MCTS for higher-quality targets
+    reanalysis_mcts_simulations: int = 100  # MCTS simulations per position
+    reanalysis_capture_q_values: bool = True  # Capture Q-values for auxiliary training
+    reanalysis_capture_uncertainty: bool = True  # Capture uncertainty estimates
+    reanalysis_db_path: str | None = None  # Database path for MCTS reanalysis
 
     # =========================================================================
     # Knowledge Distillation
@@ -516,9 +522,15 @@ class IntegratedTrainingManager:
             reanalysis_config = ReanalysisConfig(
                 value_blend_ratio=self.config.reanalysis_blend_ratio,
                 batch_size=self.config.reanalysis_batch_size,
+                # MCTS-based reanalysis config
+                use_mcts=self.config.reanalysis_use_mcts,
+                mcts_simulations=self.config.reanalysis_mcts_simulations,
+                capture_q_values=self.config.reanalysis_capture_q_values,
+                capture_uncertainty=self.config.reanalysis_capture_uncertainty,
             )
             self._reanalysis_engine = ReanalysisEngine(self.model, reanalysis_config)
-            logger.info("[IntegratedEnhancements] Reanalysis engine initialized")
+            mode = "MCTS" if self.config.reanalysis_use_mcts else "inference"
+            logger.info(f"[IntegratedEnhancements] Reanalysis engine initialized ({mode} mode)")
         except Exception as e:
             logger.warning(f"[IntegratedEnhancements] Failed to init reanalysis: {e}")
 
@@ -898,15 +910,24 @@ class IntegratedTrainingManager:
 
         return True
 
-    def process_reanalysis(self, npz_path: str | None = None) -> str | None:
+    def process_reanalysis(
+        self,
+        npz_path: str | None = None,
+        db_path: str | None = None,
+        num_players: int = 2,
+    ) -> str | None:
         """Perform reanalysis on cached training data.
 
         Reanalyzes positions using the current model and blends values
         with original targets using MuZero-style weighted averaging.
 
+        If MCTS mode is enabled and a database path is provided, uses GPU
+        Gumbel MCTS search for higher-quality soft policy targets.
+
         Args:
-            npz_path: Path to NPZ file to reanalyze. If None, attempts to
-                      find cached data from training configuration.
+            npz_path: Path to NPZ file to reanalyze (for inference-only mode)
+            db_path: Path to game database for MCTS-based reanalysis
+            num_players: Number of players for MCTS reanalysis
 
         Returns:
             Path to reanalyzed NPZ file, or None if reanalysis failed.
@@ -918,11 +939,58 @@ class IntegratedTrainingManager:
             logger.warning("[IntegratedEnhancements] Reanalysis engine not initialized")
             return None
 
-        if npz_path is None:
-            logger.warning("[IntegratedEnhancements] No NPZ path provided for reanalysis")
-            return None
+        # Use configured db_path if not provided
+        db_path = db_path or self.config.reanalysis_db_path
 
         try:
+            # Choose reanalysis mode based on config and available data
+            if self.config.reanalysis_use_mcts and db_path:
+                # MCTS-based reanalysis from database
+                db_file = Path(db_path)
+                if not db_file.exists():
+                    logger.warning(f"[IntegratedEnhancements] Database not found: {db_path}")
+                    # Fall back to NPZ reanalysis if available
+                    if npz_path:
+                        logger.info("[IntegratedEnhancements] Falling back to NPZ reanalysis")
+                    else:
+                        return None
+                else:
+                    # Run MCTS reanalysis
+                    output_path = db_file.parent / f"{db_file.stem}_mcts_reanalyzed.npz"
+                    logger.info(
+                        f"[IntegratedEnhancements] Starting MCTS reanalysis of {db_path}"
+                    )
+
+                    reanalyzed_path = self._reanalysis_engine.reanalyze_with_mcts(
+                        db_path=db_file,
+                        output_path=output_path,
+                        board_type=self.board_type,
+                        num_players=num_players,
+                    )
+
+                    if reanalyzed_path:
+                        # Update tracking state
+                        self._last_reanalysis_time = time.time()
+                        self._last_reanalysis_step = self._step
+                        current_elo = self.get_current_elo()
+                        if current_elo is not None:
+                            self._last_reanalysis_elo = current_elo
+
+                        logger.info(
+                            f"[IntegratedEnhancements] MCTS reanalysis complete: "
+                            f"{self._reanalysis_engine.positions_reanalyzed} positions, "
+                            f"saved to {reanalyzed_path}"
+                        )
+                        return str(reanalyzed_path)
+
+                    logger.warning("[IntegratedEnhancements] MCTS reanalysis returned None")
+                    return None
+
+            # Standard NPZ-based reanalysis (inference only)
+            if npz_path is None:
+                logger.warning("[IntegratedEnhancements] No NPZ path provided for reanalysis")
+                return None
+
             npz_file = Path(npz_path)
             if not npz_file.exists():
                 logger.warning(f"[IntegratedEnhancements] NPZ file not found: {npz_path}")
@@ -961,14 +1029,20 @@ class IntegratedTrainingManager:
         if self._reanalysis_engine is None:
             return {"enabled": False}
 
-        return {
+        stats = {
             "enabled": True,
             "positions_reanalyzed": self._reanalysis_engine.positions_reanalyzed,
             "games_reanalyzed": self._reanalysis_engine.games_reanalyzed,
             "last_reanalysis_time": getattr(self, '_last_reanalysis_time', 0.0),
             "last_reanalysis_step": getattr(self, '_last_reanalysis_step', 0),
             "blend_ratio": self._reanalysis_engine.config.value_blend_ratio,
+            # MCTS-specific stats
+            "use_mcts": self._reanalysis_engine.config.use_mcts,
+            "mcts_simulations": self._reanalysis_engine.config.mcts_simulations,
+            "capture_q_values": self._reanalysis_engine.config.capture_q_values,
+            "capture_uncertainty": self._reanalysis_engine.config.capture_uncertainty,
         }
+        return stats
 
     # =========================================================================
     # Knowledge Distillation Integration

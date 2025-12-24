@@ -12,12 +12,43 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import os
+os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
+
 from app.training.train_cnn_policy import CNNPolicyNet
 from app.game_engine import GameEngine
-from app.models import BoardType, GameStatus, Position
+from app.models import BoardType, GameStatus, Position, AIConfig
 from app.training.train_gmo_selfplay import create_initial_state
-from app.ai._neural_net_legacy import encode_move_for_board
+from app.ai._neural_net_legacy import encode_move_for_board, NeuralNetAI
 from app.rules.geometry import BoardGeometry
+
+
+def build_encoder():
+    """Build encoder identical to export_replay_dataset.py"""
+    config = AIConfig(
+        difficulty=5,
+        think_time=0,
+        randomness=0.0,
+        rngSeed=None,
+        heuristic_profile_id=None,
+        nn_model_id=None,
+        heuristic_eval_mode=None,
+        use_neural_net=True,
+    )
+    encoder = NeuralNetAI(player_number=1, config=config)
+    encoder.board_size = 8
+    encoder.feature_version = 2
+    return encoder
+
+
+# Global encoder instance
+_ENCODER = None
+
+def get_encoder():
+    global _ENCODER
+    if _ENCODER is None:
+        _ENCODER = build_encoder()
+    return _ENCODER
 
 
 def _pos_from_key(key: str) -> Position:
@@ -196,14 +227,19 @@ def load_model(checkpoint_path: str, device: str = "cpu"):
     return model, checkpoint.get("action_space_size", 8192)
 
 
-def get_move_by_policy(model, state, action_space_size: int, device: str, debug: bool = False, invert: bool = False):
+def get_move_by_policy(model, state, action_space_size: int, device: str, debug: bool = False, invert: bool = False, use_proper_encoder: bool = False):
     """Select move using policy network."""
     legal_moves = GameEngine.get_valid_moves(state, state.current_player)
     if not legal_moves:
         return None
 
-    # Encode state (14 channels)
-    features, globals_ = extract_features(state)
+    if use_proper_encoder:
+        # Use the EXACT same encoder as training data export
+        encoder = get_encoder()
+        features, globals_ = encoder._extract_features(state)
+    else:
+        # Use simplified local encoding
+        features, globals_ = extract_features(state)
 
     # Stack with 3 history frames of zeros to get 56 channels
     history_frames = [np.zeros_like(features) for _ in range(3)]
@@ -255,7 +291,7 @@ def get_move_by_policy(model, state, action_space_size: int, device: str, debug:
     return selected_move
 
 
-def play_game(model, action_space_size: int, ai_player: int, game_id: str, device: str, debug: bool = False, invert: bool = False) -> tuple[int | None, int]:
+def play_game(model, action_space_size: int, ai_player: int, game_id: str, device: str, debug: bool = False, invert: bool = False, use_proper_encoder: bool = False) -> tuple[int | None, int]:
     """Play one game and return (winner, move_count)."""
     state = create_initial_state(
         game_id=game_id,
@@ -284,7 +320,7 @@ def play_game(model, action_space_size: int, ai_player: int, game_id: str, devic
         if current == ai_player:
             # Debug only first 3 moves
             should_debug = debug and move_count < 3
-            move = get_move_by_policy(model, state, action_space_size, device, debug=should_debug, invert=invert)
+            move = get_move_by_policy(model, state, action_space_size, device, debug=should_debug, invert=invert, use_proper_encoder=use_proper_encoder)
         else:
             # Random opponent
             move = random.choice(legal_moves)
@@ -304,6 +340,7 @@ def main():
     parser.add_argument("--games", type=int, default=100)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--invert", action="store_true", help="Invert policy (pick lowest prob move)")
+    parser.add_argument("--proper-encoder", action="store_true", help="Use proper NeuralNetAI encoder")
     args = parser.parse_args()
 
     print(f"Loading model from {args.checkpoint}...")
@@ -311,6 +348,8 @@ def main():
     print(f"Action space size: {action_space_size}")
     if args.invert:
         print("INVERTED MODE: Picking lowest probability moves")
+    if args.proper_encoder:
+        print("Using proper NeuralNetAI encoder")
 
     wins_as_p1 = 0
     wins_as_p2 = 0
@@ -318,7 +357,7 @@ def main():
 
     print(f"\nPlaying as P1 ({games_per_side} games)...")
     for i in range(games_per_side):
-        winner, moves = play_game(model, action_space_size, 1, f"p1_game_{i}", args.device, invert=args.invert)
+        winner, moves = play_game(model, action_space_size, 1, f"p1_game_{i}", args.device, invert=args.invert, use_proper_encoder=args.proper_encoder)
         if winner == 1:
             wins_as_p1 += 1
         result = "Win" if winner == 1 else ("Loss" if winner == 2 else "Draw")
@@ -326,7 +365,7 @@ def main():
 
     print(f"\nPlaying as P2 ({games_per_side} games)...")
     for i in range(games_per_side):
-        winner, moves = play_game(model, action_space_size, 2, f"p2_game_{i}", args.device, invert=args.invert)
+        winner, moves = play_game(model, action_space_size, 2, f"p2_game_{i}", args.device, invert=args.invert, use_proper_encoder=args.proper_encoder)
         if winner == 2:
             wins_as_p2 += 1
         result = "Win" if winner == 2 else ("Loss" if winner == 1 else "Draw")

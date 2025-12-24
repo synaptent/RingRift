@@ -184,8 +184,23 @@ def train_epoch(model, loader, optimizer, device):
 
         policy_logits, value_pred = model(features, globals_)
 
-        # Policy loss: cross-entropy with soft targets
-        policy_loss = -(policy_target * F.log_softmax(policy_logits, dim=-1)).sum(dim=-1).mean()
+        # Policy loss: cross-entropy with soft targets, WEIGHTED BY GAME OUTCOME
+        # This is critical - without weighting, the model learns both winner AND loser
+        # moves equally, resulting in inverted behavior (predicting loser moves).
+        #
+        # Weight scheme:
+        #   - Winners (value > 0): weight = 1.0 (learn these moves)
+        #   - Losers (value < 0): weight = 0.0 (don't learn these moves)
+        #   - Draws (value == 0): weight = 0.5 (partial learning)
+        policy_weights = (value_target + 1.0) / 2.0  # Maps [-1, 1] to [0, 1]
+        policy_weights = policy_weights.clamp(min=0.0, max=1.0)
+
+        # Per-sample cross-entropy
+        per_sample_ce = -(policy_target * F.log_softmax(policy_logits, dim=-1)).sum(dim=-1)
+
+        # Weighted mean (only count samples with weight > 0)
+        weighted_ce = per_sample_ce * policy_weights
+        policy_loss = weighted_ce.sum() / (policy_weights.sum() + 1e-8)
 
         # Value loss: MSE
         value_loss = F.mse_loss(value_pred, value_target)

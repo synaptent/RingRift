@@ -268,6 +268,7 @@ class GumbelMCTSAI(BaseAI):
 
         # Store search results for training data extraction
         self._last_search_actions: list[GumbelAction] | None = None
+        self._last_search_stats: dict | None = None  # Rich stats from GPU tree search
 
         # GPU acceleration state (lazy initialized)
         self._gpu_batch_enabled: bool = not _GPU_GUMBEL_DISABLE
@@ -686,12 +687,15 @@ class GumbelMCTSAI(BaseAI):
                 f"device={gpu_config.device})"
             )
 
-        # Run GPU tree search
-        best_move, policy_dict = self._gpu_gumbel_mcts.search(
+        # Run GPU tree search with rich statistics for training
+        best_move, policy_dict, search_stats = self._gpu_gumbel_mcts.search_with_stats(
             game_state,
             self.neural_net,
             valid_moves,
         )
+
+        # Store rich search stats for training data extraction
+        self._last_search_stats = search_stats.to_json_dict() if search_stats else None
 
         # GPU tree shadow validation: compare against CPU sequential halving
         if self._gpu_tree_shadow_rate > 0 and np.random.random() < self._gpu_tree_shadow_rate:

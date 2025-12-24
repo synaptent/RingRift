@@ -2288,6 +2288,20 @@ def _parse_args() -> argparse.Namespace:
             "Default: CPU count - 1. Only used with --parallel."
         ),
     )
+    parser.add_argument(
+        "--gpu-mcts",
+        action="store_true",
+        help=(
+            "Use GPU-accelerated MCTS selfplay for high-quality training data. "
+            "Captures visit distributions as soft policy targets. Requires CUDA."
+        ),
+    )
+    parser.add_argument(
+        "--simulation-budget",
+        type=int,
+        default=64,
+        help="MCTS simulation budget per move. Only used with --gpu-mcts.",
+    )
     return parser.parse_args()
 
 
@@ -2446,6 +2460,28 @@ def main() -> None:
         )
 
     replay_db = get_or_create_db(record_db_path) if record_db_path else None
+
+    # Use GPU MCTS selfplay if requested (high-quality soft policy targets)
+    if args.gpu_mcts:
+        try:
+            from app.training.gpu_mcts_selfplay import run_gpu_mcts_selfplay
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"Using GPU MCTS selfplay (device={device}, sims={args.simulation_budget})")
+
+            games = run_gpu_mcts_selfplay(
+                board_type=args.board_type,
+                num_players=args.num_players,
+                num_games=args.num_games,
+                output_path=args.output,
+                device=device,
+                encoder_version="v3",
+            )
+            print(f"Generated {sum(len(g.samples) for g in games)} samples from {len(games)} games")
+            return  # GPU MCTS handles export internally
+        except ImportError as e:
+            print(f"Warning: gpu_mcts_selfplay not available ({e}), falling back to parallel")
+            args.gpu_mcts = False
 
     # Use parallel generation if requested (4-8x speedup)
     if args.parallel:

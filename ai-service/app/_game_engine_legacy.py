@@ -871,6 +871,14 @@ class GameEngine:
             new_state.current_player = move.player
             return new_state
 
+        # Case 2b: In line_processing but move is forced_elimination
+        # This happens when GPU selfplay records forced_elimination during line phase
+        if phase == GamePhase.LINE_PROCESSING and mtype == MoveType.FORCED_ELIMINATION:
+            new_state = game_state.model_copy()
+            new_state.current_phase = GamePhase.FORCED_ELIMINATION
+            new_state.current_player = move.player
+            return new_state
+
         # Case 3: In forced_elimination but move is a territory action
         # This can happen when recording didn't have forced elimination but Python detected it
         if phase == GamePhase.FORCED_ELIMINATION and mtype in territory_moves:

@@ -432,7 +432,7 @@ def export_replay_dataset_multi(
         db_samples = 0
         db_dedup = 0
 
-        for meta, initial_state, moves in db.iterate_games(**query_filters):
+        for meta, initial_state, moves, game_move_probs in db.iterate_games_with_probs(**query_filters):
             game_id = meta.get("game_id")
 
             # Deduplication: skip if we've seen this game_id before
@@ -631,8 +631,44 @@ def export_replay_dataset_multi(
                 features_list.append(stacked)
                 globals_list.append(globals_vec)
                 values_list.append(float(value))
-                policy_indices_list.append(np.array([idx], dtype=np.int32))
-                policy_values_list.append(np.array([1.0], dtype=np.float32))
+
+                # Use soft targets from move_probs if available, otherwise 1-hot
+                soft_probs = game_move_probs.get(move_index)
+                if soft_probs:
+                    # Convert move_probs dict to sparse policy representation
+                    # Keys are in format "{to_x},{to_y}" or "{from_x},{from_y}->{to_x},{to_y}"
+                    soft_indices = []
+                    soft_values = []
+                    for move_key, prob in soft_probs.items():
+                        # Parse move key to get position
+                        try:
+                            if "->" in move_key:
+                                # Format: "from_x,from_y->to_x,to_y"
+                                parts = move_key.split("->")
+                                to_part = parts[1]
+                            else:
+                                # Format: "to_x,to_y"
+                                to_part = move_key
+                            to_x, to_y = map(int, to_part.split(","))
+                            # Encode position as flat index (board_size * y + x)
+                            board_size = initial_state.board.size
+                            move_idx = to_y * board_size + to_x
+                            soft_indices.append(move_idx)
+                            soft_values.append(float(prob))
+                        except (ValueError, IndexError):
+                            continue  # Skip malformed move keys
+                    if soft_indices:
+                        policy_indices_list.append(np.array(soft_indices, dtype=np.int32))
+                        policy_values_list.append(np.array(soft_values, dtype=np.float32))
+                    else:
+                        # Fallback to 1-hot if parsing failed
+                        policy_indices_list.append(np.array([idx], dtype=np.int32))
+                        policy_values_list.append(np.array([1.0], dtype=np.float32))
+                else:
+                    # No soft targets available - use 1-hot encoding
+                    policy_indices_list.append(np.array([idx], dtype=np.int32))
+                    policy_values_list.append(np.array([1.0], dtype=np.float32))
+
                 values_mp_list.append(values_vec)
                 num_players_list.append(num_players_in_game)
                 move_numbers_list.append(move_index)

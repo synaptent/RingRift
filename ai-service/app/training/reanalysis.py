@@ -66,6 +66,12 @@ class ReanalysisConfig:
     # Quality filters
     min_game_length: int = 10  # Skip very short games
     max_game_length: int = 500  # Skip excessively long games
+    # MCTS-based reanalysis (Phase 4 enhancement)
+    use_mcts: bool = False  # Use GPU Gumbel MCTS instead of raw policy
+    mcts_simulations: int = 100  # Number of MCTS simulations per position
+    mcts_temperature: float = 1.0  # Temperature for MCTS policy extraction
+    capture_q_values: bool = True  # Capture Q-values for auxiliary training
+    capture_uncertainty: bool = True  # Capture uncertainty estimates
 
 
 @dataclass
@@ -352,6 +358,237 @@ class ReanalysisEngine:
         # Check time since last reanalysis
         hours_since = (time.time() - self.last_reanalysis_time) / 3600
         return not hours_since < self.config.reanalysis_interval_hours
+
+    def reanalyze_with_mcts(
+        self,
+        db_path: Path,
+        output_path: Path,
+        board_type: str,
+        num_players: int = 2,
+        max_games: int | None = None,
+    ) -> Path | None:
+        """Reanalyze games from database using GPU Gumbel MCTS search.
+
+        This method provides higher-quality soft policy targets than raw model
+        inference by running full MCTS search on each position. The search
+        produces:
+        - Visit-based soft policy distributions
+        - Q-value estimates for auxiliary training
+        - Uncertainty estimates from value variance
+
+        Args:
+            db_path: Path to game database
+            output_path: Path for output NPZ file
+            board_type: Board type string (e.g., 'hex8', 'square8')
+            num_players: Number of players
+            max_games: Maximum games to process (default: config.max_games_per_run)
+
+        Returns:
+            Path to reanalyzed NPZ file, or None if failed
+        """
+        if not self.config.use_mcts:
+            logger.warning("[Reanalysis] MCTS mode not enabled in config")
+            return None
+
+        try:
+            from app.db.game_replay import GameReplayDB
+            from app.rules.engine import create_game, apply_move
+            from app.ai.tensor_gumbel_tree import GPUGumbelMCTS, SearchStats
+            from app.ai.feature_encoder import FeatureEncoder
+        except ImportError as e:
+            logger.error(f"[Reanalysis] Missing dependency for MCTS reanalysis: {e}")
+            return None
+
+        max_games = max_games or self.config.max_games_per_run
+        db_path = Path(db_path)
+
+        if not db_path.exists():
+            logger.error(f"[Reanalysis] Database not found: {db_path}")
+            return None
+
+        logger.info(f"[Reanalysis MCTS] Processing up to {max_games} games from {db_path}")
+
+        # Initialize GPU MCTS
+        try:
+            gpu_mcts = GPUGumbelMCTS(
+                num_simulations=self.config.mcts_simulations,
+                device=self.device,
+            )
+        except Exception as e:
+            logger.error(f"[Reanalysis] Failed to initialize GPU MCTS: {e}")
+            return None
+
+        # Initialize feature encoder
+        encoder = FeatureEncoder(board_type=board_type, num_players=num_players)
+
+        # Collect reanalyzed positions
+        all_features = []
+        all_globals = []
+        all_values = []
+        all_policy_indices = []
+        all_policy_values = []
+        all_q_values = []  # Auxiliary data
+        all_uncertainty = []  # Auxiliary data
+
+        games_processed = 0
+        positions_processed = 0
+
+        with GameReplayDB(db_path, read_only=True) as db:
+            # Get game IDs matching the config
+            game_ids = db.list_games(
+                board_type=board_type,
+                num_players=num_players,
+                limit=max_games,
+            )
+
+            for game_id in game_ids:
+                try:
+                    meta, initial_state, moves = db.load_game(game_id)
+                    if meta is None:
+                        continue
+
+                    # Skip games outside quality bounds
+                    if len(moves) < self.config.min_game_length:
+                        continue
+                    if len(moves) > self.config.max_game_length:
+                        continue
+
+                    # Replay game and reanalyze each position
+                    game_state = initial_state
+                    for move_idx, move in enumerate(moves):
+                        # Encode current position
+                        features = encoder.encode(game_state)
+                        globals_vec = encoder.encode_globals(game_state, move_idx, len(moves))
+
+                        # Run GPU Gumbel MCTS search with stats
+                        try:
+                            best_move, policy_dict, stats = gpu_mcts.search_with_stats(
+                                game_state,
+                                self.model,
+                            )
+
+                            # Convert policy dict to sparse format
+                            policy_indices = []
+                            policy_values = []
+                            for move_key, prob in policy_dict.items():
+                                idx = encoder.encode_move_index(move_key)
+                                if idx >= 0:
+                                    policy_indices.append(idx)
+                                    policy_values.append(prob)
+
+                            # Normalize policy values
+                            if policy_values:
+                                total = sum(policy_values)
+                                policy_values = [v / total for v in policy_values]
+
+                            # Collect auxiliary data
+                            q_value = stats.root_value if stats else 0.0
+                            uncertainty = stats.uncertainty if stats else 0.0
+
+                        except Exception as e:
+                            logger.debug(f"[Reanalysis] MCTS search failed: {e}")
+                            # Fall back to model inference
+                            with torch.no_grad():
+                                feat_tensor = torch.tensor(
+                                    features[np.newaxis],
+                                    dtype=torch.float32,
+                                    device=self.device,
+                                )
+                                output = self.model(feat_tensor)
+                                if isinstance(output, tuple):
+                                    value, policy = output[:2]
+                                    policy_np = policy.cpu().numpy()[0]
+                                    # Use top-k indices as sparse policy
+                                    topk = min(10, len(policy_np))
+                                    top_indices = np.argsort(policy_np)[-topk:]
+                                    policy_indices = top_indices.tolist()
+                                    policy_values = policy_np[top_indices].tolist()
+                                    q_value = value.cpu().item()
+                                else:
+                                    policy_indices = []
+                                    policy_values = []
+                                    q_value = output.cpu().item()
+                            uncertainty = 0.0
+
+                        # Store position data
+                        all_features.append(features)
+                        all_globals.append(globals_vec)
+                        # Value from game outcome (will be set from meta)
+                        all_values.append(0.0)  # Placeholder
+                        all_policy_indices.append(np.array(policy_indices, dtype=np.int32))
+                        all_policy_values.append(np.array(policy_values, dtype=np.float32))
+                        if self.config.capture_q_values:
+                            all_q_values.append(q_value)
+                        if self.config.capture_uncertainty:
+                            all_uncertainty.append(uncertainty)
+
+                        positions_processed += 1
+
+                        # Apply move to advance game state
+                        game_state = apply_move(game_state, move)
+
+                    # Set values based on game outcome
+                    winner = meta.get('winner')
+                    if winner is not None:
+                        # Compute values for all positions in this game
+                        start_idx = len(all_values) - len(moves)
+                        for i in range(len(moves)):
+                            pos_idx = start_idx + i
+                            # Simple: winner gets +1, loser gets -1
+                            player_at_pos = initial_state.current_player
+                            # Advance player for each position
+                            for j in range(i):
+                                player_at_pos = (player_at_pos + 1) % num_players
+                            if player_at_pos == winner:
+                                all_values[pos_idx] = 1.0
+                            else:
+                                all_values[pos_idx] = -1.0
+
+                    games_processed += 1
+
+                    if games_processed % 10 == 0:
+                        logger.info(
+                            f"[Reanalysis MCTS] Processed {games_processed} games, "
+                            f"{positions_processed} positions"
+                        )
+
+                except Exception as e:
+                    logger.debug(f"[Reanalysis] Error processing game {game_id}: {e}")
+                    continue
+
+        if not all_features:
+            logger.warning("[Reanalysis MCTS] No positions collected")
+            return None
+
+        # Save to NPZ
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        save_dict = {
+            "features": np.array(all_features),
+            "globals": np.array(all_globals),
+            "values": np.array(all_values, dtype=np.float32),
+            "policy_indices": np.array(all_policy_indices, dtype=object),
+            "policy_values": np.array(all_policy_values, dtype=object),
+        }
+
+        if self.config.capture_q_values and all_q_values:
+            save_dict["q_values"] = np.array(all_q_values, dtype=np.float32)
+        if self.config.capture_uncertainty and all_uncertainty:
+            save_dict["uncertainty"] = np.array(all_uncertainty, dtype=np.float32)
+
+        np.savez_compressed(output_path, **save_dict)
+
+        self.positions_reanalyzed += positions_processed
+        self.games_reanalyzed += games_processed
+        self.last_reanalysis_time = time.time()
+
+        logger.info(
+            f"[Reanalysis MCTS] Complete: {games_processed} games, "
+            f"{positions_processed} positions saved to {output_path}"
+        )
+
+        return output_path
 
     def get_stats(self) -> dict[str, Any]:
         """Get reanalysis statistics."""

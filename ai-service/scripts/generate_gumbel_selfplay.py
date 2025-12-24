@@ -591,7 +591,11 @@ def save_game_to_jsonl(result: GameResult, output_path: Path) -> None:
 
 
 def save_game_to_db(result: GameResult, db: Any) -> None:
-    """Save game to GameReplayDB."""
+    """Save game to GameReplayDB with soft policy targets (move_probs).
+    
+    This function saves the game to the database using incremental recording
+    to properly store move_probs (MCTS policy distributions) for each move.
+    """
     if not HAS_GAME_REPLAY_DB:
         return
 
@@ -599,32 +603,47 @@ def save_game_to_db(result: GameResult, db: Any) -> None:
         logger.warning("Missing initial/final state; skipping DB write")
         return
 
-    from app.db.unified_recording import record_completed_game
+    from app.db.game_replay import GameReplayDB
+    from app.db.unified_recording import GameRecorder
+    from app.game_engine import GameEngine
     from app.models import Move as MoveModel
-
-    # Convert moves to format expected by GameReplayDB
-    moves = []
-    for idx, m in enumerate(result.moves):
-        move_data = dict(m)
-        move_data.setdefault("id", f"{result.game_id}:{idx}")
-        move = MoveModel.model_validate(move_data)
-        moves.append(move)
 
     metadata = {
         "source": "gumbel_selfplay",
         "board_type": result.board_type,
         "num_players": result.num_players,
         "winner": result.winner,
+        "engine_mode": "gumbel-mcts",
     }
 
-    record_completed_game(
-        db=db,
-        initial_state=result.initial_state,
-        final_state=result.final_state,
-        moves=moves,
-        metadata=metadata,
-        game_id=result.game_id,
-    )
+    # Use incremental recording to properly store move_probs
+    with GameRecorder(db, result.initial_state, result.game_id) as recorder:
+        state = result.initial_state
+        for idx, move_data in enumerate(result.moves):
+            # Extract move_probs (MCTS policy) from the move data
+            move_probs = move_data.get("mcts_policy")
+            
+            # Create Move object from the serialized data (excluding extra fields)
+            move_dict = {k: v for k, v in move_data.items()
+                         if k not in ("mcts_policy", "value", "moveNumber")}
+            move_dict.setdefault("id", f"{result.game_id}:{idx}")
+            move = MoveModel.model_validate(move_dict)
+            
+            # Apply move to get state_after
+            state_after = GameEngine.apply_move(state, move, trace_mode=True)
+            
+            # Record the move with soft policy targets
+            recorder.add_move(
+                move,
+                state_after=state_after,
+                state_before=state,
+                move_probs=move_probs,
+            )
+            
+            state = state_after
+        
+        # Finalize with the final state and metadata
+        recorder.finalize(result.final_state, metadata)
 
 
 def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:

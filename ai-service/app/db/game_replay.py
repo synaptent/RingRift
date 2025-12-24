@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 # - v8: Added game_nnue_features table for pre-computed NNUE training features
 # - v9: Added quality_score and quality_category columns for training data prioritization
 # - v10: Added move_probs column for storing soft policy targets from MCTS search
-SCHEMA_VERSION = 10
+# - v11: Added search_stats_json column for rich training data (Q-values, uncertainty, etc.)
+SCHEMA_VERSION = 11
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -149,6 +150,8 @@ CREATE TABLE IF NOT EXISTS game_moves (
     engine_time_ms INTEGER,
     -- v10 additions: soft policy targets from MCTS search
     move_probs TEXT,
+    -- v11 additions: rich search statistics for auxiliary training
+    search_stats_json TEXT,
     PRIMARY KEY (game_id, move_number),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );
@@ -394,6 +397,7 @@ class GameWriter:
         fsm_valid: bool | None = None,
         fsm_error_code: str | None = None,
         move_probs: dict[str, float] | None = None,
+        search_stats: dict | None = None,
     ) -> None:
         """Add a move to the game.
 
@@ -411,6 +415,8 @@ class GameWriter:
             fsm_error_code: Optional FSM error code if validation failed
             move_probs: Optional soft policy targets from MCTS search (v10)
                 Dict mapping move keys to probabilities: {"move_key": probability, ...}
+            search_stats: Optional rich search statistics for auxiliary training (v11)
+                Dict with q_values, visit_counts, uncertainty, root_value, etc.
         """
         if self._finalized:
             raise RuntimeError("GameWriter has been finalized")
@@ -441,6 +447,7 @@ class GameWriter:
             move=move,
             phase=phase_hint,
             move_probs=move_probs,
+            search_stats=search_stats,
         )
 
         # Handle snapshots
@@ -1068,6 +1075,26 @@ class GameReplayDB:
         self._set_schema_version(conn, 10)
         logger.info("Migration to v10 complete")
 
+    def _migrate_v10_to_v11(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v10 to v11.
+
+        Adds:
+        - search_stats_json column to game_moves table for storing rich
+          search statistics (Q-values, visit counts, uncertainty, etc.)
+          for auxiliary training targets.
+        """
+        logger.info("Migrating schema from v10 to v11")
+
+        # Add search_stats_json column to game_moves
+        try:
+            conn.execute("ALTER TABLE game_moves ADD COLUMN search_stats_json TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        self._set_schema_version(conn, 11)
+        logger.info("Migration to v11 complete")
+
     # =========================================================================
     # Write Operations
     # =========================================================================
@@ -1467,6 +1494,56 @@ class GameReplayDB:
             for row in rows:
                 move = _deserialize_move(row["move_json"])
                 results[row["game_id"]].append(move)
+
+        return results
+
+    def get_move_probs_batch(
+        self,
+        game_ids: list[str],
+    ) -> dict[str, dict[int, dict[str, float]]]:
+        """Get soft policy targets for multiple games in a single query.
+
+        Returns move_probs data for training data export. This allows using
+        soft targets from MCTS search instead of 1-hot encoding.
+
+        Args:
+            game_ids: List of game identifiers
+
+        Returns:
+            Dict mapping game_id -> {move_number -> {move_key: probability}}
+            Only includes entries where move_probs is not NULL.
+        """
+        if not game_ids:
+            return {}
+
+        results: dict[str, dict[int, dict[str, float]]] = {}
+
+        with self._get_conn() as conn:
+            placeholders = ",".join("?" * len(game_ids))
+            rows = conn.execute(
+                f"""
+                SELECT game_id, move_number, move_probs
+                FROM game_moves
+                WHERE game_id IN ({placeholders})
+                  AND move_probs IS NOT NULL
+                ORDER BY game_id, move_number
+                """,
+                game_ids,
+            ).fetchall()
+
+            for row in rows:
+                game_id = row["game_id"]
+                move_number = row["move_number"]
+                move_probs_json = row["move_probs"]
+
+                if move_probs_json:
+                    try:
+                        move_probs = json.loads(move_probs_json)
+                        if game_id not in results:
+                            results[game_id] = {}
+                        results[game_id][move_number] = move_probs
+                    except (json.JSONDecodeError, TypeError):
+                        pass  # Skip invalid JSON
 
         return results
 
@@ -2015,6 +2092,47 @@ class GameReplayDB:
                 moves = moves_map.get(game_id, [])
                 yield game_meta, initial_state, moves
 
+    def iterate_games_with_probs(
+        self,
+        batch_size: int = 100,
+        **filters,
+    ) -> Iterator[tuple[dict, GameState, list[Move], dict[int, dict[str, float]]]]:
+        """Iterate over games matching filters, including soft policy targets.
+
+        Like iterate_games, but also returns move_probs for training data export
+        with soft targets instead of 1-hot encoding.
+
+        Args:
+            batch_size: Number of games to load per batch (default 100)
+            **filters: Query filters (board_type, num_players, etc.)
+
+        Yields:
+            (metadata, initial_state, moves, move_probs) tuples for each game.
+            move_probs is a dict mapping move_number -> {move_key: probability}
+            for moves that have soft targets stored.
+        """
+        filters_copy = dict(filters)
+        limit = filters_copy.pop("limit", 10000)
+        games = self.query_games(**filters_copy, limit=limit)
+
+        for i in range(0, len(games), batch_size):
+            batch = games[i:i + batch_size]
+            game_ids = [g["game_id"] for g in batch]
+
+            # Batch load initial states, moves, and move_probs
+            initial_states = self.get_initial_states_batch(game_ids)
+            moves_map = self.get_moves_batch(game_ids)
+            probs_map = self.get_move_probs_batch(game_ids)
+
+            for game_meta in batch:
+                game_id = game_meta["game_id"]
+                initial_state = initial_states.get(game_id)
+                if initial_state is None:
+                    continue
+                moves = moves_map.get(game_id, [])
+                move_probs = probs_map.get(game_id, {})
+                yield game_meta, initial_state, moves, move_probs
+
     def get_game_count(
         self,
         board_type: BoardType | None = None,
@@ -2233,6 +2351,7 @@ class GameReplayDB:
         engine_pv: list[str] | None = None,
         engine_time_ms: int | None = None,
         move_probs: dict[str, float] | None = None,
+        search_stats: dict | None = None,
     ) -> None:
         """Store a single move (standalone transaction)."""
         with self._get_conn() as conn:
@@ -2251,6 +2370,7 @@ class GameReplayDB:
                 engine_pv=engine_pv,
                 engine_time_ms=engine_time_ms,
                 move_probs=move_probs,
+                search_stats=search_stats,
             )
 
     def _store_move_conn(
@@ -2270,6 +2390,7 @@ class GameReplayDB:
         engine_pv: list[str] | None = None,
         engine_time_ms: int | None = None,
         move_probs: dict[str, float] | None = None,
+        search_stats: dict | None = None,
     ) -> None:
         """Store a single move (within existing transaction).
 
@@ -2291,6 +2412,8 @@ class GameReplayDB:
             engine_time_ms: Time spent computing this move in ms (v2)
             move_probs: Soft policy targets from MCTS search (v10)
                 JSON format: {"move_key": probability, ...}
+            search_stats: Rich search statistics for auxiliary training (v11)
+                JSON format: {q_values, visit_counts, uncertainty, root_value, ...}
         """
         # Enforce canonical (phase, move_type) contract at write time for all
         # new recordings. We thread the *actual* phase-at-move-time through
@@ -2314,8 +2437,8 @@ class GameReplayDB:
             INSERT INTO game_moves
             (game_id, move_number, turn_number, player, phase, move_type, move_json,
              timestamp, think_time_ms, time_remaining_ms, engine_eval, engine_eval_type,
-             engine_depth, engine_nodes, engine_pv, engine_time_ms, move_probs)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             engine_depth, engine_nodes, engine_pv, engine_time_ms, move_probs, search_stats_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 game_id,
@@ -2335,6 +2458,7 @@ class GameReplayDB:
                 json.dumps(engine_pv) if engine_pv else None,
                 engine_time_ms,
                 json.dumps(move_probs) if move_probs else None,
+                json.dumps(search_stats) if search_stats else None,
             ),
         )
 

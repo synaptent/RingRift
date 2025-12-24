@@ -1505,7 +1505,7 @@ class SquareStateEncoder:
         globals_vec = np.zeros(self.NUM_GLOBAL_FEATURES, dtype=np.float32)
 
         # Game phase encoding (channels 0-4)
-        phase = state.game_phase
+        phase = state.current_phase
         if phase == GamePhase.RING_PLACEMENT:
             globals_vec[0] = 1.0
         elif phase == GamePhase.MOVEMENT:
@@ -1523,15 +1523,27 @@ class SquareStateEncoder:
         current_player = state.current_player
         threat_opponent = select_threat_opponent(state, num_players)
 
+        # Get player objects
+        my_player = next(
+            (p for p in state.players if p.player_number == current_player), None
+        )
+        opp_player = next(
+            (p for p in state.players if p.player_number == threat_opponent), None
+        )
+        if opp_player is None:
+            opp_player = next(
+                (p for p in state.players if p.player_number != current_player), None
+            )
+
         # Rings in hand (channel 5-6)
-        my_rings = state.rings_in_hand.get(current_player, rings_per_player)
-        opp_rings = state.rings_in_hand.get(threat_opponent, rings_per_player)
+        my_rings = my_player.rings_in_hand if my_player else rings_per_player
+        opp_rings = opp_player.rings_in_hand if opp_player else rings_per_player
         globals_vec[5] = my_rings / max(rings_per_player, 1)
         globals_vec[6] = opp_rings / max(rings_per_player, 1)
 
         # Eliminated rings (channel 7-8)
-        my_elim = state.eliminated_rings.get(current_player, 0)
-        opp_elim = state.eliminated_rings.get(threat_opponent, 0)
+        my_elim = my_player.eliminated_rings if my_player else 0
+        opp_elim = opp_player.eliminated_rings if opp_player else 0
         globals_vec[7] = my_elim / max(rings_per_player, 1)
         globals_vec[8] = opp_elim / max(rings_per_player, 1)
 

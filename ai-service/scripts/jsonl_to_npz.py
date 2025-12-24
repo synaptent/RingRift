@@ -577,8 +577,12 @@ def build_encoder(
             )
             logger.info(f"Using HexStateEncoderV3 (16 base channels -> 64 total) for {board_type.name} ({hex_board_size}×{hex_board_size}, policy={hex_policy_size})")
         else:
-            hex_encoder = HexStateEncoder(feature_version=feature_version)
-            logger.info(f"Using HexStateEncoder (10 base channels -> 40 total) for {board_type.name} ({hex_board_size}×{hex_board_size})")
+            hex_encoder = HexStateEncoder(
+                board_size=hex_board_size,
+                policy_size=hex_policy_size,
+                feature_version=feature_version,
+            )
+            logger.info(f"Using HexStateEncoder (10 base channels -> 40 total) for {board_type.name} ({hex_board_size}×{hex_board_size}, policy={hex_policy_size})")
         return HexEncoderWrapper(hex_encoder, board_size=hex_board_size)
 
     # For square boards, use NeuralNetAI (14 base channels)

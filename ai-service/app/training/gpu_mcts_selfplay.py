@@ -363,29 +363,25 @@ class GPUMCTSSelfplayRunner:
             stacked_features = np.concatenate([features, *hist], axis=0)
 
             # Convert policy dict to indices and values
+            # Build key->move lookup once (O(n) instead of O(n*m))
+            valid_moves = self._engine.get_valid_moves(state, state.current_player)
+            key_to_move = {self._move_to_key(m): m for m in valid_moves}
+
             policy_indices = []
             policy_values = []
 
             for move_key, prob in policy_dict.items():
                 if prob <= 0:
                     continue
-                # Parse move key and encode
-                # The move_key format is "{type}_{from}_{to}" or similar
-                # We need to convert back to index
-                # For now, use a simplified approach
-                try:
-                    # Get valid moves and find matching key
-                    valid_moves = self._engine.get_valid_moves(state, state.current_player)
-                    for move in valid_moves:
-                        key = self._move_to_key(move)
-                        if key == move_key:
-                            idx = encode_move_for_board(move, state.board)
-                            if idx >= 0:
-                                policy_indices.append(idx)
-                                policy_values.append(prob)
-                            break
-                except Exception:
-                    pass
+                move = key_to_move.get(move_key)
+                if move is not None:
+                    try:
+                        idx = encode_move_for_board(move, state.board)
+                        if idx >= 0:
+                            policy_indices.append(idx)
+                            policy_values.append(prob)
+                    except Exception:
+                        pass
 
             if not policy_indices:
                 return None
