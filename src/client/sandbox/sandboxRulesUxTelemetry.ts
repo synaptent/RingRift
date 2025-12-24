@@ -1,16 +1,25 @@
+/**
+ * @fileoverview Sandbox Rules-UX Telemetry - UTILITY, NOT CANONICAL
+ *
+ * SSoT alignment: This module provides **telemetry utilities** for sandbox.
+ * It contains no rules logic.
+ *
+ * This utility:
+ * - Emits spec-aligned sandbox_* telemetry events
+ * - Only curated learning scenarios emit events
+ * - High-cardinality identifiers stay in payload, not labels
+ *
+ * DO NOT add rules logic here - this is a pure telemetry utility module.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ * @see UX_RULES_TELEMETRY_SPEC.md
+ */
+
 import type { LoadableScenario } from './scenarioTypes';
 import type { GameResult } from '../../shared/types/game';
 import { logRulesUxEvent } from '../utils/rulesUxTelemetry';
 import { getRulesUxContextForScenarioId } from '../../shared/teaching/scenarioTelemetry';
-
-/**
- * Lightweight helpers for emitting spec-aligned sandbox rules-UX telemetry.
- *
- * These helpers are intentionally narrow:
- * - Only curated learning scenarios emit sandbox_* events.
- * - High-cardinality identifiers (scenario ids, flow ids) stay in the payload,
- *   not Prometheus labels (see UX_RULES_TELEMETRY_SPEC.md).
- */
 
 /**
  * Emit a sandbox_scenario_loaded event when a curated scenario is loaded

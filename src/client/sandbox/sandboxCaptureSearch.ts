@@ -1,14 +1,23 @@
 /**
- * DIAGNOSTICS-ONLY (SANDBOX CAPTURE CHAIN SEARCH)
+ * @fileoverview Sandbox Capture Chain Search - DIAGNOSTICS-ONLY, NOT CANONICAL
  *
- * This module provides analysis/search helpers for exploring overtaking capture
- * chains on cloned BoardState snapshots. It is not part of the canonical rules
- * semantics and must never be wired into production legality or move-generation
- * surfaces (e.g. ClientSandboxEngine, SandboxContext, GamePage).
+ * SSoT alignment: This module is a **DIAGNOSTICS TOOL**, NOT for production rules.
  *
- * All rules-level capture enumeration and application must go through the shared
- * CaptureAggregate and orchestrator. This file is reserved for tests, CLI tools,
- * and deep diagnostics only. See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C).
+ * Canonical SSoT:
+ * - Capture enumeration: `src/shared/engine/aggregates/CaptureAggregate.ts`
+ * - Capture validation: `src/shared/engine/aggregates/captureHelpers.ts`
+ *
+ * This module:
+ * - Provides analysis/search helpers for exploring capture chains
+ * - Operates on cloned BoardState snapshots for hypothetical analysis
+ * - Reserved for tests, CLI tools, and deep diagnostics ONLY
+ * - Must NEVER be wired into production legality or move-generation surfaces
+ *
+ * DO NOT use for production rules logic. Use CaptureAggregate instead.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ * @see docs/ORCHESTRATOR_ROLLOUT_PLAN.md Phase C
  */
 import type { BoardState, BoardType, Position, RingStack } from '../../shared/engine';
 import { positionToString } from '../../shared/engine';

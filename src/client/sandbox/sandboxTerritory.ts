@@ -1,26 +1,26 @@
 /**
- * Legacy sandbox territory helpers.
+ * @fileoverview Sandbox Territory Helpers - ADAPTER, NOT CANONICAL
  *
- * **IMPORTANT:** This file exists primarily as a thin adapter layer between
- * the sandbox engine (ClientSandboxEngine) and the canonical shared territory
- * helpers. The actual territory semantics (region detection, collapse logic,
- * border enumeration) are defined in:
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides territory detection and processing for sandbox/offline games.
  *
- * - {@link ../../shared/engine/territoryDetection.ts} - Region detection
- * - {@link ../../shared/engine/territoryProcessing.ts} - Collapse logic
- * - {@link ../../shared/engine/territoryBorders.ts} - Border markers
- * - {@link ../../shared/engine/territoryDecisionHelpers.ts} - Decision helpers
+ * Canonical SSoT:
+ * - Region detection: `src/shared/engine/territoryDetection.ts`
+ * - Collapse logic: `src/shared/engine/territoryProcessing.ts`
+ * - Border markers: `src/shared/engine/territoryBorders.ts`
+ * - Decision helpers: `src/shared/engine/territoryDecisionHelpers.ts`
+ * - Territory aggregate: `src/shared/engine/aggregates/TerritoryAggregate.ts`
  *
- * **Exported functions** in this file are thin adapters that delegate to
- * those shared modules and remain in use by ClientSandboxEngine and
- * sandboxTerritoryEngine.
+ * This adapter:
+ * - Delegates region detection to `findDisconnectedRegions()`
+ * - Delegates border enumeration to `getBorderMarkerPositionsForRegion()`
+ * - Delegates region processing to `applyTerritoryRegion()`
+ * - Contains NO standalone region-geometry implementation
  *
- * This module intentionally contains no standalone region-geometry
- * implementation; legacy helpers were removed once the shared
- * territoryDetection / territoryBorders pipeline became canonical.
+ * DO NOT add territory processing logic here - it belongs in `src/shared/engine/`.
  *
- * Do NOT add new territory processing logic here; extend the shared helpers instead.
- *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  * @module client/sandbox/sandboxTerritory
  */
 import type {

@@ -1,11 +1,19 @@
 /**
- * Type definitions for sandbox scenario loading/saving functionality.
+ * @fileoverview Sandbox Scenario Type Definitions - TYPES ONLY, NOT CANONICAL
  *
- * Scenarios allow users to:
- * 1. Load pre-built test vectors for specific game situations
- * 2. Access curated learning scenarios for beginners
- * 3. Save/load custom game states to localStorage
- * 4. Export/import scenarios as JSON files
+ * SSoT alignment: This module provides **type definitions** for sandbox scenarios.
+ * It contains no rules logic.
+ *
+ * This module defines:
+ * - Scenario categories, difficulty levels, and rules concepts
+ * - LoadableScenario interface for serialized game states
+ * - Contract test vector and curated scenario bundle types
+ * - Constants for localStorage keys and limits
+ *
+ * DO NOT add rules logic here - this is a pure types module.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import type { BoardType, Move } from '../../shared/types/game';

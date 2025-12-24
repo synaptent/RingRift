@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Sandbox AI Diagnostics - UTILITY, NOT CANONICAL
+ *
+ * SSoT alignment: This module provides **diagnostics utilities** for sandbox AI.
+ * It contains no rules logic.
+ *
+ * This utility:
+ * - Records AI decision metadata to window global for debugging
+ * - Provides getSandboxAiDiagnostics() for diagnostic UIs
+ * - Used by sandboxAI.ts for decision source tracking
+ *
+ * DO NOT add rules logic here - this is a pure utility module.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type { GameState } from '../../shared/types/game';
 
 export type SandboxAiDecisionSource = 'service' | 'local' | 'unavailable' | 'mismatch';

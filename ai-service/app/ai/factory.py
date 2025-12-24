@@ -31,7 +31,7 @@ import contextlib
 import logging
 import os
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, Union
 
 from app.models.core import AIConfig, AIType
 
@@ -379,7 +379,7 @@ DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     4: "Mid-low - Minimax/BRS (2P) or BRS/Descent (3-4P/large boards)",
     5: "Mid - Minimax+NNUE (2P small) / MaxN (3-4P) / Descent+NN (large)",
     6: "Upper-mid - Descent with neural guidance / MaxN+NN (3-4P)",
-    7: "High - MCTS with neural guidance / MaxN+NN (3-4P)",
+    7: "High - MCTS with neural guidance / MaxN+NN (3-4P) / HybridNN (env: RINGRIFT_USE_HYBRID_D7=1)",
     8: "Expert - Gumbel MCTS (2P) / MaxN+NN expert (3-4P)",
     9: "Master - Gumbel MCTS with extended budget",
     10: "Grandmaster - Gumbel MCTS with extended search",
@@ -419,6 +419,17 @@ IG_GMO_DIFFICULTY_OVERRIDE: DifficultyProfile = {
     "randomness": 0.1,
     "think_time_ms": 2000,
     "profile_id": "v3-iggmo-3-experimental",
+    "use_neural_net": True,
+}
+
+# HybridNN override for D7 - fast heuristic + NN value ranking
+# Enable via environment variable: RINGRIFT_USE_HYBRID_D7=1
+# Provides 5-10x speedup over MCTS with <500ms latency, ideal for human games
+HYBRID_NN_D7_OVERRIDE: DifficultyProfile = {
+    "ai_type": AIType.HYBRID_NN,
+    "randomness": 0.0,
+    "think_time_ms": 500,  # Target <500ms response time
+    "profile_id": "v3-hybridnn-7-fast",
     "use_neural_net": True,
 }
 
@@ -470,6 +481,13 @@ def get_difficulty_profile(
     if effective == 3 and os.environ.get("RINGRIFT_USE_EBMO", "").lower() in {"1", "true", "yes"}:
         logger.debug("Using experimental EBMO at D3 (RINGRIFT_USE_EBMO=1)")
         return EBMO_DIFFICULTY_OVERRIDE
+
+    # Check for HybridNN override at D7 for fast human games
+    # Enabled via RINGRIFT_USE_HYBRID_D7=1 environment variable
+    # Provides 5-10x speedup with <500ms latency
+    if effective == 7 and os.environ.get("RINGRIFT_USE_HYBRID_D7", "").lower() in {"1", "true", "yes"}:
+        logger.debug("Using HybridNN at D7 for fast response (RINGRIFT_USE_HYBRID_D7=1)")
+        return HYBRID_NN_D7_OVERRIDE
 
     # Check for multiplayer override (3-4 players)
     if num_players >= 3 and effective in MULTIPLAYER_DIFFICULTY_OVERRIDES:
@@ -683,6 +701,9 @@ class AIFactory:
         elif ai_type == AIType.IMPROVED_MCTS:
             from app.ai.improved_mcts_ai import ImprovedMCTSAI
             ai_class = ImprovedMCTSAI
+        elif ai_type == AIType.HYBRID_NN:
+            from app.ai.hybrid_gpu import HybridNNAI
+            ai_class = HybridNNAI
         else:
             raise ValueError(f"Unsupported AI type: {ai_type}")
 
@@ -1096,6 +1117,173 @@ class AIFactory:
         """Clear the class cache. Useful for testing."""
         cls._class_cache.clear()
 
+    @classmethod
+    def create_mcts(
+        cls,
+        board_type: str,
+        num_players: int = 2,
+        player_number: int = 1,
+        mode: str = "standard",
+        device: str = "auto",
+        simulation_budget: int = 800,
+        num_sampled_actions: int = 16,
+        neural_net: Any = None,
+        *,
+        # Mode-specific options
+        batch_size: int = 16,  # For batch/tensor modes
+        top_k: int = 8,  # For hybrid mode
+        temperature: float = 0.1,  # For hybrid mode
+        eval_mode: str = "heuristic",  # For gpu/tensor modes: heuristic, nn, hybrid
+    ) -> Any:
+        """Create MCTS AI with specified acceleration mode.
+
+        This factory method provides a unified interface for creating any of
+        the GPU-accelerated MCTS implementations:
+
+        Modes:
+        - standard: GumbelMCTSAI (CPU, single game) - Default, most compatible
+        - gpu: GPUGumbelMCTS (GPU simulation, single game) - 264x speedup
+        - batch: BatchedGumbelMCTS (batched NN, multi-game) - 3-4x over single
+        - hybrid: HybridNNValuePlayer (fast heuristic+NN) - 5-10x faster, <500ms
+        - tensor: MultiTreeMCTS (full GPU tree, batch processing) - 6,671x speedup
+
+        Recommended usage by scenario:
+        - Human vs AI games (D1-D7): Use "hybrid" for fast response
+        - Human vs AI games (D8-D11): Use "standard" for maximum strength
+        - Selfplay training: Use "tensor" for maximum throughput
+        - Gauntlet evaluation: Use "batch" for parallel game processing
+        - Testing/debugging: Use "standard" for simplicity
+
+        Args:
+            board_type: Board type string (square8, hex8, square19, hexagonal)
+            num_players: Number of players (2-4)
+            player_number: This player's number (1-indexed)
+            mode: Acceleration mode - "standard", "gpu", "batch", "hybrid", "tensor"
+            device: Device for GPU modes - "auto", "cpu", "cuda", "mps"
+            simulation_budget: MCTS simulation budget per move
+            num_sampled_actions: K for Gumbel-Top-K sampling
+            neural_net: Pre-loaded neural network (optional, will auto-load if None)
+            batch_size: Batch size for batch/tensor modes
+            top_k: Number of candidates for hybrid mode
+            temperature: Selection temperature for hybrid mode
+            eval_mode: Evaluation mode for gpu/tensor - "heuristic", "nn", "hybrid"
+
+        Returns:
+            MCTS instance appropriate for the selected mode
+
+        Raises:
+            ValueError: If mode is not recognized
+
+        Examples:
+            # Standard CPU-based Gumbel MCTS (human games D8+)
+            mcts = AIFactory.create_mcts("square8", mode="standard")
+            move = mcts.select_move(game_state, valid_moves)
+
+            # Fast hybrid for responsive human games (D7)
+            hybrid = AIFactory.create_mcts("hex8", mode="hybrid", top_k=8)
+            move = hybrid.select_move(game_state, valid_moves)
+
+            # GPU tensor for selfplay training
+            tensor_mcts = AIFactory.create_mcts("square8", mode="tensor", batch_size=64)
+            moves, policies = tensor_mcts.search_batch(game_states, neural_net)
+
+            # Batched MCTS for gauntlet evaluation
+            batch_mcts = AIFactory.create_mcts("hex8", mode="batch", batch_size=16)
+            moves = batch_mcts.select_moves_batch(game_states)
+        """
+        import torch
+
+        # Resolve device
+        if device == "auto":
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+
+        # Convert board_type string to BoardType enum if needed
+        from ..models import BoardType, AIConfig
+
+        if isinstance(board_type, str):
+            board_type_enum = BoardType(board_type.lower())
+        else:
+            board_type_enum = board_type
+
+        mode_lower = mode.lower()
+
+        if mode_lower == "standard":
+            # Standard GumbelMCTSAI - CPU-based, single game
+            from .gumbel_mcts_ai import GumbelMCTSAI
+
+            config = AIConfig(
+                difficulty=8,
+                gumbel_num_sampled_actions=num_sampled_actions,
+                gumbel_simulation_budget=simulation_budget,
+                use_neural_net=neural_net is not None,
+            )
+            mcts = GumbelMCTSAI(player_number, config, board_type_enum)
+            if neural_net is not None:
+                mcts.neural_net = neural_net
+            return mcts
+
+        elif mode_lower == "gpu":
+            # GPUGumbelMCTS - GPU simulation, single game
+            from .tensor_gumbel_tree import GPUGumbelMCTS, GPUGumbelMCTSConfig
+
+            config = GPUGumbelMCTSConfig(
+                num_sampled_actions=num_sampled_actions,
+                simulation_budget=simulation_budget,
+                device=device,
+                eval_mode=eval_mode,
+            )
+            return GPUGumbelMCTS(config)
+
+        elif mode_lower == "batch":
+            # BatchedGumbelMCTS - Batched NN, multi-game
+            from .batched_gumbel_mcts import BatchedGumbelMCTS
+
+            return BatchedGumbelMCTS(
+                board_type=board_type_enum,
+                num_players=num_players,
+                neural_net=neural_net,
+                batch_size=batch_size,
+                num_sampled_actions=num_sampled_actions,
+                simulation_budget=simulation_budget,
+                player_number=player_number,
+            )
+
+        elif mode_lower == "hybrid":
+            # HybridNNValuePlayer - Fast heuristic + NN value
+            from .hybrid_gpu import HybridNNValuePlayer
+
+            return HybridNNValuePlayer(
+                board_type=board_type if isinstance(board_type, str) else board_type.value,
+                num_players=num_players,
+                player_number=player_number,
+                top_k=top_k,
+                temperature=temperature,
+                prefer_gpu=(device != "cpu"),
+            )
+
+        elif mode_lower == "tensor":
+            # MultiTreeMCTS - Full GPU tree, batch processing
+            from .tensor_gumbel_tree import MultiTreeMCTS, MultiTreeMCTSConfig
+
+            config = MultiTreeMCTSConfig(
+                num_sampled_actions=num_sampled_actions,
+                simulation_budget=simulation_budget,
+                device=device,
+                eval_mode=eval_mode,
+            )
+            return MultiTreeMCTS(config)
+
+        else:
+            raise ValueError(
+                f"Unknown MCTS mode: {mode}. "
+                f"Available modes: standard, gpu, batch, hybrid, tensor"
+            )
+
 
 # -----------------------------------------------------------------------------
 # Convenience aliases
@@ -1105,6 +1293,7 @@ class AIFactory:
 create_ai = AIFactory.create
 create_ai_from_difficulty = AIFactory.create_from_difficulty
 create_tournament_ai = AIFactory.create_for_tournament
+create_mcts = AIFactory.create_mcts
 
 
 def get_all_difficulties() -> dict[int, DifficultyProfile]:

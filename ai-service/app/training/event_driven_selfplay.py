@@ -75,6 +75,9 @@ class EventDrivenSelfplay:
         mcts_sims: int = 800,
         output_dir: str | Path = "data/selfplay/event_driven",
         prefer_nnue: bool = True,
+        use_gpu_mcts: bool = False,
+        gpu_device: str = "cuda",
+        gpu_eval_mode: str = "heuristic",
     ):
         """Initialize event-driven selfplay manager.
 
@@ -85,6 +88,9 @@ class EventDrivenSelfplay:
             mcts_sims: MCTS simulation budget per move
             output_dir: Directory for game output
             prefer_nnue: Prefer NNUE models over policy/value nets
+            use_gpu_mcts: Use GPU-accelerated MultiTreeMCTS (Phase 3)
+            gpu_device: Device for GPU MCTS (cuda, cpu, mps)
+            gpu_eval_mode: Evaluation mode for GPU MCTS (heuristic, nn, hybrid)
         """
         self.board_type = board_type
         self.num_players = num_players
@@ -92,9 +98,13 @@ class EventDrivenSelfplay:
         self.mcts_sims = mcts_sims
         self.output_dir = Path(output_dir)
         self.prefer_nnue = prefer_nnue
+        self.use_gpu_mcts = use_gpu_mcts
+        self.gpu_device = gpu_device
+        self.gpu_eval_mode = gpu_eval_mode
 
         self._config_key = f"{board_type.lower()}_{num_players}p"
         self._batched_mcts: BatchedGumbelMCTS | None = None
+        self._multi_tree_mcts = None  # MultiTreeMCTS instance
         self._current_model_path: Path | None = None
         self._model_update_pending = False
         self._pending_model_path: Path | None = None
@@ -218,8 +228,7 @@ class EventDrivenSelfplay:
             await asyncio.sleep(0.01)
 
     async def _initialize_mcts(self) -> None:
-        """Initialize the batched MCTS engine."""
-        from app.ai.batched_gumbel_mcts import create_batched_gumbel_mcts
+        """Initialize the MCTS engine (batched or GPU-accelerated)."""
         from app.models import BoardType
 
         # Map board type string to enum
@@ -237,14 +246,34 @@ class EventDrivenSelfplay:
         if self._current_model_path and self._current_model_path.exists():
             neural_net = await self._load_neural_net(self._current_model_path)
 
-        self._batched_mcts = create_batched_gumbel_mcts(
-            board_type=board_type_enum,
-            num_players=self.num_players,
-            batch_size=self.batch_size,
-            num_sampled_actions=16,
-            simulation_budget=self.mcts_sims,
-            neural_net=neural_net,
-        )
+        if self.use_gpu_mcts:
+            # Use GPU-accelerated MultiTreeMCTS (Phase 3)
+            from app.ai.tensor_gumbel_tree import MultiTreeMCTS, MultiTreeMCTSConfig
+
+            config = MultiTreeMCTSConfig(
+                simulation_budget=self.mcts_sims,
+                num_sampled_actions=16,
+                device=self.gpu_device,
+                eval_mode=self.gpu_eval_mode,
+            )
+            self._multi_tree_mcts = MultiTreeMCTS(config)
+            self._neural_net = neural_net
+            logger.info(
+                f"Initialized GPU MultiTreeMCTS: device={self.gpu_device}, "
+                f"budget={self.mcts_sims}"
+            )
+        else:
+            # Use standard BatchedGumbelMCTS
+            from app.ai.batched_gumbel_mcts import create_batched_gumbel_mcts
+
+            self._batched_mcts = create_batched_gumbel_mcts(
+                board_type=board_type_enum,
+                num_players=self.num_players,
+                batch_size=self.batch_size,
+                num_sampled_actions=16,
+                simulation_budget=self.mcts_sims,
+                neural_net=neural_net,
+            )
 
     async def _load_neural_net(self, model_path: Path):
         """Load neural network from path.
@@ -291,6 +320,110 @@ class EventDrivenSelfplay:
 
     async def _run_batch(self, batch_size: int) -> list[dict]:
         """Run a batch of games.
+
+        Args:
+            batch_size: Number of games in batch.
+
+        Returns:
+            List of game records.
+        """
+        if self.use_gpu_mcts:
+            return await self._run_batch_gpu(batch_size)
+        else:
+            return await self._run_batch_standard(batch_size)
+
+    async def _run_batch_gpu(self, batch_size: int) -> list[dict]:
+        """Run a batch of games using GPU-accelerated MultiTreeMCTS.
+
+        This method runs all games in true parallel, using MultiTreeMCTS
+        to search all active game positions simultaneously.
+
+        Args:
+            batch_size: Number of games in batch.
+
+        Returns:
+            List of game records.
+        """
+        from app.game_engine import GameEngine
+        from app.training.initial_state import create_initial_state
+        from app.models import BoardType
+
+        board_type_map = {
+            "square8": BoardType.SQUARE8,
+            "square19": BoardType.SQUARE19,
+            "hex8": BoardType.HEX8,
+            "hex": BoardType.HEXAGONAL,
+            "hexagonal": BoardType.HEXAGONAL,
+        }
+        board_type_enum = board_type_map.get(self.board_type.lower(), BoardType.SQUARE8)
+
+        # Create initial states for all games
+        game_states = [
+            create_initial_state(
+                board_type=board_type_enum,
+                num_players=self.num_players,
+            )
+            for _ in range(batch_size)
+        ]
+
+        # Track game progress
+        game_moves: list[list] = [[] for _ in range(batch_size)]
+        active_mask = [True] * batch_size
+        max_moves = 500
+
+        # Run all games in parallel
+        while any(active_mask):
+            # Get active games
+            active_indices = [i for i, active in enumerate(active_mask) if active]
+            active_states = [game_states[i] for i in active_indices]
+
+            if not active_states:
+                break
+
+            # Get moves for all active games using MultiTreeMCTS
+            moves, _ = self._multi_tree_mcts.search_batch(
+                active_states, neural_net=getattr(self, '_neural_net', None)
+            )
+
+            # Apply moves to each game
+            for idx, (game_idx, move) in enumerate(zip(active_indices, moves)):
+                if move is None:
+                    active_mask[game_idx] = False
+                    continue
+
+                # Apply move
+                game_states[game_idx] = GameEngine.apply_move(game_states[game_idx], move)
+                game_moves[game_idx].append(move)
+
+                # Check if game is over
+                gs = game_states[game_idx]
+                if gs.game_status != "active" or len(game_moves[game_idx]) >= max_moves:
+                    active_mask[game_idx] = False
+
+            # Yield to allow other tasks
+            await asyncio.sleep(0)
+
+        # Collect results
+        games = []
+        for i, (game_state, moves) in enumerate(zip(game_states, game_moves)):
+            winner = game_state.winner or 0
+            self._stats.games_completed += 1
+            self._stats.total_moves += len(moves)
+            self._stats.wins_by_player[winner] = (
+                self._stats.wins_by_player.get(winner, 0) + 1
+            )
+
+            games.append({
+                "game_idx": self._stats.games_completed,
+                "winner": winner,
+                "move_count": len(moves),
+                "model": str(self._current_model_path or ""),
+            })
+
+        return games
+
+    async def _run_batch_standard(self, batch_size: int) -> list[dict]:
+        """Run a batch of games using standard BatchedGumbelMCTS.
 
         Args:
             batch_size: Number of games in batch.

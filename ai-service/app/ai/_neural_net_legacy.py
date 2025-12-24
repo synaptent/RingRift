@@ -3630,6 +3630,8 @@ class NeuralNetAI(BaseAI):
         num_filters = 192
         num_players_override = 4
         policy_size_override: int | None = None
+        policy_intermediate_override: int | None = None  # Inferred from checkpoint
+        value_intermediate_override: int | None = None  # Inferred from checkpoint
         in_channels_override: int | None = None  # Input channels from checkpoint metadata
         model_class_name: str | None = None
         memory_tier_override: str | None = None
@@ -3875,6 +3877,31 @@ class NeuralNetAI(BaseAI):
                                 if inferred_policy_size:
                                     policy_size_override = inferred_policy_size
 
+                        # Infer policy_intermediate and value_intermediate from checkpoint weights.
+                        # This prevents mismatch errors when loading models trained with non-default sizes.
+                        if has_v2_policy:
+                            policy_fc1_weight = state_dict.get("policy_fc1.weight")
+                            if policy_fc1_weight is not None and hasattr(policy_fc1_weight, "shape"):
+                                # policy_fc1.weight shape is [policy_intermediate, in_features]
+                                inferred_policy_intermediate = int(policy_fc1_weight.shape[0])
+                                if inferred_policy_intermediate:
+                                    policy_intermediate_override = inferred_policy_intermediate
+                                    logger.debug(
+                                        "Inferred policy_intermediate=%d from checkpoint",
+                                        inferred_policy_intermediate,
+                                    )
+
+                            value_fc1_weight = state_dict.get("value_fc1.weight")
+                            if value_fc1_weight is not None and hasattr(value_fc1_weight, "shape"):
+                                # value_fc1.weight shape is [value_intermediate, in_features]
+                                inferred_value_intermediate = int(value_fc1_weight.shape[0])
+                                if inferred_value_intermediate:
+                                    value_intermediate_override = inferred_value_intermediate
+                                    logger.debug(
+                                        "Inferred value_intermediate=%d from checkpoint",
+                                        inferred_value_intermediate,
+                                    )
+
                         # Infer res-block count from state_dict keys when possible.
                         # We avoid importing regex at module level to keep import
                         # time down for inference.
@@ -3926,16 +3953,22 @@ class NeuralNetAI(BaseAI):
 
         if model_class_name in square_model_classes:
             cls = square_model_classes[model_class_name]
-            self.model = cls(
-                board_size=self.board_size,
-                in_channels=14,
-                global_features=20,
-                num_res_blocks=num_res_blocks,
-                num_filters=num_filters,
-                history_length=history_length_override,
-                policy_size=policy_size_override,
-                num_players=num_players_override,
-            )
+            # Build kwargs, only including intermediate sizes if inferred from checkpoint
+            model_kwargs: dict[str, Any] = {
+                "board_size": self.board_size,
+                "in_channels": 14,
+                "global_features": 20,
+                "num_res_blocks": num_res_blocks,
+                "num_filters": num_filters,
+                "history_length": history_length_override,
+                "policy_size": policy_size_override,
+                "num_players": num_players_override,
+            }
+            if policy_intermediate_override is not None:
+                model_kwargs["policy_intermediate"] = policy_intermediate_override
+            if value_intermediate_override is not None:
+                model_kwargs["value_intermediate"] = value_intermediate_override
+            self.model = cls(**model_kwargs)
         else:
             # Hex boards use different in_channels depending on encoder version:
             # - HexStateEncoderV3: 16 base channels (for HexNeuralNet_v3)

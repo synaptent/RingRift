@@ -1287,4 +1287,288 @@ def get_encoder_for_board_type(
             policy_size=POLICY_SIZE_HEX8,
             feature_version=feature_version,
         )
+    elif board_type in (BoardType.SQUARE8, BoardType.SQUARE19):
+        board_size = 8 if board_type == BoardType.SQUARE8 else 19
+        return SquareStateEncoder(
+            board_type=board_type,
+            board_size=board_size,
+            feature_version=feature_version,
+        )
     return None
+
+
+class SquareStateEncoder:
+    """
+    State encoder for square boards (SQUARE8 and SQUARE19).
+
+    Converts square game states to feature tensors suitable for RingRiftCNN.
+    The encoder outputs feature tensors of shape (C, H, W) where:
+    - C = 14 channels
+    - H = W = board_size (8 or 19)
+
+    Feature Channels:
+        0: Current player stacks (height normalized to [0,1])
+        1: Opponent stacks (height normalized)
+        2: Current player markers
+        3: Opponent markers
+        4: Current player collapsed spaces (territory)
+        5: Opponent collapsed spaces
+        6: Current player liberties (normalized empty neighbors)
+        7: Opponent liberties
+        8: Current player line potential (friendly marker neighbors)
+        9: Opponent line potential
+        10: Cap presence - current player
+        11: Cap presence - opponent
+        12: Valid board position mask
+        13: Reserved (zeros)
+
+    Global Features (20 dims):
+        Same layout as HexStateEncoder for model compatibility.
+    """
+
+    NUM_CHANNELS = 14
+    NUM_GLOBAL_FEATURES = 20
+
+    def __init__(
+        self,
+        board_type: BoardType = BoardType.SQUARE8,
+        board_size: int = 8,
+        feature_version: int = 1,
+    ):
+        """
+        Initialize the square state encoder.
+
+        Args:
+            board_type: Board type (SQUARE8 or SQUARE19)
+            board_size: Size of the board (8 or 19)
+            feature_version: Feature encoding version for global feature layout.
+        """
+        self.board_type = board_type
+        self.board_size = board_size
+        self.feature_version = int(feature_version)
+
+    def encode_state(self, state: GameState) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Encode a square game state to feature tensors.
+
+        Args:
+            state: The game state to encode
+
+        Returns:
+            Tuple of (board_features, global_features):
+            - board_features: shape (14, board_size, board_size)
+            - global_features: shape (20,)
+        """
+        board = state.board
+
+        if board.type not in (BoardType.SQUARE8, BoardType.SQUARE19):
+            raise ValueError(
+                f"SquareStateEncoder requires SQUARE8 or SQUARE19 board type, "
+                f"got {board.type}"
+            )
+
+        board_size = self.board_size
+        features = np.zeros((self.NUM_CHANNELS, board_size, board_size), dtype=np.float32)
+        current_player = state.current_player
+
+        # Channel 0/1: Stacks (height normalized)
+        for pos_key, stack in board.stacks.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+
+            cx, cy = _to_canonical_xy(board, pos)
+            if not (0 <= cx < board_size and 0 <= cy < board_size):
+                continue
+
+            val = min(stack.stack_height / 5.0, 1.0)
+            if stack.controlling_player == current_player:
+                features[0, cx, cy] = val
+            else:
+                features[1, cx, cy] = val
+
+        # Channel 2/3: Markers
+        for pos_key, marker in board.markers.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+
+            cx, cy = _to_canonical_xy(board, pos)
+            if not (0 <= cx < board_size and 0 <= cy < board_size):
+                continue
+
+            if marker.player == current_player:
+                features[2, cx, cy] = 1.0
+            else:
+                features[3, cx, cy] = 1.0
+
+        # Channel 4/5: Collapsed spaces (territory)
+        for pos_key, owner in board.collapsed_spaces.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+
+            cx, cy = _to_canonical_xy(board, pos)
+            if not (0 <= cx < board_size and 0 <= cy < board_size):
+                continue
+
+            if owner == current_player:
+                features[4, cx, cy] = 1.0
+            else:
+                features[5, cx, cy] = 1.0
+
+        # Channel 6/7: Liberties
+        for pos_key, stack in board.stacks.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+
+            cx, cy = _to_canonical_xy(board, pos)
+            if not (0 <= cx < board_size and 0 <= cy < board_size):
+                continue
+
+            neighbors = BoardGeometry.get_adjacent_positions(pos, board.type, board.size)
+            liberties = 0
+            for npos in neighbors:
+                if not BoardGeometry.is_within_bounds(npos, board.type, board.size):
+                    continue
+                n_key = npos.to_key()
+                if n_key in board.stacks or n_key in board.collapsed_spaces:
+                    continue
+                liberties += 1
+
+            max_libs = 8.0  # Square boards have up to 8 neighbors
+            val = min(liberties / max_libs, 1.0)
+            if stack.controlling_player == current_player:
+                features[6, cx, cy] = val
+            else:
+                features[7, cx, cy] = val
+
+        # Channel 8/9: Line potential (markers with friendly neighbors)
+        for pos_key, marker in board.markers.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+
+            cx, cy = _to_canonical_xy(board, pos)
+            if not (0 <= cx < board_size and 0 <= cy < board_size):
+                continue
+
+            neighbors = BoardGeometry.get_adjacent_positions(pos, board.type, board.size)
+            friendly_neighbors = 0
+            for npos in neighbors:
+                n_key = npos.to_key()
+                nm = board.markers.get(n_key)
+                if nm and nm.player == marker.player:
+                    friendly_neighbors += 1
+
+            val = min(friendly_neighbors / 8.0, 1.0)
+            if marker.player == current_player:
+                features[8, cx, cy] = val
+            else:
+                features[9, cx, cy] = val
+
+        # Channel 10/11: Cap presence
+        for pos_key, stack in board.stacks.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+
+            cx, cy = _to_canonical_xy(board, pos)
+            if not (0 <= cx < board_size and 0 <= cy < board_size):
+                continue
+
+            if getattr(stack, 'has_cap', False):
+                if stack.controlling_player == current_player:
+                    features[10, cx, cy] = 1.0
+                else:
+                    features[11, cx, cy] = 1.0
+
+        # Channel 12: Valid board position mask
+        features[12, :, :] = 1.0
+
+        # Channel 13: Reserved (zeros)
+
+        # Compute global features
+        global_features = self._compute_global_features(state)
+
+        return features, global_features
+
+    def _compute_global_features(self, state: GameState) -> np.ndarray:
+        """Compute global (non-spatial) features for the game state."""
+        globals_vec = np.zeros(self.NUM_GLOBAL_FEATURES, dtype=np.float32)
+
+        # Game phase encoding (channels 0-4)
+        phase = state.game_phase
+        if phase == GamePhase.RING_PLACEMENT:
+            globals_vec[0] = 1.0
+        elif phase == GamePhase.MOVEMENT:
+            globals_vec[1] = 1.0
+        elif phase == GamePhase.CAPTURE:
+            globals_vec[2] = 1.0
+        elif phase == GamePhase.LINE_PROCESSING:
+            globals_vec[3] = 1.0
+        elif phase in (GamePhase.TERRITORY_PROCESSING, GamePhase.FORCED_ELIMINATION):
+            globals_vec[4] = 1.0
+
+        # Player statistics
+        num_players = infer_num_players(state)
+        rings_per_player = infer_rings_per_player(state)
+        current_player = state.current_player
+        threat_opponent = select_threat_opponent(state, num_players)
+
+        # Rings in hand (channel 5-6)
+        my_rings = state.rings_in_hand.get(current_player, rings_per_player)
+        opp_rings = state.rings_in_hand.get(threat_opponent, rings_per_player)
+        globals_vec[5] = my_rings / max(rings_per_player, 1)
+        globals_vec[6] = opp_rings / max(rings_per_player, 1)
+
+        # Eliminated rings (channel 7-8)
+        my_elim = state.eliminated_rings.get(current_player, 0)
+        opp_elim = state.eliminated_rings.get(threat_opponent, 0)
+        globals_vec[7] = my_elim / max(rings_per_player, 1)
+        globals_vec[8] = opp_elim / max(rings_per_player, 1)
+
+        # Current turn indicator (channel 9)
+        globals_vec[9] = 1.0
+
+        # Player count indicators (channel 10-11)
+        globals_vec[10] = 1.0 if num_players == 3 else 0.0
+        globals_vec[11] = 1.0 if num_players == 4 else 0.0
+
+        # Territory and piece counts (channels 12-17)
+        board = state.board
+        my_territory = sum(1 for p, o in board.collapsed_spaces.items() if o == current_player)
+        opp_territory = sum(1 for p, o in board.collapsed_spaces.items() if o == threat_opponent)
+        my_markers = sum(1 for p, m in board.markers.items() if m.player == current_player)
+        opp_markers = sum(1 for p, m in board.markers.items() if m.player == threat_opponent)
+        my_stacks = sum(1 for p, s in board.stacks.items() if s.controlling_player == current_player)
+        opp_stacks = sum(1 for p, s in board.stacks.items() if s.controlling_player == threat_opponent)
+
+        max_cells = self.board_size * self.board_size
+        globals_vec[12] = my_territory / max_cells
+        globals_vec[13] = opp_territory / max_cells
+        globals_vec[14] = my_markers / max_cells
+        globals_vec[15] = opp_markers / max_cells
+        globals_vec[16] = my_stacks / max_cells
+        globals_vec[17] = opp_stacks / max_cells
+
+        # Feature version specific (channels 18-19)
+        if self.feature_version >= 2:
+            globals_vec[18] = 1.0 if getattr(state, 'chain_capture_in_progress', False) else 0.0
+            globals_vec[19] = 1.0 if phase == GamePhase.FORCED_ELIMINATION else 0.0
+        else:
+            globals_vec[18] = min(state.move_number / 200.0, 1.0)
+            globals_vec[19] = 0.0
+
+        return globals_vec
+
+    def encode(self, state: GameState) -> tuple[np.ndarray, np.ndarray]:
+        """Alias for encode_state for backwards compatibility."""
+        return self.encode_state(state)

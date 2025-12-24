@@ -1,10 +1,19 @@
 /**
- * State persistence utilities for sandbox mode.
+ * @fileoverview Sandbox State Persistence - UTILITY, NOT CANONICAL
  *
- * Provides functions to:
- * - Save current game state as a custom scenario
- * - Export scenarios to downloadable JSON files
- * - Import scenarios from uploaded JSON files
+ * SSoT alignment: This module provides **state persistence utilities** for sandbox.
+ * It contains no rules logic.
+ *
+ * This utility:
+ * - Saves current game state as custom scenarios
+ * - Exports scenarios to downloadable JSON files
+ * - Imports scenarios from uploaded JSON files
+ * - Builds test fixtures for debugging
+ *
+ * DO NOT add rules logic here - this is a pure utility module.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import type { GameState, BoardType, Player, TimeControl, MoveType } from '../../shared/types/game';

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview SandboxContext - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This context is a **React adapter** that provides sandbox
+ * state and engine lifecycle management for the client UI.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ *
+ * This adapter:
+ * - Manages sandbox configuration (board type, players, AI difficulties)
+ * - Holds the ClientSandboxEngine instance
+ * - Tracks pending choices, capture targets, and UI state
+ * - Provides initialization and reset functions for sandbox lifecycle
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { BoardType, GameState, PlayerChoice, Position } from '../../shared/types/game';
 import {

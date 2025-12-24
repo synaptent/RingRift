@@ -1,13 +1,22 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * Sandbox Decision Mapping
- * ═══════════════════════════════════════════════════════════════════════════
+ * @fileoverview Sandbox Decision Mapping - ADAPTER, NOT CANONICAL
  *
- * Pure functions to map between PendingDecision (orchestrator) and
- * PlayerChoice (UI) formats. Extracted from ClientSandboxEngine to reduce
- * file size and improve testability.
+ * SSoT alignment: This module is an **adapter** between the canonical orchestrator
+ * and the client UI. It does not contain rules logic.
  *
- * These functions are stateless and only need read access to game state.
+ * Canonical SSoT:
+ * - Decision types: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - PlayerChoice types: `src/shared/types/game.ts`
+ *
+ * This adapter:
+ * - Maps PendingDecision (orchestrator format) → PlayerChoice (UI format)
+ * - Maps PlayerChoiceResponse (UI) → Move (engine format)
+ * - Pure, stateless functions with no rules logic
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import type { BoardState, Move, PendingDecision, Position } from '../../shared/engine';

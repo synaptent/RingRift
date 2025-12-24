@@ -660,19 +660,22 @@ class GumbelMCTSAI(BaseAI):
 
         # Lazy initialize GPU Gumbel MCTS
         if self._gpu_gumbel_mcts is None:
-            config = GPUGumbelMCTSConfig(
+            # Get eval_mode from AIConfig, default to "hybrid" for balanced speed/quality
+            eval_mode = getattr(self.config, 'gpu_tree_eval_mode', 'hybrid')
+            gpu_config = GPUGumbelMCTSConfig(
                 num_sampled_actions=self.num_sampled_actions,
                 simulation_budget=max(self.simulation_budget, 800),
                 max_nodes=1024,
                 max_actions=min(256, len(valid_moves) * 2),
                 max_rollout_depth=10,
-                use_nn_rollout=False,  # Use fast GPU heuristic
+                eval_mode=eval_mode,  # "heuristic", "nn", or "hybrid"
                 device="cuda" if self._gpu_available else "cpu",
             )
-            self._gpu_gumbel_mcts = GPUGumbelMCTS(config)
+            self._gpu_gumbel_mcts = GPUGumbelMCTS(gpu_config)
             logger.info(
                 f"GumbelMCTSAI: initialized GPU tree search "
-                f"(budget={config.simulation_budget}, device={config.device})"
+                f"(budget={gpu_config.simulation_budget}, eval_mode={eval_mode}, "
+                f"device={gpu_config.device})"
             )
 
         # Run GPU tree search

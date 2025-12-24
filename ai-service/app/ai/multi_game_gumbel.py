@@ -37,6 +37,7 @@ from app.models import (
 )
 from app.rules.default_engine import DefaultRulesEngine
 from app.rules.mutable_state import MutableGameState
+from app.rules.serialization import serialize_game_state
 from app.training.initial_state import create_initial_state
 
 if TYPE_CHECKING:
@@ -79,6 +80,7 @@ class GameSearchState:
     done: bool = False
     winner: int | None = None
     moves_played: list[dict] = field(default_factory=list)
+    initial_state_serialized: dict | None = None  # For training data export
 
 
 @dataclass
@@ -100,6 +102,7 @@ class GameResult:
     move_count: int
     moves: list[dict]
     duration_ms: float
+    initial_state: dict | None = None  # Serialized initial state for training
 
 
 class MultiGameGumbelRunner:
@@ -221,6 +224,7 @@ class MultiGameGumbelRunner:
                 move_count=game.move_count,
                 moves=game.moves_played,
                 duration_ms=duration_ms / num_games,  # Approximate per-game
+                initial_state=game.initial_state_serialized,
             ))
 
         logger.info(
@@ -239,11 +243,14 @@ class MultiGameGumbelRunner:
                 board_type=self.board_type,
                 num_players=self.num_players,
             )
+            # Serialize initial state for training data export
+            initial_serialized = serialize_game_state(immutable)
             mstate = MutableGameState.from_immutable(immutable)
             states.append(GameSearchState(
                 game_idx=i,
                 game_state=mstate,
                 current_player=mstate.current_player,
+                initial_state_serialized=initial_serialized,
             ))
         return states
 
@@ -455,11 +462,21 @@ class MultiGameGumbelRunner:
             game.move_count += 1
 
             # Record move with policy info
+            # Use JSON-serializable move representation as key
+            def move_key(m):
+                """Create a hashable, JSON-compatible key for a move."""
+                d = m.model_dump(mode="json")
+                # Create compact key from essential fields
+                pos = d.get("to") or d.get("from_pos")
+                pos_str = f"{pos['x']},{pos['y']}" if pos else "none"
+                return f"{d['type']}:{pos_str}"
+
             policy_dict = {
-                str(a.move): {
+                move_key(a.move): {
                     "visits": a.visit_count,
                     "value": a.mean_value,
                     "gumbel": a.gumbel_score,
+                    "move": a.move.model_dump(mode="json"),  # Full move data
                 }
                 for a in game.actions
             }

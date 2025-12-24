@@ -52,12 +52,13 @@ class ModelArchitecture(Enum):
     UNKNOWN = auto()  # Fallback for future/experimental architectures
 
 
-# Board type to policy size mapping
+# Board type to policy size mapping (board-aware encoding)
+# These MUST match app.ai.neural_net.constants.get_policy_size_for_board()
 POLICY_SIZE_MAP = {
-    BoardType.SQUARE8: 4672,
-    BoardType.SQUARE19: 43681,
-    BoardType.HEX8: 13953,
-    BoardType.HEXAGONAL: 55809,
+    BoardType.SQUARE8: 7000,     # Was 4672 (legacy)
+    BoardType.SQUARE19: 67000,   # Was 43681 (legacy)
+    BoardType.HEX8: 4500,        # Was 13953 (legacy)
+    BoardType.HEXAGONAL: 91876,  # Was 55809 (legacy)
 }
 
 # Policy size to board type reverse mapping
@@ -445,6 +446,27 @@ class UnifiedModelLoader:
         # Ensure board_type has a default
         if config.board_type is None:
             config.board_type = BoardType.SQUARE8
+
+        # VALIDATION: Check if policy_size matches expected board-aware encoding
+        # This catches models trained with legacy_max_n encoding (~59K for square8)
+        expected_policy_size = POLICY_SIZE_MAP.get(config.board_type, 7000)
+        if config.policy_size > expected_policy_size * 2:
+            # Policy size is way too large - likely legacy_max_n encoding
+            logger.warning(
+                f"CHECKPOINT POLICY SIZE MISMATCH!\n"
+                f"  Checkpoint: {path}\n"
+                f"  Inferred policy_size: {config.policy_size}\n"
+                f"  Expected for {config.board_type.value}: {expected_policy_size}\n\n"
+                f"This model was likely trained with legacy_max_n encoding.\n"
+                f"It will produce incorrect predictions. Retrain with board-aware data."
+            )
+            # For strict mode, fail immediately
+            if strict:
+                raise ValueError(
+                    f"Policy size mismatch: {config.policy_size} > {expected_policy_size} "
+                    f"for {config.board_type.value}. Model was trained with deprecated "
+                    f"legacy_max_n encoding and will not work correctly."
+                )
 
         # Instantiate model
         try:

@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Sandbox Parity Testing CLI - DIAGNOSTICS-ONLY, NOT CANONICAL
+ *
+ * SSoT alignment: This module is a **DIAGNOSTICS CLI TOOL**, NOT for production.
+ *
+ * Canonical SSoT:
+ * - Production sandbox: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ *
+ * This CLI tool:
+ * - Tests sandbox engine parity with move validation
+ * - Accesses internal engine state for diagnostics
+ * - Uses mock interaction handler for deterministic behavior
+ * - NOT for production use
+ *
+ * DO NOT use in production. For parity testing and debugging only.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 /* eslint-disable @typescript-eslint/no-explicit-any -- testing CLI accesses internal engine state */
 import { ClientSandboxEngine } from './ClientSandboxEngine';
 import { GameState, Move, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';

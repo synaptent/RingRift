@@ -1,12 +1,23 @@
 /**
- * useSandboxEvaluation - AI evaluation management for sandbox mode
+ * @fileoverview useSandboxEvaluation Hook - ADAPTER, NOT CANONICAL
  *
- * This hook extracts AI evaluation functionality from SandboxGameHost:
- * - Requesting AI position evaluation
- * - Auto-evaluation when developer tools are enabled
- * - Tracking evaluation history for visualization
- * - Managing evaluation loading state
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It manages UI state for AI evaluation, not rules logic.
  *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - AI evaluation: AI service API (external)
+ *
+ * This adapter:
+ * - Requests AI position evaluation from service
+ * - Auto-evaluates when developer tools are enabled
+ * - Tracks evaluation history for visualization
+ * - Manages evaluation loading state
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  * @module hooks/useSandboxEvaluation
  */
 

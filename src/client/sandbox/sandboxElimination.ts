@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Sandbox Elimination Helpers - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides elimination logic for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Elimination logic: `src/shared/engine/aggregates/EliminationAggregate.ts`
+ * - Elimination helpers: `src/shared/engine/aggregates/eliminationHelpers.ts`
+ *
+ * This adapter:
+ * - Delegates to `eliminateFromStack()` from EliminationAggregate
+ * - Uses `isStackEligibleForElimination()` for eligibility checks
+ * - Provides `forceEliminateCapOnBoard()` for legacy sandbox flows
+ * - Includes invariant assertions for debugging
+ *
+ * DO NOT add elimination rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type { BoardState, Player, RingStack, EliminationContext } from '../../shared/engine';
 import {
   eliminateFromStack,

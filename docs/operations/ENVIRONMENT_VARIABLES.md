@@ -641,7 +641,7 @@ The `useOrchestratorAdapter` property on [`GameEngine`](../src/server/game/GameE
 
 **Related Documentation:**
 
-- [`ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md`](../architecture/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md)
+- [`ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md`](../archive/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md) (archived)
 - [`PASS20_COMPLETION_SUMMARY.md`](../archive/assessments/PASS20_COMPLETION_SUMMARY.md)
 
 ### `ENABLE_ANALYSIS_MODE`

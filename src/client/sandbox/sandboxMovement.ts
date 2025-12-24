@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Sandbox Movement Helpers - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides movement enumeration utilities for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Movement logic: `src/shared/engine/aggregates/MovementAggregate.ts`
+ * - Movement helpers: `src/shared/engine/aggregates/movementHelpers.ts`
+ * - Recovery: `src/shared/engine/aggregates/RecoveryAggregate.ts`
+ *
+ * This adapter:
+ * - Enumerates simple move targets via shared `enumerateSimpleMoveTargetsFromStack`
+ * - Wraps recovery eligibility checks via shared helpers
+ * - Provides marker path helper re-exports for sandbox use
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type {
   BoardState,
   BoardType,

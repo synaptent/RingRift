@@ -416,6 +416,112 @@ def build_rank_targets(
     return rank_targets, active_mask
 
 
+def validate_hex_policy_indices(
+    policy_indices: torch.Tensor | "np.ndarray",
+    board_size: int,
+    hex_radius: int | None = None,
+    sample_size: int = 1000,
+) -> tuple[bool, list[str]]:
+    """Validate that hex policy indices fall within valid hex cells.
+
+    This validation gate catches encoding mismatches before training starts.
+    It decodes a sample of policy indices and checks that the referenced
+    positions are within the valid hex region (not in corners of bounding box).
+
+    Parameters
+    ----------
+    policy_indices : torch.Tensor | np.ndarray
+        Policy indices of shape (N, K) where K is the number of sparse entries.
+    board_size : int
+        Hex bounding box size (e.g., 9 for hex8, 25 for hexagonal).
+    hex_radius : int | None
+        Hex radius. If None, computed as (board_size - 1) // 2.
+    sample_size : int
+        Number of samples to validate. Set to -1 for all.
+
+    Returns
+    -------
+    tuple[bool, list[str]]
+        (is_valid, list of error messages). Empty list if valid.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> indices = np.array([[24], [4060], [100]])  # 4060 is invalid for hex8
+    >>> valid, errors = validate_hex_policy_indices(indices, board_size=9)
+    >>> valid
+    False
+    >>> errors[0]
+    'Policy index 4060 references cell (7,8) outside hex radius 4'
+    """
+    import numpy as np
+
+    if hex_radius is None:
+        hex_radius = (board_size - 1) // 2
+
+    # Layout constants (must match ActionEncoderHex and model architecture)
+    num_ring_counts = 3
+    num_directions = 6
+    max_dist = board_size - 1
+    placement_span = board_size * board_size * num_ring_counts
+    movement_span = board_size * board_size * num_directions * max_dist
+    special_base = placement_span + movement_span
+
+    # Convert to numpy if tensor
+    if hasattr(policy_indices, 'numpy'):
+        policy_indices = policy_indices.cpu().numpy()
+
+    # Sample if dataset is large
+    n_samples = len(policy_indices)
+    if sample_size > 0 and n_samples > sample_size:
+        sample_idx = np.random.choice(n_samples, sample_size, replace=False)
+        policy_indices = policy_indices[sample_idx]
+
+    center = board_size // 2
+    errors: list[str] = []
+    invalid_count = 0
+
+    for sample_indices in policy_indices:
+        for idx in sample_indices:
+            idx = int(idx)
+            if idx < 0:
+                continue  # INVALID_MOVE_INDEX, skip
+
+            # Decode the policy index to check validity
+            if idx < placement_span:
+                # Placement: idx = pos_idx * 3 + ring_offset
+                pos_idx = idx // 3
+                row = pos_idx // board_size
+                col = pos_idx % board_size
+            elif idx < special_base:
+                # Movement: decode from_cell
+                movement_idx = idx - placement_span
+                from_cell = movement_idx // (num_directions * max_dist)
+                row = from_cell // board_size
+                col = from_cell % board_size
+            else:
+                # Special action (skip_placement), always valid
+                continue
+
+            # Check hex validity
+            q = col - center
+            r = row - center
+            hex_dist = max(abs(q), abs(r), abs(q + r))
+
+            if hex_dist > hex_radius:
+                invalid_count += 1
+                if len(errors) < 5:  # Limit error messages
+                    errors.append(
+                        f"Policy index {idx} references cell ({col},{row}) "
+                        f"outside hex radius {hex_radius} (hex_dist={hex_dist})"
+                    )
+
+    if invalid_count > 0:
+        errors.insert(0, f"Found {invalid_count} policy indices referencing invalid hex cells")
+
+    return len(errors) == 0, errors
+
+
 __all__ = [
     'MAX_PLAYERS',
     'build_rank_targets',
@@ -423,4 +529,5 @@ __all__ = [
     'multi_player_value_loss',
     'rank_distribution_loss',
     'ranks_from_game_result',
+    'validate_hex_policy_indices',
 ]

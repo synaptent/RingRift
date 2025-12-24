@@ -1,13 +1,23 @@
 /**
- * useSandboxPersistence - Game persistence and sync logic for sandbox mode
+ * @fileoverview useSandboxPersistence Hook - ADAPTER, NOT CANONICAL
  *
- * This hook extracts all game auto-save and sync functionality that was
- * previously embedded in SandboxGameHost. It handles:
- * - Capturing initial game state for storage
- * - Auto-saving completed games to server or local storage
- * - Syncing local games to server when online
- * - Tracking save status for UI feedback
+ * SSoT alignment: This hook is a **React adapter** for sandbox persistence.
+ * It manages game save/sync functionality, not rules logic.
  *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Replay service: `src/client/services/ReplayService.ts`
+ *
+ * This adapter:
+ * - Captures initial game state for storage
+ * - Auto-saves completed games to server or local storage
+ * - Syncs local games to server when online
+ * - Tracks save status for UI feedback
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  * @module hooks/useSandboxPersistence
  */
 

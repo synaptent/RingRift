@@ -1,3 +1,26 @@
+/**
+ * @fileoverview SandboxGameHost - ADAPTER/HOST, NOT CANONICAL
+ *
+ * SSoT alignment: This component is a **React host** that bridges the sandbox
+ * engine with client UI. It orchestrates UI state and lifecycle, not rules logic.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - FSM: `src/shared/engine/fsm/TurnStateMachine.ts`
+ *
+ * This host:
+ * - Owns sandbox configuration (board type, seats, player kinds) via SandboxContext
+ * - Starts sandbox games using ClientSandboxEngine
+ * - Wires sandbox board interactions and local AI via useSandboxInteractions
+ * - Renders sandbox-specific HUD (players, selection, phase help, stall diagnostics)
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';

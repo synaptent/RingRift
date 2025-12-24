@@ -1,13 +1,22 @@
 /**
- * useSandboxAILoop Hook
+ * @fileoverview useSandboxAILoop Hook - ADAPTER, NOT CANONICAL
  *
- * Manages AI turn loop execution in sandbox mode. Extracted from
- * useSandboxInteractions to reduce complexity.
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It manages UI state for AI turn execution, not rules logic.
  *
- * Responsibilities:
- * - Running AI turns in an async loop (with safety bounds)
- * - Triggering AI turn checks when human actions complete
- * - Scheduling continuation batches for AI-vs-AI games
+ * Canonical SSoT:
+ * - AI turn logic: `src/client/sandbox/sandboxAI.ts`
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ *
+ * This adapter:
+ * - Runs AI turns in an async loop (with safety bounds)
+ * - Triggers AI turn checks when human actions complete
+ * - Schedules continuation batches for AI-vs-AI games
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import { useState, useCallback } from 'react';

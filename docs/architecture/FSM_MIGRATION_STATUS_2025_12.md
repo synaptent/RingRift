@@ -1,11 +1,13 @@
 # FSM Migration Status - December 2025
 
-> **Status:** Architecture Review Complete
+> **Status:** ✅ Migration Complete - PhaseStateMachine Removed from Production
 > **Author:** Kilo Code (Architect Mode)
 > **Date:** 2025-12-24
+> **Updated:** 2025-12-24 (PhaseStateMachine removal)
 > **Related Docs:**
+>
 > - [FSM_EXTENSION_STRATEGY.md](./FSM_EXTENSION_STRATEGY.md)
-> - [ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md](./ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md)
+> - [ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md](../archive/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md) (archived)
 > - [STATE_MACHINES.md](./STATE_MACHINES.md)
 > - [PHASE_ORCHESTRATION_ARCHITECTURE.md](./PHASE_ORCHESTRATION_ARCHITECTURE.md)
 
@@ -13,19 +15,19 @@
 
 ## Executive Summary
 
-**The FSM migration is effectively complete (~95%).** The TurnStateMachine (FSM) is now the **canonical orchestrator** for all phase transitions, move validation, and decision surfacing. The legacy PhaseStateMachine remains in the codebase but is fully deprecated and marked for removal.
+**The FSM migration is 100% complete.** The TurnStateMachine (FSM) is now the **canonical orchestrator** for all phase transitions, move validation, and decision surfacing. The `PhaseStateMachine` class has been removed from production code paths and replaced with an inline `ProcessingStateContainer` in `turnOrchestrator.ts`.
 
 ### Key Findings
 
-| Aspect | Status | Notes |
-|--------|--------|-------|
-| FSM Validation | ✅ 100% Complete | `validateMoveWithFSM` is canonical |
-| FSM Orchestration | ✅ 100% Complete | `computeFSMOrchestration` drives phase/player transitions |
-| Legacy PhaseStateMachine | ⚠️ Deprecated | Still imported but marked `@deprecated` |
-| Python FSM Parity | ✅ 100% Complete | `ai-service/app/rules/fsm.py` mirrors TS exactly |
-| Contract Vectors | ✅ 48+ passing | 19 vector files in `tests/fixtures/contract-vectors/v2/` |
-| Shadow Mode | ✅ Removed | ~2,300 lines of shadow infrastructure deleted |
-| Tier 2 Sandbox Cleanup | ⏸️ Deferred | ~1,200 lines pending cleanup (post-MVP) |
+| Aspect                   | Status           | Notes                                                     |
+| ------------------------ | ---------------- | --------------------------------------------------------- |
+| FSM Validation           | ✅ 100% Complete | `validateMoveWithFSM` is canonical                        |
+| FSM Orchestration        | ✅ 100% Complete | `computeFSMOrchestration` drives phase/player transitions |
+| Legacy PhaseStateMachine | ✅ Removed       | Replaced with inline `ProcessingStateContainer`           |
+| Python FSM Parity        | ✅ 100% Complete | `ai-service/app/rules/fsm.py` mirrors TS exactly          |
+| Contract Vectors         | ✅ 48+ passing   | 19 vector files in `tests/fixtures/contract-vectors/v2/`  |
+| Shadow Mode              | ✅ Removed       | ~2,300 lines of shadow infrastructure deleted             |
+| Tier 2 Sandbox Cleanup   | ⏸️ Deferred      | ~1,200 lines pending cleanup (post-MVP)                   |
 
 ---
 
@@ -45,33 +47,37 @@
 ║ Phase 6: Testing & Fixtures          ██████████████████ 100%  ║
 ║ Phase 7: Data Pipeline               ██████████████████ 100%  ║
 ║ ─────────────────────────────────────────────────────────────  ║
-║ Legacy Code Removal                  █████████████████░ 95%   ║
+║ Legacy Code Removal                  ██████████████████ 100%  ║
 ║ Tier 2 Sandbox Cleanup               ░░░░░░░░░░░░░░░░░░ 0%    ║
 ╚════════════════════════════════════════════════════════════════╝
 ```
 
-**Overall: ~95% Complete**
+**Overall: 100% Complete (Tier 2 cleanup deferred)**
 
 ### 1.2 What's Already Complete
 
 #### FSM Core Implementation
+
 - [`TurnStateMachine.ts`](../../src/shared/engine/fsm/TurnStateMachine.ts) - 1,262 lines, production-ready
 - [`FSMAdapter.ts`](../../src/shared/engine/fsm/FSMAdapter.ts) - 2,226 lines, bridges FSM with Move types
 - Pure `transition()` function with exhaustive phase handlers
 - Type-safe states, events, and actions
 
 #### FSM Integration Points
+
 - `validateMoveWithFSM()` - Canonical move validation
 - `computeFSMOrchestration()` - FSM-driven phase/player transitions
 - `derivePendingDecisionFromFSM()` - Converts FSM surface to PendingDecision
 - `onLineProcessingComplete()` / `onTerritoryProcessingComplete()` - Phase completion helpers
 
 #### Python Parity
+
 - `ai-service/app/rules/fsm.py` - Python FSM implementation
 - `ai-service/app/game_engine.py` - `_update_phase` uses FSM
 - 28 Python FSM parity tests passing
 
 #### Testing Infrastructure
+
 - 19 contract vector files covering all phases
 - 269 orchestrator parity tests
 - FSM-specific test files:
@@ -80,32 +86,35 @@
   - `FSM.territoryLoop.test.ts` - Territory processing loops
   - `FSM.crossLanguageFixtures.test.ts` - Cross-language parity
 
-### 1.3 Legacy Code Still Present
+### 1.3 Legacy Code Status
 
-#### PhaseStateMachine (Deprecated)
+#### PhaseStateMachine (Removed from Production)
+
 Location: [`src/shared/engine/orchestration/phaseStateMachine.ts`](../../src/shared/engine/orchestration/phaseStateMachine.ts)
 
-**Status:** 446 lines, marked `@deprecated` throughout
+**Status:** ✅ Removed from production code paths. Retained only for test backward compatibility.
 
-**Usage in turnOrchestrator.ts:**
-```typescript
-// Line 64: Import
-import { PhaseStateMachine, createTurnProcessingState } from './phaseStateMachine';
+**What was done:**
 
-// Line 1377: Only instantiation point
-const stateMachine = new PhaseStateMachine(createTurnProcessingState(state, move));
-```
+1. Created inline `ProcessingStateContainer` class in `turnOrchestrator.ts`
+2. Created inline `createProcessingState` factory function
+3. Replaced all `PhaseStateMachine` usage with `ProcessingStateContainer`
+4. Added strong deprecation notices to `phaseStateMachine.ts`
+5. Updated `index.ts` exports with deprecation warnings
 
-The `PhaseStateMachine` class is still instantiated for:
-1. State tracking during `processTurn()` via `stateMachine.updateGameState()`
-2. Per-turn flags management via `stateMachine.updateFlags()`
-3. Chain capture state via `stateMachine.setChainCapture()`
-4. Event recording via `stateMachine.addEvent()`
+**The `phaseStateMachine.ts` file is retained only for:**
 
-However, **all actual phase transitions are now driven by FSM**:
+- `tests/unit/phaseStateMachine.shared.test.ts` - 31 direct references
+- `tests/unit/phaseStateMachine.branchCoverage.test.ts` - 31 direct references
+
+These test files validate the deprecated helper functions (which may still be useful as reference implementations). They can be deleted in a future cleanup if desired.
+
+**All production code now uses FSM exclusively:**
+
 - `computeFSMOrchestration()` determines `nextPhase` and `nextPlayer`
 - `validateMoveWithFSM()` enforces phase/move contracts
 - `onLineProcessingComplete()` / `onTerritoryProcessingComplete()` handle phase decisions
+- `ProcessingStateContainer` handles mutable state tracking during turn processing
 
 ---
 
@@ -126,6 +135,7 @@ The `PhaseStateMachine` class could be removed entirely, but this requires:
    - `stateMachine.gameState` - 7 reads
 
 2. **Alternative approach:** Inline the mutable state tracking directly in `processTurn()`:
+
    ```typescript
    // Instead of PhaseStateMachine, use a simple processing context
    let processingContext = {
@@ -149,6 +159,7 @@ The `PhaseStateMachine` class could be removed entirely, but this requires:
 **Risk:** Low
 
 Remaining sandbox support modules (~1,200 lines):
+
 - `sandboxMovement.ts` (~70 lines)
 - `sandboxCaptures.ts` (~175 lines)
 - `sandboxCaptureSearch.ts` (~200 lines) - DIAGNOSTICS-ONLY
@@ -164,8 +175,9 @@ These are **UX adapters over shared engine**, not duplicate rule implementations
 ### 2.3 Documentation Updates (Low Priority)
 
 Some older architecture documents reference the dual-system pattern:
+
 - `PHASE_ORCHESTRATION_ARCHITECTURE.md` - References both systems
-- `ORCHESTRATOR_CONSOLIDATION.md` - Migration context, now historical
+- `ORCHESTRATOR_CONSOLIDATION.md` - Migration context (archived to `docs/archive/`)
 
 ---
 
@@ -178,28 +190,28 @@ graph TB
         FSA[FSMAdapter.ts<br/>Move → Event bridge]
         TSM --> FSA
     end
-    
+
     subgraph "Orchestration Layer"
         TO[turnOrchestrator.ts<br/>processTurn entry point]
         PSM["PhaseStateMachine<br/>(DEPRECATED)"]
         TO --> FSA
         TO -.-> PSM
     end
-    
+
     subgraph "Python Parity"
         PFSM[fsm.py<br/>Python FSM mirror]
         PGE[game_engine.py<br/>_update_phase]
         PFSM --> PGE
     end
-    
+
     subgraph "Contract Vectors"
         CV[19 vector files<br/>48+ test cases]
     end
-    
+
     FSA --> PFSM
     CV --> TSM
     CV --> PFSM
-    
+
     style PSM stroke-dasharray: 5 5,stroke:#f66
     style PSM fill:#fee
 ```
@@ -208,12 +220,12 @@ graph TB
 
 ## 4. Risk Assessment
 
-| Risk | Severity | Likelihood | Mitigation |
-|------|----------|------------|------------|
-| PhaseStateMachine removal causes regression | Medium | Low | FSM already canonical; removal is mechanical |
-| Python parity drift | High | Very Low | 48+ contract vectors enforce parity |
-| Test infrastructure gaps | Low | Very Low | Comprehensive test coverage exists |
-| Documentation drift | Low | Medium | Update docs as part of cleanup PRs |
+| Risk                                        | Severity | Likelihood | Mitigation                                   |
+| ------------------------------------------- | -------- | ---------- | -------------------------------------------- |
+| PhaseStateMachine removal causes regression | Medium   | Low        | FSM already canonical; removal is mechanical |
+| Python parity drift                         | High     | Very Low   | 48+ contract vectors enforce parity          |
+| Test infrastructure gaps                    | Low      | Very Low   | Comprehensive test coverage exists           |
+| Documentation drift                         | Low      | Medium     | Update docs as part of cleanup PRs           |
 
 ---
 
@@ -222,6 +234,7 @@ graph TB
 ### 5.1 Recommended Approach: Do Nothing Now
 
 **Rationale:**
+
 1. FSM is already canonical and working correctly
 2. PhaseStateMachine is purely internal bookkeeping
 3. No user-facing bugs or performance issues
@@ -253,6 +266,7 @@ graph TB
 **When:** Post-MVP, during a dedicated cleanup sprint
 
 **Tasks:**
+
 - Add SSOT banners to retained modules
 - Move `sandboxCaptureSearch.ts` to diagnostics namespace
 - Archive `localSandboxController.ts`
@@ -262,12 +276,12 @@ graph TB
 
 ## 6. Effort Estimates
 
-| Work Item | Effort | Priority | Notes |
-|-----------|--------|----------|-------|
-| PhaseStateMachine removal | 2 days | P3 (Low) | Optional, no user impact |
-| Tier 2 sandbox cleanup | 1-2 days | P4 (Deferred) | Post-MVP |
-| Documentation updates | 0.5 days | P4 (Deferred) | Can accompany other PRs |
-| **Total remaining work** | **3.5-4.5 days** | - | All optional |
+| Work Item                 | Effort           | Priority      | Notes                    |
+| ------------------------- | ---------------- | ------------- | ------------------------ |
+| PhaseStateMachine removal | 2 days           | P3 (Low)      | Optional, no user impact |
+| Tier 2 sandbox cleanup    | 1-2 days         | P4 (Deferred) | Post-MVP                 |
+| Documentation updates     | 0.5 days         | P4 (Deferred) | Can accompany other PRs  |
+| **Total remaining work**  | **3.5-4.5 days** | -             | All optional             |
 
 ---
 
@@ -278,6 +292,7 @@ graph TB
 The TurnStateMachine is the canonical source of truth for phase transitions, move validation, and decision surfacing. The remaining work (PhaseStateMachine removal, Tier 2 cleanup) represents internal code hygiene rather than functional migration.
 
 **Key achievements:**
+
 - ✅ Single source of truth for phase transitions (TurnStateMachine)
 - ✅ Type-safe, exhaustive phase handling
 - ✅ Python parity maintained via shared contract vectors

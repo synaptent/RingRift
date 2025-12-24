@@ -1,16 +1,26 @@
+/**
+ * @fileoverview Sandbox Victory Helpers - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides victory condition evaluation for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Victory logic: `src/shared/engine/aggregates/VictoryAggregate.ts`
+ * - Victory evaluation: `src/shared/engine/victoryEvaluation.ts`
+ *
+ * This adapter:
+ * - Delegates winner/reason detection to shared `evaluateVictory()`
+ * - Computes UI-facing GameResult statistics from final GameState
+ * - Maps VictoryReason to GameResult.reason union
+ *
+ * DO NOT add victory rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type { GameResult, GameState } from '../../shared/engine';
 import { evaluateVictory } from '../../shared/engine';
-
-/**
- * Pure victory-condition helpers for the client sandbox.
- *
- * These now delegate winner/reason detection to the shared
- * {@link evaluateVictory} helper so that backend RuleEngine,
- * shared GameEngine, and sandbox all share a single source of
- * truth for ring-elimination, territory-control, and stalemate
- * ladder semantics. Sandbox-specific helpers are responsible
- * only for deriving UI-facing GameResult statistics.
- */
 
 interface PlayerVictoryStats {
   playerNumber: number;

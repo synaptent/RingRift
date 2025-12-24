@@ -189,6 +189,7 @@ def create_neural_ai(
     model_getter: Callable[[], Any] | None = None,
     temperature: float = 0.5,
     game_seed: int | None = None,
+    num_players: int = 2,
 ) -> Any:
     """Create a neural network AI instance.
 
@@ -197,6 +198,7 @@ def create_neural_ai(
         board_type: Board type enum
         model_path: Path to model checkpoint (for file-based loading)
         model_getter: Callable that returns model weights (for in-memory loading)
+        num_players: Number of players in the game (2, 3, or 4)
         temperature: Policy temperature for move selection
         game_seed: Optional seed for RNG variation per game
 
@@ -238,8 +240,8 @@ def create_neural_ai(
                     str(path_obj),
                     player_number=player,
                     board_type=board_type,
-                    num_players=2,  # Gauntlet uses 2-player games
-                    temperature=temperature,
+                    num_players=num_players,
+                    policy_temperature=temperature,
                 )
         except Exception as e:
             logger.warning(f"UniversalAI.from_checkpoint failed: {e}, falling back to PolicyOnlyAI")
@@ -444,6 +446,7 @@ def run_baseline_gauntlet(
                     model_path=model_path,
                     model_getter=model_getter,
                     game_seed=game_seed,
+                    num_players=num_players,
                 )
 
                 # Create baseline AIs for all other players

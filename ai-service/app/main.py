@@ -1045,6 +1045,8 @@ async def get_ai_move(request: MoveRequest):
             else profile["think_time_ms"]
         )
 
+        # Enable GPU tree acceleration for Gumbel MCTS (177x speedup)
+        use_gpu_tree = ai_type == AIType.GUMBEL_MCTS
         config = AIConfig(
             difficulty=request.difficulty,
             randomness=randomness,
@@ -1053,6 +1055,8 @@ async def get_ai_move(request: MoveRequest):
             heuristic_profile_id=heuristic_profile_id,
             nn_model_id=nn_model_id,
             use_neural_net=use_neural_net,
+            use_gpu_tree=use_gpu_tree,
+            gpu_tree_eval_mode="hybrid",  # Balance speed and accuracy
         )
         ai = None
         cache_key: str | None = None

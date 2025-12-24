@@ -318,6 +318,8 @@ class NPZDatasetWriter:
         history_length: int = 3,
         feature_version: int = 2,
         policy_encoding: str = "legacy_max_n",
+        encoding_version: str = "2025.12",
+        hex_validity_checked: bool = True,
         values_mp: np.ndarray | None = None,
         num_players: np.ndarray | None = None,
         move_numbers: np.ndarray | None = None,
@@ -340,6 +342,8 @@ class NPZDatasetWriter:
             history_length: Number of history frames
             feature_version: Feature encoding version
             policy_encoding: Policy encoding type
+            encoding_version: Encoding version string (e.g., "2025.12")
+            hex_validity_checked: Whether hex cell validity was enforced
             values_mp: Multi-player values (optional)
             num_players: Number of players per sample (optional)
             move_numbers: Move number within game (optional)
@@ -375,6 +379,9 @@ class NPZDatasetWriter:
             "history_length": np.asarray(int(history_length)),
             "feature_version": np.asarray(int(feature_version)),
             "policy_encoding": np.asarray(policy_encoding),
+            # Encoding validation metadata (Dec 2025)
+            "encoding_version": np.asarray(encoding_version),
+            "hex_validity_checked": np.asarray(hex_validity_checked),
         }
 
         # Add optional arrays

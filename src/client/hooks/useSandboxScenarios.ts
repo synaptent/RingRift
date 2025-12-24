@@ -1,13 +1,24 @@
 /**
- * useSandboxScenarios - Scenario loading and replay management for sandbox mode
+ * @fileoverview useSandboxScenarios Hook - ADAPTER, NOT CANONICAL
  *
- * This hook extracts scenario/replay functionality from SandboxGameHost:
+ * SSoT alignment: This hook is a **React adapter** for scenario management.
+ * It handles scenario loading, replay, and history navigation.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Scenario types: `src/client/sandbox/scenarioTypes.ts`
+ *
+ * This adapter:
  * - Loading curated teaching scenarios
  * - Loading self-play games from database
  * - Replaying move history with animations
  * - Forking from a replay position to start a new game
  * - History scrubbing and snapshot detection
  *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  * @module hooks/useSandboxScenarios
  */
 

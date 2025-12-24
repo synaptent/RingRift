@@ -306,7 +306,7 @@ def export_replay_dataset_multi(
     use_rank_aware_values: bool = True,
     parity_fixtures_dir: str | None = None,
     exclude_recovery: bool = False,
-    use_board_aware_encoding: bool = False,
+    use_board_aware_encoding: bool = True,  # Default to board-aware encoding (not legacy MAX_N)
     append: bool = False,
     encoder_version: str = "default",
     require_moves: bool = True,
@@ -736,6 +736,23 @@ def export_replay_dataset_multi(
     from app.ai.neural_net.constants import get_policy_size_for_board
     policy_size = get_policy_size_for_board(board_type)
 
+    # VALIDATION: Ensure policy indices are within valid range for the encoding type
+    encoding_label = "board_aware" if use_board_aware_encoding else "legacy_max_n"
+    if use_board_aware_encoding and max_policy_index >= policy_size:
+        raise ValueError(
+            f"POLICY ENCODING VALIDATION FAILED!\n"
+            f"  Claimed encoding: {encoding_label}\n"
+            f"  Max policy index in data: {max_policy_index}\n"
+            f"  Expected policy size for {board_type.value}: {policy_size}\n\n"
+            f"This means the export produced indices outside the board-aware action space.\n"
+            f"Check that encode_move_for_board() is being called correctly."
+        )
+    elif not use_board_aware_encoding and max_policy_index < policy_size:
+        # Warning: using legacy encoding but indices happen to fit in board-aware space
+        # This is unusual but not an error
+        print(f"[INFO] Legacy encoding used but max_index ({max_policy_index}) < board policy_size ({policy_size})")
+        print(f"       Consider using --board-aware-encoding for better model compatibility.")
+
     save_kwargs = {
         "features": features_arr,
         "globals": globals_arr,
@@ -793,7 +810,7 @@ def export_replay_dataset(
     use_rank_aware_values: bool = True,
     parity_fixtures_dir: str | None = None,
     exclude_recovery: bool = False,
-    use_board_aware_encoding: bool = False,
+    use_board_aware_encoding: bool = True,  # Default to board-aware encoding (not legacy MAX_N)
     append: bool = False,
     encoder_version: str = "default",
     require_moves: bool = True,
@@ -964,11 +981,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--board-aware-encoding",
         action="store_true",
+        default=True,  # Now the default - flag kept for backwards compatibility
         help=(
-            "Use board-specific policy encoding (compact action space). "
+            "[DEFAULT] Use board-specific policy encoding (compact action space). "
             "square8: 7000 actions, square19: 67000 actions. "
-            "Recommended for new training runs. Legacy default uses ~55000 actions "
-            "for all square boards."
+            "This is now the default. Use --legacy-max-n-encoding for old behavior."
+        ),
+    )
+    parser.add_argument(
+        "--legacy-max-n-encoding",
+        action="store_true",
+        help=(
+            "DEPRECATED: Use legacy MAX_N=19 policy encoding (~59000 actions for all boards). "
+            "This produces training data incompatible with v3/v4 models. "
+            "Only use for reproducing old experiments."
         ),
     )
     parser.add_argument(
@@ -1061,6 +1087,13 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--history-length must be >= 0")
     if args.sample_every < 1:
         raise ValueError("--sample-every must be >= 1")
+
+    # Handle encoding flag logic: --legacy-max-n-encoding overrides default
+    use_board_aware = not getattr(args, 'legacy_max_n_encoding', False)
+    if not use_board_aware:
+        print("[WARNING] Using deprecated legacy_max_n encoding - data will be incompatible with v3/v4 models")
+    # Override args.board_aware_encoding for downstream code
+    args.board_aware_encoding = use_board_aware
 
     # Handle database discovery
     db_paths = args.db_paths or []

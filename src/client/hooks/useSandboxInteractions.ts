@@ -1,14 +1,22 @@
 /**
- * useSandboxInteractions Hook
+ * @fileoverview useSandboxInteractions Hook - ADAPTER, NOT CANONICAL
  *
- * Coordinator hook for sandbox mode interactions. Composes the following
- * sub-hooks for better maintainability:
- * - useSandboxAILoop: AI turn management
- * - useSandboxDecisionHandlers: Player choice handling
- * - useSandboxRingPlacement: Ring placement interactions
- * - useSandboxMoveHandlers: Movement/capture click handling
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It coordinates UI interactions, not rules logic.
  *
- * This hook orchestrates the main cell click routing logic.
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ *
+ * This adapter:
+ * - Composes sub-hooks for AI turns, decisions, placement, movement
+ * - Orchestrates main cell click routing logic
+ * - Manages selection state and UI feedback
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import type { Position, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
@@ -79,24 +87,20 @@ export function useSandboxInteractions({
   });
 
   // Move handlers
-  const {
-    handleRingPlacementClick,
-    handleChainCaptureClick,
-    handleFirstClick,
-    handleTargetClick,
-  } = useSandboxMoveHandlers({
-    sandboxEngine,
-    selected,
-    setSelected,
-    validTargets,
-    setValidTargets,
-    bumpSandboxTurn,
-    setSandboxStateVersion,
-    maybeRunSandboxAiIfNeeded,
-    requestRecoveryChoice,
-    analyzeInvalidMove,
-    triggerInvalidMove,
-  });
+  const { handleRingPlacementClick, handleChainCaptureClick, handleFirstClick, handleTargetClick } =
+    useSandboxMoveHandlers({
+      sandboxEngine,
+      selected,
+      setSelected,
+      validTargets,
+      setValidTargets,
+      bumpSandboxTurn,
+      setSandboxStateVersion,
+      maybeRunSandboxAiIfNeeded,
+      requestRecoveryChoice,
+      analyzeInvalidMove,
+      triggerInvalidMove,
+    });
 
   /** Explicit selection clearer for touch-centric controls */
   const clearSelection = () => {
@@ -117,7 +121,9 @@ export function useSandboxInteractions({
     if (!engine) return;
 
     const stateBefore = engine.getGameState();
-    const current = stateBefore.players.find((p: any) => p.playerNumber === stateBefore.currentPlayer);
+    const current = stateBefore.players.find(
+      (p: any) => p.playerNumber === stateBefore.currentPlayer
+    );
 
     // If it's an AI player's turn, run AI instead
     if (stateBefore.gameStatus === 'active' && current?.type === 'ai') {

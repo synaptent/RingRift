@@ -1054,3 +1054,107 @@ class HybridNNValuePlayer:
             "nn_evals": self.nn_evals,
             "avg_nn_evals_per_move": self.nn_evals / max(1, self.moves_selected),
         }
+
+
+class HybridNNAI:
+    """BaseAI-compatible wrapper for HybridNNValuePlayer.
+
+    This adapter allows HybridNNValuePlayer to be used through the standard
+    AIFactory.create() interface, making it compatible with the difficulty ladder.
+
+    The hybrid approach provides 5-10x speedup over full MCTS by using fast
+    heuristic to generate candidates and NN value head to rank them.
+    Ideal for responsive human games (D7) with <500ms latency.
+    """
+
+    def __init__(self, player_number: int, config):
+        """Initialize HybridNNAI adapter.
+
+        Args:
+            player_number: Player number (1-indexed)
+            config: AIConfig with hybrid settings
+        """
+        from ..models import AIConfig
+
+        self.player_number = player_number
+        self.config = config
+        self.move_count = 0
+
+        # Get hybrid-specific config from AIConfig or use defaults
+        top_k = getattr(config, 'hybrid_top_k', 8)
+        temperature = getattr(config, 'hybrid_temperature', 0.1)
+        board_type = getattr(config, 'board_type', None) or 'square8'
+        num_players = getattr(config, 'num_players', 2)
+
+        # If board_type is an enum, get value
+        if hasattr(board_type, 'value'):
+            board_type = board_type.value
+
+        # Create underlying hybrid player
+        self._hybrid = HybridNNValuePlayer(
+            board_type=board_type,
+            num_players=num_players,
+            player_number=player_number,
+            top_k=top_k,
+            temperature=temperature,
+            prefer_gpu=True,
+            model_path=getattr(config, 'nn_model_id', None),
+        )
+
+        # Late import to avoid circular dependency
+        from ..rules.factory import get_rules_engine
+        self.rules_engine = get_rules_engine()
+
+    def select_move(self, game_state, valid_moves=None):
+        """Select a move using hybrid heuristic + NN value approach.
+
+        Args:
+            game_state: Current game state
+            valid_moves: Optional list of valid moves
+
+        Returns:
+            Selected move or None
+        """
+        if valid_moves is None:
+            valid_moves = self.rules_engine.get_valid_moves(
+                game_state, self.player_number
+            )
+
+        if not valid_moves:
+            return None
+
+        move = self._hybrid.select_move(game_state, valid_moves)
+        if move is not None:
+            self.move_count += 1
+        return move
+
+    def evaluate_position(self, game_state) -> float:
+        """Evaluate position using NN value head.
+
+        Args:
+            game_state: Current game state
+
+        Returns:
+            Position evaluation (higher is better for this player)
+        """
+        if self._hybrid.neural_net is not None:
+            try:
+                values, _ = self._hybrid.neural_net.evaluate_batch([game_state])
+                return float(values[0])
+            except Exception:
+                pass
+
+        # Fallback to heuristic evaluation
+        return self._hybrid.evaluator.evaluate_position(
+            game_state, self.player_number
+        )
+
+    def get_valid_moves(self, game_state):
+        """Get valid moves for current player."""
+        return self.rules_engine.get_valid_moves(game_state, self.player_number)
+
+    def get_stats(self) -> dict:
+        """Get player statistics."""
+        stats = self._hybrid.get_stats()
+        stats["move_count"] = self.move_count
+        return stats

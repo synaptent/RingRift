@@ -1,3 +1,24 @@
+/**
+ * @fileoverview useSandboxAITracking Hook - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It manages UI state for AI timing, diagnostics, and auto-trigger behavior.
+ *
+ * Canonical SSoT:
+ * - AI turn logic: `src/client/sandbox/sandboxAI.ts`
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ *
+ * This adapter:
+ * - Tracks when AI starts/stops thinking for progress display
+ * - Auto-triggers AI turns when game state indicates an AI player is active
+ * - Manages AI ladder health diagnostics for debugging
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import type { GameState } from '../../shared/types/game';

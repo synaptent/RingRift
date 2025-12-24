@@ -1,3 +1,23 @@
+/**
+ * @fileoverview useSandboxClock Hook - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This hook is a **React adapter** for sandbox UI state.
+ * It manages game clock state, not rules logic.
+ *
+ * Canonical SSoT:
+ * - Turn logic: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ *
+ * This adapter:
+ * - Initializes player times when clock is enabled
+ * - Applies time increment when turns change
+ * - Decrements the active player's clock each second
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { GameState } from '../../shared/types/game';
 

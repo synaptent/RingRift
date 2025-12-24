@@ -24,9 +24,13 @@ export {
   hasValidMoves,
 } from './turnOrchestrator';
 
-// Phase state machine - minimal exports for internal orchestrator use only
+// Phase state machine - DEPRECATED
 // NOTE: phaseStateMachine.ts is deprecated in favor of FSM-based orchestration.
-// Only PhaseStateMachine and createTurnProcessingState are still used internally.
+// The PhaseStateMachine class has been replaced by an inline ProcessingStateContainer
+// in turnOrchestrator.ts. These exports are kept only for test backward compatibility
+// and should NOT be used in production code.
+//
+// See docs/architecture/FSM_MIGRATION_STATUS_2025_12.md for migration status.
 export {
   PhaseStateMachine,
   createTurnProcessingState,

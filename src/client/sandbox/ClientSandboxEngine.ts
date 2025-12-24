@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Client Sandbox Engine - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It bridges client UI interactions (clicks, decisions) with the canonical rules.
+ *
+ * Canonical SSoT:
+ * - Rules/engine: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - Types: `src/shared/types/game.ts`
+ * - FSM: `src/shared/engine/fsm/TurnStateMachine.ts`
+ *
+ * This adapter:
+ * - Translates UI events (clicks, selections) to canonical Move operations
+ * - Manages local state for offline/sandbox play
+ * - Delegates ALL rules logic to the canonical shared engine
+ * - Handles sandbox-specific UX (history playback, scenario loading, AI turns)
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ * Per RR-CANON-R070, FSM validation is the canonical move validator.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type { GameEndExplanation } from '../../shared/engine/gameEndExplanation';
 import type {
   BoardState,

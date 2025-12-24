@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Sandbox Game End Helpers - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides game-end detection and stalemate resolution for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Victory logic: `src/shared/engine/aggregates/VictoryAggregate.ts`
+ * - Victory evaluation: `src/shared/engine/victoryEvaluation.ts`
+ *
+ * This adapter:
+ * - Delegates victory checks to `checkSandboxVictory()` → `evaluateVictory()`
+ * - Resolves global stalemates when board has no stacks and no legal placements
+ * - Converts rings-in-hand to eliminated for tie-breaker evaluation
+ *
+ * DO NOT add victory rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type { GameResult, GameState, Position } from '../../shared/engine';
 import { checkSandboxVictory } from './sandboxVictory';
 

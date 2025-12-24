@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Sandbox Placement Helpers - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides ring placement validation and enumeration for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Placement logic: `src/shared/engine/aggregates/PlacementAggregate.ts`
+ * - Placement validation: `src/shared/engine/placementValidation.ts`
+ *
+ * This adapter:
+ * - Creates hypothetical boards for no-dead-placement validation
+ * - Delegates legality checks to shared `validatePlacementOnBoard()`
+ * - Wraps `hasAnyLegalMoveOrCaptureFromOnBoard()` for movement checks
+ * - Supports both canonical path (with PlacementContext) and legacy path
+ *
+ * DO NOT add placement rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type {
   BoardState,
   BoardType,

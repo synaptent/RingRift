@@ -106,35 +106,45 @@ class UniversalAI(BaseAI):
         self._encoder = None
 
     def _get_encoder(self):
-        """Get the appropriate feature encoder for this board type and model architecture."""
+        """Get the appropriate feature encoder for this board type and model architecture.
+
+        Uses the centralized get_encoder_for_board_type factory to ensure consistent
+        encoder selection across the codebase.
+        """
         if self._encoder is not None:
             return self._encoder
 
         try:
-            if self.board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
-                # Use model architecture to determine encoder version
-                arch = self.loaded_model.architecture if self.loaded_model else None
+            from app.training.encoding import get_encoder_for_board_type
 
-                if arch in (ModelArchitecture.HEX_V3, ModelArchitecture.HEX_V3_LITE):
-                    from app.training.encoding import HexStateEncoderV3
-
-                    # V3 encoder needs board_size
-                    board_size = 9 if self.board_type == BoardType.HEX8 else 25
-                    self._encoder = HexStateEncoderV3(board_size=board_size)
-                else:
-                    from app.training.encoding import HexStateEncoder
-
-                    self._encoder = HexStateEncoder(self.board_type)
+            # Determine encoder version from model architecture
+            arch = self.loaded_model.architecture if self.loaded_model else None
+            if arch in (ModelArchitecture.HEX_V3, ModelArchitecture.HEX_V3_LITE):
+                version = "v3"
             else:
-                from app.training.encoding import SquareStateEncoder
+                version = "v2"
 
-                self._encoder = SquareStateEncoder(self.board_type)
-        except ImportError as e:
-            logger.warning(f"Failed to import encoder: {e}, using fallback")
-            # Fallback to legacy encoder
-            from app.ai.features import FeatureExtractor
+            # Use centralized factory to get the correct encoder
+            self._encoder = get_encoder_for_board_type(
+                self.board_type,
+                version=version,
+                feature_version=1,
+            )
 
-            self._encoder = FeatureExtractor(self.board_type)
+            if self._encoder is None:
+                raise ValueError(f"No encoder available for board type {self.board_type}")
+
+        except Exception as e:
+            logger.warning(f"Failed to get encoder: {e}, using NeuralNetAI fallback")
+            # Fallback to NeuralNetAI which has built-in encoding
+            from app.ai._neural_net_legacy import NeuralNetAI
+
+            # Create a minimal NeuralNetAI just for encoding
+            self._encoder = NeuralNetAI(
+                self.player_number,
+                self.config,
+                board_type=self.board_type,
+            )
 
         return self._encoder
 

@@ -47,12 +47,14 @@ Completed planning documents and remediation reports.
 
 Historical design documents moved from drafts after completion.
 
-| Document                              | Description                                  |
-| ------------------------------------- | -------------------------------------------- |
-| LEGACY_CODE_ELIMINATION_PLAN.md       | Legacy code elimination (completed Nov 2025) |
-| ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md | Feature flag design (implemented Nov 2025)   |
-| PHASE3_ADAPTER_MIGRATION_REPORT.md    | Phase 3 migration (completed Nov 2025)       |
-| RULES_ENGINE_CONSOLIDATION_DESIGN.md  | Engine consolidation (completed Nov 2025)    |
+| Document                                  | Description                                          |
+| ----------------------------------------- | ---------------------------------------------------- |
+| LEGACY_CODE_ELIMINATION_PLAN.md           | Legacy code elimination (completed Nov 2025)         |
+| ORCHESTRATOR_CONSOLIDATION.md             | Orchestrator consolidation notes (archived Dec 2025) |
+| ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md | Migration completion plan (completed Dec 2025)       |
+| ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md     | Feature flag design (implemented Nov 2025)           |
+| PHASE3_ADAPTER_MIGRATION_REPORT.md        | Phase 3 migration (completed Nov 2025)               |
+| RULES_ENGINE_CONSOLIDATION_DESIGN.md      | Engine consolidation (completed Nov 2025)            |
 
 ---
 

@@ -94,6 +94,7 @@ except ImportError:
 from app.ai.neural_losses import (
     build_rank_targets,
     masked_policy_kl,
+    validate_hex_policy_indices,
 )
 from app.ai.neural_net import (
     HEX8_BOARD_SIZE,
@@ -1235,70 +1236,59 @@ def train_model(
                 "to produce 20 global features."
             )
 
-        if model_version in ('v3', 'v4'):
-            if policy_encoding == "legacy_max_n":
-                raise ValueError(
-                    f"Dataset uses legacy MAX_N policy encoding but --model-version={model_version} "
-                    "requires board-aware policy encoding.\n"
-                    f"  dataset={data_path_str}\n"
-                    "Regenerate the dataset with --board-aware-encoding."
-                )
-            if policy_encoding is None and (not distributed or is_main_process()):
-                logger.warning(
-                    "Dataset %s missing policy_encoding metadata; assuming board-aware "
-                    "encoding for %s. If this dataset was exported with legacy MAX_N, "
-                    "regenerate with --board-aware-encoding.",
-                    data_path_str,
-                    model_version,
-                )
+        # CRITICAL: Reject legacy_max_n encoding for ALL model versions
+        # Legacy encoding creates policy indices up to ~59K for square8, but models
+        # should use board-aware encoding (7K for square8). Using legacy encoding
+        # causes severe performance degradation as the model learns wrong action IDs.
+        if policy_encoding == "legacy_max_n":
+            raise ValueError(
+                f"Dataset uses DEPRECATED legacy_max_n policy encoding.\n"
+                f"  dataset={data_path_str}\n"
+                f"  model_version={model_version}\n\n"
+                "Legacy MAX_N encoding produces ~59K actions for square8 boards,\n"
+                "but board-aware encoding produces only 7K actions.\n"
+                "This mismatch causes models to output garbage predictions.\n\n"
+                "Regenerate the dataset with board-aware encoding (now the default):\n"
+                "  PYTHONPATH=. python scripts/export_replay_dataset.py \\\n"
+                "    --db <canonical_db> --board-type <square8|square19> \\\n"
+                "    --num-players <2|3|4> --output <path>.npz\n"
+            )
+        if policy_encoding is None and (not distributed or is_main_process()):
+            logger.warning(
+                "Dataset %s missing policy_encoding metadata. Assuming board-aware "
+                "encoding. If this dataset was exported with legacy MAX_N, "
+                "regenerate with current export script (board-aware is now default).",
+                data_path_str,
+            )
 
         if inferred_size is not None:
             board_default_size = get_policy_size_for_board(config.board_type)
-            if model_version in ('v3', 'v4'):
-                # V3/V4 models use spatial policy heads with fixed index mappings
-                # (encode_move_for_board). Training must therefore use a dataset
-                # whose policy indices were encoded with the same board-aware
-                # mapping; otherwise the network learns probabilities for the
-                # wrong action IDs and neural tiers degrade toward heuristic
-                # rollouts.
-                if policy_encoding == "legacy_max_n":
-                    raise ValueError(
-                        f"Dataset uses legacy MAX_N policy encoding but --model-version={model_version} "
-                        "requires board-aware policy encoding.\n"
-                        f"  dataset={data_path_str}\n"
-                        f"  inferred_policy_size={inferred_size}\n"
-                        f"  board_default_policy_size={board_default_size}\n\n"
-                        "Regenerate the dataset with:\n"
-                        "  PYTHONPATH=. python scripts/export_replay_dataset.py "
-                        "--db <canonical_db> --board-type <square8|square19> "
-                        "--num-players <2|3|4> --board-aware-encoding --output <path>.npz\n"
-                    )
-                if inferred_size > board_default_size:
-                    raise ValueError(
-                        f"Dataset policy indices exceed the {model_version} board-aware policy space. "
-                        "This usually means the dataset was exported with legacy MAX_N encoding.\n"
-                        f"  dataset={data_path_str}\n"
-                        f"  inferred_policy_size={inferred_size}\n"
-                        f"  board_default_policy_size={board_default_size}\n\n"
-                        "Regenerate the dataset with --board-aware-encoding (see scripts/export_replay_dataset.py).\n"
-                    )
-                policy_size = board_default_size
-                if not distributed or is_main_process():
-                    logger.info(
-                        "%s model requires board-aware policy space; using "
-                        "board-default policy_size=%d (dataset max index implies %d)",
-                        model_version.upper(),
-                        policy_size,
-                        inferred_size,
-                    )
-            else:
-                policy_size = inferred_size
-                if not distributed or is_main_process():
-                    logger.info(
-                        "Using inferred policy_size=%d from dataset %s",
-                        policy_size,
-                        data_path_str,
-                    )
+            # CRITICAL: For ALL model versions, validate that policy indices
+            # don't exceed the board-aware action space. If they do, the data
+            # was exported with legacy MAX_N encoding which is now deprecated.
+            if inferred_size > board_default_size:
+                raise ValueError(
+                    f"Dataset policy indices exceed the board-aware policy space.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  model_version={model_version}\n"
+                    f"  inferred_policy_size={inferred_size}\n"
+                    f"  board_default_policy_size={board_default_size}\n\n"
+                    "This indicates the dataset was exported with legacy MAX_N encoding,\n"
+                    "which produces ~59K actions for square8 instead of 7K.\n\n"
+                    "Regenerate the dataset with the current export script:\n"
+                    "  PYTHONPATH=. python scripts/export_replay_dataset.py \\\n"
+                    "    --db <canonical_db> --board-type <square8|square19> \\\n"
+                    "    --num-players <2|3|4> --output <path>.npz\n"
+                )
+            # Use board-default size for consistent policy head dimensions
+            policy_size = board_default_size
+            if not distributed or is_main_process():
+                logger.info(
+                    "Using board-default policy_size=%d for %s (dataset max index: %d)",
+                    policy_size,
+                    config.board_type.name,
+                    inferred_size,
+                )
         else:
             policy_size = get_policy_size_for_board(config.board_type)
             if not distributed or is_main_process():
@@ -1423,52 +1413,86 @@ def train_model(
                     "to produce 20 global features."
                 )
 
-            if model_version in ('v3', 'v4'):
-                if policy_encoding == "legacy_max_n":
-                    raise ValueError(
-                        f"Dataset uses legacy MAX_N policy encoding but --model-version={model_version} "
-                        "requires board-aware policy encoding.\n"
-                        f"  dataset={data_path_str}\n"
-                        "Regenerate the dataset with --board-aware-encoding."
-                    )
-                if policy_encoding is None and (not distributed or is_main_process()):
-                    logger.warning(
-                        "Dataset %s missing policy_encoding metadata; assuming board-aware "
-                        "encoding for %s. If this dataset was exported with legacy MAX_N, "
-                        "regenerate with --board-aware-encoding.",
-                        data_path_str,
-                        model_version,
-                    )
+            # CRITICAL: Reject legacy_max_n encoding for ALL model versions
+            if policy_encoding == "legacy_max_n":
+                raise ValueError(
+                    f"Dataset uses DEPRECATED legacy_max_n policy encoding.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  model_version={model_version}\n\n"
+                    "Regenerate the dataset with board-aware encoding (now the default):\n"
+                    "  PYTHONPATH=. python scripts/export_replay_dataset.py \\\n"
+                    "    --db <canonical_db> --board-type <hex8|hexagonal> \\\n"
+                    "    --num-players <2|3|4> --output <path>.npz\n"
+                )
+            if policy_encoding is None and (not distributed or is_main_process()):
+                logger.warning(
+                    "Dataset %s missing policy_encoding metadata. Assuming board-aware "
+                    "encoding. If this dataset was exported with legacy MAX_N, "
+                    "regenerate with current export script (board-aware is now default).",
+                    data_path_str,
+                )
 
         if inferred_hex_size is not None:
-            if model_version in ('v3', 'v4'):
-                board_default_size = get_policy_size_for_board(config.board_type)
-                if inferred_hex_size > board_default_size:
-                    raise ValueError(
-                        f"Dataset policy indices exceed the {model_version} board-aware policy space. "
-                        "This usually means the dataset was exported with legacy MAX_N encoding.\n"
-                        f"  dataset={data_path_str}\n"
-                        f"  inferred_policy_size={inferred_hex_size}\n"
-                        f"  board_default_policy_size={board_default_size}\n\n"
-                        "Regenerate the dataset with --board-aware-encoding (see scripts/export_replay_dataset.py).\n"
-                    )
-                policy_size = board_default_size
-                if not distributed or is_main_process():
-                    logger.info(
-                        "%s model requires board-aware policy space; using "
-                        "board-default policy_size=%d (dataset max index implies %d)",
-                        model_version.upper(),
-                        policy_size,
-                        inferred_hex_size,
-                    )
-            else:
-                policy_size = inferred_hex_size
-                if not distributed or is_main_process():
-                    logger.info(
-                        "Using inferred hex policy_size=%d from dataset %s",
-                        policy_size,
-                        data_path_str,
-                    )
+            board_default_size = get_policy_size_for_board(config.board_type)
+            # CRITICAL: Validate policy indices for ALL model versions
+            if inferred_hex_size > board_default_size:
+                raise ValueError(
+                    f"Dataset policy indices exceed the board-aware policy space.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  model_version={model_version}\n"
+                    f"  inferred_policy_size={inferred_hex_size}\n"
+                    f"  board_default_policy_size={board_default_size}\n\n"
+                    "This indicates the dataset was exported with legacy MAX_N encoding.\n"
+                    "Regenerate the dataset with the current export script:\n"
+                    "  PYTHONPATH=. python scripts/export_replay_dataset.py \\\n"
+                    "    --db <canonical_db> --board-type <hex8|hexagonal> \\\n"
+                    "    --num-players <2|3|4> --output <path>.npz\n"
+                )
+            policy_size = board_default_size
+            if not distributed or is_main_process():
+                logger.info(
+                    "Using board-default policy_size=%d for %s (dataset max index: %d)",
+                    policy_size,
+                    config.board_type.name,
+                    inferred_hex_size,
+                )
+
+            # Dec 2025: Validate policy indices for V3/V4 hex models
+            # This catches encoding mismatches that would cause -1e9 masked logits
+            if model_version in ('v3', 'v4') and data_path_str:
+                try:
+                    with np.load(data_path_str, mmap_mode="r", allow_pickle=True) as d:
+                        if "policy_indices" in d:
+                            hex_board_size = 9 if config.board_type == BoardType.HEX8 else 25
+                            hex_r = 4 if config.board_type == BoardType.HEX8 else 12
+                            is_valid, errors = validate_hex_policy_indices(
+                                d["policy_indices"],
+                                board_size=hex_board_size,
+                                hex_radius=hex_r,
+                                sample_size=2000,
+                            )
+                            if not is_valid:
+                                raise ValueError(
+                                    f"Hex policy index validation failed for {model_version} model.\n"
+                                    f"  dataset={data_path_str}\n\n"
+                                    f"Errors:\n  " + "\n  ".join(errors) + "\n\n"
+                                    "This indicates the dataset was exported with an older encoder "
+                                    "that didn't validate hex cell positions.\n"
+                                    "Regenerate the dataset with the current export script (Dec 2025+):\n"
+                                    "  PYTHONPATH=. python scripts/export_replay_dataset.py \\\n"
+                                    "    --db <canonical_db> --board-type <hex8|hexagonal> \\\n"
+                                    "    --num-players <2|3|4> --board-aware-encoding --output <path>.npz\n"
+                                )
+                            elif not distributed or is_main_process():
+                                logger.info(
+                                    "Hex policy index validation passed for %s model",
+                                    model_version.upper(),
+                                )
+                except Exception as e:
+                    if "validation failed" in str(e):
+                        raise
+                    logger.warning(f"Could not validate hex policy indices: {e}")
+
         elif use_hex_model:
             # Use board-specific policy size (4500 for HEX8, 91876 for HEXAGONAL)
             policy_size = get_policy_size_for_board(config.board_type)

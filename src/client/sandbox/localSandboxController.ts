@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Local Sandbox Controller - DIAGNOSTICS-ONLY, NOT CANONICAL
+ *
+ * SSoT alignment: This module is a **LEGACY DIAGNOSTICS HARNESS**, NOT for production.
+ *
+ * Canonical SSoT:
+ * - Production sandbox: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - Orchestrator adapter: `src/client/sandbox/SandboxOrchestratorAdapter.ts`
+ *
+ * This module:
+ * - Implements minimal, browser-safe local sandbox rules subset
+ * - Used ONLY for diagnostics, experimentation, and migration work
+ * - NOT used by /sandbox route or GamePage in normal operation
+ * - Must NOT be reintroduced as production rules host
+ *
+ * DO NOT add rules logic here. DO NOT use in production.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ * @see docs/ORCHESTRATOR_ROLLOUT_PLAN.md Phase B/C
+ */
+
 import {
   BoardState,
   BoardType,
@@ -10,30 +33,6 @@ import {
   positionToString,
 } from '../../shared/types/game';
 import { calculateCapHeight, getPathPositions } from '../../shared/engine/core';
-
-/**
- * DIAGNOSTICS-ONLY (legacy) – local sandbox harness.
- *
- * This module implements a minimal, browser-safe local sandbox rules subset
- * independent of the shared turn orchestrator. It exists solely for
- * diagnostics, experimentation, and Phase C migration work; it is **not**
- * used by the `/sandbox` route or [`GamePage`](../pages/GamePage.tsx:165) in
- * normal operation.
- *
- * Canonical sandbox rules behaviour is provided by:
- * - [`ClientSandboxEngine`](./ClientSandboxEngine.ts:131) as the sandbox host.
- * - [`SandboxOrchestratorAdapter`](./SandboxOrchestratorAdapter.ts:162) +
- *   `processTurnAsync` in the shared orchestrator as the lifecycle SSOT.
- *
- * See [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../../../docs/ORCHESTRATOR_ROLLOUT_PLAN.md:302)
- * Phase B/Phase C for the orchestrator-first rollout and legacy shutdown plan.
- *
- * This harness provides just enough structure for diagnostics code to manage a
- * local board and per-player ring placement/movement in a way that is
- * compatible with the shared `GameState`/`BoardState` types, without importing
- * any server-only modules. It must not be reintroduced as a production rules
- * host for `/sandbox`.
- */
 
 export interface LocalSandboxConfig {
   boardType: BoardType;

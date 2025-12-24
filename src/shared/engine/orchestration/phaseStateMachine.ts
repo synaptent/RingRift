@@ -1,20 +1,37 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * Phase State Machine
+ * Phase State Machine - DEPRECATED
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Manages phase transitions during turn processing.
- * Built on top of the existing turnLogic module.
+ * @deprecated This module is fully deprecated and should NOT be used in production code.
  *
- * @deprecated This module is superseded by the FSM-based orchestration in
- * `../fsm/TurnStateMachine.ts`. The FSM is now the canonical orchestrator
- * for all phase transitions and move validation. This module remains for
- * backwards compatibility but should not be used for new code.
+ * As of the FSM migration (December 2025), the PhaseStateMachine class and all
+ * exports from this module have been superseded by:
  *
- * Migration path:
- * - Use `validateMoveWithFSM` from `../fsm/FSMAdapter` for move validation
- * - Use `computeFSMOrchestration` from `../fsm/FSMAdapter` for phase transitions
- * - Use `determineNextPhaseFromFSM` from `../fsm/FSMAdapter` instead of `determineNextPhase`
+ * 1. **TurnStateMachine** (`../fsm/TurnStateMachine.ts`) - The canonical FSM for
+ *    phase transitions per RR-CANON-R070/R075.
+ *
+ * 2. **ProcessingStateContainer** (inline in `turnOrchestrator.ts`) - A lightweight
+ *    mutable state container that provides the same interface as PhaseStateMachine
+ *    but is local to the orchestrator.
+ *
+ * The exports here are retained ONLY for test backward compatibility. The test files
+ * `tests/unit/phaseStateMachine.shared.test.ts` and
+ * `tests/unit/phaseStateMachine.branchCoverage.test.ts` still import directly from
+ * this file. Once those tests are removed or migrated, this file can be deleted.
+ *
+ * ## What NOT to use from this module:
+ * - PhaseStateMachine class - use ProcessingStateContainer or TurnStateMachine
+ * - createTurnProcessingState - use inline createProcessingState in turnOrchestrator
+ * - determineNextPhase - use computeFSMOrchestration from ../fsm/FSMAdapter
+ * - All helper functions - use FSM equivalents
+ *
+ * ## Migration Status:
+ * See `docs/architecture/FSM_MIGRATION_STATUS_2025_12.md` for full details.
+ *
+ * @see ../fsm/TurnStateMachine.ts - Canonical FSM
+ * @see ../fsm/FSMAdapter.ts - FSM integration utilities
+ * @see ./turnOrchestrator.ts - ProcessingStateContainer (inline replacement)
  */
 
 import type { GameState, GamePhase, Move, Position } from '../../types/game';

@@ -1,13 +1,24 @@
 /**
- * useSandboxMoveHandlers Hook
+ * @fileoverview useSandboxMoveHandlers Hook - ADAPTER, NOT CANONICAL
  *
- * Handles movement and capture-related cell clicks in sandbox mode:
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It handles UI for movement and capture clicks, not rules logic.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Movement: `src/shared/engine/aggregates/Movement.ts`
+ * - Capture: `src/shared/engine/aggregates/Capture.ts`
+ *
+ * This adapter:
  * - Ring placement phase clicks
  * - Movement/capture phase selection and execution
  * - Chain capture continuation
  * - Recovery slide handling
  *
- * Extracted from useSandboxInteractions to reduce complexity.
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import { useCallback } from 'react';
@@ -117,7 +128,15 @@ export function useSandboxMoveHandlers({
         maybeRunSandboxAiIfNeeded();
       })();
     },
-    [sandboxEngine, selected, setSelected, setValidTargets, bumpSandboxTurn, setSandboxStateVersion, maybeRunSandboxAiIfNeeded]
+    [
+      sandboxEngine,
+      selected,
+      setSelected,
+      setValidTargets,
+      bumpSandboxTurn,
+      setSandboxStateVersion,
+      maybeRunSandboxAiIfNeeded,
+    ]
   );
 
   const handleChainCaptureClick = useCallback(
@@ -159,7 +178,18 @@ export function useSandboxMoveHandlers({
         maybeRunSandboxAiIfNeeded();
       })();
     },
-    [sandboxEngine, selected, validTargets, setSelected, setValidTargets, bumpSandboxTurn, setSandboxStateVersion, maybeRunSandboxAiIfNeeded, analyzeInvalidMove, triggerInvalidMove]
+    [
+      sandboxEngine,
+      selected,
+      validTargets,
+      setSelected,
+      setValidTargets,
+      bumpSandboxTurn,
+      setSandboxStateVersion,
+      maybeRunSandboxAiIfNeeded,
+      analyzeInvalidMove,
+      triggerInvalidMove,
+    ]
   );
 
   const handleFirstClick = useCallback(
@@ -246,8 +276,10 @@ export function useSandboxMoveHandlers({
         const matchingRecoveryMoves = validMoves.filter(
           (m: any) =>
             m.type === 'recovery_slide' &&
-            m.from && positionsEqual(m.from, sourcePos) &&
-            m.to && positionsEqual(m.to, pos)
+            m.from &&
+            positionsEqual(m.from, sourcePos) &&
+            m.to &&
+            positionsEqual(m.to, pos)
         );
 
         if (matchingRecoveryMoves.length > 0) {
@@ -288,7 +320,16 @@ export function useSandboxMoveHandlers({
         maybeRunSandboxAiIfNeeded();
       })();
     },
-    [sandboxEngine, selected, setSelected, setValidTargets, bumpSandboxTurn, setSandboxStateVersion, maybeRunSandboxAiIfNeeded, requestRecoveryChoice]
+    [
+      sandboxEngine,
+      selected,
+      setSelected,
+      setValidTargets,
+      bumpSandboxTurn,
+      setSandboxStateVersion,
+      maybeRunSandboxAiIfNeeded,
+      requestRecoveryChoice,
+    ]
   );
 
   return {

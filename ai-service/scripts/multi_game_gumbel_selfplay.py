@@ -97,16 +97,24 @@ def json_serializer(obj):
     raise TypeError(f'Object of type {type(obj).__name__} is not JSON serializable')
 
 
-def save_results_jsonl(results: list[GameResult], output_path: str) -> None:
+def save_results_jsonl(
+    results: list[GameResult],
+    output_path: str,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> None:
     """Save game results to JSONL format."""
     with open(output_path, 'a') as f:
         for result in results:
             record = {
                 "game_id": str(uuid.uuid4()),
+                "board_type": board_type,
+                "num_players": num_players,
                 "winner": result.winner,
                 "status": result.status,
                 "move_count": result.move_count,
                 "moves": result.moves,
+                "initial_state": result.initial_state,
                 "timestamp": datetime.utcnow().isoformat(),
             }
             f.write(json.dumps(record, default=json_serializer) + '\n')
@@ -175,7 +183,7 @@ def main():
         batch_elapsed = time.time() - batch_start
 
         # Save results
-        save_results_jsonl(results, output_path)
+        save_results_jsonl(results, output_path, board_type.value, args.num_players)
 
         total_games += len(results)
         winners = [r.winner for r in results if r.winner is not None]

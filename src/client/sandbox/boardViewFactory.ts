@@ -1,22 +1,23 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * Board View Adapter Factory
- * ═══════════════════════════════════════════════════════════════════════════
+ * @fileoverview Board View Adapter Factory - ADAPTER, NOT CANONICAL
  *
- * Factory functions that create board view adapters for sandbox modules.
- * Consolidates duplicate adapter construction patterns from:
+ * SSoT alignment: This module is an **adapter factory** for sandbox modules.
+ * It creates board view adapters that bridge sandbox interfaces with shared engine.
  *
- * - sandboxPlacement.ts
- * - sandboxMovement.ts
- * - sandboxCaptures.ts
+ * Canonical SSoT:
+ * - Board view interfaces: `src/shared/engine/types.ts`
+ * - Movement views: `src/shared/engine/aggregates/movementHelpers.ts`
+ * - Capture adapters: `src/shared/engine/aggregates/captureHelpers.ts`
  *
- * These adapters wrap a BoardState to provide the interfaces expected by
- * the shared engine functions (MovementBoardView, CaptureBoardAdapters).
+ * This adapter factory:
+ * - Creates unified board view adapters (MovementBoardView, CaptureBoardAdapters)
+ * - Bridges sandbox-style (pos, board) signatures to closure-based (pos) signatures
+ * - Consolidates duplicate adapter construction patterns
  *
- * Design Rationale:
- * - Shared engine interfaces capture board state in closure (isCollapsedSpace(pos))
- * - Sandbox-specific interfaces pass board as parameter (isCollapsedSpace(pos, board))
- * - This factory bridges the two by creating closures over a specific board state
+ * DO NOT add rules logic here - adapters only bridge interfaces.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import type {

@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Sandbox Capture Helpers - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides capture enumeration and analysis tools for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Capture logic: `src/shared/engine/aggregates/CaptureAggregate.ts`
+ * - Capture moves: `src/shared/engine/aggregates/captureHelpers.ts`
+ *
+ * This adapter:
+ * - Enumerates capture segments via shared `enumerateCaptureMoves`
+ * - Provides `applyCaptureSegmentOnBoard` for DIAGNOSTICS-ONLY analysis
+ * - Live capture flows delegate to CaptureAggregate exclusively
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type {
   BoardState,
   BoardType,

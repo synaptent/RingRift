@@ -1,11 +1,29 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * Sandbox Orchestrator Adapter
- * ═══════════════════════════════════════════════════════════════════════════
+ * @fileoverview Sandbox Orchestrator Adapter - ADAPTER, NOT CANONICAL
  *
- * Adapter that wraps the shared orchestrator's processTurn() for client
- * sandbox use. This provides the same interface as the backend
- * TurnEngineAdapter but tailored for browser/local game contexts.
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It wraps the shared orchestrator's `processTurn()` for client sandbox use.
+ *
+ * Canonical SSoT:
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - FSM validation: `src/shared/engine/fsm/FSMAdapter.ts`
+ * - Types: `src/shared/types/game.ts`
+ *
+ * This adapter:
+ * - Provides the same interface as the backend TurnEngineAdapter
+ * - Manages local state (no persistence layer)
+ * - Handles decision delegation to UI or AI
+ * - Supports "preview" mode for what-if analysis
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ * Per RR-CANON-R070, FSM validation is the canonical move validator.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Implementation Notes
+ * ═══════════════════════════════════════════════════════════════════════════
  *
  * Key differences from backend adapter:
  * - No persistence layer (state is managed locally)

@@ -167,6 +167,11 @@ class ActionEncoderHex:
 
     Any decoded index that maps to a canonical cell outside the true hex
     (469-cell) region is treated as invalid and returns None.
+
+    IMPORTANT (Dec 2025): This encoder validates that all encoded positions
+    are within the valid hex region. Positions outside the hex (corners of
+    the bounding box) return INVALID_MOVE_INDEX. This ensures compatibility
+    with V3/V4 model architectures that mask invalid hex cells.
     """
 
     def __init__(
@@ -177,6 +182,11 @@ class ActionEncoderHex:
         # Spatial dimension of the hex bounding box (2N+1 for side N).
         self.board_size = board_size
 
+        # Hex radius = (board_size - 1) // 2
+        # For HEXAGONAL (25x25): radius = 12
+        # For HEX8 (9x9): radius = 4
+        self.hex_radius = (board_size - 1) // 2
+
         # Compute layout constants based on board_size
         self.max_dist = board_size - 1  # max distance on hex board
         self.placement_span = board_size * board_size * 3
@@ -186,6 +196,21 @@ class ActionEncoderHex:
 
         # Hex-specific action space dimension.
         self.policy_size = policy_size or (self.special_base + 1)
+
+    def _is_valid_hex_cell(self, cx: int, cy: int) -> bool:
+        """Check if canonical (cx, cy) is within the valid hex region.
+
+        Uses axial distance formula: distance = max(|q|, |r|, |q + r|)
+        where q = cx - center, r = cy - center.
+
+        This matches the hex_mask used by V3/V4 neural net architectures,
+        ensuring encoded policy indices align with model expectations.
+        """
+        center = self.board_size // 2
+        q = cx - center
+        r = cy - center
+        hex_dist = max(abs(q), abs(r), abs(q + r))
+        return hex_dist <= self.hex_radius
 
     def _encode_canonical_xy(
         self,
@@ -220,6 +245,10 @@ class ActionEncoderHex:
                 return INVALID_MOVE_INDEX
             cx, cy = canon
 
+            # Validate position is within valid hex region (Dec 2025 fix)
+            if not self._is_valid_hex_cell(cx, cy):
+                return INVALID_MOVE_INDEX
+
             pos_idx = cy * self.board_size + cx
             count = move.placement_count or 1
             if count < 1 or count > 3:
@@ -244,6 +273,13 @@ class ActionEncoderHex:
 
             from_cx, from_cy = from_canon
             to_cx, to_cy = to_canon
+
+            # Validate both positions are within valid hex region (Dec 2025 fix)
+            # This ensures encoded indices align with V3/V4 model hex_mask
+            if not self._is_valid_hex_cell(from_cx, from_cy):
+                return INVALID_MOVE_INDEX
+            if not self._is_valid_hex_cell(to_cx, to_cy):
+                return INVALID_MOVE_INDEX
 
             dx = to_cx - from_cx
             dy = to_cy - from_cy

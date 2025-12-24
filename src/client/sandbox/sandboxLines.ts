@@ -1,21 +1,21 @@
 /**
- * Sandbox line-detection helpers.
+ * @fileoverview Sandbox Line Detection Helpers - ADAPTER, NOT CANONICAL
  *
- * This module is a thin adapter between the client-local sandbox engine
- * (ClientSandboxEngine) and the canonical shared line-detection helpers.
- * Line geometry and victory semantics live in the shared engine; sandbox
- * code should not re-introduce bespoke line logic here.
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It provides line detection for sandbox/offline games by delegating to shared helpers.
  *
- * - Geometry and detection: src/shared/engine/aggregates/LineAggregate.ts
- * - Public adapter: findAllLinesOnBoard -> findAllLines(board)
+ * Canonical SSoT:
+ * - Line detection: `src/shared/engine/aggregates/LineAggregate.ts`
+ * - Line geometry: `src/shared/engine/lineDetection.ts`
  *
- * Do NOT add new line-detection semantics in this file. Extend the shared
- * helpers instead so backend, sandbox, and rules-layer tests remain aligned.
+ * This adapter:
+ * - Wraps `findAllLines()` for backwards-compatible `findAllLinesOnBoard()` interface
+ * - Extra parameters retained for test stubs, but unused - all geometry from shared engine
  *
- * Line geometry functions (getLineDirections, findLineInDirection) are now
- * exported from LineAggregate for testing purposes. Production code should
- * use findAllLines() which uses these internally.
+ * DO NOT add line-detection semantics here - it belongs in `src/shared/engine/`.
  *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  * @module client/sandbox/sandboxLines
  */
 import type { BoardState, BoardType, LineInfo, Position } from '../../shared/engine';

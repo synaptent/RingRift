@@ -1,12 +1,22 @@
 /**
- * useSandboxRingPlacement Hook
+ * @fileoverview useSandboxRingPlacement Hook - ADAPTER, NOT CANONICAL
  *
- * Handles ring placement interactions in sandbox mode, including:
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It handles UI for ring placement interactions, not rules logic.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Placement logic: `src/shared/engine/aggregates/Placement.ts`
+ *
+ * This adapter:
  * - Double-click for quick 2-ring placement
  * - Context menu for custom ring count placement
  * - Ring placement count prompt state
  *
- * Extracted from useSandboxInteractions to reduce complexity.
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import { useState, useCallback } from 'react';

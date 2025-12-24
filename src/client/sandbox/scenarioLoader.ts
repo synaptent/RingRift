@@ -1,11 +1,19 @@
 /**
- * Scenario loading utilities for the sandbox.
+ * @fileoverview Scenario Loading Utilities - UTILITY, NOT CANONICAL
  *
- * Provides functions to:
- * - Load scenarios from contract test vectors
- * - Load curated learning scenarios
- * - Load/save custom scenarios from localStorage
- * - Delete custom scenarios
+ * SSoT alignment: This module provides **scenario loading utilities** for sandbox.
+ * It contains no rules logic.
+ *
+ * This utility:
+ * - Loads scenarios from contract test vectors
+ * - Loads curated learning scenarios
+ * - Loads/saves custom scenarios from localStorage
+ * - Filters scenarios by category, board type, and search query
+ *
+ * DO NOT add rules logic here - this is a pure utility module.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import type {

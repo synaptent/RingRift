@@ -165,6 +165,7 @@ class AIType(str, Enum):
     IG_GMO = "ig_gmo"  # Experimental: Information-Gain GMO (MI-based exploration + GNN)
     CAGE = "cage"  # Constraint-Aware Graph Energy-based move optimization (GNN + primal-dual)
     IMPROVED_MCTS = "improved_mcts"  # Advanced MCTS with PUCT, progressive widening, transposition tables
+    HYBRID_NN = "hybrid_nn"  # Fast heuristic + NN value ranking (5-10x faster than full MCTS)
 
 
 class Position(BaseModel):
@@ -735,6 +736,57 @@ class AIConfig(BaseModel):
             "When True, uses GPU-accelerated tensor tree MCTS for 170x speedup. "
             "Requires CUDA and uses Structure-of-Arrays tensor tree with batched "
             "heuristic evaluation. Falls back to CPU MCTS on error."
+        ),
+    )
+    gpu_tree_eval_mode: str = Field(
+        default="hybrid",
+        description=(
+            "Evaluation mode for GPU tensor tree MCTS. Options: "
+            "'heuristic' (fastest, ~100ms), 'nn' (most accurate, ~1-2s), "
+            "'hybrid' (heuristic for phases + NN for final selection, ~300ms). "
+            "Only used when use_gpu_tree=True."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # HybridNN Configuration (fast heuristic + NN value ranking)
+    # ------------------------------------------------------------------
+
+    hybrid_top_k: int = Field(
+        default=8,
+        ge=2,
+        le=32,
+        description=(
+            "Number of top candidate moves to evaluate with NN value head "
+            "in HybridNN mode. Higher values increase accuracy but reduce speed. "
+            "Default is 8 (good balance of speed and quality)."
+        ),
+    )
+    hybrid_temperature: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=2.0,
+        description=(
+            "Temperature for move selection in HybridNN mode. "
+            "0.0 = greedy (always pick best), higher = more random. "
+            "Default is 0.1 (mostly greedy with slight exploration)."
+        ),
+    )
+    board_type: str | None = Field(
+        default=None,
+        description=(
+            "Board type for AI initialization (e.g., 'square8', 'hex8'). "
+            "Used by HybridNNAI and other board-aware AIs. When None, "
+            "defaults to 'square8'."
+        ),
+    )
+    num_players: int = Field(
+        default=2,
+        ge=2,
+        le=4,
+        description=(
+            "Number of players in the game. Used by HybridNNAI and other "
+            "player-count-aware AIs. Default is 2."
         ),
     )
 

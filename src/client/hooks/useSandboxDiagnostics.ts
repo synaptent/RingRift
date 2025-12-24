@@ -1,3 +1,25 @@
+/**
+ * @fileoverview useSandboxDiagnostics Hook - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This hook is a **React adapter** for sandbox diagnostics UI.
+ * It manages export and debug functionality, not rules logic.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Diagnostics: `src/client/sandbox/sandboxAiDiagnostics.ts`
+ *
+ * This adapter:
+ * - Save state dialog visibility
+ * - Copy test fixture to clipboard
+ * - Export scenario JSON
+ * - Copy AI trace/metadata for debugging
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import { useState, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import type { GameState } from '../../shared/types/game';

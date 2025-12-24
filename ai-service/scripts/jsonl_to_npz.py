@@ -685,10 +685,15 @@ def parse_position(pos_data: dict[str, Any] | list | None) -> Position | None:
 def parse_move(move_dict: dict[str, Any]) -> Move:
     """Parse move dict from JSONL to Move object.
 
-    Handles both canonical format and GPU selfplay format:
+    Handles multiple formats:
     - Canonical: {"type": "place_ring", "from": {...}, "to": {...}}
     - GPU selfplay: {"move_type": "PLACEMENT", "from_pos": [...], "to_pos": [...]}
+    - Gumbel MCTS: {"move": {...}, "move_number": N, "policy": {...}}
     """
+    # Handle Gumbel MCTS wrapper format - extract inner move dict
+    if "move" in move_dict and isinstance(move_dict.get("move"), dict):
+        move_dict = move_dict["move"]
+
     # Handle move_type vs type field
     move_type = move_dict.get("type") or move_dict.get("move_type", "unknown")
     # Normalize GPU selfplay move types (UPPERCASE) to canonical (lowercase)

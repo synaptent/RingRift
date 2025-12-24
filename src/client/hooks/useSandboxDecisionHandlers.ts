@@ -1,12 +1,22 @@
 /**
- * useSandboxDecisionHandlers Hook
+ * @fileoverview useSandboxDecisionHandlers Hook - ADAPTER, NOT CANONICAL
  *
- * Handles player choice decisions in sandbox mode, including:
+ * SSoT alignment: This hook is a **React adapter** over the sandbox engine.
+ * It handles UI for player choice decisions, not rules logic.
+ *
+ * Canonical SSoT:
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - Decision types: `src/shared/types/game.ts` (PlayerChoice)
+ *
+ * This adapter:
  * - Ring elimination choices
  * - Territory region order choices
  * - Capture direction choices
  *
- * Extracted from useSandboxInteractions to reduce complexity.
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
 import { useState, useRef, useCallback } from 'react';

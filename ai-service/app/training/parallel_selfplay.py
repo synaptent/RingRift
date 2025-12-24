@@ -264,6 +264,9 @@ def _generate_single_game(args: tuple[int, int]) -> GameResult | None:
                 )
             elif config.engine == "gumbel":
                 # Gumbel-MCTS needs board_type for move encoding
+                # Enable GPU tree acceleration for 177x speedup when CUDA available
+                ai_config.use_gpu_tree = True
+                ai_config.gpu_tree_eval_mode = "hybrid"  # Balance speed and quality
                 ai_players[pn] = GumbelMCTSAI(
                     player_number=pn,
                     config=ai_config,

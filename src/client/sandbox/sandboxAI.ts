@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Sandbox AI Turn Logic - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This module is an **adapter** over the canonical shared engine.
+ * It coordinates AI move selection and application for sandbox/offline games.
+ *
+ * Canonical SSoT:
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ * - Move selection: `src/shared/engine/localMoveSelector.ts`
+ * - Types: `src/shared/types/game.ts`
+ *
+ * This adapter:
+ * - Orchestrates AI turn execution using hooks to ClientSandboxEngine
+ * - Delegates move enumeration to canonical shared helpers
+ * - Uses service-backed AI when available, falls back to local heuristics
+ * - Tracks AI stalls and diagnostics for debugging
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ * AI move selection and evaluation belong in the shared layer or ai-service.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import type {
   GameState,
   Move,

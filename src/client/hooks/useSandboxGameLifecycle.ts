@@ -1,3 +1,25 @@
+/**
+ * @fileoverview useSandboxGameLifecycle Hook - ADAPTER, NOT CANONICAL
+ *
+ * SSoT alignment: This hook is a **React adapter** for sandbox game lifecycle.
+ * It manages game start, reset, rematch, and preset operations.
+ *
+ * Canonical SSoT:
+ * - Sandbox engine: `src/client/sandbox/ClientSandboxEngine.ts`
+ * - Orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts`
+ *
+ * This adapter:
+ * - Starting games (backend + local fallback)
+ * - Quick-start presets
+ * - Resetting to setup screen
+ * - Rematch with same configuration
+ *
+ * DO NOT add rules logic here - it belongs in `src/shared/engine/`.
+ *
+ * @see docs/architecture/FSM_MIGRATION_STATUS_2025_12.md
+ * @see docs/rules/SSOT_BANNER_GUIDE.md
+ */
+
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
