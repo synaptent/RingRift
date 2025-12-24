@@ -771,10 +771,12 @@ def export_replay_dataset_multi(
         "engine_modes": engine_modes_arr,  # For source-based sample weighting (Gumbel 3x weight)
         # Phase 5 Metadata: Additional fields for training compatibility validation
         "encoder_type": np.asarray(encoder_type_str),
+        "encoder_version": np.asarray(effective_encoder),  # v2 or v3 - for model selection
+        "in_channels": np.asarray(int(features_arr.shape[1])),  # Actual channel count for validation
         "policy_size": np.asarray(int(policy_size)),
         "max_policy_index": np.asarray(int(max_policy_index)),
         "policies_normalized": np.asarray(True),  # All policy values sum to 1.0
-        "export_version": np.asarray("2.0"),  # Mark as having validation metadata
+        "export_version": np.asarray("2.1"),  # Mark as having V3 encoder metadata
     }
     if write_mp:
         save_kwargs.update({"values_mp": values_mp_arr, "num_players": num_players_arr})

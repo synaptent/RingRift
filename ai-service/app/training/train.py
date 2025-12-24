@@ -1994,6 +1994,9 @@ def train_model(
         dataset_encoder_type: str | None = None
         dataset_base_channels: int | None = None
         dataset_board_type_meta: str | None = None
+        # V2.1 encoder metadata (added 2025-12 for V3 encoder fix)
+        dataset_encoder_version: str | None = None
+        dataset_in_channels_meta: int | None = None
         is_npz = bool(first_path and first_path.endswith(".npz"))
         try:
             if first_path and os.path.exists(first_path):
@@ -2037,6 +2040,17 @@ def train_model(
                             dataset_board_type_meta = str(np.asarray(d["board_type"]).item())
                         except Exception:
                             dataset_board_type_meta = None
+                    # Read V2.1 encoder metadata (added 2025-12 for V3 encoder fix)
+                    if "encoder_version" in d:
+                        try:
+                            dataset_encoder_version = str(np.asarray(d["encoder_version"]).item())
+                        except Exception:
+                            dataset_encoder_version = None
+                    if "in_channels" in d:
+                        try:
+                            dataset_in_channels_meta = int(np.asarray(d["in_channels"]).item())
+                        except Exception:
+                            dataset_in_channels_meta = None
         except Exception as exc:
             if not distributed or is_main_process():
                 logger.warning(
@@ -2125,6 +2139,34 @@ def train_model(
                     dataset_in_channels,
                     dataset_board_type_meta,
                 )
+
+            # Log V2.1 encoder metadata if available (Dec 2025)
+            if dataset_encoder_version and (not distributed or is_main_process()):
+                logger.info(
+                    "Dataset V2.1 metadata: encoder_version=%s, in_channels_meta=%s",
+                    dataset_encoder_version,
+                    dataset_in_channels_meta,
+                )
+
+            # Cross-validate in_channels from metadata against actual feature shape
+            # This catches cases where export script updated metadata but not actual encoder
+            if dataset_in_channels_meta is not None and dataset_in_channels is not None:
+                if dataset_in_channels_meta != dataset_in_channels:
+                    raise ValueError(
+                        "========================================\n"
+                        "DATA INTEGRITY ERROR - METADATA MISMATCH\n"
+                        "========================================\n"
+                        f"Dataset in_channels metadata: {dataset_in_channels_meta}\n"
+                        f"Actual feature shape:         {dataset_in_channels} channels\n"
+                        f"Dataset:                      {first_path}\n"
+                        "\n"
+                        "The export script recorded a channel count that doesn't match\n"
+                        "the actual feature tensor shape. This indicates a bug in the\n"
+                        "export pipeline.\n"
+                        "\n"
+                        "SOLUTION: Re-export the data with a fixed export script.\n"
+                        "========================================"
+                    )
 
             # HARD ERROR: Encoder type must match model version (Dec 2025)
             if dataset_encoder_type and dataset_encoder_type != expected_encoder:
