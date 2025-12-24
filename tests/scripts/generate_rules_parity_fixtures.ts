@@ -84,7 +84,7 @@ import { moveToGameAction } from '../../src/shared/engine/moveActionAdapter';
  * - Ring elimination
  * - Skip placement (valid + invalid no-stacks case)
  *
- * v2 coverage (square8, square19, hexagonal):
+ * v2 coverage (square8, square19, hex8, hexagonal):
  * - Multi-line line-processing scenarios exercising:
  *   - Multiple simultaneous lines, including overlapping coordinates.
  *   - Mixed-player lines on the same board.
@@ -171,6 +171,28 @@ interface TraceFixture {
   boardType: BoardType;
   initialState: SharedGameState;
   steps: TraceStep[];
+}
+
+interface GeneratorOptions {
+  boardTypes?: BoardType[];
+  v1Only?: boolean;
+  v2Only?: boolean;
+}
+
+function parseGeneratorArgs(argv: string[]): GeneratorOptions {
+  const options: GeneratorOptions = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--board-types' && argv[i + 1]) {
+      options.boardTypes = argv[i + 1].split(',') as BoardType[];
+      i += 1;
+    } else if (arg === '--v1-only') {
+      options.v1Only = true;
+    } else if (arg === '--v2-only') {
+      options.v2Only = true;
+    }
+  }
+  return options;
 }
 
 function makeTraceFromStateAction(
@@ -1451,33 +1473,64 @@ function generateMultiRegionTerritoryFixtureForBoard(
   state.board.territories = new Map();
 
   // Three regions: two for player 1 (one disconnected) and one for player 2.
-  const region1: Territory = {
-    spaces: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 1, y: 1 },
-    ],
-    controllingPlayer: 1,
-    isDisconnected: false,
-  };
+  // Use hex-safe coordinates when generating hex fixtures.
+  const usesHexCoords = boardType === 'hex8' || boardType === 'hexagonal';
 
-  const region2: Territory = {
-    spaces: [
-      { x: 3, y: 3 },
-      { x: 3, y: 4 },
-    ],
-    controllingPlayer: 1,
-    isDisconnected: true,
-  };
+  const region1: Territory = usesHexCoords
+    ? {
+        spaces: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: -1 },
+        ],
+        controllingPlayer: 1,
+        isDisconnected: false,
+      }
+    : {
+        spaces: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        controllingPlayer: 1,
+        isDisconnected: false,
+      };
 
-  const region3: Territory = {
-    spaces: [
-      { x: -2, y: -2 },
-      { x: -1, y: -2 },
-    ],
-    controllingPlayer: 2,
-    isDisconnected: true,
-  };
+  const region2: Territory = usesHexCoords
+    ? {
+        spaces: [
+          { x: 2, y: -1 },
+          { x: 2, y: -2 },
+        ],
+        controllingPlayer: 1,
+        isDisconnected: true,
+      }
+    : {
+        spaces: [
+          { x: 3, y: 3 },
+          { x: 3, y: 4 },
+        ],
+        controllingPlayer: 1,
+        isDisconnected: true,
+      };
+
+  const region3: Territory = usesHexCoords
+    ? {
+        spaces: [
+          { x: -1, y: 1 },
+          { x: -2, y: 1 },
+        ],
+        controllingPlayer: 2,
+        isDisconnected: true,
+      }
+    : {
+        spaces: [
+          { x: -2, y: -2 },
+          { x: -1, y: -2 },
+        ],
+        controllingPlayer: 2,
+        isDisconnected: true,
+      };
 
   state.board.territories.set('region-1', region1);
   state.board.territories.set('region-2', region2);
@@ -1485,21 +1538,39 @@ function generateMultiRegionTerritoryFixtureForBoard(
 
   // Off-region stacks for both players so that PROCESS_TERRITORY has a
   // realistic cost-paying context.
-  state.board.stacks.set('7,7', {
-    position: { x: 7, y: 7 },
-    rings: [1, 1],
-    stackHeight: 2,
-    capHeight: 2,
-    controllingPlayer: 1,
-  });
+  if (usesHexCoords) {
+    state.board.stacks.set('3,-1', {
+      position: { x: 3, y: -1 },
+      rings: [1, 1],
+      stackHeight: 2,
+      capHeight: 2,
+      controllingPlayer: 1,
+    });
 
-  state.board.stacks.set('6,6', {
-    position: { x: 6, y: 6 },
-    rings: [2],
-    stackHeight: 1,
-    capHeight: 1,
-    controllingPlayer: 2,
-  });
+    state.board.stacks.set('-3,1', {
+      position: { x: -3, y: 1 },
+      rings: [2],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 2,
+    });
+  } else {
+    state.board.stacks.set('7,7', {
+      position: { x: 7, y: 7 },
+      rings: [1, 1],
+      stackHeight: 2,
+      capHeight: 2,
+      controllingPlayer: 1,
+    });
+
+    state.board.stacks.set('6,6', {
+      position: { x: 6, y: 6 },
+      rings: [2],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 2,
+    });
+  }
 
   const fixtureState = toFixtureState(state as EngineGameState, boardType);
 
@@ -2021,10 +2092,10 @@ function generateV1Fixtures(): void {
   writeFixtures(outDirV1, fixtures);
 }
 
-function generateV2Fixtures(): void {
+function generateV2Fixtures(targetBoardTypes?: BoardType[]): void {
   const outDirV2 = join(__dirname, '..', 'fixtures', 'rules-parity', 'v2');
 
-  const boardTypes: BoardType[] = ['square8', 'square19', 'hexagonal'];
+  const boardTypes: BoardType[] = targetBoardTypes ?? ['square8', 'square19', 'hex8', 'hexagonal'];
 
   const fixtures: { name: string; data: unknown }[] = [];
 
@@ -2102,8 +2173,16 @@ function generateV2Fixtures(): void {
 }
 
 function main() {
-  generateV1Fixtures();
-  generateV2Fixtures();
+  const options = parseGeneratorArgs(process.argv.slice(2));
+  const v1Only = options.v1Only && !options.v2Only;
+  const v2Only = options.v2Only && !options.v1Only;
+
+  if (!v2Only) {
+    generateV1Fixtures();
+  }
+  if (!v1Only) {
+    generateV2Fixtures(options.boardTypes);
+  }
 }
 
 main();

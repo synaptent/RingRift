@@ -53,8 +53,11 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Default database location
 DEFAULT_EVENT_DB = Path("/tmp/ringrift_coordination/events.db")
@@ -664,10 +667,18 @@ class CrossProcessEventPoller:
                         last_event_id = max(last_event_id, event.event_id)
 
                     except Exception as e:
-                        print(f"[CrossProcessPoller] Error handling event {event.event_id}: {e}")
+                        # December 2025 hardening: Use proper logging instead of print
+                        logger.error(
+                            f"[CrossProcessPoller] Error handling event {event.event_id}: {e}",
+                            exc_info=True,
+                        )
 
             except Exception as e:
-                print(f"[CrossProcessPoller] Poll error: {e}")
+                # December 2025 hardening: Use proper logging instead of print
+                logger.error(
+                    f"[CrossProcessPoller] Poll error: {e}",
+                    exc_info=True,
+                )
 
             time.sleep(self.poll_interval)
 

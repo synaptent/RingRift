@@ -2,6 +2,27 @@
 
 Scripts moved here have been superseded by consolidated implementations.
 
+## Archived Dec 24, 2025
+
+### cluster_monitor_daemon.py
+
+**Reason**: Functionality consolidated into `app/monitoring/unified_cluster_monitor.py`.
+The unified monitor provides:
+
+- Continuous monitoring with `start_monitoring(interval=60)`
+- Event emission for status changes
+- Health alerts with cooldown
+- JSON/text formatting
+
+Use: `python -m app.monitoring.unified_cluster_monitor --watch`
+
+### robust_cluster_monitor.py
+
+**Reason**: Functionality consolidated into `app/monitoring/unified_cluster_monitor.py`.
+SSH-based node checking is now part of the unified monitor with HTTP fallback.
+
+Use: `python -m app.monitoring.unified_cluster_monitor`
+
 ## Archived Dec 24, 2024
 
 ### export_replay_dataset_parallel.py

@@ -594,6 +594,38 @@ class UnifiedQualityScorer:
         """Check if a game should be priority synced."""
         return quality.quality_score >= self.weights.min_quality_for_priority_sync
 
+    def compute_freshness_score(
+        self,
+        game_timestamp: float | None = None,
+        current_time: float | None = None,
+    ) -> float:
+        """Compute freshness score using exponential decay.
+
+        This method provides backwards compatibility with DataQualityScorer
+        from training_enhancements.py. Recent games get higher scores.
+
+        Args:
+            game_timestamp: Unix timestamp when game was played
+            current_time: Current time (default: time.time())
+
+        Returns:
+            Freshness score (0-1, where 1 = newest)
+        """
+        if game_timestamp is None:
+            return 0.5  # Neutral if unknown
+
+        if current_time is None:
+            current_time = time.time()
+
+        age_hours = (current_time - game_timestamp) / 3600
+        if age_hours < 0:
+            return 1.0  # Future timestamp = max freshness
+
+        # Exponential decay using recency half-life from weights
+        half_life = self.weights.recency_half_life_hours
+        freshness = math.exp(-age_hours * math.log(2) / half_life)
+        return max(0.0, min(1.0, freshness))
+
 
 # Module-level convenience functions
 

@@ -22,7 +22,7 @@ If you enjoy games like **Tak**, **GIPF**, **Hive**, **Shobu**, or **Onitama**, 
 RingRift offers a novel environment for AI research:
 
 - **Non-trivial state space** — up to 469 cells on hex boards with complex stack interactions
-- **Cross-language parity** — identical rules in TypeScript and Python (87 contract vectors)
+- **Cross-language parity** — identical rules in TypeScript and Python (90 contract vectors)
 - **Explicit decision points** — no hidden auto-execution; all choices are surfaced
 - **AlphaZero-style training pipeline** — distributed self-play with neural network evaluation
 - **Multiple board sizes** — 8×8 (64), 19×19 (361), hexagonal (469) for varying complexity

@@ -48,7 +48,7 @@ Win by achieving **any one** of:
 - Non-trivial state space (up to 469 cells on hex boards, complex stack interactions)
 - Explicit decision points (no hidden auto-execution)
 - Cross-language parity (identical rules in TypeScript and Python)
-- 87 contract vectors for correctness verification
+- 90 contract vectors for correctness verification
 - AlphaZero-style training pipeline with distributed selfplay
 
 **For engineers:** A reference implementation of:
@@ -152,7 +152,7 @@ uvicorn app.main:app --port 8001 --reload
 The game logic lives in a canonical TypeScript engine with Python parity:
 
 - **Single Source of Truth**: `src/shared/engine/` — 69 files, 8 canonical phases
-- **Cross-language Parity**: 87 contract vectors ensure TS↔Python match exactly
+- **Cross-language Parity**: 90 contract vectors ensure TS↔Python match exactly
 - **Domain Aggregates**: Placement, Movement, Capture, Line, Territory, Victory
 
 ---

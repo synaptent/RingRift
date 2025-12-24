@@ -50,7 +50,7 @@ This checklist documents all requirements for launching RingRift v1.0 to product
 | Item                                                           | Status | Evidence                                                |
 | -------------------------------------------------------------- | ------ | ------------------------------------------------------- |
 | All game rules implemented per canonical spec                  | ✅     | `../rules/COMPLETE_RULES.md`, `RULES_CANONICAL_SPEC.md` |
-| TS/Python parity verified (0 divergences)                      | ✅     | 87 contract vectors, 275 parity fixtures, 0 mismatches  |
+| TS/Python parity verified (0 divergences)                      | ✅     | 90 contract vectors, 279 parity fixtures, 0 mismatches  |
 | All board types supported (square8, square19, hex8, hexagonal) | ✅     | Geometry contracts in `TOPOLOGY_MODES.md`               |
 | Victory conditions implemented and tested                      | ✅     | Ring elimination, territory control, LPS                |
 | Game end explanation working                                   | ✅     | `gameEndExplanation.ts`, builder tests                  |
@@ -552,9 +552,9 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 | Square8 2P canonical gate verified | ✅     | `db_health.canonical_square8_2p.json` (canonical_ok=true) |
 | Square19 parity verified           | ✅     | Parity gate passed                                        |
 | Hex parity verified                | ✅     | Radius-12 regenerated and gated                           |
-| Parity CI gate passing             | ✅     | Contract vectors 87/87                                    |
+| Parity CI gate passing             | ✅     | Contract vectors 90/90                                    |
 
-Note: parity fixtures count (275) = 233 ai-service parity vector steps + 35 rules-parity JSON fixtures + 7 snapshot parity fixtures.
+Note: parity fixtures count (279) = 233 ai-service parity vector steps + 39 rules-parity JSON fixtures + 7 snapshot parity fixtures.
 
 ---
 
@@ -807,7 +807,7 @@ Based on the current checklist status, the recommended action sequence:
 
 11. ~~**Architectural improvements**~~ ✅ Complete (see `ARCHITECTURAL_IMPROVEMENT_PLAN.md`)
 12. ~~**Test coverage**~~ ✅ All aggregates exceed 80% target
-13. ~~**Parity verification**~~ ✅ 87/87 contract vectors, 275 parity fixtures
+13. ~~**Parity verification**~~ ✅ 90/90 contract vectors, 279 parity fixtures
 
 ---
 

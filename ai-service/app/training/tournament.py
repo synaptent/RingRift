@@ -28,14 +28,15 @@ logger = logging.getLogger(__name__)
 
 # Victory reason categories for statistics tracking.
 # These align with the canonical game engine victory conditions (R172, etc.):
-# - "elimination": Player reached victory_threshold for eliminated rings.
+# - "ring_elimination": Player reached victory_threshold for eliminated rings.
+#   Note: This counts rings YOU eliminated, from any player (including yourself).
 # - "territory": Player reached territory_victory_threshold.
 # - "last_player_standing": R172 LPS victory - sole player with real
 #   actions for three consecutive rounds.
 # - "structural": Global stalemate resolved by tie-breakers.
 # - "unknown": Catch-all for edge cases.
 VICTORY_REASONS = [
-    "elimination",
+    "ring_elimination",
     "territory",
     "last_player_standing",
     "structural",
@@ -66,10 +67,11 @@ def infer_victory_reason(game_state: GameState) -> str:
         return "unknown"
 
     # Check ring elimination victory.
+    # Note: eliminated_rings counts rings YOU eliminated (from any player, including yourself).
     elim_rings = game_state.board.eliminated_rings
     eliminated_for_winner = elim_rings.get(str(winner), 0)
     if eliminated_for_winner >= game_state.victory_threshold:
-        return "elimination"
+        return "ring_elimination"
 
     # Check territory victory.
     territory_counts: dict[int, int] = {}

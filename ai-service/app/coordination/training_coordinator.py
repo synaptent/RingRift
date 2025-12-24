@@ -81,6 +81,17 @@ except ImportError:
     HAS_COORDINATOR_REGISTRY = False
     register_coordinator = None  # type: ignore
 
+# Cluster event integration (December 2025)
+# Subscribe to cluster health events for training decisions
+try:
+    from app.distributed.data_events import DataEventType, EventBus, get_event_bus
+    HAS_CLUSTER_EVENTS = True
+except ImportError:
+    HAS_CLUSTER_EVENTS = False
+    DataEventType = None  # type: ignore
+    EventBus = None  # type: ignore
+    get_event_bus = None  # type: ignore
+
 # NFS path for cluster-wide coordination (Lambda GH200 nodes)
 NFS_COORDINATION_PATH = Path("/lambda/nfs/RingRift/coordination")
 LOCAL_COORDINATION_PATH = DATA_DIR / "coordination"
@@ -176,6 +187,11 @@ class TrainingCoordinator:
         self._node_name = socket.gethostname()
         self._node_ip = self._get_node_ip()
         self._init_db()
+
+        # Cluster health state (December 2025 - feedback loop integration)
+        self._cluster_healthy = True
+        self._cluster_capacity = 1.0  # 0.0-1.0, affects training decisions
+        self._subscribe_to_cluster_events()
 
     def _get_db_path(self) -> Path:
         """Determine the best database path."""

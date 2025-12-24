@@ -748,8 +748,9 @@ from app.coordination.transfer_verification import (
     verify_transfer,
 )
 
-# Unified Event Coordinator (December 2025 - bridges all event systems)
-from app.coordination.unified_event_coordinator import (
+# Unified Event Coordinator (December 2025 - now consolidated into event_router)
+# Note: unified_event_coordinator.py is archived; event_router.py provides the unified API
+from app.coordination.event_router import (
     CoordinatorStats as EventCoordinatorStats,
     UnifiedEventCoordinator,
     get_coordinator_stats as get_event_coordinator_stats,

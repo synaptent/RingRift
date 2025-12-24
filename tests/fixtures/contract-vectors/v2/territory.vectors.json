@@ -1,7 +1,7 @@
 {
   "version": "v2",
   "generated": "2025-12-02T00:00:00.000Z",
-  "count": 17,
+  "count": 18,
   "categories": ["territory"],
   "description": "Test vectors for territory scenarios",
   "vectors": [
@@ -2518,6 +2518,107 @@
           "player1EliminatedRings": 7,
           "player1TerritorySpaces": 6,
           "player2EliminatedRings": 0
+        }
+      }
+    },
+    {
+      "id": "territory.movement.no_disconnection.hex8",
+      "version": "v2",
+      "category": "territory",
+      "description": "Hex8 movement that does not create a territory disconnection",
+      "tags": ["territory", "movement", "hex8"],
+      "source": "manual",
+      "createdAt": "2025-12-24T00:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-territory-hex8-001",
+          "board": {
+            "type": "hex8",
+            "size": 9,
+            "stacks": {
+              "0,0,0": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "2,-1,-1": {
+                "position": {
+                  "x": 2,
+                  "y": -1,
+                  "z": -1
+                },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": {
+              "1": 0,
+              "2": 0
+            }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 18,
+          "territoryVictoryThreshold": 31
+        },
+        "move": {
+          "id": "move-hex8-401",
+          "type": "move_stack",
+          "player": 1,
+          "from": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "to": {
+            "x": 0,
+            "y": 1,
+            "z": -1
+          },
+          "timestamp": "2025-12-24T00:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 2,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "sInvariantDelta": 1
         }
       }
     }

@@ -1,7 +1,7 @@
 {
   "version": "v2",
   "generated": "2025-11-26T04:00:00.000Z",
-  "count": 2,
+  "count": 3,
   "categories": ["line_detection"],
   "description": "Test vectors for line detection and processing scenarios",
   "vectors": [
@@ -184,6 +184,121 @@
           "markerCount": 2,
           "collapsedCount": 0,
           "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "line.hex8.four_marker_line",
+      "version": "v2",
+      "category": "line_detection",
+      "description": "Hex8 movement completes a 4-marker line along a hex axis",
+      "tags": ["line_detection", "movement", "hex8"],
+      "source": "manual",
+      "createdAt": "2025-12-24T00:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-line-hex8-001",
+          "board": {
+            "type": "hex8",
+            "size": 9,
+            "stacks": {
+              "0,0,0": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {
+              "1,-1,0": {
+                "position": {
+                  "x": 1,
+                  "y": -1,
+                  "z": 0
+                },
+                "player": 1,
+                "type": "regular"
+              },
+              "2,-2,0": {
+                "position": {
+                  "x": 2,
+                  "y": -2,
+                  "z": 0
+                },
+                "player": 1,
+                "type": "regular"
+              },
+              "3,-3,0": {
+                "position": {
+                  "x": 3,
+                  "y": -3,
+                  "z": 0
+                },
+                "player": 1,
+                "type": "regular"
+              }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": {
+              "1": 0,
+              "2": 0
+            }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 18,
+          "territoryVictoryThreshold": 31
+        },
+        "move": {
+          "id": "move-hex8-301",
+          "type": "move_stack",
+          "player": 1,
+          "from": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "to": {
+            "x": 0,
+            "y": 1,
+            "z": -1
+          },
+          "timestamp": "2025-12-24T00:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "awaiting_decision",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "line_processing",
+          "gameStatus": "active",
+          "pendingDecisionType": "select_line_to_process"
         }
       }
     }

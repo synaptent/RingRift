@@ -180,18 +180,45 @@ class SelfplayRunner(ABC):
                 logger.warning(f"Callback error: {e}")
 
     def _emit_orchestrator_event(self) -> None:
-        """Emit completion event to selfplay orchestrator if available."""
+        """Emit SELFPLAY_COMPLETE event to trigger downstream pipeline stages.
+
+        This enables automatic export triggering when selfplay completes.
+        """
         try:
-            from ..coordination.event_emitters import emit_event
-            emit_event("SELFPLAY_BATCH_COMPLETE", {
-                "games": self.stats.games_completed,
-                "samples": self.stats.total_samples,
-                "board_type": self.config.board_type,
-                "num_players": self.config.num_players,
-                "throughput": self.stats.games_per_second,
-            })
+            import asyncio
+            from ..coordination.event_emitters import emit_selfplay_complete
+
+            config_key = f"{self.config.board_type}_{self.config.num_players}p"
+
+            async def _emit():
+                await emit_selfplay_complete(
+                    task_id=config_key,
+                    board_type=self.config.board_type,
+                    num_players=self.config.num_players,
+                    games_generated=self.stats.games_completed,
+                    success=self.stats.games_failed == 0,
+                    duration_seconds=self.stats.elapsed_seconds,
+                    selfplay_type="standard",
+                    samples_generated=self.stats.total_samples,
+                    throughput=self.stats.games_per_second,
+                )
+
+            # Run async emission - use existing loop or create new one
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_emit())
+            except RuntimeError:
+                # No running loop - run synchronously
+                asyncio.run(_emit())
+
+            logger.info(
+                f"[Event] Emitted SELFPLAY_COMPLETE: {config_key}, "
+                f"{self.stats.games_completed} games, {self.stats.total_samples} samples"
+            )
         except ImportError:
             pass  # Event system not available
+        except Exception as e:
+            logger.warning(f"Failed to emit selfplay event: {e}")
 
     def get_temperature(self, move_number: int) -> float:
         """Get temperature for move selection based on scheduling."""

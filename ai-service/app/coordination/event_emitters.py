@@ -559,6 +559,63 @@ async def emit_promotion_complete(
 
 
 # =============================================================================
+# Export Events
+# =============================================================================
+
+async def emit_npz_export_complete(
+    board_type: str,
+    num_players: int,
+    samples_exported: int,
+    games_exported: int,
+    output_path: str,
+    success: bool = True,
+    duration_seconds: float = 0.0,
+    **metadata,
+) -> bool:
+    """Emit NPZ_EXPORT_COMPLETE event to trigger training.
+
+    This event enables automatic training triggering when export completes.
+
+    Args:
+        board_type: Board type exported
+        num_players: Number of players
+        samples_exported: Number of training samples exported
+        games_exported: Number of games exported
+        output_path: Path to the NPZ file
+        success: Whether export succeeded
+        duration_seconds: Duration of export
+        **metadata: Additional metadata (feature_version, encoder, etc.)
+
+    Returns:
+        True if emitted successfully
+    """
+    if not HAS_STAGE_EVENTS:
+        return False
+
+    config_key = f"{board_type}_{num_players}p"
+
+    result = StageCompletionResult(
+        event=StageEvent.NPZ_EXPORT_COMPLETE,
+        success=success,
+        iteration=0,
+        timestamp=_get_timestamp(),
+        board_type=board_type,
+        num_players=num_players,
+        games_generated=games_exported,
+        metadata={
+            "config_key": config_key,
+            "samples_exported": samples_exported,
+            "games_exported": games_exported,
+            "output_path": output_path,
+            "duration_seconds": duration_seconds,
+            **metadata,
+        },
+    )
+
+    return await _emit_stage_event(StageEvent.NPZ_EXPORT_COMPLETE, result)
+
+
+# =============================================================================
 # Sync Events
 # =============================================================================
 

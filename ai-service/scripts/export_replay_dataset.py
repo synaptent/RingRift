@@ -1305,6 +1305,46 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"[CACHE] Recorded export: {samples_exported} samples")
 
+    # Emit NPZ_EXPORT_COMPLETE event to trigger training
+    try:
+        import asyncio
+        from app.coordination.event_emitters import emit_npz_export_complete
+
+        # Read sample count from output file if not already done
+        if not args.use_cache:
+            samples_exported = 0
+            try:
+                with np.load(args.output, allow_pickle=True) as data:
+                    if "values" in data:
+                        samples_exported = len(data["values"])
+            except Exception:
+                pass
+
+        async def _emit():
+            await emit_npz_export_complete(
+                board_type=args.board_type,
+                num_players=args.num_players,
+                samples_exported=samples_exported,
+                games_exported=games_exported if 'games_exported' in dir() else 0,
+                output_path=args.output,
+                success=True,
+                feature_version=args.feature_version,
+                encoder_version=args.encoder_version,
+            )
+
+        # Run async emission
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_emit())
+        except RuntimeError:
+            asyncio.run(_emit())
+
+        print(f"[Event] Emitted NPZ_EXPORT_COMPLETE: {args.board_type}_{args.num_players}p, {samples_exported} samples")
+    except ImportError:
+        pass  # Event system not available
+    except Exception as e:
+        print(f"[Warning] Failed to emit export event: {e}")
+
     return 0
 
 

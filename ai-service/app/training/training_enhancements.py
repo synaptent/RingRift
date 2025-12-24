@@ -39,6 +39,7 @@ import copy
 import logging
 import math
 import time
+import warnings
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -736,8 +737,23 @@ class GameQualityScore:
 
 
 class DataQualityScorer:
-    """
-    Scores training data quality for sample prioritization.
+    """Scores training data quality for sample prioritization.
+
+    .. deprecated:: December 2025
+        Use ``UnifiedQualityScorer`` from ``app.quality.unified_quality``
+        instead. This class is retained for backwards compatibility but
+        delegates to the unified scorer for consistency.
+
+        Migration:
+            # Old
+            from app.training.training_enhancements import DataQualityScorer
+            scorer = DataQualityScorer()
+            freshness = scorer.compute_freshness_score(timestamp)
+
+            # New
+            from app.quality.unified_quality import get_quality_scorer
+            scorer = get_quality_scorer()
+            freshness = scorer.compute_freshness_score(timestamp)
 
     Higher quality games get higher sampling weights during training.
 
@@ -771,6 +787,12 @@ class DataQualityScorer:
             freshness_decay_hours: Half-life for freshness decay (default 24h)
             freshness_weight: Weight of freshness in total score (default 0.2)
         """
+        warnings.warn(
+            "DataQualityScorer is deprecated. Use UnifiedQualityScorer from "
+            "app.quality.unified_quality instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.min_game_length = min_game_length
         self.max_game_length = max_game_length
         self.optimal_game_length = optimal_game_length

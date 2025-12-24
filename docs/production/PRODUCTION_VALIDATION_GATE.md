@@ -38,7 +38,7 @@ Complete these validation steps before any deployment.
 | ------------------------- | ---------------------------------- | ------ | ------------------------ |
 | Unit tests passing        | `npm test`                         | [ ]    | 2,987+ TS tests expected |
 | Core profile passing      | `npm run test:core`                | [ ]    | Fast PR gate profile     |
-| Contract tests passing    | `npm run test:orchestrator-parity` | [ ]    | 87 contract vectors      |
+| Contract tests passing    | `npm run test:orchestrator-parity` | [ ]    | 90 contract vectors      |
 | Integration tests passing | `npm run test:integration`         | [ ]    | API and WebSocket tests  |
 | E2E tests passing         | `npm run test:e2e`                 | [ ]    | Playwright suite         |
 

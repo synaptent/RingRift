@@ -207,7 +207,11 @@ class UnifiedEventRouter:
         # Run async dispatch in sync context
         try:
             asyncio.get_running_loop()
-            asyncio.create_task(self._dispatch(router_event, exclude_origin=True))
+            task = asyncio.create_task(
+                self._dispatch(router_event, exclude_origin=True)
+            )
+            # Add error callback to prevent silent failures (December 2025 hardening)
+            task.add_done_callback(self._handle_dispatch_task_error)
         except RuntimeError:
             # No running loop - use sync dispatch
             self._dispatch_sync(router_event, exclude_origin=True)
@@ -431,6 +435,28 @@ class UnifiedEventRouter:
             except Exception as e:
                 logger.error(f"[EventRouter] Callback error for {event.event_type}: {e}")
 
+    def _handle_dispatch_task_error(self, task: asyncio.Task) -> None:
+        """Handle errors from async dispatch tasks (December 2025 hardening).
+
+        This callback ensures that exceptions from fire-and-forget tasks are
+        logged instead of being silently dropped.
+        """
+        try:
+            exc = task.exception()
+            if exc is not None:
+                logger.error(
+                    f"[EventRouter] Async dispatch task failed: {exc}",
+                    exc_info=exc,
+                )
+                # Track failed dispatches
+                self._events_routed["__dispatch_failures__"] = (
+                    self._events_routed.get("__dispatch_failures__", 0) + 1
+                )
+        except asyncio.CancelledError:
+            pass  # Task was cancelled, not an error
+        except asyncio.InvalidStateError:
+            pass  # Task hasn't completed yet (shouldn't happen in done callback)
+
     def subscribe(
         self,
         event_type: str | DataEventType | StageEvent | None,
@@ -475,6 +501,21 @@ class UnifiedEventRouter:
                 self._subscribers[event_type_str].remove(callback)
                 return True
         return False
+
+    def register_handler(
+        self,
+        event_type: str,
+        handler: EventCallback,
+    ) -> None:
+        """Register a handler for an event type (alias for subscribe).
+
+        This method provides backwards compatibility with UnifiedEventCoordinator.
+
+        Args:
+            event_type: Event type string
+            handler: Callback function to handle the event
+        """
+        self.subscribe(event_type, handler)
 
     def get_history(
         self,
@@ -614,6 +655,22 @@ __all__ = [
     "cp_publish",
     "reset_cross_process_queue",
     "subscribe_process",
+    # Backward compatibility aliases for unified_event_coordinator.py
+    "CoordinatorStats",
+    "UnifiedEventCoordinator",
+    "emit_evaluation_completed",
+    "emit_model_promoted",
+    "emit_selfplay_batch_completed",
+    "emit_sync_completed",
+    "emit_training_completed",
+    "emit_training_completed_sync",
+    "emit_training_failed",
+    "emit_training_started",
+    "emit_training_started_sync",
+    "get_coordinator_stats",
+    "get_event_coordinator",
+    "start_coordinator",
+    "stop_coordinator",
 ]
 
 
@@ -624,3 +681,246 @@ def get_event_bus():
     if HAS_DATA_EVENTS:
         return get_data_event_bus()
     return None
+
+
+# =============================================================================
+# Backward Compatibility Layer for unified_event_coordinator.py
+# These aliases allow code that imported from unified_event_coordinator to
+# work with the consolidated event_router instead.
+# =============================================================================
+
+@dataclass
+class CoordinatorStats:
+    """Statistics for the event coordinator (backwards-compatible alias)."""
+    events_bridged_data_to_cross: int = 0
+    events_bridged_stage_to_cross: int = 0
+    events_bridged_cross_to_data: int = 0
+    events_dropped: int = 0
+    last_bridge_time: str | None = None
+    errors: list[str] = field(default_factory=list)
+    start_time: str | None = None
+    is_running: bool = False
+
+
+# Alias for unified_event_coordinator.UnifiedEventCoordinator
+UnifiedEventCoordinator = UnifiedEventRouter
+
+
+def get_event_coordinator() -> UnifiedEventRouter:
+    """Get the event coordinator (alias for get_router).
+
+    This provides backwards compatibility for code using unified_event_coordinator.
+    """
+    return get_router()
+
+
+async def start_coordinator() -> bool:
+    """Start the event coordinator.
+
+    Returns True (the router auto-starts on instantiation).
+    """
+    get_router()  # Ensure router is created
+    return True
+
+
+async def stop_coordinator() -> None:
+    """Stop the event coordinator."""
+    router = get_router()
+    router.stop()
+
+
+def get_coordinator_stats() -> CoordinatorStats:
+    """Get coordinator statistics (mapped from router stats)."""
+    router = get_router()
+    stats = router.get_stats()
+
+    # Map router stats to coordinator stats format
+    return CoordinatorStats(
+        events_bridged_data_to_cross=stats.get("events_by_source", {}).get("data_bus", 0),
+        events_bridged_stage_to_cross=stats.get("events_by_source", {}).get("stage_bus", 0),
+        events_bridged_cross_to_data=stats.get("events_by_source", {}).get("cross_process", 0),
+        events_dropped=0,
+        last_bridge_time=None,
+        errors=[],
+        start_time=None,
+        is_running=stats.get("cross_process_polling", False),
+    )
+
+
+# =============================================================================
+# Simple Event Emitters (migrated from unified_event_coordinator.py)
+# Use these functions to emit events from anywhere in the codebase.
+# =============================================================================
+
+async def emit_training_started(
+    config_key: str,
+    node_name: str = "",
+    **extra_payload
+) -> None:
+    """Emit TRAINING_STARTED event to all systems."""
+    await publish(
+        event_type="TRAINING_STARTED",
+        payload={
+            "config_key": config_key,
+            "node_name": node_name,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="training",
+    )
+
+
+async def emit_training_completed(
+    config_key: str,
+    model_id: str,
+    val_loss: float = 0.0,
+    epochs: int = 0,
+    **extra_payload
+) -> None:
+    """Emit TRAINING_COMPLETED event to all systems."""
+    await publish(
+        event_type="TRAINING_COMPLETED",
+        payload={
+            "config_key": config_key,
+            "model_id": model_id,
+            "val_loss": val_loss,
+            "epochs": epochs,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="training",
+    )
+
+
+async def emit_training_failed(
+    config_key: str,
+    error: str,
+    **extra_payload
+) -> None:
+    """Emit TRAINING_FAILED event to all systems."""
+    await publish(
+        event_type="TRAINING_FAILED",
+        payload={
+            "config_key": config_key,
+            "error": error,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="training",
+    )
+
+
+async def emit_evaluation_completed(
+    model_id: str,
+    elo: float,
+    win_rate: float = 0.0,
+    games_played: int = 0,
+    **extra_payload
+) -> None:
+    """Emit EVALUATION_COMPLETED event to all systems."""
+    await publish(
+        event_type="EVALUATION_COMPLETED",
+        payload={
+            "model_id": model_id,
+            "elo": elo,
+            "win_rate": win_rate,
+            "games_played": games_played,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="evaluation",
+    )
+
+
+async def emit_sync_completed(
+    sync_type: str,
+    files_synced: int = 0,
+    bytes_transferred: int = 0,
+    **extra_payload
+) -> None:
+    """Emit DATA_SYNC_COMPLETED event to all systems."""
+    await publish(
+        event_type="DATA_SYNC_COMPLETED",
+        payload={
+            "sync_type": sync_type,
+            "files_synced": files_synced,
+            "bytes_transferred": bytes_transferred,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="sync",
+    )
+
+
+async def emit_model_promoted(
+    model_id: str,
+    tier: str = "production",
+    elo: float = 0.0,
+    **extra_payload
+) -> None:
+    """Emit MODEL_PROMOTED event to all systems."""
+    await publish(
+        event_type="MODEL_PROMOTED",
+        payload={
+            "model_id": model_id,
+            "tier": tier,
+            "elo": elo,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="promotion",
+    )
+
+
+async def emit_selfplay_batch_completed(
+    config_key: str,
+    games_generated: int,
+    duration_seconds: float = 0.0,
+    **extra_payload
+) -> None:
+    """Emit SELFPLAY_BATCH_COMPLETE event to all systems."""
+    await publish(
+        event_type="SELFPLAY_BATCH_COMPLETE",
+        payload={
+            "config_key": config_key,
+            "games_generated": games_generated,
+            "duration_seconds": duration_seconds,
+            "timestamp": datetime.now().isoformat(),
+            **extra_payload,
+        },
+        source="selfplay",
+    )
+
+
+def emit_training_started_sync(
+    config_key: str,
+    node_name: str = "",
+    **extra_payload
+) -> None:
+    """Sync version of emit_training_started for non-async contexts."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(emit_training_started(config_key, node_name, **extra_payload))
+        else:
+            loop.run_until_complete(emit_training_started(config_key, node_name, **extra_payload))
+    except RuntimeError:
+        asyncio.run(emit_training_started(config_key, node_name, **extra_payload))
+
+
+def emit_training_completed_sync(
+    config_key: str,
+    model_id: str,
+    val_loss: float = 0.0,
+    epochs: int = 0,
+    **extra_payload
+) -> None:
+    """Sync version of emit_training_completed."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))
+        else:
+            loop.run_until_complete(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))
+    except RuntimeError:
+        asyncio.run(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))

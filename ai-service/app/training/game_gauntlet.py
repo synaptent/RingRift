@@ -391,6 +391,64 @@ def play_single_game(
     )
 
 
+def _emit_gauntlet_result_event(
+    config_key: str,
+    elo: float,
+    win_rate: float,
+    games: int,
+) -> None:
+    """Emit EVALUATION_COMPLETED event to close eval→curriculum feedback loop.
+
+    This function emits an event that curriculum_feedback.py's
+    TournamentToCurriculumWatcher can consume to adjust training weights.
+
+    Args:
+        config_key: Configuration key (e.g., "square8_2p")
+        elo: Estimated Elo rating
+        win_rate: Overall win rate (0.0-1.0)
+        games: Total games played
+    """
+    import asyncio
+
+    try:
+        from app.distributed.event_helpers import emit_evaluation_completed_safe
+
+        # Try to emit in async context, otherwise schedule
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(
+                emit_evaluation_completed_safe(
+                    config=config_key,
+                    elo=elo,
+                    games=games,
+                    win_rate=win_rate,
+                    source="game_gauntlet",
+                )
+            )
+            logger.debug(
+                f"[gauntlet] Emitted EVALUATION_COMPLETED for {config_key}: "
+                f"elo={elo:.0f}, win_rate={win_rate:.1%}"
+            )
+        except RuntimeError:
+            # No running loop - try to run synchronously
+            try:
+                asyncio.run(
+                    emit_evaluation_completed_safe(
+                        config=config_key,
+                        elo=elo,
+                        games=games,
+                        win_rate=win_rate,
+                        source="game_gauntlet",
+                    )
+                )
+            except Exception as e:
+                logger.debug(f"[gauntlet] Could not emit event (no async context): {e}")
+    except ImportError:
+        logger.debug("[gauntlet] Event helpers not available, skipping event emission")
+    except Exception as e:
+        logger.warning(f"[gauntlet] Failed to emit EVALUATION_COMPLETED: {e}")
+
+
 def run_baseline_gauntlet(
     model_path: str | Path | None = None,
     board_type: Any = None,  # BoardType
@@ -532,6 +590,15 @@ def run_baseline_gauntlet(
 
     # Estimate Elo from win rates
     result.estimated_elo = _estimate_elo_from_results(result.opponent_results)
+
+    # Emit EVALUATION_COMPLETED event for curriculum feedback (December 2025)
+    # This closes the eval→curriculum feedback loop
+    _emit_gauntlet_result_event(
+        config_key=f"{board_type.value}_{num_players}p",
+        elo=result.estimated_elo,
+        win_rate=result.win_rate,
+        games=result.total_games,
+    )
 
     return result
 

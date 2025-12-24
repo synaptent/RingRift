@@ -643,7 +643,7 @@ class EventDrivenMonitorMixin:
             True if subscription succeeded
         """
         try:
-            from app.coordination.unified_event_coordinator import get_event_coordinator
+            from app.coordination.event_router import get_event_coordinator
 
             coordinator = get_event_coordinator()
             for event_type in event_types:

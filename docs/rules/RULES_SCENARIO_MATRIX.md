@@ -17,7 +17,7 @@
 >
 > **Coverage legend:** ✅ = covered, ⚠ = partial/fragile, ⏳ = pending/unimplemented. Use this to spot gaps quickly when adding scenarios.
 >
-> **Board coverage note:** Scenario rows currently focus on `square8`, `square19`, and `hexagonal`. Hex8 support exists in the engine/UI with basic contract vectors and snapshot parity coverage; broader hex8 scenario slices are still pending.
+> **Board coverage note:** Scenario rows currently focus on `square8`, `square19`, and `hexagonal`. Hex8 support exists in the engine/UI with placement/movement + capture/line/territory contract vectors, v2 rules-parity fixtures, and snapshot parity coverage; broader hex8 scenario slices (deep chain/FE) remain pending.
 
 ---
 

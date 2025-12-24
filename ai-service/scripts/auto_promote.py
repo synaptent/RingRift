@@ -47,6 +47,20 @@ from app.config.thresholds import (
     MIN_WIN_RATE_VS_HEURISTIC,
 )
 
+# Import PromotionController for unified promotion logic (December 2025)
+try:
+    from app.training.promotion_controller import (
+        PromotionController,
+        PromotionType,
+        PromotionDecision,
+        PromotionCriteria,
+    )
+    HAS_PROMOTION_CONTROLLER = True
+except ImportError:
+    HAS_PROMOTION_CONTROLLER = False
+    PromotionController = None
+    PromotionType = None
+
 DEFAULT_DB = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 PRODUCTION_DIR = AI_SERVICE_ROOT / "models" / "production"
 PROMOTION_LOG = AI_SERVICE_ROOT / "data" / ".promotion_history.json"
@@ -196,41 +210,143 @@ def promote_model(model_id: str, rating: float, dry_run: bool = False) -> bool:
 
 
 def run_promotion(db_path: Path, dry_run: bool = False) -> list[str]:
-    """Run promotion check and promote eligible models."""
+    """Run promotion check and promote eligible models.
+
+    Uses PromotionController when available for unified promotion logic,
+    with fallback to direct database checks.
+    """
     history = load_promotion_history()
     promoted_ids = set(history.get("promoted", []))
-    
+
+    # Try to use PromotionController for unified logic (December 2025)
+    if HAS_PROMOTION_CONTROLLER:
+        return _run_promotion_via_controller(db_path, dry_run, promoted_ids, history)
+
+    # Fallback to direct database checks
+    return _run_promotion_direct(db_path, dry_run, promoted_ids, history)
+
+
+def _run_promotion_via_controller(
+    db_path: Path,
+    dry_run: bool,
+    promoted_ids: set,
+    history: dict,
+) -> list[str]:
+    """Run promotion using PromotionController.
+
+    Delegates to the controller for evaluation and execution,
+    providing unified criteria and event emission.
+    """
     candidates = get_production_candidates(db_path)
     newly_promoted = []
-    
+    controller = PromotionController()
+
     for candidate in candidates:
         model_id = candidate["model_id"]
-        
+
         if model_id in promoted_ids:
             continue
-        
+
+        # Parse board type and players from model_id
+        board_type, num_players = _parse_config_from_model_id(model_id)
+
+        # Use controller to evaluate
+        decision = controller.evaluate_promotion(
+            model_id=model_id,
+            board_type=board_type,
+            num_players=num_players,
+            promotion_type=PromotionType.PRODUCTION,
+        )
+
+        print(f"\nEvaluating: {model_id}")
+        print(f"  ELO: {candidate['rating']:.1f}")
+        print(f"  Games: {candidate['games']}")
+        print(f"  Decision: {'PROMOTE' if decision.should_promote else 'SKIP'}")
+        print(f"  Reason: {decision.reason}")
+
+        if decision.should_promote:
+            # Use local promotion logic for file operations
+            # (controller doesn't know about our file layout)
+            if promote_model(model_id, candidate["rating"], dry_run):
+                if not dry_run:
+                    promoted_ids.add(model_id)
+                    newly_promoted.append(model_id)
+
+                    send_notification(
+                        f"Model `{model_id}` promoted to production!\n"
+                        f"  ELO: {candidate['rating']:.1f}\n"
+                        f"  Games: {candidate['games']}\n"
+                        f"  Via: PromotionController",
+                        "success"
+                    )
+
+    if not dry_run:
+        history["promoted"] = list(promoted_ids)
+        history["last_check"] = datetime.now().isoformat()
+        save_promotion_history(history)
+
+    return newly_promoted
+
+
+def _run_promotion_direct(
+    db_path: Path,
+    dry_run: bool,
+    promoted_ids: set,
+    history: dict,
+) -> list[str]:
+    """Run promotion using direct database checks (legacy fallback)."""
+    candidates = get_production_candidates(db_path)
+    newly_promoted = []
+
+    for candidate in candidates:
+        model_id = candidate["model_id"]
+
+        if model_id in promoted_ids:
+            continue
+
         print(f"\nPromoting: {model_id}")
         print(f"  ELO: {candidate['rating']:.1f}")
         print(f"  Games: {candidate['games']}")
-        
+
         if promote_model(model_id, candidate["rating"], dry_run):
             if not dry_run:
                 promoted_ids.add(model_id)
                 newly_promoted.append(model_id)
-                
+
                 send_notification(
                     f"Model `{model_id}` promoted to production!\n"
                     f"  ELO: {candidate['rating']:.1f}\n"
                     f"  Games: {candidate['games']}",
                     "success"
                 )
-    
+
     if not dry_run:
         history["promoted"] = list(promoted_ids)
         history["last_check"] = datetime.now().isoformat()
         save_promotion_history(history)
-    
+
     return newly_promoted
+
+
+def _parse_config_from_model_id(model_id: str) -> tuple[str, int]:
+    """Parse board type and player count from model ID.
+
+    Args:
+        model_id: Model identifier (e.g., "square8_2p_v42", "hex8:policy:v3")
+
+    Returns:
+        Tuple of (board_type, num_players)
+    """
+    # Common config patterns
+    for board in ["square8", "square19", "hex8", "hexagonal"]:
+        if board in model_id.lower():
+            for players in [2, 3, 4]:
+                if f"{players}p" in model_id.lower():
+                    return board, players
+            return board, 2  # Default to 2 players
+
+    # Fallback
+    return "square8", 2
 
 
 # =============================================================================

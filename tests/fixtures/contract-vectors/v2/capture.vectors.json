@@ -1,7 +1,7 @@
 {
   "version": "v2",
   "generated": "2025-11-26T04:00:00.000Z",
-  "count": 2,
+  "count": 3,
   "categories": ["capture"],
   "description": "Test vectors for overtaking capture moves",
   "vectors": [
@@ -192,6 +192,112 @@
           "timestamp": "2025-11-26T04:00:00.000Z",
           "thinkTime": 0,
           "moveNumber": 3
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "capture.overtaking.simple.hex8",
+      "version": "v2",
+      "category": "capture",
+      "description": "Simple overtaking capture on hex8 along a hex axis",
+      "tags": ["smoke", "capture", "overtaking", "hex8"],
+      "source": "manual",
+      "createdAt": "2025-12-24T00:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-capture-hex8-001",
+          "board": {
+            "type": "hex8",
+            "size": 9,
+            "stacks": {
+              "0,0,0": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "rings": [1, 1],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              },
+              "1,-1,0": {
+                "position": {
+                  "x": 1,
+                  "y": -1,
+                  "z": 0
+                },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": {
+              "1": 0,
+              "2": 0
+            }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 16,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 18,
+          "territoryVictoryThreshold": 31
+        },
+        "move": {
+          "id": "move-hex8-201",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "captureTarget": {
+            "x": 1,
+            "y": -1,
+            "z": 0
+          },
+          "to": {
+            "x": 2,
+            "y": -2,
+            "z": 0
+          },
+          "timestamp": "2025-12-24T00:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
         }
       },
       "expectedOutput": {

@@ -155,7 +155,7 @@ For each family we target:
 
 - **Hex**:
   - `hexagonal` – at least one sequence per family where geometry is critical.
-  - `hex8` – small hex board for fast parity slices (basic placement/movement vectors now included; extended families pending).
+  - `hex8` – small hex board for fast parity slices (placement/movement + capture/line/territory vectors now included; extended families pending).
 
 This design does **not** cover every Cartesian product of {family} × {board type}, but for each family we ensure **at least one** sequence on each relevant board type.
 

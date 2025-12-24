@@ -676,7 +676,7 @@ The extended vectors are organised into four primary **families**:
 - `square8`: simple, visual scenarios and smoke-level coverage.
 - `square19`: high-distance geometry and richer line/territory interactions.
 - `hexagonal`: explicit exercise of cube-coordinate movement, capture, and region detection.
-- `hex8`: basic placement/movement vectors are now included; extended families remain pending.
+- `hex8`: placement/movement + capture/line/territory vectors and v2 rules-parity fixtures are now included; extended chain/forced-elimination families remain pending.
 
 ### 8.3 Schema and assertion conventions
 

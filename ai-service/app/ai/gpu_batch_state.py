@@ -1097,7 +1097,7 @@ class BatchGameState:
 
         Returns:
             Tuple of (victory_type, tiebreaker_used) where:
-            - victory_type: "territory", "elimination", "line", "stalemate", "lps", etc.
+            - victory_type: "territory", "ring_elimination", "line", "stalemate", "lps", etc.
             - tiebreaker_used: "territory", "eliminations", "markers", etc. or None
         """
         from app.models import BoardType
@@ -1128,9 +1128,10 @@ class BatchGameState:
         if self.territory_count[game_idx, winner].item() >= territory_threshold:
             return "territory", None
 
-        # Check elimination victory
+        # Check ring elimination victory
+        # Note: rings_caused_eliminated counts rings YOU eliminated (from any player, including yourself)
         if self.rings_caused_eliminated[game_idx, winner].item() >= elim_threshold:
-            return "elimination", None
+            return "ring_elimination", None
 
         # Check if stalemate (move count at max)
         if self.move_count[game_idx].item() >= max_moves:
@@ -1276,9 +1277,9 @@ class BatchGameState:
                 tiebreakers.append(None)
                 continue
 
-            # Check elimination victory
+            # Check ring elimination victory
             if elims_cpu[g, winner] >= elim_threshold:
-                victory_types.append("elimination")
+                victory_types.append("ring_elimination")
                 tiebreakers.append(None)
                 continue
 

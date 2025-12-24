@@ -378,6 +378,8 @@ During consolidation, these unique features MUST be preserved:
 ### Long-term (ongoing)
 
 - [x] Event system consolidation (Dec 2025) - Created EVENT_GUIDE.md documenting three-tier architecture - EventBus (core), StageEventBus (pipeline), CrossProcessEventQueue (IPC) - Centralized mappings in event_mappings.py - UnifiedEventCoordinator bridges all buses
+- [x] Quality scoring consolidation (Dec 2025) - UnifiedQualityScorer (app/quality/unified_quality.py) is SSoT - Added compute_freshness_score() for backwards compatibility - Deprecated: DataQualityScorer (training_enhancements.py), GameQualityScorer (scripts/lib/data_quality.py)
+- [x] Event system hardening (Dec 2025) - Fixed fire-and-forget asyncio.create_task in event_router.py with error callbacks - Fixed silent print() statements in cross_process_events.py with proper logger.error() - Added dispatch failure tracking metrics
 - [ ] Remove deprecated code
 - [ ] Documentation updates
 
@@ -385,13 +387,14 @@ During consolidation, these unique features MUST be preserved:
 
 ## Metrics for Success
 
-| Metric                      | Current | Target      | Status                     |
-| --------------------------- | ------- | ----------- | -------------------------- |
-| Gumbel implementation files | 7       | 4           | GumbelSearchEngine created |
-| Lines in Gumbel modules     | ~5,935  | ~4,000      | ~200 lines saved           |
-| Coordinator/Manager classes | 125+    | 40-50       | Documented, 3 deprecated   |
-| Config dataclasses          | 28      | 1 (unified) | DONE - UnifiedConfig SSoT  |
-| Export modules              | 9+      | 4-5         | Documented, unified CLI    |
+| Metric                      | Current | Target      | Status                      |
+| --------------------------- | ------- | ----------- | --------------------------- |
+| Gumbel implementation files | 7       | 4           | GumbelSearchEngine created  |
+| Lines in Gumbel modules     | ~5,935  | ~4,000      | ~200 lines saved            |
+| Coordinator/Manager classes | 125+    | 40-50       | Documented, 3 deprecated    |
+| Config dataclasses          | 28      | 1 (unified) | DONE - UnifiedConfig SSoT   |
+| Export modules              | 9+      | 4-5         | Documented, unified CLI     |
+| Quality scorers             | 4       | 1 (unified) | DONE - UnifiedQualityScorer |
 
 ---
 
