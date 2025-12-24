@@ -83,30 +83,28 @@ export interface HeuristicWeights {
 
 /**
  * v1 balanced profile, aligned with Python BASE_V1_BALANCED_WEIGHTS.
+ *
+ * Validated 2025-12-24 with 128 games/opponent:
+ * - Aggregate fitness: 0.551 (55.1%)
+ * - Win rates: 53-60% vs all opponent types
  */
 export const HEURISTIC_WEIGHTS_V1_BALANCED: HeuristicWeights = {
   stackControl: 10.0,
   stackHeight: 5.0,
   territory: 8.0,
-  // Softer emphasis on rings in hand; progress comes from on-board play.
-  ringsInHand: 1.0,
+  ringsInHand: 3.0,
   centerControl: 4.0,
-  // Adjacency/influence is currently disabled on both TS and Python sides.
-  // The weight remains in the schema for future influence heuristics but
-  // no evaluation term consumes it.
-  adjacency: 0.0,
+  adjacency: 2.0,
   opponentThreat: 6.0,
   mobility: 4.0,
   eliminatedRings: 12.0,
   linePotential: 7.0,
   victoryProximity: 20.0,
-  // De-emphasise raw marker density; structure comes from territory/lines.
-  markerCount: 0.5,
+  markerCount: 1.5,
   vulnerability: 8.0,
   overtakePotential: 8.0,
-  // Reduce double-counting of structure; markers + connectivity already help.
-  territoryClosure: 7.0,
-  lineConnectivity: 4.0,
+  territoryClosure: 10.0,
+  lineConnectivity: 6.0,
   territorySafety: 5.0,
   stackMobility: 4.0,
   opponentVictoryThreat: 6.0,

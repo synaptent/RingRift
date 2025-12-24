@@ -33,75 +33,70 @@ HeuristicWeights = dict[str, float]
 
 # --- v1 Balanced Base Profile ----------------------------------------------
 #
-# These weights were optimized via iterative CMA-ES on Square8 2-player games
-# (run: square8_2p iter01/gen005, fitness: 67.5% vs previous iteration baseline).
-# Updated 2025-12-09 after recovery action integration (RR-CANON-R110-R115).
+# These weights are the validated production defaults for higher difficulty
+# heuristic AI (D4+). Validated 2025-12-24 with 128 games/opponent:
+# - Aggregate fitness: 0.551 (55.1%)
+# - Win rates: 53-60% vs all opponent types (balanced, aggressive, territorial, defensive)
 #
-# NOTE: Previous weights (95.8% fitness) were pre-recovery-rules and are now stale.
-# Key changes in this iteration:
-# - RINGS_IN_HAND +113%: ring reserves more valuable with recovery mechanics
-# - FORCED_ELIMINATION_RISK +59%: more defensive play
-# - STACK_DIVERSITY_BONUS flipped: now penalizes over-diversification
+# These round-number weights empirically outperform CMA-ES optimized weights
+# (which achieved only 0.464 fitness). The simpler values appear more robust
+# across opponent styles.
 #
 # The *shape* of the profile and the semantic meaning of each key remain
 # stable for compatibility with training pipelines and TS parity.
 
 BASE_V1_BALANCED_WEIGHTS: HeuristicWeights = {
-    "WEIGHT_STACK_CONTROL": 9.39,
-    "WEIGHT_STACK_HEIGHT": 6.81,  # -22% from prev - CMA-ES values height less
-    "WEIGHT_CAP_HEIGHT": 4.82,  # v1.5: Summed cap height (capture power dominance)
-    "WEIGHT_TERRITORY": 8.66,
-    # Ring reserves now critical with recovery mechanics (+113% from prev)
-    "WEIGHT_RINGS_IN_HAND": 5.17,
-    "WEIGHT_CENTER_CONTROL": 2.28,  # Slightly higher than prev
-    # Adjacency slightly reduced
-    "WEIGHT_ADJACENCY": 1.57,
-    "WEIGHT_OPPONENT_THREAT": 6.11,  # +29% - more defensive
-    "WEIGHT_MOBILITY": 5.31,  # +22% - mobility more valued
-    "WEIGHT_ELIMINATED_RINGS": 13.12,  # Slightly higher
-    "WEIGHT_LINE_POTENTIAL": 7.24,
-    "WEIGHT_VICTORY_PROXIMITY": 20.94,
-    # Marker density stable
-    "WEIGHT_MARKER_COUNT": 3.76,
-    "WEIGHT_VULNERABILITY": 9.32,  # Slightly more cautious
-    "WEIGHT_OVERTAKE_POTENTIAL": 5.96,
-    # Territory closure stable
-    "WEIGHT_TERRITORY_CLOSURE": 11.56,
-    "WEIGHT_LINE_CONNECTIVITY": 5.65,
-    "WEIGHT_TERRITORY_SAFETY": 2.83,
-    "WEIGHT_STACK_MOBILITY": 1.11,
+    "WEIGHT_STACK_CONTROL": 10.0,
+    "WEIGHT_STACK_HEIGHT": 5.0,
+    "WEIGHT_CAP_HEIGHT": 6.0,  # v1.5: Summed cap height (capture power dominance)
+    "WEIGHT_TERRITORY": 8.0,
+    "WEIGHT_RINGS_IN_HAND": 3.0,
+    "WEIGHT_CENTER_CONTROL": 4.0,
+    "WEIGHT_ADJACENCY": 2.0,
+    "WEIGHT_OPPONENT_THREAT": 6.0,
+    "WEIGHT_MOBILITY": 4.0,
+    "WEIGHT_ELIMINATED_RINGS": 12.0,
+    "WEIGHT_LINE_POTENTIAL": 7.0,
+    "WEIGHT_VICTORY_PROXIMITY": 20.0,
+    "WEIGHT_MARKER_COUNT": 1.5,
+    "WEIGHT_VULNERABILITY": 8.0,
+    "WEIGHT_OVERTAKE_POTENTIAL": 8.0,
+    "WEIGHT_TERRITORY_CLOSURE": 10.0,
+    "WEIGHT_LINE_CONNECTIVITY": 6.0,
+    "WEIGHT_TERRITORY_SAFETY": 5.0,
+    "WEIGHT_STACK_MOBILITY": 4.0,
     # High-signal heuristic extensions (v1).
-    "WEIGHT_OPPONENT_VICTORY_THREAT": 5.21,  # +17% more defensive
-    "WEIGHT_FORCED_ELIMINATION_RISK": 2.89,  # +59% more risk-aware
-    "WEIGHT_LPS_ACTION_ADVANTAGE": 0.99,  # +36% LPS more important
-    "WEIGHT_MULTI_LEADER_THREAT": 1.03,
+    "WEIGHT_OPPONENT_VICTORY_THREAT": 6.0,
+    "WEIGHT_FORCED_ELIMINATION_RISK": 4.0,
+    "WEIGHT_LPS_ACTION_ADVANTAGE": 2.0,
+    "WEIGHT_MULTI_LEADER_THREAT": 2.0,
     # v1.1 refactor: previously hardcoded penalties/bonuses now configurable
-    "WEIGHT_NO_STACKS_PENALTY": 51.02,
-    "WEIGHT_SINGLE_STACK_PENALTY": 10.53,
-    "WEIGHT_STACK_DIVERSITY_BONUS": -0.74,  # FLIPPED: now penalizes diversity
-    "WEIGHT_SAFE_MOVE_BONUS": 4.53,
-    "WEIGHT_NO_SAFE_MOVES_PENALTY": 3.03,
-    "WEIGHT_VICTORY_THRESHOLD_BONUS": 998.52,
-    "WEIGHT_RINGS_PROXIMITY_FACTOR": 50.75,
-    "WEIGHT_TERRITORY_PROXIMITY_FACTOR": 53.47,
-    "WEIGHT_TWO_IN_ROW": 4.25,
-    "WEIGHT_THREE_IN_ROW": 2.13,
-    "WEIGHT_FOUR_IN_ROW": 4.36,
-    "WEIGHT_CONNECTED_NEIGHBOR": 2.21,
-    "WEIGHT_GAP_POTENTIAL": 0.03,  # Now neutral (was negative)
-    "WEIGHT_BLOCKED_STACK_PENALTY": 4.57,
+    "WEIGHT_NO_STACKS_PENALTY": 50.0,
+    "WEIGHT_SINGLE_STACK_PENALTY": 10.0,
+    "WEIGHT_STACK_DIVERSITY_BONUS": 2.0,
+    "WEIGHT_SAFE_MOVE_BONUS": 1.0,
+    "WEIGHT_NO_SAFE_MOVES_PENALTY": 2.0,
+    "WEIGHT_VICTORY_THRESHOLD_BONUS": 1000.0,
+    "WEIGHT_RINGS_PROXIMITY_FACTOR": 50.0,
+    "WEIGHT_TERRITORY_PROXIMITY_FACTOR": 50.0,
+    "WEIGHT_TWO_IN_ROW": 1.0,
+    "WEIGHT_THREE_IN_ROW": 2.0,
+    "WEIGHT_FOUR_IN_ROW": 5.0,
+    "WEIGHT_CONNECTED_NEIGHBOR": 1.0,
+    "WEIGHT_GAP_POTENTIAL": 0.5,
+    "WEIGHT_BLOCKED_STACK_PENALTY": 5.0,
     # v1.2: Swap (pie rule) opening evaluation - rewards swapping into
     # advantageous P1 openings (center control, strong positions)
-    "WEIGHT_SWAP_OPENING_CENTER": 16.01,    # Bonus per P1 stack in center
-    "WEIGHT_SWAP_OPENING_ADJACENCY": 3.15,  # Bonus for P1 stacks near center
-    "WEIGHT_SWAP_OPENING_HEIGHT": 3.95,     # Bonus per stack height on P1 stacks
+    "WEIGHT_SWAP_OPENING_CENTER": 15.0,     # Bonus per P1 stack in center
+    "WEIGHT_SWAP_OPENING_ADJACENCY": 3.0,   # Bonus for P1 stacks near center
+    "WEIGHT_SWAP_OPENING_HEIGHT": 2.0,      # Bonus per stack height on P1 stacks
     # v1.3: Enhanced swap evaluation - Opening Position Classifier weights
-    "WEIGHT_SWAP_CORNER_PENALTY": 7.94,     # Penalty for corner positions (weak)
-    "WEIGHT_SWAP_EDGE_BONUS": 1.99,         # Bonus for edge positions (moderate)
-    "WEIGHT_SWAP_DIAGONAL_BONUS": 7.73,     # Bonus for key diagonal positions
-    "WEIGHT_SWAP_OPENING_STRENGTH": 18.71,  # Multiplier for normalized strength
+    "WEIGHT_SWAP_CORNER_PENALTY": 8.0,      # Penalty for corner positions (weak)
+    "WEIGHT_SWAP_EDGE_BONUS": 2.0,          # Bonus for edge positions (moderate)
+    "WEIGHT_SWAP_DIAGONAL_BONUS": 6.0,      # Bonus for key diagonal positions
+    "WEIGHT_SWAP_OPENING_STRENGTH": 20.0,   # Multiplier for normalized strength
     # v1.4: Training diversity - Swap decision randomness
-    "WEIGHT_SWAP_EXPLORATION_TEMPERATURE": -0.83,  # More deterministic swaps
+    "WEIGHT_SWAP_EXPLORATION_TEMPERATURE": 0.0,  # Deterministic swaps
     # v1.5: Recovery evaluation weights
     "WEIGHT_RECOVERY_POTENTIAL": 6.0,       # Value of having recovery available
     "WEIGHT_RECOVERY_ELIGIBILITY": 8.0,     # Bonus/penalty for recovery eligibility status
