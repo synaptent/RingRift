@@ -891,10 +891,14 @@ class GPUGumbelMCTS:
 
                 # Map policy to valid moves
                 if policies is not None:
+                    # Ensure policies are float32 to avoid dtype mismatch
+                    policy_tensor = policies[0]
+                    if hasattr(policy_tensor, 'float'):
+                        policy_tensor = policy_tensor.float()
                     for i, move in enumerate(valid_moves):
                         move_idx = neural_net.encode_move(move, game_state.board)
-                        if 0 <= move_idx < len(policies[0]):
-                            policy_logits[i] = policies[0][move_idx]
+                        if 0 <= move_idx < len(policy_tensor):
+                            policy_logits[i] = float(policy_tensor[move_idx])
             else:
                 value = 0.0
         except Exception as e:
@@ -1126,11 +1130,14 @@ class MultiTreeMCTS:
                 values, policies = neural_net.evaluate_batch(game_states)
 
                 if policies is not None:
+                    # Ensure policies are float32 to avoid dtype mismatch
+                    if hasattr(policies, 'float'):
+                        policies = policies.float()
                     for b, (gs, valid_moves) in enumerate(zip(game_states, all_valid_moves)):
                         for i, move in enumerate(valid_moves):
                             move_idx = neural_net.encode_move(move, gs.board)
                             if 0 <= move_idx < len(policies[b]):
-                                policy_logits[b, i] = policies[b][move_idx]
+                                policy_logits[b, i] = float(policies[b][move_idx])
             except Exception as e:
                 logger.warning(f"Batch NN evaluation failed: {e}")
 
