@@ -567,7 +567,8 @@ class TestDataQualityOrchestrator:
         """Test successful event subscription."""
         mock_bus = MagicMock()
 
-        with patch("app.distributed.data_events.get_event_bus", return_value=mock_bus):
+        # Patch the correct module where get_event_bus is imported from
+        with patch("app.coordination.event_router.get_event_bus", return_value=mock_bus):
             result = orchestrator.subscribe_to_events()
 
         assert result is True
@@ -582,7 +583,8 @@ class TestDataQualityOrchestrator:
 
     def test_subscribe_to_events_failure(self, orchestrator):
         """Test subscription failure."""
-        with patch("app.distributed.data_events.get_event_bus", side_effect=Exception("Error")):
+        # Patch the correct module where get_event_bus is imported from
+        with patch("app.coordination.event_router.get_event_bus", side_effect=Exception("Error")):
             result = orchestrator.subscribe_to_events()
 
         assert result is False
@@ -593,7 +595,8 @@ class TestDataQualityOrchestrator:
         mock_bus = MagicMock()
         orchestrator._subscribed = True
 
-        with patch("app.distributed.data_events.get_event_bus", return_value=mock_bus):
+        # Patch the correct module where get_event_bus is imported from
+        with patch("app.coordination.event_router.get_event_bus", return_value=mock_bus):
             orchestrator.unsubscribe()
 
         assert orchestrator._subscribed is False
