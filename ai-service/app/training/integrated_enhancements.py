@@ -91,11 +91,22 @@ from __future__ import annotations
 
 import logging
 import threading
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+# Emit deprecation warning on import (December 2025)
+warnings.warn(
+    "IntegratedTrainingManager from integrated_enhancements.py is deprecated. "
+    "Use UnifiedTrainingOrchestrator from unified_orchestrator.py instead. "
+    "Individual enhancement modules are still available for direct use. "
+    "See app/training/ORCHESTRATOR_GUIDE.md for migration instructions.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

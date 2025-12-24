@@ -50,7 +50,7 @@ This checklist documents all requirements for launching RingRift v1.0 to product
 | Item                                                           | Status | Evidence                                                |
 | -------------------------------------------------------------- | ------ | ------------------------------------------------------- |
 | All game rules implemented per canonical spec                  | ✅     | `../rules/COMPLETE_RULES.md`, `RULES_CANONICAL_SPEC.md` |
-| TS/Python parity verified (0 divergences)                      | ✅     | 85 contract vectors, 274 parity fixtures, 0 mismatches  |
+| TS/Python parity verified (0 divergences)                      | ✅     | 87 contract vectors, 274 parity fixtures, 0 mismatches  |
 | All board types supported (square8, square19, hex8, hexagonal) | ✅     | Geometry contracts in `TOPOLOGY_MODES.md`               |
 | Victory conditions implemented and tested                      | ✅     | Ring elimination, territory control, LPS                |
 | Game end explanation working                                   | ✅     | `gameEndExplanation.ts`, builder tests                  |
@@ -805,7 +805,7 @@ Based on the current checklist status, the recommended action sequence:
 
 11. ~~**Architectural improvements**~~ ✅ Complete (see `ARCHITECTURAL_IMPROVEMENT_PLAN.md`)
 12. ~~**Test coverage**~~ ✅ All aggregates exceed 80% target
-13. ~~**Parity verification**~~ ✅ 85/85 contract vectors, 387 parity tests
+13. ~~**Parity verification**~~ ✅ 87/87 contract vectors, 387 parity tests
 
 ---
 

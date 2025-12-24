@@ -79,12 +79,12 @@ Status tags:
   in training data.
 - **done** Resource monitoring (CPU/MEM/DISK/GPU) across all distributed workers.
 - **done** Enhanced error logging with full stdout/stderr capture to daily log files.
-- **done** Board-specific heuristic profiles for all 9 board×player configurations
-  (square8/square19/hex × 2p/3p/4p).
+- **done** Board-specific heuristic profiles for all 12 board×player configurations
+  (square8/square19/hex8/hex × 2p/3p/4p).
 - **done** 22 diverse selfplay job configurations (mixed, heuristic-only,
   minimax-only, mcts-only, descent-only, nn-only) across all boards.
 - **done** Tournament games now saved and synced for training data augmentation.
-- **done** CMA-ES matrix integrated with pipeline orchestrator for all 9 configs.
+- **done** CMA-ES matrix integrated with pipeline orchestrator for canonical configs (square8/square19/hex, with hex8 included when enabled).
 
 ## Canonical Data Pipeline
 

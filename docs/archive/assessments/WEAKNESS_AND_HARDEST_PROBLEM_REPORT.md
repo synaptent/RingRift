@@ -35,7 +35,7 @@ The weakest aspect is **production validation with clean signal**. We now have t
 
 - **Client-Side Test Coverage:** _Rejected._ Previous assessments incorrectly flagged this as 0%. Verification confirms substantial coverage exists for `GameHUD`, `BoardControls`, and key hooks. While coverage can always improve, it is not a critical vulnerability.
 - **Rules UX / Onboarding:** _Rejected._ Wave 2 and Wave 8 remediation efforts have significantly improved this with the Teaching Overlay, weird-state telemetry, and copy fixes. It is now a matter of iterative polish, not a structural weakness.
-- **TS/Python Parity:** _Rejected._ With 85 contract vectors passing and 100% parity achieved, this is now a strength of the project.
+- **TS/Python Parity:** _Rejected._ With 87 contract vectors passing and 100% parity achieved, this is now a strength of the project.
 
 ---
 

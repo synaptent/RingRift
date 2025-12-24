@@ -505,7 +505,7 @@ HEURISTIC_V1_4P: HeuristicWeights = {
 #   - Board×player specific: "heuristic_v1_{board}_{n}p" (e.g., "heuristic_v1_sq8_2p")
 #   - Legacy player-only: "heuristic_v1_{n}p" (aliases to sq8 profiles for backwards compat)
 #
-# Board abbreviations: sq8 = square8, sq19 = square19, hex = hexagonal
+# Board abbreviations: sq8 = square8, sq19 = square19, hex8 = hex8, hex = hexagonal
 
 HEURISTIC_WEIGHT_PROFILES: dict[str, HeuristicWeights] = {
     # High-level, persona-oriented ids (preferred for new configs).
@@ -514,7 +514,7 @@ HEURISTIC_WEIGHT_PROFILES: dict[str, HeuristicWeights] = {
     "heuristic_v1_territorial": HEURISTIC_V1_TERRITORIAL,
     "heuristic_v1_defensive": HEURISTIC_V1_DEFENSIVE,
     #
-    # === Board × Player Matrix (9 combinations) ===
+    # === Board × Player Matrix (12 combinations) ===
     # These are the canonical profile keys for CMA-ES training.
     # Each board×player combination gets its own optimized weights.
     #
@@ -527,6 +527,11 @@ HEURISTIC_WEIGHT_PROFILES: dict[str, HeuristicWeights] = {
     "heuristic_v1_sq19_2p": HEURISTIC_V1_SQUARE19_2P,  # square19 2p (CMA-ES optimized)
     "heuristic_v1_sq19_3p": HEURISTIC_V1_3P,           # square19 3p (fallback to 3p base)
     "heuristic_v1_sq19_4p": HEURISTIC_V1_4P,           # square19 4p (fallback to 4p base)
+    #
+    # Hex8 profiles (small hex board; currently aliases to hex baselines)
+    "heuristic_v1_hex8_2p": HEURISTIC_V1_BALANCED,  # hex8 2p (fallback to balanced)
+    "heuristic_v1_hex8_3p": HEURISTIC_V1_3P,        # hex8 3p (fallback to 3p base)
+    "heuristic_v1_hex8_4p": HEURISTIC_V1_4P,        # hex8 4p (fallback to 4p base)
     #
     # Hexagonal profiles (different topology)
     "heuristic_v1_hex_2p": HEURISTIC_V1_BALANCED,   # hex 2p (fallback to balanced)
@@ -582,13 +587,14 @@ PLAYER_COUNT_PROFILE_MAP: dict[int, str] = {
 }
 
 # Board-type-specific profiles (keyed by board_type, num_players)
-# This is the full 9-combination matrix. Each board×player combo gets
+# This is the full 12-combination matrix. Each board×player combo gets
 # its own CMA-ES optimized weights.
 #
-# Board type normalization: "square8" -> "sq8", "square19" -> "sq19", "hexagonal" -> "hex"
+# Board type normalization: "square8" -> "sq8", "square19" -> "sq19", "hex8" -> "hex8", "hexagonal" -> "hex"
 BOARD_ABBREV: dict[str, str] = {
     "square8": "sq8",
     "square19": "sq19",
+    "hex8": "hex8",
     "hexagonal": "hex",
     "hex": "hex",  # Allow short form too
 }
@@ -602,6 +608,10 @@ BOARD_PROFILE_MAP: dict[tuple, str] = {
     ("square19", 2): "heuristic_v1_sq19_2p",
     ("square19", 3): "heuristic_v1_sq19_3p",
     ("square19", 4): "heuristic_v1_sq19_4p",
+    # Hex8 (small hex board)
+    ("hex8", 2): "heuristic_v1_hex8_2p",
+    ("hex8", 3): "heuristic_v1_hex8_3p",
+    ("hex8", 4): "heuristic_v1_hex8_4p",
     # Hexagonal (different topology)
     ("hexagonal", 2): "heuristic_v1_hex_2p",
     ("hexagonal", 3): "heuristic_v1_hex_3p",
@@ -662,7 +672,7 @@ def get_weights_for_board(
     Parameters
     ----------
     board_type:
-        Board type identifier (e.g., "square8", "square19", "hexagonal").
+        Board type identifier (e.g., "square8", "square19", "hex8", "hexagonal").
     num_players:
         Number of players in the game (2, 3, or 4).
     fallback_profile:
@@ -769,7 +779,7 @@ def get_profile_key(board_type: str, num_players: int) -> str:
     Parameters
     ----------
     board_type:
-        Board type identifier: "square8", "square19", "hexagonal", or "hex".
+        Board type identifier: "square8", "square19", "hex8", "hexagonal", or "hex".
     num_players:
         Number of players (2, 3, or 4).
 

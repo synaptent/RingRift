@@ -17,7 +17,7 @@ This document provides detailed, step-by-step action plans for all identified im
 - **Multiple boards**: 8×8 square (64), 19×19 square (361), hexagonal (469)
 - **Tech stack**: React + Express + WebSockets + PostgreSQL/Redis + Python AI service
 - **AI**: 10-level difficulty ladder (Random → Heuristic → Minimax → MCTS → AlphaZero-style Descent)
-- **Testing**: 10,177 TypeScript tests, 1,824 Python tests, 85 contract vectors (100% parity)
+- **Testing**: 10,177 TypeScript tests, 1,824 Python tests, 87 contract vectors (100% parity)
 
 **Current Status**: Stable Beta — production validation in progress, focus on scaling tests, security hardening, UX polish. Hosted demo live at ringrift.ai, v0.1.0-beta released.
 
@@ -1857,7 +1857,7 @@ determined by player decisions.
 - Non-trivial state space (up to 469 cells, complex stack interactions)
 - Explicit decision points (no hidden auto-execution)
 - Cross-language parity (identical rules in TS and Python)
-- 85 contract vectors for correctness verification
+- 87 contract vectors for correctness verification
 
 **For engineers:** A reference implementation of:
 

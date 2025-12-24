@@ -441,7 +441,7 @@ Parity expectations ensure that, given identical inputs, different engines and h
 
 **Scope**
 
-- Line + territory pipeline semantics on all board types; hex8 parity coverage is pending.
+- Line + territory pipeline semantics on all board types; hex8 snapshot parity is now included, with extended vector coverage still pending.
 
 **Enforcement mapping**
 

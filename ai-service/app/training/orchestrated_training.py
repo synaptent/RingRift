@@ -41,9 +41,19 @@ from __future__ import annotations
 
 import logging
 import time
+import warnings
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
+
+# Emit deprecation warning on import (December 2025)
+warnings.warn(
+    "orchestrated_training.py is deprecated. "
+    "Use UnifiedTrainingOrchestrator from unified_orchestrator.py instead. "
+    "See app/training/ORCHESTRATOR_GUIDE.md for migration instructions.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

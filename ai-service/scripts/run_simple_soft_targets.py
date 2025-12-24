@@ -21,7 +21,7 @@ from app.training.initial_state import create_initial_state
 
 # Setup
 engine = DefaultRulesEngine()
-encoder = get_encoder_for_board_type("hex8", encoder_version="v3")
+encoder = get_encoder_for_board_type(BoardType.HEX8, version="v3")
 
 config = AIConfig(
     ai_type=AIType.GUMBEL_MCTS,
@@ -42,40 +42,38 @@ start = time.time()
 
 NUM_GAMES = 100
 for game_num in range(NUM_GAMES):
-    state = create_initial_state(board_type="hex8", num_players=2)
+    state = create_initial_state(board_type=BoardType.HEX8, num_players=2)
     game_samples = []
     move_count = 0
 
     while state.game_status == GameStatus.ACTIVE and move_count < 200:
         current_player = state.current_player
 
-        # Get move with policy distribution
+        # Update AI player number to match current player
+        ai.player_number = current_player
+
+        # Get move
         try:
-            move, policy_dict = ai.select_move_with_policy(state)
+            move = ai.select_move(state)
+            if move is None:
+                break
+            # Get policy distribution from last search
+            policy_moves, policy_probs = ai.get_visit_distribution()
         except Exception as e:
             print(f"  Error getting move: {e}")
             break
 
-        if policy_dict and len(policy_dict) > 1:
+        if policy_moves and len(policy_moves) > 1:
             # Encode state
             features, globals_feat = encoder.encode_state(state)
 
-            # Convert policy to indices/values
-            valid_moves = engine.get_valid_moves(state, current_player)
+            # Convert policy moves/probs to indices/values
             policy_indices = []
             policy_values = []
 
-            for m in valid_moves:
-                # Build move key to match MCTS format
-                from_str = f"{m.from_pos.x},{m.from_pos.y}" if m.from_pos else "none"
-                to_str = f"{m.to.x},{m.to.y}" if m.to else "none"
-                key = f"{m.type.value}_{from_str}_{to_str}"
-                if hasattr(m, "placement_count") and m.placement_count:
-                    key += f"_{m.placement_count}"
-
-                idx = encoder.encode_move(m, state)
-                prob = policy_dict.get(key, 0.0)
+            for m, prob in zip(policy_moves, policy_probs):
                 if prob > 0:
+                    idx = encoder.encode_move(m, state.board)
                     policy_indices.append(idx)
                     policy_values.append(prob)
 

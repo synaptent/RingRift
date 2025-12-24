@@ -155,7 +155,7 @@ For each family we target:
 
 - **Hex**:
   - `hexagonal` – at least one sequence per family where geometry is critical.
-  - `hex8` – small hex board for fast parity slices (planned; not yet in v2 vectors).
+  - `hex8` – small hex board for fast parity slices (basic placement/movement vectors now included; extended families pending).
 
 This design does **not** cover every Cartesian product of {family} × {board type}, but for each family we ensure **at least one** sequence on each relevant board type.
 
@@ -204,7 +204,7 @@ Where:
 - `variant` disambiguates steps or forks (`segment1`, `segment2`, `final`, `case1`, `branchA`).
 - `board` ∈ {`square8`, `square19`, `hex8`, `hexagonal`}.
 
-Hex8 IDs are reserved for future vectors; current v2 bundles do not yet include hex8.
+Hex8 IDs now cover basic placement/movement vectors; extended-family coverage is still pending.
 
 Examples:
 

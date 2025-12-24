@@ -105,7 +105,7 @@ important groups are:
   - Test vector generator: [`src/shared/engine/contracts/testVectorGenerator.ts`](src/shared/engine/contracts/testVectorGenerator.ts:1)
   - Contract test runner (TS): [`tests/contracts/contractVectorRunner.test.ts`](tests/contracts/contractVectorRunner.test.ts:1)
   - Contract test runner (Python): [`ai-service/tests/contracts/test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py:1)
-  - Test vectors: [`tests/fixtures/contract-vectors/v2/`](tests/fixtures/contract-vectors/v2/) (12 vectors across 5 categories)
+  - Test vectors: [`tests/fixtures/contract-vectors/v2/`](tests/fixtures/contract-vectors/v2/) (87 vectors across the v2 bundles)
 
 The **canonical description of the Move/decision/WebSocket lifecycle and engine decision surfaces** lives in `docs/CANONICAL_ENGINE_API.md`. This architecture document focuses on how the shared TS rules engine (helpers → aggregates → orchestrator → contracts) is hosted by the backend, sandbox, and Python engines, and how the Python engine is rolled out as a parity-validated validation host.
 

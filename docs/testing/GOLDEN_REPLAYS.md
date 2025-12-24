@@ -257,7 +257,7 @@ The test suite tracks coverage across:
 
 | Category      | Target | Current Status | Description                                                              |
 | ------------- | ------ | -------------- | ------------------------------------------------------------------------ |
-| Board Types   | All    | ⚠️ Partial     | `square8` ✅, `square19` ✅, `hexagonal` ✅, `hex8` ⏳                   |
+| Board Types   | All    | ⚠️ Partial     | `square8` ✅, `square19` ✅, `hex8` ✅ (smoke), `hexagonal` ✅           |
 | Player Counts | All    | ✅ Complete    | 2-player ✅, 3-player ✅, 4-player ✅                                    |
 | Victory Types | All    | ⚠️ Partial     | `ring_elimination` ✅, `territory_control` ⚠️, `last_player_standing` ⚠️ |
 | Edge Cases    | 80%+   | ⚠️ Unknown     | chain captures, territory splits, forced eliminations (need analysis)    |
@@ -277,7 +277,7 @@ The test suite tracks coverage across:
 **Coverage status:**
 
 - ✅ Hexagonal board games (10 games generated via minimal selfplay)
-- ⏳ Hex8 board games (no golden fixtures yet)
+- ✅ Hex8 board games (smoke fixture in `tests/fixtures/golden-games/`)
 - ✅ 3-player games (8 games, 2 with winners)
 - ✅ 4-player games (8 games)
 - ⚠️ Territory control victories (not yet verified)

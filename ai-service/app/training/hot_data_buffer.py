@@ -99,6 +99,20 @@ except ImportError:
     def get_config():
         return None
 
+# Quality threshold constants (December 2025 consolidation)
+try:
+    from app.config.thresholds import (
+        HIGH_QUALITY_THRESHOLD,
+        MIN_QUALITY_FOR_TRAINING,
+        DATA_SAMPLING_QUALITY_WEIGHT,
+    )
+    HAS_QUALITY_THRESHOLDS = True
+except ImportError:
+    HAS_QUALITY_THRESHOLDS = False
+    HIGH_QUALITY_THRESHOLD = 0.7
+    MIN_QUALITY_FOR_TRAINING = 0.3
+    DATA_SAMPLING_QUALITY_WEIGHT = 0.4
+
 # Data validation integration (optional - graceful fallback if not available)
 try:
     from app.training.unified_data_validator import (
@@ -1347,14 +1361,14 @@ class HotDataBuffer:
             qualities = [g.manifest_quality for g in self._buffer.values()]
             avg_quality = sum(qualities) / len(qualities)
 
-            # Use thresholds from config if available
-            high_threshold = 0.7
-            low_threshold = 0.3
+            # Use thresholds from centralized config (December 2025 consolidation)
+            high_threshold = HIGH_QUALITY_THRESHOLD
+            low_threshold = MIN_QUALITY_FOR_TRAINING
             if HAS_QUALITY_CONFIG:
                 config = get_config()
                 if config and hasattr(config, 'quality'):
-                    high_threshold = getattr(config.quality, 'high_quality_threshold', 0.7)
-                    low_threshold = getattr(config.quality, 'min_quality_for_training', 0.3)
+                    high_threshold = getattr(config.quality, 'high_quality_threshold', HIGH_QUALITY_THRESHOLD)
+                    low_threshold = getattr(config.quality, 'min_quality_for_training', MIN_QUALITY_FOR_TRAINING)
 
             high_quality = [q for q in qualities if q >= high_threshold]
             low_quality = [q for q in qualities if q < low_threshold]
