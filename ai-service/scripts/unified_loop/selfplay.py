@@ -477,7 +477,7 @@ class LocalSelfplayGenerator:
         self,
         num_games: int,
         config_key: str,
-        engine: str = "descent",
+        engine: str = "gumbel",  # GPU-accelerated Gumbel MCTS
         nn_model_id: str | None = None,
         gumbel_simulations: int = 64,
         gumbel_top_k: int = 16,

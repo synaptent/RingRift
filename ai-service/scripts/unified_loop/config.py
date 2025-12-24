@@ -310,7 +310,7 @@ class TrainingConfig:
     # Parallel Selfplay Temperature Scheduling (2025-12)
     # =========================================================================
     # Local parallel selfplay engine selection
-    selfplay_engine: str = "descent"  # "descent", "mcts", or "gumbel"
+    selfplay_engine: str = "gumbel"  # "descent", "mcts", or "gumbel" - GPU-accelerated Gumbel MCTS
     selfplay_num_workers: int | None = None  # Default: CPU count - 1
     selfplay_games_per_batch: int = 20  # Games per local selfplay batch
     # Temperature scheduling for exploration/exploitation tradeoff

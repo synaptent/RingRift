@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 # - v7: Added fsm_valid and fsm_error_code to game_history_entries for FSM validation tracking (Phase 7)
 # - v8: Added game_nnue_features table for pre-computed NNUE training features
 # - v9: Added quality_score and quality_category columns for training data prioritization
-SCHEMA_VERSION = 9
+# - v10: Added move_probs column for storing soft policy targets from MCTS search
+SCHEMA_VERSION = 10
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -146,6 +147,8 @@ CREATE TABLE IF NOT EXISTS game_moves (
     engine_nodes INTEGER,
     engine_pv TEXT,
     engine_time_ms INTEGER,
+    -- v10 additions: soft policy targets from MCTS search
+    move_probs TEXT,
     PRIMARY KEY (game_id, move_number),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );
@@ -390,6 +393,7 @@ class GameWriter:
         engine_depth: int | None = None,
         fsm_valid: bool | None = None,
         fsm_error_code: str | None = None,
+        move_probs: dict[str, float] | None = None,
     ) -> None:
         """Add a move to the game.
 
@@ -405,6 +409,8 @@ class GameWriter:
             engine_depth: Optional search depth from AI engine
             fsm_valid: Optional FSM validation result (True = valid, False = invalid)
             fsm_error_code: Optional FSM error code if validation failed
+            move_probs: Optional soft policy targets from MCTS search (v10)
+                Dict mapping move keys to probabilities: {"move_key": probability, ...}
         """
         if self._finalized:
             raise RuntimeError("GameWriter has been finalized")
@@ -434,6 +440,7 @@ class GameWriter:
             turn_number=self._turn_count,
             move=move,
             phase=phase_hint,
+            move_probs=move_probs,
         )
 
         # Handle snapshots
@@ -1041,6 +1048,25 @@ class GameReplayDB:
 
         self._set_schema_version(conn, 9)
         logger.info("Migration to v9 complete")
+
+    def _migrate_v9_to_v10(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v9 to v10.
+
+        Adds:
+        - move_probs column to game_moves table for storing soft policy targets
+          from MCTS search (JSON: {"move_key": probability, ...})
+        """
+        logger.info("Migrating schema from v9 to v10")
+
+        # Add move_probs column to game_moves
+        try:
+            conn.execute("ALTER TABLE game_moves ADD COLUMN move_probs TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        self._set_schema_version(conn, 10)
+        logger.info("Migration to v10 complete")
 
     # =========================================================================
     # Write Operations
@@ -2206,6 +2232,7 @@ class GameReplayDB:
         engine_nodes: int | None = None,
         engine_pv: list[str] | None = None,
         engine_time_ms: int | None = None,
+        move_probs: dict[str, float] | None = None,
     ) -> None:
         """Store a single move (standalone transaction)."""
         with self._get_conn() as conn:
@@ -2223,6 +2250,7 @@ class GameReplayDB:
                 engine_nodes=engine_nodes,
                 engine_pv=engine_pv,
                 engine_time_ms=engine_time_ms,
+                move_probs=move_probs,
             )
 
     def _store_move_conn(
@@ -2241,6 +2269,7 @@ class GameReplayDB:
         engine_nodes: int | None = None,
         engine_pv: list[str] | None = None,
         engine_time_ms: int | None = None,
+        move_probs: dict[str, float] | None = None,
     ) -> None:
         """Store a single move (within existing transaction).
 
@@ -2260,6 +2289,8 @@ class GameReplayDB:
             engine_nodes: Nodes searched (v2)
             engine_pv: Principal variation as list of move strings (v2)
             engine_time_ms: Time spent computing this move in ms (v2)
+            move_probs: Soft policy targets from MCTS search (v10)
+                JSON format: {"move_key": probability, ...}
         """
         # Enforce canonical (phase, move_type) contract at write time for all
         # new recordings. We thread the *actual* phase-at-move-time through
@@ -2283,8 +2314,8 @@ class GameReplayDB:
             INSERT INTO game_moves
             (game_id, move_number, turn_number, player, phase, move_type, move_json,
              timestamp, think_time_ms, time_remaining_ms, engine_eval, engine_eval_type,
-             engine_depth, engine_nodes, engine_pv, engine_time_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             engine_depth, engine_nodes, engine_pv, engine_time_ms, move_probs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 game_id,
@@ -2303,6 +2334,7 @@ class GameReplayDB:
                 engine_nodes,
                 json.dumps(engine_pv) if engine_pv else None,
                 engine_time_ms,
+                json.dumps(move_probs) if move_probs else None,
             ),
         )
 

@@ -563,9 +563,79 @@ def load_checkpoint(
     return epoch, loss
 
 
+def load_weights_only(
+    path: str,
+    model: nn.Module,
+    device: torch.device | None = None,
+    strict: bool = False,
+) -> dict[str, list[str]]:
+    """
+    Load only model weights from a checkpoint (for transfer learning).
+
+    Unlike load_checkpoint, this function:
+    - Does NOT load optimizer/scheduler/early_stopping state
+    - Allows partial loading when strict=False (skips mismatched layers)
+    - Useful for transfer learning (e.g., 2-player model to 4-player)
+
+    Args:
+        path: Path to checkpoint file
+        model: Model to load weights into
+        device: Device to map checkpoint tensors to
+        strict: If True, require all keys to match. If False, skip mismatched layers.
+
+    Returns:
+        Dict with 'missing_keys' and 'unexpected_keys' lists
+
+    Example:
+        # Initialize 4-player model with 2-player weights
+        result = load_weights_only(
+            "models/canonical_sq8_2p.pth",
+            model_4p,
+            strict=False
+        )
+        print(f"Skipped layers: {result['missing_keys']}")
+    """
+    map_loc = str(device) if device else "cpu"
+    checkpoint = safe_load_checkpoint(path, map_location=map_loc, warn_on_unsafe=False)
+
+    # Extract state dict from checkpoint
+    if 'model_state_dict' in checkpoint:
+        state_dict = checkpoint['model_state_dict']
+    elif isinstance(checkpoint, dict) and any('conv' in k or 'res_blocks' in k for k in checkpoint.keys()):
+        state_dict = checkpoint
+    else:
+        raise ValueError(f"Cannot find model weights in checkpoint: {path}")
+
+    # Load with strict=False to allow partial loading
+    result = model.load_state_dict(state_dict, strict=strict)
+
+    if not strict:
+        if result.missing_keys:
+            logger.warning(
+                f"Transfer learning: {len(result.missing_keys)} layers not in checkpoint "
+                f"(initialized fresh): {result.missing_keys[:5]}..."
+            )
+        if result.unexpected_keys:
+            logger.warning(
+                f"Transfer learning: {len(result.unexpected_keys)} layers in checkpoint "
+                f"but not in model (skipped): {result.unexpected_keys[:5]}..."
+            )
+
+    logger.info(
+        f"Loaded weights from {path} (strict={strict}, "
+        f"loaded={len(state_dict) - len(result.unexpected_keys)} layers)"
+    )
+
+    return {
+        'missing_keys': list(result.missing_keys),
+        'unexpected_keys': list(result.unexpected_keys),
+    }
+
+
 __all__ = [
     "AsyncCheckpointer",
     "GracefulShutdownHandler",
     "load_checkpoint",
+    "load_weights_only",
     "save_checkpoint",
 ]

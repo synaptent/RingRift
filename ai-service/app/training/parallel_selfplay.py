@@ -577,7 +577,7 @@ def generate_dataset_parallel(
     num_players: int = 2,
     history_length: int = 3,
     feature_version: int = 1,
-    engine: str = "descent",
+    engine: str = "gumbel",  # GPU-accelerated Gumbel MCTS (177x speedup)
     nn_model_id: str | None = None,
     multi_player_values: bool = False,
     max_players: int = 4,

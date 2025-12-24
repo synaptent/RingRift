@@ -320,6 +320,8 @@ class NPZDatasetWriter:
         policy_encoding: str = "legacy_max_n",
         encoding_version: str = "2025.12",
         hex_validity_checked: bool = True,
+        encoder_version: str = "v2",
+        in_channels: int | None = None,
         values_mp: np.ndarray | None = None,
         num_players: np.ndarray | None = None,
         move_numbers: np.ndarray | None = None,
@@ -344,6 +346,8 @@ class NPZDatasetWriter:
             policy_encoding: Policy encoding type
             encoding_version: Encoding version string (e.g., "2025.12")
             hex_validity_checked: Whether hex cell validity was enforced
+            encoder_version: Encoder version ("v2" or "v3") for model selection
+            in_channels: Actual input channel count (inferred from features if None)
             values_mp: Multi-player values (optional)
             num_players: Number of players per sample (optional)
             move_numbers: Move number within game (optional)
@@ -382,6 +386,9 @@ class NPZDatasetWriter:
             # Encoding validation metadata (Dec 2025)
             "encoding_version": np.asarray(encoding_version),
             "hex_validity_checked": np.asarray(hex_validity_checked),
+            # Encoder version and channel count (Dec 2025 - permanent fix for V3 confusion)
+            "encoder_version": np.asarray(encoder_version),
+            "in_channels": np.asarray(in_channels if in_channels is not None else features.shape[1]),
         }
 
         # Add optional arrays

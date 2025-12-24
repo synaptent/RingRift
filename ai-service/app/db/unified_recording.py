@@ -195,6 +195,7 @@ class GameRecorder:
         engine_depth: int | None = None,
         fsm_valid: bool | None = None,
         fsm_error_code: str | None = None,
+        move_probs: dict[str, float] | None = None,
     ) -> None:
         """Add a move to the game record.
 
@@ -210,6 +211,8 @@ class GameRecorder:
             engine_depth: Optional search depth from AI engine
             fsm_valid: Optional FSM validation result (True = valid, False = invalid)
             fsm_error_code: Optional FSM error code if validation failed
+            move_probs: Optional soft policy targets from MCTS search (v10)
+                Dict mapping move keys to probabilities: {"move_key": probability, ...}
         """
         if self._writer is None:
             raise RuntimeError("GameRecorder not entered as context manager")
@@ -223,6 +226,7 @@ class GameRecorder:
             engine_depth=engine_depth,
             fsm_valid=fsm_valid,
             fsm_error_code=fsm_error_code,
+            move_probs=move_probs,
         )
 
     def finalize(
@@ -855,8 +859,20 @@ class UnifiedGameRecorder:
         available_moves_count: int | None = None,
         engine_eval: float | None = None,
         engine_depth: int | None = None,
+        move_probs: dict[str, float] | None = None,
     ) -> None:
-        """Add a move to the game record."""
+        """Add a move to the game record.
+
+        Args:
+            move: The move that was played
+            state_after: Optional state after the move
+            state_before: Optional state before the move
+            available_moves_count: Optional count of valid moves
+            engine_eval: Optional evaluation score from AI engine
+            engine_depth: Optional search depth from AI engine
+            move_probs: Optional soft policy targets from MCTS search (v10)
+                Dict mapping move keys to probabilities: {"move_key": probability, ...}
+        """
         if self._recorder is None:
             return
 
@@ -876,6 +892,7 @@ class UnifiedGameRecorder:
             engine_depth=engine_depth,
             fsm_valid=fsm_valid,
             fsm_error_code=fsm_error_code,
+            move_probs=move_probs,
         )
 
     def finalize(

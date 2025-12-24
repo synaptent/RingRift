@@ -9867,6 +9867,23 @@ print(wins / total)
                         termination_reason = "no_move"
                         break
 
+                    # Get soft policy targets for training data
+                    move_probs = None
+                    if hasattr(current_ai, 'get_visit_distribution'):
+                        try:
+                            moves_dist, probs_dist = current_ai.get_visit_distribution()
+                            if moves_dist and probs_dist:
+                                move_probs = {}
+                                for mv, prob in zip(moves_dist, probs_dist, strict=False):
+                                    # Create move key in format: "{from_x},{from_y}->{to_x},{to_y}"
+                                    if hasattr(mv, 'to') and mv.to is not None:
+                                        move_key = f"{mv.to.x},{mv.to.y}"
+                                        if hasattr(mv, 'from_pos') and mv.from_pos is not None:
+                                            move_key = f"{mv.from_pos.x},{mv.from_pos.y}->{move_key}"
+                                        move_probs[move_key] = float(prob)
+                        except Exception:
+                            pass  # Silently ignore if visit distribution fails
+
                     # Record actual Move object for training
                     recorded_moves.append(move)
 
@@ -9879,6 +9896,7 @@ print(wins / total)
                             state_after=state,
                             state_before=state_before,
                             available_moves_count=None,
+                            move_probs=move_probs,
                         )
             finally:
                 if move_count >= max_moves and state.game_status == GameStatus.ACTIVE:

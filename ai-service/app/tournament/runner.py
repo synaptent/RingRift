@@ -870,6 +870,23 @@ class TournamentRunner:
                 if move is None:
                     # AI couldn't select a move, pick first legal move
                     move = legal_moves[0]
+
+                # Get soft policy targets for training data
+                move_probs = None
+                if hasattr(ai, 'get_visit_distribution'):
+                    try:
+                        moves_dist, probs_dist = ai.get_visit_distribution()
+                        if moves_dist and probs_dist:
+                            move_probs = {}
+                            for mv, prob in zip(moves_dist, probs_dist, strict=False):
+                                if hasattr(mv, 'to') and mv.to is not None:
+                                    move_key = f"{mv.to.x},{mv.to.y}"
+                                    if hasattr(mv, 'from_pos') and mv.from_pos is not None:
+                                        move_key = f"{mv.from_pos.x},{mv.from_pos.y}->{move_key}"
+                                    move_probs[move_key] = float(prob)
+                    except Exception:
+                        pass  # Silently ignore if visit distribution fails
+
                 state_before = state
                 state = GameEngine.apply_move(state, move, trace_mode=True)
                 move_count += 1
@@ -880,6 +897,7 @@ class TournamentRunner:
                         state_after=state,
                         state_before=state_before,
                         available_moves_count=len(legal_moves),
+                        move_probs=move_probs,
                     )
 
                 # After each move, auto-process any bookkeeping requirements

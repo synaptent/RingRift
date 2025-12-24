@@ -152,7 +152,16 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         '--resume', type=str, default=None,
-        help='Path to checkpoint to resume from'
+        help='Path to checkpoint to resume from (loads model, optimizer, scheduler, etc.)'
+    )
+    parser.add_argument(
+        '--init-weights', type=str, default=None,
+        help='Path to model weights for initialization (transfer learning). '
+             'Only loads model weights, not optimizer state. Useful for 2p->4p transfer.'
+    )
+    parser.add_argument(
+        '--init-weights-strict', action='store_true',
+        help='Require all weights to match when using --init-weights (default: allow partial loading)'
     )
 
     # Learning rate scheduling
@@ -537,6 +546,8 @@ def main() -> None:
         lr_t0=args.lr_t0,
         lr_t_mult=args.lr_t_mult,
         resume_path=args.resume,
+        init_weights_path=getattr(args, 'init_weights', None),
+        init_weights_strict=getattr(args, 'init_weights_strict', False),
         augment_hex_symmetry=args.augment_hex_symmetry,
         distributed=args.distributed,
         local_rank=args.local_rank,

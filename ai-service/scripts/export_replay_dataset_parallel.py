@@ -266,6 +266,11 @@ def export_parallel(
     arrays["policy_encoding"] = np.asarray(
         "board_aware" if use_board_aware_encoding else "legacy_max_n"
     )
+    # V2.1 encoder metadata (Dec 2025) - for V3 encoder fix
+    effective_encoder = encoder_version if encoder_version in ("v2", "v3") else "v3"
+    arrays["encoder_version"] = np.asarray(effective_encoder)
+    arrays["in_channels"] = np.asarray(int(arrays["features"].shape[1]))
+    arrays["export_version"] = np.asarray("2.1")
 
     # Save
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

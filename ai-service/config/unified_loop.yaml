@@ -557,16 +557,15 @@ selfplay:
     hexagonal: 0.25
     hex8: 0.25
 
-  # AI type weights (prioritize NN-guided for higher quality games)
-  # Goal: 70%+ NN-guided games for better training signal with soft policy targets
+  # AI type weights (GPU-accelerated Gumbel MCTS is now fast and primary)
+  # Goal: 70%+ Gumbel MCTS for soft policy targets with GPU acceleration (177x speedup)
   ai_type_weights:
-    gumbel_mcts: 0.40 # 40% - Highest quality search with visit distribution (soft targets)
-    policy_only: 0.30 # 30% - Fast NN-only (volume)
-    nnue_guided: 0.10 # 10% - NNUE evaluation
-    mcts: 0.08 # 8% - Traditional MCTS
-    descent: 0.05 # 5% - Gradient search
-    heuristic: 0.04 # 4% - Baseline comparison
-    minimax: 0.02 # 2% - Paranoid search
+    gumbel_mcts: 0.70 # 70% - GPU-accelerated, highest quality search (soft targets)
+    policy_only: 0.15 # 15% - Fast NN-only (volume)
+    mcts: 0.05 # 5% - Traditional MCTS
+    descent: 0.04 # 4% - Gradient search
+    heuristic: 0.03 # 3% - Baseline comparison
+    nnue_guided: 0.02 # 2% - NNUE evaluation
     random: 0.01 # 1% - Weak baseline (minimal)
 
 # Tournament settings (shared across all tournament scripts)

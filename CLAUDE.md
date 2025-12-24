@@ -96,6 +96,24 @@ python -m app.training.train \
   --data-path data/training/hex8_2p.npz
 ```
 
+### Transfer Learning (2p → 4p)
+
+```bash
+cd ai-service
+
+# Resize value head for 4-player model
+python scripts/transfer_2p_to_4p.py \
+  --source models/canonical_sq8_2p.pth \
+  --output models/transfer_sq8_4p_init.pth \
+  --board-type square8
+
+# Train with transferred weights
+python -m app.training.train \
+  --board-type square8 --num-players 4 \
+  --init-weights models/transfer_sq8_4p_init.pth \
+  --data-path data/training/sq8_4p.npz
+```
+
 ### Check Game Data Quality
 
 ```bash
@@ -122,6 +140,11 @@ python scripts/check_ts_python_replay_parity.py --db data/games/canonical_hex8.d
 All support 2, 3, or 4 players.
 
 ## Current State (Dec 2025)
+
+### Recent Additions
+
+- **Transfer Learning**: `--init-weights` flag for 2p→4p model initialization
+- **Value Head Resizing**: `scripts/transfer_2p_to_4p.py` for 2→4 player transfer
 
 ### Trained Models
 

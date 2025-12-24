@@ -449,6 +449,61 @@ class MoveResponse(BaseModel):
     nnue_checkpoint: str | None = None
 
 
+class BatchMoveRequest(BaseModel):
+    """Request model for batch AI move selection (multiple games at once)"""
+    game_states: list[GameState] = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="List of game states to get moves for (1-64 games)"
+    )
+    player_numbers: list[int] = Field(
+        ...,
+        description="Player number for each game state (1-indexed)"
+    )
+    difficulty: int = Field(ge=1, le=10, default=8)
+    mode: str = Field(
+        default="batch",
+        description="MCTS mode: 'batch' (batched NN) or 'tensor' (full GPU tree)"
+    )
+    device: str = Field(
+        default="auto",
+        description="Device: 'auto', 'cpu', 'cuda', 'mps'"
+    )
+    simulation_budget: int = Field(
+        ge=10,
+        le=1000,
+        default=64,
+        description="Simulation budget per move"
+    )
+
+    @model_validator(mode="after")
+    def validate_lengths(self) -> Self:
+        """Ensure game_states and player_numbers have matching lengths."""
+        if len(self.game_states) != len(self.player_numbers):
+            raise ValueError(
+                f"game_states ({len(self.game_states)}) and player_numbers "
+                f"({len(self.player_numbers)}) must have the same length"
+            )
+        return self
+
+
+class BatchMoveItem(BaseModel):
+    """Single move result in batch response"""
+    move: Move | None
+    evaluation: float
+    game_index: int
+
+
+class BatchMoveResponse(BaseModel):
+    """Response model for batch AI move selection"""
+    moves: list[BatchMoveItem]
+    total_thinking_time_ms: int
+    games_processed: int
+    mode: str
+    throughput_games_per_sec: float
+
+
 class EvaluationRequest(BaseModel):
     """Request model for position evaluation"""
     game_state: GameState
@@ -1189,6 +1244,130 @@ async def get_ai_move(request: MoveRequest):
             labels_difficulty,
         ).observe(duration_seconds)
         logger.error("Error generating AI move: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
+
+
+@app.post("/ai/moves_batch", response_model=BatchMoveResponse)
+async def get_ai_moves_batch(request: BatchMoveRequest):
+    """
+    Get AI-selected moves for multiple game states in a single batched call.
+
+    This endpoint uses GPU-accelerated batch processing for maximum throughput.
+    Ideal for:
+    - Gauntlet evaluation (running many games in parallel)
+    - Tournament simulations
+    - Multi-game spectator mode
+
+    Modes:
+    - 'batch': BatchedGumbelMCTS - Batched NN evaluation, 3-4x speedup
+    - 'tensor': MultiTreeMCTS - Full GPU tree, 6,671x speedup (best for selfplay)
+
+    Args:
+        request: BatchMoveRequest with list of game states and configuration.
+
+    Returns:
+        BatchMoveResponse with moves for all games and throughput metrics.
+    """
+    start_time = time.time()
+
+    try:
+        from app.ai.factory import create_mcts
+
+        # Determine board type from first game state
+        board_type = "square8"  # Default
+        if request.game_states:
+            first_board = getattr(request.game_states[0], "board", None)
+            if first_board:
+                board_type_attr = getattr(first_board, "type", None)
+                if board_type_attr:
+                    board_type = board_type_attr.value if hasattr(board_type_attr, "value") else str(board_type_attr)
+
+        # Determine number of players
+        num_players = 2  # Default
+        if request.game_states:
+            players = getattr(request.game_states[0], "players", None)
+            if players:
+                num_players = len(players)
+
+        # Validate mode
+        mode = request.mode.lower()
+        if mode not in ("batch", "tensor"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid mode '{mode}'. Must be 'batch' or 'tensor'."
+            )
+
+        # Create the appropriate MCTS instance
+        mcts = create_mcts(
+            board_type=board_type,
+            num_players=num_players,
+            mode=mode,
+            device=request.device,
+            simulation_budget=request.simulation_budget,
+            batch_size=len(request.game_states),
+            eval_mode="heuristic",  # Fast mode for batch processing
+        )
+
+        # Get moves based on mode
+        if mode == "tensor":
+            # MultiTreeMCTS returns (moves, policies)
+            moves_result, _ = await asyncio.wait_for(
+                asyncio.to_thread(
+                    mcts.search_batch,
+                    request.game_states,
+                    None,  # neural_net=None for heuristic mode
+                ),
+                timeout=AI_OPERATION_TIMEOUT * 2,  # Allow more time for batch
+            )
+            moves = moves_result
+        else:
+            # BatchedGumbelMCTS returns list of moves
+            moves = await asyncio.wait_for(
+                asyncio.to_thread(
+                    mcts.select_moves_batch,
+                    request.game_states,
+                ),
+                timeout=AI_OPERATION_TIMEOUT * 2,
+            )
+
+        thinking_time_ms = int((time.time() - start_time) * 1000)
+        games_processed = len(request.game_states)
+        throughput = games_processed / max(0.001, time.time() - start_time)
+
+        # Build response items
+        move_items = []
+        for idx, move in enumerate(moves):
+            move_items.append(BatchMoveItem(
+                move=move,
+                evaluation=0.0,  # Batch mode doesn't compute per-game evaluation
+                game_index=idx,
+            ))
+
+        logger.info(
+            "Batch AI moves: mode=%s, games=%d, time=%dms, throughput=%.1f games/sec",
+            mode,
+            games_processed,
+            thinking_time_ms,
+            throughput,
+        )
+
+        return BatchMoveResponse(
+            moves=move_items,
+            total_thinking_time_ms=thinking_time_ms,
+            games_processed=games_processed,
+            mode=mode,
+            throughput_games_per_sec=throughput,
+        )
+
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Batch AI move selection timed out after {AI_OPERATION_TIMEOUT * 2}s"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error generating batch AI moves: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 

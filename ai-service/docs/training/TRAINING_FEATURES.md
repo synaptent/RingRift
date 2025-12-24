@@ -1,6 +1,6 @@
 # RingRift Training Features Reference
 
-> **Last Updated**: 2025-12-18 (Phase 6 bottleneck optimizations summary table, P2P database batching documentation)
+> **Last Updated**: 2025-12-24 (Transfer learning with `--init-weights` for 2p→4p model initialization)
 > **Status**: Active
 
 This document provides a comprehensive reference for all training features, parameters, and techniques available in the RingRift AI training pipeline.
@@ -21,10 +21,11 @@ This document provides a comprehensive reference for all training features, para
 12. [Batch Size Management](#batch-size-management)
 13. [Model Architecture Selection](#model-architecture-selection)
 14. [CLI Arguments Reference](#cli-arguments-reference)
-15. [Parallel Selfplay Generation](#parallel-selfplay-generation)
-16. [Temperature Scheduling](#temperature-scheduling)
-17. [Value Calibration Tracking](#value-calibration-tracking)
-18. [Prometheus Metrics Reference](#prometheus-metrics-reference)
+15. [Transfer Learning](#transfer-learning)
+16. [Parallel Selfplay Generation](#parallel-selfplay-generation)
+17. [Temperature Scheduling](#temperature-scheduling)
+18. [Value Calibration Tracking](#value-calibration-tracking)
+19. [Prometheus Metrics Reference](#prometheus-metrics-reference)
 
 ---
 
@@ -1324,6 +1325,36 @@ python -m app.training.train \
 | `--checkpoint-interval` | int  | 5           | Save every N epochs    |
 | `--resume`              | str  | None        | Resume from checkpoint |
 
+### Transfer Learning
+
+| Argument                | Type | Default | Description                                     |
+| ----------------------- | ---- | ------- | ----------------------------------------------- |
+| `--init-weights`        | str  | None    | Initialize model from pre-trained weights       |
+| `--init-weights-strict` | flag | False   | Require all weight keys to match (error if not) |
+
+Transfer learning allows initializing a new model with weights from a pre-trained model. This is useful for:
+
+- **2-player to 4-player transfer**: Start 4p training from a trained 2p model
+- **Cross-board transfer**: Initialize from a similar board configuration
+- **Fine-tuning**: Continue training with new data while preserving learned features
+
+```bash
+# Example: Initialize 4-player model with 2-player weights
+python -m app.training.train \
+  --board-type hex8 --num-players 4 \
+  --init-weights models/canonical_hex8_2p.pth \
+  --data-path data/training/hex8_4p.npz \
+  --save-path models/hex8_4p_transfer.pth
+
+# Use the transfer_2p_to_4p.py script for value head resizing
+python scripts/transfer_2p_to_4p.py \
+  --source models/canonical_sq8_2p.pth \
+  --output models/transfer_sq8_4p_init.pth \
+  --board-type square8
+```
+
+**Note**: `--init-weights` is only applied if `--save-path` doesn't exist. If resuming training, use `--resume` instead.
+
 ### Sampling
 
 | Argument             | Type | Default | Description                                  |
@@ -2302,6 +2333,79 @@ The urgency score (0-1) determines training prioritization:
 | Temperature Scheduling    | `app/training/temperature_scheduling.py` | Multiple temperature schedule types      |
 | Gumbel-MCTS AI            | `app/ai/gumbel_mcts_ai.py`               | High-quality soft policy targets         |
 | GPU Parallel Games        | `app/ai/gpu_parallel_games.py`           | Batched GPU game generation              |
+
+---
+
+## Transfer Learning
+
+> **Added**: 2025-12-24
+
+Transfer learning enables initializing a new model with weights from a pre-trained model. This accelerates training by reusing learned representations.
+
+### Use Cases
+
+1. **2-player to 4-player transfer**: Initialize 4p value head from 2p model
+2. **Cross-board transfer**: Transfer hex8 knowledge to hexagonal board
+3. **Fine-tuning**: Continue training on new/additional data
+
+### CLI Arguments
+
+| Argument                | Type | Default | Description                              |
+| ----------------------- | ---- | ------- | ---------------------------------------- |
+| `--init-weights`        | str  | None    | Path to pre-trained model weights        |
+| `--init-weights-strict` | flag | False   | Require all weight keys to match exactly |
+
+### Basic Usage
+
+```bash
+# Initialize 4-player model with 2-player weights (partial loading)
+python -m app.training.train \
+  --board-type hex8 --num-players 4 \
+  --init-weights models/canonical_hex8_2p.pth \
+  --data-path data/training/hex8_4p.npz \
+  --save-path models/hex8_4p_transfer.pth
+```
+
+### Value Head Resizing (2p → 4p)
+
+The value head output dimension differs between 2-player (2 outputs) and 4-player (4 outputs) models. Use the `transfer_2p_to_4p.py` script to resize:
+
+```bash
+# Resize value head from 2 outputs to 4 outputs
+python scripts/transfer_2p_to_4p.py \
+  --source models/canonical_sq8_2p.pth \
+  --output models/transfer_sq8_4p_init.pth \
+  --board-type square8
+
+# Then train with the resized weights
+python -m app.training.train \
+  --board-type square8 --num-players 4 \
+  --init-weights models/transfer_sq8_4p_init.pth \
+  --data-path data/training/sq8_4p.npz \
+  --save-path models/sq8_4p_transfer.pth
+```
+
+### How It Works
+
+1. `--init-weights` loads model weights using `load_weights_only()` (no optimizer state)
+2. With `strict=False` (default), mismatched layers are skipped and randomly initialized
+3. Training logs show which layers were loaded vs. randomly initialized
+4. If `--save-path` already exists, `--init-weights` is skipped (use `--resume` for continuation)
+
+### Programmatic Usage
+
+```python
+from app.training.checkpointing import load_weights_only
+
+# Load 2p weights into 4p model (partial loading)
+result = load_weights_only(
+    "models/canonical_hex8_2p.pth",
+    model_4p,
+    strict=False
+)
+print(f"Missing keys (new layers): {result['missing_keys']}")
+print(f"Unexpected keys (skipped): {result['unexpected_keys']}")
+```
 
 ---
 

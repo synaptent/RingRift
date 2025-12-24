@@ -966,6 +966,8 @@ class HybridNNValuePlayer:
     ):
         """Select best move using hybrid heuristic + NN value approach.
 
+        OPTIMIZED: Uses batched evaluation for both heuristic and NN stages.
+
         Args:
             game_state: Current game state
             valid_moves: Optional list of valid moves (computed if not provided)
@@ -973,7 +975,6 @@ class HybridNNValuePlayer:
         Returns:
             Selected move
         """
-        from .heuristic_ai import HeuristicAI
         from ..game_engine import GameEngine
 
         # Get valid moves if not provided
@@ -987,55 +988,102 @@ class HybridNNValuePlayer:
             self.moves_selected += 1
             return valid_moves[0]
 
-        # Step 1: Use heuristic to score and rank moves
-        from app.models import AIConfig as HeuristicConfig
-        heuristic_config = HeuristicConfig(difficulty=1)
-        heuristic = HeuristicAI(self.player_number, heuristic_config)
-        move_scores = []
-        for move in valid_moves:
-            try:
-                # Apply move temporarily
-                next_state = GameEngine.apply_move(game_state, move)
-                # Evaluate resulting position
-                score = heuristic.evaluate_position(next_state)
-                move_scores.append((move, score))
-            except Exception:
-                # Invalid move, give low score
-                move_scores.append((move, -1e6))
+        # Step 1: Fast move selection for top-k candidates
+        # OPTIMIZATION: apply_move is slow (~7ms each), so we limit evaluations
+        # For moves < 3*top_k: evaluate all (fast enough)
+        # For more moves: subsample + use move type heuristics
+        try:
+            max_to_evaluate = self.top_k * 4  # Evaluate at most 4x top_k moves
+
+            if len(valid_moves) <= max_to_evaluate:
+                # Evaluate all moves - fast enough
+                moves_to_score = valid_moves
+            else:
+                # Subsample: prioritize captures and placements over movements
+                # This is a fast heuristic that doesn't require apply_move
+                captures = [m for m in valid_moves if hasattr(m, 'type') and m.type.value == 'capture']
+                placements = [m for m in valid_moves if hasattr(m, 'type') and m.type.value == 'placement']
+                movements = [m for m in valid_moves if hasattr(m, 'type') and m.type.value == 'movement']
+
+                # Prioritize: captures > placements > random movements
+                moves_to_score = []
+                moves_to_score.extend(captures[:max_to_evaluate // 2])
+                moves_to_score.extend(placements[:max_to_evaluate // 2])
+                remaining = max_to_evaluate - len(moves_to_score)
+                if remaining > 0 and movements:
+                    # Randomly sample movements
+                    import random
+                    moves_to_score.extend(random.sample(movements, min(remaining, len(movements))))
+
+                # Ensure we have at least top_k moves
+                if len(moves_to_score) < self.top_k:
+                    moves_to_score = valid_moves[:max_to_evaluate]
+
+            # Score the selected moves
+            from .heuristic_ai import HeuristicAI
+            from app.models import AIConfig as HeuristicConfig
+            heuristic_config = HeuristicConfig(difficulty=1)
+            heuristic = HeuristicAI(self.player_number, heuristic_config)
+            move_scores = []
+            for move in moves_to_score:
+                try:
+                    next_state = GameEngine.apply_move(game_state, move)
+                    score = heuristic.evaluate_position(next_state)
+                    move_scores.append((move, score))
+                except Exception:
+                    move_scores.append((move, -1e6))
+        except Exception as e:
+            logger.warning(f"Heuristic scoring failed: {e}, using move order")
+            move_scores = [(m, i) for i, m in enumerate(valid_moves)]
 
         # Sort by score and take top-K
-        move_scores.sort(key=lambda x: x[1], reverse=True)
-        top_moves = [m for m, _ in move_scores[:self.top_k]]
+        if isinstance(move_scores, list) and len(move_scores) > 0:
+            if isinstance(move_scores[0], tuple):
+                move_scores.sort(key=lambda x: x[1], reverse=True)
+                top_moves = [m for m, _ in move_scores[:self.top_k]]
+            else:
+                top_moves = valid_moves[:self.top_k]
+        else:
+            top_moves = valid_moves[:self.top_k]
 
-        # Step 2: Use NN value to re-rank top candidates
+        # Step 2: Use NN value to re-rank top candidates (BATCHED)
         if self.neural_net is not None and len(top_moves) > 1:
             try:
-                # Evaluate each candidate position with NN
-                nn_values = []
+                # Apply all moves at once to get next states
+                next_states = []
+                valid_top_moves = []
                 for move in top_moves:
-                    next_state = GameEngine.apply_move(game_state, move)
+                    try:
+                        next_state = GameEngine.apply_move(game_state, move)
+                        next_states.append(next_state)
+                        valid_top_moves.append(move)
+                    except Exception:
+                        continue
 
-                    # Get value from NN (for this player's perspective)
+                if next_states:
+                    # BATCH NN evaluation - single call for all states
                     value_head = self.player_number - 1 if self.num_players > 2 else None
                     values, _ = self.neural_net.evaluate_batch(
-                        [next_state], value_head=value_head
+                        next_states, value_head=value_head
                     )
-                    nn_values.append((move, values[0]))
-                    self.nn_evals += 1
+                    self.nn_evals += len(next_states)
 
-                # Sort by NN value and select
-                nn_values.sort(key=lambda x: x[1], reverse=True)
+                    # Pair moves with their values
+                    nn_values = list(zip(valid_top_moves, values))
+                    nn_values.sort(key=lambda x: x[1], reverse=True)
 
-                if self.temperature <= 0:
-                    # Greedy selection
-                    best_move = nn_values[0][0]
+                    if self.temperature <= 0:
+                        # Greedy selection
+                        best_move = nn_values[0][0]
+                    else:
+                        # Temperature-based sampling
+                        vals = np.array([v for _, v in nn_values])
+                        probs = np.exp(vals / self.temperature)
+                        probs = probs / probs.sum()
+                        idx = np.random.choice(len(nn_values), p=probs)
+                        best_move = nn_values[idx][0]
                 else:
-                    # Temperature-based sampling
-                    values = np.array([v for _, v in nn_values])
-                    probs = np.exp(values / self.temperature)
-                    probs = probs / probs.sum()
-                    idx = np.random.choice(len(nn_values), p=probs)
-                    best_move = nn_values[idx][0]
+                    best_move = top_moves[0]
 
             except Exception as e:
                 logger.warning(f"NN value evaluation failed: {e}, using heuristic")

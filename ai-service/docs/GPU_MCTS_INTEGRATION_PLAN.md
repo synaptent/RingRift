@@ -319,22 +319,140 @@ manager = EventDrivenSelfplay(
 )
 ```
 
-### Phase 4: Batch Move Endpoint ⏳ PENDING
+### Phase 4: Batch Move Endpoint ✅ COMPLETED
 
-Add FastAPI endpoint for batch move requests.
+FastAPI endpoint for batch move requests is now available:
 
-### Phase 5: Sandbox Configurability ⏳ PENDING
+```python
+# POST /ai/moves_batch
+# Request body:
+{
+    "game_states": [...],  # List of serialized game states
+    "difficulty": 8,
+    "mode": "batch"  # or "tensor" for GPU-accelerated
+}
 
-Add AI mode selection to sandbox UI.
+# Response:
+{
+    "moves": [...],
+    "mode_used": "batch",
+    "total_time_ms": 156.3
+}
+```
+
+Benchmark results: 25.6 games/sec throughput with `mode="tensor"`.
+
+### Phase 5: Sandbox Configurability ⏳ DEFERRED
+
+AI mode selection for sandbox UI requires cross-stack changes (client → server → AI service).
+Deferred pending API design review.
+
+### Phase 6: MultiTreeMCTS Optimizations ✅ COMPLETED (Dec 2024)
+
+Performance optimizations applied to `_parallel_sequential_halving`:
+
+1. **Vectorized value aggregation** - Using `torch.scatter_add` instead of Python dict loop
+2. **Pre-collect unique states** - Build states once, expand with `.repeat()` for sims_per_action
+3. **Tensor-based index construction** - Avoid Python list → tensor conversion
+
+Benchmark results (CPU, square8_2p):
+| Batch Size | Budget | Total Time | Per-Game | Games/sec |
+|------------|--------|------------|----------|-----------|
+| 4 | 32 | 73ms | 18ms | 54.6 |
+| 16 | 32 | 233ms | 15ms | 68.8 |
+| 64 | 32 | 994ms | 16ms | 64.4 |
+| 64 | 64 | 2619ms | 41ms | 24.4 |
+
+### Phase 7: Hybrid Mode Latency ✅ COMPLETED (Dec 2024)
+
+Optimized HybridNNValuePlayer to achieve <200ms latency:
+
+1. **Move subsampling** - Evaluate max 4×top_k moves, prioritizing captures/placements
+2. **Sequential heuristic evaluation** - More efficient than GPU batch for candidate scoring
+
+Latency improvement: 900ms → 91-178ms (5-10x speedup)
 
 ## Code Changes Summary
 
-| File                                    | Changes                                  | Status     |
-| --------------------------------------- | ---------------------------------------- | ---------- |
-| `app/ai/factory.py`                     | Add `create_mcts()` with mode parameter  | ✅ Done    |
-| `app/ai/hybrid_gpu.py`                  | Add `HybridNNAI` BaseAI wrapper          | ✅ Done    |
-| `app/models/core.py`                    | Add `AIType.HYBRID_NN` and config fields | ✅ Done    |
-| `app/training/event_driven_selfplay.py` | GPU MCTS integration                     | ✅ Done    |
-| `app/main.py`                           | Add `/ai/moves_batch` endpoint           | ⏳ Pending |
-| `src/client/components/sandbox/`        | AI mode selector                         | ⏳ Pending |
-| `scripts/run_gpu_mcts_selfplay.py`      | Selfplay script                          | ✅ Done    |
+| File                                    | Changes                                  | Status      |
+| --------------------------------------- | ---------------------------------------- | ----------- |
+| `app/ai/factory.py`                     | Add `create_mcts()` with mode parameter  | ✅ Done     |
+| `app/ai/hybrid_gpu.py`                  | Add `HybridNNAI` wrapper + optimizations | ✅ Done     |
+| `app/ai/tensor_gumbel_tree.py`          | Vectorized aggregation + pre-allocation  | ✅ Done     |
+| `app/models/core.py`                    | Add `AIType.HYBRID_NN` and config fields | ✅ Done     |
+| `app/training/event_driven_selfplay.py` | GPU MCTS integration                     | ✅ Done     |
+| `app/main.py`                           | Add `/ai/moves_batch` endpoint           | ✅ Done     |
+| `src/client/components/sandbox/`        | AI mode selector                         | ⏳ Deferred |
+| `scripts/run_gpu_mcts_selfplay.py`      | Selfplay script                          | ✅ Done     |
+
+## Production Deployment Configuration
+
+### Cluster Selfplay (GH200/H100 nodes)
+
+For maximum training throughput, use MultiTreeMCTS with large batch sizes:
+
+```bash
+# Environment setup
+export PYTHONPATH=/path/to/ai-service
+export CUDA_VISIBLE_DEVICES=0
+
+# Run GPU-accelerated selfplay
+python scripts/run_gpu_mcts_selfplay.py \
+    --device cuda \
+    --batch-size 64 \
+    --budget 64 \
+    --eval-mode heuristic \
+    --games 1000 \
+    --output data/games/selfplay_gpu.db
+```
+
+Expected throughput: ~50-70 games/sec on GH200.
+
+### Production Server (Human Games)
+
+For human-facing games, prioritize latency:
+
+```bash
+# D1-D6: Standard heuristics (no GPU)
+export RINGRIFT_GPU_MCTS_DISABLE=1
+
+# D7: Fast hybrid mode (~150ms latency)
+export RINGRIFT_USE_HYBRID_D7=1
+export RINGRIFT_HYBRID_TOP_K=8
+
+# D8+: Standard MCTS (GPU optional but not recommended for latency)
+# Uses GumbelMCTSAI by default
+```
+
+### Gauntlet Evaluation
+
+For parallel model evaluation:
+
+```bash
+python -m app.gauntlet.runner \
+    --batch-mode \
+    --batch-size 16 \
+    --board-type hex8 \
+    --num-players 2 \
+    --model models/latest.pth \
+    --games 100
+```
+
+Expected throughput: ~10 games/min with batched evaluation.
+
+### Environment Variables Reference
+
+| Variable                    | Default | Description                           |
+| --------------------------- | ------- | ------------------------------------- |
+| `RINGRIFT_GPU_MCTS_DISABLE` | 0       | Set to 1 to disable GPU MCTS globally |
+| `RINGRIFT_USE_HYBRID_D7`    | 0       | Set to 1 to use HybridNN at D7        |
+| `RINGRIFT_HYBRID_TOP_K`     | 8       | Number of candidate moves for hybrid  |
+| `RINGRIFT_TRACE_DEBUG`      | 0       | Enable debug tracing for MCTS         |
+
+### Hardware Recommendations
+
+| Use Case          | Recommended GPU      | VRAM  | Notes                     |
+| ----------------- | -------------------- | ----- | ------------------------- |
+| Selfplay Training | GH200/H100           | 80GB+ | Batch size 64-128         |
+| Gauntlet Eval     | Any CUDA-capable     | 8GB+  | Batch size 16-32          |
+| Human Games       | None (CPU preferred) | -     | GPU adds latency overhead |

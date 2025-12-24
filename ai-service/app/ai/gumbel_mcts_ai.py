@@ -71,6 +71,8 @@ _GPU_GUMBEL_DISABLE = os.environ.get("RINGRIFT_GPU_GUMBEL_DISABLE", "").lower() 
 _GPU_GUMBEL_SHADOW_VALIDATE = os.environ.get("RINGRIFT_GPU_GUMBEL_SHADOW_VALIDATE", "").lower() in (
     "1", "true", "yes", "on"
 )
+# GPU tree shadow validation rate (0.0 = disabled, 0.05 = 5% of searches validated)
+_GPU_TREE_SHADOW_RATE = float(os.environ.get("RINGRIFT_GPU_TREE_SHADOW_RATE", "0.0"))
 
 # Normalization scale for heuristic scores to [-1, 1]
 # HeuristicAI returns scores in range [-100000, 100000] for terminal states
@@ -276,6 +278,12 @@ class GumbelMCTSAI(BaseAI):
         self._shadow_validate: bool = _GPU_GUMBEL_SHADOW_VALIDATE
         self._shadow_divergence_count: int = 0
         self._shadow_total_checks: int = 0
+
+        # GPU tree shadow validation: compare GPU tree search vs CPU sequential halving
+        # Validates training data quality by ensuring policy distributions match
+        self._gpu_tree_shadow_rate: float = _GPU_TREE_SHADOW_RATE
+        self._gpu_tree_divergence_count: int = 0
+        self._gpu_tree_total_checks: int = 0
 
         # Batch size for GPU evaluation (tune based on GPU memory)
         self._gpu_batch_size: int = getattr(config, 'gpu_batch_size', 128)
@@ -685,6 +693,10 @@ class GumbelMCTSAI(BaseAI):
             valid_moves,
         )
 
+        # GPU tree shadow validation: compare against CPU sequential halving
+        if self._gpu_tree_shadow_rate > 0 and np.random.random() < self._gpu_tree_shadow_rate:
+            self._gpu_tree_shadow_validate(game_state, valid_moves, best_move, policy_dict)
+
         # Convert policy dict to GumbelAction list for training data extraction
         # (maintains compatibility with existing training data extraction)
         self._last_search_actions = []
@@ -1050,6 +1062,121 @@ class GumbelMCTSAI(BaseAI):
             "divergences": self._shadow_divergence_count,
             "divergence_rate": rate,
             "shadow_enabled": self._shadow_validate,
+        }
+
+    def _gpu_tree_shadow_validate(
+        self,
+        game_state: GameState,
+        valid_moves: list[Move],
+        gpu_move: Move,
+        gpu_policy: dict[str, float],
+    ) -> None:
+        """Validate GPU tree search against CPU sequential halving.
+
+        Compares the policy distribution from GPU tree search against
+        CPU-based sequential halving to ensure training data quality parity.
+
+        Args:
+            game_state: Current game state.
+            valid_moves: List of valid moves.
+            gpu_move: Best move selected by GPU tree.
+            gpu_policy: Policy distribution from GPU tree.
+        """
+        self._gpu_tree_total_checks += 1
+
+        try:
+            # Run CPU sequential halving for comparison
+            policy_logits = self._get_policy_logits(game_state, valid_moves)
+            actions = self._gumbel_top_k_sample(valid_moves, policy_logits)
+
+            if len(actions) <= 1:
+                return  # Single action, no comparison needed
+
+            # Reset action stats and run sequential halving
+            for a in actions:
+                a.visit_count = 0
+                a.total_value = 0.0
+            cpu_best = self._sequential_halving(game_state, actions)
+
+            # Build CPU policy from visit counts
+            cpu_policy = {}
+            total_visits = sum(a.visit_count for a in actions if a.visit_count > 0)
+            if total_visits > 0:
+                for a in actions:
+                    if a.visit_count > 0:
+                        move_key = self._gpu_gumbel_mcts._move_to_key(a.move)
+                        cpu_policy[move_key] = a.visit_count / total_visits
+
+            # Compare policies using KL divergence and max probability difference
+            divergence_detected = False
+            divergence_info = []
+
+            # Check if best moves match
+            cpu_move_key = self._gpu_gumbel_mcts._move_to_key(cpu_best.move)
+            gpu_move_key = self._gpu_gumbel_mcts._move_to_key(gpu_move)
+            if cpu_move_key != gpu_move_key:
+                divergence_info.append(f"move_mismatch: GPU={gpu_move_key}, CPU={cpu_move_key}")
+                divergence_detected = True
+
+            # Check policy distribution similarity (max absolute difference)
+            all_keys = set(gpu_policy.keys()) | set(cpu_policy.keys())
+            max_diff = 0.0
+            for key in all_keys:
+                gpu_prob = gpu_policy.get(key, 0.0)
+                cpu_prob = cpu_policy.get(key, 0.0)
+                diff = abs(gpu_prob - cpu_prob)
+                max_diff = max(max_diff, diff)
+
+            # Tolerate 5% policy difference (due to stochastic simulation)
+            POLICY_TOLERANCE = 0.05
+            if max_diff > POLICY_TOLERANCE:
+                divergence_info.append(f"policy_diff: max_diff={max_diff:.3f} > {POLICY_TOLERANCE}")
+                divergence_detected = True
+
+            if divergence_detected:
+                self._gpu_tree_divergence_count += 1
+                logger.warning(
+                    f"GumbelMCTSAI: GPU tree / CPU parity divergence: {', '.join(divergence_info)}"
+                )
+                # Log detailed info for first few divergences
+                if self._gpu_tree_divergence_count <= 3:
+                    logger.warning(
+                        f"  GPU policy top-3: {sorted(gpu_policy.items(), key=lambda x: -x[1])[:3]}"
+                    )
+                    logger.warning(
+                        f"  CPU policy top-3: {sorted(cpu_policy.items(), key=lambda x: -x[1])[:3]}"
+                    )
+
+        except Exception as e:
+            logger.warning(f"GumbelMCTSAI: GPU tree shadow validation error: {e}")
+
+        # Periodic stats logging
+        if self._gpu_tree_total_checks > 0 and self._gpu_tree_total_checks % 20 == 0:
+            rate = self._gpu_tree_divergence_count / self._gpu_tree_total_checks
+            logger.info(
+                f"GumbelMCTSAI: GPU tree shadow validation: "
+                f"{self._gpu_tree_divergence_count}/{self._gpu_tree_total_checks} divergences ({rate:.2%})"
+            )
+
+    def get_gpu_tree_validation_stats(self) -> dict[str, Any]:
+        """Get GPU tree shadow validation statistics.
+
+        Returns:
+            Dictionary with:
+            - total_checks: Number of GPU tree validation checks performed
+            - divergences: Number of divergences detected
+            - divergence_rate: Percentage of checks that diverged
+            - shadow_rate: Configured shadow validation rate
+        """
+        rate = 0.0
+        if self._gpu_tree_total_checks > 0:
+            rate = self._gpu_tree_divergence_count / self._gpu_tree_total_checks
+
+        return {
+            "total_checks": self._gpu_tree_total_checks,
+            "divergences": self._gpu_tree_divergence_count,
+            "divergence_rate": rate,
+            "shadow_rate": self._gpu_tree_shadow_rate,
         }
 
     def validate_move_parity(

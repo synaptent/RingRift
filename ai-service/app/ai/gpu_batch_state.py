@@ -1339,13 +1339,20 @@ class BatchGameState:
     def encode_for_nn(
         self,
         player_perspective: torch.Tensor | None = None,
+        base_channels: int = 14,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Encode batch state directly to neural network input format.
 
         This is a GPU-native encoding that avoids round-tripping through
         Python GameState objects. Provides 5-10x speedup for batch NN evaluation.
 
-        The encoding matches NeuralNetAI._extract_features() for square boards:
+        Supports multiple architectures:
+        - Square v2/v3/v4: 14 base channels
+        - Square v2_Lite/v3_Lite: 12 base channels
+        - Hex v2 (HexStateEncoder): 10 base channels
+        - Hex v3 (HexStateEncoderV3): 16 base channels
+
+        Channel layout (14 channels - Square):
         - Channels 0-1: Stack heights (my/opponent, normalized 0-1)
         - Channels 2-3: Markers (my/opponent, binary)
         - Channels 4-5: Collapsed spaces (my/opponent territory, binary)
@@ -1355,14 +1362,53 @@ class BatchGameState:
         - Channel 12: Valid board position mask
         - Channel 13: Reserved (zeros)
 
+        Channel layout (12 channels - Square Lite models):
+        - Channels 0-1: Stack heights (my/opponent, normalized 0-1)
+        - Channels 2-3: Markers (my/opponent, binary)
+        - Channels 4-5: Collapsed spaces (my/opponent territory, binary)
+        - Channels 6-7: Reserved for liberties (zeros)
+        - Channels 8-9: Cap presence (my/opponent, binary)
+        - Channels 10-11: Valid mask + reserved
+
+        Channel layout (10 channels - Hex V2):
+        - Channels 0-1: Stack heights (my/opponent, normalized 0-1)
+        - Channels 2-3: Markers (my/opponent, binary)
+        - Channels 4-5: Collapsed spaces (territory)
+        - Channels 6-7: Liberties (normalized empty neighbors)
+        - Channels 8-9: Line potential (friendly marker neighbors)
+
+        Channel layout (16 channels - Hex V3):
+        - Channels 0-9: Same as Hex V2
+        - Channels 10-11: Contestation (cells with both friendly & enemy neighbors)
+        - Channels 12-13: Stack height gradient (sum of neighboring heights)
+        - Channels 14-15: Ring placement validity
+
         Args:
             player_perspective: Optional (batch_size,) tensor of player numbers
                 for the perspective. If None, uses current_player.
+            base_channels: Number of base feature channels
 
         Returns:
             (features, globals) tuple:
-                features: [batch, 14, H, W] tensor of board features
+                features: [batch, base_channels, H, W] tensor of board features
                 globals: [batch, 20] tensor of global features
+        """
+        # Detect board type from board_size
+        is_hex = self.board_size in (9, 25)  # hex8 = 9, hexagonal = 25
+
+        if is_hex and base_channels in (10, 16):
+            return self._encode_for_nn_hex(player_perspective, base_channels)
+        else:
+            return self._encode_for_nn_square(player_perspective, base_channels)
+
+    def _encode_for_nn_square(
+        self,
+        player_perspective: torch.Tensor | None = None,
+        base_channels: int = 14,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Encode square board state to neural network input format.
+
+        Internal implementation for square boards (8x8, 19x19).
         """
         B = self.batch_size
         H = W = self.board_size
@@ -1374,14 +1420,17 @@ class BatchGameState:
         else:
             my_player = player_perspective
 
-        # Initialize feature tensor
-        features = torch.zeros((B, 14, H, W), dtype=torch.float32, device=device)
+        # Initialize feature tensor with correct channel count
+        features = torch.zeros((B, base_channels, H, W), dtype=torch.float32, device=device)
 
         # Expand my_player for broadcasting: (B, 1, 1)
         my_player_3d = my_player.view(B, 1, 1)
 
-        # Channel 0: My stacks (height normalized)
+        # Common masks
         my_mask = (self.stack_owner == my_player_3d)  # (B, H, W)
+        opp_mask = (self.stack_owner > 0) & (self.stack_owner != my_player_3d)
+
+        # Channel 0: My stacks (height normalized)
         features[:, 0] = torch.where(
             my_mask,
             self.stack_height.float() / 5.0,
@@ -1389,7 +1438,6 @@ class BatchGameState:
         ).clamp(max=1.0)
 
         # Channel 1: Opponent stacks (height normalized)
-        opp_mask = (self.stack_owner > 0) & (self.stack_owner != my_player_3d)
         features[:, 1] = torch.where(
             opp_mask,
             self.stack_height.float() / 5.0,
@@ -1408,26 +1456,33 @@ class BatchGameState:
         # Channel 5: Opponent collapsed/territory spaces
         features[:, 5] = ((self.territory_owner > 0) & (self.territory_owner != my_player_3d)).float()
 
-        # Channels 6-7: Reserved for liberties (zeros)
-        # Channels 8-9: Reserved for line potential (zeros)
+        # Channels 6-7: Reserved for liberties (zeros in both layouts)
 
-        # Channel 10: My cap presence (stacks I own with height > 0)
-        features[:, 10] = my_mask.float()
-
-        # Channel 11: Opponent cap presence
-        features[:, 11] = opp_mask.float()
-
-        # Channel 12: Valid board position mask (all 1s for square boards)
-        features[:, 12] = 1.0
-
-        # Channel 13: Reserved (zeros)
+        if base_channels >= 14:
+            # Full model layout (14 channels)
+            # Channels 8-9: Reserved for line potential (zeros)
+            # Channel 10: My cap presence
+            features[:, 10] = my_mask.float()
+            # Channel 11: Opponent cap presence
+            features[:, 11] = opp_mask.float()
+            # Channel 12: Valid board position mask
+            features[:, 12] = 1.0
+            # Channel 13: Reserved (zeros)
+        else:
+            # Lite model layout (12 channels)
+            # Channels 8-9: Cap presence (my/opponent)
+            features[:, 8] = my_mask.float()
+            features[:, 9] = opp_mask.float()
+            # Channel 10: Valid board position mask
+            features[:, 10] = 1.0
+            # Channel 11: Reserved (zeros)
 
         # Global features (20 dimensions) - fully vectorized
         globals_vec = torch.zeros((B, 20), dtype=torch.float32, device=device)
 
         # Gather my rings in hand using advanced indexing
-        batch_indices = torch.arange(B, device=device)
-        my_player_clamped = my_player.clamp(1, self.num_players)
+        batch_indices = torch.arange(B, device=device, dtype=torch.long)
+        my_player_clamped = my_player.clamp(1, self.num_players).long()
 
         # My rings in hand (normalized) - gather using player index
         globals_vec[:, 0] = self.rings_in_hand[batch_indices, my_player_clamped].float() / 24.0
@@ -1453,6 +1508,269 @@ class BatchGameState:
         # Territory counts per player (vectorized)
         for tp in range(1, min(self.num_players + 1, 5)):
             globals_vec[:, 11 + tp] = self.territory_count[:, tp].float() / (H * W)
+
+        return features, globals_vec
+
+    def _encode_for_nn_hex(
+        self,
+        player_perspective: torch.Tensor | None = None,
+        base_channels: int = 10,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Encode hex board state to neural network input format.
+
+        Internal implementation for hex boards (hex8: 9x9, hexagonal: 25x25).
+
+        Hex V2 (10 channels):
+        - 0-1: Stack heights (my/opponent)
+        - 2-3: Markers
+        - 4-5: Collapsed spaces (territory)
+        - 6-7: Liberties (normalized empty neighbors)
+        - 8-9: Line potential (friendly marker neighbors)
+
+        Hex V3 (16 channels):
+        - 0-9: Same as V2
+        - 10-11: Contestation
+        - 12-13: Stack height gradient
+        - 14-15: Ring placement validity
+        """
+        B = self.batch_size
+        H = W = self.board_size
+        device = self.device
+        radius = (self.board_size - 1) // 2  # 4 for hex8, 12 for hexagonal
+
+        # Determine "my" player for each game
+        if player_perspective is None:
+            my_player = self.current_player  # (B,)
+        else:
+            my_player = player_perspective
+
+        # Initialize feature tensor
+        features = torch.zeros((B, base_channels, H, W), dtype=torch.float32, device=device)
+
+        # Expand my_player for broadcasting: (B, 1, 1)
+        my_player_3d = my_player.view(B, 1, 1)
+
+        # Build valid hex cell mask (cells within the hex boundary)
+        # Hex boundary uses axial distance: max(|q|, |r|, |q+r|) <= radius
+        # where q = cx - center, r = cy - center
+        center = self.board_size // 2
+        cy_coords = torch.arange(H, device=device).view(1, H, 1)
+        cx_coords = torch.arange(W, device=device).view(1, 1, W)
+        q = cx_coords - center
+        r = cy_coords - center
+        hex_dist = torch.maximum(torch.abs(q), torch.maximum(torch.abs(r), torch.abs(q + r)))
+        valid_hex_mask = (hex_dist <= radius)  # (1, H, W)
+
+        # Common masks
+        my_mask = (self.stack_owner == my_player_3d)  # (B, H, W)
+        opp_mask = (self.stack_owner > 0) & (self.stack_owner != my_player_3d)
+        my_marker_mask = (self.marker_owner == my_player_3d)
+        opp_marker_mask = (self.marker_owner > 0) & (self.marker_owner != my_player_3d)
+
+        # Channel 0: My stacks (height normalized)
+        features[:, 0] = torch.where(
+            my_mask,
+            self.stack_height.float() / 5.0,
+            torch.zeros_like(self.stack_height, dtype=torch.float32)
+        ).clamp(max=1.0)
+
+        # Channel 1: Opponent stacks (height normalized)
+        features[:, 1] = torch.where(
+            opp_mask,
+            self.stack_height.float() / 5.0,
+            torch.zeros_like(self.stack_height, dtype=torch.float32)
+        ).clamp(max=1.0)
+
+        # Channel 2: My markers
+        features[:, 2] = my_marker_mask.float()
+
+        # Channel 3: Opponent markers
+        features[:, 3] = opp_marker_mask.float()
+
+        # Channel 4: My collapsed/territory spaces
+        # For hex, territory_owner stores valid collapsed spaces
+        # But out-of-bounds cells also have territory_owner set to 127
+        my_territory = (self.territory_owner == my_player_3d) & valid_hex_mask
+        features[:, 4] = my_territory.float()
+
+        # Channel 5: Opponent collapsed/territory spaces
+        opp_territory = ((self.territory_owner > 0) &
+                        (self.territory_owner != my_player_3d) &
+                        (self.territory_owner < 127) &  # Exclude out-of-bounds marker
+                        valid_hex_mask)
+        features[:, 5] = opp_territory.float()
+
+        # Channels 6-7: Liberties (empty neighbors count normalized)
+        # For hex boards, max neighbors = 6
+        # Compute using convolution-like approach for efficiency
+        has_stack = (self.stack_owner > 0).float()  # (B, H, W)
+        has_collapsed = self.is_collapsed.float()
+        empty_or_marker = (1.0 - has_stack) * (1.0 - has_collapsed)  # Cells that count as liberties
+
+        # 6-direction hex neighbor kernel (axial coordinates)
+        # Directions: (1,0), (0,1), (-1,1), (-1,0), (0,-1), (1,-1)
+        # For a simple approximation, use padding and shifts
+        liberty_count = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+        # Shift in 6 hex directions and sum empty neighbors
+        # Direction offsets in (row, col) format for canvas coords
+        hex_offsets = [(0, 1), (1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1)]
+        padded = torch.nn.functional.pad(empty_or_marker, (1, 1, 1, 1), mode='constant', value=0)
+        for dr, dc in hex_offsets:
+            shifted = padded[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+            liberty_count = liberty_count + shifted
+
+        features[:, 6] = torch.where(my_mask, liberty_count / 6.0, torch.zeros_like(liberty_count)).clamp(max=1.0)
+        features[:, 7] = torch.where(opp_mask, liberty_count / 6.0, torch.zeros_like(liberty_count)).clamp(max=1.0)
+
+        # Channels 8-9: Line potential (same-color marker neighbors)
+        # Count adjacent markers of same color
+        my_markers_float = my_marker_mask.float()
+        opp_markers_float = opp_marker_mask.float()
+
+        my_marker_neighbors = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+        opp_marker_neighbors = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+        padded_my = torch.nn.functional.pad(my_markers_float, (1, 1, 1, 1), mode='constant', value=0)
+        padded_opp = torch.nn.functional.pad(opp_markers_float, (1, 1, 1, 1), mode='constant', value=0)
+        for dr, dc in hex_offsets:
+            my_marker_neighbors = my_marker_neighbors + padded_my[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+            opp_marker_neighbors = opp_marker_neighbors + padded_opp[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+
+        # Normalize by 3 (typical for line building potential)
+        features[:, 8] = torch.where(my_marker_mask, my_marker_neighbors / 3.0, torch.zeros_like(my_marker_neighbors)).clamp(max=1.0)
+        features[:, 9] = torch.where(opp_marker_mask, opp_marker_neighbors / 3.0, torch.zeros_like(opp_marker_neighbors)).clamp(max=1.0)
+
+        # V3 additional channels (10-15)
+        if base_channels >= 16:
+            # Channels 10-11: Contestation (cells with both friendly & enemy neighbors)
+            # For each cell, count if it has both friendly and enemy stacks/markers nearby
+            friendly_nearby = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+            enemy_nearby = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+
+            padded_my_stack = torch.nn.functional.pad(my_mask.float(), (1, 1, 1, 1), mode='constant', value=0)
+            padded_opp_stack = torch.nn.functional.pad(opp_mask.float(), (1, 1, 1, 1), mode='constant', value=0)
+
+            for dr, dc in hex_offsets:
+                friendly_nearby = friendly_nearby + padded_my_stack[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+                friendly_nearby = friendly_nearby + padded_my[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+                enemy_nearby = enemy_nearby + padded_opp_stack[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+                enemy_nearby = enemy_nearby + padded_opp[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+
+            contested = (friendly_nearby > 0) & (enemy_nearby > 0)
+            features[:, 10] = torch.where(contested, (friendly_nearby / 3.0).clamp(max=1.0), torch.zeros_like(friendly_nearby))
+            features[:, 11] = torch.where(contested, (enemy_nearby / 3.0).clamp(max=1.0), torch.zeros_like(enemy_nearby))
+
+            # Channels 12-13: Stack height gradient (sum of neighboring heights)
+            stack_heights = self.stack_height.float() / 5.0  # (B, H, W)
+            my_height_gradient = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+            opp_height_gradient = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+
+            padded_my_heights = torch.nn.functional.pad(
+                torch.where(my_mask, stack_heights, torch.zeros_like(stack_heights)),
+                (1, 1, 1, 1), mode='constant', value=0
+            )
+            padded_opp_heights = torch.nn.functional.pad(
+                torch.where(opp_mask, stack_heights, torch.zeros_like(stack_heights)),
+                (1, 1, 1, 1), mode='constant', value=0
+            )
+
+            for dr, dc in hex_offsets:
+                my_height_gradient = my_height_gradient + padded_my_heights[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+                opp_height_gradient = opp_height_gradient + padded_opp_heights[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+
+            # Normalize by 6 (max neighbors)
+            features[:, 12] = (my_height_gradient / 6.0).clamp(max=1.0)
+            features[:, 13] = (opp_height_gradient / 6.0).clamp(max=1.0)
+
+            # Channels 14-15: Ring placement validity
+            # Cell is valid for ring placement if: no stack, no collapsed, valid hex cell
+            can_place = ((self.stack_owner == 0) & ~self.is_collapsed & valid_hex_mask)
+            features[:, 14] = can_place.float()
+
+            # Accessibility score (count of non-collapsed neighbors)
+            non_collapsed = (1.0 - has_collapsed)
+            padded_nc = torch.nn.functional.pad(non_collapsed, (1, 1, 1, 1), mode='constant', value=0)
+            accessibility = torch.zeros((B, H, W), dtype=torch.float32, device=device)
+            for dr, dc in hex_offsets:
+                accessibility = accessibility + padded_nc[:, 1+dr:1+dr+H, 1+dc:1+dc+W]
+            features[:, 15] = torch.where(can_place, (accessibility / 6.0).clamp(max=1.0), torch.zeros_like(accessibility))
+
+        # Mask out invalid hex cells in all channels
+        features = features * valid_hex_mask.float()
+
+        # Global features (20 dimensions) - hex-specific layout
+        globals_vec = torch.zeros((B, 20), dtype=torch.float32, device=device)
+
+        # Phase one-hot encoding (indices 0-4)
+        # Match HexStateEncoder phase mapping
+        phase = self.current_phase  # (B,)
+        # GamePhase enum: RING_PLACEMENT=1, MOVEMENT=2, CAPTURE=3, LINE_PROCESSING=4, etc.
+        globals_vec[:, 0] = (phase == 1).float()  # RING_PLACEMENT
+        globals_vec[:, 1] = (phase == 2).float()  # MOVEMENT
+        globals_vec[:, 2] = (phase == 3).float()  # CAPTURE
+        globals_vec[:, 3] = (phase == 4).float()  # LINE_PROCESSING
+        globals_vec[:, 4] = ((phase == 5) | (phase == 6)).float()  # TERRITORY_PROCESSING or FORCED_ELIMINATION
+
+        # Rings info (indices 5-8)
+        batch_indices = torch.arange(B, device=device, dtype=torch.long)
+        my_player_clamped = my_player.clamp(1, self.num_players).long()
+
+        # Infer rings_per_player from board size
+        rings_per_player = 96.0 if self.board_size == 25 else 18.0
+
+        # My rings in hand (normalized)
+        globals_vec[:, 5] = self.rings_in_hand[batch_indices, my_player_clamped].float() / rings_per_player
+
+        # Opponent rings (average of opponents)
+        total_rings = self.rings_in_hand[:, 1:self.num_players + 1].sum(dim=1).float()
+        my_rings = self.rings_in_hand[batch_indices, my_player_clamped].float()
+        opp_count = self.num_players - 1
+        if opp_count > 0:
+            globals_vec[:, 6] = ((total_rings - my_rings) / opp_count) / rings_per_player
+
+        # Eliminated rings (indices 7-8)
+        globals_vec[:, 7] = self.eliminated_rings[batch_indices, my_player_clamped].float() / rings_per_player
+        # Opponent eliminated (average)
+        total_elim = self.eliminated_rings[:, 1:self.num_players + 1].sum(dim=1).float()
+        my_elim = self.eliminated_rings[batch_indices, my_player_clamped].float()
+        if opp_count > 0:
+            globals_vec[:, 8] = ((total_elim - my_elim) / opp_count) / rings_per_player
+
+        # Turn indicator (index 9)
+        globals_vec[:, 9] = 1.0
+
+        # Player count indicators (indices 10-11)
+        globals_vec[:, 10] = 1.0 if self.num_players == 3 else 0.0
+        globals_vec[:, 11] = 1.0 if self.num_players == 4 else 0.0
+
+        # Territory counts (indices 12-13)
+        max_cells = 397.0 if self.board_size == 25 else 61.0  # Approximate valid hex cells
+        my_territory_count = self.territory_count[batch_indices, my_player_clamped].float()
+        globals_vec[:, 12] = (my_territory_count / max_cells).clamp(max=1.0)
+
+        # Opponent territory (average)
+        total_terr = self.territory_count[:, 1:self.num_players + 1].sum(dim=1).float()
+        if opp_count > 0:
+            globals_vec[:, 13] = (((total_terr - my_territory_count) / opp_count) / max_cells).clamp(max=1.0)
+
+        # Marker counts (indices 14-15)
+        max_markers = 50.0
+        my_marker_count = my_marker_mask.sum(dim=(1, 2)).float()
+        opp_marker_count = opp_marker_mask.sum(dim=(1, 2)).float()
+        globals_vec[:, 14] = (my_marker_count / max_markers).clamp(max=1.0)
+        globals_vec[:, 15] = (opp_marker_count / max_markers).clamp(max=1.0)
+
+        # Stack counts (indices 16-17)
+        max_stacks = 30.0
+        my_stack_count = my_mask.sum(dim=(1, 2)).float()
+        opp_stack_count = opp_mask.sum(dim=(1, 2)).float()
+        globals_vec[:, 16] = (my_stack_count / max_stacks).clamp(max=1.0)
+        globals_vec[:, 17] = (opp_stack_count / max_stacks).clamp(max=1.0)
+
+        # Move progress (index 18)
+        globals_vec[:, 18] = (self.move_count.float() / 200.0).clamp(max=1.0)
+
+        # Reserved (index 19)
+        globals_vec[:, 19] = 0.0
 
         return features, globals_vec
 

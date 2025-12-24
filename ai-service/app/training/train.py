@@ -675,6 +675,8 @@ def train_model(
     lr_t0: int = 10,
     lr_t_mult: int = 2,
     resume_path: str | None = None,
+    init_weights_path: str | None = None,
+    init_weights_strict: bool = False,
     augment_hex_symmetry: bool = False,
     distributed: bool = False,
     local_rank: int = -1,
@@ -1771,6 +1773,32 @@ def train_model(
             logger.info(f"Auto-tuned batch size: {config.batch_size} (was {original_batch})")
         except Exception as e:
             logger.warning(f"Batch size auto-tuning failed: {e}. Using original batch size.")
+
+    # Load initial weights for transfer learning (before save_path check)
+    # This allows starting from a pre-trained model (e.g., 2p->4p transfer)
+    # If save_path exists, it will override these weights (resume takes priority)
+    if init_weights_path is not None and os.path.exists(init_weights_path):
+        if not os.path.exists(save_path):  # Only if not resuming existing training
+            try:
+                from app.training.checkpointing import load_weights_only
+                load_result = load_weights_only(
+                    init_weights_path,
+                    model,
+                    device=device,
+                    strict=init_weights_strict,
+                )
+                if not distributed or is_main_process():
+                    logger.info(f"Loaded initial weights from {init_weights_path}")
+                    if load_result.get('missing_keys'):
+                        logger.info(f"  Missing keys (will be randomly initialized): {len(load_result['missing_keys'])}")
+                    if load_result.get('unexpected_keys'):
+                        logger.info(f"  Unexpected keys (ignored): {len(load_result['unexpected_keys'])}")
+            except Exception as e:
+                if not distributed or is_main_process():
+                    logger.warning(f"Could not load init weights from {init_weights_path}: {e}. Starting fresh.")
+        else:
+            if not distributed or is_main_process():
+                logger.info(f"Skipping init_weights_path (save_path {save_path} exists, resuming instead)")
 
     # Load existing weights if available to continue training
     if os.path.exists(save_path):

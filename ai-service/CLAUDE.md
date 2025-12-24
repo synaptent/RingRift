@@ -90,6 +90,29 @@ ssh -i ~/.ssh/id_cluster ubuntu@100.123.183.70 \
    > logs/train.log 2>&1 &"
 ```
 
+### Transfer Learning (2p → 4p)
+
+```bash
+# Step 1: Resize value head from 2 outputs to 4 outputs
+python scripts/transfer_2p_to_4p.py \
+  --source models/canonical_sq8_2p.pth \
+  --output models/transfer_sq8_4p_init.pth \
+  --board-type square8
+
+# Step 2: Train with transferred weights
+python -m app.training.train \
+  --board-type square8 --num-players 4 \
+  --init-weights models/transfer_sq8_4p_init.pth \
+  --data-path data/training/sq8_4p.npz \
+  --save-path models/sq8_4p_transfer.pth
+
+# Direct transfer (partial loading, value head randomly initialized)
+python -m app.training.train \
+  --board-type hex8 --num-players 4 \
+  --init-weights models/canonical_hex8_2p.pth \
+  --data-path data/training/hex8_4p.npz
+```
+
 ### Data Discovery & Quality
 
 ```bash

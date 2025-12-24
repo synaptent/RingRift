@@ -910,6 +910,9 @@ class GPUGumbelMCTS:
         to neural network input format, avoiding 5-10x overhead from
         creating Python GameState objects.
 
+        Supports all model architectures (v2, v2_Lite, v3, v3_Lite, v4) by
+        querying the model's expected input channels and adapting accordingly.
+
         Args:
             batch_state: Batch of game states to evaluate
             neural_net: Neural network model
@@ -917,18 +920,50 @@ class GPUGumbelMCTS:
         Returns:
             (batch_size,) tensor of position values in [-1, 1]
         """
-        # Encode directly on GPU
-        features, globals_vec = batch_state.encode_for_nn()
-
-        # Features need to be expanded for history (model expects 14 * 4 = 56 channels)
-        # For now, repeat current frame 4 times (no actual history in rollout)
-        history_length = getattr(neural_net, 'history_length', 3)
-        if history_length > 0:
-            # Stack current features multiple times to fill history channels
-            features = features.repeat(1, history_length + 1, 1, 1)
-
-        # Get the model and run forward pass directly
+        # Get the model
         model = neural_net.model if hasattr(neural_net, 'model') else neural_net
+
+        # Query model's expected input channels to support all architectures
+        # Square boards:
+        #   v2/v3/v4: 56 channels (14 base × 4 frames)
+        #   v2_Lite/v3_Lite: 36 channels (12 base × 3 frames)
+        # Hex boards:
+        #   HexStateEncoder (v2): 40 channels (10 base × 4 frames)
+        #   HexStateEncoderV3: 64 channels (16 base × 4 frames)
+        expected_channels = self._get_model_input_channels(model)
+        history_length = getattr(neural_net, 'history_length', None)
+        if history_length is None:
+            history_length = getattr(model, 'history_length', None)
+
+        # Detect board type from batch_state to determine if hex encoding needed
+        is_hex = batch_state.board_size in (9, 25)  # hex8 = 9, hexagonal = 25
+
+        # Infer base channels and history from expected total
+        if expected_channels is not None and history_length is not None:
+            base_channels = expected_channels // (history_length + 1)
+        elif expected_channels == 56:
+            base_channels, history_length = 14, 3  # Square v2/v3/v4
+        elif expected_channels == 36:
+            base_channels, history_length = 12, 2  # Square Lite
+        elif expected_channels == 48:
+            base_channels, history_length = 12, 3  # Square with 3 history
+        elif expected_channels == 40:
+            base_channels, history_length = 10, 3  # Hex V2
+        elif expected_channels == 64:
+            base_channels, history_length = 16, 3  # Hex V3
+        else:
+            # Default based on board type
+            if is_hex:
+                base_channels, history_length = 10, 3  # Default hex v2
+            else:
+                base_channels, history_length = 14, 3  # Default square v2/v3/v4
+
+        # Encode with correct base channel count
+        features, globals_vec = batch_state.encode_for_nn(base_channels=base_channels)
+
+        # Expand for history frames (repeat current frame)
+        if history_length > 0:
+            features = features.repeat(1, history_length + 1, 1, 1)
 
         with torch.no_grad():
             # Move to model device if needed
@@ -937,11 +972,16 @@ class GPUGumbelMCTS:
                 features = features.to(model_device)
                 globals_vec = globals_vec.to(model_device)
 
-            # Run model forward pass
-            value_out, _ = model(features, globals_vec)
+            # Run model forward pass - handle different return signatures
+            # v2: (value, policy)
+            # v3/v4: (value, policy, rank_dist) or (value, policy, rank_dist, features)
+            outputs = model(features, globals_vec)
+            if isinstance(outputs, tuple):
+                value_out = outputs[0]
+            else:
+                value_out = outputs
 
-            # Get value for current player (index 0 in multi-player output)
-            # The model outputs [batch, num_players], we want current player's value
+            # Get value for current player
             batch_indices = torch.arange(batch_state.batch_size, device=model_device)
             player_indices = (batch_state.current_player - 1).clamp(0, value_out.shape[1] - 1)
             player_indices = player_indices.to(model_device)
@@ -949,6 +989,32 @@ class GPUGumbelMCTS:
             values = value_out[batch_indices, player_indices]
 
         return values.to(self.device)
+
+    def _get_model_input_channels(self, model: Any) -> int | None:
+        """Query model's expected input channels for architecture compatibility.
+
+        Supports v2, v2_Lite, v3, v3_Lite, v4 and future architectures by
+        inspecting the model's first convolution layer.
+
+        Args:
+            model: Neural network model
+
+        Returns:
+            Expected input channels or None if cannot determine
+        """
+        # Try to get from model attributes first
+        if hasattr(model, 'total_in_channels'):
+            return model.total_in_channels
+
+        # Try to get from conv1 weight shape
+        if hasattr(model, 'conv1') and hasattr(model.conv1, 'weight'):
+            return model.conv1.weight.shape[1]
+
+        # Handle torch.compile wrapped models
+        if hasattr(model, '_orig_mod'):
+            return self._get_model_input_channels(model._orig_mod)
+
+        return None
 
     def _evaluate_position(
         self,
