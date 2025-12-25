@@ -1,0 +1,40 @@
+# Alerting configuration for cluster health daemon
+#
+# Slack webhooks for different alert channels
+
+# Primary alert channel (critical alerts)
+slack_webhook_url: null # Set your Slack webhook URL here
+
+# Secondary channel for informational alerts
+slack_info_webhook_url: null
+
+# Alert thresholds
+thresholds:
+  # Alert if healthy node percentage drops below this
+  min_healthy_percent: 80
+
+  # Alert if more than this many nodes are offline
+  max_offline_count: 5
+
+  # Alert if recovery attempts exceed this per hour per node
+  max_recovery_attempts_per_hour: 6
+
+  # Alert if cluster hourly cost exceeds this
+  max_hourly_cost: 50.0
+
+# Alert suppression (prevent alert storms)
+suppression:
+  # Minimum time between same alerts (seconds)
+  cooldown_seconds: 1800 # 30 minutes
+
+  # Maximum alerts per hour
+  max_alerts_per_hour: 10
+
+# Channels for different alert types
+channels:
+  critical:
+    - slack_webhook_url
+  warning:
+    - slack_webhook_url
+  info:
+    - slack_info_webhook_url

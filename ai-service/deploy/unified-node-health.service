@@ -1,0 +1,41 @@
+[Unit]
+Description=RingRift Unified Node Health Daemon
+After=network.target tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+Environment=PATH=/home/ubuntu/ringrift/ai-service/venv/bin:/usr/local/bin:/usr/bin:/bin
+
+# Main command
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python -m app.coordination.unified_node_health_daemon \
+    --health-interval 60 \
+    --recovery-interval 120 \
+    --optimization-interval 300 \
+    --hosts-config /home/ubuntu/ringrift/ai-service/config/distributed_hosts.yaml
+
+# Restart on failure
+Restart=always
+RestartSec=30
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=node-health-daemon
+
+# Security
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/data
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/logs
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/config
+
+[Install]
+WantedBy=multi-user.target

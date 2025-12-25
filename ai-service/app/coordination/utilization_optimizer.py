@@ -1,0 +1,518 @@
+"""Utilization Optimizer for cluster workload management.
+
+Ensures all nodes are productively utilized by:
+1. Detecting underutilized nodes
+2. Spawning selfplay jobs on idle GPUs/CPUs
+3. Balancing workload across the cluster
+4. Matching GPU capabilities to appropriate board sizes
+
+Usage:
+    from app.coordination.utilization_optimizer import (
+        UtilizationOptimizer,
+        get_utilization_optimizer,
+    )
+
+    optimizer = get_utilization_optimizer()
+    await optimizer.optimize_cluster()
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any
+
+from app.providers import (
+    Provider,
+    ProviderInstance,
+)
+from app.coordination.health_check_orchestrator import (
+    HealthCheckOrchestrator,
+    NodeHealthDetails,
+    NodeHealthState,
+    get_health_orchestrator,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class BoardType(str, Enum):
+    """Board types with their resource requirements."""
+
+    HEX8 = "hex8"  # Small, fast - good for consumer GPUs
+    SQUARE8 = "square8"  # Medium
+    SQUARE19 = "square19"  # Large - needs more GPU memory
+    HEXAGONAL = "hexagonal"  # Largest - needs high-end GPUs
+
+
+class WorkloadType(str, Enum):
+    """Types of workloads that can be assigned."""
+
+    SELFPLAY = "selfplay"
+    TRAINING = "training"
+    EVALUATION = "evaluation"
+    SYNC = "sync"
+
+
+@dataclass
+class WorkloadConfig:
+    """Configuration for a workload."""
+
+    workload_type: WorkloadType
+    board_type: BoardType
+    num_players: int = 2
+    engine: str = "gumbel"
+    num_games: int = 1000
+    priority: int = 50  # 0-100, higher = more important
+
+
+@dataclass
+class NodeWorkload:
+    """Current workload state of a node."""
+
+    node_id: str
+    selfplay_jobs: int = 0
+    training_running: bool = False
+    current_board_type: BoardType | None = None
+    current_engine: str | None = None
+    games_generated: int = 0
+    utilization_score: float = 0.0  # 0-100
+
+
+@dataclass
+class OptimizationResult:
+    """Result of an optimization action."""
+
+    node_id: str
+    action: str
+    success: bool
+    message: str
+    workload: WorkloadConfig | None = None
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+# GPU capability mapping - determines which boards a GPU can handle efficiently
+GPU_CAPABILITIES = {
+    # Small GPUs (8-12GB) - hex8, square8
+    "RTX 3060": {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8},
+    "RTX 3060 Ti": {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8},
+    "RTX 3070": {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8},
+    "RTX 2060": {"max_board": BoardType.HEX8, "preferred": BoardType.HEX8},
+    "RTX 2060 SUPER": {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8},
+    "RTX 2080 Ti": {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8},
+    # Medium GPUs (16-24GB) - up to square19
+    "RTX 4060 Ti": {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE8},
+    "RTX 4070": {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE8},
+    "RTX 4080": {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE19},
+    "RTX 4080 SUPER": {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE19},
+    "RTX 5070": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    "RTX 5080": {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE19},
+    "A10": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    # Large GPUs (40-96GB) - all boards
+    "A40": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    "RTX 5090": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    "H100": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    "GH200": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    "A100": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+}
+
+# Default priority for board types (what we need most training data for)
+BOARD_PRIORITIES = {
+    BoardType.HEX8: 60,  # Well trained, still useful
+    BoardType.SQUARE8: 70,  # Main competitive format
+    BoardType.SQUARE19: 80,  # Needs more data
+    BoardType.HEXAGONAL: 90,  # Needs most data
+}
+
+
+class UtilizationOptimizer:
+    """Optimizes cluster utilization by assigning workloads to idle nodes.
+
+    Features:
+    - Matches GPU capabilities to appropriate board sizes
+    - Prioritizes underserved board types
+    - Respects AWS staging node (light utilization only)
+    - Balances load across providers
+    """
+
+    # Utilization thresholds
+    UNDERUTILIZED_GPU_THRESHOLD = 20.0  # GPU < 20% = underutilized
+    UNDERUTILIZED_CPU_THRESHOLD = 30.0  # CPU < 30% = underutilized
+    TARGET_GPU_UTILIZATION = 80.0  # Aim for 80% GPU usage
+    TARGET_CPU_UTILIZATION = 70.0  # Aim for 70% CPU usage
+
+    # AWS staging node limits
+    AWS_MAX_SELFPLAY_JOBS = 2  # Keep AWS lightly loaded
+
+    def __init__(
+        self,
+        health_orchestrator: HealthCheckOrchestrator | None = None,
+    ):
+        """Initialize utilization optimizer.
+
+        Args:
+            health_orchestrator: Health check orchestrator instance
+        """
+        self.health_orchestrator = health_orchestrator or get_health_orchestrator()
+
+        # Track workload state
+        self.node_workloads: dict[str, NodeWorkload] = {}
+
+        # Track what boards need more data
+        self.board_data_needs: dict[BoardType, int] = {
+            BoardType.HEX8: 50,
+            BoardType.SQUARE8: 60,
+            BoardType.SQUARE19: 80,
+            BoardType.HEXAGONAL: 90,
+        }
+
+    def _get_gpu_capability(self, health: NodeHealthDetails) -> dict[str, Any] | None:
+        """Get GPU capability info for a node."""
+        if not health.instance:
+            return None
+
+        gpu_type = health.instance.gpu_type or ""
+
+        # Try to match GPU type
+        for gpu_name, caps in GPU_CAPABILITIES.items():
+            if gpu_name.lower() in gpu_type.lower():
+                return caps
+
+        # Default for unknown GPUs based on memory
+        if health.instance.gpu_memory_gb >= 40:
+            return {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL}
+        elif health.instance.gpu_memory_gb >= 16:
+            return {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE8}
+        elif health.instance.gpu_memory_gb >= 8:
+            return {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8}
+        else:
+            return {"max_board": BoardType.HEX8, "preferred": BoardType.HEX8}
+
+    def _select_board_for_node(self, health: NodeHealthDetails) -> BoardType:
+        """Select the best board type for a node based on its capabilities."""
+        caps = self._get_gpu_capability(health)
+        if not caps:
+            return BoardType.SQUARE8  # Safe default
+
+        max_board = caps["max_board"]
+        preferred = caps["preferred"]
+
+        # Check data needs - if we need more data for larger boards, use those
+        # Filter to boards this GPU can handle
+        valid_boards = [b for b in BoardType if self._board_size_order(b) <= self._board_size_order(max_board)]
+
+        # Weight by data need
+        weighted = [(b, self.board_data_needs.get(b, 50)) for b in valid_boards]
+        weighted.sort(key=lambda x: -x[1])  # Highest need first
+
+        # 70% chance to pick highest need, 30% chance for preferred
+        if random.random() < 0.7 and weighted:
+            return weighted[0][0]
+        return preferred
+
+    def _board_size_order(self, board: BoardType) -> int:
+        """Get size ordering for boards."""
+        order = {
+            BoardType.HEX8: 1,
+            BoardType.SQUARE8: 2,
+            BoardType.SQUARE19: 3,
+            BoardType.HEXAGONAL: 4,
+        }
+        return order.get(board, 2)
+
+    async def get_underutilized_nodes(self) -> list[tuple[str, NodeHealthDetails]]:
+        """Get list of underutilized nodes.
+
+        Returns:
+            List of (node_id, health) tuples for underutilized nodes
+        """
+        underutilized = []
+
+        for node_id, health in self.health_orchestrator.node_health.items():
+            if not health.is_available():
+                continue
+
+            # Check utilization
+            is_underutilized = False
+
+            if health.instance and health.instance.gpu_count > 0:
+                # GPU node
+                if health.gpu_percent < self.UNDERUTILIZED_GPU_THRESHOLD:
+                    is_underutilized = True
+            else:
+                # CPU-only node
+                if health.cpu_percent < self.UNDERUTILIZED_CPU_THRESHOLD:
+                    is_underutilized = True
+
+            if is_underutilized:
+                underutilized.append((node_id, health))
+
+        return underutilized
+
+    async def spawn_selfplay_job(
+        self,
+        node_id: str,
+        board_type: BoardType | None = None,
+        num_players: int = 2,
+        engine: str = "gumbel",
+        num_games: int = 1000,
+    ) -> OptimizationResult:
+        """Spawn a selfplay job on a node.
+
+        Args:
+            node_id: Target node
+            board_type: Board type (auto-selected if None)
+            num_players: Number of players
+            engine: Selfplay engine (gumbel, descent, mcts)
+            num_games: Number of games to generate
+
+        Returns:
+            OptimizationResult with outcome
+        """
+        health = self.health_orchestrator.get_node_health(node_id)
+        if not health:
+            return OptimizationResult(
+                node_id=node_id,
+                action="spawn_selfplay",
+                success=False,
+                message="Node not found",
+            )
+
+        if not health.is_available():
+            return OptimizationResult(
+                node_id=node_id,
+                action="spawn_selfplay",
+                success=False,
+                message=f"Node not available (state={health.state.value})",
+            )
+
+        # AWS limits
+        if health.provider == Provider.AWS:
+            workload = self.node_workloads.get(node_id)
+            if workload and workload.selfplay_jobs >= self.AWS_MAX_SELFPLAY_JOBS:
+                return OptimizationResult(
+                    node_id=node_id,
+                    action="spawn_selfplay",
+                    success=False,
+                    message="AWS node at max selfplay jobs",
+                )
+
+        # Auto-select board type
+        if board_type is None:
+            board_type = self._select_board_for_node(health)
+
+        # Determine work directory based on provider
+        if health.provider == Provider.VAST:
+            work_dir = "/root/ringrift/ai-service"
+            ssh_user = "root"
+        else:
+            work_dir = "~/ringrift/ai-service"
+            ssh_user = "ubuntu"
+
+        # Build selfplay command
+        db_name = f"selfplay_{board_type.value}_{num_players}p_{node_id}"
+        cmd = f"""
+cd {work_dir}
+mkdir -p data/games logs
+source venv/bin/activate 2>/dev/null || true
+PYTHONPATH=. RINGRIFT_DISABLE_TORCH_COMPILE=1 nohup python3 scripts/selfplay.py \\
+    --board {board_type.value} --num-players {num_players} \\
+    --num-games {num_games} --engine {engine} \\
+    --output-dir data/games/{db_name} \\
+    > logs/selfplay_{board_type.value}.log 2>&1 &
+sleep 2
+pgrep -f selfplay && echo "SELFPLAY_STARTED"
+"""
+
+        # Get manager and run
+        manager = self._get_manager_for_provider(health.provider)
+        if not manager:
+            return OptimizationResult(
+                node_id=node_id,
+                action="spawn_selfplay",
+                success=False,
+                message=f"No manager for provider {health.provider}",
+            )
+
+        code, stdout, stderr = await manager.run_ssh_command(
+            health.instance, cmd, timeout=60
+        )
+
+        if code == 0 and "SELFPLAY_STARTED" in stdout:
+            # Update workload tracking
+            if node_id not in self.node_workloads:
+                self.node_workloads[node_id] = NodeWorkload(node_id=node_id)
+            self.node_workloads[node_id].selfplay_jobs += 1
+            self.node_workloads[node_id].current_board_type = board_type
+            self.node_workloads[node_id].current_engine = engine
+
+            return OptimizationResult(
+                node_id=node_id,
+                action="spawn_selfplay",
+                success=True,
+                message=f"Started {engine} selfplay on {board_type.value}_{num_players}p",
+                workload=WorkloadConfig(
+                    workload_type=WorkloadType.SELFPLAY,
+                    board_type=board_type,
+                    num_players=num_players,
+                    engine=engine,
+                    num_games=num_games,
+                ),
+            )
+
+        return OptimizationResult(
+            node_id=node_id,
+            action="spawn_selfplay",
+            success=False,
+            message=f"Failed to start selfplay: {stderr or stdout}",
+        )
+
+    def _get_manager_for_provider(self, provider: Provider):
+        """Get manager for provider."""
+        from app.providers import (
+            AWSManager,
+            HetznerManager,
+            LambdaManager,
+            VastManager,
+        )
+
+        managers = {
+            Provider.LAMBDA: LambdaManager(),
+            Provider.VAST: VastManager(),
+            Provider.HETZNER: HetznerManager(),
+            Provider.AWS: AWSManager(),
+        }
+        return managers.get(provider)
+
+    async def optimize_cluster(self) -> list[OptimizationResult]:
+        """Optimize the entire cluster.
+
+        1. Find underutilized nodes
+        2. Spawn appropriate workloads
+
+        Returns:
+            List of optimization results
+        """
+        results = []
+
+        # Get underutilized nodes
+        underutilized = await self.get_underutilized_nodes()
+
+        if not underutilized:
+            logger.info("[UtilizationOptimizer] No underutilized nodes found")
+            return results
+
+        logger.info(
+            f"[UtilizationOptimizer] Found {len(underutilized)} underutilized nodes"
+        )
+
+        # Prioritize by data needs
+        for node_id, health in underutilized:
+            # Select appropriate workload
+            board_type = self._select_board_for_node(health)
+
+            # Determine num_players (mostly 2p, sometimes 4p for variety)
+            num_players = 4 if random.random() < 0.2 else 2
+
+            # Spawn selfplay
+            result = await self.spawn_selfplay_job(
+                node_id=node_id,
+                board_type=board_type,
+                num_players=num_players,
+            )
+            results.append(result)
+
+            # Small delay between spawns
+            await asyncio.sleep(0.5)
+
+        # Summary
+        successful = sum(1 for r in results if r.success)
+        logger.info(
+            f"[UtilizationOptimizer] Optimization complete: "
+            f"{successful}/{len(results)} jobs spawned"
+        )
+
+        return results
+
+    async def get_workload_distribution(self) -> dict[str, Any]:
+        """Get current workload distribution across the cluster.
+
+        Returns:
+            Dict with workload statistics
+        """
+        distribution = {
+            "by_board_type": {b.value: 0 for b in BoardType},
+            "by_provider": {},
+            "total_selfplay_jobs": 0,
+            "total_training_jobs": 0,
+            "underutilized_count": 0,
+        }
+
+        for node_id, health in self.health_orchestrator.node_health.items():
+            provider = health.provider.value if health.provider else "unknown"
+
+            if provider not in distribution["by_provider"]:
+                distribution["by_provider"][provider] = {
+                    "nodes": 0,
+                    "selfplay_jobs": 0,
+                    "gpu_utilization": 0,
+                }
+
+            distribution["by_provider"][provider]["nodes"] += 1
+            distribution["by_provider"][provider]["gpu_utilization"] += health.gpu_percent
+
+            # Check workload tracking
+            workload = self.node_workloads.get(node_id)
+            if workload:
+                distribution["total_selfplay_jobs"] += workload.selfplay_jobs
+                distribution["by_provider"][provider]["selfplay_jobs"] += workload.selfplay_jobs
+                if workload.current_board_type:
+                    distribution["by_board_type"][workload.current_board_type.value] += 1
+                if workload.training_running:
+                    distribution["total_training_jobs"] += 1
+
+        # Calculate average utilization per provider
+        for provider, stats in distribution["by_provider"].items():
+            if stats["nodes"] > 0:
+                stats["avg_gpu_utilization"] = stats["gpu_utilization"] / stats["nodes"]
+
+        # Count underutilized
+        underutilized = await self.get_underutilized_nodes()
+        distribution["underutilized_count"] = len(underutilized)
+
+        return distribution
+
+    def update_board_data_needs(self, board_needs: dict[BoardType, int]) -> None:
+        """Update board data needs for workload prioritization.
+
+        Args:
+            board_needs: Dict mapping BoardType to priority (0-100)
+        """
+        self.board_data_needs.update(board_needs)
+        logger.info(f"[UtilizationOptimizer] Updated board data needs: {board_needs}")
+
+
+# Global instance
+_utilization_optimizer: UtilizationOptimizer | None = None
+
+
+def get_utilization_optimizer() -> UtilizationOptimizer:
+    """Get or create the global utilization optimizer."""
+    global _utilization_optimizer
+
+    if _utilization_optimizer is None:
+        _utilization_optimizer = UtilizationOptimizer()
+
+    return _utilization_optimizer
+
+
+async def optimize_cluster() -> list[OptimizationResult]:
+    """Optimize cluster utilization.
+
+    Convenience function using global optimizer.
+    """
+    return await get_utilization_optimizer().optimize_cluster()
