@@ -1,7 +1,7 @@
-# CLAUDE.md - AI Assistant Memory for RingRift
+# CLAUDE.md - AI Assistant Context for ai-service
 
-This file provides context for AI assistants working on this codebase.
-It complements AGENTS.md with operational knowledge and current state.
+This file provides context for AI assistants working on the Python AI service.
+It complements AGENTS.md with operational knowledge.
 
 ## Project Overview
 
@@ -18,49 +18,10 @@ The Python `ai-service` mirrors the TS engine for training data generation and m
 
 | Board Type  | Grid              | Cells | Player Counts |
 | ----------- | ----------------- | ----- | ------------- |
-| `square8`   | 8×8               | 64    | 2, 3, 4       |
-| `square19`  | 19×19             | 361   | 2, 3, 4       |
-| `hex8`      | 9×9 (radius 4)    | 61    | 2, 3, 4       |
-| `hexagonal` | 25×25 (radius 12) | 469   | 2, 3, 4       |
-
-## Cluster Infrastructure
-
-### Primary Training Nodes (SSH via Tailscale)
-
-```bash
-# GH200 nodes (96GB each) - 19 nodes: a, b, c, d, e, f, g, h, i, k, l, m, n, o, p, q, r, s, t
-ssh -i ~/.ssh/id_cluster ubuntu@192.222.51.29    # lambda-gh200-a
-ssh -i ~/.ssh/id_cluster ubuntu@192.222.51.161   # lambda-gh200-b
-
-# H100 nodes
-ssh -i ~/.ssh/id_cluster ubuntu@209.20.157.81    # lambda-h100 (80GB)
-ssh -i ~/.ssh/id_cluster ubuntu@192.222.53.22    # lambda-2xh100 (160GB)
-
-# A10 nodes (23GB each)
-ssh -i ~/.ssh/id_cluster ubuntu@150.136.65.197   # lambda-a10
-ssh -i ~/.ssh/id_cluster ubuntu@129.153.159.191  # lambda-a10-b
-ssh -i ~/.ssh/id_cluster ubuntu@150.136.56.240   # lambda-a10-c
-
-# See config/distributed_hosts.yaml for full inventory (~43 nodes)
-```
-
-### Cluster Monitoring
-
-```bash
-# Quick P2P cluster status (preferred)
-curl -s http://localhost:8770/status | python3 -c '
-import sys,json
-d = json.load(sys.stdin)
-print(f"Leader: {d.get(\"leader_id\")}")
-print(f"Alive: {d.get(\"alive_peers\")} nodes")
-'
-
-# Or use the Python monitor
-python -m app.distributed.cluster_monitor
-
-# Watch mode (live updates)
-python -m app.distributed.cluster_monitor --watch --interval 10
-```
+| `square8`   | 8x8               | 64    | 2, 3, 4       |
+| `square19`  | 19x19             | 361   | 2, 3, 4       |
+| `hex8`      | 9x9 (radius 4)    | 61    | 2, 3, 4       |
+| `hexagonal` | 25x25 (radius 12) | 469   | 2, 3, 4       |
 
 ## Common Commands
 
@@ -69,7 +30,7 @@ python -m app.distributed.cluster_monitor --watch --interval 10
 ```bash
 # Export training data from database
 python scripts/export_replay_dataset.py \
-  --db data/games/canonical_hex8_2p.db \
+  --db data/games/my_games.db \
   --board-type hex8 --num-players 2 \
   --output data/training/hex8_2p.npz
 
@@ -85,19 +46,11 @@ python -m app.training.train \
   --data-path data/training/hex8_2p.npz \
   --model-version v2 \
   --batch-size 512 --epochs 20
-
-# Start training on cluster
-ssh -i ~/.ssh/id_cluster ubuntu@100.123.183.70 \
-  "cd ~/ringrift/ai-service && nohup python -m app.training.train \
-   --board-type hex8 --num-players 2 \
-   --data-path data/training/hex8_2p.npz \
-   --model-version v2 --batch-size 512 --epochs 20 \
-   > logs/train.log 2>&1 &"
 ```
 
-### Automated Training Pipeline (NEW Dec 2025)
+### Automated Training Pipeline
 
-One-command training loop that automatically chains: selfplay → sync → export → train → evaluate → promote
+One-command training loop that automatically chains: selfplay -> sync -> export -> train -> evaluate -> promote
 
 ```bash
 # Basic usage - runs full pipeline
@@ -119,48 +72,25 @@ python scripts/run_training_loop.py \
   --skip-selfplay
 ```
 
-**Alternative: Manual Pipeline with Flags**
-
-```bash
-# Selfplay with pipeline event emission
-python scripts/selfplay.py \
-  --board hex8 --num-players 2 \
-  --engine gumbel \
-  --emit-pipeline-events
-
-# Training with auto-trigger
-python -m app.training.train \
-  --board-type hex8 --num-players 2 \
-  --enable-pipeline-auto-trigger
-```
-
-**Environment Variable Alternative**
-
-```bash
-export COORDINATOR_AUTO_TRIGGER_PIPELINE=true
-python -m app.training.train --board-type hex8 --num-players 2 ...
-```
-
-### Transfer Learning (2p → 4p)
+### Transfer Learning (2p to 4p)
 
 ```bash
 # Step 1: Resize value head from 2 outputs to 4 outputs
 python scripts/transfer_2p_to_4p.py \
-  --source models/canonical_sq8_2p.pth \
-  --output models/transfer_sq8_4p_init.pth \
+  --source models/my_2p_model.pth \
+  --output models/my_4p_init.pth \
   --board-type square8
 
 # Step 2: Train with transferred weights
 python -m app.training.train \
   --board-type square8 --num-players 4 \
-  --init-weights models/transfer_sq8_4p_init.pth \
-  --data-path data/training/sq8_4p.npz \
-  --save-path models/sq8_4p_transfer.pth
+  --init-weights models/my_4p_init.pth \
+  --data-path data/training/sq8_4p.npz
 
 # Direct transfer (partial loading, value head randomly initialized)
 python -m app.training.train \
   --board-type hex8 --num-players 4 \
-  --init-weights models/canonical_hex8_2p.pth \
+  --init-weights models/my_hex8_2p.pth \
   --data-path data/training/hex8_4p.npz
 ```
 
@@ -189,7 +119,7 @@ python scripts/validate_databases.py data/games --check-structure
 
 ```bash
 # Check TS/Python parity for a database
-python scripts/check_ts_python_replay_parity.py --db data/games/canonical_hex8.db
+python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 # Run canonical selfplay parity gate
 python scripts/run_canonical_selfplay_parity_gate.py --board-type hex8
@@ -201,7 +131,7 @@ python scripts/run_canonical_selfplay_parity_gate.py --board-type hex8
 # Gauntlet evaluation (model vs baselines)
 python -m app.gauntlet.runner \
   --board-type hex8 --num-players 2 \
-  --model-path models/hex8_2p/best_model.pt
+  --model-path models/my_model.pth
 ```
 
 ## Key Utilities
@@ -213,15 +143,6 @@ Unified utility for finding game databases across all storage patterns:
 - `find_all_databases()` - Find all .db files with game data
 - `find_databases_for_config(board_type, num_players)` - Filter by config
 - `RemoteGameDiscovery` - SSH-based cluster-wide discovery
-
-### ClusterMonitor (`app/distributed/cluster_monitor.py`)
-
-Real-time cluster monitoring:
-
-- Game counts per node
-- Training process detection
-- Disk usage monitoring
-- CLI with watch mode
 
 ### DataQuality (`app/training/data_quality.py`)
 
@@ -244,7 +165,7 @@ checkpoint = safe_load_checkpoint("models/my_model.pth")
 checkpoint = safe_load_checkpoint(external_path, allow_unsafe=False)
 ```
 
-See `SECURITY.md` for full migration status and security considerations.
+See `SECURITY.md` for full details.
 
 ### GumbelCommon (`app/ai/gumbel_common.py`)
 
@@ -322,25 +243,12 @@ Unified training pipeline orchestration:
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
 
-```python
-# AutoSyncDaemon - automated cluster data synchronization
-from app.coordination.auto_sync_daemon import AutoSyncDaemon
-
-daemon = AutoSyncDaemon()
-await daemon.start()  # Syncs game data across cluster
-```
-
-Features: excludes coordinator nodes, skips NFS sync, prioritizes ephemeral nodes
-
 ```bash
 # Launch all daemons under unified management
 python scripts/launch_daemons.py --all
 
 # Check daemon status
 python scripts/launch_daemons.py --status
-
-# Launch specific daemons
-python scripts/launch_daemons.py --sync-only
 ```
 
 ### Temperature Scheduling (`app/training/temperature_scheduling.py`)
@@ -356,7 +264,7 @@ temp = scheduler.get_temperature(move_number=15, game_state=state)
 ```
 
 - 7 schedule types including adaptive (based on position complexity) and curriculum (based on training progress)
-- `AlphaZeroTemperature` for τ=1 → τ=0 at move N
+- `AlphaZeroTemperature` for t=1 -> t=0 at move N
 - `DirichletNoiseTemperature` for root exploration noise
 
 ### Online Learning (`app/training/online_learning.py`)
@@ -375,32 +283,6 @@ learner.record_transition(state, move, player, next_state)
 learner.update_from_game(winner)
 ```
 
-- TD-Energy updates: E(s,a) predicts min E(s', a') over next state
-- Outcome-weighted contrastive loss
-- Rolling buffer for stability
-
-## Current Model State (as of Dec 2025)
-
-All 12 canonical configurations have trained models:
-
-| Board     | 2-Player | 3-Player | 4-Player |
-| --------- | -------- | -------- | -------- |
-| hex8      | ✓ 38MB   | ✓ 38MB   | ✓ 38MB   |
-| square8   | ✓ 32MB   | ✓ 15MB   | ✓ 366MB  |
-| square19  | ✓ 102MB  | ✓ 103MB  | ✓ 103MB  |
-| hexagonal | ✓ 166MB  | ✓ 166MB  | ✓ 166MB  |
-
-Models stored as `models/canonical_<board>_<n>p.pth` (e.g., `canonical_hex8_2p.pth`).
-
-### GPU Selfplay Status
-
-The GPU parallel games engine is production-ready with 100% parity:
-
-- Location: `app/ai/gpu_parallel_games.py`
-- Current speedup: ~6.5x on CUDA
-- Optimization status: Partial (~31 `.item()` calls remain, down from 80 after Dec 2025 optimizations)
-- Full vectorization would yield 10-15x speedup
-
 ## Architecture Notes
 
 ### Neural Network (v2)
@@ -412,7 +294,7 @@ The GPU parallel games engine is production-ready with 100% parity:
 
 ### Training Pipeline
 
-1. Self-play generates games → SQLite databases
+1. Self-play generates games -> SQLite databases
 2. `export_replay_dataset.py` converts to NPZ (features, policy, value)
 3. `app.training.train` trains with early stopping
 4. Gauntlet evaluation against baselines
@@ -420,14 +302,14 @@ The GPU parallel games engine is production-ready with 100% parity:
 ### Data Flow
 
 ```
-Self-play (Python/TS) → GameReplayDB (.db)
-                              ↓
+Self-play (Python/TS) -> GameReplayDB (.db)
+                              |
               export_replay_dataset.py
-                              ↓
+                              |
                     Training NPZ files
-                              ↓
+                              |
                    app.training.train
-                              ↓
+                              |
                     Model checkpoints
 ```
 
@@ -435,13 +317,11 @@ Self-play (Python/TS) → GameReplayDB (.db)
 
 1. **Canonical databases only**: Training scripts enforce `canonical_*.db` naming by default. Use `--allow-noncanonical` to bypass.
 
-2. **Board size conventions**: Hex boards use "radius" convention. hex8 = radius 4 = 9×9 grid = 61 cells.
+2. **Board size conventions**: Hex boards use "radius" convention. hex8 = radius 4 = 9x9 grid = 61 cells.
 
-3. **Remote module paths**: Cluster nodes have different Python paths. Some modules like `app.ai.heuristic_ai` may not exist remotely.
+3. **GPU memory**: v2 models with batch_size=512 need ~8GB VRAM.
 
-4. **SSH timeouts**: Lambda nodes can have intermittent connectivity. Use `--timeout 30` for cluster operations.
-
-5. **GPU memory**: v2 models with batch_size=512 need ~8GB VRAM. GH200 nodes have 96GB, plenty of headroom.
+4. **PYTHONPATH**: Set `PYTHONPATH=.` when running scripts from the ai-service directory.
 
 ## File Locations
 
@@ -449,7 +329,7 @@ Self-play (Python/TS) → GameReplayDB (.db)
 ai-service/
 ├── app/
 │   ├── ai/              # AI implementations (neural net, MCTS, heuristics)
-│   ├── coordination/    # Training pipeline orchestration (NEW Dec 2025)
+│   ├── coordination/    # Training pipeline orchestration
 │   │   ├── event_router.py           # Unified event system
 │   │   ├── pipeline_actions.py       # Stage action invokers
 │   │   ├── daemon_manager.py         # Daemon lifecycle management
@@ -463,10 +343,7 @@ ai-service/
 │   │   └── online_learning.py        # EBMO online learning
 │   └── utils/           # Utilities (game_discovery)
 ├── archive/             # Deprecated code with migration docs
-│   ├── deprecated_scripts/
-│   └── deprecated_coordination/
-├── config/
-│   └── distributed_hosts.yaml  # Cluster node configuration
+├── config/              # Configuration files (templates provided)
 ├── data/
 │   ├── games/           # Game databases
 │   ├── training/        # NPZ training files
@@ -476,62 +353,35 @@ ai-service/
 └── tests/               # Test suite
 ```
 
-## Recent Session Context (Dec 2025)
+## Cluster Infrastructure (Optional)
 
-Recent work covered:
+For distributed training across multiple GPU nodes, configure `config/distributed_hosts.yaml`. See `config/distributed_hosts.template.yaml` for the format.
 
-- **P2P Cluster**: ~43 active nodes with leader election, ~400+ selfplay jobs
-- **GPU Parity**: 100% verified (10K seeds tested) - production ready
-- **Models**: All 12 canonical models complete and synced to cluster
-- **Infrastructure**: Updated voter configuration, fixed node_resilience issues
-- **Tests**: 11,793 passing (98.5% pass rate)
-- **Auto-Promotion Pipeline**: Added gauntlet-based model promotion (scripts/auto_promote.py)
-- **4-Player Gauntlet Fix**: Fixed multiplayer game handling in game_gauntlet.py
+The P2P mesh network supports:
 
-### Code Consolidation (Dec 24, 2025)
+- Automatic leader election
+- Data synchronization across nodes
+- Job distribution and monitoring
 
-Major consolidation of duplicated code:
+```bash
+# Check cluster status (when P2P daemon is running)
+python -m app.distributed.cluster_monitor
 
-- **`gumbel_common.py`**: Unified 3 copies of GumbelAction/GumbelNode into single source
-- **`selfplay_runner.py`**: Unified SelfplayRunner base class for all selfplay variants
-- **Budget constants**: Consolidated scattered Gumbel budget defaults into named tiers
-- **Export scripts**: Archived `export_replay_dataset_parallel.py` and `export_filtered_training.py` (now flags in main script)
+# Watch mode (live updates)
+python -m app.distributed.cluster_monitor --watch --interval 10
+```
 
-**Coordination Infrastructure** (Dec 24, 2025):
-
-- **`event_router.py`**: Unified event system (supersedes `unified_event_coordinator.py`)
-- **`pipeline_actions.py`**: Training pipeline stage invokers (export, train, evaluate, promote)
-- **`daemon_adapters.py`**: Daemon wrappers for unified DaemonManager lifecycle
-- **`sync_bandwidth.py`**: Bandwidth-coordinated rsync for cluster transfers
-- **`launch_daemons.py`**: Master daemon launcher script
-- **`auto_promote.py`**: Refactored to use PromotionController
-
-**Already Existing Training Utilities**:
-
-- **`temperature_scheduling.py`**: 7 schedule types (linear, cosine, adaptive, curriculum, etc.)
-- **`online_learning.py`**: EBMO online learning with TD-Energy updates
-
-**Quality & Event System** (Dec 24, 2025):
-
-- **`unified_quality.py`**: Single source of truth for quality scoring (`UnifiedQualityScorer`)
-- **`event_router.py`**: Fixed fire-and-forget task handling with error callbacks
-- **`game_gauntlet.py`**: Now emits EVALUATION_COMPLETED events for curriculum feedback
-- **`training_coordinator.py`**: Subscribes to cluster health events for training decisions
-
-**Deprecated Modules** (with runtime warnings):
-
-- `orchestrated_training.py` → use `unified_orchestrator.py`
-- `integrated_enhancements.py` → use `unified_orchestrator.py`
-- `training_enhancements.DataQualityScorer` → use `unified_quality.UnifiedQualityScorer`
-
-See `archive/deprecated_scripts/README.md` and `archive/deprecated_coordination/README.md` for archived module documentation.
-
-### Auto-Promotion Workflow
+## Auto-Promotion Workflow
 
 After training, run gauntlet evaluation to promote models:
 
 ```bash
-# On cluster node with model
+PYTHONPATH=. python3 scripts/auto_promote.py --gauntlet \
+  --model models/my_model.pth \
+  --board-type hex8 --num-players 4 \
+  --games 50
+
+# With cluster sync (if configured)
 PYTHONPATH=. python3 scripts/auto_promote.py --gauntlet \
   --model models/my_model.pth \
   --board-type hex8 --num-players 4 \
@@ -542,22 +392,3 @@ PYTHONPATH=. python3 scripts/auto_promote.py --gauntlet \
 
 - vs RANDOM: 85% win rate required
 - vs HEURISTIC: 60% win rate required
-
-### Model Training Status (Dec 25, 2025)
-
-All 12 canonical configurations trained and deployed:
-
-| Board     | 2-Player         | 3-Player         | 4-Player          |
-| --------- | ---------------- | ---------------- | ----------------- |
-| hex8      | ✅ Complete      | ✅ Complete      | ✅ Complete       |
-| square8   | ✅ Complete      | ✅ Complete (v2) | ✅ Complete       |
-| square19  | ✅ Complete      | ✅ Complete      | ✅ Complete       |
-| hexagonal | ✅ Complete      | ✅ Complete      | ✅ Complete       |
-
-Gauntlet validation in progress on cluster node 100.88.35.19.
-
-### Known Cluster Issues
-
-- `node_resilience.py` can kill P2P if `/status` times out - disabled on some nodes
-- Tailscale connectivity intermittent - prefer public IPs when available
-- Export scripts require `PYTHONPATH=.` when running on cluster

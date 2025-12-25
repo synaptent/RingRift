@@ -1,6 +1,7 @@
-# Local AI assistant context (user-specific)
-CLAUDE.md
-ai-service/CLAUDE.md
+# Local/private files (user-specific, contain IPs/credentials)
+*.local.md
+CLAUDE.local.md
+ai-service/CLAUDE.local.md
 
 # Test/debug results (generated locally)
 results/
