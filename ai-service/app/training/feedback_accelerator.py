@@ -162,7 +162,8 @@ class ConfigMomentum:
             return
 
         elo_change = recent[-1].elo - recent[0].elo
-        elo_change / max(1, len(recent) - 1)
+        # Note: elo_change_per_update can be computed as elo_change / max(1, len(recent) - 1)
+        # but we use total elo_change for momentum thresholds which is more stable
 
         # Determine momentum state
         if elo_change >= ELO_STRONG_IMPROVEMENT:
@@ -310,7 +311,22 @@ class FeedbackAccelerator:
         self._init_db()
         self._load_state()
 
+        # Auto-wire evaluation events for feedback loop (December 2025)
+        self._auto_wire_events()
+
         logger.info("FeedbackAccelerator initialized")
+
+    def _auto_wire_events(self) -> None:
+        """Auto-wire event subscriptions for the feedback loop.
+
+        Called during initialization to ensure evaluation results
+        automatically update momentum tracking.
+        """
+        try:
+            wire_evaluation_to_feedback()
+        except Exception as e:
+            # Non-fatal - events may not be available in all contexts
+            logger.debug(f"[FeedbackAccelerator] Event auto-wiring deferred: {e}")
 
     def _init_db(self) -> None:
         """Initialize the feedback database."""

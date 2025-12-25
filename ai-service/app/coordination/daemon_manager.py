@@ -356,6 +356,29 @@ class DaemonManager:
         # Node health monitor (December 2025) - unified cluster health maintenance
         self.register_factory(DaemonType.NODE_HEALTH_MONITOR, self._create_node_health_monitor)
 
+        # Adapter-based daemons (December 2025 - Phase 2)
+        # These use daemon adapters for lazy initialization
+
+        # Distillation daemon - creates smaller models for deployment
+        self.register_factory(
+            DaemonType.DISTILLATION,
+            self._create_distillation,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # External drive sync - backup to external drives
+        self.register_factory(DaemonType.EXTERNAL_DRIVE_SYNC, self._create_external_drive_sync)
+
+        # Vast.ai CPU pipeline - CPU-only preprocessing
+        self.register_factory(DaemonType.VAST_CPU_PIPELINE, self._create_vast_cpu_pipeline)
+
+        # Cluster data sync - full cluster synchronization
+        self.register_factory(
+            DaemonType.CLUSTER_DATA_SYNC,
+            self._create_cluster_data_sync,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
     def register_factory(
         self,
         daemon_type: DaemonType,
@@ -1491,6 +1514,67 @@ class DaemonManager:
             logger.error(f"UnifiedNodeHealthDaemon not available: {e}")
             raise
 
+    async def _create_distillation(self) -> None:
+        """Create and run distillation daemon (December 2025).
+
+        Handles model distillation to create smaller, faster models for deployment.
+        Uses DistillationDaemonAdapter for lazy initialization.
+        """
+        try:
+            from app.training.distillation_daemon import DistillationDaemon
+
+            daemon = DistillationDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.warning(f"DistillationDaemon not available: {e}")
+            # Not critical - just skip
+
+    async def _create_external_drive_sync(self) -> None:
+        """Create and run external drive sync daemon (December 2025).
+
+        Syncs game data to/from external drives for backup and offline analysis.
+        """
+        try:
+            from app.distributed.external_drive_sync import ExternalDriveSyncDaemon
+
+            daemon = ExternalDriveSyncDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.warning(f"ExternalDriveSyncDaemon not available: {e}")
+            # Not critical - just skip
+
+    async def _create_vast_cpu_pipeline(self) -> None:
+        """Create and run Vast.ai CPU pipeline daemon (December 2025).
+
+        Manages CPU-only Vast.ai instances for data preprocessing and export.
+        """
+        try:
+            from app.distributed.vast_cpu_pipeline import VastCpuPipelineDaemon
+
+            daemon = VastCpuPipelineDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.warning(f"VastCpuPipelineDaemon not available: {e}")
+            # Not critical - just skip
+
+    async def _create_cluster_data_sync(self) -> None:
+        """Create and run cluster data sync daemon (December 2025).
+
+        Coordinates full cluster data synchronization for games, models, and NPZ files.
+        """
+        try:
+            from app.coordination.cluster_data_sync import ClusterDataSyncDaemon
+
+            daemon = ClusterDataSyncDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.warning(f"ClusterDataSyncDaemon not available: {e}")
+            # Not critical - just skip
+
 
 # =============================================================================
 # Daemon Profiles (December 2025)
@@ -1537,6 +1621,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
     "selfplay": [
         DaemonType.EVENT_ROUTER,
         DaemonType.AUTO_SYNC,
+        DaemonType.QUALITY_MONITOR,  # Monitor quality to trigger throttling feedback
     ],
 
     # Full profile - all daemons (for testing)

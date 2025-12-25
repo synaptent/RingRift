@@ -560,6 +560,31 @@ class TemperatureScheduler:
         """Set current training progress (0-1)."""
         self._training_progress = max(0.0, min(1.0, progress))
 
+    def set_exploration_boost(self, boost: float) -> None:
+        """Set exploration boost from FeedbackLoopController.
+
+        December 2025: Connects temperature scheduling to the feedback loop.
+        When promotion fails, boost is increased (more exploration).
+        When promotion succeeds, boost is decreased (more exploitation).
+
+        Args:
+            boost: Exploration multiplier (1.0 = normal, 1.3 = 30% more exploration)
+                   Valid range: 0.5 to 2.0
+
+        Example:
+            scheduler.set_exploration_boost(1.3)  # After failed promotion
+            scheduler.set_exploration_boost(1.0)  # After successful promotion
+        """
+        self._exploration_boost = max(0.5, min(2.0, boost))
+        if boost != 1.0:
+            logger.info(
+                f"[TemperatureScheduler] Exploration boost set to {self._exploration_boost:.2f}"
+            )
+
+    def get_exploration_boost(self) -> float:
+        """Get current exploration boost value."""
+        return self._exploration_boost
+
     def new_game(self):
         """Signal start of a new game."""
         self._game_count += 1
@@ -803,6 +828,95 @@ def create_elo_adaptive_scheduler(
         adaptive_config={'model_elo': model_elo},
     )
     return TemperatureScheduler(config)
+
+
+def wire_exploration_boost(
+    scheduler: TemperatureScheduler,
+    config_key: str,
+) -> bool:
+    """Wire a temperature scheduler to receive exploration boost from FeedbackLoopController.
+
+    December 2025: This connects the feedback loop to temperature scheduling,
+    enabling automatic exploration adjustment based on promotion success/failure.
+
+    Args:
+        scheduler: TemperatureScheduler instance to receive boost updates
+        config_key: Configuration key (e.g., "hex8_2p") to subscribe to
+
+    Returns:
+        True if successfully wired, False if event system not available
+
+    Example:
+        >>> scheduler = create_scheduler("adaptive")
+        >>> wire_exploration_boost(scheduler, "hex8_2p")
+        True
+        >>> # Now scheduler will automatically adjust exploration based on feedback
+    """
+    try:
+        from app.coordination.event_router import get_event_bus
+        from app.distributed.data_events import DataEventType
+
+        bus = get_event_bus()
+        if bus is None:
+            logger.debug("[TemperatureScheduler] Event bus not available for boost wiring")
+            return False
+
+        def on_exploration_boost_updated(event):
+            """Handle EXPLORATION_BOOST_UPDATED from FeedbackLoopController."""
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config", "")
+
+            if event_config != config_key:
+                return
+
+            boost = payload.get("exploration_boost", 1.0)
+            scheduler.set_exploration_boost(boost)
+
+        def on_promotion_failed(event):
+            """Handle PROMOTION_FAILED - increase exploration."""
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config_key", "")
+
+            if event_config != config_key:
+                return
+
+            # Increase exploration on failure (capped at 2.0)
+            current_boost = scheduler.get_exploration_boost()
+            new_boost = min(2.0, current_boost * 1.2)
+            scheduler.set_exploration_boost(new_boost)
+            logger.info(
+                f"[TemperatureScheduler] Promotion failed for {config_key}, "
+                f"boost increased to {new_boost:.2f}"
+            )
+
+        def on_model_promoted(event):
+            """Handle MODEL_PROMOTED - decrease exploration."""
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config_key", "")
+
+            if event_config != config_key:
+                return
+
+            # Reset exploration on success
+            scheduler.set_exploration_boost(1.0)
+            logger.info(
+                f"[TemperatureScheduler] Promotion succeeded for {config_key}, "
+                f"boost reset to 1.0"
+            )
+
+        # Subscribe to feedback events
+        bus.subscribe(DataEventType.PROMOTION_FAILED, on_promotion_failed)
+        bus.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
+
+        logger.debug(f"[TemperatureScheduler] Wired exploration boost for {config_key}")
+        return True
+
+    except ImportError as e:
+        logger.debug(f"[TemperatureScheduler] Event system not available: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"[TemperatureScheduler] Failed to wire exploration boost: {e}")
+        return False
 
 
 def main() -> None:

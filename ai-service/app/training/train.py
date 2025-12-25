@@ -4359,6 +4359,49 @@ def train_model(
                         ))
                     except Exception as e:
                         logger.debug(f"Failed to publish training completed event: {e}")
+
+                # Emit curriculum update event (December 2025)
+                # Triggers curriculum reweighting when policy accuracy crosses threshold
+                try:
+                    from app.coordination.event_emitters import emit_curriculum_updated
+
+                    config_key = f"{config.board_type.value}_{num_players}p"
+                    policy_accuracy_threshold = 0.75
+
+                    # Check if this config should have its curriculum weight increased
+                    # High policy accuracy indicates strong learning - boost priority
+                    trigger_reweight = avg_policy_accuracy >= policy_accuracy_threshold
+
+                    if trigger_reweight:
+                        # Increase curriculum weight for well-performing configs
+                        new_weight = 1.0 + (avg_policy_accuracy - 0.5) * 0.5  # 0.75 acc → 1.125 weight
+                        import asyncio
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(emit_curriculum_updated(
+                                config_key=config_key,
+                                new_weight=new_weight,
+                                trigger="training_complete",
+                                policy_accuracy=avg_policy_accuracy,
+                                value_loss=avg_val_loss,
+                            ))
+                        except RuntimeError:
+                            # No event loop running, use sync wrapper
+                            asyncio.run(emit_curriculum_updated(
+                                config_key=config_key,
+                                new_weight=new_weight,
+                                trigger="training_complete",
+                                policy_accuracy=avg_policy_accuracy,
+                                value_loss=avg_val_loss,
+                            ))
+                        logger.info(
+                            f"[Curriculum] Triggered reweight for {config_key}: "
+                            f"policy_acc={avg_policy_accuracy:.1%} → weight={new_weight:.3f}"
+                        )
+                except ImportError:
+                    pass  # Event emitters not available
+                except Exception as e:
+                    logger.debug(f"Failed to emit curriculum update: {e}")
     finally:
         # Shutdown async checkpointer and wait for pending saves
         if async_checkpointer is not None:

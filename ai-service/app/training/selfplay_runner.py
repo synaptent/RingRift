@@ -140,6 +140,9 @@ class SelfplayRunner(ABC):
         self._pfsp_enabled = False
         self._pfsp_selector = None
 
+        # Temperature scheduler with exploration boost (December 2025)
+        self._temperature_scheduler = None  # Initialized in setup()
+
         # Setup signal handlers - only respond to first signal
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -184,6 +187,7 @@ class SelfplayRunner(ABC):
         self._subscribe_to_quality_events()
         self._subscribe_to_feedback_events()
         self._init_pfsp()
+        self._init_temperature_scheduler()
 
     def _apply_elo_adaptive_config(self) -> None:
         """Apply Elo-adaptive configuration for budget and temperature.
@@ -527,6 +531,51 @@ class SelfplayRunner(ABC):
         except Exception as e:
             logger.debug(f"[PFSP] Failed to initialize: {e}")
 
+    def _init_temperature_scheduler(self) -> None:
+        """Initialize temperature scheduler with exploration boost wiring.
+
+        December 2025: Creates a persistent TemperatureScheduler and wires it
+        to exploration boost events from the feedback loop. This enables:
+        - Automatic exploration increase after failed promotions
+        - Automatic exploration decrease after successful promotions
+
+        The scheduler is created once and reused for all games, preserving
+        the exploration boost state across games.
+        """
+        try:
+            from app.training.temperature_scheduling import (
+                create_elo_adaptive_scheduler,
+                wire_exploration_boost,
+            )
+
+            model_elo = getattr(self.config, 'model_elo', None) or 1500.0
+            exploration_moves = getattr(self.config, 'temperature_threshold', 30)
+
+            self._temperature_scheduler = create_elo_adaptive_scheduler(
+                model_elo=model_elo,
+                exploration_moves=exploration_moves,
+            )
+
+            # Wire to exploration boost events (PROMOTION_FAILED, MODEL_PROMOTED)
+            config_key = f"{self.config.board_type}_{self.config.num_players}p"
+            wired = wire_exploration_boost(self._temperature_scheduler, config_key)
+
+            if wired:
+                logger.info(
+                    f"[TemperatureScheduler] Initialized with exploration boost wiring "
+                    f"(Elo={model_elo:.0f}, config={config_key})"
+                )
+            else:
+                logger.info(
+                    f"[TemperatureScheduler] Initialized without event wiring "
+                    f"(Elo={model_elo:.0f})"
+                )
+
+        except ImportError as e:
+            logger.debug(f"[TemperatureScheduler] Module not available: {e}")
+        except Exception as e:
+            logger.debug(f"[TemperatureScheduler] Failed to initialize: {e}")
+
     def get_pfsp_opponent(self, current_model: str, available_opponents: list[str]) -> str:
         """Select opponent using PFSP if enabled, otherwise random.
 
@@ -719,7 +768,10 @@ class SelfplayRunner(ABC):
     def get_temperature(self, move_number: int, game_state=None) -> float:
         """Get temperature for move selection based on scheduling.
 
-        December 2025: Uses Elo-adaptive temperature when model_elo is available.
+        December 2025: Uses persistent TemperatureScheduler with exploration boost
+        wiring when available. The scheduler receives PROMOTION_FAILED and
+        MODEL_PROMOTED events to automatically adjust exploration.
+
         Weak models (Elo < 1300) get high temperature (1.5) for exploration.
         Strong models (Elo > 1700) get low temperature (0.5) for exploitation.
 
@@ -730,7 +782,11 @@ class SelfplayRunner(ABC):
         Returns:
             Temperature value for move selection.
         """
-        # Use Elo-adaptive scheduler if model_elo is set
+        # Use persistent scheduler with exploration boost (preferred)
+        if self._temperature_scheduler is not None:
+            return self._temperature_scheduler.get_temperature(move_number, game_state)
+
+        # Fallback: create one-off scheduler if model_elo is set but scheduler wasn't initialized
         if self.config.model_elo is not None:
             try:
                 from app.training.temperature_scheduling import create_elo_adaptive_scheduler

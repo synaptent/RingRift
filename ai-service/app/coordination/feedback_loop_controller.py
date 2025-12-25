@@ -207,33 +207,37 @@ class FeedbackLoopController:
         2. Update training intensity based on quality
         3. Signal training readiness if quality is sufficient
         """
-        payload = event.payload if hasattr(event, "payload") else {}
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
 
-        config_key = payload.get("config", "")
-        games_count = payload.get("games_count", 0)
-        db_path = payload.get("db_path", "")
+            config_key = payload.get("config", "")
+            games_count = payload.get("games_count", 0)
+            db_path = payload.get("db_path", "")
 
-        if not config_key:
-            return
+            if not config_key:
+                return
 
-        state = self._get_or_create_state(config_key)
-        state.last_selfplay_time = time.time()
+            state = self._get_or_create_state(config_key)
+            state.last_selfplay_time = time.time()
 
-        # Assess data quality
-        quality_score = self._assess_selfplay_quality(db_path, games_count)
-        state.last_selfplay_quality = quality_score
+            # Assess data quality
+            quality_score = self._assess_selfplay_quality(db_path, games_count)
+            state.last_selfplay_quality = quality_score
 
-        logger.info(
-            f"[FeedbackLoopController] Selfplay complete for {config_key}: "
-            f"{games_count} games, quality={quality_score:.2f}"
-        )
+            logger.info(
+                f"[FeedbackLoopController] Selfplay complete for {config_key}: "
+                f"{games_count} games, quality={quality_score:.2f}"
+            )
 
-        # Update training intensity based on quality
-        self._update_training_intensity(config_key, quality_score)
+            # Update training intensity based on quality
+            self._update_training_intensity(config_key, quality_score)
 
-        # Signal training readiness if quality is good
-        if quality_score >= 0.6:
-            self._signal_training_ready(config_key, quality_score)
+            # Signal training readiness if quality is good
+            if quality_score >= 0.6:
+                self._signal_training_ready(config_key, quality_score)
+
+        except Exception as e:
+            logger.error(f"[FeedbackLoopController] Error handling selfplay complete: {e}")
 
     def _on_training_complete(self, event: Any) -> None:
         """Handle training completion.
@@ -243,31 +247,114 @@ class FeedbackLoopController:
         2. Trigger evaluation if accuracy threshold met
         3. Adjust curriculum based on metrics
         """
-        payload = event.payload if hasattr(event, "payload") else {}
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
 
-        config_key = payload.get("config", "")
-        policy_accuracy = payload.get("policy_accuracy", 0.0)
-        value_accuracy = payload.get("value_accuracy", 0.0)
-        model_path = payload.get("model_path", "")
+            config_key = payload.get("config", "")
+            policy_accuracy = payload.get("policy_accuracy", 0.0)
+            value_accuracy = payload.get("value_accuracy", 0.0)
+            model_path = payload.get("model_path", "")
 
-        if not config_key:
-            return
+            if not config_key:
+                return
 
-        state = self._get_or_create_state(config_key)
-        state.last_training_time = time.time()
-        state.last_training_accuracy = policy_accuracy
+            state = self._get_or_create_state(config_key)
+            state.last_training_time = time.time()
+            state.last_training_accuracy = policy_accuracy
 
-        logger.info(
-            f"[FeedbackLoopController] Training complete for {config_key}: "
-            f"policy_acc={policy_accuracy:.2%}, value_acc={value_accuracy:.2%}"
-        )
+            logger.info(
+                f"[FeedbackLoopController] Training complete for {config_key}: "
+                f"policy_acc={policy_accuracy:.2%}, value_acc={value_accuracy:.2%}"
+            )
 
-        # Trigger evaluation if accuracy is good enough
-        if policy_accuracy >= self.policy_accuracy_threshold:
-            self._trigger_evaluation(config_key, model_path)
+            # Trigger evaluation if accuracy is good enough
+            if policy_accuracy >= self.policy_accuracy_threshold:
+                self._trigger_evaluation(config_key, model_path)
 
-        # Record training in curriculum
-        self._record_training_in_curriculum(config_key)
+            # Record training in curriculum
+            self._record_training_in_curriculum(config_key)
+
+            # Emit curriculum adjustment event based on training metrics
+            # Low accuracy = model needs more training data (boost weight)
+            # High accuracy = model is learning well (maintain or reduce weight)
+            self._emit_curriculum_training_feedback(
+                config_key, policy_accuracy, value_accuracy
+            )
+
+        except Exception as e:
+            logger.error(f"[FeedbackLoopController] Error handling training complete: {e}")
+
+    def _emit_curriculum_training_feedback(
+        self,
+        config_key: str,
+        policy_accuracy: float,
+        value_accuracy: float,
+    ) -> None:
+        """Emit curriculum feedback event based on training metrics.
+
+        December 2025: Closes the training → curriculum feedback loop.
+        Low training accuracy indicates the model needs more/better data,
+        triggering curriculum weight adjustments.
+        """
+        try:
+            from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+
+            # Determine curriculum adjustment based on accuracy
+            # Low accuracy (<0.65) = boost training weight
+            # High accuracy (>0.80) = reduce training weight
+            adjustment = 0.0
+            if policy_accuracy < 0.65:
+                adjustment = 0.15  # Boost - needs more training
+            elif policy_accuracy > 0.80:
+                adjustment = -0.10  # Reduce - learning well
+
+            if adjustment != 0.0:
+                # Update internal weights
+                current_weight = feedback._current_weights.get(config_key, 1.0)
+                new_weight = max(
+                    feedback.weight_min,
+                    min(feedback.weight_max, current_weight + adjustment)
+                )
+                feedback._current_weights[config_key] = new_weight
+
+                logger.info(
+                    f"[FeedbackLoopController] Curriculum adjusted for {config_key}: "
+                    f"policy_acc={policy_accuracy:.2%} → weight {current_weight:.2f} → {new_weight:.2f}"
+                )
+
+            # Emit CURRICULUM_REBALANCED event for downstream listeners
+            bus = get_event_bus()
+            event = DataEvent(
+                event_type=DataEventType.CURRICULUM_REBALANCED,
+                payload={
+                    "config": config_key,
+                    "trigger": "training_complete",
+                    "policy_accuracy": policy_accuracy,
+                    "value_accuracy": value_accuracy,
+                    "adjustment": adjustment,
+                    "new_weights": dict(feedback._current_weights),
+                    "timestamp": time.time(),
+                },
+                source="feedback_loop_controller",
+            )
+
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.publish(event))
+            except RuntimeError:
+                asyncio.run(bus.publish(event))
+
+            logger.debug(
+                f"[FeedbackLoopController] Emitted CURRICULUM_REBALANCED (training_complete)"
+            )
+
+        except ImportError:
+            pass  # Event system not available
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Failed to emit curriculum event: {e}")
 
     def _on_evaluation_complete(self, event: Any) -> None:
         """Handle evaluation completion.
@@ -277,28 +364,32 @@ class FeedbackLoopController:
         2. Consider promotion if win rate threshold met
         3. Adjust curriculum based on performance
         """
-        payload = event.payload if hasattr(event, "payload") else {}
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
 
-        config_key = payload.get("config", "")
-        win_rate = payload.get("win_rate", 0.0)
-        elo = payload.get("elo", 1500.0)
-        model_path = payload.get("model_path", "")
+            config_key = payload.get("config", "")
+            win_rate = payload.get("win_rate", 0.0)
+            elo = payload.get("elo", 1500.0)
+            model_path = payload.get("model_path", "")
 
-        if not config_key:
-            return
+            if not config_key:
+                return
 
-        state = self._get_or_create_state(config_key)
-        state.last_evaluation_time = time.time()
-        state.last_evaluation_win_rate = win_rate
+            state = self._get_or_create_state(config_key)
+            state.last_evaluation_time = time.time()
+            state.last_evaluation_win_rate = win_rate
 
-        logger.info(
-            f"[FeedbackLoopController] Evaluation complete for {config_key}: "
-            f"win_rate={win_rate:.2%}, elo={elo:.0f}"
-        )
+            logger.info(
+                f"[FeedbackLoopController] Evaluation complete for {config_key}: "
+                f"win_rate={win_rate:.2%}, elo={elo:.0f}"
+            )
 
-        # Consider promotion if threshold met
-        if win_rate >= self.promotion_threshold:
-            self._consider_promotion(config_key, model_path, win_rate, elo)
+            # Consider promotion if threshold met
+            if win_rate >= self.promotion_threshold:
+                self._consider_promotion(config_key, model_path, win_rate, elo)
+
+        except Exception as e:
+            logger.error(f"[FeedbackLoopController] Error handling evaluation complete: {e}")
 
     def _on_promotion_complete(self, event: Any) -> None:
         """Handle promotion completion.
