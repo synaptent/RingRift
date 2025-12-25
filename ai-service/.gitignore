@@ -196,3 +196,6 @@ OVERNIGHT_MONITORING.md
 
 # Debug scripts (ephemeral)
 scripts/debug_*.py
+
+# Test data directories (temporary test fixtures)
+test_data/
