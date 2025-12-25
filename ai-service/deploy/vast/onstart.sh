@@ -150,7 +150,7 @@ Wants=tailscaled.service
 Type=simple
 User=$USER
 WorkingDirectory=$HOME/ringrift/ai-service
-ExecStart=/usr/bin/python3 scripts/p2p_orchestrator.py --node-id $NODE_ID --port 8770
+ExecStart=/usr/bin/python3 scripts/p2p_orchestrator.py --node-id $NODE_ID --port 8770 --peers 100.94.174.19:8770,100.67.131.72:8770,100.126.21.102:8770
 Restart=always
 RestartSec=10
 StandardOutput=append:$HOME/ringrift/ai-service/logs/p2p_orchestrator.log
@@ -196,24 +196,51 @@ start_p2p() {
     pkill -f p2p_orchestrator || true
     sleep 2
 
+    # Seed peers: Hetzner CPU nodes (always online, stable P2P voters)
+    SEED_PEERS="100.94.174.19:8770,100.67.131.72:8770,100.126.21.102:8770"
+
     # Try systemd first for persistence, fall back to nohup
     if install_p2p_systemd; then
         echo "[$(date)] Starting P2P via systemd..."
         sudo systemctl start ringrift-p2p
         echo "[$(date)] P2P orchestrator started via systemd (persistent)"
     else
-        # Fallback to nohup
+        # Fallback to nohup with seed peers for cluster discovery
         echo "[$(date)] Starting P2P via nohup (non-persistent)..."
         nohup python3 scripts/p2p_orchestrator.py \
             --node-id "$NODE_ID" \
             --port 8770 \
+            --peers "$SEED_PEERS" \
             >> logs/p2p_orchestrator.log 2>&1 &
-        echo "[$(date)] P2P orchestrator started (PID: $!)"
+        echo "[$(date)] P2P orchestrator started (PID: $!) with seed peers"
     fi
 }
 
 # ============================================
-# 5. Health check
+# 5. Bootstrap models from cluster
+# ============================================
+bootstrap_models() {
+    echo "[$(date)] Bootstrapping canonical models from cluster..."
+    cd "$HOME/ringrift/ai-service"
+    mkdir -p models
+
+    # Try to sync models from Hetzner nodes
+    for HOST in 100.94.174.19 100.67.131.72 100.126.21.102; do
+        if rsync -avz --timeout=60 -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
+            root@$HOST:~/ringrift/ai-service/models/canonical_*.pth models/ 2>/dev/null; then
+            echo "[$(date)] Models synced from $HOST"
+            cd models
+            for f in canonical_*.pth; do
+                [ -f "$f" ] && ln -sf "$f" "${f/canonical_/ringrift_best_}" 2>/dev/null
+            done
+            return 0
+        fi
+    done
+    echo "[$(date)] Model sync failed (non-fatal)"
+}
+
+# ============================================
+# 6. Health check
 # ============================================
 health_check() {
     echo "[$(date)] Running health check..."
@@ -261,6 +288,7 @@ main() {
     setup_ringrift
     start_keepalive
     start_p2p
+    bootstrap_models
     health_check
 
     echo "[$(date)] =========================================="
