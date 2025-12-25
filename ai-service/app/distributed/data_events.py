@@ -645,7 +645,19 @@ class EventBus:
 
 
 def get_event_bus() -> EventBus:
-    """Get the global event bus singleton."""
+    """Get the global event bus singleton.
+
+    .. deprecated:: December 2025
+        Use :func:`app.coordination.event_router.get_router` instead for unified
+        event routing across all event systems.
+    """
+    import warnings
+    warnings.warn(
+        "get_event_bus() from data_events is deprecated. "
+        "Use get_router() from app.coordination.event_router instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _event_bus
     if _event_bus is None:
         _event_bus = EventBus()

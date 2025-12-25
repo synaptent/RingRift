@@ -12,7 +12,7 @@
 >
 > The Python engine and this make/unmake design are **hosts/adapters** that must match the TS rules/lifecycle SSoTs via the parity backbone and contract vectors; they do not introduce new rules semantics.
 >
-> **Related docs:** `AI_ARCHITECTURE.md`, `docs/AI_TRAINING_AND_DATASETS.md`, `docs/PYTHON_PARITY_REQUIREMENTS.md`, `docs/PARITY_SEED_TRIAGE.md`, `ai-service/AI_ASSESSMENT_REPORT.md`, `ai-service/AI_IMPROVEMENT_PLAN.md`, `docs/STRICT_INVARIANT_SOAKS.md`, and `DOCUMENTATION_INDEX.md`.
+> **Related docs:** `AI_ARCHITECTURE.md`, `docs/AI_TRAINING_AND_DATASETS.md`, `docs/PYTHON_PARITY_REQUIREMENTS.md`, `docs/PARITY_SEED_TRIAGE.md`, `ai-service/AI_ASSESSMENT_REPORT.md`, `ai-service/AI_IMPROVEMENT_PLAN.md`, `docs/testing/STRICT_INVARIANT_SOAKS.md`, and `DOCUMENTATION_INDEX.md`.
 
 **Document Version:** 1.0  
 **Date:** 2025-11-27  

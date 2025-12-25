@@ -4,7 +4,7 @@
 >
 > - Role: records the dependency stack and compatibility decisions for the Python AI microservice (NumPy/PyTorch/ Gymnasium, etc.) and outlines an aspirational RL roadmap. It guides environment setup and ML stack evolution, not game semantics.
 > - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`../docs/rules/COMPLETE_RULES.md`](../docs/rules/COMPLETE_RULES.md), [`RULES_ENGINE_ARCHITECTURE.md`](../docs/architecture/RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../docs/rules/RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/architecture/CANONICAL_ENGINE_API.md).
-> - Related docs: service-level overview in [`ai-service/README.md`](./README.md), AI architecture narrative in [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md), training and dataset docs in [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/ai/AI_TRAINING_PREPARATION_GUIDE.md), strict‑invariant/self‑play guidance in [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/testing/STRICT_INVARIANT_SOAKS.md), orchestrator rollout/SLO design in [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md) and [`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](../docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md), and security/supply-chain posture in [`docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`](../docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md).
+> - Related docs: service-level overview in [`ai-service/README.md`](./README.md), AI architecture narrative in [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md), training and dataset docs in [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/ai/AI_TRAINING_PREPARATION_GUIDE.md), strict‑invariant/self‑play guidance in [`docs/testing/STRICT_INVARIANT_SOAKS.md`](../docs/testing/STRICT_INVARIANT_SOAKS.md), orchestrator rollout/SLO design in [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md) and [`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](../docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md), and security/supply-chain posture in [`docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`](../docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md).
 
 ## Overview
 
@@ -207,7 +207,7 @@ cd ..
 See the Wave 3 guardrail subsets below for broader upgrade passes. For deeper,
 invariant-focused behavioural checks after larger dependency waves, also consider:
 
-- **Python strict-invariant self-play soak** (see `docs/STRICT_INVARIANT_SOAKS.md` §2):
+- **Python strict-invariant self-play soak** (see `docs/testing/STRICT_INVARIANT_SOAKS.md` §2):
 
   ```bash
   cd ai-service
@@ -225,7 +225,7 @@ invariant-focused behavioural checks after larger dependency waves, also conside
     --fail-on-anomaly
   ```
 
-- **TS orchestrator invariant soak** (see `docs/STRICT_INVARIANT_SOAKS.md` §2.3–2.4):
+- **TS orchestrator invariant soak** (see `docs/testing/STRICT_INVARIANT_SOAKS.md` §2.3–2.4):
 
   ```bash
   npm run soak:orchestrator:smoke
@@ -1117,7 +1117,7 @@ Python rules/AI stack. The detailed plan and SLOs for this wave live in
   and Python contract‑vector coverage so `processTurnAsync` + adapters are at least as
   well covered as legacy pipelines, anchored by the `orchestrator-parity` CI job.
 - **4‑B – Invariant soaks & CI gates:** treat orchestrator invariant soaks (short CI
-  soak plus longer scheduled soaks, see `docs/STRICT_INVARIANT_SOAKS.md`) as
+  soak plus longer scheduled soaks, see `docs/testing/STRICT_INVARIANT_SOAKS.md`) as
   first‑class gates for S‑invariant and structural invariants.
 - **4‑C – Rollout flags, topology & fallbacks:** ensure environment phases (0–4) map
   cleanly to env flags and `OrchestratorRolloutService` behaviour, with clear fallback

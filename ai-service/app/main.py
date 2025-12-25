@@ -165,10 +165,36 @@ except ImportError:  # pragma: no cover
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup/shutdown.
 
-    - On startup: Install signal handlers, start daemon manager, enable event router
+    - On startup: Validate configs, install signal handlers, start daemon manager
     - On shutdown: Gracefully shutdown daemons, then coordinators
     """
     # Startup
+
+    # Validate all configuration files before proceeding (December 2025)
+    # Catches misconfigurations early before expensive operations begin
+    try:
+        from .config.config_validator import ConfigValidator
+        validator = ConfigValidator()
+        result = validator.validate_all()
+        if not result.valid:
+            for error in result.errors:
+                logger.error(f"[Config] {error}")
+            logger.warning(
+                f"[Config] Validation found {len(result.errors)} errors, "
+                f"{len(result.warnings)} warnings"
+            )
+        else:
+            if result.warnings:
+                for warning in result.warnings:
+                    logger.warning(f"[Config] {warning}")
+            logger.info(
+                f"[Config] All configurations validated successfully "
+                f"({len(result.warnings)} warnings)"
+            )
+    except ImportError:
+        logger.debug("[Config] Config validator not available")
+    except Exception as e:
+        logger.warning(f"[Config] Validation failed: {e}")
 
     # Enable unified event router for all event emissions (December 2025)
     # This routes events through EventBus + StageEventBus + CrossProcessEventQueue

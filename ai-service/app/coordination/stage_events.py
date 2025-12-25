@@ -475,7 +475,19 @@ _global_event_bus: StageEventBus | None = None
 
 
 def get_event_bus() -> StageEventBus:
-    """Get or create the global event bus."""
+    """Get or create the global event bus.
+
+    .. deprecated:: December 2025
+        Use :func:`app.coordination.event_router.get_router` instead for unified
+        event routing across all event systems.
+    """
+    import warnings
+    warnings.warn(
+        "get_event_bus() from stage_events is deprecated. "
+        "Use get_router() from app.coordination.event_router instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _global_event_bus
     if _global_event_bus is None:
         _global_event_bus = StageEventBus()

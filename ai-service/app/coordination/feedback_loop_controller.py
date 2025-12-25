@@ -457,12 +457,73 @@ class FeedbackLoopController:
     # =========================================================================
 
     def _assess_selfplay_quality(self, db_path: str, games_count: int) -> float:
-        """Assess quality of selfplay data.
+        """Assess quality of selfplay data using UnifiedQualityScorer.
+
+        Uses the proper quality scoring system that evaluates game content,
+        not just game count. Falls back to count-based heuristics if the
+        unified scorer is unavailable.
 
         Returns:
             Quality score 0.0-1.0
         """
-        # Basic quality assessment based on game count
+        try:
+            from pathlib import Path
+            import sqlite3
+            from app.quality.unified_quality import compute_game_quality_from_params
+
+            db = Path(db_path)
+            if not db.exists():
+                logger.debug(f"Database not found: {db_path}")
+                return 0.3
+
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("""
+                    SELECT game_id, game_status, winner, termination_reason, total_moves
+                    FROM games
+                    WHERE game_status IN ('complete', 'finished', 'COMPLETE', 'FINISHED')
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                """)
+                games = cursor.fetchall()
+
+            if not games:
+                logger.debug(f"No completed games in {db_path}")
+                return 0.3
+
+            quality_scores = []
+            for game in games:
+                try:
+                    quality = compute_game_quality_from_params(
+                        game_id=game["game_id"],
+                        game_status=game["game_status"],
+                        winner=game["winner"],
+                        termination_reason=game["termination_reason"],
+                        total_moves=game["total_moves"] or 0,
+                    )
+                    quality_scores.append(quality.quality_score)
+                except Exception:
+                    continue
+
+            if not quality_scores:
+                return 0.3
+
+            avg_quality = sum(quality_scores) / len(quality_scores)
+            count_factor = min(1.0, games_count / 500)
+            final_quality = 0.3 + (avg_quality - 0.3) * count_factor
+
+            logger.debug(
+                f"[FeedbackLoopController] Quality: avg={avg_quality:.3f}, "
+                f"count_factor={count_factor:.2f}, final={final_quality:.3f}"
+            )
+            return final_quality
+
+        except ImportError:
+            logger.debug("UnifiedQualityScorer not available, using count heuristic")
+        except Exception as e:
+            logger.debug(f"Quality assessment error: {e}")
+
+        # Fallback to count-based heuristic
         if games_count < 100:
             return 0.3
         elif games_count < 500:

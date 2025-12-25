@@ -830,6 +830,58 @@ def create_elo_adaptive_scheduler(
     return TemperatureScheduler(config)
 
 
+# =============================================================================
+# Scheduler Registry (December 2025)
+# Enables FeedbackLoopController to wire exploration boost to active schedulers
+# =============================================================================
+
+_active_schedulers: dict[str, "TemperatureScheduler"] = {}
+
+
+def get_active_schedulers() -> dict[str, "TemperatureScheduler"]:
+    """Get all active temperature schedulers by config_key.
+
+    Returns:
+        Dictionary mapping config_key (e.g., "hex8_2p") to TemperatureScheduler
+
+    Example:
+        >>> schedulers = get_active_schedulers()
+        >>> for key, sched in schedulers.items():
+        ...     print(f"{key}: boost={sched.get_exploration_boost():.2f}")
+    """
+    return dict(_active_schedulers)
+
+
+def register_active_scheduler(config_key: str, scheduler: "TemperatureScheduler") -> None:
+    """Register a temperature scheduler as active for a config.
+
+    Called during selfplay initialization to make the scheduler available
+    for exploration boost wiring from FeedbackLoopController.
+
+    Args:
+        config_key: Configuration key (e.g., "hex8_2p")
+        scheduler: TemperatureScheduler instance to register
+
+    Example:
+        >>> scheduler = create_scheduler("adaptive")
+        >>> register_active_scheduler("hex8_2p", scheduler)
+        >>> # Now FeedbackLoopController can wire exploration boost
+    """
+    _active_schedulers[config_key] = scheduler
+    logger.debug(f"[TemperatureScheduler] Registered active scheduler for {config_key}")
+
+
+def unregister_active_scheduler(config_key: str) -> None:
+    """Unregister a temperature scheduler when selfplay completes.
+
+    Args:
+        config_key: Configuration key to unregister
+    """
+    if config_key in _active_schedulers:
+        del _active_schedulers[config_key]
+        logger.debug(f"[TemperatureScheduler] Unregistered scheduler for {config_key}")
+
+
 def wire_exploration_boost(
     scheduler: TemperatureScheduler,
     config_key: str,

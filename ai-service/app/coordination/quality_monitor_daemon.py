@@ -137,22 +137,21 @@ class QualityMonitorDaemon:
             logger.error(f"Error checking quality: {e}")
 
     async def _get_current_quality(self) -> float:
-        """Get current quality score from recent selfplay data.
+        """Get current quality score from recent selfplay data using UnifiedQualityScorer.
 
         Returns:
             Quality score between 0.0 and 1.0
         """
         try:
-            from app.training.data_quality import DataQualityChecker
+            import sqlite3
+            from app.quality.unified_quality import compute_game_quality_from_params
 
-            checker = DataQualityChecker()
             data_dir = Path(self.config.data_dir)
 
             if not data_dir.exists():
                 logger.debug(f"Data directory not found: {data_dir}")
-                return 1.0  # Assume good if no data yet
+                return 1.0
 
-            # Find recent selfplay databases
             db_files = sorted(
                 data_dir.glob(self.config.database_pattern),
                 key=lambda p: p.stat().st_mtime,
@@ -163,19 +162,54 @@ class QualityMonitorDaemon:
                 logger.debug("No selfplay databases found")
                 return 1.0
 
-            # Check the most recent database
             recent_db = db_files[0]
-            quality = checker.get_quality_score(recent_db)
+            try:
+                with sqlite3.connect(str(recent_db)) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.execute("""
+                        SELECT game_id, game_status, winner, termination_reason, total_moves
+                        FROM games
+                        WHERE game_status IN ('complete', 'finished', 'COMPLETE', 'FINISHED')
+                        ORDER BY created_at DESC
+                        LIMIT 30
+                    """)
+                    games = cursor.fetchall()
 
-            logger.debug(f"Quality score for {recent_db.name}: {quality:.3f}")
-            return quality
+                if not games:
+                    logger.debug(f"No completed games in {recent_db.name}")
+                    return 0.5
+
+                quality_scores = []
+                for game in games:
+                    try:
+                        quality = compute_game_quality_from_params(
+                            game_id=game["game_id"],
+                            game_status=game["game_status"],
+                            winner=game["winner"],
+                            termination_reason=game["termination_reason"],
+                            total_moves=game["total_moves"] or 0,
+                        )
+                        quality_scores.append(quality.quality_score)
+                    except Exception:
+                        continue
+
+                if not quality_scores:
+                    return 0.5
+
+                avg_quality = sum(quality_scores) / len(quality_scores)
+                logger.debug(f"Quality score for {recent_db.name}: {avg_quality:.3f}")
+                return avg_quality
+
+            except sqlite3.Error as e:
+                logger.debug(f"Database error for {recent_db.name}: {e}")
+                return self.last_quality
 
         except ImportError:
-            logger.warning("DataQualityChecker not available")
+            logger.warning("UnifiedQualityScorer not available")
             return 1.0
         except Exception as e:
             logger.error(f"Error getting quality: {e}")
-            return self.last_quality  # Return last known quality on error
+            return self.last_quality
 
     def _quality_to_state(self, quality: float) -> QualityState:
         """Convert quality score to state."""
