@@ -1118,8 +1118,8 @@ export default function LobbyPage() {
                 </div>
               ))}
               <div className="pt-2 border-t border-slate-700 text-[11px] text-slate-400">
-                D9–D10 are the strongest public tiers and may take longer per move. Use them when
-                you want a maximum-strength challenge.
+                Experimental tiers D9–D10 are the strongest public levels and may take longer per
+                move. Use them when you want a maximum-strength challenge.
               </div>
             </div>
           </Dialog>
