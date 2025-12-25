@@ -316,14 +316,22 @@ def _compute_multi_player_values(
     num_players: int,
     max_players: int = 4,
 ) -> np.ndarray:
-    """Compute value vector for all player positions."""
+    """Compute value vector for all player positions.
+
+    IMPORTANT: This iterates over ALL expected players (1 to num_players), not
+    just those remaining in final_state.players. Eliminated players are assigned
+    the worst rank (last place = -1.0 value).
+    """
     values = np.zeros(max_players, dtype=np.float32)
 
     winner = getattr(final_state, "winner", None)
     if winner is None or not final_state.players:
         return values
 
-    # Compute ranking based on eliminated_rings and territory_spaces
+    # Build a map of active players (those still in final_state.players)
+    active_player_nums = {p.player_number for p in final_state.players}
+
+    # Compute ranking for active players based on eliminated_rings and territory_spaces
     player_scores = []
     for player in final_state.players:
         score = (player.eliminated_rings, player.territory_spaces)
@@ -335,12 +343,19 @@ def _compute_multi_player_values(
     for rank, (player_num, _) in enumerate(player_scores, start=1):
         player_ranks[player_num] = rank
 
-    for player in final_state.players:
-        player_idx = player.player_number - 1
+    # Iterate over ALL expected players, not just active ones
+    for player_num in range(1, num_players + 1):
+        player_idx = player_num - 1
         if player_idx >= max_players:
             continue
 
-        rank = player_ranks.get(player.player_number, num_players)
+        if player_num in active_player_nums:
+            # Active player - use computed rank
+            rank = player_ranks.get(player_num, num_players)
+        else:
+            # Eliminated player - worst rank (last place)
+            rank = num_players
+
         if num_players <= 1:
             values[player_idx] = 0.0
         else:
@@ -354,13 +369,23 @@ def _value_from_final_ranking(
     perspective: int,
     num_players: int,
 ) -> float:
-    """Compute rank-aware value from final game state."""
+    """Compute rank-aware value from final game state.
+
+    IMPORTANT: Handles eliminated players correctly - if the perspective player
+    is not in final_state.players, they were eliminated and get worst rank (-1.0).
+    """
     winner = getattr(final_state, "winner", None)
     if winner is None or not final_state.players:
         return 0.0
 
     if num_players == 2:
         return 1.0 if winner == perspective else -1.0
+
+    # Check if perspective player is still active
+    active_player_nums = {p.player_number for p in final_state.players}
+    if perspective not in active_player_nums:
+        # Eliminated player - worst rank (last place = -1.0)
+        return -1.0
 
     player_scores = []
     for player in final_state.players:

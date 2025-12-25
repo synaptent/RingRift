@@ -38,6 +38,17 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+# Import promotion thresholds from centralized config
+try:
+    from app.config.thresholds import (
+        PRODUCTION_MIN_WIN_RATE_VS_HEURISTIC,
+        PRODUCTION_MIN_WIN_RATE_VS_RANDOM,
+    )
+except ImportError:
+    # Fallback values - keep in sync with app/config/thresholds.py
+    PRODUCTION_MIN_WIN_RATE_VS_RANDOM = 0.90  # 90%
+    PRODUCTION_MIN_WIN_RATE_VS_HEURISTIC = 0.60  # 60%
+
 logger = logging.getLogger(__name__)
 
 
@@ -575,11 +586,11 @@ async def trigger_evaluation(
                 except ValueError:
                     pass
 
-        # Check promotion eligibility
-        eligible = all(
-            win_rates.get("random", 0) >= 85,
-            win_rates.get("heuristic", 0) >= 60,
-        ) if win_rates else False
+        # Check promotion eligibility (win_rates are integer percentages, thresholds are 0-1)
+        eligible = all([
+            win_rates.get("random", 0) >= PRODUCTION_MIN_WIN_RATE_VS_RANDOM * 100,
+            win_rates.get("heuristic", 0) >= PRODUCTION_MIN_WIN_RATE_VS_HEURISTIC * 100,
+        ]) if win_rates else False
 
         result = StageCompletionResult(
             success=success,
@@ -654,11 +665,11 @@ async def trigger_promotion(
     root = _get_ai_service_root()
     start_time = time.time()
 
-    # Check eligibility from gauntlet results
+    # Check eligibility from gauntlet results (win_rates are integer percentages)
     win_rates = gauntlet_results.get("win_rates", {})
     eligible = (
-        win_rates.get("random", 0) >= 85 and
-        win_rates.get("heuristic", 0) >= 60
+        win_rates.get("random", 0) >= PRODUCTION_MIN_WIN_RATE_VS_RANDOM * 100 and
+        win_rates.get("heuristic", 0) >= PRODUCTION_MIN_WIN_RATE_VS_HEURISTIC * 100
     )
 
     if not eligible:

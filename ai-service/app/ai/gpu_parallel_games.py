@@ -578,9 +578,13 @@ class ParallelGameRunner:
         )
 
         # Store policy data for each active game
+        # Optimized 2025-12-24: Pre-extract move_count to avoid per-iteration .item() calls
+        move_counts_np = self.state.move_count.cpu().numpy()
+        moves_per_game_np = moves.moves_per_game.cpu().numpy()
+        active_mask_np = active_mask.cpu().numpy()
         for g in range(self.batch_size):
-            if active_mask[g] and moves.moves_per_game[g] > 0:
-                move_num = int(self.state.move_count[g].item())
+            if active_mask_np[g] and moves_per_game_np[g] > 0:
+                move_num = int(move_counts_np[g])
                 policy_dict = policy_data.extract_for_game(g)
                 if g not in self._pending_policy:
                     self._pending_policy[g] = []
@@ -1204,13 +1208,20 @@ class ParallelGameRunner:
 
         game_indices = torch.where(mask)[0].tolist()
 
+        # Optimized 2025-12-24: Pre-extract move metadata to avoid per-iteration .item() calls
+        move_offsets_np = moves.move_offsets.cpu().numpy()
+        moves_per_game_np = moves.moves_per_game.cpu().numpy()
+        from_y_np = moves.from_y.cpu().numpy()
+        from_x_np = moves.from_x.cpu().numpy()
+        current_player_np = self.state.current_player.cpu().numpy()
+
         for g in game_indices:
             if not self.shadow_validator.should_validate():
                 continue
 
             # Extract GPU moves for this game
-            move_start = moves.move_offsets[g].item()
-            move_count = moves.moves_per_game[g].item()
+            move_start = int(move_offsets_np[g])
+            move_count = int(moves_per_game_np[g])
 
             if move_count == 0:
                 continue
@@ -1219,8 +1230,8 @@ class ParallelGameRunner:
             for i in range(move_count):
                 idx = move_start + i
                 # Placement moves store position in from_y, from_x (target position)
-                row = moves.from_y[idx].item()
-                col = moves.from_x[idx].item()
+                row = int(from_y_np[idx])
+                col = int(from_x_np[idx])
 
                 # Convert GPU grid coords to CPU format
                 # For hex boards (25x25 embedding): convert to axial coords
@@ -1238,7 +1249,7 @@ class ParallelGameRunner:
 
             # Convert to CPU state and validate
             cpu_state = self.state.to_game_state(g)
-            player = self.state.current_player[g].item()
+            player = int(current_player_np[g])
 
             self.shadow_validator.validate_placement_moves(
                 gpu_positions, cpu_state, player
@@ -1260,47 +1271,65 @@ class ParallelGameRunner:
 
         game_indices = torch.where(mask)[0].tolist()
 
+        # Optimized 2025-12-24: Pre-extract move metadata to avoid per-iteration .item() calls
+        # Movement moves
+        mv_offsets_np = movement_moves.move_offsets.cpu().numpy()
+        mv_counts_np = movement_moves.moves_per_game.cpu().numpy()
+        mv_from_y_np = movement_moves.from_y.cpu().numpy()
+        mv_from_x_np = movement_moves.from_x.cpu().numpy()
+        mv_to_y_np = movement_moves.to_y.cpu().numpy()
+        mv_to_x_np = movement_moves.to_x.cpu().numpy()
+        # Capture moves
+        cap_offsets_np = capture_moves.move_offsets.cpu().numpy()
+        cap_counts_np = capture_moves.moves_per_game.cpu().numpy()
+        cap_from_y_np = capture_moves.from_y.cpu().numpy()
+        cap_from_x_np = capture_moves.from_x.cpu().numpy()
+        cap_to_y_np = capture_moves.to_y.cpu().numpy()
+        cap_to_x_np = capture_moves.to_x.cpu().numpy()
+        # Current player
+        current_player_np = self.state.current_player.cpu().numpy()
+
+        # Hex coordinate conversion helper (defined once outside loop)
+        is_hex = self.board_type and self.board_type.lower() in ("hexagonal", "hex", "hex8")
+        hex_center = self.board_size // 2 if is_hex else 0
+
+        def to_cpu_coords(row: int, col: int):
+            """Convert GPU grid to CPU coords."""
+            if is_hex:
+                return col - hex_center, row - hex_center
+            return col, row
+
         for g in game_indices:
             if not self.shadow_validator.should_validate():
                 continue
 
-            # Hex coordinate conversion helper
-            is_hex = self.board_type and self.board_type.lower() in ("hexagonal", "hex", "hex8")
-            hex_center = self.board_size // 2 if is_hex else 0
-
-            def to_cpu_coords(row: int, col: int, *, _is_hex: bool = is_hex, _hex_center: int = hex_center):
-                """Convert GPU grid to CPU coords."""
-                if _is_hex:
-                    return col - _hex_center, row - _hex_center
-                return col, row
-
             # Extract GPU movement moves
-            move_start = movement_moves.move_offsets[g].item()
-            move_count = movement_moves.moves_per_game[g].item()
+            move_start = int(mv_offsets_np[g])
+            move_count = int(mv_counts_np[g])
 
             gpu_movement = []
             for i in range(move_count):
                 idx = move_start + i
-                from_row = movement_moves.from_y[idx].item()
-                from_col = movement_moves.from_x[idx].item()
-                to_row = movement_moves.to_y[idx].item()
-                to_col = movement_moves.to_x[idx].item()
+                from_row = int(mv_from_y_np[idx])
+                from_col = int(mv_from_x_np[idx])
+                to_row = int(mv_to_y_np[idx])
+                to_col = int(mv_to_x_np[idx])
                 # Convert to CPU format
                 from_x, from_y = to_cpu_coords(from_row, from_col)
                 to_x, to_y = to_cpu_coords(to_row, to_col)
                 gpu_movement.append(((from_x, from_y), (to_x, to_y)))
 
             # Extract GPU capture moves
-            cap_start = capture_moves.move_offsets[g].item()
-            cap_count = capture_moves.moves_per_game[g].item()
+            cap_start = int(cap_offsets_np[g])
+            cap_count = int(cap_counts_np[g])
 
             gpu_captures = []
             for i in range(cap_count):
                 idx = cap_start + i
-                from_row = capture_moves.from_y[idx].item()
-                from_col = capture_moves.from_x[idx].item()
-                to_row = capture_moves.to_y[idx].item()
-                to_col = capture_moves.to_x[idx].item()
+                from_row = int(cap_from_y_np[idx])
+                from_col = int(cap_from_x_np[idx])
+                to_row = int(cap_to_y_np[idx])
+                to_col = int(cap_to_x_np[idx])
                 # Convert to CPU format
                 from_x, from_y = to_cpu_coords(from_row, from_col)
                 to_x, to_y = to_cpu_coords(to_row, to_col)
@@ -1308,7 +1337,7 @@ class ParallelGameRunner:
 
             # Convert to CPU state and validate
             cpu_state = self.state.to_game_state(g)
-            player = self.state.current_player[g].item()
+            player = int(current_player_np[g])
 
             if gpu_movement:
                 self.shadow_validator.validate_movement_moves(
@@ -1885,18 +1914,26 @@ class ParallelGameRunner:
             has_must_move_constraint = self.state.must_move_from_y >= 0  # (batch_size,)
 
             # For games with must_move_from constraint, check if there are captures FROM that position
+            # Optimized 2025-12-24: Pre-extract to numpy to avoid per-iteration .item() calls
             games_with_constrained_captures = torch.zeros_like(games_with_stacks)
             if has_must_move_constraint.any():
+                cap_moves_per_game_np = capture_moves.moves_per_game.cpu().numpy()
+                cap_offsets_np = capture_moves.move_offsets.cpu().numpy()
+                cap_from_y_np = capture_moves.from_y.cpu().numpy()
+                cap_from_x_np = capture_moves.from_x.cpu().numpy()
+                must_y_np = self.state.must_move_from_y.cpu().numpy()
+                must_x_np = self.state.must_move_from_x.cpu().numpy()
+
                 for g in torch.where(has_must_move_constraint & games_with_stacks)[0].tolist():
-                    if capture_moves.moves_per_game[g].item() == 0:
+                    if cap_moves_per_game_np[g] == 0:
                         continue
                     # Check if any capture originates from must_move_from position
-                    start = capture_moves.move_offsets[g].item()
-                    count = capture_moves.moves_per_game[g].item()
-                    must_y = self.state.must_move_from_y[g].item()
-                    must_x = self.state.must_move_from_x[g].item()
+                    start = int(cap_offsets_np[g])
+                    count = int(cap_moves_per_game_np[g])
+                    must_y = int(must_y_np[g])
+                    must_x = int(must_x_np[g])
                     for idx in range(start, start + count):
-                        if capture_moves.from_y[idx].item() == must_y and capture_moves.from_x[idx].item() == must_x:
+                        if cap_from_y_np[idx] == must_y and cap_from_x_np[idx] == must_x:
                             games_with_constrained_captures[g] = True
                             break
 
@@ -1985,11 +2022,14 @@ class ParallelGameRunner:
                             landing_y, landing_x = new_y, new_x
 
             # Handle constrained captures (from must_move_from position)
+            # Optimized 2025-12-24: Pre-extract to avoid per-iteration .item() calls
             if games_constrained_captures.any():
+                must_from_y_np = self.state.must_move_from_y.cpu().numpy()
+                must_from_x_np = self.state.must_move_from_x.cpu().numpy()
                 for g in torch.where(games_constrained_captures)[0].tolist():
                     # Get captures from must_move_from position
-                    from_y = int(self.state.must_move_from_y[g].item())
-                    from_x = int(self.state.must_move_from_x[g].item())
+                    from_y = int(must_from_y_np[g])
+                    from_x = int(must_from_x_np[g])
 
                     captures = generate_chain_capture_moves_from_position(
                         self.state, g, from_y, from_x
@@ -2054,11 +2094,16 @@ class ParallelGameRunner:
                 games_with_post_captures = torch.zeros_like(games_movement_only)
                 post_capture_landings = {}  # game_idx -> (landing_y, landing_x)
 
+                # Optimized 2025-12-24: Pre-extract landing coords to avoid per-iteration .item() calls
+                landing_y_np = movement_landing_y.cpu().numpy()
+                landing_x_np = movement_landing_x.cpu().numpy()
+                movement_valid_np = movement_valid.cpu().numpy()
+
                 for idx, g in enumerate(movement_game_indices.tolist()):
-                    if not movement_valid[idx]:
+                    if not movement_valid_np[idx]:
                         continue
-                    landing_y = int(movement_landing_y[idx].item())
-                    landing_x = int(movement_landing_x[idx].item())
+                    landing_y = int(landing_y_np[idx])
+                    landing_x = int(landing_x_np[idx])
 
                     # Check captures from the moved stack's new position only
                     captures_from_landing = generate_chain_capture_moves_from_position(
@@ -2195,15 +2240,20 @@ class ParallelGameRunner:
         # Determine move type for each game
         had_lines = games_with_lines[game_indices]
 
+        # Optimized 2025-12-24: Pre-extract to avoid per-iteration .item() calls
+        move_counts_np = self.state.move_count.cpu().numpy()
+        players_np = players.cpu().numpy()
+        had_lines_np = had_lines.cpu().numpy()
+
         # Record moves
         for i, g in enumerate(game_indices.tolist()):
-            move_count = int(self.state.move_count[g].item())
+            move_count = int(move_counts_np[g])
             if move_count >= self.state.max_history_moves:
                 continue
 
-            player = int(players[i].item())
+            player = int(players_np[i])
 
-            if had_lines[i]:
+            if had_lines_np[i]:
                 # RR-CANON-R123: Record CHOOSE_LINE_OPTION + ELIMINATE_RINGS_FROM_STACK
                 # First: record the line choice move
                 # Get first position of processed line for this game (for CPU parity)
@@ -2335,6 +2385,8 @@ class ParallelGameRunner:
 
         Returns a boolean mask of games where opponent has no rings left.
         Used to skip self-elimination recording when game ends during territory.
+
+        Optimized 2025-12-24: Fully vectorized for 2-player games.
         """
         result = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
 
@@ -2342,19 +2394,23 @@ class ParallelGameRunner:
         if not active_mask.any():
             return result
 
-        # Get current player for each game
-        current_players = self.state.current_player
-
         # Compute player ring status
         player_has_rings = self._compute_player_ring_status_batch()
 
-        # In 2-player games, check if the opponent has no rings
+        # In 2-player games, check if the opponent has no rings (vectorized)
         if self.num_players == 2:
-            for g in torch.where(active_mask)[0].tolist():
-                current_p = int(current_players[g].item())
-                opponent_p = 2 if current_p == 1 else 1
-                if not player_has_rings[g, opponent_p]:
-                    result[g] = True
+            # Compute opponent player index: if current==1 then opponent==2, else opponent==1
+            current_players = self.state.current_player  # (batch_size,)
+            opponent_players = torch.where(
+                current_players == 1,
+                torch.tensor(2, device=self.device),
+                torch.tensor(1, device=self.device)
+            )
+            # Gather opponent's ring status
+            opponent_indices = opponent_players.unsqueeze(1)  # (batch_size, 1)
+            opponent_has_rings = player_has_rings.gather(1, opponent_indices).squeeze(1)  # (batch_size,)
+            # Result: opponent eliminated (no rings) in active games
+            result = active_mask & ~opponent_has_rings
 
         return result
 
@@ -2401,6 +2457,8 @@ class ParallelGameRunner:
 
         Returns:
             Boolean mask of games where current player achieved territory victory.
+
+        Optimized 2025-12-24: Fully vectorized to avoid per-game loops and .item() calls.
         """
         result = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
 
@@ -2411,22 +2469,28 @@ class ParallelGameRunner:
         total_spaces = self.board_size * self.board_size
         min_threshold = total_spaces // self.num_players + 1
 
-        for g in torch.where(mask)[0].tolist():
-            current_p = int(self.state.current_player[g].item())
-            player_territory = int(self.state.territory_count[g, current_p].item())
+        # Vectorized: Get current player's territory for all games
+        # territory_count is (batch_size, num_players + 1) where index 0 is unused
+        current_players = self.state.current_player  # (batch_size,)
 
-            # Check condition 1: player has minimum
-            if player_territory < min_threshold:
-                continue
+        # Use gather to get each game's current player's territory count
+        # Expand current_players to match territory_count shape for gather
+        player_indices = current_players.unsqueeze(1)  # (batch_size, 1)
+        player_territory = self.state.territory_count.gather(1, player_indices).squeeze(1)  # (batch_size,)
 
-            # Check condition 2: player dominates all opponents combined
-            opponent_total = 0
-            for opp in range(1, self.num_players + 1):
-                if opp != current_p:
-                    opponent_total += int(self.state.territory_count[g, opp].item())
+        # Condition 1: player has minimum threshold (vectorized)
+        has_minimum = player_territory >= min_threshold
 
-            if player_territory > opponent_total:
-                result[g] = True
+        # Condition 2: player dominates opponents (vectorized)
+        # Sum all territory, then subtract player's own to get opponent total
+        total_territory = self.state.territory_count.sum(dim=1)  # (batch_size,)
+        opponent_total = total_territory - player_territory
+
+        # Player dominates if their territory > opponent total
+        dominates = player_territory > opponent_total
+
+        # Victory requires both conditions AND game is in mask
+        result = mask & has_minimum & dominates
 
         return result
 
@@ -2456,12 +2520,16 @@ class ParallelGameRunner:
 
         import numpy as np
 
+        # Optimized 2025-12-24: Pre-extract to avoid per-iteration .item() calls
+        game_status_np = self.state.game_status.cpu().numpy()
+        current_player_np = self.state.current_player.cpu().numpy()
+
         for g in torch.where(mask)[0].tolist():
             # Check if game is still active
-            if self.state.game_status[g].item() != GameStatus.ACTIVE:
+            if game_status_np[g] != GameStatus.ACTIVE:
                 continue
 
-            player = int(self.state.current_player[g].item())
+            player = int(current_player_np[g])
 
             # Get board state as numpy for efficiency
             stack_owner_np = self.state.stack_owner[g].cpu().numpy()
@@ -2544,15 +2612,20 @@ class ParallelGameRunner:
         # Determine move type for each game
         had_territory = games_with_territory[game_indices]
 
+        # Optimized 2025-12-24: Pre-extract to avoid per-iteration .item() calls
+        move_counts_np = self.state.move_count.cpu().numpy()
+        players_np = players.cpu().numpy()
+        had_territory_np = had_territory.cpu().numpy()
+
         # Record moves
         for i, g in enumerate(game_indices.tolist()):
-            move_count = int(self.state.move_count[g].item())
+            move_count = int(move_counts_np[g])
             if move_count >= self.state.max_history_moves:
                 continue
 
-            player = int(players[i].item())
+            player = int(players_np[i])
 
-            if had_territory[i]:
+            if had_territory_np[i]:
                 # RR-CANON-R145: Record CHOOSE_TERRITORY_OPTION + ELIMINATE_RINGS_FROM_STACK pairs
                 # CPU parity: Each territory needs its own CHOOSE + ELIM pair
                 # Skip all recording if territory victory was achieved - game ends immediately

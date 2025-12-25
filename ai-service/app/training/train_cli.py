@@ -163,6 +163,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         '--init-weights-strict', action='store_true',
         help='Require all weights to match when using --init-weights (default: allow partial loading)'
     )
+    parser.add_argument(
+        '--freeze-policy', action='store_true',
+        help='Freeze policy head and feature extractor, only train value head. '
+             'Useful for fine-tuning value estimates without changing policy.'
+    )
 
     # Learning rate scheduling
     parser.add_argument(
@@ -614,6 +619,7 @@ def main() -> None:
         resume_path=args.resume,
         init_weights_path=getattr(args, 'init_weights', None),
         init_weights_strict=getattr(args, 'init_weights_strict', False),
+        freeze_policy=getattr(args, 'freeze_policy', False),
         augment_hex_symmetry=args.augment_hex_symmetry,
         distributed=args.distributed,
         local_rank=args.local_rank,

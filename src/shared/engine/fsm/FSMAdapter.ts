@@ -405,7 +405,17 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
   // causing TS to transition out of territory_processing before all Python-recorded moves
   // are replayed. RR-CANON-R075: Trust recorded moves during replay.
   let phase = gameState.currentPhase;
-  if (hint?.type === 'choose_territory_option') {
+  if (
+    hint?.type === 'place_ring' ||
+    hint?.type === 'no_placement_action' ||
+    hint?.type === 'skip_placement'
+  ) {
+    // RR-CANON-R073/R075: Placement moves are always in ring_placement phase.
+    // This handles replay scenarios where the previous player's turn ended at a different phase
+    // (e.g., line_processing or territory_processing) and the state wasn't properly transitioned
+    // before the next player's placement move is validated.
+    phase = 'ring_placement';
+  } else if (hint?.type === 'choose_territory_option') {
     phase = 'territory_processing';
   } else if (hint?.type === 'eliminate_rings_from_stack') {
     // RR-CANON-R123: Check eliminationContext to determine correct phase.

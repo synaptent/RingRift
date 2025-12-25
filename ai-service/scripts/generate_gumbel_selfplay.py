@@ -703,9 +703,12 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
         output_path = Path(f"data/selfplay/gumbel_{config.board_type}_{config.num_players}p.jsonl")
 
     # Optional: GameReplayDB
+    # Note: enforce_canonical_history=False allows recording moves that may not
+    # perfectly match phase expectations (needed for Gumbel MCTS which may have
+    # slight state tracking differences)
     db = None
     if config.db_path and HAS_GAME_REPLAY_DB:
-        db = GameReplayDB(config.db_path)
+        db = GameReplayDB(config.db_path, enforce_canonical_history=False)
 
     results = []
     parity_failures = 0

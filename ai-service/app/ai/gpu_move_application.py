@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 
 from .gpu_game_types import GamePhase, MoveType, MAX_RING_STACK_DEPTH
@@ -46,6 +47,9 @@ def apply_capture_moves_vectorized(
     due to variable-length paths. This is a known limitation documented in
     GPU_PIPELINE_ROADMAP.md Section 2.2 (Irregular Data Access Patterns).
 
+    December 2025: Optimized with batch numpy pre-extraction to reduce .item() calls
+    from ~25 per game to ~6 per game (path-dependent lookups only).
+
     Args:
         state: BatchGameState to modify
         selected_local_idx: (batch_size,) local move indices
@@ -75,22 +79,45 @@ def apply_capture_moves_vectorized(
     # This is the minimal iteration - just for path processing
     game_indices = torch.where(has_selection)[0]
 
-    for g in game_indices.tolist():
-        from_y = selected_from_y[g].item()
-        from_x = selected_from_x[g].item()
-        to_y = selected_to_y[g].item()
-        to_x = selected_to_x[g].item()
-        player = current_players[g].item()
-        mc = int(state.move_count[g].item())
+    # =========================================================================
+    # Phase 1 Optimization: Batch pre-extraction to numpy
+    # This reduces CPU-GPU sync overhead by doing one bulk transfer
+    # instead of many individual .item() calls per game.
+    # =========================================================================
+    game_indices_np = game_indices.cpu().numpy()
+    from_y_np = selected_from_y.cpu().numpy()
+    from_x_np = selected_from_x.cpu().numpy()
+    to_y_np = selected_to_y.cpu().numpy()
+    to_x_np = selected_to_x.cpu().numpy()
+    players_np = current_players.cpu().numpy()
+    move_counts_np = state.move_count.cpu().numpy()
+    current_phase_np = state.current_phase.cpu().numpy()
+
+    # Pre-extract position-indexed arrays for stack info
+    stack_height_np = state.stack_height.cpu().numpy()
+    stack_owner_np = state.stack_owner.cpu().numpy()
+    cap_height_np = state.cap_height.cpu().numpy()
+    ring_under_cap_np = state.ring_under_cap.cpu().numpy()
+    marker_owner_np = state.marker_owner.cpu().numpy()
+    is_collapsed_np = state.is_collapsed.cpu().numpy()
+    buried_at_np = state.buried_at.cpu().numpy()
+
+    for g in game_indices_np:
+        from_y = int(from_y_np[g])
+        from_x = int(from_x_np[g])
+        to_y = int(to_y_np[g])
+        to_x = int(to_x_np[g])
+        player = int(players_np[g])
+        mc = int(move_counts_np[g])
         # Clear must-move constraint after the first movement/capture action
         # following a placement (RR-CANON-R090).
         state.must_move_from_y[g] = -1
         state.must_move_from_x[g] = -1
 
-        # Get attacker stack info at origin.
-        attacker_height = int(state.stack_height[g, from_y, from_x].item())
-        attacker_cap_height = int(state.cap_height[g, from_y, from_x].item())
-        attacker_ring_under = int(state.ring_under_cap[g, from_y, from_x].item())
+        # Get attacker stack info at origin using numpy (no .item() calls).
+        attacker_height = int(stack_height_np[g, from_y, from_x])
+        attacker_cap_height = int(cap_height_np[g, from_y, from_x])
+        attacker_ring_under = int(ring_under_cap_np[g, from_y, from_x])
 
         # Capture move representation:
         # - (from -> landing) is stored in BatchMoves
@@ -104,7 +131,8 @@ def apply_capture_moves_vectorized(
         for step in range(1, int(dist)):
             check_y = from_y + dy * step
             check_x = from_x + dx * step
-            if state.stack_owner[g, check_y, check_x].item() != 0:
+            # Use numpy array instead of .item()
+            if stack_owner_np[g, check_y, check_x] != 0:
                 target_y = check_y
                 target_x = check_x
                 break
@@ -118,7 +146,8 @@ def apply_capture_moves_vectorized(
             state.move_history[g, mc, 3] = from_x
             state.move_history[g, mc, 4] = to_y
             state.move_history[g, mc, 5] = to_x
-            state.move_history[g, mc, 6] = int(state.current_phase[g].item())
+            # Use pre-extracted numpy array
+            state.move_history[g, mc, 6] = int(current_phase_np[g])
             # December 2025: Record capture target for canonical export
             state.move_history[g, mc, 7] = target_y if target_y is not None else -1
             state.move_history[g, mc, 8] = target_x if target_x is not None else -1
@@ -126,7 +155,8 @@ def apply_capture_moves_vectorized(
 
         if target_y is None or target_x is None:
             # Defensive fallback: treat this as a movement to landing.
-            attacker_ring_under = state.ring_under_cap[g, from_y, from_x].item()
+            # Use numpy array
+            attacker_ring_under = int(ring_under_cap_np[g, from_y, from_x])
             state.stack_height[g, to_y, to_x] = attacker_height
             state.stack_owner[g, to_y, to_x] = player
             state.cap_height[g, to_y, to_x] = min(attacker_cap_height, attacker_height)
@@ -146,7 +176,8 @@ def apply_capture_moves_vectorized(
             if check_y == target_y and check_x == target_x:
                 continue
 
-            marker_owner = state.marker_owner[g, check_y, check_x].item()
+            # Use numpy array instead of .item()
+            marker_owner = int(marker_owner_np[g, check_y, check_x])
             if marker_owner == 0:
                 continue
             if marker_owner != player:
@@ -155,14 +186,16 @@ def apply_capture_moves_vectorized(
 
             # Own marker on intermediate cell: collapse to territory.
             state.marker_owner[g, check_y, check_x] = 0
-            if not state.is_collapsed[g, check_y, check_x].item():
+            # Use numpy array for is_collapsed check
+            if not is_collapsed_np[g, check_y, check_x]:
                 state.is_collapsed[g, check_y, check_x] = True
                 state.territory_owner[g, check_y, check_x] = player
                 state.territory_count[g, player] += 1
 
         # Landing marker interaction (RR-CANON-R102): remove any marker on landing
         # (do not collapse), then eliminate the top ring of the moving stack's cap.
-        dest_marker = state.marker_owner[g, to_y, to_x].item()
+        # Use numpy array
+        dest_marker = int(marker_owner_np[g, to_y, to_x])
         landing_ring_cost = 1 if dest_marker != 0 else 0
         if landing_ring_cost:
             state.marker_owner[g, to_y, to_x] = 0
@@ -173,10 +206,11 @@ def apply_capture_moves_vectorized(
         # of the attacking stack (RR-CANON-R102). We do not store full ring
         # sequences on GPU; we approximate by updating stack/cap metadata and
         # tracking captured rings via buried_rings.
-        target_owner = int(state.stack_owner[g, target_y, target_x].item())
-        target_height = int(state.stack_height[g, target_y, target_x].item())
-        target_cap_height = int(state.cap_height[g, target_y, target_x].item())
-        target_ring_under = int(state.ring_under_cap[g, target_y, target_x].item())
+        # Use numpy arrays for target stack info
+        target_owner = int(stack_owner_np[g, target_y, target_x])
+        target_height = int(stack_height_np[g, target_y, target_x])
+        target_cap_height = int(cap_height_np[g, target_y, target_x])
+        target_ring_under = int(ring_under_cap_np[g, target_y, target_x])
 
         # Target cell should not contain a marker; clear defensively.
         state.marker_owner[g, target_y, target_x] = 0
@@ -201,9 +235,10 @@ def apply_capture_moves_vectorized(
             state.stack_owner[g, target_y, target_x] = new_owner
             state.cap_height[g, target_y, target_x] = new_target_height  # All remaining rings are new owner's cap
             # Compute new ring_under_cap from remaining buried rings
+            # Use numpy array
             new_ring_under = 0
             for p in range(1, state.num_players + 1):
-                if p != new_owner and state.buried_at[g, p, target_y, target_x].item() > 0:
+                if p != new_owner and buried_at_np[g, p, target_y, target_x] > 0:
                     new_ring_under = p
                     break
             state.ring_under_cap[g, target_y, target_x] = new_ring_under
@@ -252,14 +287,16 @@ def apply_capture_moves_vectorized(
             new_owner = attacker_ring_under if attacker_ring_under > 0 else (1 if player == 2 else 2)
             new_cap = buried_count
             # The buried rings are now exposed - clear buried tracking for new owner
-            buried_count_at_pos = state.buried_at[g, new_owner, to_y, to_x].item()
+            # Use numpy array
+            buried_count_at_pos = int(buried_at_np[g, new_owner, to_y, to_x])
             if buried_count_at_pos > 0:
                 state.buried_at[g, new_owner, to_y, to_x] = 0
                 state.buried_rings[g, new_owner] -= buried_count_at_pos
             # Compute new ring_under_cap for landing
+            # Use numpy array
             new_ring_under = 0
             for p in range(1, state.num_players + 1):
-                if p != new_owner and state.buried_at[g, p, from_y, from_x].item() > 0:
+                if p != new_owner and buried_at_np[g, p, from_y, from_x] > 0:
                     new_ring_under = p
                     break
         elif cap_fully_eliminated:
@@ -301,8 +338,9 @@ def apply_capture_moves_vectorized(
 
         # December 2025: Move buried_at tracking from origin to landing
         # Any buried rings under the attacker move with it
+        # Use numpy array
         for p in range(1, state.num_players + 1):
-            count = state.buried_at[g, p, from_y, from_x].item()
+            count = int(buried_at_np[g, p, from_y, from_x])
             if count > 0:
                 state.buried_at[g, p, to_y, to_x] += count
                 state.buried_at[g, p, from_y, from_x] = 0
@@ -318,6 +356,8 @@ def apply_movement_moves_vectorized(
 
     Similar to capture moves but without defender elimination.
     Still requires iteration for path marker processing.
+
+    December 2025: Optimized with batch numpy pre-extraction to reduce .item() calls.
     """
     has_selection = (selected_local_idx >= 0) & active_mask & (moves.moves_per_game > 0)
 
@@ -335,13 +375,32 @@ def apply_movement_moves_vectorized(
     current_players = state.current_player
     game_indices = torch.where(has_selection)[0]
 
-    for g in game_indices.tolist():
-        from_y = selected_from_y[g].item()
-        from_x = selected_from_x[g].item()
-        to_y = selected_to_y[g].item()
-        to_x = selected_to_x[g].item()
-        player = current_players[g].item()
-        mc = int(state.move_count[g].item())
+    # =========================================================================
+    # Phase 1 Optimization: Batch pre-extraction to numpy
+    # =========================================================================
+    game_indices_np = game_indices.cpu().numpy()
+    from_y_np = selected_from_y.cpu().numpy()
+    from_x_np = selected_from_x.cpu().numpy()
+    to_y_np = selected_to_y.cpu().numpy()
+    to_x_np = selected_to_x.cpu().numpy()
+    players_np = current_players.cpu().numpy()
+    move_counts_np = state.move_count.cpu().numpy()
+
+    # Pre-extract position-indexed arrays
+    stack_height_np = state.stack_height.cpu().numpy()
+    cap_height_np = state.cap_height.cpu().numpy()
+    ring_under_cap_np = state.ring_under_cap.cpu().numpy()
+    marker_owner_np = state.marker_owner.cpu().numpy()
+    is_collapsed_np = state.is_collapsed.cpu().numpy()
+    buried_at_np = state.buried_at.cpu().numpy()
+
+    for g in game_indices_np:
+        from_y = int(from_y_np[g])
+        from_x = int(from_x_np[g])
+        to_y = int(to_y_np[g])
+        to_x = int(to_x_np[g])
+        player = int(players_np[g])
+        mc = int(move_counts_np[g])
         state.must_move_from_y[g] = -1
         state.must_move_from_x[g] = -1
 
@@ -357,8 +416,9 @@ def apply_movement_moves_vectorized(
             state.move_history[g, mc, 6] = GamePhase.MOVEMENT
         state.move_count[g] += 1
 
-        moving_height = state.stack_height[g, from_y, from_x].item()
-        moving_cap_height = state.cap_height[g, from_y, from_x].item()
+        # Use numpy arrays
+        moving_height = int(stack_height_np[g, from_y, from_x])
+        moving_cap_height = int(cap_height_np[g, from_y, from_x])
 
         # Process markers along path (RR-CANON-R092):
         # - Flip opponent markers along the path
@@ -370,7 +430,8 @@ def apply_movement_moves_vectorized(
         for step in range(1, int(dist)):
             check_y = from_y + dy * step
             check_x = from_x + dx * step
-            marker_owner = state.marker_owner[g, check_y, check_x].item()
+            # Use numpy array
+            marker_owner = int(marker_owner_np[g, check_y, check_x])
             if marker_owner == 0:
                 continue
             if marker_owner != player:
@@ -379,14 +440,16 @@ def apply_movement_moves_vectorized(
 
             # Own marker on intermediate cell: collapse to territory.
             state.marker_owner[g, check_y, check_x] = 0
-            if not state.is_collapsed[g, check_y, check_x].item():
+            # Use numpy array
+            if not is_collapsed_np[g, check_y, check_x]:
                 state.is_collapsed[g, check_y, check_x] = True
                 state.territory_owner[g, check_y, check_x] = player
                 state.territory_count[g, player] += 1
 
         # Handle landing on ANY marker (own or opponent):
         # remove the marker (do not collapse), then eliminate the top cap ring.
-        dest_marker = state.marker_owner[g, to_y, to_x].item()
+        # Use numpy array
+        dest_marker = int(marker_owner_np[g, to_y, to_x])
         landing_ring_cost = 1 if dest_marker != 0 else 0
         if landing_ring_cost:
             state.marker_owner[g, to_y, to_x] = 0
@@ -396,14 +459,15 @@ def apply_movement_moves_vectorized(
 
         # Track eliminated ring from landing cost
         if landing_ring_cost > 0:
-            current_elim = state.eliminated_rings[g, player].item()
-            state.eliminated_rings[g, player] = current_elim + landing_ring_cost
+            # Use tensor increment directly (more efficient than .item() + assignment)
+            state.eliminated_rings[g, player] += landing_ring_cost
             # Player eliminates their own ring for landing cost (self-elimination counts for victory)
             state.rings_caused_eliminated[g, player] += landing_ring_cost
 
         # Update destination
         final_height = max(0, new_height)
-        moving_ring_under = int(state.ring_under_cap[g, from_y, from_x].item())
+        # Use numpy array
+        moving_ring_under = int(ring_under_cap_np[g, from_y, from_x])
         if final_height <= 0:
             # Landing cost can eliminate the final ring; the destination remains
             # empty (but may still become collapsed if the move landed on a marker).
@@ -433,8 +497,9 @@ def apply_movement_moves_vectorized(
 
         # December 2025: Move buried_at tracking from origin to destination
         # Any buried rings under the stack move with it
+        # Use numpy array
         for p in range(1, state.num_players + 1):
-            count = state.buried_at[g, p, from_y, from_x].item()
+            count = int(buried_at_np[g, p, from_y, from_x])
             if count > 0:
                 state.buried_at[g, p, to_y, to_x] += count
                 state.buried_at[g, p, from_y, from_x] = 0
@@ -449,6 +514,7 @@ def apply_recovery_moves_vectorized(
     """Apply recovery slide moves in a fully vectorized manner.
 
     Optimized 2025-12-13: Eliminated Python loops and .item() calls.
+    December 2025: Further optimized with batch numpy pre-extraction.
     """
     device = state.device
 
@@ -458,6 +524,16 @@ def apply_recovery_moves_vectorized(
         return
 
     game_indices = torch.where(has_selection)[0]
+
+    # =========================================================================
+    # Phase 1 Optimization: Batch pre-extraction to numpy
+    # Pre-extract state arrays for efficient reads in loops
+    # =========================================================================
+    buried_at_np = state.buried_at.cpu().numpy()
+    stack_owner_np = state.stack_owner.cpu().numpy()
+    stack_height_np = state.stack_height.cpu().numpy()
+    cap_height_np = state.cap_height.cpu().numpy()
+    ring_stack_np = state.ring_stack.cpu().numpy()
 
     global_idx = moves.move_offsets[game_indices] + selected_local_idx[game_indices]
     global_idx = torch.clamp(global_idx, 0, max(0, moves.total_moves - 1))
@@ -536,14 +612,20 @@ def apply_recovery_moves_vectorized(
         state.ring_under_cap[ss_games[is_cleared], ss_to_y[is_cleared], ss_to_x[is_cleared]] = 0
 
         # December 2025: Update ring_stack for stack-strike (pop top ring)
-        for i in range(len(ss_games)):
-            g = ss_games[i].item()
-            y_pos = ss_to_y[i].item()
-            x_pos = ss_to_x[i].item()
-            old_h = int(ss_dest_height[i].item())
+        # Pre-extract to numpy for efficient loop
+        ss_games_np = ss_games.cpu().numpy()
+        ss_to_y_np = ss_to_y.cpu().numpy()
+        ss_to_x_np = ss_to_x.cpu().numpy()
+        ss_dest_height_np = ss_dest_height.cpu().numpy()
+        is_cleared_np = is_cleared.cpu().numpy()
+        for i in range(len(ss_games_np)):
+            g = int(ss_games_np[i])
+            y_pos = int(ss_to_y_np[i])
+            x_pos = int(ss_to_x_np[i])
+            old_h = int(ss_dest_height_np[i])
             if old_h > 0:
                 state.ring_stack[g, y_pos, x_pos, old_h - 1] = 0
-                if is_cleared[i]:
+                if is_cleared_np[i]:
                     state.ring_stack[g, y_pos, x_pos, :] = 0
 
         # December 2025 BUG FIX: When cap becomes 0 but height > 0, the entire
@@ -551,15 +633,17 @@ def apply_recovery_moves_vectorized(
         # by finding who has buried rings at this position.
         needs_ownership_recalc = (new_cap == 0) & (new_height > 0)
         if needs_ownership_recalc.any():
-            for i in torch.where(needs_ownership_recalc)[0]:
-                g = ss_games[i].item()
-                y_pos = ss_to_y[i].item()
-                x_pos = ss_to_x[i].item()
+            # Use pre-extracted numpy arrays for efficient reads
+            recalc_indices = torch.where(needs_ownership_recalc)[0].cpu().numpy()
+            for i in recalc_indices:
+                g = int(ss_games_np[i])
+                y_pos = int(ss_to_y_np[i])
+                x_pos = int(ss_to_x_np[i])
 
-                # Find new owner: check buried_at for each player
+                # Find new owner: check buried_at for each player (use numpy)
                 new_owner = 0
                 for p in range(1, state.num_players + 1):
-                    if state.buried_at[g, p, y_pos, x_pos].item() > 0:
+                    if buried_at_np[g, p, y_pos, x_pos] > 0:
                         new_owner = p
                         break
 
@@ -569,7 +653,7 @@ def apply_recovery_moves_vectorized(
                     # Find if there are other players' rings buried under the new cap
                     new_ring_under = 0
                     for pp in range(1, state.num_players + 1):
-                        if pp != new_owner and state.buried_at[g, pp, y_pos, x_pos].item() > 0:
+                        if pp != new_owner and buried_at_np[g, pp, y_pos, x_pos] > 0:
                             new_ring_under = pp
                             break
                     state.ring_under_cap[g, y_pos, x_pos] = new_ring_under
@@ -577,7 +661,7 @@ def apply_recovery_moves_vectorized(
                     new_owner_cap = compute_cap_from_ring_stack(state, g, y_pos, x_pos)
                     state.cap_height[g, y_pos, x_pos] = new_owner_cap
                     # Decrement the exposed buried ring count for new owner
-                    if state.buried_at[g, new_owner, y_pos, x_pos].item() > 0:
+                    if buried_at_np[g, new_owner, y_pos, x_pos] > 0:
                         state.buried_at[g, new_owner, y_pos, x_pos] -= 1
                         state.buried_rings[g, new_owner] -= 1
 
@@ -606,21 +690,28 @@ def apply_recovery_moves_vectorized(
 
         # December 2025 - Recovery fix: Also decrement the stack that contains the buried ring
         # For each game with a buried ring, find the stack position and reduce its height
-        for i, (g, p) in enumerate(zip(hb_games.tolist(), hb_players.tolist(), strict=False)):
-            # Find a position where this player has a buried ring
-            buried_mask = state.buried_at[g, p] > 0  # (board_size, board_size)
-            if buried_mask.any():
-                # Get first buried position
-                buried_indices = torch.where(buried_mask)
+        # Pre-extract game/player lists to numpy for efficient loop
+        hb_games_np = hb_games.cpu().numpy()
+        hb_players_np = hb_players.cpu().numpy()
+        for i in range(len(hb_games_np)):
+            g = int(hb_games_np[i])
+            p = int(hb_players_np[i])
+            # Find a position where this player has a buried ring (use numpy)
+            buried_mask_np = buried_at_np[g, p] > 0  # (board_size, board_size)
+            if buried_mask_np.any():
+                # Get first buried position using numpy
+                buried_indices = np.where(buried_mask_np)
                 if len(buried_indices[0]) > 0:
-                    extraction_y = buried_indices[0][0].item()
-                    extraction_x = buried_indices[1][0].item()
+                    extraction_y = int(buried_indices[0][0])
+                    extraction_x = int(buried_indices[1][0])
 
-                    # Decrement stack height at this position
-                    old_height = state.stack_height[g, extraction_y, extraction_x].item()
+                    # Decrement stack height at this position (use numpy for read)
+                    old_height = int(stack_height_np[g, extraction_y, extraction_x])
                     if old_height > 0:
                         new_height = old_height - 1
                         state.stack_height[g, extraction_y, extraction_x] = new_height
+                        # Update numpy cache for subsequent reads
+                        stack_height_np[g, extraction_y, extraction_x] = new_height
 
                         # If stack is now empty, clear owner
                         if new_height == 0:
@@ -632,6 +723,7 @@ def apply_recovery_moves_vectorized(
                             # Clear all buried_at for this empty position
                             for pp in range(1, state.num_players + 1):
                                 state.buried_at[g, pp, extraction_y, extraction_x] = 0
+                                buried_at_np[g, pp, extraction_y, extraction_x] = 0
                         else:
                             # December 2025 BUG FIX: Recalculate cap_height properly.
                             # When a non-owner's buried ring is extracted, the cap may INCREASE
@@ -642,12 +734,12 @@ def apply_recovery_moves_vectorized(
                             # this extraction. Key insight: the extracting player may still
                             # have MORE buried rings at this position (we only extracted one).
                             # Check buried_at count > 0 to determine if player still has buried at this pos.
-                            owner = int(state.stack_owner[g, extraction_y, extraction_x].item())
+                            owner = int(stack_owner_np[g, extraction_y, extraction_x])
                             # Player still has buried at THIS position if count > 1 (we're about to decrement)
-                            player_still_has_buried_here = state.buried_at[g, p, extraction_y, extraction_x].item() > 1
+                            player_still_has_buried_here = buried_at_np[g, p, extraction_y, extraction_x] > 1
                             other_player_buried_remaining = False
                             for pp in range(1, state.num_players + 1):
-                                if pp != owner and pp != p and state.buried_at[g, pp, extraction_y, extraction_x].item() > 0:
+                                if pp != owner and pp != p and buried_at_np[g, pp, extraction_y, extraction_x] > 0:
                                     other_player_buried_remaining = True
                                     break
 
@@ -660,12 +752,12 @@ def apply_recovery_moves_vectorized(
                             # Calculate new cap_height FIRST (before decrementing buried_at)
                             if non_owner_buried_remaining:
                                 # Still have non-owner buried rings, cap stays same or decreases
-                                old_cap = state.cap_height[g, extraction_y, extraction_x].item()
+                                old_cap = int(cap_height_np[g, extraction_y, extraction_x])
                                 new_cap = min(old_cap, new_height)
                             elif owner == p:
                                 # Owner extracted from own stack, use conservative approach
                                 # (owner may still have more buried rings here)
-                                old_cap = state.cap_height[g, extraction_y, extraction_x].item()
+                                old_cap = int(cap_height_np[g, extraction_y, extraction_x])
                                 new_cap = min(old_cap, new_height)
                             else:
                                 # Non-owner extracted and no non-owner buried rings remaining
@@ -684,7 +776,7 @@ def apply_recovery_moves_vectorized(
                                 for pp in range(1, state.num_players + 1):
                                     if pp != owner:
                                         # Check if this player still has buried rings after extraction
-                                        count = state.buried_at[g, pp, extraction_y, extraction_x].item()
+                                        count = int(buried_at_np[g, pp, extraction_y, extraction_x])
                                         if pp == p:
                                             count -= 1  # Account for the extraction we're about to do
                                         if count > 0:
@@ -695,13 +787,13 @@ def apply_recovery_moves_vectorized(
                             # December 2025: Update ring_stack - remove extracted ring and shift
                             # Find the bottommost ring of extracting player and remove it
                             extraction_idx = -1
-                            for ring_i in range(int(old_height)):
-                                if int(state.ring_stack[g, extraction_y, extraction_x, ring_i].item()) == p:
+                            for ring_i in range(old_height):
+                                if int(ring_stack_np[g, extraction_y, extraction_x, ring_i]) == p:
                                     extraction_idx = ring_i
                                     break
                             if extraction_idx >= 0:
                                 # Shift remaining rings down
-                                for ring_i in range(extraction_idx, int(new_height)):
+                                for ring_i in range(extraction_idx, new_height):
                                     state.ring_stack[g, extraction_y, extraction_x, ring_i] = \
                                         state.ring_stack[g, extraction_y, extraction_x, ring_i + 1]
                                 state.ring_stack[g, extraction_y, extraction_x, new_height] = 0
@@ -713,6 +805,7 @@ def apply_recovery_moves_vectorized(
                             # Decrement buried_at count for the extracted position.
                             # Now properly tracks multiple buried rings at same location.
                             state.buried_at[g, p, extraction_y, extraction_x] -= 1
+                            buried_at_np[g, p, extraction_y, extraction_x] -= 1
 
 
 def reset_capture_chain_batch(
@@ -1303,12 +1396,23 @@ def apply_movement_moves_batch_vectorized(
 
     # December 2025: Transfer ring_stack from origin to destination BEFORE clearing
     # First copy the ring_stack, then handle landing cost
+    # =========================================================================
+    # Phase 1 Optimization: Batch pre-extraction to numpy for ring_stack transfer
+    # =========================================================================
+    game_indices_np = game_indices.cpu().numpy()
+    from_y_np = from_y.cpu().numpy()
+    from_x_np = from_x.cpu().numpy()
+    to_y_np = to_y.cpu().numpy()
+    to_x_np = to_x.cpu().numpy()
+    moving_height_np = moving_height.cpu().numpy()
+    landing_ring_cost_np = landing_ring_cost.cpu().numpy()
+
     for i in range(n_games):
-        g = game_indices[i].item()
-        fy, fx = from_y[i].item(), from_x[i].item()
-        ty, tx = to_y[i].item(), to_x[i].item()
-        h = int(moving_height[i].item())
-        cost = int(landing_ring_cost[i].item())
+        g = int(game_indices_np[i])
+        fy, fx = int(from_y_np[i]), int(from_x_np[i])
+        ty, tx = int(to_y_np[i]), int(to_x_np[i])
+        h = int(moving_height_np[i])
+        cost = int(landing_ring_cost_np[i])
         # Copy ring_stack from origin to destination
         state.ring_stack[g, ty, tx, :h] = state.ring_stack[g, fy, fx, :h]
         state.ring_stack[g, ty, tx, h:] = 0  # Clear any remaining slots
@@ -1378,34 +1482,48 @@ def apply_movement_moves_batch_vectorized(
             #
             # December 2025: Use compute_cap_from_ring_stack for authoritative cap computation
             # after ownership transfer. This replaces the old buried_at-based heuristic.
-            for idx in range(len(transfer_games)):
-                g = transfer_games[idx].item()
-                y_pos = transfer_y[idx].item()
-                x_pos = transfer_x[idx].item()
-                new_owner = transfer_ring_under_cap[idx].item()
+            # =========================================================================
+            # Phase 1 Optimization: Batch pre-extraction to numpy for ownership transfer
+            # =========================================================================
+            transfer_games_np = transfer_games.cpu().numpy()
+            transfer_y_np = transfer_y.cpu().numpy()
+            transfer_x_np = transfer_x.cpu().numpy()
+            transfer_ring_under_cap_np = transfer_ring_under_cap.cpu().numpy()
+            surv_height_np = surv_height.cpu().numpy()
+            # Pre-compute all surv_idx values once
+            surv_idx_all = torch.where(transfer_mask)[0].cpu().numpy()
+            # Pre-extract buried_at for reads (will be updated during loop)
+            buried_at_np = state.buried_at.cpu().numpy()
+
+            for idx in range(len(transfer_games_np)):
+                g = int(transfer_games_np[idx])
+                y_pos = int(transfer_y_np[idx])
+                x_pos = int(transfer_x_np[idx])
+                new_owner = int(transfer_ring_under_cap_np[idx])
 
                 if new_owner > 0:
-                    surv_idx = torch.where(transfer_mask)[0][idx]
+                    surv_idx = surv_idx_all[idx]
                     final_owners[surv_idx] = new_owner
 
                     # Set stack_owner and stack_height first so compute_cap_from_ring_stack sees correct values
                     state.stack_owner[g, y_pos, x_pos] = new_owner
-                    state.stack_height[g, y_pos, x_pos] = surv_height[surv_idx].item()
+                    state.stack_height[g, y_pos, x_pos] = int(surv_height_np[surv_idx])
 
                     # December 2025: Use ring_stack for authoritative cap computation
                     new_cap = compute_cap_from_ring_stack(state, g, y_pos, x_pos)
                     final_caps[surv_idx] = new_cap
 
                     # Clear buried_at for new_owner (all rings are now exposed as cap)
-                    buried_count = int(state.buried_at[g, new_owner, y_pos, x_pos].item())
+                    buried_count = int(buried_at_np[g, new_owner, y_pos, x_pos])
                     state.buried_at[g, new_owner, y_pos, x_pos] = 0
+                    buried_at_np[g, new_owner, y_pos, x_pos] = 0  # Update cache
                     if buried_count > 0:
                         state.buried_rings[g, new_owner] -= buried_count
 
                     # Compute new ring_under_cap: find next player with buried rings at this position
                     next_ring_under = 0
                     for p in range(1, state.num_players + 1):
-                        if state.buried_at[g, p, y_pos, x_pos].item() > 0:
+                        if buried_at_np[g, p, y_pos, x_pos] > 0:
                             # Note: this doesn't guarantee correct order for 3+ buried players,
                             # but handles the common 2-player case correctly
                             next_ring_under = p
@@ -1821,23 +1939,33 @@ def apply_capture_moves_batch_vectorized(
         cap_target_y = target_y[target_cap_fully_captured]
         cap_target_x = target_x[target_cap_fully_captured]
         cap_new_owners = new_target_owner[target_cap_fully_captured]
-        for i in range(cap_games.shape[0]):
-            g = cap_games[i].item()
-            y = cap_target_y[i].item()
-            x = cap_target_x[i].item()
-            new_owner = cap_new_owners[i].item()
+        # =========================================================================
+        # Phase 1 Optimization: Batch pre-extraction to numpy for cap transfer
+        # =========================================================================
+        cap_games_np = cap_games.cpu().numpy()
+        cap_target_y_np = cap_target_y.cpu().numpy()
+        cap_target_x_np = cap_target_x.cpu().numpy()
+        cap_new_owners_np = cap_new_owners.cpu().numpy()
+        buried_at_np = state.buried_at.cpu().numpy()
+
+        for i in range(len(cap_games_np)):
+            g = int(cap_games_np[i])
+            y = int(cap_target_y_np[i])
+            x = int(cap_target_x_np[i])
+            new_owner = int(cap_new_owners_np[i])
             if new_owner > 0:  # Skip if no owner
                 # Check if the new owner had buried rings here (now exposed)
-                buried_count = int(state.buried_at[g, new_owner, y, x].item())
+                buried_count = int(buried_at_np[g, new_owner, y, x])
                 if buried_count > 0:
                     state.buried_at[g, new_owner, y, x] -= 1
                     state.buried_rings[g, new_owner] -= 1
+                    buried_at_np[g, new_owner, y, x] -= 1  # Update cache
 
                 # BUG FIX 2025-12-22: Compute new cap_height.
                 # The new cap = 1 (the exposed ring_under_cap) + any remaining buried
                 # rings of the new owner. After decrementing, buried_at[new_owner] is
                 # the count of ADDITIONAL buried rings that are also part of the cap.
-                remaining_buried = int(state.buried_at[g, new_owner, y, x].item())
+                remaining_buried = int(buried_at_np[g, new_owner, y, x])
                 new_cap = 1 + remaining_buried
                 state.cap_height[g, y, x] = new_cap
 
@@ -1846,13 +1974,14 @@ def apply_capture_moves_batch_vectorized(
                 if remaining_buried > 0:
                     state.buried_at[g, new_owner, y, x] = 0
                     state.buried_rings[g, new_owner] -= remaining_buried
+                    buried_at_np[g, new_owner, y, x] = 0  # Update cache
 
                 # BUG FIX 2025-12-22: Compute new ring_under_cap by finding which player
                 # (other than new_owner) has buried rings at this position
                 new_ring_under = 0
                 for p in range(1, state.num_players + 1):
                     if p != new_owner:
-                        if state.buried_at[g, p, y, x].item() > 0:
+                        if buried_at_np[g, p, y, x] > 0:
                             new_ring_under = p
                             break
                 state.ring_under_cap[g, y, x] = new_ring_under
@@ -2016,12 +2145,21 @@ def apply_capture_moves_batch_vectorized(
         elim_to_y = to_y[cap_elim_with_buried]
         elim_to_x = to_x[cap_elim_with_buried]
         elim_opponent = opponent[cap_elim_with_buried]
-        for i in range(elim_games.shape[0]):
-            g = elim_games[i].item()
-            y = elim_to_y[i].item()
-            x = elim_to_x[i].item()
-            opp = elim_opponent[i].item()
-            buried_count = int(state.buried_at[g, opp, y, x].item())
+        # =========================================================================
+        # Phase 1 Optimization: Batch pre-extraction to numpy for cap elimination
+        # =========================================================================
+        elim_games_np = elim_games.cpu().numpy()
+        elim_to_y_np = elim_to_y.cpu().numpy()
+        elim_to_x_np = elim_to_x.cpu().numpy()
+        elim_opponent_np = elim_opponent.cpu().numpy()
+        buried_at_np = state.buried_at.cpu().numpy()
+
+        for i in range(len(elim_games_np)):
+            g = int(elim_games_np[i])
+            y = int(elim_to_y_np[i])
+            x = int(elim_to_x_np[i])
+            opp = int(elim_opponent_np[i])
+            buried_count = int(buried_at_np[g, opp, y, x])
             if buried_count > 0:
                 state.buried_at[g, opp, y, x] = 0  # Clear all buried rings at this position
                 state.buried_rings[g, opp] -= buried_count  # Decrement by full count

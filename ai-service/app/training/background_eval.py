@@ -30,10 +30,11 @@ try:
         MIN_WIN_RATE_VS_RANDOM,
     )
 except ImportError:
+    # Fallback values - keep in sync with app/config/thresholds.py
     INITIAL_ELO_RATING = 1500.0
     ELO_DROP_ROLLBACK = 50.0
-    MIN_WIN_RATE_VS_RANDOM = 0.85
-    MIN_WIN_RATE_VS_HEURISTIC = 0.60
+    MIN_WIN_RATE_VS_RANDOM = 0.70  # 70% (matches thresholds.py)
+    MIN_WIN_RATE_VS_HEURISTIC = 0.50  # 50% (matches thresholds.py)
 
 logger = logging.getLogger(__name__)
 

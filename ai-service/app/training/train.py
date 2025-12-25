@@ -677,6 +677,7 @@ def train_model(
     resume_path: str | None = None,
     init_weights_path: str | None = None,
     init_weights_strict: bool = False,
+    freeze_policy: bool = False,
     augment_hex_symmetry: bool = False,
     distributed: bool = False,
     local_rank: int = -1,
@@ -1858,8 +1859,37 @@ def train_model(
     use_multi_player_loss = multi_player
     # Note: masked_policy_kl and build_rank_targets are imported from app.ai.neural_losses
 
+    # Handle freeze_policy: only train value head when enabled
+    if freeze_policy:
+        # Freeze all parameters first
+        for param in model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze only value head parameters
+        value_head_params = []
+        for name, param in model.named_parameters():
+            # Value head layers are typically named value_fc1, value_fc2, value_head, etc.
+            if any(x in name.lower() for x in ['value_fc', 'value_head', 'value_conv', 'value_bn']):
+                param.requires_grad = True
+                value_head_params.append(param)
+                logger.info(f"[freeze_policy] Unfreezing: {name}")
+
+        if not value_head_params:
+            logger.warning(
+                "[freeze_policy] No value head parameters found! "
+                "Check model architecture. Training all parameters."
+            )
+            for param in model.parameters():
+                param.requires_grad = True
+            optimizer_params = model.parameters()
+        else:
+            logger.info(f"[freeze_policy] Training only {len(value_head_params)} value head parameters")
+            optimizer_params = value_head_params
+    else:
+        optimizer_params = model.parameters()
+
     optimizer = optim.Adam(
-        model.parameters(),
+        optimizer_params,
         lr=config.learning_rate,
         weight_decay=config.weight_decay
     )

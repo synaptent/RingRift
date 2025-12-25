@@ -43,10 +43,12 @@ logger = logging.getLogger(__name__)
 
 # Check for PyTorch Geometric
 try:
-    from torch_geometric.data import Data
+    from torch_geometric.data import Data, Batch
     HAS_PYG = True
 except ImportError:
     HAS_PYG = False
+    Data = None
+    Batch = None
     logger.warning("PyTorch Geometric not installed - GNN AI unavailable")
 
 
@@ -280,6 +282,160 @@ class GNNAI(BaseAI):
             Evaluation score (positive = good for this AI)
         """
         return self.get_value(game_state)
+
+    def get_policy_batch(
+        self,
+        states: list["GameState"],
+    ) -> list[np.ndarray]:
+        """Get policy probabilities for multiple states in one forward pass.
+
+        This is more efficient than calling select_move() repeatedly
+        when evaluating multiple positions (e.g., in tournaments).
+
+        Args:
+            states: List of game states to evaluate
+
+        Returns:
+            List of probability arrays (one per state)
+        """
+        if self.model is None or not states:
+            return [np.ones(self.action_space_size) / self.action_space_size] * len(states)
+
+        # Convert all states to graphs
+        graphs = [self._state_to_graph(s) for s in states]
+        globals_list = [self._get_global_features(s) for s in states]
+
+        # Batch graphs using PyG Batch
+        batched = Batch.from_data_list(graphs)
+        globals_t = torch.tensor(
+            np.stack(globals_list), dtype=torch.float32
+        ).to(self.device)
+
+        # Single forward pass for all states
+        with torch.no_grad():
+            policy_logits, _ = self.model(
+                x=batched.x,
+                edge_index=batched.edge_index,
+                batch=batched.batch,
+                globals_=globals_t,
+            )
+
+        # Apply temperature and convert to probabilities
+        logits = policy_logits / self.temperature
+        probs = F.softmax(logits, dim=-1).cpu().numpy()
+
+        return [probs[i] for i in range(len(states))]
+
+    def get_values_batch(
+        self,
+        states: list["GameState"],
+    ) -> list[float]:
+        """Get value estimates for multiple states in one forward pass.
+
+        Args:
+            states: List of game states to evaluate
+
+        Returns:
+            List of value estimates (one per state)
+        """
+        if self.model is None or not states:
+            return [0.0] * len(states)
+
+        # Convert all states to graphs
+        graphs = [self._state_to_graph(s) for s in states]
+        globals_list = [self._get_global_features(s) for s in states]
+
+        # Batch graphs
+        batched = Batch.from_data_list(graphs)
+        globals_t = torch.tensor(
+            np.stack(globals_list), dtype=torch.float32
+        ).to(self.device)
+
+        # Single forward pass
+        with torch.no_grad():
+            _, values = self.model(
+                x=batched.x,
+                edge_index=batched.edge_index,
+                batch=batched.batch,
+                globals_=globals_t,
+            )
+
+        return [values[i, 0].item() for i in range(len(states))]
+
+    def select_moves_batch(
+        self,
+        states: list["GameState"],
+        player_numbers: list[int] | None = None,
+    ) -> list["Move | None"]:
+        """Select moves for multiple states efficiently.
+
+        Uses batched inference for the forward pass, then samples
+        moves for each state individually.
+
+        Args:
+            states: List of game states
+            player_numbers: Optional list of player numbers (defaults to self.player_number)
+
+        Returns:
+            List of selected moves (one per state)
+        """
+        if not states:
+            return []
+
+        if player_numbers is None:
+            player_numbers = [self.player_number] * len(states)
+
+        # Get batched policy probabilities
+        probs_list = self.get_policy_batch(states)
+
+        moves = []
+        for state, probs, player in zip(states, probs_list, player_numbers):
+            legal_moves = GameEngine.get_valid_moves(state, player)
+
+            if not legal_moves:
+                # Check for bookkeeping moves
+                req = GameEngine.get_phase_requirement(state, player)
+                if req:
+                    moves.append(GameEngine.synthesize_bookkeeping_move(req, state))
+                else:
+                    moves.append(None)
+                continue
+
+            if len(legal_moves) == 1:
+                moves.append(legal_moves[0])
+                continue
+
+            # Get probability for each legal move
+            move_probs = []
+            valid_moves = []
+            for move in legal_moves:
+                action_idx = encode_move_for_board(move, state)
+                if 0 <= action_idx < len(probs):
+                    move_probs.append(probs[action_idx])
+                    valid_moves.append(move)
+                else:
+                    move_probs.append(1e-6)
+                    valid_moves.append(move)
+
+            if not valid_moves:
+                moves.append(legal_moves[0])
+                continue
+
+            # Normalize and sample
+            weights = np.array(move_probs, dtype=np.float64)
+            weights_sum = weights.sum()
+
+            if weights_sum < 1e-10:
+                idx = np.random.randint(len(valid_moves))
+            else:
+                weights = weights / weights_sum
+                weights = np.clip(weights, 0, 1)
+                weights = weights / weights.sum()
+                idx = np.random.choice(len(valid_moves), p=weights)
+
+            moves.append(valid_moves[idx])
+
+        return moves
 
 
 def create_gnn_ai(

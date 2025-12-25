@@ -353,11 +353,51 @@ def _parse_config_from_model_id(model_id: str) -> tuple[str, int]:
 # Gauntlet-Based Promotion
 # =============================================================================
 
+def detect_model_type(model_path: Path) -> str:
+    """Detect model type from checkpoint structure.
+
+    GNN models have 'conv_type' or 'gnn' in path/checkpoint.
+    Hybrid models have 'hybrid' in path or both CNN and GNN components.
+
+    Args:
+        model_path: Path to model checkpoint
+
+    Returns:
+        "gnn", "hybrid", or "cnn"
+    """
+    import torch
+
+    path_str = str(model_path).lower()
+
+    # Check path for hints
+    if "gnn" in path_str and "hybrid" not in path_str:
+        return "gnn"
+    if "hybrid" in path_str:
+        return "hybrid"
+
+    # Check checkpoint contents
+    try:
+        ckpt = torch.load(model_path, map_location="cpu")
+        if isinstance(ckpt, dict):
+            # GNN models have conv_type in checkpoint
+            if "conv_type" in ckpt:
+                return "gnn"
+            # Check state dict for GNN layer names
+            state_dict = ckpt.get("model_state_dict", ckpt.get("state_dict", {}))
+            if any("sage" in k or "gat" in k or "message" in k for k in state_dict.keys()):
+                return "gnn"
+    except Exception:
+        pass
+
+    return "cnn"
+
+
 def run_gauntlet_evaluation(
     model_path: Path,
     board_type: str,
     num_players: int,
     games_per_opponent: int = 20,
+    model_type: str | None = None,
 ) -> dict:
     """Run gauntlet evaluation and return results.
 
@@ -366,6 +406,7 @@ def run_gauntlet_evaluation(
         board_type: Board type (e.g., "hex8", "square8")
         num_players: Number of players (2, 3, or 4)
         games_per_opponent: Games per baseline opponent
+        model_type: Model type ("cnn", "gnn", "hybrid") or None to auto-detect
 
     Returns:
         Dict with gauntlet results including pass/fail status
@@ -373,6 +414,10 @@ def run_gauntlet_evaluation(
     # Lazy import to avoid circular dependencies
     from app.training.game_gauntlet import run_baseline_gauntlet, BaselineOpponent
     from app.models import BoardType as BT
+
+    # Auto-detect model type if not specified
+    if model_type is None:
+        model_type = detect_model_type(model_path)
 
     # Map string to BoardType enum
     board_type_map = {
@@ -387,6 +432,7 @@ def run_gauntlet_evaluation(
 
     print(f"\nRunning gauntlet evaluation...")
     print(f"  Model: {model_path}")
+    print(f"  Model type: {model_type.upper()}")
     print(f"  Config: {board_type}_{num_players}p")
     print(f"  Games per opponent: {games_per_opponent}")
     print()
@@ -397,6 +443,7 @@ def run_gauntlet_evaluation(
         num_players=num_players,
         opponents=[BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC],
         games_per_opponent=games_per_opponent,
+        model_type=model_type,
     )
 
     # Extract win rates
@@ -546,6 +593,7 @@ def run_gauntlet_promotion(
     games_per_opponent: int = 20,
     sync_to_cluster: bool = False,
     dry_run: bool = False,
+    model_type: str | None = None,
 ) -> bool:
     """Full gauntlet-based promotion workflow.
 
@@ -556,6 +604,7 @@ def run_gauntlet_promotion(
         games_per_opponent: Games per baseline opponent
         sync_to_cluster: Whether to sync to cluster after promotion
         dry_run: If True, only preview without making changes
+        model_type: Model type ("cnn", "gnn", "hybrid") or None to auto-detect
 
     Returns:
         True if promotion successful, False otherwise
@@ -571,7 +620,8 @@ def run_gauntlet_promotion(
     # Run gauntlet evaluation
     try:
         results = run_gauntlet_evaluation(
-            model_path, board_type, num_players, games_per_opponent
+            model_path, board_type, num_players, games_per_opponent,
+            model_type=model_type,
         )
     except Exception as e:
         print(f"Error running gauntlet: {e}")
@@ -669,6 +719,8 @@ Examples:
                         help="Number of players for gauntlet (required for --gauntlet)")
     parser.add_argument("--games", type=int, default=20,
                         help="Games per opponent in gauntlet (default: 20)")
+    parser.add_argument("--model-type", choices=["cnn", "gnn", "hybrid"],
+                        help="Model type (auto-detected if not specified)")
     parser.add_argument("--sync-to-cluster", action="store_true",
                         help="Sync promoted model to cluster nodes")
 
@@ -693,6 +745,7 @@ Examples:
             games_per_opponent=args.games,
             sync_to_cluster=args.sync_to_cluster,
             dry_run=args.dry_run,
+            model_type=getattr(args, 'model_type', None),
         )
         sys.exit(0 if success else 1)
 

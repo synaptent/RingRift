@@ -352,10 +352,12 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
             self.config.difficulty or 8
         )
 
+        # Use "standard" mode which has select_move() interface
+        # "tensor" mode is for batch game processing with search_batch()
         self._mcts = create_mcts(
             board_type=board_type.value,
             num_players=self.config.num_players,
-            mode="tensor" if self.config.use_gpu else "standard",
+            mode="standard",
             simulation_budget=budget,
             device=self.config.device or "cuda",
         )
@@ -374,13 +376,14 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
         moves = []
         samples = []
 
-        while not state.game_over and len(moves) < self.config.max_moves:
-            valid_moves = GameEngine.get_valid_moves(state)
+        from ..rules.core import GameStatus
+        while state.game_status != GameStatus.COMPLETED and len(moves) < self.config.max_moves:
+            valid_moves = GameEngine.get_valid_moves(state, state.current_player)
             if not valid_moves:
                 break
 
-            # Get move from MCTS
-            move = self._mcts.select_move(state, valid_moves)
+            # Get move from MCTS (GumbelMCTSAI only takes game_state, computes valid moves internally)
+            move = self._mcts.select_move(state)
 
             # Record sample for training
             if self.config.record_samples:

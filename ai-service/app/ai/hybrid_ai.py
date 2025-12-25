@@ -86,8 +86,22 @@ class HybridAI(BaseAI):
         self.action_space_size = ckpt.get("action_space_size", 4132)
         self.board_size = ckpt.get("board_size", 9)
 
-        # Determine in_channels from checkpoint
-        in_channels = ckpt.get("in_channels", 40)  # 10 * history_length
+        # Infer in_channels from the first conv layer weights
+        first_conv_key = "cnn.input_conv.0.weight"
+        if first_conv_key in ckpt["model_state_dict"]:
+            in_channels = ckpt["model_state_dict"][first_conv_key].shape[1]
+        else:
+            in_channels = ckpt.get("in_channels", 40)
+
+        # Calculate base channels and history length for encoding
+        # 40 channels = 10 base × 4 history (HexStateEncoder)
+        # 64 channels = 16 base × 4 history (HexStateEncoderV3)
+        if in_channels == 64:
+            self._encoder_version = "v3"
+            self._base_channels = 16
+        else:
+            self._encoder_version = "v2"
+            self._base_channels = 10
 
         self.model = HybridPolicyNet(
             in_channels=in_channels,
@@ -106,7 +120,7 @@ class HybridAI(BaseAI):
 
         logger.info(
             f"Loaded Hybrid model: val_acc={ckpt.get('val_acc', 0):.4f}, "
-            f"action_space={self.action_space_size}"
+            f"action_space={self.action_space_size}, in_channels={in_channels}"
         )
 
     def _encode_state(self, state: "GameState") -> tuple[np.ndarray, np.ndarray]:
@@ -115,20 +129,31 @@ class HybridAI(BaseAI):
         Returns:
             Tuple of (features, global_features)
         """
-        # Use the hex encoder for proper feature extraction
-        # Training used HexStateEncoder (10 base channels) not V3 (16 channels)
-        from app.training.encoding import HexStateEncoder
+        # Use the correct encoder based on model's in_channels
+        # 40 channels -> HexStateEncoder (10 base × 4 history)
+        # 64 channels -> HexStateEncoderV3 (16 base × 4 history)
+        encoder_version = getattr(self, '_encoder_version', 'v2')
+        base_channels = getattr(self, '_base_channels', 10)
 
-        encoder = HexStateEncoder(board_size=self.board_size)
-        features, encoder_globals = encoder.encode_state(state)  # (10, H, W), (G,)
+        if encoder_version == "v3":
+            from app.training.encoding import HexStateEncoderV3
+            encoder = HexStateEncoderV3(board_size=self.board_size)
+        else:
+            from app.training.encoding import HexStateEncoder
+            encoder = HexStateEncoder(board_size=self.board_size)
 
-        # Pad to match history length (stack empty frames): 10 base × 4 frames = 40
+        features, encoder_globals = encoder.encode_state(state)
+
+        # Training data has 4 history frames, all with content
+        # At inference we only have current state, so replicate across all frames
         C, H, W = features.shape
-        base_channels = C  # 10
-        total_channels = base_channels * self.history_length  # 10 × 4 = 40
+        total_channels = base_channels * self.history_length
 
         full_features = np.zeros((total_channels, H, W), dtype=np.float32)
-        full_features[:C] = features  # Current frame in first 10 channels
+        # Fill all 4 frame slots with current state (better than zeros)
+        for frame_idx in range(self.history_length):
+            start = frame_idx * base_channels
+            full_features[start:start + base_channels] = features
 
         # Use encoder globals if available, otherwise build our own
         if encoder_globals is not None and len(encoder_globals) >= 20:

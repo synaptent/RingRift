@@ -609,9 +609,11 @@ def export_replay_dataset_multi(
                 )
             else:
                 values_vec = np.zeros(4, dtype=np.float32)
-                for p in final_state.players:
-                    base = value_from_final_winner(final_state, p.player_number)
-                    values_vec[p.player_number - 1] = float(base)
+                # Iterate over all expected players (1 to num_players), not just
+                # those remaining in final_state.players (which may exclude eliminated players)
+                for player_num in range(1, num_players_in_game + 1):
+                    base = value_from_final_winner(final_state, player_num)
+                    values_vec[player_num - 1] = float(base)
 
             # Add all samples from this game with computed values
             # NOTE: For scalar value targets, we use the CURRENT PLAYER's perspective.
@@ -1239,7 +1241,6 @@ def main(argv: list[str] | None = None) -> int:
         from scripts.export_replay_dataset_parallel import export_parallel
         num_workers = args.workers
         if num_workers is None:
-            import os
             num_workers = max(1, (os.cpu_count() or 4) - 1)
         print(f"[PARALLEL] Using {num_workers} worker processes for encoding")
         result = export_parallel(

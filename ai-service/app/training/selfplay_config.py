@@ -107,6 +107,8 @@ class SelfplayConfig:
     engine_mode: EngineMode = EngineMode.NNUE_GUIDED
     search_depth: int = 3
     mcts_simulations: int = 800
+    simulation_budget: int | None = None  # Gumbel MCTS budget (default uses difficulty)
+    difficulty: int = 8  # AI difficulty level (1-10), affects simulation budget
     temperature: float = 1.0
     temperature_threshold: int = 30  # Move number after which to use greedy
 
@@ -127,6 +129,11 @@ class SelfplayConfig:
     batch_size: int = 256
     use_gpu: bool = True
     gpu_device: int = 0
+    device: str | None = None  # CUDA device string (e.g., "cuda:0")
+
+    # Game limits
+    max_moves: int = 1000  # Maximum moves per game before termination
+    record_samples: bool = True  # Record training samples during selfplay
 
     # Disk monitoring thresholds
     disk_warning_percent: int = 75
@@ -183,6 +190,12 @@ class SelfplayConfig:
 
     # Pipeline automation (2025-12)
     emit_pipeline_events: bool = False  # Emit SELFPLAY_COMPLETE for auto-trigger pipeline
+
+    # Gumbel MCTS simulation budget (overrides mcts_simulations for Gumbel engines)
+    simulation_budget: int | None = None
+
+    # Difficulty level (used to determine simulation_budget if not set)
+    difficulty: int | None = None
 
     # Additional engine-specific options
     extra_options: dict[str, Any] = field(default_factory=dict)
@@ -330,6 +343,18 @@ def create_argument_parser(
         type=float,
         default=1.0,
         help="Temperature for move selection (default: 1.0)",
+    )
+    engine_group.add_argument(
+        "--simulation-budget",
+        type=int,
+        default=None,
+        help="Gumbel MCTS simulation budget (default: auto based on difficulty)",
+    )
+    engine_group.add_argument(
+        "--difficulty",
+        type=int,
+        default=None,
+        help="Difficulty level 1-10 for auto budget selection (default: 8)",
     )
 
     # Output settings
@@ -595,6 +620,8 @@ def parse_selfplay_args(
         search_depth=parsed.search_depth,
         mcts_simulations=parsed.mcts_simulations,
         temperature=parsed.temperature,
+        simulation_budget=getattr(parsed, "simulation_budget", None),
+        difficulty=getattr(parsed, "difficulty", None),
         # Output settings
         output_format=parsed.output_format,
         output_dir=parsed.output_dir,

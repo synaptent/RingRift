@@ -90,16 +90,17 @@ try:
         get_min_win_rate_vs_random,
     )
 except ImportError:
+    # Fallback values - keep in sync with app/config/thresholds.py
     BASELINE_ELO_RANDOM = 400
     BASELINE_ELO_HEURISTIC = 1200
-    MIN_WIN_RATE_VS_RANDOM = 0.85
-    MIN_WIN_RATE_VS_HEURISTIC = 0.60
+    MIN_WIN_RATE_VS_RANDOM = 0.70  # 70% (matches thresholds.py)
+    MIN_WIN_RATE_VS_HEURISTIC = 0.50  # 50% (matches thresholds.py)
 
     def get_min_win_rate_vs_random(num_players: int = 2) -> float:
         return 0.50 if num_players >= 4 else MIN_WIN_RATE_VS_RANDOM
 
     def get_min_win_rate_vs_heuristic(num_players: int = 2) -> float:
-        return 0.35 if num_players >= 4 else MIN_WIN_RATE_VS_HEURISTIC
+        return 0.20 if num_players >= 4 else MIN_WIN_RATE_VS_HEURISTIC
 
 BASELINE_ELOS = {
     BaselineOpponent.RANDOM: BASELINE_ELO_RANDOM,
@@ -199,6 +200,7 @@ def create_neural_ai(
     temperature: float = 0.5,
     game_seed: int | None = None,
     num_players: int = 2,
+    model_type: str = "cnn",
 ) -> Any:
     """Create a neural network AI instance.
 
@@ -210,11 +212,30 @@ def create_neural_ai(
         num_players: Number of players in the game (2, 3, or 4)
         temperature: Policy temperature for move selection
         game_seed: Optional seed for RNG variation per game
+        model_type: Type of model - "cnn" (default), "gnn", or "hybrid"
 
     Returns:
-        PolicyOnlyAI instance
+        AI instance (PolicyOnlyAI for CNN, GNNAI for GNN/hybrid)
     """
     _ensure_game_modules()
+
+    # GNN models use dedicated GNNAI class
+    if model_type in ("gnn", "hybrid"):
+        from app.ai.gnn_ai import create_gnn_ai
+
+        # Derive device - prefer GPU if available
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+
+        return create_gnn_ai(
+            player_number=player,
+            model_path=model_path,
+            device=device,
+            temperature=temperature,
+        )
 
     # Derive player-specific seed for varied but reproducible behavior
     ai_rng_seed = None
@@ -458,6 +479,7 @@ def run_baseline_gauntlet(
     check_baseline_gating: bool = True,
     verbose: bool = False,
     model_getter: Callable[[], Any] | None = None,
+    model_type: str = "cnn",
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
@@ -470,6 +492,7 @@ def run_baseline_gauntlet(
         check_baseline_gating: Whether to check minimum win rate thresholds
         verbose: Whether to log per-game results
         model_getter: Callable returning model weights (in-memory loading, zero disk I/O)
+        model_type: Type of model - "cnn" (default), "gnn", or "hybrid"
 
     Returns:
         GauntletResult with aggregated statistics
@@ -514,6 +537,7 @@ def run_baseline_gauntlet(
                     model_getter=model_getter,
                     game_seed=game_seed,
                     num_players=num_players,
+                    model_type=model_type,
                 )
 
                 # Create baseline AIs for all other players
