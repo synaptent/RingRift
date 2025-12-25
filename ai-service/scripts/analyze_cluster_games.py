@@ -205,6 +205,9 @@ class NodeGameStats:
     victory_types: dict[str, int] = field(default_factory=dict)
     games_by_ai_type: dict[str, int] = field(default_factory=dict)
 
+    # Debug: raw values that became "unknown"
+    unknown_raw_values: dict[str, int] = field(default_factory=dict)
+
     scan_duration_seconds: float = 0.0
 
 
@@ -240,6 +243,9 @@ class ClusterGameStats:
     # Recovery/FE aggregate
     games_with_recovery: int = 0
     games_with_fe: int = 0
+
+    # Debug: raw values that became "unknown"
+    unknown_raw_values: dict[str, int] = field(default_factory=dict)
 
     # Per-node details
     node_stats: dict[str, NodeGameStats] = field(default_factory=dict)
@@ -390,6 +396,7 @@ def scan_databases():
         "move_types": {},
         "games_with_recovery": 0,
         "games_with_fe": 0,
+        "unknown_raw_values": {},  # Track raw values that didn't normalize
     }
 
     search_paths = [
@@ -466,6 +473,10 @@ def scan_databases():
                     vt = normalize_vt(vt_raw)
                     cs["victory_types"][vt] = cs["victory_types"].get(vt, 0) + 1
 
+                    # Track raw values that became "unknown"
+                    if vt == "unknown" and vt_raw:
+                        results["unknown_raw_values"][str(vt_raw)[:50]] = results["unknown_raw_values"].get(str(vt_raw)[:50], 0) + 1
+
                     # Winner
                     winner = game.get("winner")
                     if winner is not None:
@@ -494,7 +505,7 @@ def scan_databases():
                         tb = game.get("stalemate_tiebreaker") or "unknown"
                         cs["stalemate_tiebreakers"][tb] = cs["stalemate_tiebreakers"].get(tb, 0) + 1
 
-                # Analyze game_moves if available
+                # Analyze game_moves if available - attribute to configs
                 if has_moves_table:
                     try:
                         cursor.execute("SELECT move_type, COUNT(*) FROM game_moves GROUP BY move_type")
@@ -502,15 +513,37 @@ def scan_databases():
                             mt = row[0] or "unknown"
                             results["move_types"][mt] = results["move_types"].get(mt, 0) + row[1]
 
-                        # Count games with recovery
-                        cursor.execute("SELECT COUNT(DISTINCT game_id) FROM game_moves WHERE move_type = 'recovery_slide'")
-                        rec_count = cursor.fetchone()[0]
-                        results["games_with_recovery"] += rec_count
+                        # Count recovery games per config
+                        bt_col = "board_type" if "board_type" in columns else "'unknown'"
+                        np_col = "num_players" if "num_players" in columns else "2"
+                        cursor.execute(f"""
+                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id)
+                            FROM game_moves gm
+                            JOIN games g ON gm.game_id = g.game_id
+                            WHERE gm.move_type = 'recovery_slide'
+                            GROUP BY g.{bt_col}, g.{np_col}
+                        """)
+                        for row in cursor.fetchall():
+                            bt, np, count = row[0] or "unknown", row[1] or 2, row[2]
+                            ck = f"{bt}_{np}p"
+                            if ck in results["config_stats"]:
+                                results["config_stats"][ck]["games_with_recovery"] += count
+                            results["games_with_recovery"] += count
 
-                        # Count games with forced elimination
-                        cursor.execute("SELECT COUNT(DISTINCT game_id) FROM game_moves WHERE move_type = 'forced_elimination'")
-                        fe_count = cursor.fetchone()[0]
-                        results["games_with_fe"] += fe_count
+                        # Count FE games per config
+                        cursor.execute(f"""
+                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id)
+                            FROM game_moves gm
+                            JOIN games g ON gm.game_id = g.game_id
+                            WHERE gm.move_type = 'forced_elimination'
+                            GROUP BY g.{bt_col}, g.{np_col}
+                        """)
+                        for row in cursor.fetchall():
+                            bt, np, count = row[0] or "unknown", row[1] or 2, row[2]
+                            ck = f"{bt}_{np}p"
+                            if ck in results["config_stats"]:
+                                results["config_stats"][ck]["games_with_fe"] += count
+                            results["games_with_fe"] += count
                     except:
                         pass
 
@@ -593,6 +626,9 @@ def scan_node_games(host: dict[str, Any]) -> NodeGameStats:
             # Aggregate AI types
             for ai, count in cs.games_by_ai_type.items():
                 stats.games_by_ai_type[ai] = stats.games_by_ai_type.get(ai, 0) + count
+
+        # Parse unknown raw values
+        stats.unknown_raw_values = data.get("unknown_raw_values", {})
 
     except json.JSONDecodeError as e:
         stats.error = f"JSON parse error: {str(e)[:50]}"
@@ -685,6 +721,10 @@ def analyze_cluster(
                 for ai, count in node_stats.games_by_ai_type.items():
                     cluster_stats.games_by_ai_type[ai] = cluster_stats.games_by_ai_type.get(ai, 0) + count
 
+                # Aggregate unknown raw values
+                for raw, count in node_stats.unknown_raw_values.items():
+                    cluster_stats.unknown_raw_values[raw] = cluster_stats.unknown_raw_values.get(raw, 0) + count
+
     # Aggregate recovery/FE from config stats
     for cs in cluster_stats.config_stats.values():
         cluster_stats.games_with_recovery += cs.games_with_recovery
@@ -722,6 +762,18 @@ def format_report_markdown(stats: ClusterGameStats) -> str:
         rate = count / total if total > 0 else 0
         lines.append(f"| {vtype} | {count:,} | {rate:.1%} |")
     lines.append("")
+
+    # Unknown raw values breakdown (for debugging)
+    if stats.unknown_raw_values:
+        lines.extend([
+            "### Raw Values That Became 'Unknown'",
+            "",
+            "| Raw Value | Count |",
+            "|-----------|-------|",
+        ])
+        for raw, count in sorted(stats.unknown_raw_values.items(), key=lambda x: -x[1])[:10]:
+            lines.append(f"| `{raw}` | {count:,} |")
+        lines.append("")
 
     # Per-Configuration Breakdown
     lines.extend([
