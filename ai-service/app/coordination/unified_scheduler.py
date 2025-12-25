@@ -44,7 +44,7 @@ Usage:
     job_id = await scheduler.submit(UnifiedJob(
         name="training-run",
         job_type="training",
-        target_node="lambda-gh200-f",
+        target_node="gpu-node-1",
         config={"data_path": "data/training/latest"},
     ))
 """

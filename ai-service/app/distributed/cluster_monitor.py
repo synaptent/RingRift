@@ -830,7 +830,7 @@ Examples:
   python -m app.distributed.cluster_monitor --watch --interval 30
 
   # Query specific hosts only
-  python -m app.distributed.cluster_monitor --hosts lambda-gh200-a lambda-h100
+  python -m app.distributed.cluster_monitor --hosts gpu-node-1 gpu-node-2
 
   # Skip expensive checks
   python -m app.distributed.cluster_monitor --no-training --no-disk

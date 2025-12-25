@@ -23,7 +23,7 @@ Usage:
     result = await rsync.sync(
         source="/data/games/",
         dest="ubuntu@remote:/data/games/",
-        host="lambda-gh200-a",
+        host="gpu-node-1",
         priority=TransferPriority.HIGH,
     )
 

@@ -9,6 +9,8 @@ Key features:
 - Skips sync between Lambda NFS nodes (shared storage)
 - Prioritizes ephemeral nodes (Vast.ai) for urgent sync
 - Integrates with existing BandwidthManager for rate limiting
+- Uses ClusterManifest for disk capacity and exclusion rules
+- Automatic disk cleanup when usage exceeds threshold
 
 Usage:
     from app.coordination.auto_sync_daemon import AutoSyncDaemon
@@ -25,9 +27,12 @@ import socket
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from app.distributed.cluster_manifest import ClusterManifest
 
 logger = logging.getLogger(__name__)
 

@@ -23,7 +23,7 @@ Usage:
     summary = await orchestrator.get_cluster_health()
 
     # Check specific node
-    health = await orchestrator.check_node("lambda-gh200-a")
+    health = await orchestrator.check_node("my-node-1")
 """
 
 from __future__ import annotations

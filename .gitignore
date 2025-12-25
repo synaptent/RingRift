@@ -305,10 +305,75 @@ ai-service/scripts/active_cluster_monitor.sh
 ai-service/scripts/monitor_10h_claude.sh
 ai-service/scripts/periodic_check.sh
 
+# Cluster-specific scripts (contain hardcoded node names/IPs)
+ai-service/scripts/gpu_cluster_manager.py
+ai-service/scripts/idle_node_alerter.py
+ai-service/scripts/harvest_cluster_training_data.py
+ai-service/scripts/consolidate_cluster_games.py
+ai-service/scripts/monitor_cluster_jobs.py
+ai-service/scripts/deploy_distributed_cmaes.py
+ai-service/scripts/deploy_persona_tournament.py
+ai-service/scripts/cluster_master_deploy.py
+ai-service/scripts/cluster_health_summary.py
+ai-service/scripts/monitor_gpu_mcts_jobs.py
+ai-service/scripts/launch_distributed_elo_tournament.py
+ai-service/scripts/cluster_health_cli.py
+ai-service/scripts/cluster_submit.py
+ai-service/scripts/cluster_health_check.py
+ai-service/scripts/cluster_supervisor.py
+ai-service/scripts/deploy_keepalive.py
+ai-service/scripts/setup_new_lambda_instances.sh
+ai-service/scripts/update_all_nodes.sh
+ai-service/scripts/cluster_ab_test.sh
+ai-service/scripts/launch_cluster_selfplay.sh
+ai-service/scripts/cluster_training_pipeline.sh
+ai-service/scripts/deploy_all_providers.sh
+ai-service/scripts/deploy_full_cluster_pipeline.sh
+ai-service/scripts/deploy_multi_config_training.sh
+ai-service/scripts/fast_gauntlet_launcher.sh
+ai-service/scripts/launch_underutilized_selfplay.sh
+ai-service/scripts/monitor_canonical_selfplay.sh
+ai-service/scripts/setup_cluster_ssh.sh
+ai-service/scripts/setup_work_rebalancing_cron.sh
+ai-service/scripts/sync_models_cluster.sh
+ai-service/scripts/train_on_cluster.sh
+scripts/tunnel_health_monitor.sh
+scripts/tunnel_watchdog.sh
+
 # Status documents with cluster details
 CURRENT_STATE_ASSESSMENT.md
 results/load-test/
 ai-service/scripts/debug_specific_move.py
+
+# Cluster-specific monitoring configs (contain node IPs)
+ai-service/monitoring/prometheus/prometheus.yml
+ai-service/config/unified_loop.yaml
+
+# Cluster-specific documentation (contain node names/IPs)
+docs/operations/CLUSTER_OPERATIONS.md
+docs/operations/SSH_ACCESS_GUIDE.md
+docs/ai/CLUSTER_NODE_CONFIGURATION.md
+ai-service/docs/GMO_DEVELOPMENT_ROADMAP.md
+ai-service/docs/HEX_CLUSTER_TRAINING.md
+ai-service/docs/P2P_NETWORK_STABILITY_PLAN.md
+ai-service/docs/TOURNAMENT_CONSOLIDATION.md
+ai-service/docs/infrastructure/GPU_RULES_PARITY_AUDIT.md
+ai-service/docs/planning/NEXT_AREAS_EXECUTION_PLAN.md
+ai-service/app/distributed/CLUSTER_MONITOR_QUICKSTART.md
+ai-service/app/distributed/README_cluster_monitor.md
+ai-service/TRAINING_DATA_REGISTRY.md
+ai-service/data/.manifest_cache.json
+ai-service/config/robust_cmaes_extended.json
+ai-service/scripts/analyze_cluster_games.py
+ai-service/scripts/dashboard_server.py
+ai-service/scripts/deploy_keepalive.py
+ai-service/archive/deprecated_scripts/cluster_monitor_daemon.py
+ai-service/scripts/deploy_persona_tournament.py
+ai-service/scripts/launch_distributed_elo_tournament.py
+ai-service/scripts/monitor_gpu_mcts_jobs.py
+ai-service/scripts/unified_ai_loop.py
+monitoring/prometheus.yml
+monitoring/prometheus/prometheus.yml
 
 # Training data and parity failure logs (generated locally)
 data/

@@ -10,7 +10,7 @@ Usage:
     await router.route_alert(Alert(
         severity=AlertSeverity.ERROR,
         alert_type="node_offline",
-        node_id="lambda-gh200-a",
+        node_id="gpu-node-1",
         message="Node offline for 30 minutes",
     ))
 """

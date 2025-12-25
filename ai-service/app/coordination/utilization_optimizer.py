@@ -137,6 +137,8 @@ class UtilizationOptimizer:
     - Prioritizes underserved board types
     - Respects AWS staging node (light utilization only)
     - Balances load across providers
+    - Routes GPU selfplay to GPU-rich nodes (Lambda)
+    - Routes CPU selfplay to CPU-rich nodes (Vast, Hetzner)
     """
 
     # Utilization thresholds
@@ -147,6 +149,10 @@ class UtilizationOptimizer:
 
     # AWS staging node limits
     AWS_MAX_SELFPLAY_JOBS = 2  # Keep AWS lightly loaded
+
+    # Engine selection by provider - Lambda gets GPU selfplay, others get CPU
+    GPU_SELFPLAY_PROVIDERS = {Provider.LAMBDA}  # Providers with high-end GPUs for GPU selfplay
+    CPU_SELFPLAY_PROVIDERS = {Provider.VAST, Provider.HETZNER}  # CPU-rich providers
 
     def __init__(
         self,
@@ -223,6 +229,28 @@ class UtilizationOptimizer:
             BoardType.HEXAGONAL: 4,
         }
         return order.get(board, 2)
+
+    def _select_engine_for_node(self, health: NodeHealthDetails) -> str:
+        """Select the appropriate selfplay engine for a node.
+
+        GPU-rich Lambda nodes should run GPU-based Gumbel MCTS.
+        CPU-rich Vast/Hetzner nodes should run CPU-based heuristic.
+
+        Returns:
+            Engine name: "gumbel" for GPU nodes, "heuristic" for CPU nodes
+        """
+        if health.provider in self.GPU_SELFPLAY_PROVIDERS:
+            # Lambda nodes with high-end GPUs - use GPU selfplay
+            return "gumbel"
+        elif health.provider in self.CPU_SELFPLAY_PROVIDERS:
+            # Vast/Hetzner - CPU-rich but GPU is often consumer-grade
+            return "heuristic"
+        elif health.provider == Provider.AWS:
+            # AWS staging - light duty, use heuristic
+            return "heuristic"
+        else:
+            # Unknown - default to heuristic for safety
+            return "heuristic"
 
     async def get_underutilized_nodes(self) -> list[tuple[str, NodeHealthDetails]]:
         """Get list of underutilized nodes.
@@ -388,16 +416,79 @@ pgrep -f selfplay && echo "SELFPLAY_STARTED"
         }
         return managers.get(provider)
 
+    async def stop_cpu_selfplay_on_gpu_nodes(self, node_id: str, health: NodeHealthDetails) -> OptimizationResult:
+        """Stop CPU-based selfplay on GPU-capable nodes.
+
+        Lambda GH200/H100 nodes should run GPU selfplay, not heuristic.
+        This kills heuristic selfplay to free resources for Gumbel MCTS.
+        """
+        if health.provider not in self.GPU_SELFPLAY_PROVIDERS:
+            return OptimizationResult(
+                node_id=node_id,
+                action="stop_cpu_selfplay",
+                success=True,
+                message="Not a GPU provider, skipping",
+            )
+
+        manager = self._get_manager_for_provider(health.provider)
+        if not manager or not health.instance:
+            return OptimizationResult(
+                node_id=node_id,
+                action="stop_cpu_selfplay",
+                success=False,
+                message="No manager or instance",
+            )
+
+        # Kill heuristic selfplay processes (but not Gumbel MCTS ones)
+        cmd = """
+pkill -f 'engine-mode.*heuristic' 2>/dev/null || true
+pkill -f 'engine.*heuristic' 2>/dev/null || true
+pkill -f 'run_self_play_soak' 2>/dev/null || true
+sleep 1
+echo "CPU_SELFPLAY_STOPPED"
+"""
+        code, stdout, stderr = await manager.run_ssh_command(health.instance, cmd, timeout=30)
+
+        if "CPU_SELFPLAY_STOPPED" in stdout:
+            logger.info(f"[UtilizationOptimizer] Stopped CPU selfplay on {node_id}")
+            return OptimizationResult(
+                node_id=node_id,
+                action="stop_cpu_selfplay",
+                success=True,
+                message="Stopped CPU selfplay processes",
+            )
+
+        return OptimizationResult(
+            node_id=node_id,
+            action="stop_cpu_selfplay",
+            success=False,
+            message=f"Failed: {stderr or stdout}",
+        )
+
     async def optimize_cluster(self) -> list[OptimizationResult]:
         """Optimize the entire cluster.
 
-        1. Find underutilized nodes
-        2. Spawn appropriate workloads
+        1. Stop CPU selfplay on GPU nodes (they should use GPU selfplay)
+        2. Find underutilized nodes
+        3. Spawn appropriate workloads (GPU/CPU based on provider)
 
         Returns:
             List of optimization results
         """
         results = []
+
+        # First pass: Stop CPU selfplay on GPU nodes
+        for node_id, health in self.health_orchestrator.node_health.items():
+            if health.provider in self.GPU_SELFPLAY_PROVIDERS and health.is_available():
+                # Check if running heuristic selfplay (low GPU + high CPU)
+                if health.gpu_percent < 20 and health.cpu_percent > 50:
+                    logger.info(
+                        f"[UtilizationOptimizer] Node {node_id} running CPU selfplay "
+                        f"(GPU={health.gpu_percent:.0f}%, CPU={health.cpu_percent:.0f}%)"
+                    )
+                    result = await self.stop_cpu_selfplay_on_gpu_nodes(node_id, health)
+                    results.append(result)
+                    await asyncio.sleep(1)
 
         # Get underutilized nodes
         underutilized = await self.get_underutilized_nodes()
@@ -415,14 +506,24 @@ pgrep -f selfplay && echo "SELFPLAY_STARTED"
             # Select appropriate workload
             board_type = self._select_board_for_node(health)
 
+            # Select engine based on provider capability
+            engine = self._select_engine_for_node(health)
+
             # Determine num_players (mostly 2p, sometimes 4p for variety)
             num_players = 4 if random.random() < 0.2 else 2
 
-            # Spawn selfplay
+            logger.info(
+                f"[UtilizationOptimizer] Spawning {engine} selfplay on {node_id} "
+                f"(provider={health.provider.value if health.provider else 'unknown'}, "
+                f"board={board_type.value}, players={num_players})"
+            )
+
+            # Spawn selfplay with provider-appropriate engine
             result = await self.spawn_selfplay_job(
                 node_id=node_id,
                 board_type=board_type,
                 num_players=num_players,
+                engine=engine,
             )
             results.append(result)
 
@@ -431,9 +532,11 @@ pgrep -f selfplay && echo "SELFPLAY_STARTED"
 
         # Summary
         successful = sum(1 for r in results if r.success)
+        stopped = sum(1 for r in results if r.action == "stop_cpu_selfplay" and r.success)
+        spawned = sum(1 for r in results if r.action == "spawn_selfplay" and r.success)
         logger.info(
             f"[UtilizationOptimizer] Optimization complete: "
-            f"{successful}/{len(results)} jobs spawned"
+            f"{stopped} CPU jobs stopped, {spawned} GPU/CPU jobs spawned"
         )
 
         return results

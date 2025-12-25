@@ -14,7 +14,7 @@ Usage:
     queue.add_work(WorkItem(work_type="training", config={"board": "square8"}))
 
     # On worker (via API)
-    work = queue.claim_work(node_id="lambda-gh200-a", capabilities=["training", "gpu_cmaes"])
+    work = queue.claim_work(node_id="gpu-node-1", capabilities=["training", "gpu_cmaes"])
     # ... do work ...
     queue.complete_work(work.work_id)
 """

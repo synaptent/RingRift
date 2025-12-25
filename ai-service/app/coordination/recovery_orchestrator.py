@@ -24,7 +24,7 @@ Usage:
     )
 
     orchestrator = get_recovery_orchestrator()
-    result = await orchestrator.attempt_recovery("lambda-gh200-a")
+    result = await orchestrator.attempt_recovery("gpu-node-1")
 """
 
 from __future__ import annotations

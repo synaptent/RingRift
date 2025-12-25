@@ -58,7 +58,7 @@ class TailscaleManager:
         print(f"Self: {status.self_hostname} ({status.self_ip})")
 
         # Remote status
-        peer = await manager.get_peer_status("lambda-gh200-a")
+        peer = await manager.get_peer_status("gpu-node-1")
         if peer and peer.online:
             print(f"Peer online: {peer.tailscale_ip}")
     """

@@ -10,14 +10,14 @@ Usage:
     manager = get_policy_manager()
 
     # Check if work type is allowed on a node
-    if manager.is_work_allowed("lambda-gh200-a", "cpu_cmaes"):
+    if manager.is_work_allowed("gpu-node-1", "cpu_cmaes"):
         start_cmaes(node)
 
     # Get best work type for a node
-    work_type = manager.get_best_work_type("lambda-gh200-a", ["training", "cpu_cmaes", "selfplay"])
+    work_type = manager.get_best_work_type("gpu-node-1", ["training", "cpu_cmaes", "selfplay"])
 
     # Get policy for a node
-    policy = manager.get_node_policy("lambda-gh200-a")
+    policy = manager.get_node_policy("gpu-node-1")
 """
 
 from __future__ import annotations
