@@ -25,33 +25,33 @@ RingRift currently has no strong Neural Network (NN) based AI despite having sub
 
 ### 1.1 NN Architectures in Place
 
-| Architecture                                                    | Location        | Purpose                                   | Status      |
-| --------------------------------------------------------------- | --------------- | ----------------------------------------- | ----------- |
-| [`RingRiftCNN`](../ai-service/app/ai/neural_net.py)             | `neural_net.py` | Square board CNN (10 blocks, 128 filters) | Implemented |
-| [`RingRiftCNN_MPS`](../ai-service/app/ai/neural_net.py)         | `neural_net.py` | Apple Silicon variant                     | Implemented |
-| [`RingRiftCNN_v3`](../ai-service/app/ai/neural_net.py)          | `neural_net.py` | Spatial policy + rank distribution        | Implemented |
-| [`HexNeuralNet_v3`](../ai-service/app/ai/neural_net.py)         | `neural_net.py` | 16-channel hex encoder                    | Implemented |
-| [`RingRiftCNN_MultiPlayer`](../ai-service/app/ai/neural_net.py) | `neural_net.py` | Vector value head for 3-4P                | Implemented |
+| Architecture                                                             | Location        | Purpose                                   | Status      |
+| ------------------------------------------------------------------------ | --------------- | ----------------------------------------- | ----------- |
+| [`RingRiftCNN`](../ai-service/app/ai/neural_net/__init__.py)             | `neural_net.py` | Square board CNN (10 blocks, 128 filters) | Implemented |
+| [`RingRiftCNN_MPS`](../ai-service/app/ai/neural_net/__init__.py)         | `neural_net.py` | Apple Silicon variant                     | Implemented |
+| [`RingRiftCNN_v3`](../ai-service/app/ai/neural_net/__init__.py)          | `neural_net.py` | Spatial policy + rank distribution        | Implemented |
+| [`HexNeuralNet_v3`](../ai-service/app/ai/neural_net/__init__.py)         | `neural_net.py` | 16-channel hex encoder                    | Implemented |
+| [`RingRiftCNN_MultiPlayer`](../ai-service/app/ai/neural_net/__init__.py) | `neural_net.py` | Vector value head for 3-4P                | Implemented |
 
 **Observation:** Architecture diversity is good. The infrastructure supports multiple board types and player counts.
 
 ### 1.2 Training Pipeline Components
 
-| Component           | Location                                                          | Purpose                   | Status      |
-| ------------------- | ----------------------------------------------------------------- | ------------------------- | ----------- |
-| State Encoding      | [`encoding.py`](../ai-service/app/training/encoding.py)           | 56-channel board features | ✅ Complete |
-| Data Loading        | [`datasets.py`](../ai-service/app/training/datasets.py)           | NPZ dataset loading       | ✅ Complete |
-| Training Loop       | [`train.py`](../ai-service/app/training/train.py)                 | Supervised learning       | ✅ Complete |
-| Self-Play Data Gen  | [`generate_data.py`](../ai-service/app/training/generate_data.py) | MCTS/Descent self-play    | ✅ Complete |
-| Curriculum Training | [`curriculum.py`](../ai-service/app/training/curriculum.py)       | Multi-generation loop     | ✅ Complete |
-| Gumbel MCTS         | [`gumbel_mcts_ai.py`](../ai-service/app/ai/gumbel_mcts_ai.py)     | Soft policy targets       | ✅ Complete |
-| Policy-only AI      | [`policy_only_ai.py`](../ai-service/app/ai/policy_only_ai.py)     | Direct NN policy use      | ✅ Complete |
+| Component           | Location                                                             | Purpose                   | Status      |
+| ------------------- | -------------------------------------------------------------------- | ------------------------- | ----------- |
+| State Encoding      | [`encoding.py`](../../ai-service/app/training/encoding.py)           | 56-channel board features | ✅ Complete |
+| Data Loading        | [`datasets.py`](../../ai-service/app/training/datasets.py)           | NPZ dataset loading       | ✅ Complete |
+| Training Loop       | [`train.py`](../../ai-service/app/training/train.py)                 | Supervised learning       | ✅ Complete |
+| Self-Play Data Gen  | [`generate_data.py`](../../ai-service/app/training/generate_data.py) | MCTS/Descent self-play    | ✅ Complete |
+| Curriculum Training | [`curriculum.py`](../../ai-service/app/training/curriculum.py)       | Multi-generation loop     | ✅ Complete |
+| Gumbel MCTS         | [`gumbel_mcts_ai.py`](../../ai-service/app/ai/gumbel_mcts_ai.py)     | Soft policy targets       | ✅ Complete |
+| Policy-only AI      | [`policy_only_ai.py`](../../ai-service/app/ai/policy_only_ai.py)     | Direct NN policy use      | ✅ Complete |
 
 **Observation:** Training pipeline is technically complete but not actively producing strong models.
 
 ### 1.3 Training Data Availability
 
-Based on [`TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md):
+Based on [`TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md):
 
 | Board     | Players | Database                  | Games  | Status          | Target |
 | --------- | ------- | ------------------------- | ------ | --------------- | ------ |
@@ -72,7 +72,7 @@ Based on [`TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md):
 
 ### 1.4 Current Model Strength
 
-Based on [`NN_STRENGTHENING_PLAN.md`](../ai-service/docs/planning/NN_STRENGTHENING_PLAN.md):
+Based on [`NN_STRENGTHENING_PLAN.md`](../../ai-service/docs/planning/NN_STRENGTHENING_PLAN.md):
 
 | Config       | Best NN Model       | Elo   | Heuristic Baseline | Gap             |
 | ------------ | ------------------- | ----- | ------------------ | --------------- |
@@ -127,7 +127,7 @@ graph TD
 
 #### Gap 2: Policy Training Quality
 
-**Problem:** Historical policy loss implementation was incomplete (noted in [`neural_net_analysis.md`](../ai-service/app/ai/neural_net_analysis.md)).
+**Problem:** Historical policy loss implementation was incomplete (noted in [`neural_net_analysis.md`](../../ai-service/app/ai/neural_net_analysis.md)).
 
 **Evidence:**
 
@@ -155,7 +155,7 @@ graph TD
 
 **Evidence:**
 
-- From [`neural_net_analysis.md`](../ai-service/app/ai/neural_net_analysis.md): "MCTS uses the neural net value but has a placeholder for policy priors"
+- From [`neural_net_analysis.md`](../../ai-service/app/ai/neural_net_analysis.md): "MCTS uses the neural net value but has a placeholder for policy priors"
 - Temperature and exploration parameters not tuned for NN guidance
 
 **Impact:** Even if NN is strong, search doesn't effectively use its guidance.
@@ -541,11 +541,11 @@ python scripts/check_ts_python_replay_parity.py \
 
 ## 8. Related Documentation
 
-- [`TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md) - Data provenance
-- [`NN_STRENGTHENING_PLAN.md`](../ai-service/docs/planning/NN_STRENGTHENING_PLAN.md) - Detailed strengthening plan
-- [`NEURAL_AI_ARCHITECTURE.md`](../ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md) - Architecture reference
-- [`AI_IMPROVEMENT_PLAN.md`](../ai-service/AI_IMPROVEMENT_PLAN.md) - Overall AI improvement plan
-- [`TRAINING_FEATURES.md`](../ai-service/docs/training/TRAINING_FEATURES.md) - Training feature reference
+- [`TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md) - Data provenance
+- [`NN_STRENGTHENING_PLAN.md`](../../ai-service/docs/planning/NN_STRENGTHENING_PLAN.md) - Detailed strengthening plan
+- [`NEURAL_AI_ARCHITECTURE.md`](../../ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md) - Architecture reference
+- [`AI_IMPROVEMENT_PLAN.md`](../../ai-service/AI_IMPROVEMENT_PLAN.md) - Overall AI improvement plan
+- [`TRAINING_FEATURES.md`](../../ai-service/docs/training/TRAINING_FEATURES.md) - Training feature reference
 
 ---
 

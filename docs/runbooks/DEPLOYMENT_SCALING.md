@@ -53,6 +53,7 @@ Procedures for scaling RingRift services to handle changes in load. This covers 
 ```
 
 **Requirements for Multi-Instance**:
+
 - `RINGRIFT_APP_TOPOLOGY=multi-sticky` environment variable
 - Load balancer with sticky session support
 - Session affinity based on user/game ID
@@ -211,21 +212,23 @@ docker compose up -d ai-service
 ### 2.1 Prerequisites for Multi-Instance
 
 1. **Configure topology mode:**
+
    ```bash
    # Edit .env
    RINGRIFT_APP_TOPOLOGY=multi-sticky
    ```
 
 2. **Configure load balancer with sticky sessions:**
-   
+
    Example nginx configuration:
+
    ```nginx
    upstream ringrift_app {
        ip_hash;  # Sticky sessions based on client IP
        server app1:3000;
        server app2:3000;
    }
-   
+
    # Or use cookie-based persistence:
    upstream ringrift_app {
        server app1:3000;
@@ -303,18 +306,18 @@ spec:
   minReplicas: 2
   maxReplicas: 10
   metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
 ```
 
 ### 3.2 Manual Scaling in Kubernetes
@@ -340,11 +343,11 @@ spec:
   sessionAffinity: ClientIP
   sessionAffinityConfig:
     clientIP:
-      timeoutSeconds: 3600  # 1 hour
+      timeoutSeconds: 3600 # 1 hour
   selector:
     app: ringrift-app
   ports:
-  - port: 3000
+    - port: 3000
 ```
 
 ---
@@ -454,14 +457,14 @@ fi
 
 ### Key Metrics to Watch
 
-| Metric | Normal | Warning | Critical |
-|--------|--------|---------|----------|
-| App CPU | <60% | >70% | >85% |
-| App Memory | <70% | >80% | >90% |
-| Response Time (p95) | <200ms | >500ms | >1000ms |
-| Error Rate | <0.1% | >1% | >5% |
-| DB Connections | <80% pool | >80% pool | Pool exhausted |
-| AI Service Latency | <100ms | >300ms | >1000ms |
+| Metric              | Normal    | Warning   | Critical       |
+| ------------------- | --------- | --------- | -------------- |
+| App CPU             | <60%      | >70%      | >85%           |
+| App Memory          | <70%      | >80%      | >90%           |
+| Response Time (p95) | <200ms    | >500ms    | >1000ms        |
+| Error Rate          | <0.1%     | >1%       | >5%            |
+| DB Connections      | <80% pool | >80% pool | Pool exhausted |
+| AI Service Latency  | <100ms    | >300ms    | >1000ms        |
 
 ### Monitoring Commands
 
@@ -474,7 +477,7 @@ curl -s http://localhost:3000/metrics | grep -E "(request_duration|active_connec
 
 # Database query performance
 docker compose exec postgres psql -U ringrift -d ringrift -c "
-SELECT 
+SELECT
   calls,
   total_exec_time / calls as avg_time,
   query
@@ -508,13 +511,13 @@ docker compose logs app --since 5m | grep -c ERROR
 
 ### Resource Estimates per Component
 
-| Component | Per 100 Users | Per 1000 Users |
-|-----------|--------------|----------------|
-| App Memory | 128MB | 256MB |
-| App CPU | 0.2 cores | 1 core |
-| DB Connections | 10 | 50 |
-| Redis Memory | 16MB | 64MB |
-| AI Service | 1 instance | 2+ instances |
+| Component      | Per 100 Users | Per 1000 Users |
+| -------------- | ------------- | -------------- |
+| App Memory     | 128MB         | 256MB          |
+| App CPU        | 0.2 cores     | 1 core         |
+| DB Connections | 10            | 50             |
+| Redis Memory   | 16MB          | 64MB           |
+| AI Service     | 1 instance    | 2+ instances   |
 
 ### Load Testing Before Production Scaling
 
@@ -537,9 +540,9 @@ docker compose logs app --since 5m | grep -c ERROR
 
 ## Related Documentation
 
-- [DEPLOYMENT_REQUIREMENTS.md](../DEPLOYMENT_REQUIREMENTS.md) - Resource limits reference
-- [DEPLOYMENT_ROUTINE.md](./DEPLOYMENT_ROUTINE.md) - Standard deployment procedures
-- [ALERTING_THRESHOLDS.md](../ALERTING_THRESHOLDS.md) - Alert configuration
+- [DEPLOYMENT_REQUIREMENTS.md](../planning/DEPLOYMENT_REQUIREMENTS.md) - Resource limits reference
+- [DEPLOYMENT_ROUTINE.md](DEPLOYMENT_ROUTINE.md) - Standard deployment procedures
+- [ALERTING_THRESHOLDS.md](../operations/ALERTING_THRESHOLDS.md) - Alert configuration
 
 ---
 

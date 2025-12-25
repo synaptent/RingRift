@@ -717,12 +717,12 @@ if (currentResults.latency.p95 > previousBaseline.latency.p95 * 1.2) {
 
 ## Related Documents
 
-- [STAGING_ENVIRONMENT.md](./STAGING_ENVIRONMENT.md) - Staging deployment guide
-- [DEPLOYMENT_REQUIREMENTS.md](./DEPLOYMENT_REQUIREMENTS.md) - Production requirements
-- [PROJECT_GOALS.md](../PROJECT_GOALS.md) - Overall project targets
-- [STRATEGIC_ROADMAP.md](../STRATEGIC_ROADMAP.md) - Performance optimization plans
-- [tests/load/README.md](../tests/load/README.md) - Load test documentation
-- [tests/load/configs/thresholds.json](../tests/load/config/thresholds.json) - SLO definitions
+- [STAGING_ENVIRONMENT.md](../operations/STAGING_ENVIRONMENT.md) - Staging deployment guide
+- [DEPLOYMENT_REQUIREMENTS.md](../planning/DEPLOYMENT_REQUIREMENTS.md) - Production requirements
+- [PROJECT_GOALS.md](../../PROJECT_GOALS.md) - Overall project targets
+- [STRATEGIC_ROADMAP.md](../planning/STRATEGIC_ROADMAP.md) - Performance optimization plans
+- [tests/load/README.md](../../tests/load/README.md) - Load test documentation
+- [tests/load/configs/thresholds.json](../../tests/load/config/thresholds.json) - SLO definitions
 
 ## Appendix: Quick Commands
 

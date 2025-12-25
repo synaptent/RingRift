@@ -281,14 +281,14 @@ For large‑board and multi‑player evaluation we use mid/late‑game
 with a small, config‑driven tournament harness:
 
 - Pool loader and registry live in
-  [`app.training.eval_pools`](ai-service/app/training/eval_pools.py).
+  [`app.training.eval_pools`](../../ai-service/app/training/eval_pools.py).
 - Named pools such as:
   - `square8_2p_core`, `square19_2p_core`
   - `square8_3p_baseline`, `square8_4p_baseline`
   - `square19_3p_baseline`, `square19_4p_baseline`
 - Hex 2p/3p/4p pools are wired in code for the **radius‑12** geometry
   but the JSONL files must be regenerated; see
-  [`HEX_DATA_DEPRECATION_NOTICE.md`](ai-service/data/HEX_DATA_DEPRECATION_NOTICE.md).
+  [`HEX_DATA_DEPRECATION_NOTICE.md`](../../ai-service/data/HEX_DATA_DEPRECATION_NOTICE.md).
 
 The tournament CLI is:
 
@@ -313,17 +313,17 @@ PYTHONPATH=. python scripts/run_eval_tournaments.py \
 
 For promotion decisions and long‑running studies, callers must use
 configs aligned with the tier gating and perf budgets described in
-[`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md)
+[`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md)
 and **not** the lightweight `--demo` defaults above.
 
 ---
 
 ## 7. Related Documentation
 
-- [`AI_IMPROVEMENT_BACKLOG.md`](./supplementary/AI_IMPROVEMENT_BACKLOG.md) §4.1 - SearchBoard design
-- [`ai-service/docs/MAKE_UNMAKE_DESIGN.md`](../ai-service/docs/MAKE_UNMAKE_DESIGN.md) - Make/unmake pattern
-- [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md) - Overall AI system design
-- [`AI_TRAINING_AND_DATASETS.md`](./AI_TRAINING_AND_DATASETS.md) - Training pipeline
+- [`AI_IMPROVEMENT_BACKLOG.md`](../supplementary/AI_IMPROVEMENT_BACKLOG.md) §4.1 - SearchBoard design
+- [`ai-service/docs/MAKE_UNMAKE_DESIGN.md`](../../ai-service/docs/specs/MAKE_UNMAKE_DESIGN.md) - Make/unmake pattern
+- [`AI_ARCHITECTURE.md`](../architecture/AI_ARCHITECTURE.md) - Overall AI system design
+- [`AI_TRAINING_AND_DATASETS.md`](AI_TRAINING_AND_DATASETS.md) - Training pipeline
 
 ---
 

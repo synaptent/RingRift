@@ -79,7 +79,7 @@ For more detail on how each suite is classified and which ones act as semantic g
 
 ### MultiClientCoordinator
 
-**Location:** [`tests/helpers/MultiClientCoordinator.ts`](../tests/helpers/MultiClientCoordinator.ts)
+**Location:** [`tests/helpers/MultiClientCoordinator.ts`](../../tests/helpers/MultiClientCoordinator.ts)
 
 **Purpose:** Coordinates multiple WebSocket client connections for E2E testing of multiplayer game scenarios. Enables synchronized actions between multiple players with Promise-based event waiting.
 
@@ -124,23 +124,23 @@ await coordinator.cleanup();
 **Core Methods:**
 | Method | Description |
 |--------|-------------|
-| [`connect(clientId, config)`](../tests/helpers/MultiClientCoordinator.ts:157) | Connect a client to the WebSocket server |
-| [`disconnect(clientId)`](../tests/helpers/MultiClientCoordinator.ts:204) | Disconnect a specific client |
-| [`cleanup()`](../tests/helpers/MultiClientCoordinator.ts:243) | Clean up all connections (use in `afterEach`) |
-| [`send(clientId, event, payload)`](../tests/helpers/MultiClientCoordinator.ts:376) | Send a message from a client |
-| [`waitFor(clientId, condition)`](../tests/helpers/MultiClientCoordinator.ts:429) | Wait for a condition on a client |
-| [`waitForAll(clientIds, condition)`](../tests/helpers/MultiClientCoordinator.ts:467) | Wait for condition on multiple clients |
-| [`waitForGameState(clientId, predicate)`](../tests/helpers/MultiClientCoordinator.ts:502) | Wait for specific game state |
-| [`waitForPhase(clientId, phase)`](../tests/helpers/MultiClientCoordinator.ts:520) | Wait for game to reach a phase |
-| [`waitForGameOver(clientId)`](../tests/helpers/MultiClientCoordinator.ts:546) | Wait for game to end |
-| [`getMessages(clientId)`](../tests/helpers/MultiClientCoordinator.ts:609) | Get all captured messages |
-| [`getLastGameState(clientId)`](../tests/helpers/MultiClientCoordinator.ts:650) | Get most recent game state |
+| [`connect(clientId, config)`](../../tests/helpers/MultiClientCoordinator.ts:157) | Connect a client to the WebSocket server |
+| [`disconnect(clientId)`](../../tests/helpers/MultiClientCoordinator.ts:204) | Disconnect a specific client |
+| [`cleanup()`](../../tests/helpers/MultiClientCoordinator.ts:243) | Clean up all connections (use in `afterEach`) |
+| [`send(clientId, event, payload)`](../../tests/helpers/MultiClientCoordinator.ts:376) | Send a message from a client |
+| [`waitFor(clientId, condition)`](../../tests/helpers/MultiClientCoordinator.ts:429) | Wait for a condition on a client |
+| [`waitForAll(clientIds, condition)`](../../tests/helpers/MultiClientCoordinator.ts:467) | Wait for condition on multiple clients |
+| [`waitForGameState(clientId, predicate)`](../../tests/helpers/MultiClientCoordinator.ts:502) | Wait for specific game state |
+| [`waitForPhase(clientId, phase)`](../../tests/helpers/MultiClientCoordinator.ts:520) | Wait for game to reach a phase |
+| [`waitForGameOver(clientId)`](../../tests/helpers/MultiClientCoordinator.ts:546) | Wait for game to end |
+| [`getMessages(clientId)`](../../tests/helpers/MultiClientCoordinator.ts:609) | Get all captured messages |
+| [`getLastGameState(clientId)`](../../tests/helpers/MultiClientCoordinator.ts:650) | Get most recent game state |
 
 ---
 
 ### NetworkSimulator
 
-**Location:** [`tests/helpers/NetworkSimulator.ts`](../tests/helpers/NetworkSimulator.ts)
+**Location:** [`tests/helpers/NetworkSimulator.ts`](../../tests/helpers/NetworkSimulator.ts)
 
 **Purpose:** Simulates network conditions for resilience testing. Enables testing of reconnection scenarios, network partitions, latency, and packet loss.
 
@@ -206,20 +206,20 @@ networkSimulator.delayNextMessage('player1', 500);
 **Core Methods:**
 | Method | Description |
 |--------|-------------|
-| [`setCondition(clientId, condition)`](../tests/helpers/NetworkSimulator.ts:134) | Apply network conditions |
-| [`clearCondition(clientId)`](../tests/helpers/NetworkSimulator.ts:160) | Clear network conditions |
-| [`forceDisconnect(clientId)`](../tests/helpers/NetworkSimulator.ts:192) | Force disconnect a client |
-| [`simulateReconnect(clientId, delay)`](../tests/helpers/NetworkSimulator.ts:232) | Reconnect after partition |
-| [`interceptMessages(clientId, interceptor)`](../tests/helpers/NetworkSimulator.ts:296) | Set message interceptor |
-| [`dropNextMessage(clientId)`](../tests/helpers/NetworkSimulator.ts:325) | Drop next outgoing message |
-| [`delayNextMessage(clientId, delayMs)`](../tests/helpers/NetworkSimulator.ts:344) | Delay next outgoing message |
-| [`cleanup()`](../tests/helpers/NetworkSimulator.ts:382) | Clean up all state |
+| [`setCondition(clientId, condition)`](../../tests/helpers/NetworkSimulator.ts:134) | Apply network conditions |
+| [`clearCondition(clientId)`](../../tests/helpers/NetworkSimulator.ts:160) | Clear network conditions |
+| [`forceDisconnect(clientId)`](../../tests/helpers/NetworkSimulator.ts:192) | Force disconnect a client |
+| [`simulateReconnect(clientId, delay)`](../../tests/helpers/NetworkSimulator.ts:232) | Reconnect after partition |
+| [`interceptMessages(clientId, interceptor)`](../../tests/helpers/NetworkSimulator.ts:296) | Set message interceptor |
+| [`dropNextMessage(clientId)`](../../tests/helpers/NetworkSimulator.ts:325) | Drop next outgoing message |
+| [`delayNextMessage(clientId, delayMs)`](../../tests/helpers/NetworkSimulator.ts:344) | Delay next outgoing message |
+| [`cleanup()`](../../tests/helpers/NetworkSimulator.ts:382) | Clean up all state |
 
 ---
 
 ### TimeController
 
-**Location:** [`tests/helpers/TimeController.ts`](../tests/helpers/TimeController.ts)
+**Location:** [`tests/helpers/TimeController.ts`](../../tests/helpers/TimeController.ts)
 
 **Purpose:** Controls time in tests for timeout testing. Uses Jest's built-in fake timers to enable rapid testing of timeout scenarios that would otherwise take 30+ seconds in real time.
 
@@ -294,17 +294,17 @@ timeController.resume();
 **Factory Functions:**
 | Function | Description |
 |----------|-------------|
-| [`createTimeController(options)`](../tests/helpers/TimeController.ts:468) | Create with default options |
-| [`createFastTimeoutController()`](../tests/helpers/TimeController.ts:481) | Optimized for 30s timeout tests |
-| [`createHybridTimeController()`](../tests/helpers/TimeController.ts:498) | For mixed async/timer testing |
-| [`withTimeControl(testFn)`](../tests/helpers/TimeController.ts:535) | Auto setup/teardown wrapper |
-| [`waitForConditionWithTimeAdvance()`](../tests/helpers/TimeController.ts:569) | Wait for condition while advancing time |
+| [`createTimeController(options)`](../../tests/helpers/TimeController.ts:468) | Create with default options |
+| [`createFastTimeoutController()`](../../tests/helpers/TimeController.ts:481) | Optimized for 30s timeout tests |
+| [`createHybridTimeController()`](../../tests/helpers/TimeController.ts:498) | For mixed async/timer testing |
+| [`withTimeControl(testFn)`](../../tests/helpers/TimeController.ts:535) | Auto setup/teardown wrapper |
+| [`waitForConditionWithTimeAdvance()`](../../tests/helpers/TimeController.ts:569) | Wait for condition while advancing time |
 
 ---
 
 ### OrchestratorTestUtils
 
-**Location:** [`tests/helpers/orchestratorTestUtils.ts`](../tests/helpers/orchestratorTestUtils.ts)
+**Location:** [`tests/helpers/orchestratorTestUtils.ts`](../../tests/helpers/orchestratorTestUtils.ts)
 
 **Purpose:** Shared helpers for orchestrator-centric backend and sandbox tests. Provides utilities for creating game engines with orchestrator-first turn processing and seeding complex game states.
 
@@ -361,7 +361,7 @@ const actionMoves = filterRealActionMoves(validMoves);
 
 #### nearVictoryTerritoryFixture
 
-**Location:** [`tests/fixtures/nearVictoryTerritoryFixture.ts`](../tests/fixtures/nearVictoryTerritoryFixture.ts)
+**Location:** [`tests/fixtures/nearVictoryTerritoryFixture.ts`](../../tests/fixtures/nearVictoryTerritoryFixture.ts)
 
 **Purpose:** Provides game states where Player 1 is one territory region resolution away from winning by territory control.
 
@@ -380,7 +380,7 @@ const fixture = createNearVictoryTerritoryFixture({
 
 #### chainCaptureExtendedFixture
 
-**Location:** [`tests/fixtures/chainCaptureExtendedFixture.ts`](../tests/fixtures/chainCaptureExtendedFixture.ts)
+**Location:** [`tests/fixtures/chainCaptureExtendedFixture.ts`](../../tests/fixtures/chainCaptureExtendedFixture.ts)
 
 **Purpose:** Provides game states for extended chain captures with 4+ targets, testing sequential decision-making during chain captures.
 
@@ -404,7 +404,7 @@ const edge = createChainCaptureEdgeTerminationFixture();
 
 #### multiPhaseTurnFixture
 
-**Location:** [`tests/fixtures/multiPhaseTurnFixture.ts`](../tests/fixtures/multiPhaseTurnFixture.ts)
+**Location:** [`tests/fixtures/multiPhaseTurnFixture.ts`](../../tests/fixtures/multiPhaseTurnFixture.ts)
 
 **Purpose:** Provides game states where a single action triggers multiple turn phases in sequence: placement → movement/capture → chain_capture → line_processing → territory_processing.
 
@@ -429,26 +429,26 @@ const placement = createPlacementToMovementFixture();
 
 ### Contract Vectors
 
-**Location:** [`tests/fixtures/contract-vectors/`](../tests/fixtures/contract-vectors/)
+**Location:** [`tests/fixtures/contract-vectors/`](../../tests/fixtures/contract-vectors)
 
 **Purpose:** JSON-based test vectors for contract-based parity testing between TypeScript canonical engine and Python AI rules engine.
 
 #### v2 Vectors (Current)
 
-| File                                                                                                               | Category             | Description                       |
-| ------------------------------------------------------------------------------------------------------------------ | -------------------- | --------------------------------- |
-| [`placement.vectors.json`](../tests/fixtures/contract-vectors/v2/placement.vectors.json)                           | placement            | Ring placement and skip scenarios |
-| [`movement.vectors.json`](../tests/fixtures/contract-vectors/v2/movement.vectors.json)                             | movement             | Stack movement scenarios          |
-| [`capture.vectors.json`](../tests/fixtures/contract-vectors/v2/capture.vectors.json)                               | capture              | Overtaking capture scenarios      |
-| [`chain_capture.vectors.json`](../tests/fixtures/contract-vectors/v2/chain_capture.vectors.json)                   | chain_capture        | Chain-capture continuations       |
-| [`chain_capture_extended.vectors.json`](../tests/fixtures/contract-vectors/v2/chain_capture_extended.vectors.json) | chain_capture        | Extended chains (3+ segments)     |
-| [`line_detection.vectors.json`](../tests/fixtures/contract-vectors/v2/line_detection.vectors.json)                 | line_detection       | Line-detection entry scenarios    |
-| [`territory.vectors.json`](../tests/fixtures/contract-vectors/v2/territory.vectors.json)                           | territory            | Territory detection/credit        |
-| [`territory_processing.vectors.json`](../tests/fixtures/contract-vectors/v2/territory_processing.vectors.json)     | territory_processing | Region processing + elimination   |
-| [`forced_elimination.vectors.json`](../tests/fixtures/contract-vectors/v2/forced_elimination.vectors.json)         | edge_case            | Forced-elimination and ANM        |
-| [`hex_edge_cases.vectors.json`](../tests/fixtures/contract-vectors/v2/hex_edge_cases.vectors.json)                 | edge_case            | Hex-specific edge cases           |
-| [`multi_phase_turn.vectors.json`](../tests/fixtures/contract-vectors/v2/multi_phase_turn.vectors.json)             | multi_phase          | Multi-phase turn sequences        |
-| [`near_victory_territory.vectors.json`](../tests/fixtures/contract-vectors/v2/near_victory_territory.vectors.json) | territory            | Near-victory scenarios            |
+| File                                                                                                                  | Category             | Description                       |
+| --------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------- |
+| [`placement.vectors.json`](../../tests/fixtures/contract-vectors/v2/placement.vectors.json)                           | placement            | Ring placement and skip scenarios |
+| [`movement.vectors.json`](../../tests/fixtures/contract-vectors/v2/movement.vectors.json)                             | movement             | Stack movement scenarios          |
+| [`capture.vectors.json`](../../tests/fixtures/contract-vectors/v2/capture.vectors.json)                               | capture              | Overtaking capture scenarios      |
+| [`chain_capture.vectors.json`](../../tests/fixtures/contract-vectors/v2/chain_capture.vectors.json)                   | chain_capture        | Chain-capture continuations       |
+| [`chain_capture_extended.vectors.json`](../../tests/fixtures/contract-vectors/v2/chain_capture_extended.vectors.json) | chain_capture        | Extended chains (3+ segments)     |
+| [`line_detection.vectors.json`](../../tests/fixtures/contract-vectors/v2/line_detection.vectors.json)                 | line_detection       | Line-detection entry scenarios    |
+| [`territory.vectors.json`](../../tests/fixtures/contract-vectors/v2/territory.vectors.json)                           | territory            | Territory detection/credit        |
+| [`territory_processing.vectors.json`](../../tests/fixtures/contract-vectors/v2/territory_processing.vectors.json)     | territory_processing | Region processing + elimination   |
+| [`forced_elimination.vectors.json`](../../tests/fixtures/contract-vectors/v2/forced_elimination.vectors.json)         | edge_case            | Forced-elimination and ANM        |
+| [`hex_edge_cases.vectors.json`](../../tests/fixtures/contract-vectors/v2/hex_edge_cases.vectors.json)                 | edge_case            | Hex-specific edge cases           |
+| [`multi_phase_turn.vectors.json`](../../tests/fixtures/contract-vectors/v2/multi_phase_turn.vectors.json)             | multi_phase          | Multi-phase turn sequences        |
+| [`near_victory_territory.vectors.json`](../../tests/fixtures/contract-vectors/v2/near_victory_territory.vectors.json) | territory            | Near-victory scenarios            |
 
 **Vector Format:**
 
@@ -505,7 +505,7 @@ for (const vector of vectors) {
 
 ### Rules Parity Fixtures
 
-**Location:** [`tests/fixtures/rules-parity/`](../tests/fixtures/rules-parity/)
+**Location:** [`tests/fixtures/rules-parity/`](../../tests/fixtures/rules-parity)
 
 **Purpose:** State snapshots and traces for TS↔Python parity testing. Contains both v1 (simpler) and v2 (complex multi-board) fixtures.
 
@@ -519,7 +519,7 @@ for (const vector of vectors) {
 
 ### Heuristic Fixtures
 
-**Location:** [`tests/fixtures/heuristic/`](../tests/fixtures/heuristic/)
+**Location:** [`tests/fixtures/heuristic/`](../../tests/fixtures/heuristic)
 
 **Purpose:** Fixtures for AI heuristic evaluation testing.
 
@@ -632,8 +632,8 @@ it('should timeout decision after 30 seconds', async () => {
 
 ## See Also
 
-- [`docs/CONTRACT_VECTORS_DESIGN.md`](CONTRACT_VECTORS_DESIGN.md) - Contract vector design and implementation
-- [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](INVARIANTS_AND_PARITY_FRAMEWORK.md) - Parity testing framework
+- [`docs/CONTRACT_VECTORS_DESIGN.md`](../rules/CONTRACT_VECTORS_DESIGN.md) - Contract vector design and implementation
+- [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](../rules/INVARIANTS_AND_PARITY_FRAMEWORK.md) - Parity testing framework
 - [`docs/TEST_CATEGORIES.md`](TEST_CATEGORIES.md) - Test categorization guide
-- [`tests/TEST_LAYERS.md`](../tests/TEST_LAYERS.md) - Layering, CI profiles, and example suites
-- [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md) - Parity/diagnostic suite map and TS↔Python anchors
+- [`tests/TEST_LAYERS.md`](../../tests/TEST_LAYERS.md) - Layering, CI profiles, and example suites
+- [`tests/TEST_SUITE_PARITY_PLAN.md`](../../tests/TEST_SUITE_PARITY_PLAN.md) - Parity/diagnostic suite map and TS↔Python anchors

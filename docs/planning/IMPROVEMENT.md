@@ -70,9 +70,9 @@ The project is approaching production readiness but has key gaps that need addre
 
 **Key Deliverables:**
 
-- [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](docs/testing/LOAD_TEST_BASELINE_REPORT.md) - Comprehensive load test results and lessons learned
-- [`docs/testing/GO_NO_GO_CHECKLIST.md`](docs/testing/GO_NO_GO_CHECKLIST.md) - Production readiness checklist
-- [`monitoring/alertmanager/alertmanager.local.yml`](monitoring/alertmanager/alertmanager.local.yml) - Local development alertmanager config
+- [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](../testing/LOAD_TEST_BASELINE_REPORT.md) - Comprehensive load test results and lessons learned
+- [`docs/testing/GO_NO_GO_CHECKLIST.md`](../testing/GO_NO_GO_CHECKLIST.md) - Production readiness checklist
+- [`monitoring/alertmanager/alertmanager.local.yml`](../../monitoring/alertmanager/alertmanager.local.yml) - Local development alertmanager config
 
 ### 7.1 Load Test Execution ✅ COMPLETE (Dec 3, 2025)
 
@@ -85,7 +85,7 @@ The project is approaching production readiness but has key gaps that need addre
 
 **Issue Fixed:** Rebuilt Docker container with updated `GameIdParamSchema` that accepts both UUID and CUID formats.
 
-**Report:** [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](docs/testing/LOAD_TEST_BASELINE_REPORT.md)
+**Report:** [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](../testing/LOAD_TEST_BASELINE_REPORT.md)
 
 ### 7.2 Baseline Metrics Establishment ✅ COMPLETE (Dec 3, 2025)
 
@@ -114,12 +114,12 @@ The project is approaching production readiness but has key gaps that need addre
 - [x] Execute secrets rotation drill – Token invalidation verified, ~30s recovery
 - [x] Execute backup/restore drill – 11MB backup, full integrity verified (40K games)
 - [x] Simulate incident response scenarios – AI service outage, detection <75s
-- [x] Document lessons learned → Added to [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](docs/testing/LOAD_TEST_BASELINE_REPORT.md)
+- [x] Document lessons learned → Added to [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](../testing/LOAD_TEST_BASELINE_REPORT.md)
 
 ### 7.5 Go/No-Go Validation ✅ COMPLETE (Dec 3, 2025)
 
 - [x] Validate monitoring infrastructure (Prometheus, Grafana, Alertmanager)
-- [x] Execute go/no-go checklist → [`docs/testing/GO_NO_GO_CHECKLIST.md`](docs/testing/GO_NO_GO_CHECKLIST.md)
+- [x] Execute go/no-go checklist → [`docs/testing/GO_NO_GO_CHECKLIST.md`](../testing/GO_NO_GO_CHECKLIST.md)
 - [x] **Verdict: ✅ GO (with caveats)** - System ready for soft launch
 
 **Lessons Learned:**
@@ -458,7 +458,7 @@ Both `BackendGameHost` and `SandboxGameHost` use the shared `toHUDViewModel` ada
 > **Note:** Accessibility feature work landed primarily under Wave 14.5; this section summarizes the Wave‑8 intent and points to the canonical accessibility docs.
 
 - [x] Keyboard navigation for all game actions – implemented via `useKeyboardNavigation` and global game shortcuts, with per-phase handling for board, dialogs, and core actions.
-- [x] Screen reader support for game state announcements – implemented through ARIA roles/labels on HUD and BoardView plus `ScreenReaderAnnouncer` and related hooks. See [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md).
+- [x] Screen reader support for game state announcements – implemented through ARIA roles/labels on HUD and BoardView plus `ScreenReaderAnnouncer` and related hooks. See [`docs/ACCESSIBILITY.md`](../ACCESSIBILITY.md).
 - [x] High-contrast mode option – provided by `AccessibilityContext` + `AccessibilitySettingsPanel` and `accessibility.css` high‑contrast theme.
 - [x] Colorblind-friendly player color palette – deuteranopia/protanopia/tritanopia modes provided via `AccessibilityContext` and applied across HUD/BoardView.
 
@@ -676,10 +676,10 @@ All major board configurations have been optimized via CMA-ES:
 
 **Key Deliverables:**
 
-- [`tests/golden/goldenReplayHelpers.ts`](tests/golden/goldenReplayHelpers.ts) - TypeScript invariant checkers and replay utilities
-- [`tests/golden/goldenReplay.test.ts`](tests/golden/goldenReplay.test.ts) - Jest test runner with dynamic test generation
-- [`ai-service/tests/golden/test_golden_replay.py`](ai-service/tests/golden/test_golden_replay.py) - Python pytest runner
-- [`docs/testing/GOLDEN_REPLAYS.md`](docs/testing/GOLDEN_REPLAYS.md) - Documentation for golden replay system
+- [`tests/golden/goldenReplayHelpers.ts`](../../tests/golden/goldenReplayHelpers.ts) - TypeScript invariant checkers and replay utilities
+- [`tests/golden/goldenReplay.test.ts`](../../tests/golden/goldenReplay.test.ts) - Jest test runner with dynamic test generation
+- [`ai-service/tests/golden/test_golden_replay.py`](../../ai-service/tests/golden/test_golden_replay.py) - Python pytest runner
+- [`docs/testing/GOLDEN_REPLAYS.md`](../testing/GOLDEN_REPLAYS.md) - Documentation for golden replay system
 
 ### 11.1 Golden Game Fixtures ✅ SUBSTANTIALLY COMPLETE (Dec 5, 2025)
 
@@ -1123,7 +1123,7 @@ AI heuristics have been optimized for multi-player:
 
 ## Success Metrics for v1.0
 
-These metrics are an execution-focused view of the project-level success criteria defined in [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1); if they diverge, treat [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1) as canonical and adjust this table.
+These metrics are an execution-focused view of the project-level success criteria defined in [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:1); if they diverge, treat [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:1) as canonical and adjust this table.
 
 | Metric          | Target              | Current           |
 | --------------- | ------------------- | ----------------- |

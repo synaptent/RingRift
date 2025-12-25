@@ -19,25 +19,25 @@ When you receive an alert, follow this checklist:
 
 ### Quick Severity Assessment
 
-| Ask This Question | If Yes → Severity |
-|-------------------|-------------------|
-| Is the service completely down? | **P1 Critical** |
-| Are >5% of users seeing errors? | **P1 Critical** |
-| Is the database unreachable? | **P1 Critical** |
-| Is latency >5s for P99? | **P1 Critical** |
-| Is the AI service down with no fallback? | **P2 High** |
-| Are >1% of users seeing errors? | **P3 Medium** |
-| Is latency elevated but functional? | **P3 Medium** |
-| Is it informational with no user impact? | **P4 Low** |
+| Ask This Question                        | If Yes → Severity |
+| ---------------------------------------- | ----------------- |
+| Is the service completely down?          | **P1 Critical**   |
+| Are >5% of users seeing errors?          | **P1 Critical**   |
+| Is the database unreachable?             | **P1 Critical**   |
+| Is latency >5s for P99?                  | **P1 Critical**   |
+| Is the AI service down with no fallback? | **P2 High**       |
+| Are >1% of users seeing errors?          | **P3 Medium**     |
+| Is latency elevated but functional?      | **P3 Medium**     |
+| Is it informational with no user impact? | **P4 Low**        |
 
 ### Severity Definitions
 
-| Severity | User Impact | Response Time | Escalation |
-|----------|-------------|---------------|------------|
-| **P1 Critical** | Major outage, all/most users affected | 15 minutes | Immediate |
-| **P2 High** | Significant degradation, many users affected | 1 hour | Within 30 min if unresolved |
-| **P3 Medium** | Minor degradation, some users affected | 4 hours | Within 2 hours if unresolved |
-| **P4 Low** | Minimal/no user impact | Next business day | N/A |
+| Severity        | User Impact                                  | Response Time     | Escalation                   |
+| --------------- | -------------------------------------------- | ----------------- | ---------------------------- |
+| **P1 Critical** | Major outage, all/most users affected        | 15 minutes        | Immediate                    |
+| **P2 High**     | Significant degradation, many users affected | 1 hour            | Within 30 min if unresolved  |
+| **P3 Medium**   | Minor degradation, some users affected       | 4 hours           | Within 2 hours if unresolved |
+| **P4 Low**      | Minimal/no user impact                       | Next business day | N/A                          |
 
 ---
 
@@ -100,14 +100,14 @@ docker exec ringrift-redis-1 redis-cli info memory | grep used_memory_human
 
 ### Which Service is Affected?
 
-| Symptom | Likely Cause | Go To |
-|---------|--------------|-------|
-| All API requests failing | Database or App down | [AVAILABILITY.md](./AVAILABILITY.md) |
-| Slow responses across all endpoints | Event loop blocked, DB slow | [LATENCY.md](./LATENCY.md) |
-| AI moves using fallback | AI service issue | [AI_SERVICE.md](./AI_SERVICE.md) |
-| High memory or CPU | Resource exhaustion | [RESOURCES.md](./RESOURCES.md) |
-| Rate limit alerts | Traffic spike or abuse | [SECURITY.md](./SECURITY.md) |
-| 403/429 errors increasing | Rate limiting active | [SECURITY.md](./SECURITY.md) |
+| Symptom                             | Likely Cause                | Go To                              |
+| ----------------------------------- | --------------------------- | ---------------------------------- |
+| All API requests failing            | Database or App down        | [AVAILABILITY.md](AVAILABILITY.md) |
+| Slow responses across all endpoints | Event loop blocked, DB slow | [LATENCY.md](LATENCY.md)           |
+| AI moves using fallback             | AI service issue            | [AI_SERVICE.md](AI_SERVICE.md)     |
+| High memory or CPU                  | Resource exhaustion         | [RESOURCES.md](RESOURCES.md)       |
+| Rate limit alerts                   | Traffic spike or abuse      | [SECURITY.md](SECURITY.md)         |
+| 403/429 errors increasing           | Rate limiting active        | [SECURITY.md](SECURITY.md)         |
 
 ### Check Grafana Dashboards
 
@@ -133,7 +133,6 @@ curl -s http://localhost:9090/api/v1/alerts | jq '.data.alerts[] | {alertname: .
 1. **When did it start?**
    - Check alert firing time in Prometheus
    - Look at metrics graphs for the change point
-   
 2. **What changed recently?**
    - Check recent deployments
    - Check infrastructure changes
@@ -200,13 +199,13 @@ Next Update: [HH:MM UTC] (in 15 min for P1, 30 min for P2)
 
 Based on your assessment, proceed to the appropriate response guide:
 
-| Alert Category | Go To |
-|----------------|-------|
-| DatabaseDown, RedisDown, HighErrorRate, Service Down | [AVAILABILITY.md](./AVAILABILITY.md) |
-| HighP99Latency, HighMedianLatency, Slow Responses | [LATENCY.md](./LATENCY.md) |
-| HighMemoryUsage, HighEventLoopLag, Resource Issues | [RESOURCES.md](./RESOURCES.md) |
-| AIServiceDown, AIFallbackRate, AI Issues | [AI_SERVICE.md](./AI_SERVICE.md) |
-| RateLimitHits, Security Concerns | [SECURITY.md](./SECURITY.md) |
+| Alert Category                                       | Go To                              |
+| ---------------------------------------------------- | ---------------------------------- |
+| DatabaseDown, RedisDown, HighErrorRate, Service Down | [AVAILABILITY.md](AVAILABILITY.md) |
+| HighP99Latency, HighMedianLatency, Slow Responses    | [LATENCY.md](LATENCY.md)           |
+| HighMemoryUsage, HighEventLoopLag, Resource Issues   | [RESOURCES.md](RESOURCES.md)       |
+| AIServiceDown, AIFallbackRate, AI Issues             | [AI_SERVICE.md](AI_SERVICE.md)     |
+| RateLimitHits, Security Concerns                     | [SECURITY.md](SECURITY.md)         |
 
 ---
 
@@ -258,14 +257,14 @@ docker compose up -d app
 
 ### When to Escalate
 
-| Condition | Action |
-|-----------|--------|
+| Condition                     | Action                        |
+| ----------------------------- | ----------------------------- |
 | P1 not acknowledged in 15 min | Escalate to secondary on-call |
-| P1 not resolved in 30 min | Escalate to team lead |
-| P2 not resolved in 2 hours | Escalate to team lead |
-| Multiple services affected | Consider all-hands |
-| Security incident suspected | Involve security team |
-| Database corruption suspected | Involve DBA |
+| P1 not resolved in 30 min     | Escalate to team lead         |
+| P2 not resolved in 2 hours    | Escalate to team lead         |
+| Multiple services affected    | Consider all-hands            |
+| Security incident suspected   | Involve security team         |
+| Database corruption suspected | Involve DBA                   |
 
 ### How to Escalate
 
@@ -291,11 +290,11 @@ Before diving into detailed diagnosis, confirm:
 
 ## Related Documentation
 
-- [Incident Index](./INDEX.md)
-- [Availability Incidents](./AVAILABILITY.md)
-- [Latency Incidents](./LATENCY.md)
-- [Resource Incidents](./RESOURCES.md)
-- [AI Service Incidents](./AI_SERVICE.md)
-- [Security Incidents](./SECURITY.md)
-- [Post-Mortem Template](./POST_MORTEM_TEMPLATE.md)
-- [Alerting Thresholds](../ALERTING_THRESHOLDS.md)
+- [Incident Index](INDEX.md)
+- [Availability Incidents](AVAILABILITY.md)
+- [Latency Incidents](LATENCY.md)
+- [Resource Incidents](RESOURCES.md)
+- [AI Service Incidents](AI_SERVICE.md)
+- [Security Incidents](SECURITY.md)
+- [Post-Mortem Template](POST_MORTEM_TEMPLATE.md)
+- [Alerting Thresholds](../operations/ALERTING_THRESHOLDS.md)

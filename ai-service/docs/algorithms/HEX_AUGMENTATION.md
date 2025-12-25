@@ -419,6 +419,6 @@ for t in range(12):
 
 ## See Also
 
-- [TRAINING_FEATURES.md](TRAINING_FEATURES.md) - Training configuration
-- [NEURAL_AI_ARCHITECTURE.md](NEURAL_AI_ARCHITECTURE.md) - HexNeuralNet architectures
-- [GAME_NOTATION_SPEC.md](GAME_NOTATION_SPEC.md) - Move encoding specification
+- [TRAINING_FEATURES.md](../training/TRAINING_FEATURES.md) - Training configuration
+- [NEURAL_AI_ARCHITECTURE.md](../architecture/NEURAL_AI_ARCHITECTURE.md) - HexNeuralNet architectures
+- [GAME_NOTATION_SPEC.md](../specs/GAME_NOTATION_SPEC.md) - Move encoding specification

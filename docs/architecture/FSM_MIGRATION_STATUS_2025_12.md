@@ -6,10 +6,10 @@
 > **Updated:** 2025-12-24 (PhaseStateMachine removal)
 > **Related Docs:**
 >
-> - [FSM_EXTENSION_STRATEGY.md](./FSM_EXTENSION_STRATEGY.md)
+> - [FSM_EXTENSION_STRATEGY.md](FSM_EXTENSION_STRATEGY.md)
 > - [ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md](../archive/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md) (archived)
-> - [STATE_MACHINES.md](./STATE_MACHINES.md)
-> - [PHASE_ORCHESTRATION_ARCHITECTURE.md](./PHASE_ORCHESTRATION_ARCHITECTURE.md)
+> - [STATE_MACHINES.md](STATE_MACHINES.md)
+> - [PHASE_ORCHESTRATION_ARCHITECTURE.md](PHASE_ORCHESTRATION_ARCHITECTURE.md)
 
 ---
 
@@ -305,9 +305,9 @@ The TurnStateMachine is the canonical source of truth for phase transitions, mov
 
 ## References
 
-- **FSM Implementation:** [`src/shared/engine/fsm/`](../../src/shared/engine/fsm/)
+- **FSM Implementation:** [`src/shared/engine/fsm/`](../../src/shared/engine/fsm)
 - **Legacy PhaseStateMachine:** [`src/shared/engine/orchestration/phaseStateMachine.ts`](../../src/shared/engine/orchestration/phaseStateMachine.ts)
 - **Turn Orchestrator:** [`src/shared/engine/orchestration/turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts)
 - **Python FSM:** [`ai-service/app/rules/fsm.py`](../../ai-service/app/rules/fsm.py)
-- **Contract Vectors:** [`tests/fixtures/contract-vectors/v2/`](../../tests/fixtures/contract-vectors/v2/)
+- **Contract Vectors:** [`tests/fixtures/contract-vectors/v2/`](../../tests/fixtures/contract-vectors/v2)
 - **Parity Runbook:** [`docs/PARITY_RUNBOOK.md`](../PARITY_RUNBOOK.md)

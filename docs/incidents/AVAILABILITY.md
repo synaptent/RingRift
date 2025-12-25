@@ -4,37 +4,40 @@ This guide covers incidents related to service availability, including service o
 
 ## Alerts Covered
 
-| Alert | Severity | Threshold | Duration |
-|-------|----------|-----------|----------|
-| DatabaseDown | Critical | Service status = 0 | 1 min |
-| RedisDown | Critical | Service status = 0 | 1 min |
-| HighErrorRate | Critical | >5% 5xx errors | 5 min |
-| ElevatedErrorRate | Warning | >1% 5xx errors | 10 min |
-| NoHTTPTraffic | Warning | 0 requests | 10 min |
-| ServiceDegraded | Warning | Degradation level > 0 | 5 min |
-| ServiceMinimalMode | Critical | Degradation level ≥ 2 | 1 min |
-| ServiceOffline | Critical | Degradation level = 3 | 30 sec |
-| NoActiveGames | Info | 0 active games | 30 min |
-| NoWebSocketConnections | Warning | 0 connections | 15 min |
-| LongRunningGames | Info | Median > 1 hour | 30 min |
-| RulesParityValidationMismatch | Warning | >5/hour | 5 min |
-| RulesParityHashMismatch | Warning | >5/hour | 5 min |
-| RulesParityGameStatusMismatch | Critical | >0/hour | 5 min |
+| Alert                         | Severity | Threshold             | Duration |
+| ----------------------------- | -------- | --------------------- | -------- |
+| DatabaseDown                  | Critical | Service status = 0    | 1 min    |
+| RedisDown                     | Critical | Service status = 0    | 1 min    |
+| HighErrorRate                 | Critical | >5% 5xx errors        | 5 min    |
+| ElevatedErrorRate             | Warning  | >1% 5xx errors        | 10 min   |
+| NoHTTPTraffic                 | Warning  | 0 requests            | 10 min   |
+| ServiceDegraded               | Warning  | Degradation level > 0 | 5 min    |
+| ServiceMinimalMode            | Critical | Degradation level ≥ 2 | 1 min    |
+| ServiceOffline                | Critical | Degradation level = 3 | 30 sec   |
+| NoActiveGames                 | Info     | 0 active games        | 30 min   |
+| NoWebSocketConnections        | Warning  | 0 connections         | 15 min   |
+| LongRunningGames              | Info     | Median > 1 hour       | 30 min   |
+| RulesParityValidationMismatch | Warning  | >5/hour               | 5 min    |
+| RulesParityHashMismatch       | Warning  | >5/hour               | 5 min    |
+| RulesParityGameStatusMismatch | Critical | >0/hour               | 5 min    |
 
 ---
 
 ## Alert: DatabaseDown
 
 ### Severity
+
 **P1 Critical** - Immediate response required
 
 ### Symptoms
+
 - `/ready` endpoint returns database failure
 - All API requests returning 500 errors
 - Users cannot log in, create games, or perform any action
 - `ringrift_service_status{service="database"} == 0`
 
 ### Impact
+
 - **Complete service outage** - All data operations unavailable
 - Users cannot authenticate
 - Game state cannot be persisted
@@ -72,6 +75,7 @@ docker inspect ringrift-postgres-1 | jq '.[0].State'
 ```
 
 **Common causes:**
+
 - Out of memory kill
 - Disk space exhaustion
 - Configuration error
@@ -92,6 +96,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c "SELECT pg_is_in_recovery();
 ```
 
 **Common causes:**
+
 - Max connections reached
 - Authentication issues
 - WAL corruption
@@ -130,7 +135,7 @@ docker compose restart app
 ```bash
 # Terminate idle connections older than 10 minutes
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
+  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
    WHERE state = 'idle' AND query_start < now() - interval '10 minutes';"
 ```
 
@@ -149,11 +154,13 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ```
 
 ### Communication
+
 - **Status Page**: Update to "Database connectivity issues - Investigating"
 - **Slack**: Post in #incidents with severity and impact
 - **Escalation**: If not resolved in 15 min, page database admin
 
 ### Post-Incident
+
 - Analyze what caused the database failure
 - Review connection pool settings
 - Check disk space alerts/monitoring
@@ -164,14 +171,17 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ## Alert: RedisDown
 
 ### Severity
+
 **P1 Critical** - Immediate response required
 
 ### Symptoms
+
 - Rate limiting not working (429 errors stop)
 - Session management issues
 - `ringrift_service_status{service="redis"} == 0`
 
 ### Impact
+
 - Rate limiting disabled (abuse vulnerability)
 - Increased load on database
 - Session caching unavailable
@@ -246,6 +256,7 @@ docker exec ringrift-redis-1 redis-cli flushall
 ```
 
 ### Communication
+
 - **Status Page**: Update to "Cache service issues - Rate limiting degraded"
 - **Slack**: Post in #incidents
 - **Note**: Rate limiting is disabled, monitor for abuse
@@ -255,15 +266,18 @@ docker exec ringrift-redis-1 redis-cli flushall
 ## Alert: HighErrorRate
 
 ### Severity
+
 **P1 Critical** - Immediate response required when >5% of requests return 5xx
 
 ### Symptoms
+
 - Users seeing "Something went wrong" errors
 - Prometheus showing `http_requests_total{status=~"5.."}` spike
 - Application logs full of errors
 
 ### Impact
-- >5% of user requests failing
+
+- > 5% of user requests failing
 - Degraded user experience
 - Potential data inconsistency
 
@@ -297,13 +311,13 @@ docker compose logs --tail 1000 app 2>&1 | \
 
 #### Common Error Patterns
 
-| Error | Likely Cause | Action |
-|-------|--------------|--------|
-| Database connection error | DB down | Check DatabaseDown |
-| Redis connection error | Redis down | Check RedisDown |
-| ECONNREFUSED | Service down | Restart affected service |
-| ENOMEM | Out of memory | Check HighMemoryUsage |
-| Timeout | Slow dependency | Check latency alerts |
+| Error                     | Likely Cause    | Action                   |
+| ------------------------- | --------------- | ------------------------ |
+| Database connection error | DB down         | Check DatabaseDown       |
+| Redis connection error    | Redis down      | Check RedisDown          |
+| ECONNREFUSED              | Service down    | Restart affected service |
+| ENOMEM                    | Out of memory   | Check HighMemoryUsage    |
+| Timeout                   | Slow dependency | Check latency alerts     |
 
 ### Mitigation
 
@@ -330,6 +344,7 @@ docker compose up -d app
 ```
 
 ### Communication
+
 - **Status Page**: "Service experiencing errors - Investigating"
 - **Slack**: Post error rate and affected functionality
 - **Escalation**: Page on-call if error rate doesn't decrease in 10 min
@@ -339,9 +354,11 @@ docker compose up -d app
 ## Alert: ElevatedErrorRate
 
 ### Severity
+
 **P3 Medium** - Investigation needed (>1% errors for 10 min)
 
 ### Symptoms
+
 - Lower rate of errors than HighErrorRate
 - May be intermittent
 - May affect specific endpoints only
@@ -361,9 +378,11 @@ Same as HighErrorRate but less urgent. Focus on identifying the specific endpoin
 ## Alert: NoHTTPTraffic
 
 ### Severity
+
 **P2 High** - Investigate urgently (no requests for 10 min)
 
 ### Symptoms
+
 - No HTTP requests recorded in metrics
 - Service appears up but unreachable
 
@@ -384,6 +403,7 @@ curl -v http://localhost:3000/health
 ```
 
 ### Common Causes
+
 - Load balancer misconfigured
 - Firewall blocking traffic
 - DNS issues
@@ -402,21 +422,23 @@ curl -v http://localhost:3000/health
 ## Alert: ServiceDegraded
 
 ### Severity
+
 **P3 Medium** - Some features unavailable
 
 ### Symptoms
+
 - Application reporting degraded status
 - `ringrift_degradation_level > 0`
 - Some features returning 503
 
 ### Degradation Levels
 
-| Level | Status | Meaning |
-|-------|--------|---------|
-| 0 | FULL | All features available |
-| 1 | DEGRADED | Some features unavailable |
-| 2 | MINIMAL | Only core features |
-| 3 | OFFLINE | Service down |
+| Level | Status   | Meaning                   |
+| ----- | -------- | ------------------------- |
+| 0     | FULL     | All features available    |
+| 1     | DEGRADED | Some features unavailable |
+| 2     | MINIMAL  | Only core features        |
+| 3     | OFFLINE  | Service down              |
 
 ### Diagnosis
 
@@ -437,9 +459,11 @@ Address the underlying service issue. The application auto-recovers when depende
 ## Alert: ServiceMinimalMode
 
 ### Severity
+
 **P1 Critical** - Most features unavailable
 
 ### Symptoms
+
 - Degradation level ≥ 2
 - Only basic endpoints working
 - AI service, complex queries unavailable
@@ -455,9 +479,11 @@ Address the underlying service issue. The application auto-recovers when depende
 ## Alert: ServiceOffline
 
 ### Severity
+
 **P1 Critical** - Complete outage
 
 ### Symptoms
+
 - Degradation level = 3
 - All user-facing features unavailable
 
@@ -472,9 +498,11 @@ Address the underlying service issue. The application auto-recovers when depende
 ## Alert: NoWebSocketConnections
 
 ### Severity
+
 **P2 High** - Real-time features broken
 
 ### Symptoms
+
 - No WebSocket connections for 15 min
 - Real-time game updates not working
 - `ringrift_websocket_connections == 0`
@@ -491,6 +519,7 @@ wscat -c ws://localhost:3001
 ```
 
 ### Common Causes
+
 - WebSocket port not exposed
 - Nginx WebSocket upgrade not configured
 - All clients disconnected (off-peak?)
@@ -506,13 +535,16 @@ wscat -c ws://localhost:3001
 ## Alert: NoActiveGames
 
 ### Severity
+
 **P4 Low** - Informational
 
 ### Symptoms
+
 - No games running for 30 min
 - May be normal during off-peak
 
 ### Response
+
 - If during peak hours (10 AM - 10 PM local), investigate
 - If off-peak, likely normal - no action needed
 
@@ -521,9 +553,11 @@ wscat -c ws://localhost:3001
 ## Alert: LongRunningGames
 
 ### Severity
+
 **P4 Low** - Investigate stalled games
 
 ### Symptoms
+
 - Median game duration > 1 hour
 - May indicate orphaned game sessions
 
@@ -532,9 +566,9 @@ wscat -c ws://localhost:3001
 ```bash
 # Check for stalled games in database
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT id, status, created_at, updated_at 
-   FROM games 
-   WHERE status = 'in_progress' 
+  "SELECT id, status, created_at, updated_at
+   FROM games
+   WHERE status = 'in_progress'
    AND updated_at < now() - interval '1 hour';"
 ```
 
@@ -547,11 +581,13 @@ Consider implementing game timeout logic if not already present.
 ## Alert: RulesParityValidationMismatch
 
 ### Severity
+
 **P3 Medium** - Rules engine consistency issue
 
 ### Symptoms
+
 - TypeScript and Python rules engines disagreeing on move validity
-- >5 mismatches per hour
+- > 5 mismatches per hour
 
 ### Diagnosis
 
@@ -564,6 +600,7 @@ docker compose logs --tail 500 ai-service | grep -i parity
 ```
 
 ### Response
+
 - This is a code issue - file a bug
 - Game functionality continues (TypeScript engine is authoritative)
 - Schedule investigation for next sprint
@@ -573,9 +610,11 @@ docker compose logs --tail 500 ai-service | grep -i parity
 ## Alert: RulesParityGameStatusMismatch
 
 ### Severity
+
 **P1 Critical** - Game integrity issue
 
 ### Symptoms
+
 - Different win/loss outcomes between engines
 - Critical game integrity violation
 
@@ -587,6 +626,7 @@ docker compose logs --tail 500 ai-service | grep -i parity
 4. **File critical bug** with reproduction steps
 
 ### Post-Incident
+
 - Root cause analysis mandatory
 - Review all affected games
 - Consider player compensation if outcomes affected
@@ -595,20 +635,20 @@ docker compose logs --tail 500 ai-service | grep -i parity
 
 ## Quick Reference: Restart Commands
 
-| Service | Command |
-|---------|---------|
-| Application | `docker compose restart app` |
-| Database | `docker compose restart postgres` |
-| Redis | `docker compose restart redis` |
-| All services | `docker compose restart` |
+| Service       | Command                                       |
+| ------------- | --------------------------------------------- |
+| Application   | `docker compose restart app`                  |
+| Database      | `docker compose restart postgres`             |
+| Redis         | `docker compose restart redis`                |
+| All services  | `docker compose restart`                      |
 | Full recreate | `docker compose down && docker compose up -d` |
 
 ---
 
 ## Related Documentation
 
-- [Initial Triage](./TRIAGE_GUIDE.md)
-- [Latency Incidents](./LATENCY.md)
-- [Resource Incidents](./RESOURCES.md)
+- [Initial Triage](TRIAGE_GUIDE.md)
+- [Latency Incidents](LATENCY.md)
+- [Resource Incidents](RESOURCES.md)
 - [Deployment Runbooks](../runbooks/INDEX.md)
-- [Database Operations](../OPERATIONS_DB.md)
+- [Database Operations](../operations/OPERATIONS_DB.md)

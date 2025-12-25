@@ -145,5 +145,5 @@ When creating a game, consider:
 ## See Also
 
 - [Complete Rules](../rules/COMPLETE_RULES.md) — Full rulebook with examples
-- [Quick Reference Diagrams](ux/RULES_QUICK_REFERENCE_DIAGRAMS.md) — Visual guides for common rules
-- [Canonical Specification](RULES_CANONICAL_SPEC.md) — Formal rules spec for implementers
+- [Quick Reference Diagrams](../ux/RULES_QUICK_REFERENCE_DIAGRAMS.md) — Visual guides for common rules
+- [Canonical Specification](../../RULES_CANONICAL_SPEC.md) — Formal rules spec for implementers

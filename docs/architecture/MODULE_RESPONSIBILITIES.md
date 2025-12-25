@@ -101,7 +101,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.1 Shared Core & Infrastructure
 
-#### [`core.ts`](../src/shared/engine/core.ts)
+#### [`core.ts`](../../src/shared/engine/core.ts)
 
 - **Primary Responsibility:** Geometry, reachability, marker effects, and invariant bookkeeping used across all domains.
 - **Key Concerns:**
@@ -113,14 +113,14 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 - **Dependents:** Movement, Capture, Territory, Victory helpers; aggregates; hosts; tests.
 - **Concern Type:** `HELPER` (geometry + invariants).
 
-#### [`types.ts`](../src/shared/engine/types.ts)
+#### [`types.ts`](../../src/shared/engine/types.ts)
 
 - **Primary Responsibility:** Engine-specific internal types used across helpers, aggregates, and orchestration.
 - **Examples:** Internal validation/result types, helper interfaces for board views, and engine-specific action/event shapes that are not part of the public `src/shared/types/game.ts` API.
 - **Dependents:** Many helpers, aggregates, legacy validators/mutators.
 - **Concern Type:** `HELPER` (type definitions).
 
-#### [`index.ts`](../src/shared/engine/index.ts)
+#### [`index.ts`](../../src/shared/engine/index.ts)
 
 - **Primary Responsibility:** Barrel file that exposes the **canonical shared-engine API** to hosts (backend `GameEngine.ts`, sandbox `ClientSandboxEngine.ts`, Python parity tooling, tests).
 - **Notes:**
@@ -128,12 +128,12 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Older exports from validators/mutators/monolithic GameEngine are maintained where needed for backward compatibility, but new callers should prefer the orchestrator surface (`processTurn` / `processTurnAsync`).
 - **Concern Type:** `ORCHESTRATION` (API surface).
 
-#### [`notation.ts`](../src/shared/engine/notation.ts)
+#### [`notation.ts`](../../src/shared/engine/notation.ts)
 
 - **Primary Responsibility:** Human-readable formatting for positions and moves for debugging, logs, and tests.
 - **Concern Type:** `HELPER`.
 
-#### [`moveActionAdapter.ts`](../src/shared/engine/moveActionAdapter.ts)
+#### [`moveActionAdapter.ts`](../../src/shared/engine/moveActionAdapter.ts)
 
 - **Primary Responsibility:** Conversion helpers between canonical `Move` structures (`src/shared/types/game.ts`) and legacy `GameAction`/validator-style action types.
 - **Use Cases:**
@@ -141,13 +141,13 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Debugging tools that still work in terms of `GameAction`.
 - **Concern Type:** `HELPER` (adapter).
 
-#### [`initialState.ts`](../src/shared/engine/initialState.ts)
+#### [`initialState.ts`](../../src/shared/engine/initialState.ts)
 
 - **Primary Responsibility:** Factory for pristine `GameState` instances with correct zobrist seeds, per-player ring counts, and board configuration.
 - **Dependents:** Host engines and tests that need fresh game states.
 - **Concern Type:** `MUTATION` (state initialization only).
 
-#### [`rulesConfig.ts`](../src/shared/engine/rulesConfig.ts)
+#### [`rulesConfig.ts`](../../src/shared/engine/rulesConfig.ts)
 
 - **Primary Responsibility:** Board-type and player-count specific rules configuration helpers.
 - **Key Concerns:**
@@ -155,7 +155,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 - **Dependents:** Line detection, line processing, tests.
 - **Concern Type:** `HELPER` (configuration).
 
-#### [`globalActions.ts`](../src/shared/engine/globalActions.ts)
+#### [`globalActions.ts`](../../src/shared/engine/globalActions.ts)
 
 - **Primary Responsibility:** Global legal action surface enumeration for invariants and termination checking.
 - **Key Concerns:**
@@ -171,7 +171,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.2 Placement Domain
 
-#### [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts)
+#### [`placementHelpers.ts`](../../src/shared/engine/placementHelpers.ts)
 
 - **Primary Responsibility:** Low-level helpers for applying placements and checking skip-placement eligibility.
 - **Notes:**
@@ -179,9 +179,9 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Enforces no-dead-placement semantics in collaboration with `core.hasAnyLegalMoveOrCaptureFromOnBoard`.
 - **Concern Type:** `MUTATION` + `QUERY`.
 
-#### [`validators/PlacementValidator.ts`](../src/shared/engine/validators/PlacementValidator.ts)
+#### [`validators/PlacementValidator.ts`](../../src/shared/engine/validators/PlacementValidator.ts)
 
-#### [`mutators/PlacementMutator.ts`](../src/shared/engine/mutators/PlacementMutator.ts)
+#### [`mutators/PlacementMutator.ts`](../../src/shared/engine/mutators/PlacementMutator.ts)
 
 - **Role in canonical architecture:**
   - Still used directly by some hosts/tests for placement validation and mutation.
@@ -190,7 +190,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 (See the historical appendix for full validator/mutator breakdown.)
 
-#### [`aggregates/PlacementAggregate.ts`](../src/shared/engine/aggregates/PlacementAggregate.ts)
+#### [`aggregates/PlacementAggregate.ts`](../../src/shared/engine/aggregates/PlacementAggregate.ts)
 
 - **Primary Responsibility:** Domain façade for all placement-related operations.
 - **Typical Responsibilities:**
@@ -204,7 +204,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.3 Movement & Capture Domains
 
-#### [`movementLogic.ts`](../src/shared/engine/movementLogic.ts)
+#### [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts)
 
 - **Primary Responsibility:** Enumerate simple (non-capturing) movement options for stacks.
 - **Key Concerns:**
@@ -212,17 +212,17 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Stack-height and board-type specific distance rules.
 - **Concern Type:** `QUERY` (move enumeration).
 
-#### [`movementApplication.ts`](../src/shared/engine/movementApplication.ts)
+#### [`movementApplication.ts`](../../src/shared/engine/movementApplication.ts)
 
 - **Primary Responsibility:** Apply non-capturing movement (and associated marker-path effects) to `GameState` / `BoardState`.
 - **Concern Type:** `MUTATION`.
 
-#### [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)
+#### [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts)
 
 - **Primary Responsibility:** Enumerate overtaking capture moves from a given position.
 - **Concern Type:** `QUERY` (capture-move enumeration).
 
-#### [`aggregates/MovementAggregate.ts`](../src/shared/engine/aggregates/MovementAggregate.ts)
+#### [`aggregates/MovementAggregate.ts`](../../src/shared/engine/aggregates/MovementAggregate.ts)
 
 - **Primary Responsibility:** Aggregate all non-capturing movement logic for the orchestrator.
 - **Typical Responsibilities:**
@@ -231,7 +231,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Coordinate `movementLogic`, `movementApplication`, and core marker-path effects.
 - **Concern Type:** `AGGREGATE`.
 
-#### [`aggregates/CaptureAggregate.ts`](../src/shared/engine/aggregates/CaptureAggregate.ts)
+#### [`aggregates/CaptureAggregate.ts`](../../src/shared/engine/aggregates/CaptureAggregate.ts)
 
 - **Primary Responsibility:** Aggregate capture and chain-capture semantics.
 - **Typical Responsibilities:**
@@ -246,12 +246,12 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.4 Line Domain
 
-#### [`lineDetection.ts`](../src/shared/engine/lineDetection.ts)
+#### [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts)
 
 - **Primary Responsibility:** Detect lines of markers on the board for all players and board types.
 - **Concern Type:** `DETECTION`.
 
-#### [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)
+#### [`lineDecisionHelpers.ts`](../../src/shared/engine/lineDecisionHelpers.ts)
 
 - **Primary Responsibility:** Canonical enumeration and application of line-related decision moves.
 - **Key Concerns:**
@@ -260,7 +260,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Apply those decisions to `GameState` including marker collapse, ring elimination, and pending reward elimination flags.
 - **Concern Type:** `QUERY` + `MUTATION`.
 
-#### [`aggregates/LineAggregate.ts`](../src/shared/engine/aggregates/LineAggregate.ts)
+#### [`aggregates/LineAggregate.ts`](../../src/shared/engine/aggregates/LineAggregate.ts)
 
 - **Primary Responsibility:** Domain façade for the line subsystem.
 - **Typical Responsibilities:**
@@ -272,17 +272,17 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.5 Territory Domain
 
-#### [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts)
+#### [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts)
 
 - **Primary Responsibility:** Canonical detection of disconnected territory regions for all geometries.
 - **Concern Type:** `DETECTION`.
 
-#### [`territoryBorders.ts`](../src/shared/engine/territoryBorders.ts)
+#### [`territoryBorders.ts`](../../src/shared/engine/territoryBorders.ts)
 
 - **Primary Responsibility:** Identify border markers adjacent to Territory regions and support the Q23 prerequisite.
 - **Concern Type:** `QUERY`.
 
-#### [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts)
+#### [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts)
 
 - **Primary Responsibility:** Territory region processability, collapse, and elimination pipeline.
 - **Key Concerns:**
@@ -290,7 +290,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Board-level collapse + elimination bookkeeping consistent with S‑invariant and exclusivity rules.
 - **Concern Type:** `QUERY` + `MUTATION`.
 
-#### [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts)
+#### [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts)
 
 - **Primary Responsibility:** Enumerate and apply Territory decision moves.
 - **Key Concerns:**
@@ -299,7 +299,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - Shared implementation for backend and sandbox hosts.
 - **Concern Type:** `QUERY` + `MUTATION`.
 
-#### [`aggregates/TerritoryAggregate.ts`](../src/shared/engine/aggregates/TerritoryAggregate.ts)
+#### [`aggregates/TerritoryAggregate.ts`](../../src/shared/engine/aggregates/TerritoryAggregate.ts)
 
 - **Primary Responsibility:** Cohesive façade for Territory detection, Q23 eligibility, processing, and elimination.
 - **Typical Responsibilities:**
@@ -311,7 +311,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.6 Victory Domain
 
-#### [`aggregates/VictoryAggregate.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts)
+#### [`aggregates/VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts)
 
 - **Primary Responsibility:** Canonical victory evaluation and last-actor tiebreaking.
 - **Key Concerns:**
@@ -332,7 +332,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.7 Elimination Domain
 
-#### [`aggregates/EliminationAggregate.ts`](../src/shared/engine/aggregates/EliminationAggregate.ts)
+#### [`aggregates/EliminationAggregate.ts`](../../src/shared/engine/aggregates/EliminationAggregate.ts)
 
 - **Primary Responsibility:** Canonical elimination logic for all contexts (line, territory, forced, recovery).
 - **Key Concerns:**
@@ -353,7 +353,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.8 Recovery Domain
 
-#### [`playerStateHelpers.ts`](../src/shared/engine/playerStateHelpers.ts)
+#### [`playerStateHelpers.ts`](../../src/shared/engine/playerStateHelpers.ts)
 
 - **Primary Responsibility:** Player state queries including recovery eligibility and buried ring counting.
 - **Key Exports:**
@@ -362,7 +362,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
   - `getControlledStacks()` - Get stacks controlled by a player.
 - **Concern Type:** `QUERY`.
 
-#### [`aggregates/RecoveryAggregate.ts`](../src/shared/engine/aggregates/RecoveryAggregate.ts)
+#### [`aggregates/RecoveryAggregate.ts`](../../src/shared/engine/aggregates/RecoveryAggregate.ts)
 
 - **Primary Responsibility:** Recovery action domain for temporarily eliminated players.
 - **Key Concerns:**
@@ -387,33 +387,33 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.9 Turn Orchestration (Canonical)
 
-#### [`turnLogic.ts`](../src/shared/engine/turnLogic.ts)
+#### [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts)
 
 - **Primary Responsibility:** Shared phase/turn state machine used historically by host engines and still referenced by orchestrator-related code.
 - **Concern Type:** `ORCHESTRATION`.
 
-#### [`turnDelegateHelpers.ts`](../src/shared/engine/turnDelegateHelpers.ts)
+#### [`turnDelegateHelpers.ts`](../../src/shared/engine/turnDelegateHelpers.ts)
 
 - **Primary Responsibility:** Default delegates/helpers for turn-logic operations (e.g., checking if any placements or moves exist for a player).
 - **Concern Type:** `ORCHESTRATION` + `QUERY`.
 
-#### [`turnLifecycle.ts`](../src/shared/engine/turnLifecycle.ts)
+#### [`turnLifecycle.ts`](../../src/shared/engine/turnLifecycle.ts)
 
 - **Primary Responsibility:** Higher-level helpers for moving between phases/turn boundaries.
 - **Concern Type:** `ORCHESTRATION`.
 
-#### [`orchestration/types.ts`](../src/shared/engine/orchestration/types.ts)
+#### [`orchestration/types.ts`](../../src/shared/engine/orchestration/types.ts)
 
 - **Primary Responsibility:** Types used by the orchestrator and its adapters.
 - **Key Types:** `ProcessTurnResult`, `PendingDecision`, `DecisionType`, `VictoryState`, and related orchestration results.
 - **Concern Type:** `HELPER` (type definitions).
 
-#### [`orchestration/phaseStateMachine.ts`](../src/shared/engine/orchestration/phaseStateMachine.ts)
+#### [`orchestration/phaseStateMachine.ts`](../../src/shared/engine/orchestration/phaseStateMachine.ts)
 
 - **Primary Responsibility:** Canonical phase transition logic for the orchestrator.
 - **Concern Type:** `ORCHESTRATION`.
 
-#### [`orchestration/turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts)
+#### [`orchestration/turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts)
 
 - **Primary Responsibility:** **Single canonical entry point** for rules application.
 - **Key Responsibilities:**
@@ -423,7 +423,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 - **Dependents:** `TurnEngineAdapter` (backend), `SandboxOrchestratorAdapter` (sandbox), contract test vector generation, trace parity tests.
 - **Concern Type:** `ORCHESTRATION`.
 
-#### [`orchestration/index.ts`](../src/shared/engine/orchestration/index.ts)
+#### [`orchestration/index.ts`](../../src/shared/engine/orchestration/index.ts)
 
 - **Primary Responsibility:** Orchestration barrel.
 
@@ -433,23 +433,23 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.8 Contracts & Cross-language Parity
 
-#### [`contracts/schemas.ts`](../src/shared/engine/contracts/schemas.ts)
+#### [`contracts/schemas.ts`](../../src/shared/engine/contracts/schemas.ts)
 
 - **Primary Responsibility:** Type-level schemas for contract vectors shared between TS and Python.
 - **Concern Type:** `HELPER` (type definitions).
 
-#### [`contracts/serialization.ts`](../src/shared/engine/contracts/serialization.ts)
+#### [`contracts/serialization.ts`](../../src/shared/engine/contracts/serialization.ts)
 
 - **Primary Responsibility:** Deterministic JSON serialization/deserialization for game state, moves, and turn results.
 - **Concern Type:** `HELPER`.
 
-#### [`contracts/testVectorGenerator.ts`](../src/shared/engine/contracts/testVectorGenerator.ts)
+#### [`contracts/testVectorGenerator.ts`](../../src/shared/engine/contracts/testVectorGenerator.ts)
 
 - **Primary Responsibility:** Utilities for generating new contract-vector suites, typically by driving the orchestrator through interesting scenarios.
 - **Dependents:** `tests/contracts/contractVectorRunner.test.ts`, Python contract tests, vector-generation scripts.
 - **Concern Type:** `HELPER`.
 
-#### [`contracts/index.ts`](../src/shared/engine/contracts/index.ts)
+#### [`contracts/index.ts`](../../src/shared/engine/contracts/index.ts)
 
 - **Primary Responsibility:** Contracts barrel.
 
@@ -457,12 +457,12 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.9 AI / Evaluation Helpers
 
-#### [`heuristicEvaluation.ts`](../src/shared/engine/heuristicEvaluation.ts)
+#### [`heuristicEvaluation.ts`](../../src/shared/engine/heuristicEvaluation.ts)
 
 - **Primary Responsibility:** Heuristic evaluation and feature extraction for AI.
 - **Concern Type:** `QUERY`.
 
-#### [`localAIMoveSelection.ts`](../src/shared/engine/localAIMoveSelection.ts)
+#### [`localAIMoveSelection.ts`](../../src/shared/engine/localAIMoveSelection.ts)
 
 - **Primary Responsibility:** Local/fallback AI move-choice policy used by backend AI and sandbox AI when the Python service is unavailable or for quick heuristics.
 - **Concern Type:** `QUERY`.
@@ -473,7 +473,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 These adapters connect the shared orchestrator to the backend and sandbox host environments. They are at **100% rollout** as of November 2025.
 
-#### [`src/server/game/turn/TurnEngineAdapter.ts`](../src/server/game/turn/TurnEngineAdapter.ts)
+#### [`src/server/game/turn/TurnEngineAdapter.ts`](../../src/server/game/turn/TurnEngineAdapter.ts)
 
 - **Primary Responsibility:** Backend adapter that wraps the canonical turn orchestrator for the `GameEngine` / `GameSession` environment.
 - **Key Concerns:**
@@ -484,7 +484,7 @@ These adapters connect the shared orchestrator to the backend and sandbox host e
 - **Dependents:** `GameEngine.ts`, `GameSession.ts`, `TurnEngine.ts`.
 - **Concern Type:** `ORCHESTRATION` (host adapter).
 
-#### [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)
+#### [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts)
 
 - **Primary Responsibility:** Client sandbox adapter that wraps the canonical turn orchestrator for local `ClientSandboxEngine` simulation.
 - **Key Concerns:**

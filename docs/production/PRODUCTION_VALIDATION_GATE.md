@@ -9,7 +9,7 @@
 > **References:**
 >
 > - [`PRODUCTION_VALIDATION_REMEDIATION_PLAN.md`](../planning/PRODUCTION_VALIDATION_REMEDIATION_PLAN.md) - Full remediation details
-> - [`PRODUCTION_READINESS_CHECKLIST.md`](./PRODUCTION_READINESS_CHECKLIST.md) - Comprehensive readiness checklist
+> - [`PRODUCTION_READINESS_CHECKLIST.md`](PRODUCTION_READINESS_CHECKLIST.md) - Comprehensive readiness checklist
 > - [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md) §4.1, §4.4 - SLO requirements
 > - [`SLO_GATE_CI_RUNBOOK.md`](../operations/SLO_GATE_CI_RUNBOOK.md) - Automated SLO gate CI/CD integration
 

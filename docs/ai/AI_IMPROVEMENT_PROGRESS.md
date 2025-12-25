@@ -5,7 +5,7 @@
 This document tracks concrete AI/training improvements as they land, so work
 is not duplicated and future refactors stay canonical and debuggable.
 
-**See also:** [`ai-service/docs/AI_TRAINING_PLAN.md`](../../ai-service/docs/AI_TRAINING_PLAN.md) for the primary training guide.
+**See also:** [`ai-service/docs/AI_TRAINING_PLAN.md`](../../ai-service/docs/roadmaps/AI_TRAINING_PLAN.md) for the primary training guide.
 
 Status tags:
 

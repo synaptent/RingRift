@@ -6,10 +6,10 @@
 
 **Environment (intended):**
 
-- Topology: single-node staging stack via `docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build` as described in [`QUICKSTART.md`](QUICKSTART.md:637).
+- Topology: single-node staging stack via `docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build` as described in [`QUICKSTART.md`](../../QUICKSTART.md:637).
 - Target base URL: `http://localhost:3000` (Node backend + built client, API + WebSocket on the `app` service).
-- Threshold environment: `THRESHOLD_ENV=staging`, mapping to the `staging` block in [`thresholds.json`](tests/load/config/thresholds.json:8).
-- SLO sources (unchanged): [`PROJECT_GOALS.md`](PROJECT_GOALS.md:150), [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:257), and [`docs/operations/ALERTING_THRESHOLDS.md`](docs/operations/ALERTING_THRESHOLDS.md:10).
+- Threshold environment: `THRESHOLD_ENV=staging`, mapping to the `staging` block in [`thresholds.json`](../../tests/load/config/thresholds.json:8).
+- SLO sources (unchanged): [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:150), [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:257), and [`docs/operations/ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:10).
 
 **k6 execution status (Wave 3.1 attempt):**
 
@@ -21,16 +21,16 @@
   npx k6 run tests/load/scenarios/game-creation.js
   ```
 
-- Script: [`game-creation.js`](tests/load/scenarios/game-creation.js:1)
-- During [`setup()`](tests/load/scenarios/game-creation.js:175), the scenario attempted:
+- Script: [`game-creation.js`](../../tests/load/scenarios/game-creation.js:1)
+- During [`setup()`](../../tests/load/scenarios/game-creation.js:175), the scenario attempted:
   - `GET /health` against `http://localhost:3000/health`
-  - `POST /api/auth/login` via [`loginAndGetToken()`](tests/load/auth/helpers.js:30)
+  - `POST /api/auth/login` via [`loginAndGetToken()`](../../tests/load/auth/helpers.js:30)
 - Both requests failed with `dial tcp 127.0.0.1:3000: connect: connection refused`, indicating the staging backend was not reachable at the time of the run.
-- [`loginAndGetToken()`](tests/load/auth/helpers.js:65) threw, and k6 aborted during setup (no scenario iterations ran), but [`makeHandleSummary()`](tests/load/summary.js:168) still produced a compact JSON summary at [`results/load/game-creation.staging.summary.json`](results/load/game-creation.staging.summary.json:1).
+- [`loginAndGetToken()`](../../tests/load/auth/helpers.js:65) threw, and k6 aborted during setup (no scenario iterations ran), but [`makeHandleSummary()`](../../tests/load/summary.js:168) still produced a compact JSON summary at [`results/load/game-creation.staging.summary.json`](results/load/game-creation.staging.summary.json:1).
 
 **Observed metrics vs SLOs – Game Creation (staging, backend unreachable):**
 
-Values below are from [`results/load/game-creation.staging.summary.json`](results/load/game-creation.staging.summary.json:1) and the `staging` thresholds in [`thresholds.json`](tests/load/config/thresholds.json:11):
+Values below are from [`results/load/game-creation.staging.summary.json`](results/load/game-creation.staging.summary.json:1) and the `staging` thresholds in [`thresholds.json`](../../tests/load/config/thresholds.json:11):
 
 | Metric                                      | Observed (this run)        | Staging SLO / threshold                                          | Verdict       | Notes                                                                                          |
 | ------------------------------------------- | -------------------------- | ---------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------- |
@@ -54,12 +54,12 @@ Values below are from [`results/load/game-creation.staging.summary.json`](result
 
 - No new healthy latency or error-rate ranges can be established from this attempted run, since there was effectively **no traffic** beyond failing pre-flight checks.
 - Until a successful staging run is recorded:
-  - Continue to treat the local/Docker baseline in [`docs/testing/LOAD_TEST_BASELINE.md`](docs/testing/LOAD_TEST_BASELINE.md:18) as the reference for “healthy” behaviour.
-  - Use the SLO values and alert thresholds in [`PROJECT_GOALS.md`](PROJECT_GOALS.md:150), [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:257), and [`docs/operations/ALERTING_THRESHOLDS.md`](docs/operations/ALERTING_THRESHOLDS.md:10) as the authoritative SSoTs.
+  - Continue to treat the local/Docker baseline in [`docs/testing/LOAD_TEST_BASELINE.md`](LOAD_TEST_BASELINE.md:18) as the reference for “healthy” behaviour.
+  - Use the SLO values and alert thresholds in [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:150), [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:257), and [`docs/operations/ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:10) as the authoritative SSoTs.
 
 **Planned commands for a complete Wave 3.1 staging baseline (once environment is healthy):**
 
-These commands should be executed against a healthy staging stack on `http://localhost:3000` with `THRESHOLD_ENV=staging`, producing per-scenario summaries under `results/load/*.staging.summary.json` via [`tests/load/summary.js`](tests/load/summary.js:1):
+These commands should be executed against a healthy staging stack on `http://localhost:3000` with `THRESHOLD_ENV=staging`, producing per-scenario summaries under `results/load/*.staging.summary.json` via [`tests/load/summary.js`](../../tests/load/summary.js:1):
 
 ```bash
 # Game creation SLOs (HTTP API)
@@ -87,7 +87,7 @@ npx k6 run tests/load/scenarios/websocket-stress.js
 
 ### Harness mechanics and SLO/go–no‑go reporting (Wave 3.1+)
 
-The commands above all use the shared `handleSummary` factory in [`tests/load/summary.js`](tests/load/summary.js:1). For each scenario:
+The commands above all use the shared `handleSummary` factory in [`tests/load/summary.js`](../../tests/load/summary.js:1). For each scenario:
 
 - A compact, SLO-aware JSON summary is written to:
 
@@ -130,7 +130,7 @@ The commands above all use the shared `handleSummary` factory in [`tests/load/su
   Key fields:
   - `scenario`: scenario identifier (e.g. `game-creation`, `concurrent-games`).
   - `environment`: human-readable environment label for reporting. Preferentially taken from `RINGRIFT_ENV` (e.g. `staging`, `prod-preview`), with fallbacks to k6 `ENVIRONMENT` or `THRESHOLD_ENV`.
-  - `thresholdsEnv`: the environment key used when looking up SLO thresholds in [`tests/load/config/thresholds.json`](tests/load/config/thresholds.json:1) (e.g. `staging`, `production`).
+  - `thresholdsEnv`: the environment key used when looking up SLO thresholds in [`tests/load/config/thresholds.json`](../../tests/load/config/thresholds.json:1) (e.g. `staging`, `production`).
   - `thresholds`: one entry per k6 threshold expression actually evaluated during the run. Each entry includes:
     - `metric`: k6 metric name (e.g. `http_req_duration{name:create-game}`).
     - `threshold`: raw k6 threshold expression (e.g. `"p(95)<800"` or `"rate<0.01"`).
@@ -225,8 +225,8 @@ Overall load test SLO result: GO (all scenarios passed)
 
 The underlying SLO targets and semantics remain defined in:
 
-- [`tests/load/config/thresholds.json`](tests/load/config/thresholds.json:1)
-- SLO strategy docs: [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:257), [`PROJECT_GOALS.md`](PROJECT_GOALS.md:150), and (where present) [`docs/operations/ALERTING_THRESHOLDS.md`](docs/operations/ALERTING_THRESHOLDS.md:10).
+- [`tests/load/config/thresholds.json`](../../tests/load/config/thresholds.json:1)
+- SLO strategy docs: [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:257), [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:150), and (where present) [`docs/operations/ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:10).
 
 The harness described here simply makes those SLOs executable for discrete load runs and exposes clear, scriptable go/no‑go signals.
 
@@ -241,7 +241,7 @@ The harness described here simply makes those SLOs executable for discrete load 
 
 **Scenario configuration:**
 
-- Script: [player-moves.js](tests/load/scenarios/player-moves.js:1)
+- Script: [player-moves.js](../../tests/load/scenarios/player-moves.js:1)
 - Mode: HTTP move harness mode (real moves via `POST /api/games/:gameId/moves`)
 - Options: `realistic_gameplay` ramping-vus scenario as defined in the script:
   - 0 → 20 VUs over 1m
@@ -274,7 +274,7 @@ The harness described here simply makes those SLOs executable for discrete load 
 - `move_submission_success_rate`: **unknown**, but clearly degraded once 429s and connection refusals began.
 - `stalled_moves_total`: **unknown**; no evidence of stalls before rate limiting, but unable to compute final count.
 
-**Threshold status vs script thresholds and SLOs ([STRATEGIC_ROADMAP.md](STRATEGIC_ROADMAP.md:324) §2.2):**
+**Threshold status vs script thresholds and SLOs ([STRATEGIC_ROADMAP.md](../planning/STRATEGIC_ROADMAP.md:324) §2.2):**
 
 - Thresholds were not evaluated by k6 because the run aborted before summary:
   - `move_submission_latency_ms` p95/p99: **inconclusive** (no summary).
@@ -289,7 +289,7 @@ The harness described here simply makes those SLOs executable for discrete load 
 
 - The HTTP move harness endpoint and k6 scenario wiring are **functionally validated**:
   - Real games are created, polled, and advanced via `POST /api/games/:gameId/moves`.
-  - The move payload generator [generateRandomMove()](tests/load/scenarios/player-moves.js:389) matches the backend MoveSchema used by the HTTP harness.
+  - The move payload generator [generateRandomMove()](../../tests/load/scenarios/player-moves.js:389) matches the backend MoveSchema used by the HTTP harness.
 - This specific run **cannot be used as a quantitative latency/reliability baseline** because k6 did not produce a summary and the system spent much of the run in a rate-limited/unavailable state.
 - For a proper PASS24.3 baseline:
   - Re-run `player-moves` against a staging-like environment with higher capacity and tuned rate limits, or

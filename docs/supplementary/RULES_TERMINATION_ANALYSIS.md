@@ -5,7 +5,7 @@
 
 > **Purpose:** Supporting mathematical analysis of the RingRift rules, with a focus on the S‑invariant, termination, and tie‑breaking behaviour. This document explains _why_ the rules in [`docs/rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md) and [`docs/rules/COMPACT_RULES.md`](../rules/COMPACT_RULES.md) guarantee finite games and unique winners, but it is not itself a canonical rules specification.
 > **Audience:** Engine implementers, AI authors, and rules maintainers who need to reason about progress and termination.
-> **Relationship to other docs:** For authoritative rules semantics, see [`docs/rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md) and [`docs/rules/COMPACT_RULES.md`](../rules/COMPACT_RULES.md). For how specific rules/FAQ examples map into executable Jest suites, see [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md).
+> **Relationship to other docs:** For authoritative rules semantics, see [`docs/rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md) and [`docs/rules/COMPACT_RULES.md`](../rules/COMPACT_RULES.md). For how specific rules/FAQ examples map into executable Jest suites, see [`RULES_SCENARIO_MATRIX.md`](../rules/RULES_SCENARIO_MATRIX.md).
 
 ## 1. Executive Summary
 

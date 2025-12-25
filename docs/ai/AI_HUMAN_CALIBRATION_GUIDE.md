@@ -258,7 +258,7 @@ As these telemetry pipelines mature, their aggregate data should be:
 - Interpreted using the qualitative anchors and experiment templates in
   this guide (Templates A/B/C), and
 - Analysed using the workflow and decision rules defined in
-  [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1), which joins
+  [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1), which joins
   human calibration data with automated tier evaluation, perf budgets,
   and the Square‑8 2‑player tier candidate registry.
 

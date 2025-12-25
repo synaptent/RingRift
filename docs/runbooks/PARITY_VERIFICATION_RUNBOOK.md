@@ -100,7 +100,7 @@ Each canonical DB has an accompanying parity gate JSON:
 
 The authoritative inventory of canonical vs legacy databases is maintained in:
 
-📄 [`ai-service/TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md)
+📄 [`ai-service/TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md)
 
 **Data Classification:**
 
@@ -351,9 +351,9 @@ parity_fixtures/failing__game123__k50.json
 
 **Problem:** When replaying recorded games, Python would remain stuck in `line_processing` or `territory_processing` phases waiting for explicit moves that don't exist in legacy databases.
 
-**Solution (RR-PARITY-FIX):** The Python [`GameReplayDB.get_state_at_move()`](../ai-service/app/db/game_replay.py:1143) method auto-injects bookkeeping moves to match TypeScript's replay behavior.
+**Solution (RR-PARITY-FIX):** The Python [`GameReplayDB.get_state_at_move()`](../../ai-service/app/db/game_replay.py:1143) method auto-injects bookkeeping moves to match TypeScript's replay behavior.
 
-**Key code in [`game_replay.py`](../ai-service/app/db/game_replay.py:1238-1296):**
+**Key code in [`game_replay.py`](../../ai-service/app/db/game_replay.py:1238-1296):**
 
 ```python
 def _auto_inject_no_action_moves(self, state: GameState) -> GameState:
@@ -382,7 +382,7 @@ def _auto_inject_no_action_moves(self, state: GameState) -> GameState:
 
 ### 5.2 Why Bookkeeping Moves Matter
 
-The TypeScript [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts) automatically advances through phases with no interactive options during replay. Key logic:
+The TypeScript [`SandboxOrchestratorAdapter`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts) automatically advances through phases with no interactive options during replay. Key logic:
 
 ```typescript
 // RR-CANON-R076: Handle required no-action decisions from core layer.
@@ -522,7 +522,7 @@ The dedicated parity CI gate runs on PRs that modify:
 **What it does:**
 
 1. Sets up Node.js (for TS replay harness) and Python
-2. Runs [`check_ts_python_replay_parity.py`](../ai-service/scripts/check_ts_python_replay_parity.py) with `--fail-on-divergence`
+2. Runs [`check_ts_python_replay_parity.py`](../../ai-service/scripts/check_ts_python_replay_parity.py) with `--fail-on-divergence`
 3. Gates merges on zero semantic divergences
 4. Uploads summary JSON as artifact for debugging
 
@@ -669,7 +669,7 @@ PYTHONPATH=. python scripts/diff_state_bundle.py --bundle <bundle.json>
 **Fix approach:**
 
 - Regenerate the DB using canonical self-play pipeline
-- Check [`history_contract.py`](../ai-service/app/rules/history_contract.py) for valid phase/move-type pairs
+- Check [`history_contract.py`](../../ai-service/app/rules/history_contract.py) for valid phase/move-type pairs
 
 ---
 
@@ -677,33 +677,33 @@ PYTHONPATH=. python scripts/diff_state_bundle.py --bundle <bundle.json>
 
 ### 9.1 Python Parity Infrastructure
 
-| File                                                                                                                      | Purpose                                                       |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| [`ai-service/app/db/game_replay.py`](../ai-service/app/db/game_replay.py)                                                 | GameReplayDB with parity fix (`_auto_inject_no_action_moves`) |
-| [`ai-service/scripts/check_ts_python_replay_parity.py`](../ai-service/scripts/check_ts_python_replay_parity.py)           | Main parity checker script                                    |
-| [`ai-service/scripts/diff_state_bundle.py`](../ai-service/scripts/diff_state_bundle.py)                                   | State bundle differ                                           |
-| [`ai-service/scripts/run_parity_healthcheck.py`](../ai-service/scripts/run_parity_healthcheck.py)                         | Multi-suite parity healthcheck                                |
-| [`ai-service/scripts/run_canonical_selfplay_parity_gate.py`](../ai-service/scripts/run_canonical_selfplay_parity_gate.py) | Generate + gate canonical DBs                                 |
-| [`ai-service/scripts/generate_canonical_selfplay.py`](../ai-service/scripts/generate_canonical_selfplay.py)               | Unified canonical generator                                   |
-| [`ai-service/app/rules/history_contract.py`](../ai-service/app/rules/history_contract.py)                                 | Canonical phase/move-type contract                            |
-| [`ai-service/app/rules/history_validation.py`](../ai-service/app/rules/history_validation.py)                             | History validation helpers                                    |
+| File                                                                                                                         | Purpose                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [`ai-service/app/db/game_replay.py`](../../ai-service/app/db/game_replay.py)                                                 | GameReplayDB with parity fix (`_auto_inject_no_action_moves`) |
+| [`ai-service/scripts/check_ts_python_replay_parity.py`](../../ai-service/scripts/check_ts_python_replay_parity.py)           | Main parity checker script                                    |
+| [`ai-service/scripts/diff_state_bundle.py`](../../ai-service/scripts/diff_state_bundle.py)                                   | State bundle differ                                           |
+| [`ai-service/scripts/run_parity_healthcheck.py`](../../ai-service/scripts/run_parity_healthcheck.py)                         | Multi-suite parity healthcheck                                |
+| [`ai-service/scripts/run_canonical_selfplay_parity_gate.py`](../../ai-service/scripts/run_canonical_selfplay_parity_gate.py) | Generate + gate canonical DBs                                 |
+| [`ai-service/scripts/generate_canonical_selfplay.py`](../../ai-service/scripts/generate_canonical_selfplay.py)               | Unified canonical generator                                   |
+| [`ai-service/app/rules/history_contract.py`](../../ai-service/app/rules/history_contract.py)                                 | Canonical phase/move-type contract                            |
+| [`ai-service/app/rules/history_validation.py`](../../ai-service/app/rules/history_validation.py)                             | History validation helpers                                    |
 
 ### 9.2 TypeScript Parity Infrastructure
 
-| File                                                                                                            | Purpose                              |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| [`scripts/selfplay-db-ts-replay.ts`](../scripts/selfplay-db-ts-replay.ts)                                       | TS replay harness for parity checks  |
-| [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)       | TS sandbox adapter with auto-advance |
-| [`src/client/sandbox/ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts)                     | TS sandbox engine                    |
-| [`src/shared/engine/orchestration/turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts) | Core TS turn orchestrator            |
+| File                                                                                                               | Purpose                              |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| [`scripts/selfplay-db-ts-replay.ts`](../../scripts/selfplay-db-ts-replay.ts)                                       | TS replay harness for parity checks  |
+| [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts)       | TS sandbox adapter with auto-advance |
+| [`src/client/sandbox/ClientSandboxEngine.ts`](../../src/client/sandbox/ClientSandboxEngine.ts)                     | TS sandbox engine                    |
+| [`src/shared/engine/orchestration/turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts) | Core TS turn orchestrator            |
 
 ### 9.3 Documentation
 
-| File                                                                                              | Purpose                                 |
-| ------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`ai-service/TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md)                 | Canonical vs legacy data inventory      |
-| [`ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md`](../ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md) | GameReplayDB schema spec                |
-| [`AGENTS.md`](../AGENTS.md)                                                                       | Agent guidelines including parity rules |
+| File                                                                                                       | Purpose                                 |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`ai-service/TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md)                       | Canonical vs legacy data inventory      |
+| [`ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md`](../../ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md) | GameReplayDB schema spec                |
+| [`AGENTS.md`](../../AGENTS.md)                                                                             | Agent guidelines including parity rules |
 
 ---
 
@@ -826,9 +826,9 @@ If semantic parity passes but FSM fails, the FSM model needs improvement but the
 
 ### 11.6 Relevant Code References
 
-- **FSM Adapter:** [`src/shared/engine/fsm/FSMAdapter.ts`](../src/shared/engine/fsm/FSMAdapter.ts) - Contains the `turn_end` resolution logic per RR-CANON-R073
-- **Turn State Machine:** [`src/shared/engine/fsm/TurnStateMachine.ts`](../src/shared/engine/fsm/TurnStateMachine.ts) - Core FSM implementation
-- **TS Replay Harness:** [`scripts/selfplay-db-ts-replay.ts`](../scripts/selfplay-db-ts-replay.ts) - Reports FSM validation status
+- **FSM Adapter:** [`src/shared/engine/fsm/FSMAdapter.ts`](../../src/shared/engine/fsm/FSMAdapter.ts) - Contains the `turn_end` resolution logic per RR-CANON-R073
+- **Turn State Machine:** [`src/shared/engine/fsm/TurnStateMachine.ts`](../../src/shared/engine/fsm/TurnStateMachine.ts) - Core FSM implementation
+- **TS Replay Harness:** [`scripts/selfplay-db-ts-replay.ts`](../../scripts/selfplay-db-ts-replay.ts) - Reports FSM validation status
 
 ---
 

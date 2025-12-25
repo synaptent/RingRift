@@ -4,7 +4,7 @@
 > **Status:** Complete
 > **Purpose:** Document "healthy system" metric ranges for operations and alerting
 
-Note: For which scenarios are required for v1.0, and which SLO thresholds and go/no-go rules apply, see the Production Validation Contract in [`docs/PRODUCTION_READINESS_CHECKLIST.md`](../PRODUCTION_READINESS_CHECKLIST.md:104). This file reports baseline metrics only and is subordinate to that contract.
+Note: For which scenarios are required for v1.0, and which SLO thresholds and go/no-go rules apply, see the Production Validation Contract in [`docs/PRODUCTION_READINESS_CHECKLIST.md`](../production/PRODUCTION_READINESS_CHECKLIST.md:104). This file reports baseline metrics only and is subordinate to that contract.
 
 ## Test Environment
 
@@ -134,17 +134,17 @@ During the run, use the **Game Performance** and **System Health** Grafana dashb
 
 ## Scenario ↔ SLO ↔ Metrics Mapping
 
-This run exercised the canonical P‑01 load scenarios defined in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:257) and the v1.0 performance SLOs in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:150). For each k6 scenario we explicitly map:
+This run exercised the canonical P‑01 load scenarios defined in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:257) and the v1.0 performance SLOs in [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:150). For each k6 scenario we explicitly map:
 
 - Which SLO families it is intended to validate.
-- Which k6 metrics/thresholds act as the **authoritative pass/fail signals** for load runs (via [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json:1)).
+- Which k6 metrics/thresholds act as the **authoritative pass/fail signals** for load runs (via [`tests/load/config/thresholds.json`](../../tests/load/config/thresholds.json:1)).
 - Which Prometheus metrics, alerts, and Grafana panels observe the same SLOs under steady‑state traffic.
 
 ### Scenario 1: Game Creation (`game-creation.js`)
 
 - **Primary SLOs**
   - HTTP API latency and 5xx rate for:
-    - `POST /api/auth/login`, `POST /api/games`, `GET /api/games/:gameId` (see [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:292) §2.1 and [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:152) §4.1).
+    - `POST /api/auth/login`, `POST /api/games`, `GET /api/games/:gameId` (see [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:292) §2.1 and [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:152) §4.1).
   - Core gameplay availability/error budget for these endpoints (STRATEGIC_ROADMAP §2.4 “Availability and error budgets”).
 
 - **k6 signals (per-run, authoritative)**
@@ -162,7 +162,7 @@ This run exercised the canonical P‑01 load scenarios defined in [`STRATEGIC_RO
 
 - **Prometheus / alerts / dashboards**
   - Metrics: `http_request_duration_seconds_bucket`, `http_requests_total`.
-  - Alerts ([`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml:1)):
+  - Alerts ([`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml:1)):
     - `HighP95Latency`, `HighP99Latency`, `HighMedianLatency`.
     - `HighErrorRate`, `ElevatedErrorRate`, `NoHTTPTraffic`.
   - Dashboards:

@@ -8,11 +8,11 @@
 >
 > **Related Documents:**
 >
-> - [`REFACTORING_OPPORTUNITIES_ANALYSIS.md`](./REFACTORING_OPPORTUNITIES_ANALYSIS.md) - Parent analysis document
+> - [`REFACTORING_OPPORTUNITIES_ANALYSIS.md`](REFACTORING_OPPORTUNITIES_ANALYSIS.md) - Parent analysis document
 > - [`ai-service/app/ai/heuristic_ai.py`](../../ai-service/app/ai/heuristic_ai.py) - Coordinator (~1,911 LOC)
-> - [`ai-service/app/ai/evaluators/`](../../ai-service/app/ai/evaluators/) - Extracted evaluators (3,525 LOC total)
+> - [`ai-service/app/ai/evaluators/`](../../ai-service/app/ai/evaluators) - Extracted evaluators (3,525 LOC total)
 > - [`ai-service/app/ai/evaluation_provider.py`](../../ai-service/app/ai/evaluation_provider.py) - Existing interface
-> - [`AI_ARCHITECTURE.md`](./AI_ARCHITECTURE.md) - AI service architecture
+> - [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md) - AI service architecture
 
 ---
 

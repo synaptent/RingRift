@@ -201,7 +201,7 @@ Questions to answer:
 
 If game snapshots show states where neither player can realistically force a win but the engine never declares a draw:
 
-- Review victory semantics in `src/shared/engine/victoryLogic.ts`, `VictoryAggregate.ts`, and related documentation in `RULES_CANONICAL_SPEC.md`.
+- Review victory semantics in `src/shared/engine/aggregates/VictoryAggregate.ts`, `VictoryAggregate.ts`, and related documentation in `RULES_CANONICAL_SPEC.md`.
 - Check whether global stalemate / tie-breaker logic (e.g. R172 last-player-standing, territory thresholds, ring caps) is behaving as designed.
 - For AI games, confirm that AI is not **repeating meaningless moves** due to evaluation plateaus or insufficient draw detection (see AI and training docs under `ai-service/AI_ASSESSMENT_REPORT.md` and `ai-service/AI_IMPROVEMENT_PLAN.md`).
 

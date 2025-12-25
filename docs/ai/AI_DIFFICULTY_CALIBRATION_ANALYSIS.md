@@ -5,16 +5,16 @@
 
 This document complements:
 
-- Human calibration guide: [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:1)
-- Training and promotion pipeline: [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:1)
-- Tier performance budgets: [`AI_TIER_PERF_BUDGETS.md`](docs/ai/AI_TIER_PERF_BUDGETS.md:1)
-- Tier training orchestration: [`run_tier_training_pipeline.py`](ai-service/scripts/run_tier_training_pipeline.py:1)
-- Full gating wrapper: [`run_full_tier_gating.py`](ai-service/scripts/run_full_tier_gating.py:1)
-- Promotion-plan applier and registry helpers: [`python.tier_promotion_registry`](ai-service/app/training/tier_promotion_registry.py:1), [`apply_tier_promotion_plan.py`](ai-service/scripts/apply_tier_promotion_plan.py:1)
+- Human calibration guide: [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:1)
+- Training and promotion pipeline: [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:1)
+- Tier performance budgets: [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1)
+- Tier training orchestration: [`run_tier_training_pipeline.py`](../../ai-service/scripts/run_tier_training_pipeline.py:1)
+- Full gating wrapper: [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_tier_gating.py:1)
+- Promotion-plan applier and registry helpers: [`python.tier_promotion_registry`](../../ai-service/app/training/tier_promotion_registry.py:1), [`apply_tier_promotion_plan.py`](../../ai-service/scripts/apply_tier_promotion_plan.py:1)
 
 It is **analysis/process-level only**. No ladder configs, models, or UI are changed directly here.
 
-## For step-by-step operational instructions on running a calibration cycle, see [`AI_CALIBRATION_RUNBOOK.md`](docs/ai/AI_CALIBRATION_RUNBOOK.md:1).
+## For step-by-step operational instructions on running a calibration cycle, see [`AI_CALIBRATION_RUNBOOK.md`](AI_CALIBRATION_RUNBOOK.md:1).
 
 ## 1. Scope and Objectives
 
@@ -23,7 +23,7 @@ It is **analysis/process-level only**. No ladder configs, models, or UI are chan
 - Board: `square8` (8×8 compact ruleset)
 - Players: 2
 - Ladder difficulties: **D2, D4, D6, D8** (logical difficulties 2, 4, 6, 8)
-- AI families and current intended strength ordering are as in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:39)
+- AI families and current intended strength ordering are as in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:39)
 
 ### 1.2 Objectives
 
@@ -37,7 +37,7 @@ For each tier D2 / D4 / D6 / D8:
    - **Within target band** (no action)
    - **Slightly too easy / too hard** (monitor and queue minor tuning)
    - **Clearly mis-tuned** (plan concrete ladder or model changes)
-3. Produce an **explicit calibration report artefact** that downstream tools (e.g. a future [`python.analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1) script) can generate and CI or reviewers can read.
+3. Produce an **explicit calibration report artefact** that downstream tools (e.g. a future [`python.analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1) script) can generate and CI or reviewers can read.
 
 This loop sits between model training/gating (H-AI-9/10/11) and UX-facing difficulty descriptors.
 
@@ -49,10 +49,10 @@ This loop sits between model training/gating (H-AI-9/10/11) and UX-facing diffic
 
 **Event schema and wiring**
 
-- Shared event payload: [`difficultyCalibrationEvents.ts`](src/shared/telemetry/difficultyCalibrationEvents.ts:1)
-- Client helper: [`difficultyCalibrationTelemetry.ts`](src/client/utils/difficultyCalibrationTelemetry.ts:1)
-- Server route: [`difficultyCalibrationTelemetry.ts`](src/server/routes/difficultyCalibrationTelemetry.ts:1)
-- Metrics sink: [`typescript.MetricsService.recordDifficultyCalibrationEvent`](src/server/services/MetricsService.ts:1292)
+- Shared event payload: [`difficultyCalibrationEvents.ts`](../../src/shared/telemetry/difficultyCalibrationEvents.ts:1)
+- Client helper: [`difficultyCalibrationTelemetry.ts`](../../src/client/utils/difficultyCalibrationTelemetry.ts:1)
+- Server route: [`difficultyCalibrationTelemetry.ts`](../../src/server/routes/difficultyCalibrationTelemetry.ts:1)
+- Metrics sink: [`typescript.MetricsService.recordDifficultyCalibrationEvent`](../../src/server/services/MetricsService.ts:1292)
 
 When a player opts into calibration mode:
 
@@ -78,7 +78,7 @@ ringrift_difficulty_calibration_events_total{
 }
 ```
 
-Exact label set is defined in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:442) and the metrics module.
+Exact label set is defined in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:442) and the metrics module.
 
 **Expected storage and access**
 
@@ -105,28 +105,28 @@ These can be exported as CSV or Parquet from Prometheus or a log pipeline for of
 
 ### 2.2 Automated Evaluation, Gating, and Perf
 
-Core building blocks (see [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:96)):
+Core building blocks (see [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:96)):
 
-- Tier evaluation configs: [`python.TIER_EVAL_CONFIGS`](ai-service/app/training/tier_eval_config.py:53)
-- Evaluation runner returning `TierEvaluationResult`: [`python.run_tier_evaluation`](ai-service/app/training/tier_eval_runner.py:319)
-- Tier gating CLI: [`run_tier_gate.py`](ai-service/scripts/run_tier_gate.py:1)
-- Combined gating + perf wrapper: [`run_full_tier_gating.py`](ai-service/scripts/run_full_tier_gating.py:1)
+- Tier evaluation configs: [`python.TIER_EVAL_CONFIGS`](../../ai-service/app/training/tier_eval_config.py:53)
+- Evaluation runner returning `TierEvaluationResult`: [`python.run_tier_evaluation`](../../ai-service/app/training/tier_eval_runner.py:319)
+- Tier gating CLI: [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1)
+- Combined gating + perf wrapper: [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_tier_gating.py:1)
 - Perf budgets and harness:
-  - [`python.TIER_PERF_BUDGETS`](ai-service/app/config/perf_budgets.py:101)
-  - [`python.run_tier_perf_benchmark`](ai-service/app/training/tier_perf_benchmark.py:84)
+  - [`python.TIER_PERF_BUDGETS`](../../ai-service/app/config/perf_budgets.py:101)
+  - [`python.run_tier_perf_benchmark`](../../ai-service/app/training/tier_perf_benchmark.py:84)
 
 **Run directory layout**
 
 A standard Square-8 2p tier training + gating cycle uses:
 
-1. Train candidate (stub or real) via [`python.main()`](ai-service/scripts/run_tier_training_pipeline.py:373):
+1. Train candidate (stub or real) via [`python.main()`](../../ai-service/scripts/run_tier_training_pipeline.py:373):
    - Run dir example:
      - `ai-service/logs/tier_training/sq8_2p/D4/2025-12-05T14-15-00Z/`
    - Key artefacts:
      - `training_report.json`
      - `status.json` (training block initialised; gating/perf/human_calibration stubbed)
 
-2. Gate candidate via [`python.main()`](ai-service/scripts/run_full_tier_gating.py:291) pointing at that run dir:
+2. Gate candidate via [`python.main()`](../../ai-service/scripts/run_full_tier_gating.py:291) pointing at that run dir:
    - Additional artefacts in the same `--run-dir`:
      - `tier_eval_result.json` – `TierEvaluationResult` payload
      - `promotion_plan.json` – difficulty-tier promotion decision
@@ -163,19 +163,19 @@ These values allow calibration analysis to distinguish between:
 
 ### 2.3 Tier Candidate Registry
 
-Registry helpers: [`python.tier_promotion_registry`](ai-service/app/training/tier_promotion_registry.py:1)
+Registry helpers: [`python.tier_promotion_registry`](../../ai-service/app/training/tier_promotion_registry.py:1)
 
 - Default Square-8 2p registry path:
-  - [`python.DEFAULT_SQUARE8_2P_REGISTRY_PATH`](ai-service/app/training/tier_promotion_registry.py:15)  
+  - [`python.DEFAULT_SQUARE8_2P_REGISTRY_PATH`](../../ai-service/app/training/tier_promotion_registry.py:15)  
     → `ai-service/config/tier_candidate_registry.square8_2p.json`
 
 - Loader and saver:
-  - [`python.load_square8_two_player_registry()`](ai-service/app/training/tier_promotion_registry.py:29)
-  - [`python.save_square8_two_player_registry()`](ai-service/app/training/tier_promotion_registry.py:46)
+  - [`python.load_square8_two_player_registry()`](../../ai-service/app/training/tier_promotion_registry.py:29)
+  - [`python.save_square8_two_player_registry()`](../../ai-service/app/training/tier_promotion_registry.py:46)
 
 - Registry update from a promotion plan:
-  - [`python.update_square8_two_player_registry_for_run()`](ai-service/app/training/tier_promotion_registry.py:196)
-  - [`python.record_promotion_plan()`](ai-service/app/training/tier_promotion_registry.py:113)
+  - [`python.update_square8_two_player_registry_for_run()`](../../ai-service/app/training/tier_promotion_registry.py:196)
+  - [`python.record_promotion_plan()`](../../ai-service/app/training/tier_promotion_registry.py:113)
 
 **Expected registry shape (conceptual)**
 
@@ -228,7 +228,7 @@ Calibration analysis will typically inspect:
 
 In addition to in-client calibration telemetry, the process should consider:
 
-- Structured playtests following templates A/B/C in [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:137)
+- Structured playtests following templates A/B/C in [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:137)
 - External or invited-tester surveys capturing:
   - Self-reported skill levels
   - Free-text difficulty comments per tier
@@ -245,7 +245,7 @@ These sources will usually live in external systems (issue tracker, docs, survey
 
 ### 3.1 Player Segments
 
-Following [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:75) and its templates, we distinguish:
+Following [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:75) and its templates, we distinguish:
 
 - **New** – first-time or early RingRift players (Template A)
 - **Intermediate** – comfortable with D2 and basic tactics, strong casual strategists (Template B)
@@ -255,7 +255,7 @@ For telemetry, these may be approximated (e.g. via MMR bands or questionnaire), 
 
 ### 3.2 Target Bands (Summary)
 
-Restating the informal targets from [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:75):
+Restating the informal targets from [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:75):
 
 | Tier | Intended segment     | Target human win rate band (for intended segment) | Too easy (data)                                                          | Too hard (data)                                                     |
 | ---- | -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- |
@@ -328,7 +328,7 @@ flowchart TD
 
 ### 4.3 Step 2 – Export Calibration Metrics
 
-Conceptually, a future [`python.analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1) script will:
+Conceptually, a future [`python.analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1) script will:
 
 1. Query Prometheus or a warehouse and write a CSV/Parquet with rows like:
 
@@ -347,7 +347,7 @@ Tooling can be abstract (PromQL, SQL-over-logs, or offline aggregation jobs); th
 For each Square-8 2p tier T:
 
 1. Resolve the current ladder assignment via the registry:
-   - Load registry with [`python.load_square8_two_player_registry()`](ai-service/app/training/tier_promotion_registry.py:29)
+   - Load registry with [`python.load_square8_two_player_registry()`](../../ai-service/app/training/tier_promotion_registry.py:29)
    - Read `tiers[T]["current"]` to obtain:
      - `model_id`, `heuristic_profile_id`, `ai_type`, `difficulty`
 
@@ -449,15 +449,15 @@ For each Square-8 2p tier T:
 1. **Model selection within tier T**
    - Promote or roll back a candidate model at fixed difficulty T using:
      - The full H-AI-9 pipeline and promotion helpers:
-       - [`run_tier_training_pipeline.py`](ai-service/scripts/run_tier_training_pipeline.py:1)
-       - [`run_full_tier_gating.py`](ai-service/scripts/run_full_tier_gating.py:1)
-       - [`apply_tier_promotion_plan.py`](ai-service/scripts/apply_tier_promotion_plan.py:1)
+       - [`run_tier_training_pipeline.py`](../../ai-service/scripts/run_tier_training_pipeline.py:1)
+       - [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_tier_gating.py:1)
+       - [`apply_tier_promotion_plan.py`](../../ai-service/scripts/apply_tier_promotion_plan.py:1)
    - This preserves ladder difficulty numbers and UI labels; only the underlying engine profile changes.
 
 2. **Search budget / think-time adjustments**
    - Adjust `think_time_ms` or search parameters for a tier, **within performance budgets** defined in:
-     - [`AI_TIER_PERF_BUDGETS.md`](docs/ai/AI_TIER_PERF_BUDGETS.md:1)
-     - [`python.TIER_PERF_BUDGETS`](ai-service/app/config/perf_budgets.py:101)
+     - [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1)
+     - [`python.TIER_PERF_BUDGETS`](../../ai-service/app/config/perf_budgets.py:101)
    - Any increase beyond current perf budgets must be:
      - Explicitly justified (e.g. D8 is allowed to be slower)
      - Accompanied by a coordinated budget update and new perf benchmarks
@@ -483,10 +483,10 @@ For each Square-8 2p tier T:
 
 2. **Maintain tier ordering and non-regression**
    - In terms of strength: **D2 < D4 < D6 < D8** for Square-8 2p
-   - No new Dn should be substantially weaker than the previous production Dn (see [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:339))
+   - No new Dn should be substantially weaker than the previous production Dn (see [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:339))
 
 3. **Respect perf budgets as UX guardrails**
-   - D4 / D6 / D8 must respect the budgets in [`AI_TIER_PERF_BUDGETS.md`](docs/ai/AI_TIER_PERF_BUDGETS.md:14)
+   - D4 / D6 / D8 must respect the budgets in [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:14)
    - Any recommendation to increase strength via deeper search must either:
      - Stay within existing budgets, or
      - Propose an explicit budget change with UX justification (e.g. “accept slower D8 turns for a clearly stronger expert tier”)
@@ -553,7 +553,7 @@ Suggested cadence:
 - Human-readable reports:
   - `docs/ai/calibration_runs/CALIB_YYYYMMDD_square8_2p.md`
 - Registry snapshots:
-  - `ai-service/config/tier_candidate_registry.square8_2p.json` (managed via [`python.save_square8_two_player_registry()`](ai-service/app/training/tier_promotion_registry.py:46))
+  - `ai-service/config/tier_candidate_registry.square8_2p.json` (managed via [`python.save_square8_two_player_registry()`](../../ai-service/app/training/tier_promotion_registry.py:46))
 
 Each calibration report should clearly indicate:
 
@@ -567,7 +567,7 @@ Each calibration report should clearly indicate:
 
 A future Code-mode task is expected to implement a script, conceptually:
 
-- [`python.main()`](ai-service/scripts/analyze_difficulty_calibration.py:1) in `ai-service/scripts/analyze_difficulty_calibration.py`
+- [`python.main()`](../../ai-service/scripts/analyze_difficulty_calibration.py:1) in `ai-service/scripts/analyze_difficulty_calibration.py`
 
 High-level behaviour:
 

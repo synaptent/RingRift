@@ -9,7 +9,7 @@
 >
 > **References:**
 >
-> - [`docs/planning/AI_TRAINING_PIPELINE_REMEDIATION_PLAN.md`](./AI_TRAINING_PIPELINE_REMEDIATION_PLAN.md) - Parent remediation plan
+> - [`docs/planning/AI_TRAINING_PIPELINE_REMEDIATION_PLAN.md`](AI_TRAINING_PIPELINE_REMEDIATION_PLAN.md) - Parent remediation plan
 > - [`ai-service/TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md) - Data classification and provenance
 > - [`ai-service/scripts/generate_canonical_selfplay.py`](../../ai-service/scripts/generate_canonical_selfplay.py) - Self-play generator
 

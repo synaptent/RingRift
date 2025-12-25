@@ -4,8 +4,8 @@
 
 This doc complements:
 
-- [`AI_TRAINING_AND_DATASETS.md`](AI_TRAINING_AND_DATASETS.md) – general self-play and dataset generation.
-- [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md) / [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md) – TS↔Python rules alignment.
+- [`AI_TRAINING_AND_DATASETS.md`](../ai/AI_TRAINING_AND_DATASETS.md) – general self-play and dataset generation.
+- [`RULES_ENGINE_ARCHITECTURE.md`](../architecture/RULES_ENGINE_ARCHITECTURE.md) / [`RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md) – TS↔Python rules alignment.
 
 ---
 
@@ -24,7 +24,7 @@ When enabled, every state produced by `GameEngine.apply_move` must satisfy:
 > - any interactive move returned by `GameEngine.get_valid_moves(...)` for the current phase (placements, movements, captures, line/territory decisions), **or**
 > - at least one forced-elimination move from `_get_forced_elimination_moves(...)` when the player is blocked but still controls stacks.
 
-Implementation (Python): `GameEngine._assert_active_player_has_legal_action` in [`ai-service/app/game_engine/__init__.py`](../ai-service/app/game_engine/__init__.py).
+Implementation (Python): `GameEngine._assert_active_player_has_legal_action` in [`ai-service/app/game_engine/__init__.py`](../../ai-service/app/game_engine/__init__.py).
 
 Violations are logged under:
 
@@ -44,7 +44,7 @@ These encode situations where `env.legal_moves()` returns an empty list while `G
 
 The long self-play soak harness lives in:
 
-- [`ai-service/scripts/run_self_play_soak.py`](../ai-service/scripts/run_self_play_soak.py)
+- [`ai-service/scripts/run_self_play_soak.py`](../../ai-service/scripts/run_self_play_soak.py)
 
 It runs N-player self-play over `RingRiftEnv` + Python `GameEngine`, and writes per-game summaries to a JSONL log.
 
@@ -249,7 +249,7 @@ The TS orchestrator soak harness is a **gating tool**, not just a diagnostic:
     - `npm run soak:orchestrator -- --boardTypes=square8 --gamesPerBoard=5 --failOnViolation=true`
   - acts as a concrete implementation of the
     `SLO-CI-ORCH-SHORT-SOAK` SLO defined in
-    [`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1):
+    [`ORCHESTRATOR_ROLLOUT_PLAN.md`](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md:1):
     - Exit code must be `0`.
     - `results/orchestrator_soak_summary.json` must report
       `totalInvariantViolations == 0`.
@@ -263,16 +263,16 @@ The TS orchestrator soak harness is a **gating tool**, not just a diagnostic:
     for regressions tied to specific seeds or board configurations.
   - These runs back the `SLO-STAGE-ORCH-INVARIANTS` and
     `SLO-PROD-ORCH-INVARIANTS` SLOs in
-    [`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1):
+    [`ORCHESTRATOR_ROLLOUT_PLAN.md`](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md:1):
     - Any **new** invariant violation pattern discovered in these soaks should
       be turned into a regression test (TS or Python) and investigated before
       further rollout.
     - Multiple soak failures in a short period are a signal to pause rollout
       or roll back to a safer phase (see the environment phases in
-      [`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1)).
+      [`ORCHESTRATOR_ROLLOUT_PLAN.md`](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md:1)).
 
 You do **not** need to re-state the full orchestrator rollout design here; treat
-[`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1) as the SLO and
+[`ORCHESTRATOR_ROLLOUT_PLAN.md`](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md:1) as the SLO and
 gating SSoT, and this document as the operational recipe for running strict
 invariant and soak jobs.
 
@@ -342,7 +342,7 @@ new invariant pattern discovered by these Python soaks as input to:
 
 The CI-friendly stability test lives in:
 
-- [`ai-service/tests/test_self_play_stability.py`](../ai-service/tests/test_self_play_stability.py)
+- [`ai-service/tests/test_self_play_stability.py`](../../ai-service/tests/test_self_play_stability.py)
 
 Key properties:
 

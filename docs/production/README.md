@@ -13,6 +13,6 @@ Documentation for production deployment, release management, and operational rea
 
 ## Related Documentation
 
-- [Runbooks](../runbooks/) - Detailed operational procedures
-- [Operations](../operations/) - Infrastructure operations
-- [AI Service Operations](../../ai-service/docs/infrastructure/) - AI service ops docs
+- [Runbooks](../runbooks) - Detailed operational procedures
+- [Operations](../operations) - Infrastructure operations
+- [AI Service Operations](../../ai-service/docs/infrastructure) - AI service ops docs

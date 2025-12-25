@@ -261,9 +261,9 @@ On machines with less than 32GB RAM, the unified loop will suggest coordinator-o
 - [Training Internals](TRAINING_INTERNALS.md) - Internal training modules
 - [Curriculum Feedback](CURRICULUM_FEEDBACK.md) - Adaptive curriculum weights
 - [Training Optimizations](TRAINING_OPTIMIZATIONS.md) - Pipeline optimizations
-- [Coordination System](COORDINATION_SYSTEM.md) - Task coordination and resource management
+- [Coordination System](../architecture/COORDINATION_SYSTEM.md) - Task coordination and resource management
 - [Distributed Selfplay](DISTRIBUTED_SELFPLAY.md) - Remote host configuration
-- [Pipeline Orchestrator](PIPELINE_ORCHESTRATOR.md) - ⚠️ _Archived; replaced by unified loop_
+- [Pipeline Orchestrator](../infrastructure/PIPELINE_ORCHESTRATOR.md) - ⚠️ _Archived; replaced by unified loop_
 
 ---
 

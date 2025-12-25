@@ -18,12 +18,12 @@ For general environment setup, see [`QUICKSTART.md`](../../QUICKSTART.md) and [`
 
 ## 1. Environments & Database Expectations
 
-RingRift uses PostgreSQL as the primary persistence layer and Prisma as the ORM. All schema changes must flow through checked-in Prisma migrations under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql).
+RingRift uses PostgreSQL as the primary persistence layer and Prisma as the ORM. All schema changes must flow through checked-in Prisma migrations under [`prisma/migrations`](../../prisma/migrations/20251119080345_init/migration.sql).
 
 At a high level:
 
-- **Local development** uses a Postgres container from [`docker-compose.yml`](../docker-compose.yml) or a local Postgres instance.
-- **Staging** is a single-node Docker Compose stack using [`docker-compose.yml`](../docker-compose.yml) + [`docker-compose.staging.yml`](../docker-compose.staging.yml) and the [`.env.staging`](../.env.staging) template.
+- **Local development** uses a Postgres container from [`docker-compose.yml`](../../docker-compose.yml) or a local Postgres instance.
+- **Staging** is a single-node Docker Compose stack using [`docker-compose.yml`](../../docker-compose.yml) + [`docker-compose.staging.yml`](../../docker-compose.staging.yml) and the [`.env.staging`](../../.env.staging) template.
 - **Production** is expected to use a managed or self-operated Postgres instance; the exact hosting platform is out of scope for this repo, but the workflows below assume:
   - A stable `DATABASE_URL` for the primary database.
   - Regular automated backups or snapshots managed by infra/ops.
@@ -42,8 +42,8 @@ At a high level:
   - Host: `localhost:5432`
   - DB name: `ringrift`
   - User: `ringrift`
-  - Password: from `DB_PASSWORD` (default `password`) in [`docker-compose.yml`](../docker-compose.yml) / [`.env.example`](../.env.example).
-- The local Prisma `DATABASE_URL` usually matches [`DATABASE_URL` in .env.example](../.env.example):  
+  - Password: from `DB_PASSWORD` (default `password`) in [`docker-compose.yml`](../../docker-compose.yml) / [`.env.example`](../../.env.example).
+- The local Prisma `DATABASE_URL` usually matches [`DATABASE_URL` in .env.example](../../.env.example):  
   `postgresql://ringrift:password@localhost:5432/ringrift`.
 
 **Applying migrations (schema changes)**
@@ -75,7 +75,7 @@ When you need an ad-hoc backup (for example, before experimenting with destructi
 docker compose exec postgres pg_dump -U ringrift -d ringrift -f /backups/dev_YYYYMMDD_HHMM.sql
 ```
 
-The `postgres` service mounts `./backups` into `/backups` (see [`docker-compose.yml`](../docker-compose.yml)), so the file will appear under `./backups/` on the host.
+The `postgres` service mounts `./backups` into `/backups` (see [`docker-compose.yml`](../../docker-compose.yml)), so the file will appear under `./backups/` on the host.
 
 To restore a local backup:
 
@@ -100,15 +100,15 @@ to verify that backups are usable.
 
 Staging is intended to look like a small production deployment while still living on a developer or CI host:
 
-- Single-node stack defined by [`docker-compose.yml`](../docker-compose.yml) + [`docker-compose.staging.yml`](../docker-compose.staging.yml).
-- Uses `.env` based on [`.env.staging`](../.env.staging) for secrets and connection strings.
+- Single-node stack defined by [`docker-compose.yml`](../../docker-compose.yml) + [`docker-compose.staging.yml`](../../docker-compose.staging.yml).
+- Uses `.env` based on [`.env.staging`](../../.env.staging) for secrets and connection strings.
 - The `app` service runs:
 
   ```bash
   npx prisma migrate deploy && node dist/server/index.js
   ```
 
-  on startup (see [`docker-compose.staging.yml`](../docker-compose.staging.yml)).
+  on startup (see [`docker-compose.staging.yml`](../../docker-compose.staging.yml)).
 
 **Migrations in staging**
 
@@ -187,11 +187,11 @@ The repo does **not** prescribe a specific cloud provider. Operators must ensure
 
 ## 2. Safe Prisma Migration Workflow
 
-This workflow applies to any schema change in [`prisma/schema.prisma`](../prisma/schema.prisma). All changes must go through migrations checked into Git.
+This workflow applies to any schema change in [`prisma/schema.prisma`](../../prisma/schema.prisma). All changes must go through migrations checked into Git.
 
 ### 2.1 Design & local development
 
-1. Edit the schema in [`prisma/schema.prisma`](../prisma/schema.prisma).
+1. Edit the schema in [`prisma/schema.prisma`](../../prisma/schema.prisma).
 2. From a **local dev** environment, generate a new migration:
 
    ```bash
@@ -206,10 +206,10 @@ This workflow applies to any schema change in [`prisma/schema.prisma`](../prisma
    npm test
    ```
 
-4. Inspect the generated SQL under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql) to confirm it matches intent (especially for destructive changes).
+4. Inspect the generated SQL under [`prisma/migrations`](../../prisma/migrations/20251119080345_init/migration.sql) to confirm it matches intent (especially for destructive changes).
 5. Commit **both**:
-   - The updated [`prisma/schema.prisma`](../prisma/schema.prisma).
-   - The new directory under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql).
+   - The updated [`prisma/schema.prisma`](../../prisma/schema.prisma).
+   - The new directory under [`prisma/migrations`](../../prisma/migrations/20251119080345_init/migration.sql).
 
 ### 2.2 Staging rollout
 
@@ -296,7 +296,7 @@ This section describes how to respond when migrations or DB incidents go wrong. 
    - Inspect logs for specific constraint or nullability errors.
    - Confirm that the underlying tables and data are still intact (e.g., via provider console or `psql`).
 3. **Fix forward with a corrective migration**
-   - Make the necessary schema change locally in [`prisma/schema.prisma`](../prisma/schema.prisma) (for example, relax a constraint, add a default, or add a compatibility column).
+   - Make the necessary schema change locally in [`prisma/schema.prisma`](../../prisma/schema.prisma) (for example, relax a constraint, add a default, or add a compatibility column).
    - Generate a new migration with `prisma migrate dev`, test locally, and roll it through staging.
    - Apply it to production with `prisma migrate deploy`.
 4. **Clean up (if needed)**

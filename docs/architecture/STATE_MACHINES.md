@@ -516,7 +516,7 @@ This section lists key tests that validate the state machines and their integrat
 
 - `tests/unit/WebSocketInteractionHandler.test.ts` – decision handling, including invalid choices, timeouts, and cancellations.
 - `tests/unit/GameSession.decisionPhaseTimeout.test.ts` – how choice/decision timeouts interact with session and connection state.
-- `tests/unit/GameEngine.lineRewardChoiceAIService.integration.test.ts` – AI-assisted choice flows (line reward) crossing WebSocket and AI-service boundaries.
+- `tests/unit/GameEngine.lines.scenarios.test.ts` – AI-assisted choice flows (line reward) crossing WebSocket and AI-service boundaries.
 
 - `tests/unit/WebSocketServer.connectionState.test.ts` – explicit tests of `PlayerConnectionState` behaviour in the WebSocket server.
 - `tests/unit/GameContext.reconnect.test.tsx`, `tests/integration/LobbyRealtime.test.ts`, `tests/integration/GameReconnection.test.ts`, `tests/unit/client/BackendGameHost.test.tsx`, `tests/e2e/multiplayer.e2e.spec.ts` – client and server reconnection flows, including host-level UX for reconnect banners, abandonment, spectator mode, and rematch handshakes.

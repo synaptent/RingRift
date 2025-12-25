@@ -314,6 +314,6 @@ python scripts/run_hybrid_selfplay.py \
 
 ## See Also
 
-- [NEURAL_AI_ARCHITECTURE.md](NEURAL_AI_ARCHITECTURE.md) - Neural network architectures
-- [TRAINING_FEATURES.md](TRAINING_FEATURES.md) - Training configuration
-- [ai_types_implementation.md](ai_types_implementation.md) - All AI types overview
+- [NEURAL_AI_ARCHITECTURE.md](../architecture/NEURAL_AI_ARCHITECTURE.md) - Neural network architectures
+- [TRAINING_FEATURES.md](../training/TRAINING_FEATURES.md) - Training configuration
+- [ai_types_implementation.md](../archive/historical/ai_types_implementation.md) - All AI types overview

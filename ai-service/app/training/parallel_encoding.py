@@ -117,6 +117,7 @@ class EncodedSample:
     perspective: int
     num_players: int
     game_id: str = ""  # Added for NNUE compatibility
+    move_type: str = "unknown"  # For chain-aware sample weighting
 
 
 @dataclass
@@ -240,6 +241,13 @@ def _encode_single_game(
                 else str(state_before.current_phase)
             )
 
+            # Get move type for chain-aware sample weighting
+            move_type_raw = getattr(move, "type", None)
+            if hasattr(move_type_raw, "value"):
+                move_type_str = str(move_type_raw.value)
+            else:
+                move_type_str = str(move_type_raw) if move_type_raw else "unknown"
+
             perspective = state_before.current_player
             pending_samples.append((
                 stacked.astype(np.float32),
@@ -249,6 +257,7 @@ def _encode_single_game(
                 perspective,
                 phase_str,
                 num_players,
+                move_type_str,
             ))
 
         # Use current_state as final_state if not provided (computed during replay)
@@ -273,7 +282,7 @@ def _encode_single_game(
 
         # Build final samples with computed values
         samples: list[EncodedSample] = []
-        for stacked, globals_vec, idx, move_idx, perspective, phase_str, n_players in pending_samples:
+        for stacked, globals_vec, idx, move_idx, perspective, phase_str, n_players, move_type_str in pending_samples:
             value = _value_from_final_ranking(final_state, perspective, num_players) if final_state else 0.0
 
             samples.append(EncodedSample(
@@ -288,6 +297,7 @@ def _encode_single_game(
                 perspective=perspective,
                 num_players=n_players,
                 game_id=game_id,
+                move_type=move_type_str,
             ))
 
         return GameEncodingResult(game_id=game_id, samples=samples)
@@ -630,6 +640,8 @@ def samples_to_arrays(
     # NNUE-compatible fields
     player_numbers = np.array([s.perspective for s in samples], dtype=np.int32)
     game_ids = np.array([s.game_id for s in samples], dtype=object)
+    # Chain-aware sample weighting
+    move_types = np.array([s.move_type for s in samples], dtype=object)
 
     return {
         "features": features,
@@ -645,6 +657,8 @@ def samples_to_arrays(
         # NNUE-compatible fields
         "player_numbers": player_numbers,
         "game_ids": game_ids,
+        # Chain-aware sample weighting
+        "move_types": move_types,
     }
 
 

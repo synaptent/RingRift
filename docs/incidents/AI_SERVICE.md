@@ -4,13 +4,13 @@ This guide covers incidents related to the AI service, including service unavail
 
 ## Alerts Covered
 
-| Alert | Severity | Threshold | Duration |
-|-------|----------|-----------|----------|
-| AIServiceDown | Warning | Service status = 0 | 2 min |
-| AIFallbackRateHigh | Warning | > 30% fallback | 10 min |
-| AIFallbackRateCritical | Critical | > 50% fallback | 5 min |
-| AIRequestHighLatency | Warning | P99 > 5s | 5 min |
-| AIErrorsIncreasing | Warning | Error rate > 0.1/sec | 5 min |
+| Alert                  | Severity | Threshold            | Duration |
+| ---------------------- | -------- | -------------------- | -------- |
+| AIServiceDown          | Warning  | Service status = 0   | 2 min    |
+| AIFallbackRateHigh     | Warning  | > 30% fallback       | 10 min   |
+| AIFallbackRateCritical | Critical | > 50% fallback       | 5 min    |
+| AIRequestHighLatency   | Warning  | P99 > 5s             | 5 min    |
+| AIErrorsIncreasing     | Warning  | Error rate > 0.1/sec | 5 min    |
 
 ---
 
@@ -41,6 +41,7 @@ This guide covers incidents related to the AI service, including service unavail
 ```
 
 **Key Points:**
+
 - AI service is **optional** - games continue with fallback if down
 - Local heuristic fallback provides reduced but functional AI
 - AI service typically responds in 1-3 seconds
@@ -50,14 +51,17 @@ This guide covers incidents related to the AI service, including service unavail
 ## Alert: AIServiceDown
 
 ### Severity
+
 **P2 High** - AI service unavailable (2 min without response)
 
 ### Symptoms
+
 - AI service health check failing
 - All AI requests using fallback
 - `ringrift_service_status{service="ai_service"} == 0`
 
 ### Impact
+
 - AI games continue with **reduced move quality**
 - Local heuristic fallback activated
 - Not a full outage - games still playable
@@ -94,6 +98,7 @@ docker inspect ringrift-ai-service-1 | jq '.[0].State'
 ```
 
 **Common causes:**
+
 - Out of memory (models are memory-intensive)
 - Python crash
 - GPU issues (if GPU-enabled)
@@ -113,6 +118,7 @@ docker compose logs ai-service | grep -E "Error|Exception|Traceback"
 ```
 
 **Common causes:**
+
 - Model not loaded correctly
 - Dependency issue
 - Environment variable missing
@@ -165,11 +171,13 @@ docker compose logs -f ai-service
 ```
 
 ### Communication
+
 - **Status Page**: "AI features operating in reduced mode"
 - **Slack**: Post in #alerts
 - **Note**: Users playing against AI will see simpler moves
 
 ### Post-Incident
+
 - Document what caused the failure
 - Check model loading reliability
 - Review memory limits
@@ -179,14 +187,17 @@ docker compose logs -f ai-service
 ## Alert: AIFallbackRateHigh
 
 ### Severity
+
 **P3 Medium** - More than 30% of AI requests falling back to heuristics
 
 ### Symptoms
+
 - AI service responding but with many failures
 - Noticeable difference in AI game quality
 - Alert indicates elevated fallback rate
 
 ### Impact
+
 - ~30% of AI moves are from simpler local heuristic
 - AI game quality degraded
 - Service is functional but suboptimal
@@ -231,13 +242,13 @@ docker compose logs --tail 500 app | grep -i "ai.*timeout"
 
 #### Common Causes
 
-| Cause | Evidence | Solution |
-|-------|----------|----------|
-| AI service timeouts | Timeout errors in logs | Increase timeout or optimize |
-| AI service errors | Error messages in AI logs | Fix error condition |
-| Network issues | Connection errors | Check network |
-| Resource constraints | High CPU/memory on AI | Scale AI service |
-| Model issues | Prediction errors | Check model configuration |
+| Cause                | Evidence                  | Solution                     |
+| -------------------- | ------------------------- | ---------------------------- |
+| AI service timeouts  | Timeout errors in logs    | Increase timeout or optimize |
+| AI service errors    | Error messages in AI logs | Fix error condition          |
+| Network issues       | Connection errors         | Check network                |
+| Resource constraints | High CPU/memory on AI     | Scale AI service             |
+| Model issues         | Prediction errors         | Check model configuration    |
 
 ### Mitigation
 
@@ -266,6 +277,7 @@ echo $AI_REQUEST_TIMEOUT
 ```
 
 ### Communication
+
 - **Slack**: Post in #alerts with fallback percentage
 - **Monitor**: Watch closely for escalation to 50% (Critical)
 
@@ -274,14 +286,17 @@ echo $AI_REQUEST_TIMEOUT
 ## Alert: AIFallbackRateCritical
 
 ### Severity
+
 **P1 Critical** - More than 50% of AI requests falling back
 
 ### Symptoms
+
 - Majority of AI moves using local heuristics
 - AI service is effectively failing for most requests
 - High error/timeout rate
 
 ### Impact
+
 - AI game quality significantly degraded
 - Most AI games not using trained model
 - User experience for AI games is poor
@@ -357,11 +372,13 @@ If AI service is causing cascading issues:
 ```
 
 ### Communication
+
 - **Status Page**: "AI game quality degraded - Games using simplified AI"
 - **Slack**: Escalate to #incidents
 - **User Impact**: "AI opponents may make simpler moves than usual"
 
 ### Post-Incident
+
 - Root cause analysis for high failure rate
 - Review AI service resource limits
 - Consider redundancy for AI service
@@ -371,14 +388,17 @@ If AI service is causing cascading issues:
 ## Alert: AIRequestHighLatency
 
 ### Severity
+
 **P3 Medium** - AI requests taking >5 seconds at P99
 
 ### Symptoms
+
 - Slow AI move responses
 - Games feel sluggish when playing against AI
 - `histogram_quantile(0.99, ringrift_ai_request_duration_seconds) > 5`
 
 ### Impact
+
 - AI turn feels slow
 - User waiting for AI moves
 - May cause timeout-based fallbacks
@@ -401,12 +421,12 @@ docker compose exec ai-service ps aux --sort=-time
 
 ### Common Causes
 
-| Cause | Evidence | Solution |
-|-------|----------|----------|
-| Model too large | High memory, slow inference | Use smaller model |
-| CPU bound | High CPU usage | Add resources or optimize |
-| Complex board state | Large boards slower | Optimize for board size |
-| Batch queuing | Multiple requests waiting | Scale AI service |
+| Cause               | Evidence                    | Solution                  |
+| ------------------- | --------------------------- | ------------------------- |
+| Model too large     | High memory, slow inference | Use smaller model         |
+| CPU bound           | High CPU usage              | Add resources or optimize |
+| Complex board state | Large boards slower         | Optimize for board size   |
+| Batch queuing       | Multiple requests waiting   | Scale AI service          |
 
 ### Mitigation
 
@@ -419,6 +439,7 @@ docker stats --no-stream ringrift-ai-service-1
 ```
 
 ### Long-Term Fixes
+
 - Optimize model inference
 - Consider GPU acceleration
 - Implement request batching
@@ -429,9 +450,11 @@ docker stats --no-stream ringrift-ai-service-1
 ## Alert: AIErrorsIncreasing
 
 ### Severity
+
 **P3 Medium** - AI service returning errors at >0.1/sec
 
 ### Symptoms
+
 - Error rate increasing in AI requests
 - Not yet causing high fallback, but trending poorly
 
@@ -450,12 +473,12 @@ curl -s http://localhost:3000/metrics | grep 'ringrift_ai_requests_total{outcome
 
 ### Common Error Types
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| ValueError | Invalid input | Fix input validation |
-| MemoryError | OOM | Increase memory limit |
+| Error        | Cause          | Fix                          |
+| ------------ | -------------- | ---------------------------- |
+| ValueError   | Invalid input  | Fix input validation         |
+| MemoryError  | OOM            | Increase memory limit        |
 | TimeoutError | Slow inference | Optimize or increase timeout |
-| ModelError | Model issue | Check model configuration |
+| ModelError   | Model issue    | Check model configuration    |
 
 ### Mitigation
 
@@ -559,8 +582,8 @@ docker compose start ai-service
 
 ## Related Documentation
 
-- [Initial Triage](./TRIAGE_GUIDE.md)
-- [Availability Incidents](./AVAILABILITY.md)
-- [Latency Incidents](./LATENCY.md)
-- [AI Architecture](../../AI_ARCHITECTURE.md)
-- [Alerting Thresholds](../ALERTING_THRESHOLDS.md)
+- [Initial Triage](TRIAGE_GUIDE.md)
+- [Availability Incidents](AVAILABILITY.md)
+- [Latency Incidents](LATENCY.md)
+- [AI Architecture](../architecture/AI_ARCHITECTURE.md)
+- [Alerting Thresholds](../operations/ALERTING_THRESHOLDS.md)

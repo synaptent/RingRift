@@ -3117,6 +3117,6 @@ hardest = tracker.get_hardest_samples(n=100)
 ## See Also
 
 - [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - Training infrastructure overview
-- [NEURAL_AI_ARCHITECTURE.md](NEURAL_AI_ARCHITECTURE.md) - Model architectures
+- [NEURAL_AI_ARCHITECTURE.md](../architecture/NEURAL_AI_ARCHITECTURE.md) - Model architectures
 - [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Automated training loop
-- [HEX_AUGMENTATION.md](HEX_AUGMENTATION.md) - Detailed hex augmentation guide
+- [HEX_AUGMENTATION.md](../algorithms/HEX_AUGMENTATION.md) - Detailed hex augmentation guide

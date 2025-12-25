@@ -1,7 +1,7 @@
 # Pipeline Orchestrator
 
 > ⚠️ **DEPRECATED:** This document describes the legacy pipeline orchestrator which has been archived.
-> **Replacement:** Use the [Unified AI Loop](UNIFIED_AI_LOOP.md) instead (`scripts/unified_ai_loop.py`).
+> **Replacement:** Use the [Unified AI Loop](../training/UNIFIED_AI_LOOP.md) instead (`scripts/unified_ai_loop.py`).
 > **Archive Location:** `scripts/archive/pipeline_orchestrator.py`
 >
 > _The unified loop integrates all pipeline phases into a single daemon with better coordination, P2P support, and adaptive scheduling._
@@ -641,8 +641,8 @@ python scripts/pipeline_orchestrator.py --iterations 1
 
 ## Related Documentation
 
-- [DISTRIBUTED_SELFPLAY.md](DISTRIBUTED_SELFPLAY.md) - Cluster setup
+- [DISTRIBUTED_SELFPLAY.md](../training/DISTRIBUTED_SELFPLAY.md) - Cluster setup
 - [P2P_ORCHESTRATOR_AUTH.md](P2P_ORCHESTRATOR_AUTH.md) - P2P authentication
-- [GPU_PIPELINE_ROADMAP.md](GPU_PIPELINE_ROADMAP.md) - GPU acceleration plans
-- [AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md](../../docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md) - Tier gating details
-- [TRAINING_DATA_REGISTRY.md](../TRAINING_DATA_REGISTRY.md) - Canonical data sources
+- [GPU_PIPELINE_ROADMAP.md](../roadmaps/GPU_PIPELINE_ROADMAP.md) - GPU acceleration plans
+- [AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md](../../../docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md) - Tier gating details
+- [TRAINING_DATA_REGISTRY.md](../../TRAINING_DATA_REGISTRY.md) - Canonical data sources

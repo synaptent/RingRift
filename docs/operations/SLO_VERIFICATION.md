@@ -44,7 +44,7 @@ tests/load/scripts/run-slo-verification.sh --skip-test --results-file tests/load
 
 ## Defined SLOs
 
-The following SLOs are derived from [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) §4.1 and [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json):
+The following SLOs are derived from [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md) §4.1 and [`tests/load/config/thresholds.json`](../../tests/load/config/thresholds.json):
 
 ### Critical Priority (Zero Tolerance)
 
@@ -313,7 +313,7 @@ tests/load/
 
 ### Adding New SLOs
 
-1. Add the SLO definition to [`tests/load/configs/slo-definitions.json`](../tests/load/configs/slo-definitions.json):
+1. Add the SLO definition to [`tests/load/configs/slo-definitions.json`](../../tests/load/configs/slo-definitions.json):
 
 ```json
 {
@@ -330,7 +330,7 @@ tests/load/
 }
 ```
 
-2. Add metric extraction logic to [`verify-slos.js`](../tests/load/scripts/verify-slos.js) in `extractMetrics()` function.
+2. Add metric extraction logic to [`verify-slos.js`](../../tests/load/scripts/verify-slos.js) in `extractMetrics()` function.
 
 3. Add verification logic in `verifySLOs()` function.
 
@@ -366,9 +366,9 @@ export default function () {
 
 ## Related Documentation
 
-- [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) - Project SLO targets (§4.1)
-- [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md) - Phase-based SLO roadmap
-- [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json) - Detailed thresholds
+- [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md) - Project SLO targets (§4.1)
+- [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md) - Phase-based SLO roadmap
+- [`tests/load/config/thresholds.json`](../../tests/load/config/thresholds.json) - Detailed thresholds
 - [`docs/operations/ALERTING_THRESHOLDS.md`](ALERTING_THRESHOLDS.md) - Production alerting thresholds
 - [`docs/testing/BASELINE_CAPACITY.md`](../testing/BASELINE_CAPACITY.md) - Baseline capacity documentation
 

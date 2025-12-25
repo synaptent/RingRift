@@ -17,7 +17,7 @@ Before starting deployment:
 - [ ] CI pipeline passed (all tests green)
 - [ ] Database migrations tested in staging
 - [ ] Release notes reviewed for breaking changes
-- [ ] Rollback plan reviewed (see [DEPLOYMENT_ROLLBACK.md](./DEPLOYMENT_ROLLBACK.md))
+- [ ] Rollback plan reviewed (see [DEPLOYMENT_ROLLBACK.md](DEPLOYMENT_ROLLBACK.md))
 - [ ] Deployment window confirmed (low-traffic period preferred)
 
 ---
@@ -130,7 +130,7 @@ docker compose run --rm app npx prisma migrate status
 
 ### Step 4: Apply Database Migrations (if needed)
 
-⚠️ **Important**: For migrations with breaking changes, see [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md).
+⚠️ **Important**: For migrations with breaking changes, see [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md).
 
 ```bash
 # Backup database before migration (production)
@@ -274,7 +274,7 @@ Verification: All checks passed
 
 ## Rollback Procedure
 
-If issues are detected during or after deployment, follow [DEPLOYMENT_ROLLBACK.md](./DEPLOYMENT_ROLLBACK.md).
+If issues are detected during or after deployment, follow [DEPLOYMENT_ROLLBACK.md](DEPLOYMENT_ROLLBACK.md).
 
 **Quick rollback command:**
 
@@ -425,10 +425,10 @@ curl -s http://localhost:9090/api/v1/query?query=http_request_duration_seconds_b
 
 ## Related Documentation
 
-- [DEPLOYMENT_INITIAL.md](./DEPLOYMENT_INITIAL.md) - First-time deployment
-- [DEPLOYMENT_ROLLBACK.md](./DEPLOYMENT_ROLLBACK.md) - Rollback procedures
-- [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md) - Migration procedures
-- [DEPLOYMENT_REQUIREMENTS.md](../DEPLOYMENT_REQUIREMENTS.md) - Environment requirements
+- [DEPLOYMENT_INITIAL.md](DEPLOYMENT_INITIAL.md) - First-time deployment
+- [DEPLOYMENT_ROLLBACK.md](DEPLOYMENT_ROLLBACK.md) - Rollback procedures
+- [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md) - Migration procedures
+- [DEPLOYMENT_REQUIREMENTS.md](../planning/DEPLOYMENT_REQUIREMENTS.md) - Environment requirements
 
 ---
 

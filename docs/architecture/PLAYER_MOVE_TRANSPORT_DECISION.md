@@ -6,11 +6,11 @@
 >
 > Related docs:
 >
-> - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:1)
-> - [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md:1)
-> - [`API_REFERENCE.md`](./API_REFERENCE.md:1)
-> - [`player-moves.js`](../tests/load/scenarios/player-moves.js:1)
-> - [`LOAD_TEST_BASELINE_REPORT.md`](./LOAD_TEST_BASELINE_REPORT.md:1)
+> - [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:1)
+> - [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1)
+> - [`API_REFERENCE.md`](API_REFERENCE.md:1)
+> - [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1)
+> - [`LOAD_TEST_BASELINE_REPORT.md`](../testing/LOAD_TEST_BASELINE_REPORT.md:1)
 
 ---
 
@@ -19,25 +19,25 @@
 ### 1.1 Current gameplay networking architecture
 
 - **WebSocket gameplay protocol (canonical today):**
-  - Socket.IO v4 server under [`WebSocketServer`](../src/server/websocket/server.ts:1).
-  - Per-game interaction pipeline in [`WebSocketInteractionHandler.ts`](../src/server/game/WebSocketInteractionHandler.ts:1).
-  - Session and state orchestration in [`GameSessionManager.ts`](../src/server/game/GameSessionManager.ts:1) and [`TurnEngine.ts`](../src/server/game/turn/TurnEngine.ts:1), backed by the canonical turn orchestrator in [`turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts:1).
-  - Real-time client protocol documented in [`CANONICAL_ENGINE_API.md`](./CANONICAL_ENGINE_API.md:1) and surfaced in the WebSocket section of [`API_REFERENCE.md`](./API_REFERENCE.md:1).
+  - Socket.IO v4 server under [`WebSocketServer`](../../src/server/websocket/server.ts:1).
+  - Per-game interaction pipeline in [`WebSocketInteractionHandler.ts`](../../src/server/game/WebSocketInteractionHandler.ts:1).
+  - Session and state orchestration in [`GameSessionManager.ts`](../../src/server/game/GameSessionManager.ts:1) and [`TurnEngine.ts`](../../src/server/game/turn/TurnEngine.ts:1), backed by the canonical turn orchestrator in [`turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts:1).
+  - Real-time client protocol documented in [`CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md:1) and surfaced in the WebSocket section of [`API_REFERENCE.md`](API_REFERENCE.md:1).
 - **HTTP APIs (supporting surfaces):**
-  - Auth, game creation, game state readbacks, and diagnostics provided via [`src/server/routes`](../src/server/routes/index.ts:1), including [`game.ts`](../src/server/routes/game.ts:1).
-  - REST API contract documented in [`API_REFERENCE.md`](./API_REFERENCE.md:1).
+  - Auth, game creation, game state readbacks, and diagnostics provided via [`src/server/routes`](../../src/server/routes/index.ts:1), including [`game.ts`](../../src/server/routes/game.ts:1).
+  - REST API contract documented in [`API_REFERENCE.md`](API_REFERENCE.md:1).
 - **Domain move semantics:**
-  - All rules semantics and turn sequencing live in the shared engine and orchestrator stack under [`src/shared/engine`](../src/shared/engine/types.ts:1) and the backend host described in [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md:1).
-  - Server-side gameplay hosts (including [`GameSessionManager.ts`](../src/server/game/GameSessionManager.ts:1)) ultimately delegate move application to the orchestrator-backed domain API (conceptually `GameSessionManager.applyMove()`), with WebSocket as the public transport.
+  - All rules semantics and turn sequencing live in the shared engine and orchestrator stack under [`src/shared/engine`](../../src/shared/engine/types.ts:1) and the backend host described in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1).
+  - Server-side gameplay hosts (including [`GameSessionManager.ts`](../../src/server/game/GameSessionManager.ts:1)) ultimately delegate move application to the orchestrator-backed domain API (conceptually `GameSessionManager.applyMove()`), with WebSocket as the public transport.
 
 ### 1.2 Existing k6 load tests
 
-- k6 scenarios live under [`tests/load/scenarios`](../tests/load/scenarios/game-creation.js:1):
-  - [`game-creation.js`](../tests/load/scenarios/game-creation.js:1) – create-game and GET `/api/games/:gameId` performance.
-  - [`concurrent-games.js`](../tests/load/scenarios/concurrent-games.js:1) – many simultaneous active games and state polling.
-  - [`player-moves.js`](../tests/load/scenarios/player-moves.js:1) – intended to exercise move submission and turn processing.
+- k6 scenarios live under [`tests/load/scenarios`](../../tests/load/scenarios/game-creation.js:1):
+  - [`game-creation.js`](../../tests/load/scenarios/game-creation.js:1) – create-game and GET `/api/games/:gameId` performance.
+  - [`concurrent-games.js`](../../tests/load/scenarios/concurrent-games.js:1) – many simultaneous active games and state polling.
+  - [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1) – intended to exercise move submission and turn processing.
   - `websocket-stress.js` – WebSocket connection and ping-pong stress (transport-level only).
-- WebSocket gameplay SLOs and stall definitions are specified in [`STRATEGIC_ROADMAP.md` §2.2](../STRATEGIC_ROADMAP.md:324).
+- WebSocket gameplay SLOs and stall definitions are specified in [`STRATEGIC_ROADMAP.md` §2.2](../planning/STRATEGIC_ROADMAP.md:324).
 - The `player-moves` scenario defines custom metrics aligned to those SLOs:
   - `move_submission_latency_ms`
   - `move_submission_success_rate`
@@ -46,12 +46,12 @@
 
 ### 1.3 Current limitation: HTTP move harness is feature-flagged
 
-- **All production gameplay moves are carried over WebSockets** via `player_move` / `player_move_by_id` (see the WebSocket API section of [`API_REFERENCE.md`](./API_REFERENCE.md:489)).
-- A thin HTTP move harness is implemented in [`game.ts`](../src/server/routes/game.ts:1) as `POST /api/games/:gameId/moves`, but it is gated by:
+- **All production gameplay moves are carried over WebSockets** via `player_move` / `player_move_by_id` (see the WebSocket API section of [`API_REFERENCE.md`](API_REFERENCE.md:489)).
+- A thin HTTP move harness is implemented in [`game.ts`](../../src/server/routes/game.ts:1) as `POST /api/games/:gameId/moves`, but it is gated by:
   - `ENABLE_HTTP_MOVE_HARNESS` (feature flag)
   - `HTTP_MOVE_HARNESS_TIMEOUT_MS` (timeout guard)
-- The HTTP-based move submission path in [`player-moves.js`](../tests/load/scenarios/player-moves.js:1) is still intentionally guarded:
-  - `const MOVE_HTTP_ENDPOINT_ENABLED = false;` in [`player-moves.js`](../tests/load/scenarios/player-moves.js:86) keeps the harness inactive unless explicitly enabled.
+- The HTTP-based move submission path in [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1) is still intentionally guarded:
+  - `const MOVE_HTTP_ENDPOINT_ENABLED = false;` in [`player-moves.js`](../../tests/load/scenarios/player-moves.js:86) keeps the harness inactive unless explicitly enabled.
 - As a result:
   - The `player-moves` scenario often acts as **"game creation + polling under load"** rather than a true move-throughput test.
   - Move-related k6 metrics remain effectively zero unless the harness is enabled, even though real WebSocket move paths are not being exercised end-to-end.
@@ -66,7 +66,7 @@
   - Ensure both transports share a **single domain `applyMove` API** so there is exactly one place where move semantics live.
 - **Non-goals**
   - Expose a second fully featured, public HTTP move API for general clients.
-  - Change the canonical **rules/turn semantics SSoT**, which remains the shared engine + orchestrator stack described in [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md:1) and [`CANONICAL_ENGINE_API.md`](./CANONICAL_ENGINE_API.md:1).
+  - Change the canonical **rules/turn semantics SSoT**, which remains the shared engine + orchestrator stack described in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1) and [`CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md:1).
 
 ---
 
@@ -80,7 +80,7 @@
 
 - Single canonical protocol and code path for gameplay.
 - Efficient, bidirectional, low-latency channel well suited to real-time games.
-- Matches existing implementation and the WebSocket gameplay SLOs in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:324).
+- Matches existing implementation and the WebSocket gameplay SLOs in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:324).
 - Simplifies auth and authorization surface: only the WebSocket channel needs to be hardened for gameplay moves.
 
 **Cons**
@@ -140,30 +140,30 @@ The following decisions are **accepted** and should be treated as the canonical 
 
 1. **Canonical transport**
    - WebSocket remains the **canonical, long-term move transport** for all interactive game clients.
-   - Client applications (web, mobile, desktop) **must** submit moves over the WebSocket protocol (`player_move` / `player_move_by_id` events) as documented in [`CANONICAL_ENGINE_API.md`](./CANONICAL_ENGINE_API.md:1) and the WebSocket section of [`API_REFERENCE.md`](./API_REFERENCE.md:1).
+   - Client applications (web, mobile, desktop) **must** submit moves over the WebSocket protocol (`player_move` / `player_move_by_id` events) as documented in [`CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md:1) and the WebSocket section of [`API_REFERENCE.md`](API_REFERENCE.md:1).
 
 2. **Single domain API for move semantics**
    - All move semantics are implemented and validated in a **single, shared domain API**, conceptually:
-     - [`GameSessionManager.applyMove()`](../src/server/game/GameSessionManager.ts:1), which:
+     - [`GameSessionManager.applyMove()`](../../src/server/game/GameSessionManager.ts:1), which:
        - Accepts a validated, canonical `Move`/`PlayerChoice` payload.
-       - Delegates to the orchestrator-backed rules engine stack described in [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md:1).
+       - Delegates to the orchestrator-backed rules engine stack described in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1).
        - Publishes authoritative state updates and notifications to interested channels (WebSocket sessions, observers, metrics).
    - Both of the following call sites must use this same domain API:
-     - WebSocket move handlers in [`WebSocketInteractionHandler.ts`](../src/server/game/WebSocketInteractionHandler.ts:1).
-     - Any HTTP move harness endpoint implemented in [`game.ts`](../src/server/routes/game.ts:1).
+     - WebSocket move handlers in [`WebSocketInteractionHandler.ts`](../../src/server/game/WebSocketInteractionHandler.ts:1).
+     - Any HTTP move harness endpoint implemented in [`game.ts`](../../src/server/routes/game.ts:1).
 
 3. **HTTP move harness semantics**
    - An HTTP endpoint of the form:
      - `POST /api/games/:gameId/moves`
-   - **may be implemented** as a **thin adapter** over [`GameSessionManager.applyMove()`](../src/server/game/GameSessionManager.ts:1) with the following constraints:
+   - **may be implemented** as a **thin adapter** over [`GameSessionManager.applyMove()`](../../src/server/game/GameSessionManager.ts:1) with the following constraints:
      - The harness performs:
        - Authentication using the same JWT/session model as other game routes.
-       - Authorization consistent with game-seat/spectator rules from [`CANONICAL_ENGINE_API.md`](./CANONICAL_ENGINE_API.md:1).
+       - Authorization consistent with game-seat/spectator rules from [`CANONICAL_ENGINE_API.md`](CANONICAL_ENGINE_API.md:1).
        - Request validation using the same schemas as the WebSocket payloads.
      - The harness does **not** introduce new move semantics, extra side effects, or divergent error codes; on success it returns the same effective result that the WebSocket handler would have produced.
    - The harness is **not** a general public API:
      - It is intended for **internal/test harness** use only (k6, CI, ops tools).
-     - It should be clearly documented as such in [`API_REFERENCE.md`](./API_REFERENCE.md:1) under an "Internal / Test harness APIs" section.
+     - It should be clearly documented as such in [`API_REFERENCE.md`](API_REFERENCE.md:1) under an "Internal / Test harness APIs" section.
 
 4. **Environment and feature-flag controls**
    - Harness availability is controlled by `ENABLE_HTTP_MOVE_HARNESS` (implemented), with `HTTP_MOVE_HARNESS_TIMEOUT_MS` providing a timeout guard for the HTTP adapter path.
@@ -177,17 +177,17 @@ The following decisions are **accepted** and should be treated as the canonical 
      - **Production:**
        - Harness **disabled by default**.
        - If enabled for specific drills, access must be tightly scoped (auth scopes, network controls) and time-bounded.
-   - Any change to harness exposure in production must be treated like an API surface change and reviewed under the security model in [`SECURITY_THREAT_MODEL.md`](./SECURITY_THREAT_MODEL.md:1).
+   - Any change to harness exposure in production must be treated like an API surface change and reviewed under the security model in [`SECURITY_THREAT_MODEL.md`](../security/SECURITY_THREAT_MODEL.md:1).
 
 5. **k6 player-moves scenario behaviour**
-   - [`player-moves.js`](../tests/load/scenarios/player-moves.js:1) remains the canonical HTTP-oriented load test for move and turn performance.
+   - [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1) remains the canonical HTTP-oriented load test for move and turn performance.
    - Its behaviour is defined as:
      - When the harness is **enabled**:
        - Use `POST /api/games/:gameId/moves` to submit **real moves** over HTTP.
        - Record:
          - `move_submission_latency_ms` for end-to-end HTTP move latency.
          - `turn_processing_latency_ms` as a proxy for move-to-update latency.
-         - `stalled_moves_total` for moves exceeding the stall threshold from [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:344).
+         - `stalled_moves_total` for moves exceeding the stall threshold from [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:344).
          - `move_submission_success_rate` and an explicit `moves_attempted_total` counter.
      - When the harness is **disabled**:
        - The scenario:
@@ -205,7 +205,7 @@ The following decisions are **accepted** and should be treated as the canonical 
   - All move logic flows through the shared orchestrator stack and a single backend domain API, regardless of transport.
   - Reduces the risk of subtle behaviour differences between WebSocket and HTTP paths.
 - **Clear production SLO mapping**
-  - WebSocket gameplay SLOs in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:324) now map unambiguously to the actual production move path.
+  - WebSocket gameplay SLOs in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:324) now map unambiguously to the actual production move path.
   - Load-test SLOs for moves and turns can be expressed in terms of:
     - WebSocket round-trip latencies.
     - HTTP harness to `applyMove` latency when the harness is enabled.
@@ -220,7 +220,7 @@ The following decisions are **accepted** and should be treated as the canonical 
   - Operators must ensure it does **not** become a de facto public API for untrusted clients.
   - Any misconfiguration that exposes the harness without appropriate auth/rate limiting could be used for scripted abuse (for example, move spamming).
 - **Complexity in environment configuration**
-  - Additional feature flags and environment-specific configuration must be maintained and documented in [`ENVIRONMENT_VARIABLES.md`](./ENVIRONMENT_VARIABLES.md:1) and deployment runbooks.
+  - Additional feature flags and environment-specific configuration must be maintained and documented in [`ENVIRONMENT_VARIABLES.md`](../operations/ENVIRONMENT_VARIABLES.md:1) and deployment runbooks.
   - CI and staging pipelines need to set harness flags consistently so benchmarks are reproducible.
 - **Dual-path testing requirements**
   - Even with an HTTP harness, WebSocket-based load tests remain necessary to validate:
@@ -231,8 +231,8 @@ The following decisions are **accepted** and should be treated as the canonical 
 
 - **Load tests**
   - HTTP-based:
-    - [`player-moves.js`](../tests/load/scenarios/player-moves.js:1) drives `POST /api/games/:gameId/moves` when the harness is enabled.
-    - [`game-creation.js`](../tests/load/scenarios/game-creation.js:1) and [`concurrent-games.js`](../tests/load/scenarios/concurrent-games.js:1) continue to focus on game creation and state polling.
+    - [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1) drives `POST /api/games/:gameId/moves` when the harness is enabled.
+    - [`game-creation.js`](../../tests/load/scenarios/game-creation.js:1) and [`concurrent-games.js`](../../tests/load/scenarios/concurrent-games.js:1) continue to focus on game creation and state polling.
   - WebSocket-based:
     - Existing `websocket-stress.js` and future socket.io/Playwright scenarios validate the canonical WebSocket path for move latency and stall behaviour.
 - **Contract and parity tests**
@@ -252,7 +252,7 @@ The following decisions are **accepted** and should be treated as the canonical 
   - Not intended for untrusted public internet clients or third-party integrations.
 - WebSockets remain the **only** supported public move channel for first-party clients.
 - Security reviews for the harness should:
-  - Reuse the threat categories from [`SECURITY_THREAT_MODEL.md`](./SECURITY_THREAT_MODEL.md:1).
+  - Reuse the threat categories from [`SECURITY_THREAT_MODEL.md`](../security/SECURITY_THREAT_MODEL.md:1).
   - Ensure rate limiting and abuse detection mirror or exceed protections on the WebSocket move handlers.
 
 ---
@@ -262,26 +262,26 @@ The following decisions are **accepted** and should be treated as the canonical 
 The following tasks are **out of scope** for this document but are expected to be implemented by Code/Debug mode in follow-up subtasks. They are listed here to bind this decision to concrete next steps.
 
 1. **HTTP move harness endpoint (implemented)**
-   - `POST /api/games/:gameId/moves` exists in [`game.ts`](../src/server/routes/game.ts:1) as a thin adapter over the canonical move pipeline (`WebSocketServer.handlePlayerMoveFromHttp` → `GameSession.handlePlayerMoveFromHttp`).
+   - `POST /api/games/:gameId/moves` exists in [`game.ts`](../../src/server/routes/game.ts:1) as a thin adapter over the canonical move pipeline (`WebSocketServer.handlePlayerMoveFromHttp` → `GameSession.handlePlayerMoveFromHttp`).
    - Feature-flagged by `ENABLE_HTTP_MOVE_HARNESS` with `HTTP_MOVE_HARNESS_TIMEOUT_MS` protecting long-running requests.
    - Auth and seat/spectator authorization follow the same invariants as other game routes.
 
 2. **Update k6 `player-moves` scenario**
-   - Replace the hard-coded `MOVE_HTTP_ENDPOINT_ENABLED = false` in [`player-moves.js`](../tests/load/scenarios/player-moves.js:86) with an environment-driven toggle (for example, `__ENV.MOVE_HTTP_ENDPOINT_ENABLED`).
+   - Replace the hard-coded `MOVE_HTTP_ENDPOINT_ENABLED = false` in [`player-moves.js`](../../tests/load/scenarios/player-moves.js:86) with an environment-driven toggle (for example, `__ENV.MOVE_HTTP_ENDPOINT_ENABLED`).
    - Implement real move submission against `POST /api/games/:gameId/moves`, generating legal moves based on the current game state rather than the current placeholder payload.
    - Add a `moves_attempted_total` counter and tighten thresholds so the scenario fails if:
      - No moves are attempted, or
-     - Move success rate or stall metrics violate the SLOs in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:324).
+     - Move success rate or stall metrics violate the SLOs in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:324).
 
 3. **Design WebSocket-based move load tests**
    - Extend existing WebSocket stress tooling or introduce a Playwright-based harness that:
      - Authenticates real clients.
      - Joins games and submits moves over WebSockets.
-     - Measures end-to-end move latency and stall rates consistent with [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:324).
-   - Ensure these tests run (at least) in staging as part of the P-01 performance gate defined in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:590).
+     - Measures end-to-end move latency and stall rates consistent with [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:324).
+   - Ensure these tests run (at least) in staging as part of the P-01 performance gate defined in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:590).
 
 4. **Document harness configuration and runbooks**
-   - Keep [`ENVIRONMENT_VARIABLES.md`](./ENVIRONMENT_VARIABLES.md:1) and [`API_REFERENCE.md`](./API_REFERENCE.md:1) aligned with the harness flags (`ENABLE_HTTP_MOVE_HARNESS`, `HTTP_MOVE_HARNESS_TIMEOUT_MS`).
+   - Keep [`ENVIRONMENT_VARIABLES.md`](../operations/ENVIRONMENT_VARIABLES.md:1) and [`API_REFERENCE.md`](API_REFERENCE.md:1) aligned with the harness flags (`ENABLE_HTTP_MOVE_HARNESS`, `HTTP_MOVE_HARNESS_TIMEOUT_MS`).
    - Add runbook entries (for example, under `docs/runbooks/`) describing:
      - How to safely enable the harness for a specific load test.
      - How to verify that it is disabled again afterwards.

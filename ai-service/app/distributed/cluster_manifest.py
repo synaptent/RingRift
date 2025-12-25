@@ -56,6 +56,34 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Enums
+    "DataType",
+    "NodeRole",
+    # Data classes
+    "GameLocation",
+    "ModelLocation",
+    "NPZLocation",
+    "NodeCapacity",
+    "NodeInventory",
+    "SyncTarget",
+    "DiskCleanupPolicy",
+    "DiskCleanupResult",
+    "CleanupCandidate",
+    "NodeSyncPolicy",
+    # Main class
+    "ClusterManifest",
+    # Singleton accessors
+    "get_cluster_manifest",
+    "reset_cluster_manifest",
+    # Constants
+    "MANIFEST_DB_NAME",
+    "SCHEMA_VERSION",
+    "MAX_DISK_USAGE_PERCENT",
+    "MIN_FREE_DISK_PERCENT",
+    "REPLICATION_TARGET_COUNT",
+]
+
 # Constants
 MANIFEST_DB_NAME = "cluster_manifest.db"
 SCHEMA_VERSION = "1.0"

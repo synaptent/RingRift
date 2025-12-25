@@ -1698,9 +1698,15 @@ def apply_capture_moves_batch_vectorized(
         dist_exp_hist = dist_hist.unsqueeze(1).expand(-1, max_dist_hist)
         within_landing_hist = steps_hist < dist_exp_hist
         ray_has_stack_hist = (ray_owners_hist != 0) & within_landing_hist
+        # BUG FIX 2025-12-25: argmax returns 0 when all elements are False,
+        # causing invalid target computation. Check if any target exists first.
+        has_valid_target_hist = ray_has_stack_hist.any(dim=1)
         target_step_idx_hist = ray_has_stack_hist.to(torch.int32).argmax(dim=1)
-        target_y_hist = from_y + dy_hist * (target_step_idx_hist + 1)
-        target_x_hist = from_x + dx_hist * (target_step_idx_hist + 1)
+        # Compute target only for games with valid targets, use -1 sentinel otherwise
+        computed_target_y = from_y + dy_hist * (target_step_idx_hist + 1)
+        computed_target_x = from_x + dx_hist * (target_step_idx_hist + 1)
+        target_y_hist = torch.where(has_valid_target_hist, computed_target_y, torch.full_like(from_y, -1))
+        target_x_hist = torch.where(has_valid_target_hist, computed_target_x, torch.full_like(from_x, -1))
     else:
         target_y_hist = to_y
         target_x_hist = to_x
@@ -1763,11 +1769,15 @@ def apply_capture_moves_batch_vectorized(
         ray_has_stack = (ray_owners != 0) & within_landing
 
         # Get index of first target (argmax returns first True)
+        # BUG FIX 2025-12-25: Validate target exists before using argmax result
+        has_valid_target = ray_has_stack.any(dim=1)
         target_step_idx = ray_has_stack.to(torch.int32).argmax(dim=1)  # (n_games,)
 
-        # Compute target positions
-        target_y = from_y + dy * (target_step_idx + 1)
-        target_x = from_x + dx * (target_step_idx + 1)
+        # Compute target positions (use landing as fallback if no target found)
+        computed_target_y = from_y + dy * (target_step_idx + 1)
+        computed_target_x = from_x + dx * (target_step_idx + 1)
+        target_y = torch.where(has_valid_target, computed_target_y, to_y)
+        target_x = torch.where(has_valid_target, computed_target_x, to_x)
     else:
         # Fallback: no distance, treat to as target
         target_y = to_y

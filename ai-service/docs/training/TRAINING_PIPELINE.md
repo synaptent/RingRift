@@ -392,7 +392,7 @@ python scripts/unified_ai_loop.py --start --config config/unified_loop.yaml
 | `RINGRIFT_POLICY_KL_MIN_SAMPLES`  | Min samples for auto-KL           | `50`    |
 | `RINGRIFT_ENABLE_AUTO_HP_TUNING`  | Enable hyperparameter auto-tuning | `0`     |
 
-See [NNUE_POLICY_TRAINING.md](NNUE_POLICY_TRAINING.md) for complete policy training documentation.
+See [NNUE_POLICY_TRAINING.md](../algorithms/NNUE_POLICY_TRAINING.md) for complete policy training documentation.
 
 ---
 
@@ -472,8 +472,8 @@ python scripts/run_hybrid_selfplay.py \
 ### See Also
 
 - [TRAINING_FEATURES.md](TRAINING_FEATURES.md) - Comprehensive training features reference
-- [HEX_AUGMENTATION.md](HEX_AUGMENTATION.md) - D6 symmetry augmentation details
-- [MCTS_INTEGRATION.md](MCTS_INTEGRATION.md) - MCTS implementation and training data generation
+- [HEX_AUGMENTATION.md](../algorithms/HEX_AUGMENTATION.md) - D6 symmetry augmentation details
+- [MCTS_INTEGRATION.md](../algorithms/MCTS_INTEGRATION.md) - MCTS implementation and training data generation
 
 ---
 

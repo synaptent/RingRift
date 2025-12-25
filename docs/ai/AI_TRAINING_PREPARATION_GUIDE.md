@@ -14,7 +14,7 @@
 > If this guide ever conflicts with those executable artefacts or the canonical lifecycle/parity docs it references, **code + tests + canonical rules/lifecycle docs win**, and this guide must be updated to match.
 >
 > **Last Updated**: 2025-11-26  
-> **Applicable To**: [`ai-service/`](../ai-service/) module
+> **Applicable To**: [`ai-service/`](../../ai-service) module
 
 ---
 
@@ -39,21 +39,21 @@
 
 ## Current Infrastructure Summary
 
-| Component         | Current Implementation                                                                |
-| ----------------- | ------------------------------------------------------------------------------------- |
-| AI Service        | Python microservice (FastAPI, uvicorn)                                                |
-| ML Framework      | PyTorch 2.6.0                                                                         |
-| RL Environment    | gymnasium 1.0.0                                                                       |
-| AI Types          | Random, Heuristic, Minimax, MCTS, Descent                                             |
-| Difficulty Levels | 1-10 ladder                                                                           |
-| Neural Network    | [`RingRiftCNN`](../ai-service/app/ai/neural_net.py) - 10 residual blocks, 128 filters |
-| Hex Neural Net    | [`HexNeuralNet`](../ai-service/app/ai/neural_net.py)                                  |
-| State Encoding    | 10 channels × 4 frames = 40 input channels                                            |
-| Policy Size       | 55,000 actions (canonical encoding)                                                   |
-| Replay Buffer     | MAX_BUFFER_SIZE = 50,000 samples                                                      |
-| Storage Format    | Memory-mapped .npz datasets                                                           |
-| Heuristic Weights | 17 weights with 4 profiles                                                            |
-| Board Types       | SQUARE8 (8×8), SQUARE19 (19×19), HEXAGONAL (radius 12)                                |
+| Component         | Current Implementation                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| AI Service        | Python microservice (FastAPI, uvicorn)                                                         |
+| ML Framework      | PyTorch 2.6.0                                                                                  |
+| RL Environment    | gymnasium 1.0.0                                                                                |
+| AI Types          | Random, Heuristic, Minimax, MCTS, Descent                                                      |
+| Difficulty Levels | 1-10 ladder                                                                                    |
+| Neural Network    | [`RingRiftCNN`](../ai-service/app/ai/neural_net/__init__.py) - 10 residual blocks, 128 filters |
+| Hex Neural Net    | [`HexNeuralNet`](../ai-service/app/ai/neural_net/__init__.py)                                  |
+| State Encoding    | 10 channels × 4 frames = 40 input channels                                                     |
+| Policy Size       | 55,000 actions (canonical encoding)                                                            |
+| Replay Buffer     | MAX_BUFFER_SIZE = 50,000 samples                                                               |
+| Storage Format    | Memory-mapped .npz datasets                                                                    |
+| Heuristic Weights | 17 weights with 4 profiles                                                                     |
+| Board Types       | SQUARE8 (8×8), SQUARE19 (19×19), HEXAGONAL (radius 12)                                         |
 
 ---
 
@@ -131,7 +131,7 @@ FEATURE_CHANNELS = {
 }
 ```
 
-The current encoding in [`encoding.py`](../ai-service/app/training/encoding.py) uses:
+The current encoding in [`encoding.py`](../../ai-service/app/training/encoding.py) uses:
 
 | Feature Type       | Normalization                        | Rationale                  |
 | ------------------ | ------------------------------------ | -------------------------- |
@@ -257,7 +257,7 @@ AUGMENTATION_HEX = {
 | SQUARE19   | 4         | 2 (horizontal/no-op) | 8×           |
 | HEXAGONAL  | 6         | D6 reflections       | 12×          |
 
-> **Status (2025-11-27):** Square-board augmentation is implemented via rotation/flip in [`generate_data.py`](../ai-service/app/training/generate_data.py). Hexagonal board augmentation is implemented using the full dihedral group D6 (6 rotations × reflections, 12 total transforms) via `HexSymmetryTransform` / `augment_hex_sample` in [`ai-service/app/training/hex_augmentation.py`](../ai-service/app/training/hex_augmentation.py) together with `augment_hex_data` in [`generate_data.py`](../ai-service/app/training/generate_data.py). The table above reflects the implemented behaviour; for exact semantics, the **canonical SSoT** is the live code and tests in [`ai-service/tests/test_hex_augmentation.py`](../ai-service/tests/test_hex_augmentation.py) and [`ai-service/tests/test_hex_training.py`](../ai-service/tests/test_hex_training.py).
+> **Status (2025-11-27):** Square-board augmentation is implemented via rotation/flip in [`generate_data.py`](../../ai-service/app/training/generate_data.py). Hexagonal board augmentation is implemented using the full dihedral group D6 (6 rotations × reflections, 12 total transforms) via `HexSymmetryTransform` / `augment_hex_sample` in [`ai-service/app/training/hex_augmentation.py`](../../ai-service/app/training/hex_augmentation.py) together with `augment_hex_data` in [`generate_data.py`](../../ai-service/app/training/generate_data.py). The table above reflects the implemented behaviour; for exact semantics, the **canonical SSoT** is the live code and tests in [`ai-service/tests/test_hex_augmentation.py`](../../ai-service/tests/test_hex_augmentation.py) and [`ai-service/tests/test_hex_training.py`](../../ai-service/tests/test_hex_training.py).
 
 **Augmentation Pipeline:**
 
@@ -301,7 +301,7 @@ def augment_position(
 
 ### 2.1 CNN Architecture for Board Games
 
-The [`RingRiftCNN`](../ai-service/app/ai/neural_net.py) architecture follows AlphaZero-style design:
+The [`RingRiftCNN`](../ai-service/app/ai/neural_net/__init__.py) architecture follows AlphaZero-style design:
 
 ```
 Input: 40 channels × H × W (history_length=3 → 4 frames × 10 channels)
@@ -415,7 +415,7 @@ def objective(trial):
 
 ### 2.6 Recommended Initial Hyperparameters
 
-Based on [`config.py`](../ai-service/app/training/config.py) and best practices:
+Based on [`config.py`](../../ai-service/app/training/config.py) and best practices:
 
 ```python
 # Current configuration (from config.py)
@@ -482,7 +482,7 @@ INITIAL_HYPERPARAMETERS = {
 
 ### 3.1 CRITICAL: Configurable Memory Limiting System
 
-**Current status (2025-11-27):** Core memory limiting is implemented in [`MemoryConfig`](../ai-service/app/utils/memory_config.py) and wired into `DescentAI`, `MCTSAI`, and training scripts via `MemoryConfig.from_env()`. This section now serves as a **design appendix** for finer-grained per-component budgets and future refactors beyond the current implementation.
+**Current status (2025-11-27):** Core memory limiting is implemented in [`MemoryConfig`](../../ai-service/app/utils/memory_config.py) and wired into `DescentAI`, `MCTSAI`, and training scripts via `MemoryConfig.from_env()`. This section now serves as a **design appendix** for finer-grained per-component budgets and future refactors beyond the current implementation.
 
 **Target Interface (historical design, partially implemented):**
 
@@ -585,7 +585,7 @@ def calculate_optimal_batch_size(
 
 ### 3.4 Transposition Table Size Limits
 
-**Current Issue**: Both [`DescentAI`](../ai-service/app/ai/descent_ai.py) and MCTS use unbounded dictionaries.
+**Current Issue**: Both [`DescentAI`](../../ai-service/app/ai/descent_ai.py) and MCTS use unbounded dictionaries.
 
 **Recommended Fix:**
 
@@ -622,8 +622,8 @@ class BoundedTranspositionTable:
 
 **Integration Points:**
 
-- [`descent_ai.py`](../ai-service/app/ai/descent_ai.py) line 42: Replace `self.transposition_table = {}` with `BoundedTranspositionTable(max_entries)`
-- [`mcts_ai.py`](../ai-service/app/ai/mcts_ai.py) line ~200: Add node count limiting
+- [`descent_ai.py`](../../ai-service/app/ai/descent_ai.py) line 42: Replace `self.transposition_table = {}` with `BoundedTranspositionTable(max_entries)`
+- [`mcts_ai.py`](../../ai-service/app/ai/mcts_ai.py) line ~200: Add node count limiting
 
 ### 3.5 Dataset Streaming vs Full Loading
 
@@ -634,7 +634,7 @@ class BoundedTranspositionTable:
 | 4-16 GB      | Memory-mapped + prefetch | Stream from disk     |
 | > 16 GB      | Chunked DataLoader       | Must stream          |
 
-**Current Implementation** (from [`train.py`](../ai-service/app/training/train.py)):
+**Current Implementation** (from [`train.py`](../../ai-service/app/training/train.py)):
 
 ```python
 # Already uses memory mapping - good!
@@ -695,7 +695,7 @@ def aggressive_gc() -> None:
 
 ### 3.8 MPS (Apple Silicon) Optimizations
 
-From current [`neural_net.py`](../ai-service/app/ai/neural_net.py):
+From current [`neural_net.py`](../ai-service/app/ai/neural_net/__init__.py):
 
 ```python
 def get_device() -> torch.device:
@@ -837,7 +837,7 @@ def initialize_model(model: nn.Module) -> None:
 
 ### 4.5 Pre-trained Weight Loading
 
-From [`train.py`](../ai-service/app/training/train.py) (lines 212–222):
+From [`train.py`](../../ai-service/app/training/train.py) (lines 212–222):
 
 ```python
 def load_pretrained_weights(
@@ -929,7 +929,7 @@ Before training neural networks, establish baseline performance levels:
 
 ### 5.2 Random Agent Baseline
 
-The [`RandomAI`](../ai-service/app/ai/random_ai.py) provides the absolute floor:
+The [`RandomAI`](../../ai-service/app/ai/random_ai.py) provides the absolute floor:
 
 ```python
 def evaluate_random_baseline(num_games: int = 100) -> Dict[str, float]:
@@ -961,7 +961,7 @@ def evaluate_random_baseline(num_games: int = 100) -> Dict[str, float]:
 
 ### 5.3 Heuristic Agent Benchmarks
 
-Using [`heuristic_weights.py`](../ai-service/app/ai/heuristic_weights.py):
+Using [`heuristic_weights.py`](../../ai-service/app/ai/heuristic_weights.py):
 
 | Difficulty | Profile     | Expected Elo (relative) | Win % vs Random |
 | ---------- | ----------- | ----------------------- | --------------- |
@@ -1235,7 +1235,7 @@ def calculate_validation_metrics(
 
 ### 7.1 Seed Management
 
-**Current Implementation** (from [`config.py`](../ai-service/app/training/config.py)):
+**Current Implementation** (from [`config.py`](../../ai-service/app/training/config.py)):
 
 ```python
 @dataclass
@@ -1840,7 +1840,7 @@ def validate_move_generation(state: GameState) -> None:
 
 - Encourages faster wins
 - Penalizes delayed victories less
-- Current implementation: [`generate_territory_dataset.py`](../ai-service/app/training/generate_territory_dataset.py)
+- Current implementation: [`generate_territory_dataset.py`](../../ai-service/app/training/generate_territory_dataset.py)
 
 **Policy Temperature Considerations:**
 
@@ -2383,38 +2383,38 @@ EFFORT   ├──────────────────────�
 
 ### Priority 1: Critical (Blocking)
 
-| Task                                             | Effort | File(s) to Modify                                                                                                                  | Status         |
-| ------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| **Implement MemoryConfig class**                 | Medium | [`MemoryConfig`](../ai-service/app/utils/memory_config.py) (training/inference limits, env-driven)                                 | ✅ Implemented |
-| **Add bounded transposition table to DescentAI** | Low    | [`BoundedTranspositionTable`](../ai-service/app/ai/bounded_transposition_table.py) wired into `DescentAI` / `MinimaxAI` / `MCTSAI` | ✅ Implemented |
-| **Add node limit to MCTS**                       | Low    | [`mcts_ai.py`](../ai-service/app/ai/mcts_ai.py) with bounded TT–backed search                                                      | ✅ Implemented |
-| **Make num_games CLI configurable**              | Low    | [`generate_data.py`](../ai-service/app/training/generate_data.py), `--num-games` flag in `_parse_args()`                           | ✅ Implemented |
+| Task                                             | Effort | File(s) to Modify                                                                                                                     | Status         |
+| ------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| **Implement MemoryConfig class**                 | Medium | [`MemoryConfig`](../../ai-service/app/utils/memory_config.py) (training/inference limits, env-driven)                                 | ✅ Implemented |
+| **Add bounded transposition table to DescentAI** | Low    | [`BoundedTranspositionTable`](../../ai-service/app/ai/bounded_transposition_table.py) wired into `DescentAI` / `MinimaxAI` / `MCTSAI` | ✅ Implemented |
+| **Add node limit to MCTS**                       | Low    | [`mcts_ai.py`](../../ai-service/app/ai/mcts_ai.py) with bounded TT–backed search                                                      | ✅ Implemented |
+| **Make num_games CLI configurable**              | Low    | [`generate_data.py`](../../ai-service/app/training/generate_data.py), `--num-games` flag in `_parse_args()`                           | ✅ Implemented |
 
 ### Priority 2: High (Should Have)
 
-| Task                                 | Effort | File(s) to Modify                                                                                                                                                                                                                                                                                      | Status         |
-| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
-| **Add early stopping to training**   | Medium | [`train.py`](../ai-service/app/training/train.py) (EarlyStopping + --early-stopping-patience CLI)                                                                                                                                                                                                      | ✅ Implemented |
-| **Add checkpointing every N epochs** | Medium | [`train.py`](../ai-service/app/training/train.py) (periodic + best/early-stop checkpoints)                                                                                                                                                                                                             | ✅ Implemented |
-| **Add gamma CLI flag**               | Low    | [`generate_territory_dataset.py`](../ai-service/app/training/generate_territory_dataset.py) (`--gamma` flag)                                                                                                                                                                                           | ✅ Implemented |
-| **Implement hex board augmentation** | High   | [`generate_data.py`](../ai-service/app/training/generate_data.py), [`hex_augmentation.py`](../ai-service/app/training/hex_augmentation.py), [`tests/test_hex_augmentation.py`](../ai-service/tests/test_hex_augmentation.py), [`tests/test_hex_training.py`](../ai-service/tests/test_hex_training.py) | ✅ Implemented |
+| Task                                 | Effort | File(s) to Modify                                                                                                                                                                                                                                                                                                  | Status         |
+| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| **Add early stopping to training**   | Medium | [`train.py`](../../ai-service/app/training/train.py) (EarlyStopping + --early-stopping-patience CLI)                                                                                                                                                                                                               | ✅ Implemented |
+| **Add checkpointing every N epochs** | Medium | [`train.py`](../../ai-service/app/training/train.py) (periodic + best/early-stop checkpoints)                                                                                                                                                                                                                      | ✅ Implemented |
+| **Add gamma CLI flag**               | Low    | [`generate_territory_dataset.py`](../../ai-service/app/training/generate_territory_dataset.py) (`--gamma` flag)                                                                                                                                                                                                    | ✅ Implemented |
+| **Implement hex board augmentation** | High   | [`generate_data.py`](../../ai-service/app/training/generate_data.py), [`hex_augmentation.py`](../../ai-service/app/training/hex_augmentation.py), [`tests/test_hex_augmentation.py`](../../ai-service/tests/test_hex_augmentation.py), [`tests/test_hex_training.py`](../../ai-service/tests/test_hex_training.py) | ✅ Implemented |
 
 ### Priority 3: Medium (Nice to Have)
 
-| Task                                 | Effort | File(s) to Modify                                                                             | Status         |
-| ------------------------------------ | ------ | --------------------------------------------------------------------------------------------- | -------------- |
-| **Add learning rate warmup**         | Low    | [`train.py`](../ai-service/app/training/train.py) (`--warmup-epochs` + `create_lr_scheduler`) | ✅ Implemented |
-| **Enable self-play tests in CI**     | Medium | `.github/workflows/*.yml`                                                                     | 🔴 Not Started |
-| **Add parity tests to CI**           | Medium | `.github/workflows/*.yml`                                                                     | 🔴 Not Started |
-| **Add memory profiling to training** | Medium | [`train.py`](../ai-service/app/training/train.py)                                             | 🔴 Not Started |
+| Task                                 | Effort | File(s) to Modify                                                                                | Status         |
+| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------ | -------------- |
+| **Add learning rate warmup**         | Low    | [`train.py`](../../ai-service/app/training/train.py) (`--warmup-epochs` + `create_lr_scheduler`) | ✅ Implemented |
+| **Enable self-play tests in CI**     | Medium | `.github/workflows/*.yml`                                                                        | 🔴 Not Started |
+| **Add parity tests to CI**           | Medium | `.github/workflows/*.yml`                                                                        | 🔴 Not Started |
+| **Add memory profiling to training** | Medium | [`train.py`](../../ai-service/app/training/train.py)                                             | 🔴 Not Started |
 
 ### Priority 4: Low (Future)
 
-| Task                                                 | Effort | File(s) to Modify                                                                                                                                         | Status         |
-| ---------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| **Add comprehensive unit tests for data generation** | High   | `ai-service/tests/`                                                                                                                                       | 🔴 Not Started |
-| **Implement streaming dataset for very large data**  | High   | [`data_loader.py`](../ai-service/app/training/data_loader.py), [`train.py`](../ai-service/app/training/train.py) (`StreamingDataLoader`, `use_streaming`) | ✅ Implemented |
-| **Add Optuna hyperparameter search**                 | High   | New file                                                                                                                                                  | 🔴 Not Started |
+| Task                                                 | Effort | File(s) to Modify                                                                                                                                               | Status         |
+| ---------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| **Add comprehensive unit tests for data generation** | High   | `ai-service/tests/`                                                                                                                                             | 🔴 Not Started |
+| **Implement streaming dataset for very large data**  | High   | [`data_loader.py`](../../ai-service/app/training/data_loader.py), [`train.py`](../../ai-service/app/training/train.py) (`StreamingDataLoader`, `use_streaming`) | ✅ Implemented |
+| **Add Optuna hyperparameter search**                 | High   | New file                                                                                                                                                        | 🔴 Not Started |
 
 ### Priority 5: Documentation
 
@@ -2505,16 +2505,16 @@ python -m memory_profiler app/training/train.py
 
 ## Appendix B: File Reference Index
 
-| File                                                                                        | Purpose            | Key Functions                    |
-| ------------------------------------------------------------------------------------------- | ------------------ | -------------------------------- |
-| [`neural_net.py`](../ai-service/app/ai/neural_net.py)                                       | CNN architecture   | `RingRiftCNN`, `HexNeuralNet`    |
-| [`config.py`](../ai-service/app/training/config.py)                                         | Training config    | `TrainConfig`                    |
-| [`train.py`](../ai-service/app/training/train.py)                                           | Training loop      | `train_model()`                  |
-| [`generate_data.py`](../ai-service/app/training/generate_data.py)                           | Self-play data     | `generate_dataset()`             |
-| [`generate_territory_dataset.py`](../ai-service/app/training/generate_territory_dataset.py) | Territory data     | Territory+elimination dataset    |
-| [`descent_ai.py`](../ai-service/app/ai/descent_ai.py)                                       | Descent AI         | `DescentAI`, transposition table |
-| [`mcts_ai.py`](../ai-service/app/ai/mcts_ai.py)                                             | MCTS AI            | `MCTSAI`, tree search            |
-| [`heuristic_weights.py`](../ai-service/app/ai/heuristic_weights.py)                         | Heuristic profiles | Weight dictionaries              |
+| File                                                                                           | Purpose            | Key Functions                    |
+| ---------------------------------------------------------------------------------------------- | ------------------ | -------------------------------- |
+| [`neural_net.py`](../ai-service/app/ai/neural_net/__init__.py)                                 | CNN architecture   | `RingRiftCNN`, `HexNeuralNet`    |
+| [`config.py`](../../ai-service/app/training/config.py)                                         | Training config    | `TrainConfig`                    |
+| [`train.py`](../../ai-service/app/training/train.py)                                           | Training loop      | `train_model()`                  |
+| [`generate_data.py`](../../ai-service/app/training/generate_data.py)                           | Self-play data     | `generate_dataset()`             |
+| [`generate_territory_dataset.py`](../../ai-service/app/training/generate_territory_dataset.py) | Territory data     | Territory+elimination dataset    |
+| [`descent_ai.py`](../../ai-service/app/ai/descent_ai.py)                                       | Descent AI         | `DescentAI`, transposition table |
+| [`mcts_ai.py`](../../ai-service/app/ai/mcts_ai.py)                                             | MCTS AI            | `MCTSAI`, tree search            |
+| [`heuristic_weights.py`](../../ai-service/app/ai/heuristic_weights.py)                         | Heuristic profiles | Weight dictionaries              |
 
 ---
 

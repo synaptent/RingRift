@@ -86,17 +86,17 @@ Continue scaling via canonical selfplay and re-run fixtures once volume grows.
 ### TypeScript
 
 - [x] Board type enum includes 'hexagonal'
-- [x] Geometry calculations in [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts)
-- [x] Line detection in [`LineAggregate.ts`](../src/shared/engine/aggregates/LineAggregate.ts)
-- [x] Placement validation in [`PlacementAggregate.ts`](../src/shared/engine/aggregates/PlacementAggregate.ts)
-- [x] Territory processing in [`TerritoryAggregate.ts`](../src/shared/engine/aggregates/TerritoryAggregate.ts)
+- [x] Geometry calculations in [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts)
+- [x] Line detection in [`LineAggregate.ts`](../../src/shared/engine/aggregates/LineAggregate.ts)
+- [x] Placement validation in [`PlacementAggregate.ts`](../../src/shared/engine/aggregates/PlacementAggregate.ts)
+- [x] Territory processing in [`TerritoryAggregate.ts`](../../src/shared/engine/aggregates/TerritoryAggregate.ts)
 
 ### Python
 
-- [x] Board type support in [`core.py`](../ai-service/app/rules/core.py:32) (BoardConfig for HEXAGONAL)
-- [x] Geometry calculations in [`geometry.py`](../ai-service/app/rules/geometry.py)
-- [x] Capture chain support in [`capture_chain.py`](../ai-service/app/rules/capture_chain.py:136)
-- [x] Mutable state handling in [`mutable_state.py`](../ai-service/app/rules/mutable_state.py:1736)
+- [x] Board type support in [`core.py`](../../ai-service/app/rules/core.py:32) (BoardConfig for HEXAGONAL)
+- [x] Geometry calculations in [`geometry.py`](../../ai-service/app/rules/geometry.py)
+- [x] Capture chain support in [`capture_chain.py`](../../ai-service/app/rules/capture_chain.py:136)
+- [x] Mutable state handling in [`mutable_state.py`](../../ai-service/app/rules/mutable_state.py:1736)
 
 ### New Hex Geometry Parameters (radius-12)
 

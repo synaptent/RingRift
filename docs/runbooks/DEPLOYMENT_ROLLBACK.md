@@ -511,9 +511,9 @@ docker compose up -d --build app
 
 ## Related Documentation
 
-- [DEPLOYMENT_ROUTINE.md](./DEPLOYMENT_ROUTINE.md) - Standard deployment
-- [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md) - Migration procedures
-- [OPERATIONS_DB.md](../OPERATIONS_DB.md) - Database backup/restore details
+- [DEPLOYMENT_ROUTINE.md](DEPLOYMENT_ROUTINE.md) - Standard deployment
+- [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md) - Migration procedures
+- [OPERATIONS_DB.md](../operations/OPERATIONS_DB.md) - Database backup/restore details
 
 ---
 

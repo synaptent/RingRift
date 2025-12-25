@@ -4,8 +4,8 @@
 > **Target File:** `src/client/sandbox/ClientSandboxEngine.ts` (4,611 lines)
 > **Related Docs:**
 >
-> - [`CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md`](./CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md) - Prior proposal (Dec 2025, deferred)
-> - [`SHARED_ENGINE_CONSOLIDATION_PLAN.md`](./SHARED_ENGINE_CONSOLIDATION_PLAN.md) - Canonical engine architecture
+> - [`CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md`](CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md) - Prior proposal (Dec 2025, deferred)
+> - [`SHARED_ENGINE_CONSOLIDATION_PLAN.md`](SHARED_ENGINE_CONSOLIDATION_PLAN.md) - Canonical engine architecture
 > - [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md) - Canonical rules SSoT
 
 ---

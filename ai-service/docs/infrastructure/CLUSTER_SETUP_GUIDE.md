@@ -343,6 +343,6 @@ python scripts/curriculum_training.py \
 
 ## See Also
 
-- [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - Detailed pipeline documentation
-- [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Unified loop reference
-- [DISTRIBUTED_SELFPLAY.md](DISTRIBUTED_SELFPLAY.md) - Remote worker setup
+- [TRAINING_PIPELINE.md](../training/TRAINING_PIPELINE.md) - Detailed pipeline documentation
+- [UNIFIED_AI_LOOP.md](../training/UNIFIED_AI_LOOP.md) - Unified loop reference
+- [DISTRIBUTED_SELFPLAY.md](../training/DISTRIBUTED_SELFPLAY.md) - Remote worker setup

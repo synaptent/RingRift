@@ -268,5 +268,5 @@ with profile_block("my_operation"):
 - Read [ARCHITECTURE.md](ARCHITECTURE.md) for system design
 - Read [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for coding patterns
 - Read [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for all config options
-- Explore [infrastructure/](infrastructure/) for deployment guides
-- Check [runbooks/](runbooks/) for operational procedures
+- Explore [infrastructure/](infrastructure) for deployment guides
+- Check [runbooks/](runbooks) for operational procedures

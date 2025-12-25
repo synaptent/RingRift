@@ -13,11 +13,11 @@ This document extends the existing refactoring and architecture documentation wi
 
 | Document                                                                                | Purpose                                                             |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| [`REFACTORING_OPPORTUNITIES_ANALYSIS.md`](./REFACTORING_OPPORTUNITIES_ANALYSIS.md)      | Comprehensive codebase refactoring opportunities (~16K LOC savings) |
-| [`FSM_EXTENSION_STRATEGY.md`](./FSM_EXTENSION_STRATEGY.md)                              | Turn FSM adoption roadmap for phase validation                      |
-| [`STATE_MACHINES.md`](./STATE_MACHINES.md)                                              | Existing state machine definitions                                  |
+| [`REFACTORING_OPPORTUNITIES_ANALYSIS.md`](REFACTORING_OPPORTUNITIES_ANALYSIS.md)        | Comprehensive codebase refactoring opportunities (~16K LOC savings) |
+| [`FSM_EXTENSION_STRATEGY.md`](FSM_EXTENSION_STRATEGY.md)                                | Turn FSM adoption roadmap for phase validation                      |
+| [`STATE_MACHINES.md`](STATE_MACHINES.md)                                                | Existing state machine definitions                                  |
 | [`ARCHITECTURE_REMEDIATION_PLAN.md`](../archive/plans/ARCHITECTURE_REMEDIATION_PLAN.md) | Five-tier architecture remediation (Tiers 1-2 complete)             |
-| [`PARITY_VERIFICATION_RUNBOOK.md`](../PARITY_VERIFICATION_RUNBOOK.md)                   | TS↔Python parity debugging procedures                               |
+| [`PARITY_VERIFICATION_RUNBOOK.md`](../runbooks/PARITY_VERIFICATION_RUNBOOK.md)          | TS↔Python parity debugging procedures                               |
 
 ---
 
@@ -296,7 +296,7 @@ After refactoring, update these documents:
 
 ## 6. Connection to FSM Extension Strategy
 
-The bookkeeping issues identified in this document directly align with the FSM extension roadmap in [`FSM_EXTENSION_STRATEGY.md`](./FSM_EXTENSION_STRATEGY.md). The FSM approach provides a cleaner solution than the proposed refactorings above.
+The bookkeeping issues identified in this document directly align with the FSM extension roadmap in [`FSM_EXTENSION_STRATEGY.md`](FSM_EXTENSION_STRATEGY.md). The FSM approach provides a cleaner solution than the proposed refactorings above.
 
 ### How FSM Solves the Bookkeeping Problem
 

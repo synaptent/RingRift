@@ -33,7 +33,7 @@ The AI training pipeline requires TS↔Python parity for canonical game replay. 
 
 ### 1.1 Early LPS (Last Player Standing) Victory Detection
 
-**File:** `src/shared/engine/victoryLogic.ts`
+**File:** `src/shared/engine/aggregates/VictoryAggregate.ts`
 
 **Problem:** TS's Early LPS check only looked at `ringsInHand`, not total rings (including rings buried in opponent stacks). Python's `count_rings_in_play_for_player` correctly counts all rings.
 
@@ -80,7 +80,7 @@ if (playersWithStacks.size === 1) {
 
 ### 1.2 Territory Victory Threshold Check
 
-**File:** `src/shared/engine/victoryLogic.ts`
+**File:** `src/shared/engine/aggregates/VictoryAggregate.ts`
 
 **Problem:** TS used `player.territorySpaces` field which could be stale after territory region processing moves. Python's `_check_victory` counts directly from `collapsed_spaces`.
 

@@ -418,8 +418,8 @@ docker volume prune
 
 After successful initial deployment:
 
-1. **Configure monitoring alerts** - See [ALERTING_THRESHOLDS.md](../ALERTING_THRESHOLDS.md)
-2. **Set up backup schedule** - See [OPERATIONS_DB.md](../OPERATIONS_DB.md)
+1. **Configure monitoring alerts** - See [ALERTING_THRESHOLDS.md](../operations/ALERTING_THRESHOLDS.md)
+2. **Set up backup schedule** - See [OPERATIONS_DB.md](../operations/OPERATIONS_DB.md)
 3. **Configure log aggregation** - Forward Docker logs to your logging system
 4. **Document access** - Record credentials in secrets manager
 5. **Schedule security review** - Verify firewall rules and exposed ports

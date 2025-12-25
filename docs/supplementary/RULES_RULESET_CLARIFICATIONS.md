@@ -4,12 +4,12 @@ This document records remaining or newly-identified rules clarifications (`CLAR-
 
 It is intended to complement the canonical rules in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:1), the prior audit in [`archive/FINAL_RULES_AUDIT_REPORT.md`](../../archive/FINAL_RULES_AUDIT_REPORT.md:1), and the analysis artefacts:
 
-- [`RULES_IMPLEMENTATION_MAPPING.md`](../../RULES_IMPLEMENTATION_MAPPING.md:1)
+- [`RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md:1)
 - [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:1)
 - [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:1)
 - [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](RULES_CONSISTENCY_EDGE_CASES.md:1)
 
-Only items that are **not fully resolved** in Sections 11–12 of [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:489) are included here. Each CLAR entry is structured for use by an orchestrator agent to ask the human rules author targeted questions.
+Only items that are **not fully resolved** in Sections 11–12 of [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:489) are included here. Each CLAR entry is structured for use by an orchestrator agent to ask the human rules author targeted questions.
 
 ## 1. CLAR Items Overview
 
@@ -31,14 +31,14 @@ Only items that are **not fully resolved** in Sections 11–12 of [`RULES_CANONI
 
 **Sources**
 
-- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:232) – RR-CANON-R090 text: "any stack in S that satisfies RR-CANON-R091–R093 for at least one direction has at least one legal move."
-- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:239) – RR-CANON-R091 Path and distance for non-capture movement.
-- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:255) – RR-CANON-R092 Marker interaction during non-capture movement.
+- [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:232) – RR-CANON-R090 text: "any stack in S that satisfies RR-CANON-R091–R093 for at least one direction has at least one legal move."
+- [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:239) – RR-CANON-R091 Path and distance for non-capture movement.
+- [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:255) – RR-CANON-R092 Marker interaction during non-capture movement.
 - No RR-CANON-R093 definition exists in the canonical spec.
 
 **Problem description**
 
-RR-CANON-R090 defines movement availability in terms of stacks that "satisfy RR-CANON-R091–R093", but only RR-CANON-R091 and RR-CANON-R092 are actually defined. There is no RR-CANON-R093 rule block in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1). This creates a dangling rule reference and minor ambiguity for downstream tooling that expects every referenced rule ID to exist.
+RR-CANON-R090 defines movement availability in terms of stacks that "satisfy RR-CANON-R091–R093", but only RR-CANON-R091 and RR-CANON-R092 are actually defined. There is no RR-CANON-R093 rule block in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:1). This creates a dangling rule reference and minor ambiguity for downstream tooling that expects every referenced rule ID to exist.
 
 **Candidate interpretations**
 
@@ -47,7 +47,7 @@ RR-CANON-R090 defines movement availability in terms of stacks that "satisfy RR-
 
 **Current implementation behaviour**
 
-- All known movement logic in the TypeScript and Python engines implements movement availability using exactly the semantics described in RR-CANON-R091 and RR-CANON-R092, as mapped in [`RULES_IMPLEMENTATION_MAPPING.md`](../../RULES_IMPLEMENTATION_MAPPING.md:254) §3.4 and analysed in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:811) §2.4 and [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:227) §2.4.
+- All known movement logic in the TypeScript and Python engines implements movement availability using exactly the semantics described in RR-CANON-R091 and RR-CANON-R092, as mapped in [`RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md:254) §3.4 and analysed in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:811) §2.4 and [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:227) §2.4.
 - No code, tests, or documentation refer to a distinct RR-CANON-R093 behaviour. The system behaves as if Interpretation A is correct.
 
 **Recommended clarification / questions for rules author**
@@ -68,10 +68,10 @@ RR-CANON-R090 defines movement availability in terms of stacks that "satisfy RR-
 
 **Sources**
 
-- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:700) – RR-CANON-R172 Last-player-standing victory: defines an explicit early victory condition when exactly one player has real actions for three consecutive full rounds and all others with material have none.
+- [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:700) – RR-CANON-R172 Last-player-standing victory: defines an explicit early victory condition when exactly one player has real actions for three consecutive full rounds and all others with material have none.
 - [`docs/rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md:1376) §13.3 Last Player Standing – narrative description and examples of last-player-standing as a primary victory path alongside elimination and territory.
 - [`docs/rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md:1867) §16.6 and [`docs/rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md:2156) §16.9.4.5 – summaries that restate last-player-standing as a distinct victory path.
-- [`RULES_IMPLEMENTATION_MAPPING.md`](../../RULES_IMPLEMENTATION_MAPPING.md:381) §3.8 – notes that victory logic encodes elimination, territory, last-player-standing, and stalemate via the shared `VictoryAggregate` and LPS helpers.
+- [`RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md:381) §3.8 – notes that victory logic encodes elimination, territory, last-player-standing, and stalemate via the shared `VictoryAggregate` and LPS helpers.
 - [`docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md`](../rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:170) ANM-SCEN-07 – documents how early LPS interacts with ANM and forced elimination.
 
 **Problem description**
@@ -106,7 +106,7 @@ This resolves the earlier ambiguity where engines played to completion and relie
 
 **Sources**
 
-- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61) – RR-CANON-R020 rings per player; [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:218) RR-CANON-R081 and [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:225) RR-CANON-R082 reference a per-player `ringsPerPlayer` maximum when placing.
+- [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:61) – RR-CANON-R020 rings per player; [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:218) RR-CANON-R081 and [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:225) RR-CANON-R082 reference a per-player `ringsPerPlayer` maximum when placing.
 - [`../rules/COMPACT_RULES.md`](../rules/COMPACT_RULES.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8/hex8), 72 (square19), or 96 (hexagonal radius 12).
 - [`../rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md:443) §3.2.1 – states the fixed personal ring supply: 72 (19×19), 96 (hexagonal), 18 (8×8/hex8).
 - [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755) §2.3.3 – describes the current implementation approximation: per-player ring cap counts **all rings in stacks controlled by a player**, including captured rings of other colours, when deciding whether further placements are allowed (CCE-002).
@@ -152,7 +152,7 @@ The current implementation adopts a conservative approximation: it treats the su
     - (i) Define `ringsPerPlayer` explicitly as an own-colour budget, and
     - (ii) Adjust placement-cap checks in both TypeScript and Python engines to count only own-colour rings on the board plus rings in hand when deciding whether further placements are legal?"
 - **If Interpretation B is intended (current behaviour is desired):**
-  - "Can we update [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61) and the Complete / Compact rules to state clearly that:
+  - "Can we update [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:61) and the Complete / Compact rules to state clearly that:
     - (i) `ringsPerPlayer` is effectively a cap on total **stack height** under a player’s control (not just own-colour rings), and
     - (ii) captured rings of other colours in a player’s stacks count toward that player’s control cap for placement purposes?"
 - **If a hybrid or alternative approach (Interpretation C) is preferred:**
@@ -162,6 +162,6 @@ The current implementation adopts a conservative approximation: it treats the su
 
 ## 3. Status Summary
 
-- CLAR-001, CLAR-002, and CLAR-003 are now **Resolved**, and their chosen interpretations have been integrated into [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1), [`../rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md:1), and [`../rules/COMPACT_RULES.md`](../rules/COMPACT_RULES.md:1).
+- CLAR-001, CLAR-002, and CLAR-003 are now **Resolved**, and their chosen interpretations have been integrated into [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:1), [`../rules/COMPLETE_RULES.md`](../rules/COMPLETE_RULES.md:1), and [`../rules/COMPACT_RULES.md`](../rules/COMPACT_RULES.md:1).
 - There are currently **no** open CLAR items that block implementation or documentation work on Last-Player-Standing victory or per-player ring caps.
 - Future clarification items, if any, should be added as new `CLAR-00X` entries below, with their own status and resolution notes.

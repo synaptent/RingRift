@@ -237,7 +237,7 @@ TS_NODE_PROJECT=tsconfig.server.json npx ts-node -T scripts/validate-fsm-active-
 ### Related Documentation
 
 - [Environment Variables](../operations/ENVIRONMENT_VARIABLES.md#fsm-validation-mode)
-- [Production Deployment Runbook](./PRODUCTION_DEPLOYMENT_RUNBOOK.md)
+- [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md)
 - [Orchestrator Rollout Feature Flags](../archive/ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md) (historical reference)
 
 ---

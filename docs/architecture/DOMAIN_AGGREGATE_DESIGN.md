@@ -10,10 +10,10 @@
 >   - Cross-language contracts under `src/shared/engine/contracts/*` plus JSON fixtures under `tests/fixtures/contract-vectors/v2/`.
 > - The **multi-file per-aggregate layouts and migration phases below** are a **target design**. They have been partially implemented via the current `aggregates/*.ts` modules and refactors, but many legacy validators/mutators still exist as compatibility shims.
 > - For the **authoritative, current module inventory and concern types**, see:
->   - [`docs/MODULE_RESPONSIBILITIES.md`](./MODULE_RESPONSIBILITIES.md) (helpers → aggregates → orchestrator → contracts).
->   - [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md).
+>   - [`docs/MODULE_RESPONSIBILITIES.md`](MODULE_RESPONSIBILITIES.md) (helpers → aggregates → orchestrator → contracts).
+>   - [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md).
 > - For the **canonical Move / PendingDecision / PlayerChoice / WebSocket lifecycle**, see:
->   - [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](./CANONICAL_ENGINE_API.md).
+>   - [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](CANONICAL_ENGINE_API.md).
 >
 > Use this document as a **design reference** when evolving the aggregate internals, not as the sole source of truth about the current file layout.
 
@@ -125,11 +125,11 @@ Owns all ring placement validation, mutation, and enumeration logic.
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                                        | Status in design        |
-| ------------------------------------------------------------------------------------------- | ----------------------- |
-| [`validators/PlacementValidator.ts`](../src/shared/engine/validators/PlacementValidator.ts) | Absorbed into aggregate |
-| [`mutators/PlacementMutator.ts`](../src/shared/engine/mutators/PlacementMutator.ts)         | Absorbed into aggregate |
-| [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts)                           | Absorbed into aggregate |
+| File                                                                                           | Status in design        |
+| ---------------------------------------------------------------------------------------------- | ----------------------- |
+| [`validators/PlacementValidator.ts`](../../src/shared/engine/validators/PlacementValidator.ts) | Absorbed into aggregate |
+| [`mutators/PlacementMutator.ts`](../../src/shared/engine/mutators/PlacementMutator.ts)         | Absorbed into aggregate |
+| [`placementHelpers.ts`](../../src/shared/engine/placementHelpers.ts)                           | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -266,12 +266,12 @@ Owns all non-capturing movement validation, enumeration, and mutation logic.
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                                      | Status in design        |
-| ----------------------------------------------------------------------------------------- | ----------------------- |
-| [`validators/MovementValidator.ts`](../src/shared/engine/validators/MovementValidator.ts) | Absorbed into aggregate |
-| [`mutators/MovementMutator.ts`](../src/shared/engine/mutators/MovementMutator.ts)         | Absorbed into aggregate |
-| [`movementLogic.ts`](../src/shared/engine/movementLogic.ts)                               | Absorbed into aggregate |
-| [`movementApplication.ts`](../src/shared/engine/movementApplication.ts)                   | Absorbed into aggregate |
+| File                                                                                         | Status in design        |
+| -------------------------------------------------------------------------------------------- | ----------------------- |
+| [`validators/MovementValidator.ts`](../../src/shared/engine/validators/MovementValidator.ts) | Absorbed into aggregate |
+| [`mutators/MovementMutator.ts`](../../src/shared/engine/mutators/MovementMutator.ts)         | Absorbed into aggregate |
+| [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts)                               | Absorbed into aggregate |
+| [`movementApplication.ts`](../../src/shared/engine/movementApplication.ts)                   | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -383,11 +383,11 @@ Owns all overtaking capture validation, enumeration, and mutation logic, includi
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                                    | Status in design        |
-| --------------------------------------------------------------------------------------- | ----------------------- |
-| [`validators/CaptureValidator.ts`](../src/shared/engine/validators/CaptureValidator.ts) | Absorbed into aggregate |
-| [`mutators/CaptureMutator.ts`](../src/shared/engine/mutators/CaptureMutator.ts)         | Absorbed into aggregate |
-| [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)                               | Absorbed into aggregate |
+| File                                                                                       | Status in design        |
+| ------------------------------------------------------------------------------------------ | ----------------------- |
+| [`validators/CaptureValidator.ts`](../../src/shared/engine/validators/CaptureValidator.ts) | Absorbed into aggregate |
+| [`mutators/CaptureMutator.ts`](../../src/shared/engine/mutators/CaptureMutator.ts)         | Absorbed into aggregate |
+| [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts)                               | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -536,12 +536,12 @@ Owns all marker line detection, validation, and collapse logic including line re
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                              | Status in design        |
-| --------------------------------------------------------------------------------- | ----------------------- |
-| [`validators/LineValidator.ts`](../src/shared/engine/validators/LineValidator.ts) | Absorbed into aggregate |
-| [`mutators/LineMutator.ts`](../src/shared/engine/mutators/LineMutator.ts)         | Absorbed into aggregate |
-| [`lineDetection.ts`](../src/shared/engine/lineDetection.ts)                       | Absorbed into aggregate |
-| [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)           | Absorbed into aggregate |
+| File                                                                                 | Status in design        |
+| ------------------------------------------------------------------------------------ | ----------------------- |
+| [`validators/LineValidator.ts`](../../src/shared/engine/validators/LineValidator.ts) | Absorbed into aggregate |
+| [`mutators/LineMutator.ts`](../../src/shared/engine/mutators/LineMutator.ts)         | Absorbed into aggregate |
+| [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts)                       | Absorbed into aggregate |
+| [`lineDecisionHelpers.ts`](../../src/shared/engine/lineDecisionHelpers.ts)           | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -677,14 +677,14 @@ Owns all territory disconnection detection, border analysis, processability chec
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                                        | Status in design        |
-| ------------------------------------------------------------------------------------------- | ----------------------- |
-| [`validators/TerritoryValidator.ts`](../src/shared/engine/validators/TerritoryValidator.ts) | Absorbed into aggregate |
-| [`mutators/TerritoryMutator.ts`](../src/shared/engine/mutators/TerritoryMutator.ts)         | Absorbed into aggregate |
-| [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts)                       | Absorbed into aggregate |
-| [`territoryBorders.ts`](../src/shared/engine/territoryBorders.ts)                           | Absorbed into aggregate |
-| [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts)                     | Absorbed into aggregate |
-| [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts)           | Absorbed into aggregate |
+| File                                                                                           | Status in design        |
+| ---------------------------------------------------------------------------------------------- | ----------------------- |
+| [`validators/TerritoryValidator.ts`](../../src/shared/engine/validators/TerritoryValidator.ts) | Absorbed into aggregate |
+| [`mutators/TerritoryMutator.ts`](../../src/shared/engine/mutators/TerritoryMutator.ts)         | Absorbed into aggregate |
+| [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts)                       | Absorbed into aggregate |
+| [`territoryBorders.ts`](../../src/shared/engine/territoryBorders.ts)                           | Absorbed into aggregate |
+| [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts)                     | Absorbed into aggregate |
+| [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts)           | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -895,9 +895,9 @@ Owns all victory condition evaluation and tie-breaker logic.
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                      | Status in design        |
-| --------------------------------------------------------- | ----------------------- |
-| [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts) | Absorbed into aggregate |
+| File                                                                     | Status in design        |
+| ------------------------------------------------------------------------ | ----------------------- |
+| [`victoryLogic.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts) | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -964,9 +964,9 @@ Owns all elimination semantics for RingRift, providing a single source of truth 
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                                            | Status in design |
-| ----------------------------------------------------------------------------------------------- | ---------------- |
-| [`aggregates/EliminationAggregate.ts`](../src/shared/engine/aggregates/EliminationAggregate.ts) | Canonical SSoT   |
+| File                                                                                               | Status in design |
+| -------------------------------------------------------------------------------------------------- | ---------------- |
+| [`aggregates/EliminationAggregate.ts`](../../src/shared/engine/aggregates/EliminationAggregate.ts) | Canonical SSoT   |
 
 #### Public Interface (design sketch)
 
@@ -1083,10 +1083,10 @@ Owns all recovery action validation, enumeration, and mutation for temporarily e
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                                      | Status in design     |
-| ----------------------------------------------------------------------------------------- | -------------------- |
-| [`aggregates/RecoveryAggregate.ts`](../src/shared/engine/aggregates/RecoveryAggregate.ts) | Canonical SSoT       |
-| [`playerStateHelpers.ts`](../src/shared/engine/playerStateHelpers.ts)                     | Helper (eligibility) |
+| File                                                                                         | Status in design     |
+| -------------------------------------------------------------------------------------------- | -------------------- |
+| [`aggregates/RecoveryAggregate.ts`](../../src/shared/engine/aggregates/RecoveryAggregate.ts) | Canonical SSoT       |
+| [`playerStateHelpers.ts`](../../src/shared/engine/playerStateHelpers.ts)                     | Helper (eligibility) |
 
 #### Public Interface (design sketch)
 
@@ -1233,14 +1233,14 @@ In the actual codebase, this role is currently played by:
 
 ### Source Modules (conceptual consolidation)
 
-| File                                                                | Status in design                              |
-| ------------------------------------------------------------------- | --------------------------------------------- |
-| [`core.ts`](../src/shared/engine/core.ts)                           | Remains as SharedCore                         |
-| [`types.ts`](../src/shared/engine/types.ts)                         | Remains as SharedCore                         |
-| [`notation.ts`](../src/shared/engine/notation.ts)                   | Remains as SharedCore                         |
-| [`moveActionAdapter.ts`](../src/shared/engine/moveActionAdapter.ts) | Remains as SharedCore                         |
-| [`validators/utils.ts`](../src/shared/engine/validators/utils.ts)   | Conceptually merged into SharedCore           |
-| [`validators/index.ts`](../src/shared/engine/validators/index.ts)   | Deprecated (barrel replaced by aggregate API) |
+| File                                                                   | Status in design                              |
+| ---------------------------------------------------------------------- | --------------------------------------------- |
+| [`core.ts`](../../src/shared/engine/core.ts)                           | Remains as SharedCore                         |
+| [`types.ts`](../../src/shared/engine/types.ts)                         | Remains as SharedCore                         |
+| [`notation.ts`](../../src/shared/engine/notation.ts)                   | Remains as SharedCore                         |
+| [`moveActionAdapter.ts`](../../src/shared/engine/moveActionAdapter.ts) | Remains as SharedCore                         |
+| [`validators/utils.ts`](../../src/shared/engine/validators/utils.ts)   | Conceptually merged into SharedCore           |
+| [`validators/index.ts`](../../src/shared/engine/validators/index.ts)   | Deprecated (barrel replaced by aggregate API) |
 
 ### Public Interface (design sketch)
 

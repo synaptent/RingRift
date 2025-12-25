@@ -391,4 +391,4 @@ print(f"Failed baselines: {result.failed_baselines}")
 
 - [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - Training workflow
 - [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Automated promotion in unified loop
-- [AI_LADDER_PRODUCTION_RUNBOOK.md](../../docs/ai/AI_LADDER_PRODUCTION_RUNBOOK.md) - Difficulty ladder operations
+- [AI_LADDER_PRODUCTION_RUNBOOK.md](../../../docs/ai/AI_LADDER_PRODUCTION_RUNBOOK.md) - Difficulty ladder operations

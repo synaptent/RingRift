@@ -67,9 +67,9 @@ environment flags:
 
 For host-driven turn processing and rules-surface queries, the canonical orchestrator APIs into the shared TS rules engine are:
 
-- `processTurnAsync(state, move, delegates)` in [`turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts:1) – **canonical host-facing entrypoint** for applying moves.
-- `processTurn(state, move)` in [`turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts:1) – synchronous helper used where decisions can be resolved inline.
-- `validateMove(state, move)`, `getValidMoves(state)`, and `hasValidMoves(state)` in [`turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts:1) – canonical validation and enumeration helpers for hosts and diagnostics harnesses.
+- `processTurnAsync(state, move, delegates)` in [`turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts:1) – **canonical host-facing entrypoint** for applying moves.
+- `processTurn(state, move)` in [`turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts:1) – synchronous helper used where decisions can be resolved inline.
+- `validateMove(state, move)`, `getValidMoves(state)`, and `hasValidMoves(state)` in [`turnOrchestrator.ts`](../../src/shared/engine/orchestration/turnOrchestrator.ts:1) – canonical validation and enumeration helpers for hosts and diagnostics harnesses.
 
 All host stacks (backend `GameEngine`, client sandbox `ClientSandboxEngine`, diagnostics harnesses) **must** treat `processTurnAsync` and these helpers as the lifecycle and rules-surface SSOT for turn processing. Legacy turn loops in `GameEngine` and `ClientSandboxEngine` are treated as migration scaffolding to be removed or demoted by this plan.
 
@@ -77,14 +77,14 @@ All host stacks (backend `GameEngine`, client sandbox `ClientSandboxEngine`, dia
 
 The following domain aggregates under `src/shared/engine/aggregates/**` are the **single source of truth for rules semantics** in their respective domains:
 
-- [`MovementAggregate`](../src/shared/engine/aggregates/MovementAggregate.ts:1) – non-capturing movement validation, enumeration, and mutation.
-- [`CaptureAggregate`](../src/shared/engine/aggregates/CaptureAggregate.ts:1) – capture and chain-capture validation, enumeration, mutation, and continuation logic.
-- [`PlacementAggregate`](../src/shared/engine/aggregates/PlacementAggregate.ts:1) – placement and no-dead-placement validation, enumeration, and mutation.
-- [`RecoveryAggregate`](../src/shared/engine/aggregates/RecoveryAggregate.ts:1) – recovery eligibility, enumeration, and mutation for temporarily eliminated players.
-- [`LineAggregate`](../src/shared/engine/aggregates/LineAggregate.ts:1) – line detection and decision moves via `enumerateProcessLineMoves` and `applyProcessLineDecision`.
-- [`TerritoryAggregate`](../src/shared/engine/aggregates/TerritoryAggregate.ts:1) – disconnected-region detection, Q23 gating, territory collapse, and elimination decisions.
-- [`EliminationAggregate`](../src/shared/engine/aggregates/EliminationAggregate.ts:1) – ring elimination semantics for line, territory, and forced elimination contexts.
-- [`VictoryAggregate`](../src/shared/engine/aggregates/VictoryAggregate.ts:1) – victory evaluation and tie-breaking, surfaced via `evaluateVictory`.
+- [`MovementAggregate`](../../src/shared/engine/aggregates/MovementAggregate.ts:1) – non-capturing movement validation, enumeration, and mutation.
+- [`CaptureAggregate`](../../src/shared/engine/aggregates/CaptureAggregate.ts:1) – capture and chain-capture validation, enumeration, mutation, and continuation logic.
+- [`PlacementAggregate`](../../src/shared/engine/aggregates/PlacementAggregate.ts:1) – placement and no-dead-placement validation, enumeration, and mutation.
+- [`RecoveryAggregate`](../../src/shared/engine/aggregates/RecoveryAggregate.ts:1) – recovery eligibility, enumeration, and mutation for temporarily eliminated players.
+- [`LineAggregate`](../../src/shared/engine/aggregates/LineAggregate.ts:1) – line detection and decision moves via `enumerateProcessLineMoves` and `applyProcessLineDecision`.
+- [`TerritoryAggregate`](../../src/shared/engine/aggregates/TerritoryAggregate.ts:1) – disconnected-region detection, Q23 gating, territory collapse, and elimination decisions.
+- [`EliminationAggregate`](../../src/shared/engine/aggregates/EliminationAggregate.ts:1) – ring elimination semantics for line, territory, and forced elimination contexts.
+- [`VictoryAggregate`](../../src/shared/engine/aggregates/VictoryAggregate.ts:1) – victory evaluation and tie-breaking, surfaced via `evaluateVictory`.
 
 All hosts and helpers (backend, sandbox, Python mirror, diagnostics scripts) **must** treat these aggregates and their helper modules (`movementLogic.ts`, `captureLogic.ts`, `lineDecisionHelpers.ts`, `territoryDecisionHelpers.ts`, `victoryLogic.ts`, etc.) as the **only authoritative implementation of placement, movement, recovery, capture, line, territory, elimination, and victory semantics**.
 
@@ -92,8 +92,8 @@ All hosts and helpers (backend, sandbox, Python mirror, diagnostics scripts) **m
 
 The orchestrator integration layers are:
 
-- Backend adapter: [`TurnEngineAdapter`](../src/server/game/turn/TurnEngineAdapter.ts:1).
-- Sandbox adapter: [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts:1).
+- Backend adapter: [`TurnEngineAdapter`](../../src/server/game/turn/TurnEngineAdapter.ts:1).
+- Sandbox adapter: [`SandboxOrchestratorAdapter`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts:1).
 
 These adapters:
 
@@ -118,20 +118,20 @@ They are **not** allowed as alternative production turn-processing pipelines onc
 ### 2.4 Host stacks and Python mirror
 
 - Backend host stack:
-  - `GameEngine` in [`GameEngine.ts`](../src/server/game/GameEngine.ts:1) – stateful backend host responsible for timers, WebSocket integration, rating updates, and structured history. It currently has:
+  - `GameEngine` in [`GameEngine.ts`](../../src/server/game/GameEngine.ts:1) – stateful backend host responsible for timers, WebSocket integration, rating updates, and structured history. It currently has:
     - An orchestrator path via `processMoveViaAdapter` + `TurnEngineAdapter`.
     - A legacy path via `makeMove` and internal phase loops that apply moves via shared aggregates and helpers.
-  - `RuleEngine` in [`RuleEngine.ts`](../src/server/game/RuleEngine.ts:1) – rules-facing validation and enumeration surface used by `GameEngine` and `TurnEngine`. It delegates to shared helpers and aggregates but still exposes an older `processMove` pipeline.
-  - `TurnEngine` in [`turn/TurnEngine.ts`](../src/server/game/turn/TurnEngine.ts:1) – shared backend turn/phase lifecycle for the backend path, already aligned with shared `turnLogic`.
+  - `RuleEngine` in [`RuleEngine.ts`](../../src/server/game/RuleEngine.ts:1) – rules-facing validation and enumeration surface used by `GameEngine` and `TurnEngine`. It delegates to shared helpers and aggregates but still exposes an older `processMove` pipeline.
+  - `TurnEngine` in [`turn/TurnEngine.ts`](../../src/server/game/turn/TurnEngine.ts:1) – shared backend turn/phase lifecycle for the backend path, already aligned with shared `turnLogic`.
 
 - Sandbox host stack:
-  - `ClientSandboxEngine` in [`ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts:1) – client-local host for `/sandbox`, with:
+  - `ClientSandboxEngine` in [`ClientSandboxEngine.ts`](../../src/client/sandbox/ClientSandboxEngine.ts:1) – client-local host for `/sandbox`, with:
     - An orchestrator path via `processMoveViaAdapter` + `SandboxOrchestratorAdapter`.
     - A legacy sandbox pipeline composed out of shared aggregates and sandbox helpers (movement, capture, lines, territory, forced elimination, LPS, and victory).
   - Sandbox helpers under `src/client/sandbox/**` (movement, captures, territory, lines, victory, AI, game-end) – now predominantly UX/diagnostics wrappers over shared aggregates.
 
 - Python rules/AI mirror:
-  - `GameEngine` in [`ai-service/app/game_engine/__init__.py`](../ai-service/app/game_engine/__init__.py:1) and rule modules under `ai-service/app/rules/**` implement a parity-checked Python port of the TS rules engine.
+  - `GameEngine` in [`ai-service/app/game_engine/__init__.py`](../../ai-service/app/game_engine/__init__.py:1) and rule modules under `ai-service/app/rules/**` implement a parity-checked Python port of the TS rules engine.
   - Parity and contract tests under `ai-service/tests/**` and `tests/parity/**` validate that Python behaviour matches the TS SSOT.
   - Python code is **not** a semantics SSOT; any divergence must be fixed by updating Python to match the TS shared engine and contracts.
 
@@ -243,7 +243,7 @@ This section enumerates remaining TS backend and sandbox modules that either:
 
 ### 4.3 Diagnostics scripts and tooling
 
-Some scripts under `scripts/` use shared engine helpers to explore or debug rules behaviour (for example, [`scripts/findCyclicCaptures.js`](../scripts/findCyclicCaptures.js:1) and [`scripts/findCyclicCapturesHex.js`](../scripts/findCyclicCapturesHex.js:1)). These scripts:
+Some scripts under `scripts/` use shared engine helpers to explore or debug rules behaviour (for example, [`scripts/findCyclicCaptures.js`](../../scripts/findCyclicCaptures.js:1) and [`scripts/findCyclicCapturesHex.js`](../../scripts/findCyclicCapturesHex.js:1)). These scripts:
 
 - Do **not** implement independent semantics.
 - Are explicitly documented as analysis tools.
@@ -414,8 +414,8 @@ The remaining orchestrator rollout and legacy shutdown work is organised into fo
 
 This section defines orchestrator‑specific SLOs and error budgets and then restates
 the supporting tests, metrics, and rollback levers that enforce them. Alert
-thresholds in [`ALERTING_THRESHOLDS.md`](ALERTING_THRESHOLDS.md:1) and
-[`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml:1) are
+thresholds in [`ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:1) and
+[`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml:1) are
 intentionally a little looser than these SLO targets so that on‑call receives
 early warning before the error budget is exhausted.
 
@@ -477,7 +477,7 @@ These conditions define "Success" for Phase 2 in the context of P18.4-4; moving 
 **SLO-CI-ORCH-PARITY – Orchestrator parity CI gate**
 
 - **Metric:** Status of the `orchestrator-parity` GitHub Actions job defined in
-  [`.github/workflows/ci.yml`](.github/workflows/ci.yml:1), which runs
+  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml:1), which runs
   `npm run test:orchestrator-parity:ts` and
   `./scripts/run-python-contract-tests.sh --verbose`.
 - **Target:** For any commit that will be:
@@ -496,10 +496,10 @@ These conditions define "Success" for Phase 2 in the context of P18.4-4; moving 
   - Canonical CI command:
     `npm run soak:orchestrator:short`
     (as used by the `orchestrator-short-soak` job in
-    [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1)).
+    [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml:1)).
   - Smoke variant (single-game fast check):
     `npm run soak:orchestrator:smoke` producing
-    [`results/orchestrator_soak_smoke.json`](../results/orchestrator_soak_smoke.json:1).
+    [`results/orchestrator_soak_smoke.json`](../../results/orchestrator_soak_smoke.json:1).
   - For deeper offline or scheduled runs (not required for this SLO) see
     `npm run soak:orchestrator:nightly`, which produces
     [`results/orchestrator_soak_nightly.json`](../results/orchestrator_soak_nightly.json:1).
@@ -523,10 +523,10 @@ Although not a hard gate for orchestrator rollout, Python strict‑invariant hea
 
 - **Metric / alerts:**
   - `ringrift_python_invariant_violations_total{invariant_id, type}` exported by the AI self‑play soak harness (`run_self_play_soak.py` under `RINGRIFT_STRICT_NO_MOVE_INVARIANT=1`).
-  - `PythonInvariantViolations` alert in [`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml:580) and described in [`docs/operations/ALERTING_THRESHOLDS.md`](docs/operations/ALERTING_THRESHOLDS.md:640).
+  - `PythonInvariantViolations` alert in [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml:580) and described in [`docs/operations/ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:640).
 - **CI / workflows:**
-  - `python-ai-healthcheck` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1) – runs `python scripts/run_self_play_soak.py --profile ai-healthcheck --max-moves 200 --fail-on-anomaly` across `square8`, `square19`, and `hexagonal`, emitting invariant violations keyed by `INV-*` IDs (see [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:1)).
-  - `AI Self-Play Healthcheck (Nightly)` workflow in [`.github/workflows/ai-healthcheck-nightly.yml`](../.github/workflows/ai-healthcheck-nightly.yml:1) – deeper variant with increased `RINGRIFT_AI_HEALTHCHECK_GAMES` and a higher `--max-moves` cap.
+  - `python-ai-healthcheck` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml:1) – runs `python scripts/run_self_play_soak.py --profile ai-healthcheck --max-moves 200 --fail-on-anomaly` across `square8`, `square19`, and `hexagonal`, emitting invariant violations keyed by `INV-*` IDs (see [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](../rules/INVARIANTS_AND_PARITY_FRAMEWORK.md:1)).
+  - `AI Self-Play Healthcheck (Nightly)` workflow in [`.github/workflows/ai-healthcheck-nightly.yml`](../../.github/workflows/ai-healthcheck-nightly.yml:1) – deeper variant with increased `RINGRIFT_AI_HEALTHCHECK_GAMES` and a higher `--max-moves` cap.
 - **Rollout posture:**
   - For any release candidate going to staging or production, Python AI healthchecks **should be green** and `PythonInvariantViolations` should be quiet over the recent window, or any violations must be understood and explicitly triaged as AI‑only or training‑only issues.
   - When Python invariant alerts indicate potential cross‑stack rules regressions (for example `INV-ACTIVE-NO-MOVES` or `INV-S-MONOTONIC` anomalies), treat them as inputs to the same investigation loop as orchestrator invariant and rules‑parity signals before advancing phases in §8.
@@ -547,7 +547,7 @@ production.
 
 - **Metric:** `ringrift_orchestrator_error_rate{environment="staging"}` – the
   fraction of orchestrator‑handled requests that failed in the most recent
-  error window, as exposed by [`MetricsService`](../src/server/services/MetricsService.ts:1).
+  error window, as exposed by [`MetricsService`](../../src/server/services/MetricsService.ts:1).
 - **Target:**
   `ringrift_orchestrator_error_rate <= 0.001` (0.1%) over a trailing 24‑hour window.
 - **Window:** 24h trailing, evaluated via e.g.:
@@ -604,7 +604,7 @@ production.
 
 Production SLOs are phrased in terms of orchestrator‑specific metrics and sit
 under the broader availability and latency SLOs documented in
-[`ALERTING_THRESHOLDS.md`](ALERTING_THRESHOLDS.md:1).
+[`ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:1).
 
 **SLO-PROD-ORCH-ERROR – Production orchestrator error rate**
 
@@ -634,7 +634,7 @@ under the broader availability and latency SLOs documented in
   - `ringrift_orchestrator_invariant_violations_total{environment="production",type,invariant_id}`.
   - Logs and soak summaries derived from the orchestrator soak harness
     running periodically against production images
-    (see [`STRICT_INVARIANT_SOAKS.md`](STRICT_INVARIANT_SOAKS.md:1)).
+    (see [`STRICT_INVARIANT_SOAKS.md`](../testing/STRICT_INVARIANT_SOAKS.md:1)).
 - **Target:**
   - No invariant violations attributable to the orchestrator in production
     logs.
@@ -701,9 +701,9 @@ invalidate `SLO-CI-ORCH-PARITY` and halt rollout until fixed.
 
 Across implementation Phases A–C and environment Phases 0–4, the following
 metrics must be monitored, as described in
-[`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md:1),
-[`docs/runbooks/RULES_PARITY.md`](runbooks/RULES_PARITY.md:1), and
-[`docs/runbooks/GAME_HEALTH.md`](runbooks/GAME_HEALTH.md:1):
+[`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](../runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md:1),
+[`docs/runbooks/RULES_PARITY.md`](../runbooks/RULES_PARITY.md:1), and
+[`docs/runbooks/GAME_HEALTH.md`](../runbooks/GAME_HEALTH.md:1):
 
 - Orchestrator‑specific metrics:
   - `ringrift_orchestrator_error_rate`.
@@ -721,8 +721,8 @@ metrics must be monitored, as described in
     mode and by TS↔Python parity jobs.
 
 Target thresholds should align with v1.0 user‑visible SLOs in
-[`PROJECT_GOALS.md`](../PROJECT_GOALS.md:76) and the thresholds in
-[`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml:1),
+[`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:76) and the thresholds in
+[`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml:1),
 while remaining consistent with the orchestrator SLOs in §§6.2–6.4.
 
 ### 6.7 Rollback levers
@@ -743,7 +743,7 @@ Rollbacks should rely on:
     orchestrator metrics.
   - Production deployments using the existing deployment runbooks and
     rollback procedures in
-    [`docs/runbooks/DEPLOYMENT_ROUTINE.md`](runbooks/DEPLOYMENT_ROUTINE.md:1)
+    [`docs/runbooks/DEPLOYMENT_ROUTINE.md`](../runbooks/DEPLOYMENT_ROUTINE.md:1)
     and [`docs/runbooks/DEPLOYMENT_ROLLBACK.md`](runbooks/DEPLOYMENT_ROLLOUT.md:1).
 
 These levers define the rollback targets referenced in the environment phases
@@ -881,7 +881,7 @@ diagnostic legacy/SHADOW lane.
 ### 6.9 Orchestrator Parity CI Job (`orchestrator-parity`)
 
 The orchestrator parity CI gate is implemented as the `orchestrator-parity` job
-in [`.github/workflows/ci.yml`](.github/workflows/ci.yml:1). It runs under the
+in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml:1). It runs under the
 **orchestrator‑ON** profile described above and is required for
 orchestrator‑first rollout and TS↔Python parity guarantees.
 
@@ -890,17 +890,17 @@ orchestrator‑first rollout and TS↔Python parity guarantees.
   - Scope: backend and sandbox orchestrator multi‑phase scenarios plus core
     lines/territory unit suites:
     - [`tests/scenarios/Orchestrator.Backend.multiPhase.test.ts`](tests/scenarios/Orchestrator.Backend.multiPhase.test.ts:1)
-    - [`tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts`](tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts:1)
-    - [`tests/unit/GameEngine.lines.scenarios.test.ts`](tests/unit/GameEngine.lines.scenarios.test.ts:1)
-    - [`tests/unit/ClientSandboxEngine.lines.test.ts`](tests/unit/ClientSandboxEngine.lines.test.ts:1)
-    - [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1)
+    - [`tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts`](../../tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts:1)
+    - [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts:1)
+    - [`tests/unit/sandboxLines.test.ts`](tests/unit/sandboxLines.test.ts:1)
+    - [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts:1)
     - [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1)
-    - [`tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts`](tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts:1)
+    - [`tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts`](../../tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts:1)
 
 - **Python contract vectors:**
   - Command (from repo root): `./scripts/run-python-contract-tests.sh --verbose`
-  - Uses [`ai-service/requirements.txt`](ai-service/requirements.txt:1) and
-    [`ai-service/tests/contracts/test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py:1)
+  - Uses [`ai-service/requirements.txt`](../../ai-service/requirements.txt:1) and
+    [`ai-service/tests/contracts/test_contract_vectors.py`](../../ai-service/tests/contracts/test_contract_vectors.py:1)
     to validate Python rules behaviour against shared TS contract vectors.
 
 Failures in this job indicate either an orchestrator/host regression in the TS
@@ -952,16 +952,16 @@ This section summarises the plan for use by Track A implementation tasks:
 
 ### 7.2 Phase B – Sandbox orchestrator-only status (2025-11-28)
 
-- `/sandbox` and the React host in [`GamePage`](../src/client/pages/GamePage.tsx:1) now
+- `/sandbox` and the React host in [`GamePage`](../../src/client/pages/GamePage.tsx:1) now
   drive all canonical local sandbox moves through:
   - `ClientSandboxEngine.processMoveViaAdapter`
-  - [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts:1)
+  - [`SandboxOrchestratorAdapter`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts:1)
   - `processTurnAsync` in the shared orchestrator.
 - The legacy `LocalSandboxState` + `localSandboxController` harness is fully
   fenced off from production sandbox flows:
   - `GamePage.tsx` no longer imports `LocalSandboxState` or projects it into a
     faux `GameState` for the live `/sandbox` view.
-  - [`useSandboxInteractions`](../src/client/hooks/useSandboxInteractions.ts:1) no longer
+  - [`useSandboxInteractions`](../../src/client/hooks/useSandboxInteractions.ts:1) no longer
     imports or calls `handleLocalSandboxCellClick`; it always uses
     `ClientSandboxEngine` when a sandbox is configured.
   - `SandboxContext` continues to construct `ClientSandboxEngine` via
@@ -1024,7 +1024,7 @@ Wave 4 is considered complete when:
 ### 7.3 Phase C – Legacy helper shutdown & diagnostics fencing status (2025-11-28)
 
 - **Backend helpers**
-  - Legacy helpers in [`RuleEngine`](../src/server/game/RuleEngine.ts:1)
+  - Legacy helpers in [`RuleEngine`](../../src/server/game/RuleEngine.ts:1)
     (`processMove`, `processChainReactions`, `processLineFormation`,
     `processTerritoryDisconnection`) are explicitly documented as
     **DIAGNOSTICS-ONLY (legacy backend pipeline)** and are not called from:
@@ -1038,15 +1038,15 @@ Wave 4 is considered complete when:
     remain available for deep diagnostics and archived tests but are fully
     fenced from production hosts by call-site search and SSOT checks.
 - **Sandbox diagnostics surface**
-  - [`sandboxCaptures.applyCaptureSegmentOnBoard`](../src/client/sandbox/sandboxCaptures.ts:103)
+  - [`sandboxCaptures.applyCaptureSegmentOnBoard`](../../src/client/sandbox/sandboxCaptures.ts:103)
     now carries a top-level **DIAGNOSTICS-ONLY (SANDBOX ANALYSIS TOOL)** banner.
     It is only used by:
     - Capture/chain diagnostics tests (e.g.
-      [`captureSequenceEnumeration.test.ts`](../tests/unit/captureSequenceEnumeration.test.ts:1),
+      [`captureSequenceEnumeration.test.ts`](../../tests/unit/captureSequenceEnumeration.test.ts:1),
       cyclic-capture suites).
     - Diagnostic helpers built on cloned boards; live sandbox capture mutation
       in `ClientSandboxEngine` delegates exclusively to `CaptureAggregate`.
-  - [`sandboxCaptureSearch`](../src/client/sandbox/sandboxCaptureSearch.ts:1) now has a
+  - [`sandboxCaptureSearch`](../../src/client/sandbox/sandboxCaptureSearch.ts:1) now has a
     module header declaring it **DIAGNOSTICS-ONLY (SANDBOX CAPTURE CHAIN SEARCH)**:
     - It performs DFS over cloned `BoardState`s using shared
       `enumerateCaptureSegmentsFromBoard` + `applyCaptureSegmentOnBoard`.
@@ -1103,7 +1103,7 @@ orchestrator rollout postures. They are not an exhaustive matrix, but are
 intended as **canonical examples** that should be reflected in:
 
 - `.env` / deployment configuration for each environment
-- CI job `env:` blocks in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1)
+- CI job `env:` blocks in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml:1)
 - Operator expectations in the rollout runbook
 
 > On any conflict between these tables and live CI configs or env validation
@@ -1196,7 +1196,7 @@ Before moving beyond Phase 0, the following must exist:
   - Game move latency and key HTTP/availability/error SLOs.
   - Rules‑parity metrics for TS↔Python.
 - Alerts configured as in
-  [`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml:1)
+  [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml:1)
   for:
   - `OrchestratorCircuitBreakerOpen`
   - `OrchestratorErrorRateWarning`

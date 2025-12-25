@@ -199,7 +199,7 @@ The orchestrator now wraps all phase transitions and move validation. When it's 
 | [`test_mcts_ai.py:71`](../../ai-service/tests/test_mcts_ai.py:71)                                      | MCTS tests                                   | MCTS_TESTS_ENABLED env variable must be set | D        | Keep skipped | Controlled by env variable             |
 | [`test_rules_parity_fixtures.py:122`](../../ai-service/tests/parity/test_rules_parity_fixtures.py:122) | Rule parity fixture tests (4 entries)        | Fixture-dependent skipif                    | D        | Keep skipped | Valid conditional skip                 |
 | [`test_golden_replay.py:303`](../../ai-service/tests/golden/test_golden_replay.py:303)                 | Golden replay tests                          | Fixture-dependent skipif                    | D        | Keep skipped | Valid conditional skip                 |
-| [`invariants/test_*.py`](../../ai-service/tests/invariants/)                                           | Various invariant regression tests (5 files) | Snapshot-file-dependent skipif              | D        | Keep skipped | Valid conditional skip                 |
+| [`invariants/test_*.py`](../../ai-service/tests/invariants)                                            | Various invariant regression tests (5 files) | Snapshot-file-dependent skipif              | D        | Keep skipped | Valid conditional skip                 |
 
 ---
 

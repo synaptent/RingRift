@@ -4,18 +4,18 @@ This directory contains operational runbooks for deploying, managing, and troubl
 
 ## Runbook Index
 
-| Runbook                                                                        | Purpose                                               | When to Use                                                                       |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [DEPLOYMENT_INITIAL.md](./DEPLOYMENT_INITIAL.md)                               | First-time deployment                                 | Setting up a new environment                                                      |
-| [DEPLOYMENT_ROUTINE.md](./DEPLOYMENT_ROUTINE.md)                               | Standard release procedure                            | Regular version deployments                                                       |
-| [DEPLOYMENT_ROLLBACK.md](./DEPLOYMENT_ROLLBACK.md)                             | Rollback procedures                                   | When a deployment causes issues                                                   |
-| [DEPLOYMENT_SCALING.md](./DEPLOYMENT_SCALING.md)                               | Scaling operations                                    | Adjusting capacity up/down                                                        |
-| [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md)                               | Database schema changes                               | Prisma migration procedures                                                       |
-| [DATABASE_BACKUP_AND_RESTORE_DRILL.md](./DATABASE_BACKUP_AND_RESTORE_DRILL.md) | Backup/restore drill for Postgres                     | Periodic staging drills and pre-change rehearsals                                 |
-| [SECRETS_ROTATION_DRILL.md](./SECRETS_ROTATION_DRILL.md)                       | JWT and DB secrets rotation drill                     | Periodic security drills and pre-launch hardening                                 |
-| [AI_SERVICE_DEGRADATION_DRILL.md](./AI_SERVICE_DEGRADATION_DRILL.md)           | AI service degradation drill (staging)                | Staging drills for AI availability, fallbacks, dashboards, and alert validation   |
-| [ORCHESTRATOR_ROLLOUT_RUNBOOK.md](./ORCHESTRATOR_ROLLOUT_RUNBOOK.md)           | Orchestrator rollout, rollback, and incident handling | Changing orchestrator rollout phase or responding to orchestrator-specific alerts |
-| [FSM_VALIDATION_ROLLOUT.md](./FSM_VALIDATION_ROLLOUT.md)                       | FSM validation operations and monitoring              | FSM is canonical - operational guide for the game state orchestrator              |
+| Runbook                                                                      | Purpose                                               | When to Use                                                                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [DEPLOYMENT_INITIAL.md](DEPLOYMENT_INITIAL.md)                               | First-time deployment                                 | Setting up a new environment                                                      |
+| [DEPLOYMENT_ROUTINE.md](DEPLOYMENT_ROUTINE.md)                               | Standard release procedure                            | Regular version deployments                                                       |
+| [DEPLOYMENT_ROLLBACK.md](DEPLOYMENT_ROLLBACK.md)                             | Rollback procedures                                   | When a deployment causes issues                                                   |
+| [DEPLOYMENT_SCALING.md](DEPLOYMENT_SCALING.md)                               | Scaling operations                                    | Adjusting capacity up/down                                                        |
+| [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md)                               | Database schema changes                               | Prisma migration procedures                                                       |
+| [DATABASE_BACKUP_AND_RESTORE_DRILL.md](DATABASE_BACKUP_AND_RESTORE_DRILL.md) | Backup/restore drill for Postgres                     | Periodic staging drills and pre-change rehearsals                                 |
+| [SECRETS_ROTATION_DRILL.md](SECRETS_ROTATION_DRILL.md)                       | JWT and DB secrets rotation drill                     | Periodic security drills and pre-launch hardening                                 |
+| [AI_SERVICE_DEGRADATION_DRILL.md](AI_SERVICE_DEGRADATION_DRILL.md)           | AI service degradation drill (staging)                | Staging drills for AI availability, fallbacks, dashboards, and alert validation   |
+| [ORCHESTRATOR_ROLLOUT_RUNBOOK.md](ORCHESTRATOR_ROLLOUT_RUNBOOK.md)           | Orchestrator rollout, rollback, and incident handling | Changing orchestrator rollout phase or responding to orchestrator-specific alerts |
+| [FSM_VALIDATION_ROLLOUT.md](FSM_VALIDATION_ROLLOUT.md)                       | FSM validation operations and monitoring              | FSM is canonical - operational guide for the game state orchestrator              |
 
 ## Quick Reference
 

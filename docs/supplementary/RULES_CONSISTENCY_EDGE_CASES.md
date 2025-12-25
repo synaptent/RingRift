@@ -19,22 +19,22 @@ This report analyses how the implemented rules behave when **different rule clus
 
 The focus is **not** to redo full static or dynamic verification, but to sit on top of:
 
-- Canonical rules `RR‑CANON‑R001–R191` in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:36).
-- Implementation mapping in [`RULES_IMPLEMENTATION_MAPPING.md`](RULES_IMPLEMENTATION_MAPPING.md:1).
+- Canonical rules `RR‑CANON‑R001–R191` in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:36).
+- Implementation mapping in [`RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md:1).
 - Static analysis in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:1).
 - Scenario and soak analysis in [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:1).
 
 Code behaviour is inferred primarily from the shared engine and orchestration:
 
-- Turn / phase / forced elimination via [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:135) and backend / sandbox delegates.
-- Movement / capture / markers via [`TypeScript.core`](src/shared/engine/core.ts:1), [`TypeScript.movementLogic`](src/shared/engine/movementLogic.ts:1), and [`TypeScript.captureLogic`](src/shared/engine/captureLogic.ts:1).
-- Lines via [`TypeScript.lineDecisionHelpers`](src/shared/engine/lineDecisionHelpers.ts:1).
-- Territory via [`TypeScript.territoryDetection`](src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing`](src/shared/engine/territoryProcessing.ts:1), and [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:1).
-- Victory / stalemate via [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45).
-- Board invariants and repairs via [`TypeScript.BoardManager`](src/server/game/BoardManager.ts:94).
-- Sandbox turn orchestration via [`TypeScript.ClientSandboxEngine` turn helpers](src/client/sandbox/ClientSandboxEngine.ts:1606) composed with [`TypeScript.turnLogic.advanceTurnAndPhase`](src/shared/engine/turnLogic.ts:135).
+- Turn / phase / forced elimination via [`TypeScript.turnLogic.advanceTurnAndPhase()`](../../src/shared/engine/turnLogic.ts:135) and backend / sandbox delegates.
+- Movement / capture / markers via [`TypeScript.core`](../../src/shared/engine/core.ts:1), [`TypeScript.movementLogic`](../../src/shared/engine/movementLogic.ts:1), and [`TypeScript.captureLogic`](../../src/shared/engine/captureLogic.ts:1).
+- Lines via [`TypeScript.lineDecisionHelpers`](../../src/shared/engine/lineDecisionHelpers.ts:1).
+- Territory via [`TypeScript.territoryDetection`](../../src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing`](../../src/shared/engine/territoryProcessing.ts:1), and [`TypeScript.territoryDecisionHelpers`](../../src/shared/engine/territoryDecisionHelpers.ts:1).
+- Victory / stalemate via [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45).
+- Board invariants and repairs via [`TypeScript.BoardManager`](../../src/server/game/BoardManager.ts:94).
+- Sandbox turn orchestration via [`TypeScript.ClientSandboxEngine` turn helpers](../../src/client/sandbox/ClientSandboxEngine.ts:1606) composed with [`TypeScript.turnLogic.advanceTurnAndPhase`](../../src/shared/engine/turnLogic.ts:135).
 
-> **Note on legacy module references:** Throughout this report, some references point to historical modules such as `src/client/sandbox/sandboxTurnEngine.ts`, `sandboxMovementEngine.ts`, `sandboxLinesEngine.ts`, `sandboxTerritoryEngine.ts`, or backend helpers under `src/server/game/rules/*.ts` (e.g. `captureChainEngine.ts`). These files have been removed as part of the shared-engine consolidation and now exist only as historical anchors; their responsibilities live in the shared TS engine/orchestrator plus `ClientSandboxEngine.ts`, `SandboxOrchestratorAdapter.ts`, `GameEngine.ts`, `TurnEngineAdapter.ts`, and the Python rules/AI adapters described in the current architecture docs.
+> **Note on legacy module references:** Throughout this report, some references point to historical modules such as `src/client/sandbox/ClientSandboxEngine.ts`, `sandboxMovementEngine.ts`, `sandboxLinesEngine.ts`, `sandboxTerritoryEngine.ts`, or backend helpers under `src/server/game/rules/*.ts` (e.g. `captureChainEngine.ts`). These files have been removed as part of the shared-engine consolidation and now exist only as historical anchors; their responsibilities live in the shared TS engine/orchestrator plus `ClientSandboxEngine.ts`, `SandboxOrchestratorAdapter.ts`, `GameEngine.ts`, `TurnEngineAdapter.ts`, and the Python rules/AI adapters described in the current architecture docs.
 
 The main interaction domains covered are:
 
@@ -61,30 +61,30 @@ Each subsection lists:
 
 ### 2.1 Turn / Phase / Forced Elimination Interactions
 
-**RR‑CANON rules:** `R070–R072`, `R080–R082`, `R100`, `R170–R173` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:181)).  
-**Key implementations:** [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:135), [`TypeScript.advanceGameForCurrentPlayer`](src/server/game/turn/TurnEngine.ts:91), [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:752), [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1606), [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1715), Python strict invariants (`ai-service/tests/invariants/**`).
+**RR‑CANON rules:** `R070–R072`, `R080–R082`, `R100`, `R170–R173` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:181)).  
+**Key implementations:** [`TypeScript.turnLogic.advanceTurnAndPhase()`](../../src/shared/engine/turnLogic.ts:135), [`TypeScript.advanceGameForCurrentPlayer`](../../src/server/game/turn/TurnEngine.ts:91), [`TypeScript.RuleEngine`](../../src/server/game/RuleEngine.ts:752), [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](../../src/client/sandbox/ClientSandboxEngine.ts:1606), [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](../../src/client/sandbox/ClientSandboxEngine.ts:1715), Python strict invariants (`ai-service/tests/invariants/**`).
 
 #### 2.1.1 Intended interaction
 
-- Phases execute in the strict order placement → movement / capture (including chains) → line processing → territory processing → victory ([`RR‑CANON‑R070–R071`](RULES_CANONICAL_SPEC.md:181)).
-- At the start of a player’s action, if they control a stack but have **no legal placement, movement, or capture**, they must perform forced elimination ([`RR‑CANON‑R072`](RULES_CANONICAL_SPEC.md:196), [`RR‑CANON‑R100`](RULES_CANONICAL_SPEC.md:269)).
+- Phases execute in the strict order placement → movement / capture (including chains) → line processing → territory processing → victory ([`RR‑CANON‑R070–R071`](../../RULES_CANONICAL_SPEC.md:181)).
+- At the start of a player’s action, if they control a stack but have **no legal placement, movement, or capture**, they must perform forced elimination ([`RR‑CANON‑R072`](../../RULES_CANONICAL_SPEC.md:196), [`RR‑CANON‑R100`](../../RULES_CANONICAL_SPEC.md:269)).
 - Placement is:
   - Mandatory when no controlled stack has a legal move/capture.
   - Optional (skippable) when some controlled stack can move/capture.
-  - Forbidden when `ringsInHand == 0` ([`RR‑CANON‑R080`](RULES_CANONICAL_SPEC.md:208)).
+  - Forbidden when `ringsInHand == 0` ([`RR‑CANON‑R080`](../../RULES_CANONICAL_SPEC.md:208)).
 - Pending line / territory decisions must **not** block entry into forced elimination or victory checks at the end of a full turn.
 
 #### 2.1.2 Observed behaviour
 
 - **Backend / shared engine**
-  - [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:135) exactly enforces the phase ladder: `ring_placement → movement/capture/chain_capture → line_processing → territory_processing`, then rotates `currentPlayer` and considers forced elimination for the next player.
-  - Forced elimination eligibility uses delegates `hasAnyPlacement`, `hasAnyMovement`, `hasAnyCapture`. Backend implementations in [`TypeScript.TurnEngine.hasValidPlacements`](src/server/game/turn/TurnEngine.ts:208) and siblings query [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:752), so “no actions” is defined in terms of actual move enumeration, including `skip_placement`.
-  - If a player has stacks but `hasAnyPlacement == hasAnyMovement == hasAnyCapture == false`, `advanceTurnAndPhase` calls `applyForcedElimination`, which in backend is [`TypeScript.turn.processForcedElimination()`](src/server/game/turn/TurnEngine.ts:286) eliminating an entire cap from a chosen stack and then re‑running victory checks. This is consistent with [`RR‑CANON‑R100`](RULES_CANONICAL_SPEC.md:269).
+  - [`TypeScript.turnLogic.advanceTurnAndPhase()`](../../src/shared/engine/turnLogic.ts:135) exactly enforces the phase ladder: `ring_placement → movement/capture/chain_capture → line_processing → territory_processing`, then rotates `currentPlayer` and considers forced elimination for the next player.
+  - Forced elimination eligibility uses delegates `hasAnyPlacement`, `hasAnyMovement`, `hasAnyCapture`. Backend implementations in [`TypeScript.TurnEngine.hasValidPlacements`](../../src/server/game/turn/TurnEngine.ts:208) and siblings query [`TypeScript.RuleEngine.getValidMoves`](../../src/server/game/RuleEngine.ts:752), so “no actions” is defined in terms of actual move enumeration, including `skip_placement`.
+  - If a player has stacks but `hasAnyPlacement == hasAnyMovement == hasAnyCapture == false`, `advanceTurnAndPhase` calls `applyForcedElimination`, which in backend is [`TypeScript.turn.processForcedElimination()`](../../src/server/game/turn/TurnEngine.ts:286) eliminating an entire cap from a chosen stack and then re‑running victory checks. This is consistent with [`RR‑CANON‑R100`](../../RULES_CANONICAL_SPEC.md:269).
   - Line and territory processing are always entered **after** movement / capture (including chains) and always completed **before** turn rotation. Forced elimination is only considered after `territory_processing`, so pending lines/regions never block it.
 - **Sandbox (historical path; legacy `sandboxTurnEngine`, now removed)**
-  - In pre‑consolidation builds, sandbox phase advancement used the shared sequencer via [`TypeScript.sandboxTurnEngine.advanceTurnAndPhaseForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:81) but wrapped it with start‑of‑turn helpers.
-  - At the beginning of a turn, [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164) called [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228), which:
-  - In the current architecture, the same semantics are implemented by [`TypeScript.ClientSandboxEngine` turn helpers](src/client/sandbox/ClientSandboxEngine.ts:1606) composed with the shared [`TypeScript.turnLogic.advanceTurnAndPhase`](src/shared/engine/turnLogic.ts:135); sandbox no longer uses a separate consolidated `sandboxTurnEngine.ts` module.
+  - In pre‑consolidation builds, sandbox phase advancement used the shared sequencer via [`TypeScript.sandboxTurnEngine.advanceTurnAndPhaseForCurrentPlayerSandbox`](../../src/client/sandbox/ClientSandboxEngine.ts:81) but wrapped it with start‑of‑turn helpers.
+  - At the beginning of a turn, [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](../../src/client/sandbox/ClientSandboxEngine.ts:164) called [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](../../src/client/sandbox/ClientSandboxEngine.ts:228), which:
+  - In the current architecture, the same semantics are implemented by [`TypeScript.ClientSandboxEngine` turn helpers](../../src/client/sandbox/ClientSandboxEngine.ts:1606) composed with the shared [`TypeScript.turnLogic.advanceTurnAndPhase`](../../src/shared/engine/turnLogic.ts:135); sandbox no longer uses a separate consolidated `sandboxTurnEngine.ts` module.
     - Computes controlled stacks and approximated ring cap usage.
     - Uses `hooks.hasAnyLegalMoveOrCaptureFrom` and `hooks.enumerateLegalRingPlacements` (both wired back to shared helpers) to decide whether any move/capture/placement exists.
     - If no placements/movements/captures exist but stacks do, calls `forceEliminateCap` and immediately advances to the next player.
@@ -103,37 +103,37 @@ Each subsection lists:
 
 ### 2.2 Movement, Capture, Lines, and Territory in Sequence
 
-**RR‑CANON rules:** `R090–R092`, `R100–R103`, `R120–R122`, `R140–R145` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:231)).  
-**Key implementations:** [`TypeScript.core`](src/shared/engine/core.ts:367), [`TypeScript.movementLogic.enumerateSimpleMoveTargetsFromStack()`](src/shared/engine/movementLogic.ts:55), [`TypeScript.captureLogic.enumerateCaptureMoves()`](src/shared/engine/captureLogic.ts:26), backend and sandbox movement / capture application, [`TypeScript.lineDecisionHelpers`](src/shared/engine/lineDecisionHelpers.ts:1), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:172), [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:123), [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:171).
+**RR‑CANON rules:** `R090–R092`, `R100–R103`, `R120–R122`, `R140–R145` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:231)).  
+**Key implementations:** [`TypeScript.core`](../../src/shared/engine/core.ts:367), [`TypeScript.movementLogic.enumerateSimpleMoveTargetsFromStack()`](../../src/shared/engine/movementLogic.ts:55), [`TypeScript.captureLogic.enumerateCaptureMoves()`](../../src/shared/engine/captureLogic.ts:26), backend and sandbox movement / capture application, [`TypeScript.lineDecisionHelpers`](../../src/shared/engine/lineDecisionHelpers.ts:1), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](../../src/shared/engine/territoryProcessing.ts:172), [`TypeScript.territoryDecisionHelpers`](../../src/shared/engine/territoryDecisionHelpers.ts:123), [`TypeScript.turnLogic.advanceTurnAndPhase()`](../../src/shared/engine/turnLogic.ts:171).
 
 #### 2.2.1 Intended interaction
 
 - Movement and capture segments:
-  - Apply marker path effects immediately (departure marker, intermediate flips/collapses, landing‑cell own‑marker removal and top‑ring elimination) ([`RR‑CANON‑R092`](RULES_CANONICAL_SPEC.md:255), [`RR‑CANON‑R102`](RULES_CANONICAL_SPEC.md:295)).
+  - Apply marker path effects immediately (departure marker, intermediate flips/collapses, landing‑cell own‑marker removal and top‑ring elimination) ([`RR‑CANON‑R092`](../../RULES_CANONICAL_SPEC.md:255), [`RR‑CANON‑R102`](../../RULES_CANONICAL_SPEC.md:295)).
   - Update stack geometry (captures moving rings to bottom) but **do not** yet process lines or territory.
 - After **all** movement and any full capture chain:
-  - Detect and process lines sequentially ([`RR‑CANON‑R120–R122`](RULES_CANONICAL_SPEC.md:322)).
-  - Then detect and process disconnected regions ([`RR‑CANON‑R140–R145`](RULES_CANONICAL_SPEC.md:359)).
-  - Then evaluate victory ([`RR‑CANON‑R170–R173`](RULES_CANONICAL_SPEC.md:415)).
+  - Detect and process lines sequentially ([`RR‑CANON‑R120–R122`](../../RULES_CANONICAL_SPEC.md:322)).
+  - Then detect and process disconnected regions ([`RR‑CANON‑R140–R145`](../../RULES_CANONICAL_SPEC.md:359)).
+  - Then evaluate victory ([`RR‑CANON‑R170–R173`](../../RULES_CANONICAL_SPEC.md:415)).
 - Line and territory processing can change both elimination totals and territory counts within the **same turn**, and those updated values must be seen by victory checks.
 
 #### 2.2.2 Observed behaviour
 
-- Movement and capture reachability and paths are centralised in [`TypeScript.core.hasAnyLegalMoveOrCaptureFromOnBoard()`](src/shared/engine/core.ts:367) and [`TypeScript.movementLogic.enumerateSimpleMoveTargetsFromStack()`](src/shared/engine/movementLogic.ts:55), which:
-  - Use [`TypeScript.getMovementDirectionsForBoardType()`](src/shared/engine/core.ts:61) and [`TypeScript.getPathPositions()`](src/shared/engine/core.ts:96) to ensure straight‑line rays and distance ≥ stackHeight.
+- Movement and capture reachability and paths are centralised in [`TypeScript.core.hasAnyLegalMoveOrCaptureFromOnBoard()`](../../src/shared/engine/core.ts:367) and [`TypeScript.movementLogic.enumerateSimpleMoveTargetsFromStack()`](../../src/shared/engine/movementLogic.ts:55), which:
+  - Use [`TypeScript.getMovementDirectionsForBoardType()`](../../src/shared/engine/core.ts:61) and [`TypeScript.getPathPositions()`](../../src/shared/engine/core.ts:96) to ensure straight‑line rays and distance ≥ stackHeight.
   - Treat stacks and collapsed spaces as blocking, with markers allowed along the path.
-- Marker path effects for both movement and captures are applied via [`TypeScript.applyMarkerEffectsAlongPathOnBoard()`](src/shared/engine/core.ts:619) using host‑provided marker mutators (`setMarker`, `flipMarker`, `collapseMarker`).
+- Marker path effects for both movement and captures are applied via [`TypeScript.applyMarkerEffectsAlongPathOnBoard()`](../../src/shared/engine/core.ts:619) using host‑provided marker mutators (`setMarker`, `flipMarker`, `collapseMarker`).
 - Landing on own marker and immediate top‑ring elimination are implemented in movement/capture mutators (backend GameEngine and sandbox movement engine) and are **completed before** any line detection.
-- Phase transitions in [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:171) always move from `movement` / `capture` / `chain_capture` to `line_processing`, and from `line_processing` to `territory_processing`, before any turn rotation.
+- Phase transitions in [`TypeScript.turnLogic.advanceTurnAndPhase()`](../../src/shared/engine/turnLogic.ts:171) always move from `movement` / `capture` / `chain_capture` to `line_processing`, and from `line_processing` to `territory_processing`, before any turn rotation.
 - Line decisions:
-  - Detection via [`TypeScript.lineDetection.findAllLines`](src/shared/engine/lineDetection.ts:21).
-  - Decision surfaces and state updates via [`TypeScript.lineDecisionHelpers.enumerateProcessLineMoves()`](src/shared/engine/lineDecisionHelpers.ts:272), [`TypeScript.lineDecisionHelpers.applyProcessLineDecision()`](src/shared/engine/lineDecisionHelpers.ts:474), and [`TypeScript.lineDecisionHelpers.applyChooseLineRewardDecision()`](src/shared/engine/lineDecisionHelpers.ts:543).
-  - Exact‑length lines always set `pendingLineRewardElimination = true`; overlength lines set it only for “collapse all” choices, matching [`RR‑CANON‑R122`](RULES_CANONICAL_SPEC.md:339).
+  - Detection via [`TypeScript.lineDetection.findAllLines`](../../src/shared/engine/lineDetection.ts:21).
+  - Decision surfaces and state updates via [`TypeScript.lineDecisionHelpers.enumerateProcessLineMoves()`](../../src/shared/engine/lineDecisionHelpers.ts:272), [`TypeScript.lineDecisionHelpers.applyProcessLineDecision()`](../../src/shared/engine/lineDecisionHelpers.ts:474), and [`TypeScript.lineDecisionHelpers.applyChooseLineRewardDecision()`](../../src/shared/engine/lineDecisionHelpers.ts:543).
+  - Exact‑length lines always set `pendingLineRewardElimination = true`; overlength lines set it only for “collapse all” choices, matching [`RR‑CANON‑R122`](../../RULES_CANONICAL_SPEC.md:339).
 - Territory decisions:
-  - Region detection via [`TypeScript.territoryDetection.findDisconnectedRegions`](src/shared/engine/territoryDetection.ts:36).
-  - Self‑elimination gating plus per‑region processing via [`TypeScript.territoryProcessing`](src/shared/engine/territoryProcessing.ts:99) and [`TypeScript.territoryDecisionHelpers.applyProcessTerritoryRegionDecision()`](src/shared/engine/territoryDecisionHelpers.ts:234).
+  - Region detection via [`TypeScript.territoryDetection.findDisconnectedRegions`](../../src/shared/engine/territoryDetection.ts:36).
+  - Self‑elimination gating plus per‑region processing via [`TypeScript.territoryProcessing`](../../src/shared/engine/territoryProcessing.ts:99) and [`TypeScript.territoryDecisionHelpers.applyProcessTerritoryRegionDecision()`](../../src/shared/engine/territoryDecisionHelpers.ts:234).
   - `applyProcessTerritoryRegionDecision` updates `players[*].territorySpaces`, `players[*].eliminatedRings`, and `totalRingsEliminated`, and sets `pendingSelfElimination = true`.
-- Both backend and sandbox attach victory checks **after** line and territory decisions in their move / decision pipelines, ultimately funnelling into [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45).
+- Both backend and sandbox attach victory checks **after** line and territory decisions in their move / decision pipelines, ultimately funnelling into [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45).
 
 #### 2.2.3 Classification & impact
 
@@ -143,36 +143,36 @@ Each subsection lists:
 
 ### 2.3 Multi‑Region Territory & Self‑Elimination Budget
 
-**RR‑CANON rules:** `R140–R145` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:359)).  
-**Key implementations:** [`TypeScript.territoryDetection.findDisconnectedRegions`](src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing.canProcessTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:99), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:172), [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves()`](src/shared/engine/territoryDecisionHelpers.ts:123), [`TypeScript.territoryDecisionHelpers.applyProcessTerritoryRegionDecision()`](src/shared/engine/territoryDecisionHelpers.ts:234), [`TypeScript.territoryDecisionHelpers.enumerateTerritoryEliminationMoves()`](src/shared/engine/territoryDecisionHelpers.ts:402).
+**RR‑CANON rules:** `R140–R145` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:359)).  
+**Key implementations:** [`TypeScript.territoryDetection.findDisconnectedRegions`](../../src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing.canProcessTerritoryRegion()`](../../src/shared/engine/territoryProcessing.ts:99), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](../../src/shared/engine/territoryProcessing.ts:172), [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves()`](../../src/shared/engine/territoryDecisionHelpers.ts:123), [`TypeScript.territoryDecisionHelpers.applyProcessTerritoryRegionDecision()`](../../src/shared/engine/territoryDecisionHelpers.ts:234), [`TypeScript.territoryDecisionHelpers.enumerateTerritoryEliminationMoves()`](../../src/shared/engine/territoryDecisionHelpers.ts:402).
 
 #### 2.3.1 Intended interaction
 
-- Regions are maximal sets of non‑collapsed cells connected by `territoryAdjacency` ([`RR‑CANON‑R040`](RULES_CANONICAL_SPEC.md:111), [`RR‑CANON‑R140`](RULES_CANONICAL_SPEC.md:359)).
+- Regions are maximal sets of non‑collapsed cells connected by `territoryAdjacency` ([`RR‑CANON‑R040`](../../RULES_CANONICAL_SPEC.md:111), [`RR‑CANON‑R140`](../../RULES_CANONICAL_SPEC.md:359)).
 - A region is “disconnected” only if it is both:
-  - Physically isolated by collapsed spaces and/or markers of a **single** border colour ([`RR‑CANON‑R141`](RULES_CANONICAL_SPEC.md:363)).
-  - Colour‑disconnected: its RegionColors are a strict subset of ActiveColors ([`RR‑CANON‑R142`](RULES_CANONICAL_SPEC.md:371)).
+  - Physically isolated by collapsed spaces and/or markers of a **single** border colour ([`RR‑CANON‑R141`](../../RULES_CANONICAL_SPEC.md:363)).
+  - Colour‑disconnected: its RegionColors are a strict subset of ActiveColors ([`RR‑CANON‑R142`](../../RULES_CANONICAL_SPEC.md:371)).
 - For each region and moving player `P`:
-  - `P` may process the region only if, in the hypothetical state where the region’s rings are removed, `P` still controls at least one ring/cap **outside** the region ([`RR‑CANON‑R143`](RULES_CANONICAL_SPEC.md:378)).
-  - Processing a region always requires **exactly one** self‑elimination from outside that region ([`RR‑CANON‑R145`](RULES_CANONICAL_SPEC.md:397)).
+  - `P` may process the region only if, in the hypothetical state where the region’s rings are removed, `P` still controls at least one ring/cap **outside** the region ([`RR‑CANON‑R143`](../../RULES_CANONICAL_SPEC.md:378)).
+  - Processing a region always requires **exactly one** self‑elimination from outside that region ([`RR‑CANON‑R145`](../../RULES_CANONICAL_SPEC.md:397)).
   - After processing a region and paying self‑elimination, subsequent regions must re‑check the prerequisite using the updated outside material; each outside ring/cap can pay for at most one region.
-- Region processing order is per‑region optional; players may process any subset of eligible regions in any order ([`RR‑CANON‑R144`](RULES_CANONICAL_SPEC.md:386)).
+- Region processing order is per‑region optional; players may process any subset of eligible regions in any order ([`RR‑CANON‑R144`](../../RULES_CANONICAL_SPEC.md:386)).
 
 #### 2.3.2 Observed behaviour
 
-- Disconnected regions are computed centrally by [`TypeScript.territoryDetection.findDisconnectedRegions`](src/shared/engine/territoryDetection.ts:36) and re‑used by backend and sandbox via [`TypeScript.BoardManager.findDisconnectedRegions`](src/server/game/BoardManager.ts:907) and sandbox adapters.
-- Processability is determined by [`TypeScript.territoryProcessing.canProcessTerritoryRegion`](src/shared/engine/territoryProcessing.ts:99), which checks for at least one controlled stack **outside** the region.
-- [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves`](src/shared/engine/territoryDecisionHelpers.ts:123) filters disconnected regions through `canProcessTerritoryRegion` at enumeration time, and hosts re‑call it after each region/self‑elimination pair, naturally implementing the “one outside cap per region” budget.
-- [`TypeScript.territoryDecisionHelpers.applyProcessTerritoryRegionDecision`](src/shared/engine/territoryDecisionHelpers.ts:234) calls [`TypeScript.territoryProcessing.applyTerritoryRegion`](src/shared/engine/territoryProcessing.ts:172) to:
+- Disconnected regions are computed centrally by [`TypeScript.territoryDetection.findDisconnectedRegions`](../../src/shared/engine/territoryDetection.ts:36) and re‑used by backend and sandbox via [`TypeScript.BoardManager.findDisconnectedRegions`](../../src/server/game/BoardManager.ts:907) and sandbox adapters.
+- Processability is determined by [`TypeScript.territoryProcessing.canProcessTerritoryRegion`](../../src/shared/engine/territoryProcessing.ts:99), which checks for at least one controlled stack **outside** the region.
+- [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves`](../../src/shared/engine/territoryDecisionHelpers.ts:123) filters disconnected regions through `canProcessTerritoryRegion` at enumeration time, and hosts re‑call it after each region/self‑elimination pair, naturally implementing the “one outside cap per region” budget.
+- [`TypeScript.territoryDecisionHelpers.applyProcessTerritoryRegionDecision`](../../src/shared/engine/territoryDecisionHelpers.ts:234) calls [`TypeScript.territoryProcessing.applyTerritoryRegion`](../../src/shared/engine/territoryProcessing.ts:172) to:
   - Eliminate all stacks inside the region, crediting all eliminations to the moving player.
   - Collapse interior and border marker cells to territory for the moving player.
   - Update `players[*].territorySpaces`, `players[*].eliminatedRings`, and `totalRingsEliminated`.
   - Set `pendingSelfElimination: true` for the processed region.
-- Self‑elimination is then expressed as one or more `eliminate_rings_from_stack` decisions; [`TypeScript.territoryDecisionHelpers.enumerateTerritoryEliminationMoves`](src/shared/engine/territoryDecisionHelpers.ts:402) currently:
+- Self‑elimination is then expressed as one or more `eliminate_rings_from_stack` decisions; [`TypeScript.territoryDecisionHelpers.enumerateTerritoryEliminationMoves`](../../src/shared/engine/territoryDecisionHelpers.ts:402) currently:
   - Defers self‑elimination while **any** processable disconnected region remains (region‑first ordering).
   - Enumerates candidate stacks purely by `controllingPlayer == player`, without tracking inside/outside relative to the processed region; however, interior stacks have already been removed by `applyTerritoryRegion`, so in practice only outside stacks remain.
 - Multi‑region chains:
-  - After each region + self‑elimination, engines re‑detect or re‑filter regions using current board state, so chain‑reaction regions (newly disconnected due to the collapse) are discovered and processed deterministically in whatever order the player chooses, matching [`RR‑CANON‑R144`](RULES_CANONICAL_SPEC.md:386).
+  - After each region + self‑elimination, engines re‑detect or re‑filter regions using current board state, so chain‑reaction regions (newly disconnected due to the collapse) are discovered and processed deterministically in whatever order the player chooses, matching [`RR‑CANON‑R144`](../../RULES_CANONICAL_SPEC.md:386).
 
 #### 2.3.3 Classification & impact
 
@@ -184,35 +184,35 @@ Each subsection lists:
 
 ### 2.4 Victory, Last‑Player‑Standing, and Stalemates
 
-**RR‑CANON rules:** `R170–R173`, `R190–R191` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:413)).  
-**Key implementations:** [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45), [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:135), backend `RuleEngine.checkGameEnd`, sandbox victory wrappers, Python `GameEngine` and strict no‑move invariants (`ai-service/tests/invariants/**`).
+**RR‑CANON rules:** `R170–R173`, `R190–R191` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:413)).  
+**Key implementations:** [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45), [`TypeScript.turnLogic`](../../src/shared/engine/turnLogic.ts:135), backend `RuleEngine.checkGameEnd`, sandbox victory wrappers, Python `GameEngine` and strict no‑move invariants (`ai-service/tests/invariants/**`).
 
 #### 2.4.1 Intended interaction
 
-- Elimination victory when a player’s credited eliminations reach `victoryThreshold` ([`RR‑CANON‑R170`](RULES_CANONICAL_SPEC.md:415)).
-- Territory victory when `territorySpaces` reach `territoryVictoryThreshold` ([`RR‑CANON‑R171`](RULES_CANONICAL_SPEC.md:420)).
+- Elimination victory when a player’s credited eliminations reach `victoryThreshold` ([`RR‑CANON‑R170`](../../RULES_CANONICAL_SPEC.md:415)).
+- Territory victory when `territorySpaces` reach `territoryVictoryThreshold` ([`RR‑CANON‑R171`](../../RULES_CANONICAL_SPEC.md:420)).
 - Last‑player‑standing when, after **three consecutive full rounds** of turns:
   - One player (P) has at least one legal real action and takes at least one during each of those rounds, and
-  - All others have no legal placements, movements, or captures during those rounds (even if they own buried rings) ([`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703)).
-- Global stalemate only when **no player** has any legal placement, movement, capture, or forced elimination, which can occur only after all stacks are gone; tie‑breaking ladder territory → eliminated rings (including converted rings in hand) → markers → last actor ([`RR‑CANON‑R173`](RULES_CANONICAL_SPEC.md:433)).
-- S‑invariant `S = M + C + E` must be monotone and bounded under all **legal** moves; illegal states are outside the rules model ([`RR‑CANON‑R191`](RULES_CANONICAL_SPEC.md:455)).
+  - All others have no legal placements, movements, or captures during those rounds (even if they own buried rings) ([`RR‑CANON‑R172`](../../RULES_CANONICAL_SPEC.md:703)).
+- Global stalemate only when **no player** has any legal placement, movement, capture, or forced elimination, which can occur only after all stacks are gone; tie‑breaking ladder territory → eliminated rings (including converted rings in hand) → markers → last actor ([`RR‑CANON‑R173`](../../RULES_CANONICAL_SPEC.md:433)).
+- S‑invariant `S = M + C + E` must be monotone and bounded under all **legal** moves; illegal states are outside the rules model ([`RR‑CANON‑R191`](../../RULES_CANONICAL_SPEC.md:455)).
 
 #### 2.4.2 Observed behaviour
 
-- [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45):
+- [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45):
   - Implements ring‑elimination and territory victories exactly as specified, using pre‑computed thresholds.
   - Only considers stalemate and tie‑breaking on a **bare board** (`board.stacks.size === 0`):
     - If any player with rings in hand has a legal placement satisfying no‑dead‑placement, the game is **not** over.
     - Otherwise, treats all rings in hand as eliminated for tie‑breaking (`handCountsAsEliminated`), and walks the ladder territory → eliminated rings (including hand) → markers → last actor → `game_completed`.
-  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703) (three-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
-- Turn rotation in [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:181) and Python strict invariants ensure that:
+  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](../../RULES_CANONICAL_SPEC.md:703) (three-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
+- Turn rotation in [`TypeScript.turnLogic`](../../src/shared/engine/turnLogic.ts:181) and Python strict invariants ensure that:
   - Players with neither stacks nor rings in hand are skipped when choosing the next active player.
   - Any ACTIVE state must offer at least one move or forced elimination to the current player (Python enforces this; TS assumes it via sequencing).
 - So‑called “last active player with material” positions (others having no stacks and no rings) are **functionally equivalent** to a state where:
   - The active player keeps taking turns until they win by elimination or territory, or until the game reaches bare‑board stalemate.
   - No additional early‑termination check for R172 is performed.
 - Multi‑player stalemates (3–4 players) rely purely on the stalemate ladder; dynamic tests currently emphasise 2‑player cases, though the ladder is symmetric in player count.
-- S‑invariant accounting is centralised in [`TypeScript.computeProgressSnapshot()`](src/shared/engine/core.ts:531) and is used extensively in backend / sandbox history and TS↔Python parity, as well as in Python self‑play soaks.
+- S‑invariant accounting is centralised in [`TypeScript.computeProgressSnapshot()`](../../src/shared/engine/core.ts:531) and is used extensively in backend / sandbox history and TS↔Python parity, as well as in Python self‑play soaks.
 
 #### 2.4.3 Classification & impact
 
@@ -227,24 +227,24 @@ Each subsection lists:
 
 ### 2.5 Board Invariants, Repairs, and Long‑Running States
 
-**RR‑CANON rules:** `R021–R023`, `R030–R031`, `R050–R052`, `R190–R191` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:69)).  
-**Key implementations:** [`TypeScript.BoardManager.assertBoardInvariants()`](src/server/game/BoardManager.ts:94), marker / collapsed helpers in [`TypeScript.BoardManager`](src/server/game/BoardManager.ts:325), shared `BoardState` invariants in [`src/shared/types/game.ts`](src/shared/types/game.ts:164), S‑invariant helpers in [`TypeScript.core.computeProgressSnapshot()`](src/shared/engine/core.ts:531), sandbox `ClientSandboxEngine.assertBoardInvariants`.
+**RR‑CANON rules:** `R021–R023`, `R030–R031`, `R050–R052`, `R190–R191` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:69)).  
+**Key implementations:** [`TypeScript.BoardManager.assertBoardInvariants()`](../../src/server/game/BoardManager.ts:94), marker / collapsed helpers in [`TypeScript.BoardManager`](../../src/server/game/BoardManager.ts:325), shared `BoardState` invariants in [`src/shared/types/game.ts`](../../src/shared/types/game.ts:164), S‑invariant helpers in [`TypeScript.core.computeProgressSnapshot()`](../../src/shared/engine/core.ts:531), sandbox `ClientSandboxEngine.assertBoardInvariants`.
 
 #### 2.5.1 Intended interaction
 
-- Each cell is in exactly one of: empty, stack, marker, collapsed territory ([`RR‑CANON‑R021`](RULES_CANONICAL_SPEC.md:69), [`RR‑CANON‑R030–R031`](RULES_CANONICAL_SPEC.md:94), [`RR‑CANON‑R052`](RULES_CANONICAL_SPEC.md:146)).
+- Each cell is in exactly one of: empty, stack, marker, collapsed territory ([`RR‑CANON‑R021`](../../RULES_CANONICAL_SPEC.md:69), [`RR‑CANON‑R030–R031`](../../RULES_CANONICAL_SPEC.md:94), [`RR‑CANON‑R052`](../../RULES_CANONICAL_SPEC.md:146)).
 - Legal rules **never** create overlapping occupancy (stack+marker, marker+collapsed, stack+collapsed); such states are considered unreachable.
 - S‑invariant `S = M + C + E` must be monotone and bounded under all **legal** moves; illegal states are outside the rules model.
 
 #### 2.5.2 Observed behaviour
 
-- [`TypeScript.BoardManager.assertBoardInvariants()`](src/server/game/BoardManager.ts:94) first performs a **repair pass**:
+- [`TypeScript.BoardManager.assertBoardInvariants()`](../../src/server/game/BoardManager.ts:94) first performs a **repair pass**:
   - Deletes markers that share a key with a stack.
   - Deletes markers on collapsed spaces.
   - Logs diagnostics for both cases.
   - Only then checks invariants and throws in strict/test modes.
 - Marker and collapsed helpers (`setMarker`, `collapseMarker`, `setCollapsedSpace`, `setStack`) all call `assertBoardInvariants` after updates, so any overlapping writes are immediately “fixed” by deleting markers and preserving stacks / collapsed spaces.
-- Sandbox mirrors exclusivity semantics in [`TypeScript.ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts:964), but its `assertBoardInvariants` helper in tests chooses to **throw** rather than repair; there is no marker‑deletion repair step there.
+- Sandbox mirrors exclusivity semantics in [`TypeScript.ClientSandboxEngine`](../../src/client/sandbox/ClientSandboxEngine.ts:964), but its `assertBoardInvariants` helper in tests chooses to **throw** rather than repair; there is no marker‑deletion repair step there.
 - Because repairs are only triggered by **already invalid** states, legal move sequences are not intended to invoke this behaviour; however, nothing in the production backend prevents such repairs from happening silently if a bug or external state mutation occurs.
 - When a repair deletes a marker without an accompanying collapse or elimination, the S‑invariant `S = M + C + E` can **decrease**: `M` drops while `C` and `E` stay constant. This is acceptable for illegal states, but violates the monotonicity argument if such a state ever arose from a sequence of ostensibly legal moves.
 - Python self‑play soaks and invariant tests have not reported any repairs being necessary; instead, they treat active‑no‑moves and similar anomalies as hard errors.
@@ -264,8 +264,8 @@ This section answers the five explicitly requested questions, with cross‑refer
 
 ### 3.1 Board repair behaviour (`CCE‑001`)
 
-- **RR‑CANON:** Exclusivity of stack / marker / collapsed (`R021`, `R030–R031`, `R052`, `R191`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:69).
-- **Code:** [`TypeScript.BoardManager.assertBoardInvariants()`](src/server/game/BoardManager.ts:94) and stack / marker / collapsed setters.
+- **RR‑CANON:** Exclusivity of stack / marker / collapsed (`R021`, `R030–R031`, `R052`, `R191`) in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:69).
+- **Code:** [`TypeScript.BoardManager.assertBoardInvariants()`](../../src/server/game/BoardManager.ts:94) and stack / marker / collapsed setters.
 - **Assessment:**
   - Repairs (deleting overlapping markers) are a **purely defensive mechanism**, not part of RR‑CANON semantics.
   - Under legal rules, such overlaps should be unreachable; any repair indicates a bug or externally constructed malformed state.
@@ -280,10 +280,10 @@ This section answers the five explicitly requested questions, with cross‑refer
 
 ### 3.2 Placement cap approximation with mixed‑colour stacks (`CCE‑002`)
 
-- **RR‑CANON:** Ring counts and caps (`R020–R023`, `R060–R062`, `R080–R082`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61).
+- **RR‑CANON:** Ring counts and caps (`R020–R023`, `R060–R062`, `R080–R082`) in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:61).
 - **Code:** `ringsPerPlayer` cap enforced using **total height of stacks controlled by the player**, not the count of rings of that colour, in:
   - Backend placement validator and enumeration (see [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755)).
-  - Sandbox `hasAnyPlacement` and forced‑elimination gating via [`TypeScript.ClientSandboxEngine` turn helpers](src/client/sandbox/ClientSandboxEngine.ts:1606).
+  - Sandbox `hasAnyPlacement` and forced‑elimination gating via [`TypeScript.ClientSandboxEngine` turn helpers](../../src/client/sandbox/ClientSandboxEngine.ts:1606).
 - **Assessment:**
   - The implementation counts **all rings in stacks whose top ring the player controls**, including buried opponent rings, when enforcing a per‑player cap based on `BOARD_CONFIGS[boardType].ringsPerPlayer`.
   - This is a **conservative approximation**: it can only **forbid** some placements that would be legal under a strict “by‑colour rings on board” reading; it cannot create extra rings or allow over‑cap placements.
@@ -291,13 +291,13 @@ This section answers the five explicitly requested questions, with cross‑refer
   - These states are rare and already near resource saturation; dynamic tests do not currently exercise them.
 - **Classification:** `Implementation compromise` (behaviour deviates from the most natural textual reading but is conservative and simplifies enforcement).
 - **Recommendation:** either:
-  - **Canonicalise** this as “placement cap is based on the total height of stacks you control, including buried rings, up to `ringsPerPlayer`”, and update [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61) accordingly; or
+  - **Canonicalise** this as “placement cap is based on the total height of stacks you control, including buried rings, up to `ringsPerPlayer`”, and update [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:61) accordingly; or
   - Tighten the implementation to count only own‑colour rings, and add explicit regression tests for mixed‑colour, near‑cap configurations to ensure parity across TS and Python.
 
 ### 3.3 Sandbox phase / skip semantics vs backend (`CCE‑003`)
 
-- **RR‑CANON:** Placement optionality and turn phases (`R070–R072`, `R080–R082`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:181).
-- **Code:** Backend `skip_placement` moves in [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:116) and backend turn logic, vs sandbox heuristics in [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1606) and [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1715).
+- **RR‑CANON:** Placement optionality and turn phases (`R070–R072`, `R080–R082`) in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:181).
+- **Code:** Backend `skip_placement` moves in [`TypeScript.RuleEngine`](../../src/server/game/RuleEngine.ts:116) and backend turn logic, vs sandbox heuristics in [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](../../src/client/sandbox/ClientSandboxEngine.ts:1606) and [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](../../src/client/sandbox/ClientSandboxEngine.ts:1715).
 - **Assessment:**
   - Backend expresses optional placement explicitly via `skip_placement` moves; move logs and AI policies see a clear distinction between “chose not to place” and “could not place”.
   - Sandbox never surfaces `skip_placement` as a Move; it:
@@ -314,15 +314,15 @@ This section answers the five explicitly requested questions, with cross‑refer
 
 ### 3.4 Capture‑chain helpers vs active implementations (`CCE‑004`)
 
-- **RR‑CANON:** Chain capture semantics (`R101–R103`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:281).
-- **Code:** Shared stub [`TypeScript.captureChainHelpers.enumerateChainCaptureSegments()`](src/shared/engine/captureChainHelpers.ts:134) and [`TypeScript.captureChainHelpers.getChainCaptureContinuationInfo()`](src/shared/engine/captureChainHelpers.ts:163) vs live logic in:
-  - Backend [`TypeScript.captureChainEngine`](src/server/game/rules/captureChainEngine.ts:45) and [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92).
-  - Sandbox [`TypeScript.sandboxMovementEngine.performCaptureChainSandbox`](src/client/sandbox/sandboxMovementEngine.ts:400).
+- **RR‑CANON:** Chain capture semantics (`R101–R103`) in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:281).
+- **Code:** Shared stub [`TypeScript.captureChainHelpers.enumerateChainCaptureSegments()`](../../src/shared/engine/chainCaptureTracking.ts:134) and [`TypeScript.captureChainHelpers.getChainCaptureContinuationInfo()`](../../src/shared/engine/chainCaptureTracking.ts:163) vs live logic in:
+  - Backend [`TypeScript.captureChainEngine`](../../src/server/game/rules/captureChainEngine.ts:45) and [`TypeScript.GameEngine`](../../src/server/game/GameEngine.ts:92).
+  - Sandbox [`TypeScript.sandboxMovementEngine.performCaptureChainSandbox`](../../src/client/sandbox/sandboxMovement.ts:400).
 - **Assessment:**
   - All **live** capture‑chain behaviour (mandatory continuation, 180° reversals, revisiting stacks under cap‑height constraints, landing‑on‑own‑marker elimination) is implemented and tested at the backend / sandbox level (FAQ Q15 scenarios, cyclic captures, etc.).
   - The shared helper is an explicit **design‑time stub** which currently throws if called; no production path depends on it.
   - Future refactors that centralise chain logic into the shared helper must preserve:
-    - Enumeration equivalence with [`TypeScript.captureLogic.enumerateCaptureMoves()`](src/shared/engine/captureLogic.ts:26).
+    - Enumeration equivalence with [`TypeScript.captureLogic.enumerateCaptureMoves()`](../../src/shared/engine/captureLogic.ts:26).
     - Mandatory continuation while any capture exists.
     - Freedom of direction change and revisiting targets where cap legality allows.
     - Deferral of line / territory processing until after the entire chain completes.
@@ -331,8 +331,8 @@ This section answers the five explicitly requested questions, with cross‑refer
 
 ### 3.5 Victory edge cases (`CCE‑006`)
 
-- **RR‑CANON:** Victory, last‑player‑standing, stalemate ladder (`R170–R173`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:415).
-- **Code:** [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45), backend `RuleEngine.checkGameEnd`, sandbox victory wrappers, Python `GameEngine`.
+- **RR‑CANON:** Victory, last‑player‑standing, stalemate ladder (`R170–R173`) in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:415).
+- **Code:** [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45), backend `RuleEngine.checkGameEnd`, sandbox victory wrappers, Python `GameEngine`.
 - **Assessment:**
   - Elimination and territory victories, and bare‑board stalemate with tiebreak ladder, are implemented consistently across hosts and match RR‑CANON.
   - RR‑CANON’s **non‑bare‑board last‑player‑standing** condition (one player with legal actions on their next turn while others have none) is **not currently encoded** in TS victory logic; instead, such games continue until elimination, territory, or stalemate conditions are met.
@@ -345,11 +345,11 @@ This section answers the five explicitly requested questions, with cross‑refer
 
 ### 3.6 Territory self‑elimination outside vs inside processed region (`CCE‑005`)
 
-- **RR‑CANON:** Self‑elimination prerequisite and processing order (`R143–R145`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:378).
-- **Code:** [`TypeScript.territoryProcessing.canProcessTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:99), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:172), [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:123,234,402).
+- **RR‑CANON:** Self‑elimination prerequisite and processing order (`R143–R145`) in [`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:378).
+- **Code:** [`TypeScript.territoryProcessing.canProcessTerritoryRegion()`](../../src/shared/engine/territoryProcessing.ts:99), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](../../src/shared/engine/territoryProcessing.ts:172), [`TypeScript.territoryDecisionHelpers`](../../src/shared/engine/territoryDecisionHelpers.ts:123,234,402).
 - **Assessment:**
   - Enumeration and application correctly enforce “must have an outside stack before processing a region” and “one outside cap per region”.
-  - Shared elimination helper [`TypeScript.territoryDecisionHelpers.enumerateTerritoryEliminationMoves`](src/shared/engine/territoryDecisionHelpers.ts:402) currently **ignores** `processedRegionId` and simply offers eliminations from any controlled stack.
+  - Shared elimination helper [`TypeScript.territoryDecisionHelpers.enumerateTerritoryEliminationMoves`](../../src/shared/engine/territoryDecisionHelpers.ts:402) currently **ignores** `processedRegionId` and simply offers eliminations from any controlled stack.
   - In current flows this is safe because all interior stacks have already been removed by `applyTerritoryRegion`, so only outside stacks remain.
   - The rules, however, conceptually distinguish between “outside” and “inside” when paying the self‑elimination cost.
 - **Classification:** `Design‑intent match` for current flows, with an **under‑specified hook** for future variants.
@@ -363,8 +363,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑001 – Backend board “repair” deletes overlapping markers
 
-- **RR‑CANON rules:** `R021`, `R030–R031`, `R050–R052`, `R191` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:69)).
-- **Code / tests:** [`TypeScript.BoardManager.assertBoardInvariants()`](src/server/game/BoardManager.ts:94), [`TypeScript.BoardManager.setMarker`](src/server/game/BoardManager.ts:325), [`TypeScript.BoardManager.setStack`](src/server/game/BoardManager.ts:446), sandbox invariant checks in `ClientSandboxEngine.assertBoardInvariants` and invariant soaks documented in [`docs/STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md:1).
+- **RR‑CANON rules:** `R021`, `R030–R031`, `R050–R052`, `R191` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:69)).
+- **Code / tests:** [`TypeScript.BoardManager.assertBoardInvariants()`](../../src/server/game/BoardManager.ts:94), [`TypeScript.BoardManager.setMarker`](../../src/server/game/BoardManager.ts:325), [`TypeScript.BoardManager.setStack`](../../src/server/game/BoardManager.ts:446), sandbox invariant checks in `ClientSandboxEngine.assertBoardInvariants` and invariant soaks documented in [`docs/STRICT_INVARIANT_SOAKS.md`](../testing/STRICT_INVARIANT_SOAKS.md:1).
 - **Interaction / edge case:** Buggy or external writes create cells that simultaneously contain a stack plus marker or marker plus collapsed space.
 - **Intended behaviour (RR‑CANON):** Such states are unreachable; if they occur, semantics are undefined and should be treated as hard errors, not silently corrected.
 - **Observed behaviour:** Backend logs a diagnostic and **repairs** the state by deleting markers while keeping stacks / collapsed spaces, even in non‑test environments, then enforces invariants on the repaired board.
@@ -377,8 +377,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑002 – Placement cap approximation counts all rings in controlled stacks
 
-- **RR‑CANON rules:** `R020–R023`, `R060–R062`, `R080–R082` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61)).
-- **Code / tests:** Shared placement validator and RuleEngine enumeration described in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755); sandbox `hasAnyPlacement` and forced‑elimination gating in [`TypeScript.sandboxTurnEngine`](src/client/sandbox/sandboxTurnEngine.ts:122,278); AI / Python parity tests around placement capacity in `ai-service/tests/**`.
+- **RR‑CANON rules:** `R020–R023`, `R060–R062`, `R080–R082` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:61)).
+- **Code / tests:** Shared placement validator and RuleEngine enumeration described in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755); sandbox `hasAnyPlacement` and forced‑elimination gating in [`TypeScript.sandboxTurnEngine`](../../src/client/sandbox/ClientSandboxEngine.ts:122,278); AI / Python parity tests around placement capacity in `ai-service/tests/**`.
 - **Interaction / edge case:** Near‑cap states with tall mixed‑colour stacks under a player’s control (many captured opponent rings under a small own‑colour cap) where total stack heights exceed `ringsPerPlayer` even though few own‑colour rings are actually on the board.
 - **Intended behaviour (RR‑CANON):** Caps conceptually apply to rings of that player’s colour; as long as ring conservation is respected, additional placements of own‑colour rings should be legal up to the physical supply.
 - **Observed behaviour:** Implementation forbids further placements once the sum of **heights** of controlled stacks reaches `ringsPerPlayer`, regardless of ring colours within those stacks.
@@ -391,8 +391,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑003 – Sandbox phase / skip semantics differ from backend
 
-- **RR‑CANON rules:** `R070–R072`, `R080–R082` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:181)).
-- **Code / tests:** Backend `skip_placement` handling in [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:116,752), shared turn logic in [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:135), sandbox start‑of‑turn helpers in [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164) and [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228), parity tests in `tests/unit/ClientSandboxEngine.*.test.ts`.
+- **RR‑CANON rules:** `R070–R072`, `R080–R082` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:181)).
+- **Code / tests:** Backend `skip_placement` handling in [`TypeScript.RuleEngine`](../../src/server/game/RuleEngine.ts:116,752), shared turn logic in [`TypeScript.turnLogic`](../../src/shared/engine/turnLogic.ts:135), sandbox start‑of‑turn helpers in [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](../../src/client/sandbox/ClientSandboxEngine.ts:164) and [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](../../src/client/sandbox/ClientSandboxEngine.ts:228), parity tests in `tests/unit/ClientSandboxEngine.*.test.ts`.
 - **Interaction / edge case:** Turns where placement is optional (legal placements **and** legal moves exist) or effectively impossible (rings in hand but no legal placements; only movement is available).
 - **Intended behaviour (RR‑CANON):**
   - Optional placement should be representable as either “place N rings” or “skip placement, then move”.
@@ -412,8 +412,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑004 – Shared `captureChainHelpers` unimplemented while hosts are live
 
-- **RR‑CANON rules:** `R101–R103` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:281)).
-- **Code / tests:** [`TypeScript.captureChainHelpers`](src/shared/engine/captureChainHelpers.ts:134), backend [`TypeScript.captureChainEngine`](src/server/game/rules/captureChainEngine.ts:45), sandbox [`TypeScript.ClientSandboxEngine.performCaptureChainInternal`](src/client/sandbox/ClientSandboxEngine.ts:2229), FAQ Q15 and cyclic capture tests in [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1) and `tests/unit/GameEngine.cyclicCapture.*.test.ts`.
+- **RR‑CANON rules:** `R101–R103` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:281)).
+- **Code / tests:** [`TypeScript.captureChainHelpers`](../../src/shared/engine/chainCaptureTracking.ts:134), backend [`TypeScript.captureChainEngine`](../../src/server/game/rules/captureChainEngine.ts:45), sandbox [`TypeScript.ClientSandboxEngine.performCaptureChainInternal`](../../src/client/sandbox/ClientSandboxEngine.ts:2229), FAQ Q15 and cyclic capture tests in [`tests/scenarios/FAQ_Q15.test.ts`](../../tests/scenarios/FAQ_Q15.test.ts:1) and `tests/unit/GameEngine.cyclicCapture.*.test.ts`.
 - **Interaction / edge case:** Complex capture chains (180° reversal, revisiting stacks, long cycles) where refactoring to shared helpers could subtly change continuation sets or mandatory‑continuation semantics.
 - **Intended behaviour (RR‑CANON):** Chains must continue while any legal capture exists; direction changes and revisiting stacks are allowed as long as each segment is legal; lines and territory are deferred until the chain ends.
 - **Observed behaviour:** Current engines obey these rules at the GameEngine / sandbox level. The shared `enumerateChainCaptureSegments` helper is a stub that throws, and is **not** used in production flows yet.
@@ -426,8 +426,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑005 – Territory self‑elimination locality is implicit, not enforced
 
-- **RR‑CANON rules:** `R143–R145` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:378)).
-- **Code / tests:** [`TypeScript.territoryProcessing`](src/shared/engine/territoryProcessing.ts:99,172), [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:123,234,402), territory tests in [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) and [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1).
+- **RR‑CANON rules:** `R143–R145` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:378)).
+- **Code / tests:** [`TypeScript.territoryProcessing`](../../src/shared/engine/territoryProcessing.ts:99,172), [`TypeScript.territoryDecisionHelpers`](../../src/shared/engine/territoryDecisionHelpers.ts:123,234,402), territory tests in [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts:1) and [`tests/unit/GameEngine.territoryDisconnection.test.ts`](../../tests/unit/GameEngine.territoryDisconnection.test.ts:1).
 - **Interaction / edge case:** Multi‑region turns where multiple disconnected regions exist and self‑elimination budget is tight; requirement that self‑elimination come from **outside** the processed region.
 - **Intended behaviour (RR‑CANON):** Each processed region must be paid for by eliminating a ring/cap from **outside** that region; processing R1 may remove the only such cap, preventing immediate processing of R2.
 - **Observed behaviour:**
@@ -443,8 +443,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑006 – Non‑bare‑board last‑player‑standing (R172) not explicitly implemented
 
-- **RR‑CANON rules:** `R170–R173` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:415)).
-- **Code / tests:** [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45), backend victory scenarios in [`tests/unit/GameEngine.victory.scenarios.test.ts`](tests/unit/GameEngine.victory.scenarios.test.ts:1), stalemate / forced‑elimination scenarios in [`tests/scenarios/ForcedEliminationAndStalemate.test.ts`](tests/scenarios/ForcedEliminationAndStalemate.test.ts:1), Python invariants in `ai-service/tests/invariants/**`.
+- **RR‑CANON rules:** `R170–R173` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:415)).
+- **Code / tests:** [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45), backend victory scenarios in [`tests/unit/GameEngine.victory.scenarios.test.ts`](../../tests/unit/GameEngine.victory.scenarios.test.ts:1), stalemate / forced‑elimination scenarios in [`tests/scenarios/ForcedEliminationAndStalemate.test.ts`](../../tests/scenarios/ForcedEliminationAndStalemate.test.ts:1), Python invariants in `ai-service/tests/invariants/**`.
 - **Interaction / edge case:** Games where exactly one player has any legal actions on their next turn while others are permanently inactive (no placements, moves, or captures) but stacks remain on the board.
 - **Intended behaviour (RR‑CANON):** Such a player should win immediately by last‑player‑standing.
 - **Observed behaviour:**
@@ -459,8 +459,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑007 – Forced‑elimination stack‑selection heuristic
 
-- **RR‑CANON rules:** `R072`, `R100` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:196)).
-- **Code / tests:** [`TypeScript.turn.processForcedElimination`](src/server/game/turn/TurnEngine.ts:286), [`TypeScript.ClientSandboxEngine.forceEliminateCap`](src/client/sandbox/ClientSandboxEngine.ts:888), invariant tests in `ai-service/tests/invariants/test_active_no_moves_movement_forced_elimination_regression.py`.
+- **RR‑CANON rules:** `R072`, `R100` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:196)).
+- **Code / tests:** [`TypeScript.turn.processForcedElimination`](../../src/server/game/turn/TurnEngine.ts:286), [`TypeScript.ClientSandboxEngine.forceEliminateCap`](../../src/client/sandbox/ClientSandboxEngine.ts:888), invariant tests in `ai-service/tests/invariants/test_active_no_moves_movement_forced_elimination_regression.py`.
 - **Interaction / edge case:** When multiple stacks are eligible for forced elimination, RR‑CANON does not specify which cap must be chosen.
 - **Intended behaviour (RR‑CANON):** Any full cap from a controlled stack may be eliminated; tiebreak is unspecified.
 - **Observed behaviour:**
@@ -474,8 +474,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑008 – Movement / capture / lines / territory / victory ordering
 
-- **RR‑CANON rules:** `R090–R092`, `R100–R103`, `R120–R122`, `R140–R145`, `R170–R173` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:231)).
-- **Code / tests:** Movement / capture helpers in [`TypeScript.core`](src/shared/engine/core.ts:367), [`TypeScript.movementLogic`](src/shared/engine/movementLogic.ts:55), [`TypeScript.captureLogic`](src/shared/engine/captureLogic.ts:26); line and territory helpers in [`TypeScript.lineDecisionHelpers`](src/shared/engine/lineDecisionHelpers.ts:1) and [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:123); turn sequencing in [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:135); dynamic scenarios in [`tests/unit/GameEngine.lines.scenarios.test.ts`](tests/unit/GameEngine.lines.scenarios.test.ts:1), [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1), and [`tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts`](tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1).
+- **RR‑CANON rules:** `R090–R092`, `R100–R103`, `R120–R122`, `R140–R145`, `R170–R173` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:231)).
+- **Code / tests:** Movement / capture helpers in [`TypeScript.core`](../../src/shared/engine/core.ts:367), [`TypeScript.movementLogic`](../../src/shared/engine/movementLogic.ts:55), [`TypeScript.captureLogic`](../../src/shared/engine/captureLogic.ts:26); line and territory helpers in [`TypeScript.lineDecisionHelpers`](../../src/shared/engine/lineDecisionHelpers.ts:1) and [`TypeScript.territoryDecisionHelpers`](../../src/shared/engine/territoryDecisionHelpers.ts:123); turn sequencing in [`TypeScript.turnLogic`](../../src/shared/engine/turnLogic.ts:135); dynamic scenarios in [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts:1), [`tests/unit/GameEngine.territoryDisconnection.test.ts`](../../tests/unit/GameEngine.territoryDisconnection.test.ts:1), and [`tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts`](../../tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1).
 - **Interaction / edge case:** Combined turns where a movement or capture chain:
   - Produces markers and collapsed spaces,
   - Forms one or more lines,
@@ -490,8 +490,8 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑009 – Recovery Action interactions with LPS, ANM, FE, and weird states
 
-- **RR‑CANON rules:** `R110–R115` (Recovery Action), `R172` (Last Player Standing), `R200–R207` (Active No Moves), `R100` (Forced Elimination) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
-- **Code / tests:** Recovery action detection in [`TypeScript.globalActions.canPerformRecoveryAction()`](src/shared/engine/globalActions.ts:45), [`TypeScript.globalActions.enumerateRecoverySlides()`](src/shared/engine/globalActions.ts:89); line processing via [`TypeScript.lineDecisionHelpers`](src/shared/engine/lineDecisionHelpers.ts:1); victory logic in [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45); ANM detection in shared engine helpers; weird state detection in [`TypeScript.gameStateWeirdness`](src/client/utils/gameStateWeirdness.ts:1).
+- **RR‑CANON rules:** `R110–R115` (Recovery Action), `R172` (Last Player Standing), `R200–R207` (Active No Moves), `R100` (Forced Elimination) ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:301)).
+- **Code / tests:** Recovery action detection in [`TypeScript.globalActions.canPerformRecoveryAction()`](../../src/shared/engine/globalActions.ts:45), [`TypeScript.globalActions.enumerateRecoverySlides()`](../../src/shared/engine/globalActions.ts:89); line processing via [`TypeScript.lineDecisionHelpers`](../../src/shared/engine/lineDecisionHelpers.ts:1); victory logic in [`TypeScript.victoryLogic.evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45); ANM detection in shared engine helpers; weird state detection in [`TypeScript.gameStateWeirdness`](../../src/client/utils/gameStateWeirdness.ts:1).
 - **Interaction / edge case:** A player has zero stacks on board, zero rings in hand, but still has:
   - At least one marker (from prior movements), AND
   - At least one "buried ring" (opponent's stack sitting on top of one of their rings).
@@ -527,14 +527,14 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑010 – Capture and chain capture landing on markers
 
-- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:255)).
-- **Code / tests:** [`TypeScript.CaptureAggregate.mutateCapture()`](src/shared/engine/aggregates/CaptureAggregate.ts:1) section 5 (landing marker handling), [`Python.game_engine/__init__.py`](ai-service/app/game_engine/__init__.py:1) (parallel implementation), [`tests/unit/captureLogic.shared.test.ts`](tests/unit/captureLogic.shared.test.ts:1), [`tests/unit/CaptureAggregate.chainCapture.shared.test.ts`](tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1).
+- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:255)).
+- **Code / tests:** [`TypeScript.CaptureAggregate.mutateCapture()`](../../src/shared/engine/aggregates/CaptureAggregate.ts:1) section 5 (landing marker handling), [`Python.game_engine/__init__.py`](../../ai-service/app/game_engine/__init__.py:1) (parallel implementation), [`tests/unit/captureLogic.shared.test.ts`](../../tests/unit/captureLogic.shared.test.ts:1), [`tests/unit/CaptureAggregate.chainCapture.shared.test.ts`](../../tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1).
 - **Interaction / edge case:** During captures and chain captures, the attacker may land on any marker (own or opponent) as a valid landing position. This interaction triggers a 1-ring elimination cost.
 - **Intended behaviour (RR‑CANON):**
-  - Per [`RR‑CANON‑R091`](RULES_CANONICAL_SPEC.md:255): "Landing cell may contain any marker (own or opponent); landing on markers is always legal but incurs a cap‑elimination cost."
-  - Per [`RR‑CANON‑R092`](RULES_CANONICAL_SPEC.md:257): "At landing cell: If there is any marker (own or opponent), remove that marker (do NOT collapse it), then place the moving stack. If a marker was present (regardless of owner), immediately eliminate the top ring of the moving stack's cap and credit it to P."
-  - Per [`RR‑CANON‑R101`](RULES_CANONICAL_SPEC.md:295): "Landing is an empty cell or a cell with any marker (own or opponent)."
-  - Per [`RR‑CANON‑R102`](RULES_CANONICAL_SPEC.md:297): "If landing on any marker (own or opponent), remove the marker (do NOT collapse it), then land and immediately eliminate the top ring of the attacking stack's cap, crediting it to P (before line/territory processing)."
+  - Per [`RR‑CANON‑R091`](../../RULES_CANONICAL_SPEC.md:255): "Landing cell may contain any marker (own or opponent); landing on markers is always legal but incurs a cap‑elimination cost."
+  - Per [`RR‑CANON‑R092`](../../RULES_CANONICAL_SPEC.md:257): "At landing cell: If there is any marker (own or opponent), remove that marker (do NOT collapse it), then place the moving stack. If a marker was present (regardless of owner), immediately eliminate the top ring of the moving stack's cap and credit it to P."
+  - Per [`RR‑CANON‑R101`](../../RULES_CANONICAL_SPEC.md:295): "Landing is an empty cell or a cell with any marker (own or opponent)."
+  - Per [`RR‑CANON‑R102`](../../RULES_CANONICAL_SPEC.md:297): "If landing on any marker (own or opponent), remove the marker (do NOT collapse it), then land and immediately eliminate the top ring of the attacking stack's cap, crediting it to P (before line/territory processing)."
 - **Observed behaviour:**
   - **TypeScript:** `CaptureAggregate.mutateCapture()` checks for `landingMarker` after capture application. If present: removes marker from board (does NOT collapse), eliminates top ring of attacker's cap, updates `totalRingsEliminated` and per-player `eliminatedRings` counts.
   - **Python:** `GameEngine.apply_move()` contains parallel logic with `_eliminate_top_ring_at()` helper, removing marker and eliminating top ring with identical semantics.

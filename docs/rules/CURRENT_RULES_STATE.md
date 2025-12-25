@@ -17,13 +17,13 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 ## Quick Status Summary
 
-| Aspect         | Status                 | Notes                                                                                                  |
-| -------------- | ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| Rules Engine   | ✅ Fully implemented   | TS/Python parity verified (core flows)                                                                 |
-| Orchestrator   | ✅ 100% rollout in CI  | All environments use orchestrator adapter                                                              |
-| Known Issues   | ⚠️ Frontend UX gaps    | See [PASS18_ASSESSMENT_REPORT_PASS3.md](docs/PASS18_ASSESSMENT_REPORT_PASS3.md)                        |
-| Weakest Aspect | Frontend UX Polish     | See [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](../../WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) (Pass 18-3) |
-| Test Health    | ✅ 2,670 tests passing | 0 failing, 176 skipped (orchestrator-conditional + diagnostic)                                         |
+| Aspect         | Status                 | Notes                                                                                                                   |
+| -------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Rules Engine   | ✅ Fully implemented   | TS/Python parity verified (core flows)                                                                                  |
+| Orchestrator   | ✅ 100% rollout in CI  | All environments use orchestrator adapter                                                                               |
+| Known Issues   | ⚠️ Frontend UX gaps    | See [PASS18_ASSESSMENT_REPORT_PASS3.md](../archive/assessments/PASS18_ASSESSMENT_REPORT_PASS3.md)                       |
+| Weakest Aspect | Frontend UX Polish     | See [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](../archive/assessments/WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) (Pass 18-3) |
+| Test Health    | ✅ 2,670 tests passing | 0 failing, 176 skipped (orchestrator-conditional + diagnostic)                                                          |
 
 ---
 
@@ -31,50 +31,50 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 ### Rules Specification
 
-| Document                                                                                                 | Description                       | When to Use                                        |
-| -------------------------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------- |
-| [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)                                                       | Canonical rules with RR-CANON IDs | Authoritative reference for any rule question      |
-| [docs/supplementary/RULES_RULESET_CLARIFICATIONS.md](docs/supplementary/RULES_RULESET_CLARIFICATIONS.md) | Ambiguity resolutions (CLAR-XXX)  | When handling edge cases or unclear scenarios      |
-| [COMPLETE_RULES.md](COMPLETE_RULES.md)                                                                   | Player-facing complete rules      | Understanding full ruleset from player perspective |
-| [COMPACT_RULES.md](COMPACT_RULES.md)                                                                     | Player-facing compact rules       | Quick reference or onboarding new players          |
+| Document                                                                                               | Description                       | When to Use                                        |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------- |
+| [RULES_CANONICAL_SPEC.md](../../RULES_CANONICAL_SPEC.md)                                               | Canonical rules with RR-CANON IDs | Authoritative reference for any rule question      |
+| [docs/supplementary/RULES_RULESET_CLARIFICATIONS.md](../supplementary/RULES_RULESET_CLARIFICATIONS.md) | Ambiguity resolutions (CLAR-XXX)  | When handling edge cases or unclear scenarios      |
+| [COMPLETE_RULES.md](COMPLETE_RULES.md)                                                                 | Player-facing complete rules      | Understanding full ruleset from player perspective |
+| [COMPACT_RULES.md](COMPACT_RULES.md)                                                                   | Player-facing compact rules       | Quick reference or onboarding new players          |
 
 ### Implementation
 
-| Document                                                           | Description                                       | When to Use                                          |
-| ------------------------------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- |
-| [RULES_IMPLEMENTATION_MAPPING.md](RULES_IMPLEMENTATION_MAPPING.md) | Rules → Code mapping (RR-CANON → files/functions) | Finding which code implements a specific rule        |
-| [RULES_ENGINE_ARCHITECTURE.md](RULES_ENGINE_ARCHITECTURE.md)       | Engine architecture overview                      | Understanding system design and module relationships |
+| Document                                                                     | Description                                       | When to Use                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| [RULES_IMPLEMENTATION_MAPPING.md](RULES_IMPLEMENTATION_MAPPING.md)           | Rules → Code mapping (RR-CANON → files/functions) | Finding which code implements a specific rule        |
+| [RULES_ENGINE_ARCHITECTURE.md](../architecture/RULES_ENGINE_ARCHITECTURE.md) | Engine architecture overview                      | Understanding system design and module relationships |
 
 ### Verification & Audit
 
-| Document                                                                                                 | Description                     | When to Use                                   |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------- | --------------------------------------------- |
-| [archive/RULES_STATIC_VERIFICATION.md](archive/RULES_STATIC_VERIFICATION.md)                             | Static code analysis results    | Reviewing code coverage of rules              |
-| [archive/RULES_DYNAMIC_VERIFICATION.md](archive/RULES_DYNAMIC_VERIFICATION.md)                           | Dynamic test mapping            | Finding tests for specific rules              |
-| [docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md](docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md) | Edge case analysis and handling | Debugging unusual game states                 |
-| [docs/supplementary/RULES_DOCS_UX_AUDIT.md](docs/supplementary/RULES_DOCS_UX_AUDIT.md)                   | Documentation/UX audit findings | Improving player-facing documentation         |
-| [archive/FINAL_RULES_AUDIT_REPORT.md](archive/FINAL_RULES_AUDIT_REPORT.md)                               | Complete audit report           | Understanding overall rules compliance status |
+| Document                                                                                               | Description                     | When to Use                                   |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------- | --------------------------------------------- |
+| [archive/RULES_STATIC_VERIFICATION.md](../../archive/RULES_STATIC_VERIFICATION.md)                     | Static code analysis results    | Reviewing code coverage of rules              |
+| [archive/RULES_DYNAMIC_VERIFICATION.md](../../archive/RULES_DYNAMIC_VERIFICATION.md)                   | Dynamic test mapping            | Finding tests for specific rules              |
+| [docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md](../supplementary/RULES_CONSISTENCY_EDGE_CASES.md) | Edge case analysis and handling | Debugging unusual game states                 |
+| [docs/supplementary/RULES_DOCS_UX_AUDIT.md](../supplementary/RULES_DOCS_UX_AUDIT.md)                   | Documentation/UX audit findings | Improving player-facing documentation         |
+| [archive/FINAL_RULES_AUDIT_REPORT.md](../../archive/FINAL_RULES_AUDIT_REPORT.md)                       | Complete audit report           | Understanding overall rules compliance status |
 
 Additional rules‑UX and onboarding specs:
 
-- [`UX_RULES_COPY_SPEC.md`](../docs/UX_RULES_COPY_SPEC.md:1) – Canonical copy for HUD, VictoryModal, TeachingOverlay, and sandbox rules explanations.
-- [`UX_RULES_TELEMETRY_SPEC.md`](../docs/UX_RULES_TELEMETRY_SPEC.md:1) – Rules‑UX telemetry envelope, metrics, and hotspot queries (W‑UX‑1).
-- [`UX_RULES_WEIRD_STATES_SPEC.md`](../docs/UX_RULES_WEIRD_STATES_SPEC.md:1) – Weird‑state reason codes and UX mappings for ANM/FE, structural stalemate, and LPS (W‑UX‑2).
-- [`UX_RULES_TEACHING_SCENARIOS.md`](../docs/UX_RULES_TEACHING_SCENARIOS.md:1) – Scenario‑driven teaching flows for complex mechanics (W‑UX‑3).
-- [`UX_RULES_IMPROVEMENT_LOOP.md`](../docs/UX_RULES_IMPROVEMENT_LOOP.md:1) – Telemetry‑driven rules‑UX improvement process (W‑UX‑4).
+- [`UX_RULES_COPY_SPEC.md`](../ux/UX_RULES_COPY_SPEC.md:1) – Canonical copy for HUD, VictoryModal, TeachingOverlay, and sandbox rules explanations.
+- [`UX_RULES_TELEMETRY_SPEC.md`](../ux/UX_RULES_TELEMETRY_SPEC.md:1) – Rules‑UX telemetry envelope, metrics, and hotspot queries (W‑UX‑1).
+- [`UX_RULES_WEIRD_STATES_SPEC.md`](../ux/UX_RULES_WEIRD_STATES_SPEC.md:1) – Weird‑state reason codes and UX mappings for ANM/FE, structural stalemate, and LPS (W‑UX‑2).
+- [`UX_RULES_TEACHING_SCENARIOS.md`](../ux/UX_RULES_TEACHING_SCENARIOS.md:1) – Scenario‑driven teaching flows for complex mechanics (W‑UX‑3).
+- [`UX_RULES_IMPROVEMENT_LOOP.md`](../ux/UX_RULES_IMPROVEMENT_LOOP.md:1) – Telemetry‑driven rules‑UX improvement process (W‑UX‑4).
 
 ### Process & Tools
 
-| Document                                                               | Description                                    | When to Use                                                       |
-| ---------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
-| [archive/RULES_CHANGE_CHECKLIST.md](archive/RULES_CHANGE_CHECKLIST.md) | Change workflow checklist (archived reference) | Historical reference before making major rules-related changes    |
-| [scripts/rules-health-report.sh](scripts/rules-health-report.sh)       | Health report script                           | Automated compliance verification (runs core rules/parity suites) |
+| Document                                                                     | Description                                    | When to Use                                                       |
+| ---------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
+| [archive/RULES_CHANGE_CHECKLIST.md](../../archive/RULES_CHANGE_CHECKLIST.md) | Change workflow checklist (archived reference) | Historical reference before making major rules-related changes    |
+| [scripts/rules-health-report.sh](../../scripts/rules-health-report.sh)       | Health report script                           | Automated compliance verification (runs core rules/parity suites) |
 
 ### AI & Training
 
-| Document                                                             | Description                | When to Use                                     |
-| -------------------------------------------------------------------- | -------------------------- | ----------------------------------------------- |
-| [docs/AI_TRAINING_AND_DATASETS.md](docs/AI_TRAINING_AND_DATASETS.md) | AI alignment documentation | Training AI or ensuring rules consistency in AI |
+| Document                                                              | Description                | When to Use                                     |
+| --------------------------------------------------------------------- | -------------------------- | ----------------------------------------------- |
+| [docs/AI_TRAINING_AND_DATASETS.md](../ai/AI_TRAINING_AND_DATASETS.md) | AI alignment documentation | Training AI or ensuring rules consistency in AI |
 
 #### Decision timers and countdowns
 
@@ -156,8 +156,8 @@ Additional rules‑UX and onboarding specs:
 
 ## Getting Started
 
-1. **Understand the rules:** Start with [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md) for authoritative rule definitions.
+1. **Understand the rules:** Start with [RULES_CANONICAL_SPEC.md](../../RULES_CANONICAL_SPEC.md) for authoritative rule definitions.
 2. **Find relevant code:** Check [RULES_IMPLEMENTATION_MAPPING.md](RULES_IMPLEMENTATION_MAPPING.md) to locate implementation.
-3. **Before making changes:** Review the historical checklist in [archive/RULES_CHANGE_CHECKLIST.md](archive/RULES_CHANGE_CHECKLIST.md) for context on the rules-change workflow.
+3. **Before making changes:** Review the historical checklist in [archive/RULES_CHANGE_CHECKLIST.md](../../archive/RULES_CHANGE_CHECKLIST.md) for context on the rules-change workflow.
 4. **Verify compliance:** Run `./scripts/rules-health-report.sh` to check rules health.
-5. **Review context:** See [archive/FINAL_RULES_AUDIT_REPORT.md](archive/FINAL_RULES_AUDIT_REPORT.md) for audit findings and resolution status.
+5. **Review context:** See [archive/FINAL_RULES_AUDIT_REPORT.md](../../archive/FINAL_RULES_AUDIT_REPORT.md) for audit findings and resolution status.

@@ -132,7 +132,7 @@ Total:           4,132 → POLICY_SIZE_HEX8 = 4,500 (padded)
 1. **`src/shared/types/game.ts`**
    - Add `HEX8 = 'hex8'` to `BoardType` enum
 
-2. **`ai-service/app/models.py`**
+2. **`ai-service/app/models/core.py`**
    - Add `HEX8 = "hex8"` to `BoardType` enum
 
 3. **`RULES_CANONICAL_SPEC.md`**
@@ -159,7 +159,7 @@ Total:           4,132 → POLICY_SIZE_HEX8 = 4,500 (padded)
 
 **Files to modify:**
 
-1. **`ai-service/app/ai/neural_net.py`**
+1. **`ai-service/app/ai/neural_net/__init__.py`**
    - Add `HEX8_BOARD_SIZE = 9`
    - Add `POLICY_SIZE_HEX8 = 4500`
    - Add hex8 to `BOARD_POLICY_SIZES` and `BOARD_SPATIAL_SIZES` dicts
@@ -266,4 +266,4 @@ ringrift_v5_hex8_4p.pth
 
 - [RULES_CANONICAL_SPEC.md](../../RULES_CANONICAL_SPEC.md) - Canonical rules specification
 - [AI_ARCHITECTURE.md](../architecture/AI_ARCHITECTURE.md) - Neural network architecture
-- [neural_net.py](../../ai-service/app/ai/neural_net.py) - Policy size definitions
+- [neural_net.py](../../ai-service/app/ai/neural_net/__init__.py) - Policy size definitions

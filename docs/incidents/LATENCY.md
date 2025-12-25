@@ -4,29 +4,32 @@ This guide covers incidents related to response time degradation and performance
 
 ## Alerts Covered
 
-| Alert | Severity | Threshold | Duration |
-|-------|----------|-----------|----------|
-| HighP99Latency | Warning | P99 > 2s | 5 min |
-| HighP99LatencyCritical | Critical | P99 > 5s | 2 min |
-| HighP95Latency | Warning | P95 > 1s | 10 min |
-| HighMedianLatency | Warning | P50 > 500ms | 15 min |
-| HighGameMoveLatency | Warning | P99 > 1s per board type | 5 min |
-| DatabaseResponseTimeSlow | Warning | P99 > 500ms | 5 min |
-| RedisResponseTimeSlow | Warning | P99 > 100ms | 5 min |
+| Alert                    | Severity | Threshold               | Duration |
+| ------------------------ | -------- | ----------------------- | -------- |
+| HighP99Latency           | Warning  | P99 > 2s                | 5 min    |
+| HighP99LatencyCritical   | Critical | P99 > 5s                | 2 min    |
+| HighP95Latency           | Warning  | P95 > 1s                | 10 min   |
+| HighMedianLatency        | Warning  | P50 > 500ms             | 15 min   |
+| HighGameMoveLatency      | Warning  | P99 > 1s per board type | 5 min    |
+| DatabaseResponseTimeSlow | Warning  | P99 > 500ms             | 5 min    |
+| RedisResponseTimeSlow    | Warning  | P99 > 100ms             | 5 min    |
 
 ---
 
 ## Alert: HighP99Latency
 
 ### Severity
+
 **P3 Medium** - 1% of users experiencing slow responses (>2s)
 
 ### Symptoms
+
 - Some users reporting slow page loads
 - Metrics showing P99 latency > 2 seconds
 - Game moves feel sluggish for some players
 
 ### Impact
+
 - 1% of requests taking >2 seconds
 - User experience degraded
 - Potential for users abandoning actions
@@ -67,14 +70,14 @@ docker compose logs --tail 500 app 2>&1 | \
 ```bash
 # Check slow queries
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT query, calls, mean_exec_time, total_exec_time 
-   FROM pg_stat_statements 
+  "SELECT query, calls, mean_exec_time, total_exec_time
+   FROM pg_stat_statements
    ORDER BY mean_exec_time DESC LIMIT 10;"
 
 # Check active queries
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT pid, query_start, state, query 
-   FROM pg_stat_activity 
+  "SELECT pid, query_start, state, query
+   FROM pg_stat_activity
    WHERE state = 'active';"
 ```
 
@@ -100,13 +103,13 @@ curl -s http://localhost:3000/metrics | grep nodejs_heap
 
 ### Common Causes
 
-| Cause | Indicators | Solution |
-|-------|------------|----------|
-| Slow database queries | Database response time high | Optimize queries, add indexes |
-| Event loop blocking | Event loop lag elevated | Identify sync code, optimize |
-| Memory pressure | High GC time, heap usage | Profile memory, restart |
-| Network latency | All external calls slow | Check network, DNS |
-| Connection pool exhausted | Connection wait times high | Increase pool size |
+| Cause                     | Indicators                  | Solution                      |
+| ------------------------- | --------------------------- | ----------------------------- |
+| Slow database queries     | Database response time high | Optimize queries, add indexes |
+| Event loop blocking       | Event loop lag elevated     | Identify sync code, optimize  |
+| Memory pressure           | High GC time, heap usage    | Profile memory, restart       |
+| Network latency           | All external calls slow     | Check network, DNS            |
+| Connection pool exhausted | Connection wait times high  | Increase pool size            |
 
 ### Mitigation
 
@@ -140,11 +143,13 @@ docker compose up -d --scale app=3
 ```
 
 ### Communication
+
 - **Status Page**: "Some users may experience slow performance"
 - **Slack**: Post in #alerts with latency metrics
 - **Monitor**: Watch for escalation to P99 > 5s Critical
 
 ### Post-Incident
+
 - Identify the specific slow endpoints/queries
 - Create optimization tickets
 - Consider adding caching
@@ -154,14 +159,17 @@ docker compose up -d --scale app=3
 ## Alert: HighP99LatencyCritical
 
 ### Severity
+
 **P1 Critical** - 1% of users experiencing timeouts (>5s)
 
 ### Symptoms
+
 - Users seeing timeout errors
 - P99 latency > 5 seconds
 - Significant user complaints
 
 ### Impact
+
 - Requests timing out
 - Users unable to complete actions
 - Game moves may fail
@@ -177,8 +185,8 @@ docker exec ringrift-postgres-1 pg_isready
 
 # 3. Check active queries (may be blocking)
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT pid, now() - query_start as runtime, state, query 
-   FROM pg_stat_activity 
+  "SELECT pid, now() - query_start as runtime, state, query
+   FROM pg_stat_activity
    WHERE state != 'idle' ORDER BY runtime DESC LIMIT 5;"
 ```
 
@@ -189,7 +197,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ```bash
 # Find and kill queries running > 30 seconds
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
+  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
    WHERE state = 'active' AND query_start < now() - interval '30 seconds';"
 ```
 
@@ -215,6 +223,7 @@ Follow same diagnosis steps as HighP99Latency but with more urgency. Look for:
 4. **GC pause > 500ms**: Memory pressure, restart
 
 ### Communication
+
 - **Status Page**: "Service degraded - Some requests timing out"
 - **Slack**: Escalate to #incidents
 - **Escalation**: If not improving in 10 min, page secondary on-call
@@ -224,9 +233,11 @@ Follow same diagnosis steps as HighP99Latency but with more urgency. Look for:
 ## Alert: HighP95Latency
 
 ### Severity
+
 **P3 Medium** - 5% of users experiencing slow responses (>1s)
 
 ### Symptoms
+
 - More widespread slowness than P99
 - General sense that the app is "sluggish"
 
@@ -244,20 +255,24 @@ Similar to HighP99Latency but indicates broader performance issue. Focus on:
 ## Alert: HighMedianLatency
 
 ### Severity
+
 **P3 Medium** - 50% of users affected (median >500ms)
 
 ### Symptoms
+
 - **Majority of users** experiencing slow responses
 - General performance degradation
 - Not isolated to specific endpoints
 
 ### Impact
+
 - This is systemic - affects half of all requests
 - User experience broadly degraded
 
 ### Diagnosis Focus
 
 This typically indicates:
+
 1. **Database is slow** - most requests hit DB
 2. **Event loop is blocked** - affects all requests
 3. **Infrastructure issue** - network, disk I/O
@@ -268,13 +283,14 @@ docker stats --no-stream
 
 # Check database wait events
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT wait_event_type, wait_event, count(*) 
-   FROM pg_stat_activity 
-   WHERE state = 'active' 
+  "SELECT wait_event_type, wait_event, count(*)
+   FROM pg_stat_activity
+   WHERE state = 'active'
    GROUP BY wait_event_type, wait_event;"
 ```
 
 ### Communication
+
 - This affects most users - status page update needed
 - "Performance degraded - investigating"
 
@@ -283,14 +299,17 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ## Alert: HighGameMoveLatency
 
 ### Severity
+
 **P3 Medium** - Game-specific latency issue
 
 ### Symptoms
+
 - Game moves taking >1 second to process
 - Players experiencing lag between moves
 - Alert includes board_type label
 
 ### Impact
+
 - Game experience degraded
 - Competitive play affected
 - Players may abandon games
@@ -310,11 +329,11 @@ curl -s http://localhost:3000/metrics | grep ringrift_ai_request_duration
 
 ### Common Causes
 
-| Board Type | Possible Cause |
-|------------|----------------|
-| All types | Rules engine performance |
+| Board Type    | Possible Cause                   |
+| ------------- | -------------------------------- |
+| All types     | Rules engine performance         |
 | Larger boards | Territory calculation complexity |
-| AI games | AI service response time |
+| AI games      | AI service response time         |
 
 ### Mitigation
 
@@ -334,9 +353,11 @@ docker compose logs --tail 100 ai-service
 ## Alert: DatabaseResponseTimeSlow
 
 ### Severity
+
 **P3 Medium** - Database queries slow (P99 > 500ms)
 
 ### Symptoms
+
 - Database queries taking longer than expected
 - Affects all endpoints that touch database
 
@@ -345,13 +366,13 @@ docker compose logs --tail 100 ai-service
 ```bash
 # Check database performance
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd 
+  "SELECT relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd
    FROM pg_stat_user_tables ORDER BY seq_scan DESC LIMIT 10;"
 
 # Check for missing indexes (high seq_scan)
 # Check for table bloat
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) 
+  "SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
    FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC;"
 
 # Check connection count
@@ -375,9 +396,11 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ## Alert: RedisResponseTimeSlow
 
 ### Severity
+
 **P3 Medium** - Redis operations slow (P99 > 100ms)
 
 ### Symptoms
+
 - Cache operations taking too long
 - Rate limiting checks slow
 - Session operations slow
@@ -445,8 +468,8 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 
 # Get top slow queries
 docker exec ringrift-postgres-1 psql -U ringrift -c \
-  "SELECT query, calls, mean_exec_time, total_exec_time 
-   FROM pg_stat_statements 
+  "SELECT query, calls, mean_exec_time, total_exec_time
+   FROM pg_stat_statements
    ORDER BY mean_exec_time DESC LIMIT 10;"
 ```
 
@@ -454,8 +477,8 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 
 ## Related Documentation
 
-- [Initial Triage](./TRIAGE_GUIDE.md)
-- [Availability Incidents](./AVAILABILITY.md)
-- [Resource Incidents](./RESOURCES.md)
-- [Database Operations](../OPERATIONS_DB.md)
-- [Alerting Thresholds](../ALERTING_THRESHOLDS.md)
+- [Initial Triage](TRIAGE_GUIDE.md)
+- [Availability Incidents](AVAILABILITY.md)
+- [Resource Incidents](RESOURCES.md)
+- [Database Operations](../operations/OPERATIONS_DB.md)
+- [Alerting Thresholds](../operations/ALERTING_THRESHOLDS.md)

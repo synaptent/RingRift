@@ -14,7 +14,7 @@
 
 ## 1. Overview
 
-This document defines the narrow, stable public API boundary for the canonical RingRift rules engine located in [`src/shared/engine/`](../src/shared/engine/).
+This document defines the narrow, stable public API boundary for the canonical RingRift rules engine located in [`src/shared/engine/`](../../src/shared/engine).
 
 > **Note (November 2025):** A new canonical **Turn Orchestrator** layer has been added in [`src/shared/engine/orchestration/`](../../src/shared/engine/orchestration/README.md). This provides `processTurn()` and `processTurnAsync()` as single entry points for turn processing. See [Section 3.9](#39-orchestration-domain-new) for details.
 
@@ -28,7 +28,7 @@ This API is designed to be:
 
 ### Design Philosophy
 
-The canonical engine implements RingRift rules as **pure functions** that transform [`GameState`](../src/shared/types/game.ts) immutably. Adapters (Server GameEngine, Client Sandbox, Python AI Service) are responsible for:
+The canonical engine implements RingRift rules as **pure functions** that transform [`GameState`](../../src/shared/types/game.ts) immutably. Adapters (Server GameEngine, Client Sandbox, Python AI Service) are responsible for:
 
 - Orchestrating turn/phase flow
 - Managing player interaction (choices, timeouts)
@@ -41,7 +41,7 @@ The engine itself knows nothing about WebSockets, databases, or user interfaces.
 
 ## 2. Type Exports
 
-### 2.1 Core Types (from [`src/shared/types/game.ts`](../src/shared/types/game.ts))
+### 2.1 Core Types (from [`src/shared/types/game.ts`](../../src/shared/types/game.ts))
 
 ```typescript
 // Board & Position
@@ -64,7 +64,7 @@ export { BOARD_CONFIGS };
 export { positionToString, stringToPosition, positionsEqual };
 ```
 
-### 2.2 Engine Types (from [`src/shared/engine/types.ts`](../src/shared/engine/types.ts))
+### 2.2 Engine Types (from [`src/shared/engine/types.ts`](../../src/shared/engine/types.ts))
 
 ```typescript
 // Validation
@@ -165,7 +165,7 @@ string discriminants outside these sets, and must not emit legacy move types for
 
 ### 3.1 Placement Domain
 
-**Location:** [`validators/PlacementValidator.ts`](../src/shared/engine/validators/PlacementValidator.ts), [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts)
+**Location:** [`validators/PlacementValidator.ts`](../../src/shared/engine/validators/PlacementValidator.ts), [`placementHelpers.ts`](../../src/shared/engine/placementHelpers.ts)
 
 ```typescript
 // Validation (Board-Level)
@@ -210,7 +210,7 @@ if (result.valid) {
 
 ### 3.2 Movement Domain
 
-**Location:** [`movementLogic.ts`](../src/shared/engine/movementLogic.ts), [`validators/MovementValidator.ts`](../src/shared/engine/validators/MovementValidator.ts)
+**Location:** [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts), [`validators/MovementValidator.ts`](../../src/shared/engine/validators/MovementValidator.ts)
 
 ```typescript
 // Enumeration
@@ -253,7 +253,7 @@ const moves = enumerateSimpleMoveTargetsFromStack(boardType, fromPos, player, ad
 
 ### 3.3 Capture Domain
 
-**Location:** [`captureLogic.ts`](../src/shared/engine/captureLogic.ts), [`core.ts`](../src/shared/engine/core.ts), [`validators/CaptureValidator.ts`](../src/shared/engine/validators/CaptureValidator.ts)
+**Location:** [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts), [`core.ts`](../../src/shared/engine/core.ts), [`validators/CaptureValidator.ts`](../../src/shared/engine/validators/CaptureValidator.ts)
 
 ```typescript
 // Enumeration
@@ -298,7 +298,7 @@ const captures = enumerateCaptureMoves(boardType, fromPos, player, adapters, mov
 
 ### 3.4 Line Domain
 
-**Location:** [`lineDetection.ts`](../src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)
+**Location:** [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](../../src/shared/engine/lineDecisionHelpers.ts)
 
 ```typescript
 // Detection
@@ -360,7 +360,7 @@ if (lines.length > 0) {
 
 ### 3.5 Territory Domain
 
-**Location:** [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts), [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts)
+**Location:** [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts), [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts)
 
 ```typescript
 // Detection
@@ -467,7 +467,7 @@ if (regions.length > 0) {
 
 ### 3.6 Victory Domain
 
-**Location:** [`aggregates/VictoryAggregate.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts)
+**Location:** [`aggregates/VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts)
 
 > **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now in `VictoryAggregate.ts`.
 
@@ -518,7 +518,7 @@ evaluateSkipPlacementEligibility(state: GameState, player: number): SkipPlacemen
 
 ### 3.7 Turn Management
 
-**Location:** [`turnLogic.ts`](../src/shared/engine/turnLogic.ts)
+**Location:** [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts)
 
 ```typescript
 // Turn/Phase Progression
@@ -578,7 +578,7 @@ const { nextState, nextTurn } = advanceTurnAndPhase(state, turnState, delegates)
 
 ### 3.8 Core Utilities
 
-**Location:** [`core.ts`](../src/shared/engine/core.ts)
+**Location:** [`core.ts`](../../src/shared/engine/core.ts)
 
 ```typescript
 // Geometry
@@ -611,7 +611,7 @@ computeProgressSnapshot(state: GameState): ProgressSnapshot
 
 ### 3.9 Orchestration Domain (NEW)
 
-**Location:** [`orchestration/`](../src/shared/engine/orchestration/)
+**Location:** [`orchestration/`](../../src/shared/engine/orchestration)
 
 The orchestration layer provides a single, canonical entry point for all turn processing, delegating to domain aggregates in deterministic order and surfacing **pending decisions** as canonical `Move[]` options. For host-driven rules interactions, these orchestrator functions are the only canonical entrypoints for applying moves, validating candidate moves, and enumerating legal actions; backend and sandbox hosts must treat this surface as the lifecycle and rules-surface SSoT for turn processing.
 
@@ -813,7 +813,7 @@ The core type alignment is:
   - `'elimination_target'` ↔ `PlayerChoiceType: 'ring_elimination'`
   - `'capture_direction'` ↔ `PlayerChoiceType: 'capture_direction'`
   - `'chain_capture'` – currently surfaced as capture `Move` options; choice flows may treat each `Move` as an implicit direction choice.
-- For `line_order`, `region_order`, and `ring_elimination` choices, the shared types in [`game.ts`](../src/shared/types/game.ts) include stable `moveId` fields that point back to the canonical `Move.id` in `pendingDecision.options`.
+- For `line_order`, `region_order`, and `ring_elimination` choices, the shared types in [`game.ts`](../../src/shared/types/game.ts) include stable `moveId` fields that point back to the canonical `Move.id` in `pendingDecision.options`.
 
 This ensures that **all decision semantics live in the engine’s `Move` model**, and transports/clients only ever pick among already‑validated canonical actions.
 
@@ -850,13 +850,13 @@ async function applyMoveViaOrchestrator(
 Two adapters wrap the orchestrator for specific runtime contexts and are the
 only sanctioned production integration layers for this API in live games:
 
-1. **Backend Adapter:** [`TurnEngineAdapter.ts`](../src/server/game/turn/TurnEngineAdapter.ts)
+1. **Backend Adapter:** [`TurnEngineAdapter.ts`](../../src/server/game/turn/TurnEngineAdapter.ts)
    - Wraps the orchestrator with WebSocket/session concerns and persistence.
    - Uses `processTurnAsync`, `validateMove`, `getValidMoves`, and `hasValidMoves` to drive backend rules interactions.
    - Maps `VictoryState` → backend `GameResult` and emits `game:state_update` / `game:ended` events.
    - Controlled by the `useOrchestratorAdapter` feature flag inside the server `GameEngine`.
 
-2. **Sandbox Adapter:** [`SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)
+2. **Sandbox Adapter:** [`SandboxOrchestratorAdapter.ts`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts)
    - Wraps the orchestrator for browser-local simulation and tooling.
    - Provides the same surface as `ClientSandboxEngine` (get state, apply moves, query validity).
    - Uses `processTurn` / `processTurnAsync` + `validateMove` / `getValidMoves` to power local RulesMatrix/FAQ scenarios and AI-vs-AI tests.
@@ -866,14 +866,14 @@ In both cases, **`Move` remains the canonical action**, and all decision/choice 
 
 Beneath the orchestrator, the domain aggregates and helper modules under `src/shared/engine/**` form the rules-semantics SSoT for their respective domains:
 
-- [`MovementAggregate`](../src/shared/engine/aggregates/MovementAggregate.ts) together with [`movementLogic.ts`](../src/shared/engine/movementLogic.ts) for non-capturing movement.
-- [`CaptureAggregate`](../src/shared/engine/aggregates/CaptureAggregate.ts) together with [`captureLogic.ts`](../src/shared/engine/captureLogic.ts) for capture and chain-capture semantics.
-- [`PlacementAggregate`](../src/shared/engine/aggregates/PlacementAggregate.ts) together with [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts) for placement, multi-ring placement on empty cells, stacking rules, and the no-dead-placement rule.
-- [`LineAggregate`](../src/shared/engine/aggregates/LineAggregate.ts) together with helpers such as [`lineDetection.ts`](../src/shared/engine/lineDetection.ts) and [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts) for line detection and line-reward decisions.
-- [`TerritoryAggregate`](../src/shared/engine/aggregates/TerritoryAggregate.ts) together with helpers such as [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts), and [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts) for Territory disconnection, Q23 self-elimination prerequisites, and explicit Territory decisions.
-- [`VictoryAggregate`](../src/shared/engine/aggregates/VictoryAggregate.ts) for ring-elimination, territory-control, and last-player-standing victory semantics.
+- [`MovementAggregate`](../../src/shared/engine/aggregates/MovementAggregate.ts) together with [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts) for non-capturing movement.
+- [`CaptureAggregate`](../../src/shared/engine/aggregates/CaptureAggregate.ts) together with [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts) for capture and chain-capture semantics.
+- [`PlacementAggregate`](../../src/shared/engine/aggregates/PlacementAggregate.ts) together with [`placementHelpers.ts`](../../src/shared/engine/placementHelpers.ts) for placement, multi-ring placement on empty cells, stacking rules, and the no-dead-placement rule.
+- [`LineAggregate`](../../src/shared/engine/aggregates/LineAggregate.ts) together with helpers such as [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts) and [`lineDecisionHelpers.ts`](../../src/shared/engine/lineDecisionHelpers.ts) for line detection and line-reward decisions.
+- [`TerritoryAggregate`](../../src/shared/engine/aggregates/TerritoryAggregate.ts) together with helpers such as [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts), and [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts) for Territory disconnection, Q23 self-elimination prerequisites, and explicit Territory decisions.
+- [`VictoryAggregate`](../../src/shared/engine/aggregates/VictoryAggregate.ts) for ring-elimination, territory-control, and last-player-standing victory semantics.
 
-Hosts (backend and sandbox) must treat these aggregates and helpers as the **only authoritative implementation** of movement, capture, placement, line, Territory, and victory rules semantics. Production hosts must go through the orchestrator (`processTurn` / `processTurnAsync` together with `validateMove` / `getValidMoves` / `hasValidMoves`) via [`TurnEngineAdapter`](../src/server/game/turn/TurnEngineAdapter.ts) or [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts); direct calls into aggregates or helpers are reserved for tests, diagnostics, and tooling. For a design-level view of these aggregates see [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](./DOMAIN_AGGREGATE_DESIGN.md), and for rule-ID → implementation mapping see [`docs/rules/RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md). For consolidation and rollout details, see [`docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md`](./SHARED_ENGINE_CONSOLIDATION_PLAN.md) and [`docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`](./ORCHESTRATOR_ROLLOUT_PLAN.md).
+Hosts (backend and sandbox) must treat these aggregates and helpers as the **only authoritative implementation** of movement, capture, placement, line, Territory, and victory rules semantics. Production hosts must go through the orchestrator (`processTurn` / `processTurnAsync` together with `validateMove` / `getValidMoves` / `hasValidMoves`) via [`TurnEngineAdapter`](../../src/server/game/turn/TurnEngineAdapter.ts) or [`SandboxOrchestratorAdapter`](../../src/client/sandbox/SandboxOrchestratorAdapter.ts); direct calls into aggregates or helpers are reserved for tests, diagnostics, and tooling. For a design-level view of these aggregates see [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](DOMAIN_AGGREGATE_DESIGN.md), and for rule-ID → implementation mapping see [`docs/rules/RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md). For consolidation and rollout details, see [`docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md`](SHARED_ENGINE_CONSOLIDATION_PLAN.md) and [`docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md).
 
 ##### 3.9.0a High-level turn + decision flow (diagram)
 
@@ -928,15 +928,15 @@ as different views on this single orchestrator‑centred flow.
 **Key types & modules:**
 
 - Canonical actions & decisions:
-  - `Move`, `MoveType`, `GamePhase`, `PlayerChoice*`, `PlayerChoiceType` – [`src/shared/types/game.ts`](../src/shared/types/game.ts)
-  - `DecisionType`, `PendingDecision`, `ProcessTurnResult` – [`src/shared/engine/orchestration/types.ts`](../src/shared/engine/orchestration/types.ts)
+  - `Move`, `MoveType`, `GamePhase`, `PlayerChoice*`, `PlayerChoiceType` – [`src/shared/types/game.ts`](../../src/shared/types/game.ts)
+  - `DecisionType`, `PendingDecision`, `ProcessTurnResult` – [`src/shared/engine/orchestration/types.ts`](../../src/shared/engine/orchestration/types.ts)
 - WebSocket contracts:
-  - Server↔client events & payloads – [`src/shared/types/websocket.ts`](../src/shared/types/websocket.ts)
-  - Zod schemas for inbound payloads – [`src/shared/validation/websocketSchemas.ts`](../src/shared/validation/websocketSchemas.ts)
+  - Server↔client events & payloads – [`src/shared/types/websocket.ts`](../../src/shared/types/websocket.ts)
+  - Zod schemas for inbound payloads – [`src/shared/validation/websocketSchemas.ts`](../../src/shared/validation/websocketSchemas.ts)
 - Backend handlers:
-  - Game WebSocket server wiring – [`src/server/websocket/server.ts`](../src/server/websocket/server.ts)
-  - Per-game interaction bridge – [`src/server/game/WebSocketInteractionHandler.ts`](../src/server/game/WebSocketInteractionHandler.ts)
-  - Game session state machine – [`src/shared/stateMachines/gameSession.ts`](../src/shared/stateMachines/gameSession.ts)
+  - Game WebSocket server wiring – [`src/server/websocket/server.ts`](../../src/server/websocket/server.ts)
+  - Per-game interaction bridge – [`src/server/game/WebSocketInteractionHandler.ts`](../../src/server/game/WebSocketInteractionHandler.ts)
+  - Game session state machine – [`src/shared/stateMachines/gameSession.ts`](../../src/shared/stateMachines/gameSession.ts)
 
 At the WebSocket boundary, **all rules interactions are expressed in terms of canonical `Move` objects and their IDs**:
 
@@ -1007,7 +1007,7 @@ This architecture ensures that **`Move` remains the single canonical description
 While this document focuses on **function-level** API, the orchestrator
 surface is also wired into a small set of metrics that form part of the
 operational contract for rollout, scale, and invariant soaks. These metrics
-are emitted by [`MetricsService.ts`](../src/server/services/MetricsService.ts)
+are emitted by [`MetricsService.ts`](../../src/server/services/MetricsService.ts)
 and referenced from the rollout and alerting docs:
 
 - **Orchestrator error rate:**  
@@ -1244,7 +1244,7 @@ Throughout this loop:
 
 #### 3.9.4 WebSocket Lifecycle Semantics
 
-This section documents the **canonical lifecycle semantics** for WebSocket-backed game sessions. These semantics are implemented in [`WebSocketServer`](../src/server/websocket/server.ts) and [`WebSocketInteractionHandler`](../src/server/game/WebSocketInteractionHandler.ts), and form part of the multiplayer "lifecycle SSoT" alongside the rules semantics.
+This section documents the **canonical lifecycle semantics** for WebSocket-backed game sessions. These semantics are implemented in [`WebSocketServer`](../../src/server/websocket/server.ts) and [`WebSocketInteractionHandler`](../../src/server/game/WebSocketInteractionHandler.ts), and form part of the multiplayer "lifecycle SSoT" alongside the rules semantics.
 
 ##### Connection roles and state machine
 
@@ -1370,7 +1370,7 @@ From an `IN_PROGRESS` game two independent processes may produce a terminal resu
 
 1. **Rules‑level termination**
    - Victory, resignation, or loss on time according to the rules and time‑control configuration.
-   - Implemented via `ClockManager` / `GameSession` timers and evaluated through [`VictoryAggregate.evaluateVictory`](../src/shared/engine/aggregates/VictoryAggregate.ts).
+   - Implemented via `ClockManager` / `GameSession` timers and evaluated through [`VictoryAggregate.evaluateVictory`](../../src/shared/engine/aggregates/VictoryAggregate.ts).
 
 2. **Abandonment due to reconnection‑window expiry**
    - When a player’s state moves from `DISCONNECTED_PENDING` to `DISCONNECTED_FINAL` because the reconnection window expired, `GameSession.handleAbandonmentForDisconnectedPlayer` may end the game (for example, awarding a rated win to the remaining human opponent in a 2‑player game).
@@ -1388,7 +1388,7 @@ Persistence distinguishes these outcomes via result metadata stored with the gam
 Decision‑phase **timeouts** (failure to answer a `player_choice_required` within the configured deadline) are orthogonal:
 
 - They auto‑resolve the _current decision_ (e.g. choose a default `Move`), usually keeping the game in ACTIVE state.
-- They are covered by dedicated tests and scenario rows under `LF5.a` / `LF5.b` in [`RULES_SCENARIO_MATRIX.md`](../rules/RULES_SCENARIO_MATRIX.md:53) and by E2E suites such as [`tests/e2e/decision-phase-timeout.e2e.spec.ts`](../tests/e2e/decision-phase-timeout.e2e.spec.ts:1).
+- They are covered by dedicated tests and scenario rows under `LF5.a` / `LF5.b` in [`RULES_SCENARIO_MATRIX.md`](../rules/RULES_SCENARIO_MATRIX.md:53) and by E2E suites such as [`tests/e2e/decision-phase-timeout.e2e.spec.ts`](../../tests/e2e/decision-phase-timeout.e2e.spec.ts:1).
 
 ##### Rematch and Back-to-Lobby Flows
 
@@ -1422,11 +1422,11 @@ The following tests validate lifecycle semantics:
 | Spectator join/leave and late join     | `tests/unit/GameSession.spectatorFlow.test.ts`, `tests/unit/GameSession.spectatorLateJoin.test.ts` |
 | Connection lifecycle helpers           | `tests/unit/GameConnection.reconnection.test.ts`                                                   |
 
-Additional coverage for lobby flows, abandonment vs timeout, late-join spectators, and rematch semantics is tracked in `TODO.md` §P1.1, in the lifecycle axis rows `LF1`–`LF6` (including `LF1.a`, `LF5.a`, `LF5.b`) of [`RULES_SCENARIO_MATRIX.md`](../rules/RULES_SCENARIO_MATRIX.md:53), and in the ANM/timeout catalogue [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](../ACTIVE_NO_MOVES_BEHAVIOUR.md:1).
+Additional coverage for lobby flows, abandonment vs timeout, late-join spectators, and rematch semantics is tracked in `TODO.md` §P1.1, in the lifecycle axis rows `LF1`–`LF6` (including `LF1.a`, `LF5.a`, `LF5.b`) of [`RULES_SCENARIO_MATRIX.md`](../rules/RULES_SCENARIO_MATRIX.md:53), and in the ANM/timeout catalogue [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](../rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:1).
 
 ### 3.10 Contract Testing Domain (NEW)
 
-**Location:** [`contracts/`](../src/shared/engine/contracts/)
+**Location:** [`contracts/`](../../src/shared/engine/contracts)
 
 The contract testing domain provides a **language‑neutral description** of key engine behaviours for TypeScript and Python to share. It complements rules-level tests by:
 

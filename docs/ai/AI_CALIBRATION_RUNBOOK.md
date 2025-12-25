@@ -1,23 +1,23 @@
 # AI Difficulty Calibration Runbook – Square‑8 2‑Player (H‑AI‑14)
 
 &gt; **Status (2025‑12‑05): New – H‑AI‑14 runbook.**  
-&gt; **Role:** Step‑by‑step operational guide for running AI difficulty calibration cycles for the Square‑8 2‑player ladder tiers D2 / D4 / D6 / D8, using the analysis design in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1) and the CLI in [`analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1).
+&gt; **Role:** Step‑by‑step operational guide for running AI difficulty calibration cycles for the Square‑8 2‑player ladder tiers D2 / D4 / D6 / D8, using the analysis design in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1) and the CLI in [`analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1).
 
 ---
 
 ## 1. Purpose and scope
 
-- This runbook is part of the remediation track for the **hardest problem** identified in [`WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md`](WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md:145): _advanced AI strength and a stable high‑tier Square‑8 2‑player ladder_.
+- This runbook is part of the remediation track for the **hardest problem** identified in [`WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md`](../archive/assessments/WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md:145): _advanced AI strength and a stable high‑tier Square‑8 2‑player ladder_.
 - It defines the **operational procedure** for running an AI difficulty calibration cycle:
   - choosing a calibration window;
   - assembling required inputs (telemetry aggregates, registry, eval/perf artefacts);
-  - invoking [`analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1);
+  - invoking [`analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1);
   - storing outputs under `docs/ai/calibration_runs/`;
   - capturing human notes and decisions.
 - It **does not** redefine calibration theory, metrics, or thresholds. Those live in:
-  - [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1) – analysis design and decision rules;
-  - [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:1) – human‑study templates;
-  - the script implementation [`analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1).
+  - [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1) – analysis design and decision rules;
+  - [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:1) – human‑study templates;
+  - the script implementation [`analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1).
 
 Primary users:
 
@@ -31,8 +31,8 @@ Primary users:
 ### 2.1 Environment assumptions
 
 - You have a working checkout of the RingRift repo and `ai-service` subproject.
-- Python is installed with a version compatible with `ai-service` (see [`requirements.txt`](ai-service/requirements.txt:1)).
-- Dependencies are installed as described in [`ai-service/README.md`](ai-service/README.md:1) (for example via `pip install -r ai-service/requirements.txt` or the project’s bootstrap scripts).
+- Python is installed with a version compatible with `ai-service` (see [`requirements.txt`](../../ai-service/requirements.txt:1)).
+- Dependencies are installed as described in [`ai-service/README.md`](../../ai-service/README.md:1) (for example via `pip install -r ai-service/requirements.txt` or the project’s bootstrap scripts).
 - You can run Python modules from the project root, e.g.:
 
   ```bash
@@ -67,7 +67,7 @@ A JSON file exported from metrics or a data warehouse, containing **pre‑aggreg
 - `difficulty ∈ {2,4,6,8}`
 - Calibration cohort only (e.g. `isCalibrationOptIn = true`)
 
-The file must match the schema validated by [`load_calibration_aggregates()`](ai-service/scripts/analyze_difficulty_calibration.py:130) in [`analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1). Conceptually:
+The file must match the schema validated by [`load_calibration_aggregates()`](../../ai-service/scripts/analyze_difficulty_calibration.py:130) in [`analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1). Conceptually:
 
 ```json
 {
@@ -100,7 +100,7 @@ Notes:
 
 - `tier` must be one of `"D2"`, `"D4"`, `"D6"`, `"D8"`.
 - `difficulty` must numerically match the tier (e.g. `"D4"` → `4`).
-- Fields are per **segment** (e.g. `new`, `intermediate`, `strong`) as described in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:244).
+- Fields are per **segment** (e.g. `new`, `intermediate`, `strong`) as described in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:244).
 
 How this JSON is produced (PromQL, SQL, batch job) is outside this runbook; treat its shape as a **contract**.
 
@@ -109,7 +109,7 @@ How this JSON is produced (PromQL, SQL, batch job) is outside this runbook; trea
 The **Square‑8 2‑player tier candidate registry**:
 
 - Default path: [`tier_candidate_registry.square8_2p.json`](ai-service/config/tier_candidate_registry.square8_2p.json:1)
-- Canonical loader: [`load_square8_two_player_registry()`](ai-service/app/training/tier_promotion_registry.py:29)
+- Canonical loader: [`load_square8_two_player_registry()`](../../ai-service/app/training/tier_promotion_registry.py:29)
 
 This registry tells the calibration script:
 
@@ -159,13 +159,13 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
 1. **Choose the time window.**
    - Default recommendation: the last **28 days** of calibration activity, or “since the previous calibration run”.
    - Ensure:
-     - Sufficient sample sizes per tier/segment (see thresholds in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:289)).
+     - Sufficient sample sizes per tier/segment (see thresholds in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:289)).
      - No major mid‑window ladder changes if possible.
 
 2. **Confirm tiers in scope.**
    - Board: `square8` (8×8 compact ruleset).
    - Players: `2`.
-   - Difficulty tiers: `D2`, `D4`, `D6`, `D8`, matching the ladder scope in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:19).
+   - Difficulty tiers: `D2`, `D4`, `D6`, `D8`, matching the ladder scope in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:19).
 
 3. **Create a calibration run directory.**
    - Under `docs/ai/calibration_runs/`, create a directory using the convention:
@@ -181,7 +181,7 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
      ```
 
 4. **Seed the run with the notes template.**
-   - Copy the per‑run template [`TEMPLATE.md`](docs/ai/calibration_runs/TEMPLATE.md:1) into the new directory as `notes.md`:
+   - Copy the per‑run template [`TEMPLATE.md`](calibration_runs/TEMPLATE.md:1) into the new directory as `notes.md`:
 
      ```bash
      cp docs/ai/calibration_runs/TEMPLATE.md \
@@ -202,6 +202,9 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
            docs/ai/calibration_runs/2025_12_square8_2p_window01/\
 
       aggregates.square8_2p.window01.json
+
+      ```
+
       ```
 
 2.  **Snapshot the tier candidate registry (optional but recommended).**
@@ -215,6 +218,9 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
               docs/ai/calibration_runs/2025_12_square8_2p_window01/\
 
       tier_candidate_registry.square8_2p.snapshot.json
+
+      ```
+
       ```
 
 3.  **Choose `--eval-root` and verify tier directories.**
@@ -233,13 +239,13 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
       ```
 
     - These artefacts are typically produced by:
-      - [`run_tier_gate.py`](ai-service/scripts/run_tier_gate.py:1) and/or
-      - the combined wrapper [`run_full_tier_gating.py`](ai-service/scripts/run_full_tier_gating.py:1),
+      - [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1) and/or
+      - the combined wrapper [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_tier_gating.py:1),
 
-      as described in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:285).
+      as described in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:285).
 
 4.  **Record inputs in `notes.md`.**
-    - In the run’s `notes.md` (from [`TEMPLATE.md`](docs/ai/calibration_runs/TEMPLATE.md:1)), fill the **Inputs** section with:
+    - In the run’s `notes.md` (from [`TEMPLATE.md`](calibration_runs/TEMPLATE.md:1)), fill the **Inputs** section with:
       - path to the calibration aggregates JSON;
       - path to the registry (and snapshot, if created);
       - chosen `--eval-root`.
@@ -264,10 +270,10 @@ calibration_summary.md \
   --window-label 2025-12-square8-2p-window01
 ```
 
-Key flags (see [`parse_args()`](ai-service/scripts/analyze_difficulty_calibration.py:726)):
+Key flags (see [`parse_args()`](../../ai-service/scripts/analyze_difficulty_calibration.py:726)):
 
 - `--calibration-aggregates` – path to the aggregates JSON exported in §3.2.1.
-- `--registry-path` – path to the Square‑8 2p registry JSON (defaults to [`DEFAULT_SQUARE8_2P_REGISTRY_PATH`](ai-service/app/training/tier_promotion_registry.py:37)).
+- `--registry-path` – path to the Square‑8 2p registry JSON (defaults to [`DEFAULT_SQUARE8_2P_REGISTRY_PATH`](../../ai-service/app/training/tier_promotion_registry.py:37)).
 - `--eval-root` – root directory that prefixes all `source_run_dir` entries from the registry.
 - `--output-json` – where to write the machine‑readable calibration summary JSON (recommended: inside the run directory).
 - `--output-md` – where to write the human‑readable Markdown summary (also inside the run directory).
@@ -285,13 +291,13 @@ After running the CLI, the run directory should contain:
 
 #### 3.4.1 JSON summary
 
-Shape is defined by [`build_calibration_summary()`](ai-service/scripts/analyze_difficulty_calibration.py:576). At a high level it contains:
+Shape is defined by [`build_calibration_summary()`](../../ai-service/scripts/analyze_difficulty_calibration.py:576). At a high level it contains:
 
 - `board`, `num_players`
 - `window` – including `start`, `end`, and `label`
 - `tiers[]` – one entry per tier, each with:
   - `tier`, `difficulty`
-  - `ladder` – current ladder model id, AI type, heuristic profile (from [`get_ladder_tier_config`](ai-service/app/config/ladder_config.py:279)).
+  - `ladder` – current ladder model id, AI type, heuristic profile (from [`get_ladder_tier_config`](../../ai-service/app/config/ladder_config.py:279)).
   - `registry` – `current` registry block and `latest_candidate` metadata.
   - `evaluation` – `overall_pass` and win‑rates vs baseline / previous tier, derived from `tier_eval_result.json` when present.
   - `perf` – `overall_pass`, `avg_ms`, `p95_ms`, derived from `tier_perf_report.json` when present.
@@ -304,7 +310,7 @@ This JSON is intended for:
 
 #### 3.4.2 Markdown summary
 
-The Markdown is produced by [`build_markdown_report()`](ai-service/scripts/analyze_difficulty_calibration.py:623) and is the primary **human‑facing report** for this run. For each tier it includes:
+The Markdown is produced by [`build_markdown_report()`](../../ai-service/scripts/analyze_difficulty_calibration.py:623) and is the primary **human‑facing report** for this run. For each tier it includes:
 
 - **Ladder model**: model id, AI type, heuristic profile.
 - **Evaluation summary**: gate status (`PASS`/`FAIL`) and win‑rates vs baseline / previous tier, if available.
@@ -317,7 +323,7 @@ The Markdown is produced by [`build_markdown_report()`](ai-service/scripts/analy
   - `status` in `{too_easy, too_hard, in_band, inconclusive}`
 - **Overall calibration status** for the tier and short notes summarising the segment‑level picture.
 
-How to interpret `too_easy` / `too_hard` / `in_band` is defined precisely in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:443). Use that document as the **normative reference** when turning this report into actions.
+How to interpret `too_easy` / `too_hard` / `in_band` is defined precisely in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:443). Use that document as the **normative reference** when turning this report into actions.
 
 ### 3.5 Step 5 – Decide next actions
 
@@ -328,21 +334,21 @@ Inputs to consider:
 - Calibration status and notes per tier/segment (from `calibration_summary.*`).
 - Automated evaluation and perf status (from `evaluation` and `perf` blocks).
 - Ladder and training context from:
-  - [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:1)
-  - [`AI_TIER_PERF_BUDGETS.md`](docs/ai/AI_TIER_PERF_BUDGETS.md:1)
+  - [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:1)
+  - [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1)
 
 Typical next actions (to record in `notes.md`):
 
 - **Tier appears too easy** for its intended segment and passes gates/perf:
   - Prioritise a stronger candidate for that tier in the next training cycle.
-  - Optionally tighten future gate expectations as described in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:500).
+  - Optionally tighten future gate expectations as described in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:500).
 - **Tier appears too hard** for its intended segment and passes gates/perf:
   - Consider weakening the tier (e.g. reduced search depth, increased randomness) and then re‑running gating/perf.
   - In extreme cases, consider remapping this model to a higher logical difficulty and re‑labeling UX.
 - **Data inconclusive** (low `n_games` or mixed signals):
-  - Schedule additional calibration telemetry collection or structured human sessions using templates A/B/C from [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:137).
+  - Schedule additional calibration telemetry collection or structured human sessions using templates A/B/C from [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:137).
 - **Automated gates or perf fail**:
-  - Treat this primarily as an H‑AI‑9/H‑AI‑8 issue; calibration may still be informative but should not drive promotions that violate the invariants documented in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:287) and [`AI_TIER_PERF_BUDGETS.md`](docs/ai/AI_TIER_PERF_BUDGETS.md:1).
+  - Treat this primarily as an H‑AI‑9/H‑AI‑8 issue; calibration may still be informative but should not drive promotions that violate the invariants documented in [`AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md`](AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md:287) and [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1).
 
 Record:
 
@@ -399,7 +405,7 @@ Optional additions:
 
 ### 4.3 Template usage
 
-The per‑run template [`TEMPLATE.md`](docs/ai/calibration_runs/TEMPLATE.md:1):
+The per‑run template [`TEMPLATE.md`](calibration_runs/TEMPLATE.md:1):
 
 - Provides a **consistent skeleton** for `notes.md`:
   - Run metadata and window label.
@@ -424,7 +430,7 @@ This runbook assumes lightweight role responsibilities; H‑AI‑16 will define 
 
 - **Data / Telemetry Owner**
   - Produces and validates the calibration aggregates JSON.
-  - Confirms that schema changes in telemetry or exports do not break [`analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1).
+  - Confirms that schema changes in telemetry or exports do not break [`analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1).
 
 - **Product / Game Design Owner**
   - Interprets calibration outcomes relative to target player experience.
@@ -454,7 +460,7 @@ Use this as a compact checklist when running calibration:
 1. **Plan**
    - [ ] Pick calibration window (e.g. last 28 days) and confirm D2/D4/D6/D8 in scope.
    - [ ] Create `docs/ai/calibration_runs/YYYY_MM_square8_2p_windowNN/`.
-   - [ ] Copy [`TEMPLATE.md`](docs/ai/calibration_runs/TEMPLATE.md:1) → `notes.md`.
+   - [ ] Copy [`TEMPLATE.md`](calibration_runs/TEMPLATE.md:1) → `notes.md`.
 
 2. **Gather inputs**
    - [ ] Export calibration aggregates JSON into the run directory.
@@ -462,7 +468,7 @@ Use this as a compact checklist when running calibration:
    - [ ] Choose `--eval-root` and verify required `tier_eval_result.json` / `tier_perf_report.json` / `gate_report.json` exist for current ladder models.
 
 3. **Run analysis**
-   - [ ] Run [`analyze_difficulty_calibration.py`](ai-service/scripts/analyze_difficulty_calibration.py:1) with `--calibration-aggregates`, `--registry-path`, `--eval-root`, `--output-json`, `--output-md`, and a `--window-label`.
+   - [ ] Run [`analyze_difficulty_calibration.py`](../../ai-service/scripts/analyze_difficulty_calibration.py:1) with `--calibration-aggregates`, `--registry-path`, `--eval-root`, `--output-json`, `--output-md`, and a `--window-label`.
    - [ ] Confirm `calibration_summary.json` and `calibration_summary.md` were created in the run directory.
 
 4. **Review and decide**

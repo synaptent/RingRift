@@ -2,7 +2,7 @@
 
 > **Status:** Graduated (FSM is Canonical)
 > **Last Updated:** 2025-12-10
-> **Related:** [STATE_MACHINES.md](./STATE_MACHINES.md), [CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md)
+> **Related:** [STATE_MACHINES.md](STATE_MACHINES.md), [CANONICAL_ENGINE_API.md](CANONICAL_ENGINE_API.md)
 
 ---
 
@@ -366,5 +366,5 @@ All action items from the original FSM Extension Strategy have been completed:
 - **FSM Source:** `src/shared/engine/fsm/`
 - **Orchestrator:** `src/shared/engine/orchestration/turnOrchestrator.ts`
 - **Python Phase Contract:** `ai-service/app/rules/history_contract.py`
-- **Parity Runbook:** [PARITY_VERIFICATION_RUNBOOK.md](../PARITY_VERIFICATION_RUNBOOK.md)
-- **State Machines Overview:** [STATE_MACHINES.md](./STATE_MACHINES.md)
+- **Parity Runbook:** [PARITY_VERIFICATION_RUNBOOK.md](../runbooks/PARITY_VERIFICATION_RUNBOOK.md)
+- **State Machines Overview:** [STATE_MACHINES.md](STATE_MACHINES.md)

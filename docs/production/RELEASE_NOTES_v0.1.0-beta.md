@@ -81,9 +81,9 @@ npm run dev
 ## Documentation
 
 - [Complete Rules](../rules/COMPLETE_RULES.md) - Full rulebook with examples
-- [Canonical Specification](RULES_CANONICAL_SPEC.md) - Formal rules spec
-- [Quick Start Guide](QUICKSTART.md) - Detailed setup instructions
-- [AI Service](ai-service/README.md) - Neural network training documentation
+- [Canonical Specification](../../RULES_CANONICAL_SPEC.md) - Formal rules spec
+- [Quick Start Guide](../../QUICKSTART.md) - Detailed setup instructions
+- [AI Service](../../ai-service/README.md) - Neural network training documentation
 
 ## What's Next
 

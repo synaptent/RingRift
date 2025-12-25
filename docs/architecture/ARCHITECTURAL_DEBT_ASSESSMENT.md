@@ -52,7 +52,7 @@ Both marked @deprecated but still in production paths.
 
 ### Current Architecture (Dual-System)
 
-**See**: [`PHASE_ORCHESTRATION_ARCHITECTURE.md`](./PHASE_ORCHESTRATION_ARCHITECTURE.md)
+**See**: [`PHASE_ORCHESTRATION_ARCHITECTURE.md`](PHASE_ORCHESTRATION_ARCHITECTURE.md)
 
 The systems coexist with clear responsibilities:
 

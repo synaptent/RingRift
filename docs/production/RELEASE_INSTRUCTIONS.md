@@ -82,7 +82,7 @@ npm run dev
 
 ## Full Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for complete list of changes.
+See [CHANGELOG.md](../../CHANGELOG.md) for complete list of changes.
 
 ## Known Issues
 

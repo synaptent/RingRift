@@ -39,6 +39,19 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Data classes
+    "EphemeralSyncConfig",
+    "EphemeralSyncStats",
+    # Main class
+    "EphemeralSyncDaemon",
+    # Singleton accessors
+    "get_ephemeral_sync_daemon",
+    "reset_ephemeral_sync_daemon",
+    # Utility functions
+    "is_ephemeral_host",
+]
+
 
 @dataclass
 class EphemeralSyncConfig:

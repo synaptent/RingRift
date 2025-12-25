@@ -713,9 +713,9 @@ class HexStateEncoderV3:
 
 ## 10. Related Documentation
 
-- [TRAINING_FEATURES.md](TRAINING_FEATURES.md) - Training configuration reference
-- [GUMBEL_MCTS.md](GUMBEL_MCTS.md) - Gumbel MCTS implementation details
-- [HEX_AUGMENTATION.md](HEX_AUGMENTATION.md) - D6 symmetry augmentation
+- [TRAINING_FEATURES.md](../training/TRAINING_FEATURES.md) - Training configuration reference
+- [GUMBEL_MCTS.md](../algorithms/GUMBEL_MCTS.md) - Gumbel MCTS implementation details
+- [HEX_AUGMENTATION.md](../algorithms/HEX_AUGMENTATION.md) - D6 symmetry augmentation
 
 ---
 

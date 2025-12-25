@@ -244,10 +244,10 @@ python scripts/cluster_control.py selfplay start --board hex8 --games 500
 
 ## Related Documentation
 
-- [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Training loop configuration
-- [TRAINING_FEATURES.md](TRAINING_FEATURES.md) - Training system overview
-- [DISTRIBUTED_SELFPLAY.md](DISTRIBUTED_SELFPLAY.md) - Distributed generation setup
-- [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - Full pipeline architecture
+- [UNIFIED_AI_LOOP.md](../training/UNIFIED_AI_LOOP.md) - Training loop configuration
+- [TRAINING_FEATURES.md](../training/TRAINING_FEATURES.md) - Training system overview
+- [DISTRIBUTED_SELFPLAY.md](../training/DISTRIBUTED_SELFPLAY.md) - Distributed generation setup
+- [TRAINING_PIPELINE.md](../training/TRAINING_PIPELINE.md) - Full pipeline architecture
 
 ---
 

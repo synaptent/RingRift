@@ -330,7 +330,7 @@ Golden replay tests run as part of the standard test suite:
 ## Related Documentation
 
 - [Game Record Types](../../src/shared/types/gameRecord.ts)
-- [Engine Architecture](../../RULES_ENGINE_ARCHITECTURE.md)
+- [Engine Architecture](../architecture/RULES_ENGINE_ARCHITECTURE.md)
 - [Test Layers](../../tests/TEST_LAYERS.md)
 - [Rules Scenario Matrix](../rules/RULES_SCENARIO_MATRIX.md)
 - [Invariants & Parity Framework](../rules/INVARIANTS_AND_PARITY_FRAMEWORK.md)

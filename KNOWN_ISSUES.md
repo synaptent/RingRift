@@ -1100,6 +1100,56 @@ The parity issues were addressed through:
 
 - [`ai-service/docs/runbooks/HEXAGONAL_PARITY_BUG.md`](ai-service/docs/runbooks/HEXAGONAL_PARITY_BUG.md) – Historical runbook (now resolved)
 
+### INV-003 / SQUARE19-PARITY-01 – Square19 2P TS↔Python Parity Issues (Dec 2025)
+
+**Component(s):** Python `game_engine.py`, TS `turnOrchestrator.ts`, forced elimination phase handling, ANM state tracking
+**Severity:** P1 (blocks square19 canonical training data at scale)
+**Status:** NOT RESOLVED – Partially Blocked (70% pass rate)
+
+**Description:**
+Square19 2-player games exhibit TS↔Python parity issues with a 70% pass rate (7/10 games pass, 3 games have semantic divergences). This blocks generation of large-scale canonical training data for the square19 board type.
+
+**Divergence Types Found:**
+
+1. **Forced Elimination Phase Mismatch:**
+   - Python shows `forced_elimination` phase, TS shows `ring_placement` phase
+   - Indicates disagreement on when a player enters the FE phase vs continuing normal turn flow
+   - Root cause likely in phase transition logic after territory processing or when player has no legal moves
+
+2. **ANM State Mismatch:**
+   - Same state hash but `is_anm` differs (Python: `true`, TS: `false`)
+   - Occurs in `territory_processing` phase
+   - State hashes match, indicating board state is identical, but ANM detection logic differs
+   - Similar pattern to the hex8 ANM parity issues that were previously fixed (INV-002)
+
+**Discovery Context:**
+
+- Found during PASS26-P1.1 square19 parity assessment
+- Test configuration: square19 2P selfplay, 10 games
+- 7 games passed with 0 semantic divergences
+- 3 games had semantic divergences in late-game phases
+
+**Impact:**
+
+- Square19 training data cannot be generated at scale with confidence
+- Limits model training to square8 and hexagonal board types
+- Does NOT affect square8 2P (100% parity pass rate confirmed)
+
+**Workaround:**
+Use square8 2P for canonical training data generation, which has 100% parity pass rate.
+
+**Investigation Path:**
+
+1. Analyze forced_elimination phase transition logic in both engines for square19-specific edge cases
+2. Compare ANM detection in `territory_processing` for large board scenarios
+3. Consider if larger board geometry (19×19 = 361 cells vs 8×8 = 64 cells) exposes edge cases not seen on smaller boards
+4. Review whether the fix applied for hex8 ANM parity (INV-002) needs to be extended for square19
+
+**Related Issues:**
+
+- INV-002 / HEX-PARITY-02 – Similar ANM divergence pattern on hex boards (RESOLVED)
+- P0.1 – Forced Elimination Choice Divergence (historical, mostly resolved)
+
 ---
 
 For a historical snapshot of implementation status, see

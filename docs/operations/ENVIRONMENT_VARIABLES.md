@@ -679,7 +679,7 @@ In production, this should typically remain at the default `30000` (30 seconds) 
 
 **PERMANENTLY ENABLED** as of PASS20 (2025-12-01). The orchestrator adapter is now the canonical turn processor. This variable is **hardcoded to `true`** and no longer reads from environment variables.
 
-The `useOrchestratorAdapter` property on [`GameEngine`](../src/server/game/GameEngine.ts) and [`ClientSandboxEngine`](../src/client/sandbox/ClientSandboxEngine.ts) remains for internal state management but always evaluates to true. The legacy turn processing path has been completely removed.
+The `useOrchestratorAdapter` property on [`GameEngine`](../../src/server/game/GameEngine.ts) and [`ClientSandboxEngine`](../../src/client/sandbox/ClientSandboxEngine.ts) remains for internal state management but always evaluates to true. The legacy turn processing path has been completely removed.
 
 **Migration Completed:**
 
@@ -974,7 +974,7 @@ Maximum spectators per game.
 
 Optional overrides for decision-phase timeouts. Primarily intended for non-production environments and specialized test harnesses (e.g., Playwright E2E) that need shorter timeouts to exercise decision timeout behavior end-to-end.
 
-When unset, the server falls back to hard-coded defaults in [`unified.ts`](../src/server/config/unified.ts): 30s total timeout, 5s warning, 15s extension.
+When unset, the server falls back to hard-coded defaults in [`unified.ts`](../../src/server/config/unified.ts): 30s total timeout, 5s warning, 15s extension.
 
 #### `DECISION_PHASE_TIMEOUT_MS`
 
@@ -1185,7 +1185,7 @@ Number of parallel workers for Playwright E2E tests. Increase for faster test ex
 
 ## Data Retention
 
-These variables control the data retention policies enforced by [`DataRetentionService`](../src/server/services/DataRetentionService.ts). The service provides configurable retention periods for different data types and can be scheduled via cron for automated cleanup.
+These variables control the data retention policies enforced by [`DataRetentionService`](../../src/server/services/DataRetentionService.ts). The service provides configurable retention periods for different data types and can be scheduled via cron for automated cleanup.
 
 ### `DATA_RETENTION_DELETED_USERS_DAYS`
 
@@ -1195,7 +1195,7 @@ These variables control the data retention policies enforced by [`DataRetentionS
 | Default  | `30`     |
 | Required | No       |
 
-Days to retain soft-deleted user accounts before permanent deletion. After this period, [`hardDeleteExpiredUsers()`](../src/server/services/DataRetentionService.ts) will permanently remove the user record and associated data.
+Days to retain soft-deleted user accounts before permanent deletion. After this period, [`hardDeleteExpiredUsers()`](../../src/server/services/DataRetentionService.ts) will permanently remove the user record and associated data.
 
 ### `DATA_RETENTION_INACTIVE_USERS_DAYS`
 
@@ -1215,7 +1215,7 @@ Days of inactivity before considering a user for cleanup operations. Used for id
 | Default  | `7`      |
 | Required | No       |
 
-Days to retain unverified user accounts before soft-deleting them. [`cleanupUnverifiedAccounts()`](../src/server/services/DataRetentionService.ts) marks these accounts as deleted with `isActive: false`.
+Days to retain unverified user accounts before soft-deleting them. [`cleanupUnverifiedAccounts()`](../../src/server/services/DataRetentionService.ts) marks these accounts as deleted with `isActive: false`.
 
 ### `DATA_RETENTION_GAME_DATA_MONTHS`
 
@@ -1245,7 +1245,7 @@ Hours to retain session data in Redis. Affects WebSocket session cleanup.
 | Default  | `7`      |
 | Required | No       |
 
-Days to retain expired refresh tokens before cleanup. [`cleanupExpiredTokens()`](../src/server/services/DataRetentionService.ts) removes tokens that have been expired or revoked beyond this threshold.
+Days to retain expired refresh tokens before cleanup. [`cleanupExpiredTokens()`](../../src/server/services/DataRetentionService.ts) removes tokens that have been expired or revoked beyond this threshold.
 
 ### Data Retention Service Usage
 
@@ -1496,6 +1496,6 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 
 ## See Also
 
-- [Secrets Management Guide](./SECRETS_MANAGEMENT.md)
+- [Secrets Management Guide](SECRETS_MANAGEMENT.md)
 - [Security Threat Model](../security/SECURITY_THREAT_MODEL.md)
-- [Operations Database Reference](./OPERATIONS_DB.md)
+- [Operations Database Reference](OPERATIONS_DB.md)

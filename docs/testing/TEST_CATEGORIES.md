@@ -229,8 +229,8 @@ These suites exercise legacy helpers and pre‑orchestrator code paths. They are
 **Representative files/patterns:**
 
 - Legacy GameEngine flows:
-  - `tests/unit/GameEngine.lineRewardChoiceAIService.integration.test.ts`
-  - `tests/unit/GameEngine.lineRewardChoiceWebSocketIntegration.test.ts`
+  - `tests/unit/GameEngine.lines.scenarios.test.ts`
+  - `tests/unit/GameEngine.lines.scenarios.test.ts`
   - `tests/unit/GameEngine.regionOrderChoiceIntegration.test.ts`
   - `tests/unit/GameEngine.lines.scenarios.test.ts`
 - Legacy RuleEngine / RuleEngine‑vs‑Sandbox parity:
@@ -600,11 +600,11 @@ When adding a new test file, determine its category:
 
 ## Related Documentation
 
-- [`tests/README.md`](../tests/README.md) - Comprehensive testing guide
-- [`tests/TEST_LAYERS.md`](../tests/TEST_LAYERS.md) - Test layer strategy
-- [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md) - Parity test planning
-- [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) - Expected failures and diagnostics
-- [`docs/PARITY_SEED_TRIAGE.md`](./PARITY_SEED_TRIAGE.md) - Seed-specific debugging
+- [`tests/README.md`](../../tests/README.md) - Comprehensive testing guide
+- [`tests/TEST_LAYERS.md`](../../tests/TEST_LAYERS.md) - Test layer strategy
+- [`tests/TEST_SUITE_PARITY_PLAN.md`](../../tests/TEST_SUITE_PARITY_PLAN.md) - Parity test planning
+- [`KNOWN_ISSUES.md`](../../KNOWN_ISSUES.md) - Expected failures and diagnostics
+- [`docs/PARITY_SEED_TRIAGE.md`](../rules/PARITY_SEED_TRIAGE.md) - Seed-specific debugging
 - [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](../archive/historical/CURRENT_STATE_ASSESSMENT.md) - Canonical test counts and CI profile
-- [`docs/PASS19B_ASSESSMENT_REPORT.md`](./PASS19B_ASSESSMENT_REPORT.md) - CI‑gated test health summary
-- [`docs/PASS20_ASSESSMENT.md`](./PASS20_ASSESSMENT.md) - Extended/diagnostic Jest profile analysis (including `jest-results.json`)
+- [`docs/PASS19B_ASSESSMENT_REPORT.md`](../archive/assessments/PASS19B_ASSESSMENT_REPORT.md) - CI‑gated test health summary
+- [`docs/PASS20_ASSESSMENT.md`](../archive/assessments/PASS20_ASSESSMENT.md) - Extended/diagnostic Jest profile analysis (including `jest-results.json`)

@@ -585,7 +585,11 @@ def export_replay_dataset_multi(
                     else str(state_before.current_phase)
                 )
                 # Extract move type for chain-aware weighting
-                move_type_str = str(getattr(move, "type", "unknown"))
+                move_type_raw = getattr(move, "type", None)
+                if hasattr(move_type_raw, "value"):
+                    move_type_str = str(move_type_raw.value)
+                else:
+                    move_type_str = str(move_type_raw) if move_type_raw else "unknown"
                 game_samples.append((
                     stacked, globals_vec, idx, state_before.current_player,
                     move_index, phase_str, move_type_str

@@ -4,10 +4,10 @@ This guide covers security-related incidents including rate limiting alerts, sus
 
 ## Alerts Covered
 
-| Alert | Severity | Threshold | Duration |
-|-------|----------|-----------|----------|
-| HighRateLimitHits | Warning | > 1/sec per endpoint | 5 min |
-| SustainedRateLimiting | Warning | > 10/sec total | 15 min |
+| Alert                 | Severity | Threshold            | Duration |
+| --------------------- | -------- | -------------------- | -------- |
+| HighRateLimitHits     | Warning  | > 1/sec per endpoint | 5 min    |
+| SustainedRateLimiting | Warning  | > 10/sec total       | 15 min   |
 
 **Note**: Security incidents may also manifest through other alerts (high error rates, unusual traffic patterns, etc.)
 
@@ -16,15 +16,18 @@ This guide covers security-related incidents including rate limiting alerts, sus
 ## Alert: HighRateLimitHits
 
 ### Severity
+
 **P3 Medium** - Rate limiting being triggered frequently on specific endpoint
 
 ### Symptoms
+
 - Users receiving 429 (Too Many Requests) responses
 - Rate limit counters increasing rapidly
 - Specific endpoint under heavy load
 - `sum(rate(ringrift_rate_limit_hits_total[5m])) by (endpoint) > 1`
 
 ### Impact
+
 - Legitimate users may be blocked
 - Potential abuse attempt
 - Server resources being consumed
@@ -67,13 +70,13 @@ docker compose logs --tail 2000 app | grep "429" | \
 
 #### Assess Intent
 
-| Pattern | Likely Cause | Response |
-|---------|--------------|----------|
-| Single IP, single endpoint | API abuse/scraping | Consider IP block |
-| Single IP, multiple endpoints | Bot/automated tool | Consider IP block |
-| Multiple IPs, same pattern | Distributed attack | Investigate source |
-| Legitimate user agents | Traffic spike | May need to adjust limits |
-| Bot/script user agents | Automated abuse | Block user agent or IP range |
+| Pattern                       | Likely Cause       | Response                     |
+| ----------------------------- | ------------------ | ---------------------------- |
+| Single IP, single endpoint    | API abuse/scraping | Consider IP block            |
+| Single IP, multiple endpoints | Bot/automated tool | Consider IP block            |
+| Multiple IPs, same pattern    | Distributed attack | Investigate source           |
+| Legitimate user agents        | Traffic spike      | May need to adjust limits    |
+| Bot/script user agents        | Automated abuse    | Block user agent or IP range |
 
 ### Mitigation
 
@@ -113,6 +116,7 @@ docker compose restart app
 ```
 
 ### Communication
+
 - **Slack**: Post in #security (if pattern looks malicious)
 - **Slack**: Post in #alerts (if traffic spike)
 - **Document**: Log IPs/patterns for future reference
@@ -122,14 +126,17 @@ docker compose restart app
 ## Alert: SustainedRateLimiting
 
 ### Severity
+
 **P3 Medium** - Persistent rate limiting across multiple endpoints
 
 ### Symptoms
+
 - Rate limiting happening continuously
 - Multiple endpoints affected
 - Sustained over 15+ minutes
 
 ### Impact
+
 - Multiple users potentially affected
 - Possible coordinated abuse
 - Service under sustained load
@@ -152,11 +159,13 @@ docker compose logs --since 15m app | grep -c "200"
 ### Assessment
 
 **Legitimate traffic spike:**
+
 - Occurs during peak hours
 - Distributed sources
 - Normal user agents
 
 **Potentially malicious:**
+
 - Unusual hours
 - Concentrated sources
 - Automated patterns
@@ -176,19 +185,20 @@ For sustained rate limiting, consider:
 
 ### Types of Security Incidents
 
-| Type | Indicators | Severity |
-|------|------------|----------|
-| DDoS Attempt | Massive traffic spike, service degradation | P1 Critical |
-| Brute Force | High rate of failed logins | P2 High |
-| API Abuse | Rate limiting + unusual patterns | P3 Medium |
-| Data Exfiltration | Unusual data access patterns | P1 Critical |
-| Account Compromise | Suspicious account activity | P2 High |
+| Type               | Indicators                                 | Severity    |
+| ------------------ | ------------------------------------------ | ----------- |
+| DDoS Attempt       | Massive traffic spike, service degradation | P1 Critical |
+| Brute Force        | High rate of failed logins                 | P2 High     |
+| API Abuse          | Rate limiting + unusual patterns           | P3 Medium   |
+| Data Exfiltration  | Unusual data access patterns               | P1 Critical |
+| Account Compromise | Suspicious account activity                | P2 High     |
 
 ---
 
 ## Incident: DDoS Attempt
 
 ### Indicators
+
 - Sudden massive traffic increase
 - Rate limiting at maximum
 - Service becoming unresponsive
@@ -229,6 +239,7 @@ done
 ```
 
 ### Communication
+
 - **Status Page**: "Service experiencing high traffic - Working to restore"
 - **Slack**: Escalate to #incidents and #security
 - **Escalation**: Involve infrastructure team
@@ -238,6 +249,7 @@ done
 ## Incident: Brute Force Attack
 
 ### Indicators
+
 - High rate of failed login attempts
 - Targeting login/auth endpoints
 - Multiple usernames or single username
@@ -273,6 +285,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ```
 
 ### Post-Incident
+
 - Review affected accounts
 - Notify users if accounts were at risk
 - Review auth security (2FA, password policy)
@@ -282,6 +295,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ## Incident: Data Exfiltration Suspicion
 
 ### Indicators
+
 - Unusual bulk data requests
 - Single user accessing large amounts of data
 - API endpoints being crawled systematically
@@ -318,6 +332,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ```
 
 ### Communication
+
 - **Slack**: Immediately escalate to #security
 - **Management**: Inform leadership
 - **Legal**: May need to notify depending on data accessed
@@ -327,6 +342,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ## Incident: Account Compromise
 
 ### Indicators
+
 - User reports unauthorized access
 - Unusual activity from user account
 - Multiple sessions from different locations
@@ -362,6 +378,7 @@ docker exec ringrift-postgres-1 psql -U ringrift -c \
 ```
 
 ### Communication
+
 - Contact the affected user
 - Document the incident
 - Review for wider compromise
@@ -458,21 +475,21 @@ sudo iptables -L INPUT -n | grep 1.2.3.4
 
 ### When to Escalate Immediately
 
-| Situation | Escalate To |
-|-----------|-------------|
-| Active data exfiltration | Security Lead + Management |
-| Confirmed breach | Security Lead + Legal |
-| DDoS severely impacting service | Infrastructure + Security |
-| Credential compromise (admin) | Security Lead + Management |
+| Situation                       | Escalate To                |
+| ------------------------------- | -------------------------- |
+| Active data exfiltration        | Security Lead + Management |
+| Confirmed breach                | Security Lead + Legal      |
+| DDoS severely impacting service | Infrastructure + Security  |
+| Credential compromise (admin)   | Security Lead + Management |
 
 ### Security Contact List
 
-| Role | Contact | Purpose |
-|------|---------|---------|
-| Security Lead | [Configure] | All security incidents |
-| Infrastructure | [Configure] | DDoS, network issues |
-| Legal/Compliance | [Configure] | Data breach, GDPR |
-| Management | [Configure] | Significant incidents |
+| Role             | Contact     | Purpose                |
+| ---------------- | ----------- | ---------------------- |
+| Security Lead    | [Configure] | All security incidents |
+| Infrastructure   | [Configure] | DDoS, network issues   |
+| Legal/Compliance | [Configure] | Data breach, GDPR      |
+| Management       | [Configure] | Significant incidents  |
 
 ---
 
@@ -493,8 +510,8 @@ After any security incident:
 
 ## Related Documentation
 
-- [Initial Triage](./TRIAGE_GUIDE.md)
-- [Availability Incidents](./AVAILABILITY.md)
-- [Security Threat Model](../SECURITY_THREAT_MODEL.md)
-- [Secrets Management](../SECRETS_MANAGEMENT.md)
-- [Post-Mortem Template](./POST_MORTEM_TEMPLATE.md)
+- [Initial Triage](TRIAGE_GUIDE.md)
+- [Availability Incidents](AVAILABILITY.md)
+- [Security Threat Model](../security/SECURITY_THREAT_MODEL.md)
+- [Secrets Management](../operations/SECRETS_MANAGEMENT.md)
+- [Post-Mortem Template](POST_MORTEM_TEMPLATE.md)

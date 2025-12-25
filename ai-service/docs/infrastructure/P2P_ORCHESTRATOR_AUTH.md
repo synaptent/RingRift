@@ -176,5 +176,5 @@ Gossip runs over the main HTTP API port.
 ## Related Documentation
 
 - [VAST_P2P_ORCHESTRATION.md](VAST_P2P_ORCHESTRATION.md) - Vast.ai P2P setup
-- [DISTRIBUTED_SELFPLAY.md](DISTRIBUTED_SELFPLAY.md) - Cluster selfplay
-- [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - Training workflow
+- [DISTRIBUTED_SELFPLAY.md](../training/DISTRIBUTED_SELFPLAY.md) - Cluster selfplay
+- [TRAINING_PIPELINE.md](../training/TRAINING_PIPELINE.md) - Training workflow

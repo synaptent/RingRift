@@ -52,6 +52,23 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Data classes
+    "FreshnessConfig",
+    "FreshnessResult",
+    "DataSourceInfo",
+    # Main class
+    "TrainingFreshnessChecker",
+    # Singleton accessors
+    "get_freshness_checker",
+    "reset_freshness_checker",
+    # Convenience functions
+    "check_freshness_sync",
+    # Constants
+    "DEFAULT_MAX_AGE_HOURS",
+    "DEFAULT_SYNC_TIMEOUT_SECONDS",
+]
+
 # Default freshness threshold (1 hour)
 DEFAULT_MAX_AGE_HOURS = 1.0
 

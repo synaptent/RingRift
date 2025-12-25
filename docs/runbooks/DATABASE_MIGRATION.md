@@ -2,7 +2,7 @@
 
 ## Overview
 
-Procedures for safely applying Prisma database migrations to RingRift environments. This runbook complements [OPERATIONS_DB.md](../OPERATIONS_DB.md) with step-by-step operational procedures.
+Procedures for safely applying Prisma database migrations to RingRift environments. This runbook complements [OPERATIONS_DB.md](../operations/OPERATIONS_DB.md) with step-by-step operational procedures.
 
 **Critical Rules:**
 
@@ -591,9 +591,9 @@ docker compose run --rm app npx prisma db pull --print
 
 ## Related Documentation
 
-- [OPERATIONS_DB.md](../OPERATIONS_DB.md) - Comprehensive database operations guide
-- [DEPLOYMENT_ROUTINE.md](./DEPLOYMENT_ROUTINE.md) - Standard deployment procedures
-- [DEPLOYMENT_ROLLBACK.md](./DEPLOYMENT_ROLLBACK.md) - Rollback procedures
+- [OPERATIONS_DB.md](../operations/OPERATIONS_DB.md) - Comprehensive database operations guide
+- [DEPLOYMENT_ROUTINE.md](DEPLOYMENT_ROUTINE.md) - Standard deployment procedures
+- [DEPLOYMENT_ROLLBACK.md](DEPLOYMENT_ROLLBACK.md) - Rollback procedures
 - [prisma/schema.prisma](../../prisma/schema.prisma) - Database schema
 
 ---

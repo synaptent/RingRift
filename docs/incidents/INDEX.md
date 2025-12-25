@@ -4,51 +4,51 @@ This directory contains incident response procedures for RingRift. Each guide is
 
 ## Quick Reference: Alert to Response Mapping
 
-| Alert                         | Severity | Response Guide                                                                                         | Response Time |
-| ----------------------------- | -------- | ------------------------------------------------------------------------------------------------------ | ------------- |
-| **Availability**              |          |                                                                                                        |               |
-| DatabaseDown                  | Critical | [AVAILABILITY.md#databasedown](./AVAILABILITY.md#alert-databasedown)                                   | Immediate     |
-| RedisDown                     | Critical | [AVAILABILITY.md#redisdown](./AVAILABILITY.md#alert-redisdown)                                         | Immediate     |
-| AIServiceDown                 | Warning  | [AI_SERVICE.md#aiservicedown](./AI_SERVICE.md#alert-aiservicedown)                                     | 1 hour        |
-| HighErrorRate                 | Critical | [AVAILABILITY.md#higherrorrate](./AVAILABILITY.md#alert-higherrorrate)                                 | Immediate     |
-| ElevatedErrorRate             | Warning  | [AVAILABILITY.md#elevatederrorrate](./AVAILABILITY.md#alert-elevatederrorrate)                         | 4 hours       |
-| NoHTTPTraffic                 | Warning  | [AVAILABILITY.md#nohttptraffic](./AVAILABILITY.md#alert-nohttptraffic)                                 | 1 hour        |
-| **Latency**                   |          |                                                                                                        |               |
-| HighP99Latency                | Warning  | [LATENCY.md#highp99latency](./LATENCY.md#alert-highp99latency)                                         | 4 hours       |
-| HighP99LatencyCritical        | Critical | [LATENCY.md#highp99latencycritical](./LATENCY.md#alert-highp99latencycritical)                         | Immediate     |
-| HighP95Latency                | Warning  | [LATENCY.md#highp95latency](./LATENCY.md#alert-highp95latency)                                         | 4 hours       |
-| HighMedianLatency             | Warning  | [LATENCY.md#highmedianlatency](./LATENCY.md#alert-highmedianlatency)                                   | 4 hours       |
-| HighGameMoveLatency           | Warning  | [LATENCY.md#highgamemovelatency](./LATENCY.md#alert-highgamemovelatency)                               | 4 hours       |
-| **Resources**                 |          |                                                                                                        |               |
-| HighMemoryUsage               | Warning  | [RESOURCES.md#highmemoryusage](./RESOURCES.md#alert-highmemoryusage)                                   | 4 hours       |
-| HighMemoryUsageCritical       | Critical | [RESOURCES.md#highmemoryusagecritical](./RESOURCES.md#alert-highmemoryusagecritical)                   | Immediate     |
-| HighEventLoopLag              | Warning  | [RESOURCES.md#higheventlooplag](./RESOURCES.md#alert-higheventlooplag)                                 | 4 hours       |
-| HighEventLoopLagCritical      | Critical | [RESOURCES.md#higheventlooplagcritical](./RESOURCES.md#alert-higheventlooplagcritical)                 | Immediate     |
-| HighActiveHandles             | Warning  | [RESOURCES.md#highactivehandles](./RESOURCES.md#alert-highactivehandles)                               | 4 hours       |
-| **AI Service**                |          |                                                                                                        |               |
-| AIFallbackRateHigh            | Warning  | [AI_SERVICE.md#aifallbackratehigh](./AI_SERVICE.md#alert-aifallbackratehigh)                           | 4 hours       |
-| AIFallbackRateCritical        | Critical | [AI_SERVICE.md#aifallbackratecritical](./AI_SERVICE.md#alert-aifallbackratecritical)                   | 1 hour        |
-| AIRequestHighLatency          | Warning  | [AI_SERVICE.md#airequesthighlatency](./AI_SERVICE.md#alert-airequesthighlatency)                       | 4 hours       |
-| AIErrorsIncreasing            | Warning  | [AI_SERVICE.md#aierrorsincreasing](./AI_SERVICE.md#alert-aierrorsincreasing)                           | 4 hours       |
-| **Degradation**               |          |                                                                                                        |               |
-| ServiceDegraded               | Warning  | [AVAILABILITY.md#servicedegraded](./AVAILABILITY.md#alert-servicedegraded)                             | 4 hours       |
-| ServiceMinimalMode            | Critical | [AVAILABILITY.md#serviceminimalmode](./AVAILABILITY.md#alert-serviceminimalmode)                       | Immediate     |
-| ServiceOffline                | Critical | [AVAILABILITY.md#serviceoffline](./AVAILABILITY.md#alert-serviceoffline)                               | Immediate     |
-| **Security/Rate Limiting**    |          |                                                                                                        |               |
-| HighRateLimitHits             | Warning  | [SECURITY.md#highratelimithits](./SECURITY.md#alert-highratelimithits)                                 | 4 hours       |
-| SustainedRateLimiting         | Warning  | [SECURITY.md#sustainedratelimiting](./SECURITY.md#alert-sustainedratelimiting)                         | 4 hours       |
-| **Rules Parity**              |          |                                                                                                        |               |
-| RulesParityValidationMismatch | Warning  | [AVAILABILITY.md#rulesparityvalidationmismatch](./AVAILABILITY.md#alert-rulesparityvalidationmismatch) | 4 hours       |
-| RulesParityHashMismatch       | Warning  | [AVAILABILITY.md#rulesparityhashmismatch](./AVAILABILITY.md#alert-rulesparityhashmismatch)             | 4 hours       |
-| RulesParityGameStatusMismatch | Critical | [AVAILABILITY.md#rulesparitygamestatusmismatch](./AVAILABILITY.md#alert-rulesparitygamestatusmismatch) | Immediate     |
-| **Service Response**          |          |                                                                                                        |               |
-| DatabaseResponseTimeSlow      | Warning  | [LATENCY.md#databaseresponsetimeslow](./LATENCY.md#alert-databaseresponsetimeslow)                     | 4 hours       |
-| RedisResponseTimeSlow         | Warning  | [LATENCY.md#redisresponsetimeslow](./LATENCY.md#alert-redisresponsetimeslow)                           | 4 hours       |
-| **Business Metrics**          |          |                                                                                                        |               |
-| NoActiveGames                 | Info     | [AVAILABILITY.md#noactivegames](./AVAILABILITY.md#alert-noactivegames)                                 | Next day      |
-| NoWebSocketConnections        | Warning  | [AVAILABILITY.md#nowebsocketconnections](./AVAILABILITY.md#alert-nowebsocketconnections)               | 4 hours       |
-| HighWebSocketConnections      | Warning  | [RESOURCES.md#highwebsocketconnections](./RESOURCES.md#alert-highwebsocketconnections)                 | 4 hours       |
-| LongRunningGames              | Info     | [AVAILABILITY.md#longrunninggames](./AVAILABILITY.md#alert-longrunninggames)                           | Next day      |
+| Alert                         | Severity | Response Guide                                                                                       | Response Time |
+| ----------------------------- | -------- | ---------------------------------------------------------------------------------------------------- | ------------- |
+| **Availability**              |          |                                                                                                      |               |
+| DatabaseDown                  | Critical | [AVAILABILITY.md#databasedown](AVAILABILITY.md#alert-databasedown)                                   | Immediate     |
+| RedisDown                     | Critical | [AVAILABILITY.md#redisdown](AVAILABILITY.md#alert-redisdown)                                         | Immediate     |
+| AIServiceDown                 | Warning  | [AI_SERVICE.md#aiservicedown](AI_SERVICE.md#alert-aiservicedown)                                     | 1 hour        |
+| HighErrorRate                 | Critical | [AVAILABILITY.md#higherrorrate](AVAILABILITY.md#alert-higherrorrate)                                 | Immediate     |
+| ElevatedErrorRate             | Warning  | [AVAILABILITY.md#elevatederrorrate](AVAILABILITY.md#alert-elevatederrorrate)                         | 4 hours       |
+| NoHTTPTraffic                 | Warning  | [AVAILABILITY.md#nohttptraffic](AVAILABILITY.md#alert-nohttptraffic)                                 | 1 hour        |
+| **Latency**                   |          |                                                                                                      |               |
+| HighP99Latency                | Warning  | [LATENCY.md#highp99latency](LATENCY.md#alert-highp99latency)                                         | 4 hours       |
+| HighP99LatencyCritical        | Critical | [LATENCY.md#highp99latencycritical](LATENCY.md#alert-highp99latencycritical)                         | Immediate     |
+| HighP95Latency                | Warning  | [LATENCY.md#highp95latency](LATENCY.md#alert-highp95latency)                                         | 4 hours       |
+| HighMedianLatency             | Warning  | [LATENCY.md#highmedianlatency](LATENCY.md#alert-highmedianlatency)                                   | 4 hours       |
+| HighGameMoveLatency           | Warning  | [LATENCY.md#highgamemovelatency](LATENCY.md#alert-highgamemovelatency)                               | 4 hours       |
+| **Resources**                 |          |                                                                                                      |               |
+| HighMemoryUsage               | Warning  | [RESOURCES.md#highmemoryusage](RESOURCES.md#alert-highmemoryusage)                                   | 4 hours       |
+| HighMemoryUsageCritical       | Critical | [RESOURCES.md#highmemoryusagecritical](RESOURCES.md#alert-highmemoryusagecritical)                   | Immediate     |
+| HighEventLoopLag              | Warning  | [RESOURCES.md#higheventlooplag](RESOURCES.md#alert-higheventlooplag)                                 | 4 hours       |
+| HighEventLoopLagCritical      | Critical | [RESOURCES.md#higheventlooplagcritical](RESOURCES.md#alert-higheventlooplagcritical)                 | Immediate     |
+| HighActiveHandles             | Warning  | [RESOURCES.md#highactivehandles](RESOURCES.md#alert-highactivehandles)                               | 4 hours       |
+| **AI Service**                |          |                                                                                                      |               |
+| AIFallbackRateHigh            | Warning  | [AI_SERVICE.md#aifallbackratehigh](AI_SERVICE.md#alert-aifallbackratehigh)                           | 4 hours       |
+| AIFallbackRateCritical        | Critical | [AI_SERVICE.md#aifallbackratecritical](AI_SERVICE.md#alert-aifallbackratecritical)                   | 1 hour        |
+| AIRequestHighLatency          | Warning  | [AI_SERVICE.md#airequesthighlatency](AI_SERVICE.md#alert-airequesthighlatency)                       | 4 hours       |
+| AIErrorsIncreasing            | Warning  | [AI_SERVICE.md#aierrorsincreasing](AI_SERVICE.md#alert-aierrorsincreasing)                           | 4 hours       |
+| **Degradation**               |          |                                                                                                      |               |
+| ServiceDegraded               | Warning  | [AVAILABILITY.md#servicedegraded](AVAILABILITY.md#alert-servicedegraded)                             | 4 hours       |
+| ServiceMinimalMode            | Critical | [AVAILABILITY.md#serviceminimalmode](AVAILABILITY.md#alert-serviceminimalmode)                       | Immediate     |
+| ServiceOffline                | Critical | [AVAILABILITY.md#serviceoffline](AVAILABILITY.md#alert-serviceoffline)                               | Immediate     |
+| **Security/Rate Limiting**    |          |                                                                                                      |               |
+| HighRateLimitHits             | Warning  | [SECURITY.md#highratelimithits](SECURITY.md#alert-highratelimithits)                                 | 4 hours       |
+| SustainedRateLimiting         | Warning  | [SECURITY.md#sustainedratelimiting](SECURITY.md#alert-sustainedratelimiting)                         | 4 hours       |
+| **Rules Parity**              |          |                                                                                                      |               |
+| RulesParityValidationMismatch | Warning  | [AVAILABILITY.md#rulesparityvalidationmismatch](AVAILABILITY.md#alert-rulesparityvalidationmismatch) | 4 hours       |
+| RulesParityHashMismatch       | Warning  | [AVAILABILITY.md#rulesparityhashmismatch](AVAILABILITY.md#alert-rulesparityhashmismatch)             | 4 hours       |
+| RulesParityGameStatusMismatch | Critical | [AVAILABILITY.md#rulesparitygamestatusmismatch](AVAILABILITY.md#alert-rulesparitygamestatusmismatch) | Immediate     |
+| **Service Response**          |          |                                                                                                      |               |
+| DatabaseResponseTimeSlow      | Warning  | [LATENCY.md#databaseresponsetimeslow](LATENCY.md#alert-databaseresponsetimeslow)                     | 4 hours       |
+| RedisResponseTimeSlow         | Warning  | [LATENCY.md#redisresponsetimeslow](LATENCY.md#alert-redisresponsetimeslow)                           | 4 hours       |
+| **Business Metrics**          |          |                                                                                                      |               |
+| NoActiveGames                 | Info     | [AVAILABILITY.md#noactivegames](AVAILABILITY.md#alert-noactivegames)                                 | Next day      |
+| NoWebSocketConnections        | Warning  | [AVAILABILITY.md#nowebsocketconnections](AVAILABILITY.md#alert-nowebsocketconnections)               | 4 hours       |
+| HighWebSocketConnections      | Warning  | [RESOURCES.md#highwebsocketconnections](RESOURCES.md#alert-highwebsocketconnections)                 | 4 hours       |
+| LongRunningGames              | Info     | [AVAILABILITY.md#longrunninggames](AVAILABILITY.md#alert-longrunninggames)                           | Next day      |
 
 ---
 
@@ -65,15 +65,15 @@ This directory contains incident response procedures for RingRift. Each guide is
 
 ## Response Guides
 
-| Guide                                                | Contents                                       |
-| ---------------------------------------------------- | ---------------------------------------------- |
-| [TRIAGE_GUIDE.md](./TRIAGE_GUIDE.md)                 | Initial triage procedures for any incident     |
-| [AVAILABILITY.md](./AVAILABILITY.md)                 | Service availability and degradation incidents |
-| [LATENCY.md](./LATENCY.md)                           | Performance and latency incidents              |
-| [RESOURCES.md](./RESOURCES.md)                       | Memory, CPU, and resource exhaustion incidents |
-| [AI_SERVICE.md](./AI_SERVICE.md)                     | AI service failures and fallback incidents     |
-| [SECURITY.md](./SECURITY.md)                         | Rate limiting and security-related incidents   |
-| [POST_MORTEM_TEMPLATE.md](./POST_MORTEM_TEMPLATE.md) | Post-incident review template                  |
+| Guide                                              | Contents                                       |
+| -------------------------------------------------- | ---------------------------------------------- |
+| [TRIAGE_GUIDE.md](TRIAGE_GUIDE.md)                 | Initial triage procedures for any incident     |
+| [AVAILABILITY.md](AVAILABILITY.md)                 | Service availability and degradation incidents |
+| [LATENCY.md](LATENCY.md)                           | Performance and latency incidents              |
+| [RESOURCES.md](RESOURCES.md)                       | Memory, CPU, and resource exhaustion incidents |
+| [AI_SERVICE.md](AI_SERVICE.md)                     | AI service failures and fallback incidents     |
+| [SECURITY.md](SECURITY.md)                         | Rate limiting and security-related incidents   |
+| [POST_MORTEM_TEMPLATE.md](POST_MORTEM_TEMPLATE.md) | Post-incident review template                  |
 
 ---
 
@@ -104,7 +104,7 @@ This directory contains incident response procedures for RingRift. Each guide is
 ### During an Incident
 
 1. **Acknowledge** the alert within SLA (15 min for critical)
-2. **Assess** severity using [TRIAGE_GUIDE.md](./TRIAGE_GUIDE.md)
+2. **Assess** severity using [TRIAGE_GUIDE.md](TRIAGE_GUIDE.md)
 3. **Communicate** in #incidents channel with status
 4. **Mitigate** using the appropriate response guide
 5. **Escalate** if unable to resolve within escalation window

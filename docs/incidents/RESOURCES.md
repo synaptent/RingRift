@@ -4,29 +4,32 @@ This guide covers incidents related to resource exhaustion including memory, CPU
 
 ## Alerts Covered
 
-| Alert | Severity | Threshold | Duration |
-|-------|----------|-----------|----------|
-| HighMemoryUsage | Warning | > 1.5 GB | 10 min |
-| HighMemoryUsageCritical | Critical | > 2 GB | 5 min |
-| HighEventLoopLag | Warning | > 100ms | 5 min |
-| HighEventLoopLagCritical | Critical | > 500ms | 2 min |
-| HighActiveHandles | Warning | > 10,000 | 10 min |
-| HighWebSocketConnections | Warning | > 1,000 | 5 min |
+| Alert                    | Severity | Threshold | Duration |
+| ------------------------ | -------- | --------- | -------- |
+| HighMemoryUsage          | Warning  | > 1.5 GB  | 10 min   |
+| HighMemoryUsageCritical  | Critical | > 2 GB    | 5 min    |
+| HighEventLoopLag         | Warning  | > 100ms   | 5 min    |
+| HighEventLoopLagCritical | Critical | > 500ms   | 2 min    |
+| HighActiveHandles        | Warning  | > 10,000  | 10 min   |
+| HighWebSocketConnections | Warning  | > 1,000   | 5 min    |
 
 ---
 
 ## Alert: HighMemoryUsage
 
 ### Severity
+
 **P3 Medium** - Memory usage over 1.5 GB (warning threshold)
 
 ### Symptoms
+
 - Memory approaching container limit
 - May see increased GC activity
 - Response times may be slightly elevated
 - `process_resident_memory_bytes / 1024 / 1024 / 1024 > 1.5`
 
 ### Impact
+
 - Risk of OOM kill if memory continues to grow
 - GC pauses may affect latency
 - Service may become unstable
@@ -85,12 +88,12 @@ curl -s http://localhost:3000/metrics | grep ringrift_websocket_connections
 
 ### Common Causes
 
-| Indicator | Likely Cause | Solution |
-|-----------|--------------|----------|
-| Heap growing continuously | Memory leak | Requires code fix, restart as mitigation |
-| High external memory | Buffer/stream leak | Check file/network streams |
-| Many active handles | Connection leak | Check DB/Redis connections |
-| Correlated with traffic | Under-provisioned | Scale up or optimize |
+| Indicator                 | Likely Cause       | Solution                                 |
+| ------------------------- | ------------------ | ---------------------------------------- |
+| Heap growing continuously | Memory leak        | Requires code fix, restart as mitigation |
+| High external memory      | Buffer/stream leak | Check file/network streams               |
+| Many active handles       | Connection leak    | Check DB/Redis connections               |
+| Correlated with traffic   | Under-provisioned  | Scale up or optimize                     |
 
 ### Mitigation
 
@@ -123,6 +126,7 @@ curl -s http://localhost:3000/metrics | grep process_resident_memory_bytes
 ```
 
 ### Communication
+
 - **Status Page**: No update needed for warning
 - **Slack**: Post in #alerts for awareness
 - **Monitor**: Watch for escalation to critical (2GB)
@@ -132,14 +136,17 @@ curl -s http://localhost:3000/metrics | grep process_resident_memory_bytes
 ## Alert: HighMemoryUsageCritical
 
 ### Severity
+
 **P1 Critical** - Memory over 2 GB, OOM risk imminent
 
 ### Symptoms
+
 - Memory at or near container limit
 - Possible increased latency due to GC
 - Risk of container being killed
 
 ### Impact
+
 - **OOM kill imminent** if not addressed
 - Service will crash if container limit reached
 - All in-flight requests will fail
@@ -198,12 +205,14 @@ curl -s http://localhost:3000/metrics | grep ringrift_websocket_connections
 ```
 
 ### Long-Term Actions
+
 - File bug for memory leak investigation
 - Review recent code changes
 - Consider increasing container memory limit temporarily
 - Add memory profiling to staging environment
 
 ### Communication
+
 - **Status Page**: Update if restart causes downtime
 - **Slack**: Post in #incidents with memory stats
 - **Escalation**: If memory grows back to critical in <1 hour
@@ -213,15 +222,18 @@ curl -s http://localhost:3000/metrics | grep ringrift_websocket_connections
 ## Alert: HighEventLoopLag
 
 ### Severity
+
 **P3 Medium** - Event loop blocked > 100ms
 
 ### Symptoms
+
 - All async operations delayed
 - API responses slower than usual
 - WebSocket messages delayed
 - `nodejs_eventloop_lag_seconds > 0.1`
 
 ### Impact
+
 - All requests affected (Node.js is single-threaded for JS)
 - User-perceived latency increases
 - WebSocket real-time updates delayed
@@ -248,13 +260,13 @@ curl -s http://localhost:3000/metrics | grep nodejs_active_requests
 
 Common blocking operations in Node.js:
 
-| Type | Indicator | Check |
-|------|-----------|-------|
-| Synchronous I/O | Correlated with specific endpoints | Check endpoint logs |
-| Large JSON parsing | Spikes with large payloads | Check request sizes |
-| CPU computation | High CPU with lag | Profile CPU |
-| Complex regex | Specific input patterns | Check validation code |
-| Crypto operations | Auth/encryption endpoints | Check auth flow |
+| Type               | Indicator                          | Check                 |
+| ------------------ | ---------------------------------- | --------------------- |
+| Synchronous I/O    | Correlated with specific endpoints | Check endpoint logs   |
+| Large JSON parsing | Spikes with large payloads         | Check request sizes   |
+| CPU computation    | High CPU with lag                  | Profile CPU           |
+| Complex regex      | Specific input patterns            | Check validation code |
+| Crypto operations  | Auth/encryption endpoints          | Check auth flow       |
 
 ```bash
 # Check CPU usage pattern
@@ -297,6 +309,7 @@ docker compose up -d --scale app=2
 ```
 
 ### Communication
+
 - **Slack**: Post in #alerts if sustained
 - **Monitor**: Watch for escalation to critical (500ms)
 
@@ -305,15 +318,18 @@ docker compose up -d --scale app=2
 ## Alert: HighEventLoopLagCritical
 
 ### Severity
+
 **P1 Critical** - Event loop blocked > 500ms
 
 ### Symptoms
+
 - Application effectively unresponsive
 - Requests timing out
 - WebSocket connections may be dropped
 - Health checks may fail
 
 ### Impact
+
 - **Service nearly unusable**
 - Requests timing out
 - Users seeing errors
@@ -344,14 +360,15 @@ docker compose logs --since 10m app | grep -E "error|fail|timeout|slow"
 
 ### Common Causes and Fixes
 
-| Cause | Evidence | Fix |
-|-------|----------|-----|
-| Infinite loop | 100% CPU | Code fix required |
-| Large payload | Specific request before lag | Add size limits |
-| Regex DoS | Specific input | Fix regex |
-| Sync file I/O | File operation logs | Make async |
+| Cause         | Evidence                    | Fix               |
+| ------------- | --------------------------- | ----------------- |
+| Infinite loop | 100% CPU                    | Code fix required |
+| Large payload | Specific request before lag | Add size limits   |
+| Regex DoS     | Specific input              | Fix regex         |
+| Sync file I/O | File operation logs         | Make async        |
 
 ### Communication
+
 - **Status Page**: "Service degraded - Requests may be slow or fail"
 - **Slack**: Escalate to #incidents
 - **Escalation**: If happens repeatedly, page team lead
@@ -361,14 +378,17 @@ docker compose logs --since 10m app | grep -E "error|fail|timeout|slow"
 ## Alert: HighActiveHandles
 
 ### Severity
+
 **P3 Medium** - Potential resource leak (>10,000 handles)
 
 ### Symptoms
+
 - High number of Node.js active handles
 - May indicate connection or timer leaks
 - `nodejs_active_handles_total > 10000`
 
 ### Impact
+
 - Potential resource exhaustion
 - May lead to memory growth
 - Could affect stability
@@ -392,13 +412,13 @@ docker exec ringrift-redis-1 redis-cli client list | wc -l
 
 ### Common Handle Sources
 
-| Source | Normal Count | Check |
-|--------|--------------|-------|
-| WebSocket connections | ~1 per user | ringrift_websocket_connections |
-| Database connections | Pool size (~20) | pg_stat_activity |
-| Redis connections | Pool size (~10) | redis client list |
-| Timers | Varies | Often from setInterval leaks |
-| File handles | Should be low | Check for file stream leaks |
+| Source                | Normal Count    | Check                          |
+| --------------------- | --------------- | ------------------------------ |
+| WebSocket connections | ~1 per user     | ringrift_websocket_connections |
+| Database connections  | Pool size (~20) | pg_stat_activity               |
+| Redis connections     | Pool size (~10) | redis client list              |
+| Timers                | Varies          | Often from setInterval leaks   |
+| File handles          | Should be low   | Check for file stream leaks    |
 
 ### Mitigation
 
@@ -411,6 +431,7 @@ watch -n 30 'curl -s http://localhost:3000/metrics | grep nodejs_active_handles_
 ```
 
 ### Long-Term Fix
+
 - Audit code for:
   - Timers not being cleared
   - Connections not being closed
@@ -421,13 +442,16 @@ watch -n 30 'curl -s http://localhost:3000/metrics | grep nodejs_active_handles_
 ## Alert: HighWebSocketConnections
 
 ### Severity
+
 **P3 Medium** - Many WebSocket connections (>1,000)
 
 ### Symptoms
+
 - High concurrent WebSocket connections
 - May indicate successful scaling OR connection leaks
 
 ### Impact
+
 - Higher memory usage
 - May approach connection limits
 - If leaking, will exhaust resources
@@ -446,11 +470,13 @@ curl -s http://localhost:3000/metrics | grep ringrift_users_online
 ### Assessment
 
 **Normal if:**
+
 - High traffic period
 - Connection count correlates with active games
 - Count is stable
 
 **Suspicious if:**
+
 - Connections growing without traffic
 - Much higher than expected for game count
 - Growing even during low traffic
@@ -547,8 +573,8 @@ See [DEPLOYMENT_SCALING.md](../runbooks/DEPLOYMENT_SCALING.md) for full scaling 
 
 ## Related Documentation
 
-- [Initial Triage](./TRIAGE_GUIDE.md)
-- [Availability Incidents](./AVAILABILITY.md)
-- [Latency Incidents](./LATENCY.md)
+- [Initial Triage](TRIAGE_GUIDE.md)
+- [Availability Incidents](AVAILABILITY.md)
+- [Latency Incidents](LATENCY.md)
 - [Scaling Procedures](../runbooks/DEPLOYMENT_SCALING.md)
-- [Alerting Thresholds](../ALERTING_THRESHOLDS.md)
+- [Alerting Thresholds](../operations/ALERTING_THRESHOLDS.md)

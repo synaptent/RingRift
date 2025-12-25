@@ -548,7 +548,7 @@ cat /tmp/volume_summary.txt
 ## Related Documentation
 
 - [`TRAINING_DATA_VOLUME_REMEDIATION_PLAN.md`](../planning/TRAINING_DATA_VOLUME_REMEDIATION_PLAN.md) - Detailed remediation plan
-- [`VAST_CANONICAL_SELFPLAY.md`](./VAST_CANONICAL_SELFPLAY.md) - Vast.ai-specific setup
+- [`VAST_CANONICAL_SELFPLAY.md`](VAST_CANONICAL_SELFPLAY.md) - Vast.ai-specific setup
 - [`TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md) - Database inventory and classification
 - [`AI_TRAINING_AND_DATASETS.md`](../ai/AI_TRAINING_AND_DATASETS.md) - Training data requirements
 

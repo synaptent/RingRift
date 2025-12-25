@@ -222,7 +222,7 @@ brew install python@3.11
 
 ## Advanced: Pipeline Orchestrator
 
-For production training pipelines with P2P cluster coordination, see [PIPELINE_ORCHESTRATOR.md](PIPELINE_ORCHESTRATOR.md).
+For production training pipelines with P2P cluster coordination, see [PIPELINE_ORCHESTRATOR.md](../infrastructure/PIPELINE_ORCHESTRATOR.md).
 
 The pipeline orchestrator provides:
 

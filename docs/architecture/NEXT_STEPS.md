@@ -16,12 +16,12 @@ This document tracks actionable improvements to the RingRift codebase, prioritiz
 
 ## Related Documents
 
-| Document                                                               | Purpose                                  |
-| ---------------------------------------------------------------------- | ---------------------------------------- |
-| [ARCHITECTURAL_DEBT_ASSESSMENT.md](./ARCHITECTURAL_DEBT_ASSESSMENT.md) | Detailed debt tracking with progress     |
-| [REFACTORING_RECOMMENDATIONS.md](./REFACTORING_RECOMMENDATIONS.md)     | Bookkeeping architecture recommendations |
-| [VICTORY_REFACTORING_PLAN.md](./VICTORY_REFACTORING_PLAN.md)           | Victory consolidation (COMPLETE)         |
-| [TEST_HYGIENE_NOTES.md](./TEST_HYGIENE_NOTES.md)                       | Test organization and cleanup            |
+| Document                                                             | Purpose                                  |
+| -------------------------------------------------------------------- | ---------------------------------------- |
+| [ARCHITECTURAL_DEBT_ASSESSMENT.md](ARCHITECTURAL_DEBT_ASSESSMENT.md) | Detailed debt tracking with progress     |
+| [REFACTORING_RECOMMENDATIONS.md](REFACTORING_RECOMMENDATIONS.md)     | Bookkeeping architecture recommendations |
+| [VICTORY_REFACTORING_PLAN.md](VICTORY_REFACTORING_PLAN.md)           | Victory consolidation (COMPLETE)         |
+| [TEST_HYGIENE_NOTES.md](TEST_HYGIENE_NOTES.md)                       | Test organization and cleanup            |
 
 ---
 

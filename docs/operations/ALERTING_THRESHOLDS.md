@@ -30,11 +30,11 @@ This document describes all alerting rules configured for RingRift, their thresh
 
 ## Overview
 
-RingRift uses Prometheus for metrics collection and alerting. Alerts are defined in [`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml) and routed through Alertmanager ([`monitoring/alertmanager/alertmanager.yml`](../monitoring/alertmanager/alertmanager.yml)).
+RingRift uses Prometheus for metrics collection and alerting. Alerts are defined in [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml) and routed through Alertmanager ([`monitoring/alertmanager/alertmanager.yml`](../../monitoring/alertmanager/alertmanager.yml)).
 
 ### Metrics Endpoint
 
-The application exposes metrics at `http://localhost:3000/metrics` in Prometheus format. Key metrics are collected by [`MetricsService`](../src/server/services/MetricsService.ts).
+The application exposes metrics at `http://localhost:3000/metrics` in Prometheus format. Key metrics are collected by [`MetricsService`](../../src/server/services/MetricsService.ts).
 
 ### Alert Flow
 
@@ -918,8 +918,8 @@ These alerts track database and cache response times.
 ## Load Test SLO Mapping
 
 This section ties the **P‑01 load test scenarios** and **k6 metrics** to the
-SLOs defined in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:257) and
-[`PROJECT_GOALS.md`](../PROJECT_GOALS.md:150), and to the Prometheus alerts and
+SLOs defined in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:257) and
+[`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:150), and to the Prometheus alerts and
 Grafana dashboards that monitor the same behaviours under steady‑state
 traffic.
 
@@ -933,7 +933,7 @@ how those ranges are enforced and visualised.
 - **Primary SLOs**
   - `POST /api/auth/login`, `POST /api/games`,
     `GET /api/games/:gameId` latency and 5xx rate per environment
-    (see [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:296) §2.1).
+    (see [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:296) §2.1).
 - **Validated by k6 scenarios**
   - `tests/load/scenarios/game-creation.js`
   - `tests/load/scenarios/concurrent-games.js`
@@ -951,13 +951,13 @@ how those ranges are enforced and visualised.
     - `id_lifecycle_mismatches_total`
     - `capacity_failures_total`
 - **Prometheus alerts**
-  - [`HighP95Latency`](../monitoring/prometheus/alerts.yml:172),
-    [`HighP99Latency`](../monitoring/prometheus/alerts.yml:142),
-    [`HighMedianLatency`](../monitoring/prometheus/alerts.yml:187)
+  - [`HighP95Latency`](../../monitoring/prometheus/alerts.yml:172),
+    [`HighP99Latency`](../../monitoring/prometheus/alerts.yml:142),
+    [`HighMedianLatency`](../../monitoring/prometheus/alerts.yml:187)
     for HTTP latency.
-  - [`HighErrorRate`](../monitoring/prometheus/alerts.yml:81),
-    [`ElevatedErrorRate`](../monitoring/prometheus/alerts.yml:101),
-    [`NoHTTPTraffic`](../monitoring/prometheus/alerts.yml:121)
+  - [`HighErrorRate`](../../monitoring/prometheus/alerts.yml:81),
+    [`ElevatedErrorRate`](../../monitoring/prometheus/alerts.yml:101),
+    [`NoHTTPTraffic`](../../monitoring/prometheus/alerts.yml:121)
     for availability/error budget.
 - **Dashboards**
   - **System Health** (`system-health.json`) –
@@ -969,7 +969,7 @@ how those ranges are enforced and visualised.
 
 - **Primary SLOs**
   - Human move submission and stall rates, and WebSocket move
-    end‑to‑end latency (see [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:335)
+    end‑to‑end latency (see [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:335)
     §2.2).
   - WebSocket connection success, handshake success, and 5‑minute
     connection stability under spectator/reconnect patterns
@@ -996,14 +996,14 @@ how those ranges are enforced and visualised.
     p50 > 5 minutes for sustained connections.
   - Classification counters as above.
 - **Prometheus alerts**
-  - [`HighGameMoveLatency`](../monitoring/prometheus/alerts.yml:202) –
+  - [`HighGameMoveLatency`](../../monitoring/prometheus/alerts.yml:202) –
     breach of move‑latency SLOs via `ringrift_game_move_latency_seconds_bucket`.
   - `WebSocketReconnectionTimeouts`,
     `AbnormalGameSessionTerminationSpike`,
     and `GameSessionStatusSkew` (added under the
     `connection-lifecycle` rules group) for reconnection/abandonment
     semantics and stalled sessions.
-  - [`HighWebSocketConnections`](../monitoring/prometheus/alerts.yml:334) for
+  - [`HighWebSocketConnections`](../../monitoring/prometheus/alerts.yml:334) for
     saturation of `ringrift_websocket_connections`.
 - **Dashboards**
   - **Game Performance** (`game-performance.json`) –
@@ -1016,7 +1016,7 @@ how those ranges are enforced and visualised.
 
 - **Primary SLOs**
   - AI request latency and fallback/error rates at the AI service boundary
-    (see [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:353) §2.3).
+    (see [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:353) §2.3).
   - End‑to‑end AI turn latency from “AI turn starts” to authoritative
     move broadcast.
 - **Validated by k6 scenarios**
@@ -1028,12 +1028,12 @@ how those ranges are enforced and visualised.
   - Classification and HTTP error metrics surface AI failures that
     manifest as timeouts or 5xx responses.
 - **Prometheus alerts**
-  - [`AIRequestHighLatency`](../monitoring/prometheus/alerts.yml:413)
+  - [`AIRequestHighLatency`](../../monitoring/prometheus/alerts.yml:413)
     via `ringrift_ai_request_duration_seconds_bucket`.
-  - [`AIFallbackRateHigh`](../monitoring/prometheus/alerts.yml:373) and
-    [`AIFallbackRateCritical`](../monitoring/prometheus/alerts.yml:393)
+  - [`AIFallbackRateHigh`](../../monitoring/prometheus/alerts.yml:373) and
+    [`AIFallbackRateCritical`](../../monitoring/prometheus/alerts.yml:393)
     via `ringrift_ai_fallback_total` and `ringrift_ai_requests_total`.
-  - [`AIErrorsIncreasing`](../monitoring/prometheus/alerts.yml:428) for
+  - [`AIErrorsIncreasing`](../../monitoring/prometheus/alerts.yml:428) for
     AI error outcomes.
 - **Dashboards**
   - **Game Performance** (`game-performance.json`) –
@@ -1041,9 +1041,9 @@ how those ranges are enforced and visualised.
 
 When updating SLO numbers or adding new scenarios:
 
-1. Treat [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:257) and
-   [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:150) as the canonical SLO sources.
-2. Update [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json:1)
+1. Treat [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:257) and
+   [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:150) as the canonical SLO sources.
+2. Update [`tests/load/config/thresholds.json`](../../tests/load/config/thresholds.json:1)
    and the individual k6 scenario thresholds to match.
 3. Ensure the corresponding Prometheus alerts and Grafana panels continue to
    observe the same metrics and label sets, avoiding forks in metric naming.
@@ -1213,15 +1213,15 @@ After deployment, establish baselines for:
 
 ## Files Reference
 
-- **Alert Rules**: [`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml)
-- **Prometheus Config**: [`monitoring/prometheus/prometheus.yml`](../monitoring/prometheus/prometheus.yml)
-- **Alertmanager Config**: [`monitoring/alertmanager/alertmanager.yml`](../monitoring/alertmanager/alertmanager.yml)
-- **Metrics Service**: [`src/server/services/MetricsService.ts`](../src/server/services/MetricsService.ts)
+- **Alert Rules**: [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml)
+- **Prometheus Config**: [`monitoring/prometheus/prometheus.yml`](../../monitoring/prometheus/prometheus.yml)
+- **Alertmanager Config**: [`monitoring/alertmanager/alertmanager.yml`](../../monitoring/alertmanager/alertmanager.yml)
+- **Metrics Service**: [`src/server/services/MetricsService.ts`](../../src/server/services/MetricsService.ts)
 
 ---
 
 ## Related Documentation
 
-- [Operations Database Guide](./OPERATIONS_DB.md)
+- [Operations Database Guide](OPERATIONS_DB.md)
 - [Security Threat Model](../security/SECURITY_THREAT_MODEL.md)
 - [Incident Response](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md)

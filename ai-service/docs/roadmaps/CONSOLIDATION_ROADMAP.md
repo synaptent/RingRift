@@ -514,6 +514,6 @@ Before any consolidation PR:
 
 ## See Also
 
-- [Architecture Overview](ARCHITECTURE_OVERVIEW.md)
-- [Training Triggers](TRAINING_TRIGGERS.md)
-- [Unified AI Loop](UNIFIED_AI_LOOP.md)
+- [Architecture Overview](../architecture/ARCHITECTURE_OVERVIEW.md)
+- [Training Triggers](../training/TRAINING_TRIGGERS.md)
+- [Unified AI Loop](../training/UNIFIED_AI_LOOP.md)

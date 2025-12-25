@@ -134,7 +134,7 @@ services:
 
 ### Secrets Rotation Drill (staging)
 
-For an operator-focused, step-by-step practice drill in **staging** or another non-production environment, use the runbook [`docs/runbooks/SECRETS_ROTATION_DRILL.md`](./runbooks/SECRETS_ROTATION_DRILL.md). The drill applies the JWT and database patterns below in a **PASS-style** structure (Purpose, Preconditions, Actions, Signals) and is intended to be boring and repeatable.
+For an operator-focused, step-by-step practice drill in **staging** or another non-production environment, use the runbook [`docs/runbooks/SECRETS_ROTATION_DRILL.md`](../runbooks/SECRETS_ROTATION_DRILL.md). The drill applies the JWT and database patterns below in a **PASS-style** structure (Purpose, Preconditions, Actions, Signals) and is intended to be boring and repeatable.
 
 **Scope (initial drill):**
 
@@ -149,20 +149,20 @@ For an operator-focused, step-by-step practice drill in **staging** or another n
 **Preconditions:**
 
 - **Backups exist and are tested** for the target environment:
-  - See [`DATA_LIFECYCLE_AND_PRIVACY.md`](./DATA_LIFECYCLE_AND_PRIVACY.md) §3.5 (Backups and offline copies).
-  - See [`OPERATIONS_DB.md`](./OPERATIONS_DB.md) and the `DATABASE_BACKUP_AND_RESTORE_DRILL` runbook (`docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`) for concrete backup/restore procedures. That runbook is the **canonical operational drill** for validating database credential changes together with backup/restore flows in staging or other non‑production environments.
+  - See [`DATA_LIFECYCLE_AND_PRIVACY.md`](../security/DATA_LIFECYCLE_AND_PRIVACY.md) §3.5 (Backups and offline copies).
+  - See [`OPERATIONS_DB.md`](OPERATIONS_DB.md) and the `DATABASE_BACKUP_AND_RESTORE_DRILL` runbook (`docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`) for concrete backup/restore procedures. That runbook is the **canonical operational drill** for validating database credential changes together with backup/restore flows in staging or other non‑production environments.
 - **Monitoring and alerts are active**:
-  - Prometheus + Alertmanager and Grafana dashboards from [`monitoring/`](../monitoring/).
-  - See [`DEPLOYMENT_REQUIREMENTS.md`](./DEPLOYMENT_REQUIREMENTS.md) “Monitoring Stack” and “Validation”.
+  - Prometheus + Alertmanager and Grafana dashboards from [`monitoring/`](../../monitoring).
+  - See [`DEPLOYMENT_REQUIREMENTS.md`](../planning/DEPLOYMENT_REQUIREMENTS.md) “Monitoring Stack” and “Validation”.
 - **Config and manifests pass validation** for the staged configuration:
-  - From the project root, run `npm run validate:deployment` to execute [`scripts/validate-deployment-config.ts`](../scripts/validate-deployment-config.ts).
+  - From the project root, run `npm run validate:deployment` to execute [`scripts/validate-deployment-config.ts`](../../scripts/validate-deployment-config.ts).
   - Optionally run `./scripts/validate-monitoring-configs.sh` (from the project root) to validate Prometheus/Alertmanager configs before and after the drill.
 
 **High-level drill flow (staging):**
 
 1. **Plan**
    - Identify the environment/cluster and exact secret set you will rotate.
-   - Generate new secret values using the commands in this document or [`.env.example`](../.env.example).
+   - Generate new secret values using the commands in this document or [`.env.example`](../../.env.example).
    - Stage the new values in the secret store for **staging only** (for example `.env.staging`, Docker/Kubernetes secrets). Do not change production secrets as part of the drill.
 2. **Apply / Rotate**
    - Update the secrets in the staging secret store.
@@ -358,7 +358,7 @@ NODE_ENV=production node -e "require('./dist/server/config')"
 
 ## Related Documentation
 
-- [`.env.example`](../.env.example) - Environment variable template
-- [`src/server/config.ts`](../src/server/config.ts) - Configuration loading
-- [`src/server/utils/secretsValidation.ts`](../src/server/utils/secretsValidation.ts) - Validation logic
-- [SECURITY_THREAT_MODEL.md](./SECURITY_THREAT_MODEL.md) - Security analysis
+- [`.env.example`](../../.env.example) - Environment variable template
+- [`src/server/config.ts`](../../src/server/config.ts) - Configuration loading
+- [`src/server/utils/secretsValidation.ts`](../../src/server/utils/secretsValidation.ts) - Validation logic
+- [SECURITY_THREAT_MODEL.md](../security/SECURITY_THREAT_MODEL.md) - Security analysis

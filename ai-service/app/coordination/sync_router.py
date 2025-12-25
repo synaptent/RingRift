@@ -41,6 +41,17 @@ from app.distributed.cluster_manifest import (
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Data classes
+    "SyncRoute",
+    "NodeSyncCapability",
+    # Main class
+    "SyncRouter",
+    # Singleton accessors
+    "get_sync_router",
+    "reset_sync_router",
+]
+
 
 @dataclass
 class SyncRoute:

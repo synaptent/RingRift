@@ -224,7 +224,7 @@ After any rollout or rollback action:
    - Optionally run an orchestrator soak to re-check core invariants under the TS engine:
      - `npm run soak:orchestrator:smoke` (single short backend game on square8, fails on invariant violation).
      - `npm run soak:orchestrator:short` (deterministic short backend soak on square8 with multiple games, `--failOnViolation=true`; this is the concrete CI implementation of `SLO-CI-ORCH-SHORT-SOAK`).
-     - For deeper offline runs, see `npm run soak:orchestrator:nightly` and [`docs/STRICT_INVARIANT_SOAKS.md`](../STRICT_INVARIANT_SOAKS.md) §2.3–2.4 for details on orchestrator soak profiles and related SLOs.
+     - For deeper offline runs, see `npm run soak:orchestrator:nightly` and [`docs/STRICT_INVARIANT_SOAKS.md`](../testing/STRICT_INVARIANT_SOAKS.md) §2.3–2.4 for details on orchestrator soak profiles and related SLOs.
      - For extended **vector‑seeded** soaks (chain capture, deep chains, forced elimination, territory/line endgame, hex edge cases, and near‑victory territory), use:
        ```bash
        npx ts-node scripts/run-orchestrator-soak.ts \
@@ -319,7 +319,7 @@ Run this checklist **before** promoting a new build to staging or production.
    - Verify (for the run corresponding to the candidate commit):
      - Exit code is `0`.
      - The short-soak summary reports `totalInvariantViolations == 0` (see
-       [`docs/STRICT_INVARIANT_SOAKS.md`](../STRICT_INVARIANT_SOAKS.md) §2.3 for output details).
+       [`docs/STRICT_INVARIANT_SOAKS.md`](../testing/STRICT_INVARIANT_SOAKS.md) §2.3 for output details).
    - If any violation is reported:
      - Treat this as an SLO breach.
      - Do not promote the build until the invariant bug is understood and
@@ -360,7 +360,7 @@ Run this checklist **before** promoting a new build to staging or production.
    - When in doubt about which combination of `NODE_ENV`, `RINGRIFT_APP_TOPOLOGY`,
      `RINGRIFT_RULES_MODE`, and orchestrator flags to use for a given phase,
      refer to the canonical presets in
-     [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1](../ORCHESTRATOR_ROLLOUT_PLAN.md#811-environment-and-flag-presets-by-phase).
+     [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md#811-environment-and-flag-presets-by-phase).
 
 6. **Optional AI evaluation overlay (non-blocking)**
    - For releases that materially change AI difficulty profiles or models, consider running the AI evaluation harness alongside the orchestrator gates:
@@ -502,7 +502,7 @@ Before increasing rollout above 0% in production:
      - `RulesParity*` P0/P1 alerts.
 
 3. **Parity and staging gates**
-   - Latest staging report for the candidate build (for example [`P18.4-3_ORCHESTRATOR_STAGING_REPORT.md`](../P18.4-3_ORCHESTRATOR_STAGING_REPORT.md)) shows:
+   - Latest staging report for the candidate build (for example [`P18.4-3_ORCHESTRATOR_STAGING_REPORT.md`](../archive/assessments/P18.4-3_ORCHESTRATOR_STAGING_REPORT.md)) shows:
      - Orchestrator-only staging soak with `totalInvariantViolations == 0`.
      - Chain-capture and plateau parity suites green.
    - PASS18 weakest-aspect gates:

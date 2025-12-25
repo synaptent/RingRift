@@ -14,7 +14,7 @@ Technical documentation for the RingRift AI training service.
 
 ## Documentation Structure
 
-### [architecture/](architecture/)
+### [architecture/](architecture)
 
 System design and component architecture.
 
@@ -23,7 +23,7 @@ System design and component architecture.
 - Coordination systems (see also [COORDINATION_ARCHITECTURE.md](COORDINATION_ARCHITECTURE.md))
 - Platform-specific (MPS, CUDA)
 
-### [training/](training/)
+### [training/](training)
 
 Training pipeline and methodology.
 
@@ -32,7 +32,7 @@ Training pipeline and methodology.
 - Curriculum learning
 - Model promotion and Elo
 
-### [infrastructure/](infrastructure/)
+### [infrastructure/](infrastructure)
 
 Cluster setup, operations, and cloud infrastructure.
 
@@ -41,7 +41,7 @@ Cluster setup, operations, and cloud infrastructure.
 - P2P orchestration
 - Resource management
 
-### [algorithms/](algorithms/)
+### [algorithms/](algorithms)
 
 AI algorithms and search methods.
 
@@ -50,7 +50,7 @@ AI algorithms and search methods.
 - Hex board augmentation
 - NNUE policy training
 
-### [specs/](specs/)
+### [specs/](specs)
 
 Game notation and data format specifications.
 
@@ -59,7 +59,7 @@ Game notation and data format specifications.
 - Replay database design
 - Make/unmake design
 
-### [roadmaps/](roadmaps/)
+### [roadmaps/](roadmaps)
 
 Active development roadmaps and plans.
 
@@ -67,7 +67,7 @@ Active development roadmaps and plans.
 - Consolidation roadmap
 - Integration migration plan
 
-### [runbooks/](runbooks/)
+### [runbooks/](runbooks)
 
 Operational runbooks for incident response.
 
@@ -75,7 +75,7 @@ Operational runbooks for incident response.
 - Coordinator errors
 - Sync host issues
 
-### [archive/](archive/)
+### [archive/](archive)
 
 Historical documentation and status reports.
 
@@ -93,6 +93,6 @@ Historical documentation and status reports.
 
 ## See Also
 
-- [Main docs/](../../docs/) - Product documentation
+- [Main docs/](../../docs) - Product documentation
 - [TRAINING_DATA_REGISTRY](../TRAINING_DATA_REGISTRY.md) - Training data inventory
 - [RULES_CANONICAL_SPEC](../../RULES_CANONICAL_SPEC.md) - Canonical rules

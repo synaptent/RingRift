@@ -93,6 +93,9 @@ class DaemonType(Enum):
     # Cluster-wide data sync (December 2025)
     CLUSTER_DATA_SYNC = "cluster_data_sync"
 
+    # Model distribution (December 2025) - auto-distribute models after promotion
+    MODEL_DISTRIBUTION = "model_distribution"
+
     # Automated P2P data sync (December 2025)
     AUTO_SYNC = "auto_sync"
 

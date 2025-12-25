@@ -11,7 +11,7 @@
 >
 > - [`ai-service/TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md) - Data classification and provenance
 > - [`docs/ai/AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md) - Infrastructure assessment
-> - [`docs/planning/NEXT_AREAS_EXECUTION_PLAN.md`](./NEXT_AREAS_EXECUTION_PLAN.md) - Overall execution context
+> - [`docs/planning/NEXT_AREAS_EXECUTION_PLAN.md`](NEXT_AREAS_EXECUTION_PLAN.md) - Overall execution context
 > - [`ai-service/app/db/game_replay.py`](../../ai-service/app/db/game_replay.py) - Database schema
 > - [`ai-service/scripts/generate_canonical_selfplay.py`](../../ai-service/scripts/generate_canonical_selfplay.py) - Self-play generator
 

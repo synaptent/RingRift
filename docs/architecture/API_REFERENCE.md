@@ -64,7 +64,7 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 
 ### Games (`/api/games`)
 
-> **Move transport:** Interactive move submission is performed over the WebSocket API. A feature-flagged internal HTTP move harness (`POST /games/:gameId/moves`) exists for load tests and tooling; it is not a public client API. For the canonical transport decision (WebSocket vs HTTP, and the scope of the harness), see [`PLAYER_MOVE_TRANSPORT_DECISION.md`](./PLAYER_MOVE_TRANSPORT_DECISION.md).
+> **Move transport:** Interactive move submission is performed over the WebSocket API. A feature-flagged internal HTTP move harness (`POST /games/:gameId/moves`) exists for load tests and tooling; it is not a public client API. For the canonical transport decision (WebSocket vs HTTP, and the scope of the harness), see [`PLAYER_MOVE_TRANSPORT_DECISION.md`](PLAYER_MOVE_TRANSPORT_DECISION.md).
 
 | Method | Endpoint                             | Description                       | Auth Required |
 | ------ | ------------------------------------ | --------------------------------- | ------------- |
@@ -166,7 +166,7 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 > over the same shared domain `applyMove` API used by WebSocket move handlers, is
 > gated by `ENABLE_HTTP_MOVE_HARNESS` (see [`ENVIRONMENT_VARIABLES.md`](../operations/ENVIRONMENT_VARIABLES.md)
 > for details), and is **not** a general public HTTP move API for interactive clients.
-> See [`PLAYER_MOVE_TRANSPORT_DECISION.md`](./PLAYER_MOVE_TRANSPORT_DECISION.md) for
+> See [`PLAYER_MOVE_TRANSPORT_DECISION.md`](PLAYER_MOVE_TRANSPORT_DECISION.md) for
 > the canonical scope and constraints.
 
 ---
@@ -532,7 +532,7 @@ Response includes `Content-Disposition: attachment; filename="ringrift-data-expo
 
 #### Worked example: `GET /api/users/me/export`
 
-The data export endpoint is driven by the same OpenAPI source as other user routes (see [`src/server/openapi/config.ts`](../src/server/openapi/config.ts)) and implemented in the Users routes/handlers (`src/server/routes/user.ts` and associated controllers). Its concrete behaviour is validated by:
+The data export endpoint is driven by the same OpenAPI source as other user routes (see [`src/server/openapi/config.ts`](../../src/server/openapi/config.ts)) and implemented in the Users routes/handlers (`src/server/routes/user.ts` and associated controllers). Its concrete behaviour is validated by:
 
 - `tests/integration/dataLifecycle.test.ts` – end-to-end tests under “GET /api/users/me/export” that assert:
   - The response uses `Content-Disposition` with a `ringrift-data-export-<timestamp>.json` filename.
@@ -547,7 +547,7 @@ Clients calling `GET /api/users/me/export` should therefore expect:
 
 #### Worked example: `DELETE /api/users/me`
 
-The account deletion endpoint is defined and documented via OpenAPI annotations in the user routes and aggregated through [`src/server/openapi/config.ts`](../src/server/openapi/config.ts). Its behaviour is enforced by both unit and integration tests:
+The account deletion endpoint is defined and documented via OpenAPI annotations in the user routes and aggregated through [`src/server/openapi/config.ts`](../../src/server/openapi/config.ts). Its behaviour is enforced by both unit and integration tests:
 
 - Route and controller logic live under the Users routes (`src/server/routes/user.ts` and related handlers).
 - HTTP-level behaviour (status codes and error codes such as `AUTH_TOKEN_INVALID` or `AUTH_TOKEN_REQUIRED`) is covered by:
@@ -566,9 +566,9 @@ Clients calling `DELETE /api/users/me` should therefore expect:
 
 Real-time game communication uses Socket.IO over WebSockets. Authentication is required via JWT token passed in the handshake.
 
-WebSocket is the canonical move transport for interactive clients; any HTTP move endpoint that submits moves is an internal/test harness over the same shared domain API, as documented in [`PLAYER_MOVE_TRANSPORT_DECISION.md`](./PLAYER_MOVE_TRANSPORT_DECISION.md).
+WebSocket is the canonical move transport for interactive clients; any HTTP move endpoint that submits moves is an internal/test harness over the same shared domain API, as documented in [`PLAYER_MOVE_TRANSPORT_DECISION.md`](PLAYER_MOVE_TRANSPORT_DECISION.md).
 
-For the **authoritative Move / PendingDecision / PlayerChoice / WebSocket lifecycle** (including concrete type definitions and a worked example), see [`docs/architecture/CANONICAL_ENGINE_API.md` §3.9–3.10](./CANONICAL_ENGINE_API.md). This section focuses on transport-level events and error codes; it assumes that orchestrator-centric lifecycle as its executable derivation of the canonical rules SSoT.
+For the **authoritative Move / PendingDecision / PlayerChoice / WebSocket lifecycle** (including concrete type definitions and a worked example), see [`docs/architecture/CANONICAL_ENGINE_API.md` §3.9–3.10](CANONICAL_ENGINE_API.md). This section focuses on transport-level events and error codes; it assumes that orchestrator-centric lifecycle as its executable derivation of the canonical rules SSoT.
 
 ### Connection
 
@@ -637,7 +637,7 @@ const socket = io('http://localhost:3000', {
 
 #### Worked example: `player_choice_required` → `player_choice_response`
 
-When the engine reaches an interactive decision (for example a line reward or region order choice), the backend emits a `player_choice_required` event to the relevant player, carrying a typed `PlayerChoice` object as defined in [`src/shared/types/game.ts`](../src/shared/types/game.ts) and surfaced on the socket via [`ServerToClientEvents.player_choice_required`](../src/shared/types/websocket.ts).
+When the engine reaches an interactive decision (for example a line reward or region order choice), the backend emits a `player_choice_required` event to the relevant player, carrying a typed `PlayerChoice` object as defined in [`src/shared/types/game.ts`](../../src/shared/types/game.ts) and surfaced on the socket via [`ServerToClientEvents.player_choice_required`](../../src/shared/types/websocket.ts).
 
 - The `WebSocketServer` delivers this event from the current `GameSession` interaction handler; see the choice-response wiring in `src/server/websocket/server.ts` (the `player_choice_response` handler).
 - The client listens for `player_choice_required`, renders a choice UI (for example `ChoiceDialog` / `GameContext` in the React app), and replies with a `player_choice_response` event that selects exactly one of the provided options.
@@ -648,7 +648,7 @@ When the engine reaches an interactive decision (for example a line reward or re
 End-to-end behaviour for this flow is exercised by tests such as:
 
 - `tests/unit/WebSocketInteractionHandler.test.ts` – lifecycle and validation of `PlayerChoice` requests/responses.
-- `tests/unit/GameEngine.lineRewardChoiceWebSocketIntegration.test.ts` – full WebSocket + engine integration for line reward decisions.
+- `tests/unit/GameEngine.lines.scenarios.test.ts` – full WebSocket + engine integration for line reward decisions.
 
 ### Lobby Events (Server → Client)
 
@@ -685,10 +685,10 @@ These events are transport-only and do not mutate game state. They are primarily
 
 ## 🔗 Related Documentation
 
-- [WebSocket Types](../src/shared/types/websocket.ts) - TypeScript type definitions
+- [WebSocket Types](../../src/shared/types/websocket.ts) - TypeScript type definitions
 - [Game Rules](../rules/COMPLETE_RULES.md) - Complete game rulebook
 - [Environment Variables](../operations/ENVIRONMENT_VARIABLES.md) - Server configuration
-- [OpenAPI Spec](../src/server/openapi/config.ts) - OpenAPI schema definitions
+- [OpenAPI Spec](../../src/server/openapi/config.ts) - OpenAPI schema definitions
 
 ---
 
