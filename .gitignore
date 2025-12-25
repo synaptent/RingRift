@@ -256,6 +256,9 @@ ai-service/scripts/show_all_moves_*.py
 ai-service/data/.elo_alert_state.json
 ai-service/data/.merge_state.json
 
+# Tier candidate registry (runtime state)
+ai-service/config/tier_candidate_registry*.json
+
 # Root-level hypothesis directory (Python property-based testing)
 .hypothesis/
 

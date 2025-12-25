@@ -38,7 +38,7 @@ This document specifies the design for implementing a make/unmake move pattern i
 
 ### 1.1 GameState Structure
 
-From [`ai-service/app/models/core.py`](../app/models/core.py):
+From [`ai-service/app/models/core.py`](../../app/models/core.py):
 
 ```python
 class GameState(BaseModel):
@@ -87,7 +87,7 @@ class BoardState(BaseModel):
 
 ### 1.3 Current apply_move Bottleneck
 
-From [`ai-service/app/game_engine/__init__.py:117-268`](../app/game_engine/__init__.py:117):
+From [`ai-service/app/game_engine/__init__.py:117-268`](../../app/game_engine/__init__.py:117):
 
 ```python
 def apply_move(game_state: GameState, move: Move) -> GameState:
@@ -978,7 +978,7 @@ classDiagram
 
 **Benchmark Date:** 2025-11-27
 **Environment:** Python 3.x, macOS
-**Benchmark Script:** [`ai-service/scripts/benchmark_make_unmake.py`](../scripts/benchmark_make_unmake.py)
+**Benchmark Script:** [`ai-service/scripts/benchmark_make_unmake.py`](../../scripts/benchmark_make_unmake.py)
 
 ### 10.1 Correctness Validation
 
@@ -1040,11 +1040,11 @@ The pattern is now enabled by default via `AIConfig.use_incremental_search`.
 
 ## 11. References
 
-- [`ai-service/app/models/core.py`](../app/models/core.py) - GameState, BoardState, Move definitions
-- [`ai-service/app/game_engine/__init__.py`](../app/game_engine/__init__.py) - Current apply_move implementation
-- [`ai-service/app/ai/minimax_ai.py`](../app/ai/minimax_ai.py) - Primary consumer (lines 137-141 bottleneck)
-- [`ai-service/app/ai/mcts_ai.py`](../app/ai/mcts_ai.py) - Secondary consumer
-- [`ai-service/app/ai/zobrist.py`](../app/ai/zobrist.py) - Zobrist hash implementation
-- [`ai-service/AI_IMPROVEMENT_PLAN.md`](../AI_IMPROVEMENT_PLAN.md) - Overall AI improvement roadmap
-- [`ai-service/scripts/benchmark_make_unmake.py`](../scripts/benchmark_make_unmake.py) - Benchmark script
-- [`ai-service/tests/test_benchmark_make_unmake.py`](../tests/test_benchmark_make_unmake.py) - Benchmark tests
+- [`ai-service/app/models/core.py`](../../app/models/core.py) - GameState, BoardState, Move definitions
+- [`ai-service/app/game_engine/__init__.py`](../../app/game_engine/__init__.py) - Current apply_move implementation
+- [`ai-service/app/ai/minimax_ai.py`](../../app/ai/minimax_ai.py) - Primary consumer (lines 137-141 bottleneck)
+- [`ai-service/app/ai/mcts_ai.py`](../../app/ai/mcts_ai.py) - Secondary consumer
+- [`ai-service/app/ai/zobrist.py`](../../app/ai/zobrist.py) - Zobrist hash implementation
+- [`ai-service/AI_IMPROVEMENT_PLAN.md`](../../AI_IMPROVEMENT_PLAN.md) - Overall AI improvement roadmap
+- [`ai-service/scripts/benchmark_make_unmake.py`](../../scripts/benchmark_make_unmake.py) - Benchmark script
+- [`ai-service/tests/test_benchmark_make_unmake.py`](../../tests/test_benchmark_make_unmake.py) - Benchmark tests

@@ -126,7 +126,7 @@ At runtime there are three tightly coupled layers that share the **same rules se
   - Core game types (including `GameState`, `BoardState`, `Move`, and enums for phases and move types) live in [`game.ts`](../../src/shared/types/game.ts) and engine-specific type helpers in [`types.ts`](../../src/shared/engine/types.ts).
   - Movement, capture, lines, and Territory are implemented as pure helpers under [`src/shared/engine`](../../src/shared/engine/core.ts):
     - Movement / reachability: [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts), [`movementApplication.ts`](../../src/shared/engine/movementApplication.ts).
-    - Capture / chains: [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts), [`captureChainHelpers.ts`](src/shared/engine/chainCaptureTracking.ts).
+    - Capture / chains: [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts), [`captureChainHelpers.ts`](../../src/shared/engine/chainCaptureTracking.ts).
     - Lines: [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](../../src/shared/engine/lineDecisionHelpers.ts).
     - Territory: [`territoryBorders.ts`](../../src/shared/engine/territoryBorders.ts), [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts), [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts).
   - These shared helpers are orchestrated by the **shared turn orchestrator** in

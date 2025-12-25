@@ -86,7 +86,7 @@ The FastAPI service endpoint [`python.get_ai_move`](../../ai-service/app/main.py
   - `heuristic_profile_id` from ladder or difficulty profile.
   - `nn_model_id` from ladder `model_id` when `ai_type` is MCTS or DESCENT.
 
-Neural-net-backed AIs (MCTS/Descent) resolve `nn_model_id` to a checkpoint under `ai-service/models` via [`python.NeuralNetAI`](ai-service/app/ai/neural_net/__init__.py:1049).
+Neural-net-backed AIs (MCTS/Descent) resolve `nn_model_id` to a checkpoint under `ai-service/models` via [`python.NeuralNetAI`](../../ai-service/app/ai/neural_net/__init__.py:1049).
 
 Heuristic tiers use profiles in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1).
 

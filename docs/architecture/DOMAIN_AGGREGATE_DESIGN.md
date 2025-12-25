@@ -895,9 +895,9 @@ Owns all victory condition evaluation and tie-breaker logic.
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                     | Status in design        |
-| ------------------------------------------------------------------------ | ----------------------- |
-| [`victoryLogic.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts) | Absorbed into aggregate |
+| File                                                                        | Status in design        |
+| --------------------------------------------------------------------------- | ----------------------- |
+| [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts) | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 

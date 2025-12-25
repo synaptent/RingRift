@@ -69,7 +69,7 @@ important groups are:
   - Board‑level placement mutators: [`PlacementMutator.ts`](../../src/shared/engine/mutators/PlacementMutator.ts:1)
 
 - **Victory**
-  - Ring‑elimination, Territory‑majority, and stalemate ladder: [`victoryLogic.ts`](src/shared/engine/aggregates/VictoryAggregate.ts:51)
+  - Ring‑elimination, Territory‑majority, and stalemate ladder: [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51)
 
 - **Turn sequencing & orchestration**
   - Shared phase/turn state machine: [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts:132)
@@ -175,7 +175,7 @@ truth:
   [`PlacementMutator.ts`](../../src/shared/engine/mutators/PlacementMutator.ts:1),
   [`PlacementAggregate.ts`](../../src/shared/engine/aggregates/PlacementAggregate.ts:1) (canonical `place_ring` / `skip_placement` validation and mutation, including no-dead-placement and skip-eligibility helpers now consumed directly by backend `RuleEngine`, `GameEngine`, and `ClientSandboxEngine`),
   [`placementHelpers.ts`](../../src/shared/engine/placementHelpers.ts:1).
-- Victory: [`victoryLogic.ts`](src/shared/engine/aggregates/VictoryAggregate.ts:51),
+- Victory: [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51),
   [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:1).
 - Turn orchestration: [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts:132),
   [`phaseStateMachine.ts`](../../src/shared/engine/orchestration/phaseStateMachine.ts:1),
@@ -198,32 +198,32 @@ truth:
    - Territory:
      [`territoryBorders.shared.test.ts`](../../tests/unit/territoryBorders.shared.test.ts:1),
      [`territoryProcessing.shared.test.ts`](../../tests/unit/territoryProcessing.shared.test.ts:1),
-     [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
+     [`TerritoryAggregate.hex.feParity.test.ts`](../../tests/unit/TerritoryAggregate.hex.feParity.test.ts:1),
      [`territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts:1) – **canonical** `choose_territory_option` / `eliminate_rings_from_stack` decision semantics (legacy alias: `process_territory_region`), including Q23 and S‑invariant bookkeeping.
    - Placement:
      [`placement.shared.test.ts`](../../tests/unit/placement.shared.test.ts:1).
    - Victory:
      [`victory.shared.test.ts`](../../tests/unit/victory.shared.test.ts:1).
    - Turn sequencing & termination:
-     [`GameEngine.decisionPhases.MoveDriven.test.ts`](tests/unit/GameEngine.decisionPhases.MoveDriven.test.ts:1),
-     [`SandboxAI.ringPlacementNoopRegression.test.ts`](tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts:1),
+     [`OrchestratorAdapter.parity.test.ts`](../../tests/unit/OrchestratorAdapter.parity.test.ts:1),
+     [`ClientSandboxEngine.placementParity.shared.test.ts`](../../tests/unit/ClientSandboxEngine.placementParity.shared.test.ts:1),
      [`GameEngine.aiSimulation.test.ts`](../../tests/unit/GameEngine.aiSimulation.test.ts:1).
 
 4. Re‑run parity suites that ensure backend and sandbox still match the shared
    helpers and orchestrator:
    - Backend vs sandbox & host engines (TypeScript): representative suites under `tests/unit/` such as
-     [`Backend_vs_Sandbox.traceParity.test.ts`](tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1),
-     [`Backend_vs_Sandbox.eliminationTrace.test.ts`](tests/unit/Backend_vs_Sandbox.eliminationTrace.test.ts:1),
-     [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.internalStateParity.test.ts:1),
-     [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.checkpoints.test.ts:1),
-     [`Backend_vs_Sandbox.seed1.snapshotParity.test.ts`](tests/parity/Backend_vs_Sandbox.seed1.snapshotParity.test.ts:1) / [`archive/tests/parity/Backend_vs_Sandbox.seed1.snapshotParity.test.ts`](archive/tests/parity/Backend_vs_Sandbox.seed1.snapshotParity.test.ts:1),
-     [`Backend_vs_Sandbox.seed18.snapshotParity.test.ts`](tests/parity/Backend_vs_Sandbox.seed18.snapshotParity.test.ts:1) / [`archive/tests/parity/Backend_vs_Sandbox.seed18.snapshotParity.test.ts`](archive/tests/parity/Backend_vs_Sandbox.seed18.snapshotParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts:1),
+     [`Backend_vs_Sandbox.eliminationTrace.test.ts`](../../tests/parity/Backend_vs_Sandbox.eliminationTrace.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.internalStateParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.checkpoints.test.ts:1),
+     [`Backend_vs_Sandbox.seed1.snapshotParity.test.ts`](../../archive/tests/parity/Backend_vs_Sandbox.seed1.snapshotParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed18.snapshotParity.test.ts`](../../archive/tests/parity/Backend_vs_Sandbox.seed18.snapshotParity.test.ts:1),
      [`Sandbox_vs_Backend.aiRngParity.test.ts`](../../tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1),
      [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](../../tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1),
-     [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryParity.square8.R1Fixtures.test.ts`](../../tests/unit/TerritoryParity.square8.R1Fixtures.test.ts:1),
      [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](../../tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1),
      [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1),
-     [`MarkerPath.GameEngine_vs_Sandbox.test.ts`](tests/unit/MarkerPath.GameEngine_vs_Sandbox.test.ts:1),
+     [`movementReachabilityParity.test.ts`](../../tests/unit/movementReachabilityParity.test.ts:1),
      [`TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts:1),
      [`Sandbox_vs_Backend.aiHeuristicCoverage.test.ts`](../../tests/unit/Sandbox_vs_Backend.aiHeuristicCoverage.test.ts:1) (heuristic AI parity, including pie-rule/swap_sides and deep seeded runs).
    - Shared engine vs hosts (TypeScript):
@@ -231,11 +231,11 @@ truth:
      [`EngineDeterminism.shared.test.ts`](../../tests/unit/EngineDeterminism.shared.test.ts:1),
      [`NoRandomInCoreRules.test.ts`](../../tests/unit/NoRandomInCoreRules.test.ts:1).
    - Python vs TypeScript parity (AI service):
-     [`test_rules_parity.py`](ai-service/tests/parity/test_rules_parity.py:1),
-     [`test_rules_parity_fixtures.py`](../../ai-service/tests/parity/test_rules_parity_fixtures.py:1),
-     [`test_ts_seed_plateau_snapshot_parity.py`](../../ai-service/tests/parity/test_ts_seed_plateau_snapshot_parity.py:1),
-     [`test_line_and_territory_scenario_parity.py`](../../ai-service/tests/parity/test_line_and_territory_scenario_parity.py:1),
-     [`test_ai_plateau_progress.py`](../../ai-service/tests/parity/test_ai_plateau_progress.py:1).
+     [`generate_test_vectors.py`](../../ai-service/tests/parity/generate_test_vectors.py:1),
+     [`square8_2p_seed1_plateau.snapshot.json`](../../ai-service/tests/parity/square8_2p_seed1_plateau.snapshot.json),
+     [`square8_2p_seed18_plateau.snapshot.json`](../../ai-service/tests/parity/square8_2p_seed18_plateau.snapshot.json),
+     [`line_territory_scenario_square8.snapshot.json`](../../ai-service/tests/parity/line_territory_scenario_square8.snapshot.json),
+     [`line_territory_multi_region_square8.snapshot.json`](../../ai-service/tests/parity/line_territory_multi_region_square8.snapshot.json).
 
 5. Validate **RulesMatrix** and **FAQ** scenarios under
    [`tests/scenarios`](../../tests/scenarios/FAQ_Q09_Q14.test.ts:1) remain green; add
@@ -290,7 +290,7 @@ To ensure the Python engine behaves exactly like the TypeScript engine:
 **Verification:**
 
 - **Trace Parity:** TS-generated parity traces under `tests/fixtures/rules-parity/v1/**` together with the integration harness in [`src/server/game/test-python-rules-integration.ts`](../../src/server/game/test-python-rules-integration.ts:1) feed the Python parity suites.
-- **Fixture Parity:** `ai-service/tests/parity/test_rules_parity_fixtures.py` validates TS-generated fixtures against the Python engine.
+- **Fixture Parity:** parity snapshots under `ai-service/tests/parity/*.snapshot.json` are validated by the Python parity harness (see `ai-service/tests/parity/generate_test_vectors.py`).
 
 ### 2.1 Multi-phase turn vectors and phase sequencing
 
@@ -310,19 +310,9 @@ The canonical **multi-phase turn sequence** (ring_placement → movement / captu
     (for `square8`, `square19`, and `hexagonal`; hex8 tags pending) are the canonical
     identifiers for “line-then-Territory” turns referenced by RR‑CANON‑R208/R209.
 
-- **Snapshot parity tests (TS ↔ Python structure).**
-  - `ai-service/tests/parity/test_ts_seed_plateau_snapshot_parity.py`:
-    - Validates plateau snapshots (seeds 1 and 18) against Python models using TS-generated `ComparableSnapshot` JSON.
-  - `ai-service/tests/parity/test_line_and_territory_scenario_parity.py`:
-    - Encodes the Q7/Q20/Q22-style line+Territory scenario for all three board types.
-    - Contains:
-      - Per-board synthetic line+Territory fixtures:
-        - `LINE_TERRITORY_SNAPSHOT_BY_BOARD[...]` → `line_territory_scenario_*.snapshot.json`
-        - `MULTI_REGION_SNAPSHOT` → `line_territory_multi_region_square8.snapshot.json`
-      - Tests that:
-        - Rebuild a Python `GameState` equivalent to the TS snapshot.
-        - Exercise the combined `line_processing` → `territory_processing` flow via `GameEngine._get_line_processing_moves` and `GameEngine._get_territory_processing_moves`.
-        - Assert deep equality between TS and Python `ComparableSnapshot` shapes for line+Territory scenarios.
+- **Snapshot parity fixtures (TS ↔ Python structure).**
+  - `ai-service/tests/parity/square8_2p_seed1_plateau.snapshot.json` and `ai-service/tests/parity/square8_2p_seed18_plateau.snapshot.json` validate plateau snapshots (seeds 1 and 18) against Python models using TS-generated `ComparableSnapshot` JSON.
+  - `ai-service/tests/parity/line_territory_scenario_*.snapshot.json` plus `ai-service/tests/parity/line_territory_multi_region_square8.snapshot.json` encode the Q7/Q20/Q22-style line+Territory scenarios across board types.
 
 - **As implemented (Dec 2025) – host adapters for multi-phase turns.**
   - **Backend TS GameEngine (`src/server/game/GameEngine.ts`).**
@@ -377,16 +367,10 @@ lockstep with `GameEngine.apply_move` for key move families.
 
 Additionally, TS-generated trace fixtures are replayed through both engines:
 
-- `ai-service/tests/parity/test_rules_parity_fixtures.py`:
-  - `test_replay_ts_trace_fixtures_and_assert_python_state_parity` asserts hash + S-invariant parity for `GameEngine.apply_move` against TS.
-  - `test_default_engine_matches_game_engine_when_replaying_ts_traces` asserts
-    full-state lockstep between `DefaultRulesEngine.apply_move` and
-    `GameEngine.apply_move` for every move in the TS traces (captures,
-    line-processing, Territory, etc.).
-  - `test_default_engine_mutator_first_matches_game_engine_on_ts_traces` runs
-    the same traces with `DefaultRulesEngine(mutator_first=True)`, exercising
-    the full mutator-first orchestration path while still comparing the
-    resulting state against `GameEngine.apply_move`.
+- `ai-service/tests/parity/generate_test_vectors.py`:
+  - Generates parity vectors under `ai-service/tests/parity/vectors/**` and
+    snapshot fixtures used by TS↔Python parity harnesses.
+  - Provides the canonical fixture set for trace/snapshot parity comparisons.
 
 - `ai-service/tests/rules/test_default_engine_mutator_first_scenarios.py`:
   - `test_mutator_first_env_smoke_for_place_ring_and_move_stack` uses
@@ -1063,7 +1047,7 @@ of the sandbox AI matches the theoretical termination guarantees in
   - [`CaptureMutator.ts`](../../src/shared/engine/mutators/CaptureMutator.ts:1)
   - [`territoryBorders.ts`](../../src/shared/engine/territoryBorders.ts:35)
   - [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts:1)
-  - [`victoryLogic.ts`](src/shared/engine/aggregates/VictoryAggregate.ts:51)
+  - [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51)
   - [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts:132)
 - Backend:
   - [`BoardManager.ts`](../../src/server/game/BoardManager.ts:1)

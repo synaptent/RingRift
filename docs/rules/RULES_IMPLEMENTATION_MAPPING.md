@@ -25,7 +25,7 @@ Canonical rule IDs of the form `RR-CANON-RXXX` always refer to entries in [`RULE
 | Area                     | Primary TS surface                                                                                                     | Key tests                                                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Turn/phase orchestration | `src/shared/engine/orchestration/turnOrchestrator.ts`, `phaseStateMachine.ts`                                          | `tests/contracts/contractVectorRunner.test.ts`, `tests/unit/TraceFixtures.sharedEngineParity.test.ts`                                                   |
-| Lines & territory        | `src/shared/engine/lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryDecisionHelpers.ts` | `tests/unit/GameEngine.lines.scenarios.test.ts`, `tests/unit/GameEngine.territoryDisconnection.test.ts`                                                 |
+| Lines & territory        | `src/shared/engine/lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryDecisionHelpers.ts` | `tests/unit/GameEngine.lines.scenarios.test.ts`, `tests/unit/BoardManager.territoryDisconnection.test.ts`                                               |
 | Forced elimination / ANM | `src/shared/engine/orchestration/turnOrchestrator.ts`, `src/shared/engine/globalActions.ts`                            | `tests/unit/GameEngine.gameEndExplanation.shared.test.ts`, `ai-service/tests/invariants/test_active_no_moves_movement_forced_elimination_regression.py` |
 
 ---
@@ -105,7 +105,7 @@ Frameworks and libraries that materially affect rules behaviour:
 - **Tests & parity harnesses**
   - Shared-engine unit tests (movement, capture, lines, territory, victory) under `tests/unit/**`.
   - Scenario/FAQ matrix tests under `tests/scenarios/**` (e.g. disconnected-region examples and FAQ Q15/Q23).
-  - Backend-versus-sandbox parity suites such as [`tests/unit/sandboxLines.test.ts`](tests/unit/sandboxLines.test.ts) and [`tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts).
+  - Backend-versus-sandbox parity suites such as [`tests/unit/sandboxLines.test.ts`](../../tests/unit/sandboxLines.test.ts) and [`tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts).
 
 ### 1.3 Core data models
 
@@ -175,8 +175,8 @@ Status legend:
   - Sandbox board-validity helpers in [`TypeScript.ClientSandboxEngine.isValidPosition`](../../src/client/sandbox/ClientSandboxEngine.ts:936) and [`TypeScript.sandboxTerritory.getTerritoryNeighbors`](../../src/client/sandbox/sandboxTerritory.ts:88).
 - **Supporting / tests**
   - Movement tests in [`tests/unit/movement.shared.test.ts`](../../tests/unit/movement.shared.test.ts).
-  - Line detection tests in [`tests/unit/lineDecisionHelpers.shared.test.ts`](../../tests/unit/lineDecisionHelpers.shared.test.ts) and [`tests/unit/sandboxLines.test.ts`](tests/unit/sandboxLines.test.ts).
-  - Territory adjacency and region tests in [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts) and [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts).
+  - Line detection tests in [`tests/unit/lineDecisionHelpers.shared.test.ts`](../../tests/unit/lineDecisionHelpers.shared.test.ts) and [`tests/unit/sandboxLines.test.ts`](../../tests/unit/sandboxLines.test.ts).
+  - Territory adjacency and region tests in [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts) and [`tests/unit/BoardManager.territoryDisconnection.test.ts`](../../tests/unit/BoardManager.territoryDisconnection.test.ts).
 
 **R020–R023 Rings, stacks, control, capHeight, allowed mutations (HC)**
 
@@ -326,7 +326,7 @@ Status legend:
   - Sandbox movement enumeration in [`TypeScript.sandboxMovement.enumerateSimpleMovementLandings`](../../src/client/sandbox/sandboxMovement.ts:23) and click-driven movement host [`TypeScript.ClientSandboxEngine.handleLegacyMovementClick`](../../src/client/sandbox/ClientSandboxEngine.ts:1897).
 - **Supporting / tests**
   - Shared movement/aggregate tests in [`tests/unit/movement.shared.test.ts`](../../tests/unit/movement.shared.test.ts) and [`tests/unit/MovementAggregate.shared.test.ts`](../../tests/unit/MovementAggregate.shared.test.ts).
-  - Backend aggregate integration in [`tests/unit/movement.shared.test.ts`](tests/unit/movement.shared.test.ts).
+  - Backend aggregate integration in [`tests/unit/movement.shared.test.ts`](../../tests/unit/movement.shared.test.ts).
   - Sandbox movement/aggregate parity in [`tests/unit/ClientSandboxEngine.movementParity.shared.test.ts`](../../tests/unit/ClientSandboxEngine.movementParity.shared.test.ts) and broader backend–sandbox parity in `tests/unit/ClientSandboxEngine.*.test.ts` and `tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`.
 
 **R092 Marker interaction during non-capture movement (HC)**
@@ -384,7 +384,7 @@ Status legend:
   - Sandbox adapter [`TypeScript.sandboxLines.findAllLinesOnBoard`](../../src/client/sandbox/sandboxLines.ts:124), now a thin wrapper over the shared detector.
 - **Supporting / tests**
   - Shared line decision tests in [`tests/unit/lineDecisionHelpers.shared.test.ts`](../../tests/unit/lineDecisionHelpers.shared.test.ts).
-  - Sandbox line tests in [`tests/unit/sandboxLines.test.ts`](tests/unit/sandboxLines.test.ts).
+  - Sandbox line tests in [`tests/unit/sandboxLines.test.ts`](../../tests/unit/sandboxLines.test.ts).
   - GameEngine line scenario tests in [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts).
 
 **R121–R122 Line processing order and rewards (HC, with some legacy behaviour retained)**
@@ -402,8 +402,8 @@ Status legend:
 - **Supporting / tests**
   - Line reward and option-1/option-2 semantics in [`tests/unit/lineDecisionHelpers.shared.test.ts`](../../tests/unit/lineDecisionHelpers.shared.test.ts).
   - AI and WebSocket integration tests for line-reward choices in:
-    - [`tests/unit/GameEngine.lines.scenarios.test.ts`](tests/unit/GameEngine.lines.scenarios.test.ts).
-    - [`tests/unit/GameEngine.lines.scenarios.test.ts`](tests/unit/GameEngine.lines.scenarios.test.ts).
+    - [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts).
+    - [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts).
 
 ### 3.7 Territory disconnection and region processing (R140–R145)
 
@@ -415,7 +415,7 @@ Status legend:
   - Border-marker extraction in [`TypeScript.territoryBorders.getBorderMarkerPositionsForRegion`](../../src/shared/engine/territoryBorders.ts:1) and sandbox adapter [`TypeScript.sandboxTerritory.getBorderMarkerPositionsForRegion`](../../src/client/sandbox/sandboxTerritory.ts:441).
   - Representation checks (`ActiveColors` vs `RegionColors`) encoded within shared detection/processing helpers.
 - **Supporting / tests**
-  - Territory disconnection scenarios in [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts).
+  - Territory disconnection scenarios in [`tests/unit/BoardManager.territoryDisconnection.test.ts`](../../tests/unit/BoardManager.territoryDisconnection.test.ts).
   - Rules-matrix and FAQ tests such as [`tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts`](../../tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts) and [`tests/scenarios/FAQ_Q15.test.ts`](../../tests/scenarios/FAQ_Q15.test.ts).
   - Python invariant tests such as `test_active_no_moves_territory_processing_regression.py`.
 
@@ -439,7 +439,7 @@ Status legend:
   - Shared canonical region-application logic [`TypeScript.territoryProcessing.applyTerritoryRegion`](../../src/shared/engine/territoryProcessing.ts:172) and end-to-end decision helpers [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves`](../../src/shared/engine/territoryDecisionHelpers.ts:123) (canonical `choose_territory_option` MoveType; legacy alias: `process_territory_region`) and `applyProcessTerritoryRegionDecision()`.
   - Backend integration:
     - RuleEngine decision move generation for `choose_territory_option` (legacy alias: `process_territory_region`) and `eliminate_rings_from_stack` (territory context) in [`TypeScript.RuleEngine.getValidMoves`](../../src/server/game/RuleEngine.ts:839).
-    - Legacy automatic processor [`TypeScript.territoryProcessing.processDisconnectedRegionsForCurrentPlayer`](src/server/game/rules/territoryProcessing.ts:41), now partly replaced by move-driven phases in `GameEngine`.
+    - Legacy automatic processor `TypeScript.territoryProcessing.processDisconnectedRegionsForCurrentPlayer` (module removed; replaced by move-driven phases in `GameEngine`).
   - Sandbox integration:
     - Region discovery and automatic processing in [`TypeScript.ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer`](../../src/client/sandbox/ClientSandboxEngine.ts:2057), which now drives `choose_territory_option` (legacy alias: `process_territory_region`) and in-loop self-elimination via shared `applyProcessTerritoryRegionDecision()` and `applyEliminateRingsFromStackDecision()`.
     - Canonical move application in [`TypeScript.ClientSandboxEngine.applyCanonicalMoveInternal`](../../src/client/sandbox/ClientSandboxEngine.ts:1746) for `choose_territory_option` (legacy alias: `process_territory_region`) and `eliminate_rings_from_stack`.
@@ -783,7 +783,7 @@ Focus areas:
   - Movement and marker behaviour → [`tests/unit/movement.shared.test.ts`](../../tests/unit/movement.shared.test.ts), [`tests/unit/ClientSandboxEngine.landingOnOwnMarker.test.ts`](../../tests/unit/ClientSandboxEngine.landingOnOwnMarker.test.ts).
   - Capture chains and cyclic patterns → `GameEngine.cyclicCapture.*.test.ts` and [`tests/unit/GameEngine.chainCapture.test.ts`](../../tests/unit/GameEngine.chainCapture.test.ts).
   - Lines and graduated rewards → [`tests/unit/lineDecisionHelpers.shared.test.ts`](../../tests/unit/lineDecisionHelpers.shared.test.ts), [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts), sandbox line tests.
-  - Territory disconnection and Q15/Q23 → [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts), [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts), [`tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts`](../../tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts), [`tests/scenarios/FAQ_Q15.test.ts`](../../tests/scenarios/FAQ_Q15.test.ts).
+  - Territory disconnection and Q15/Q23 → [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts), [`tests/unit/BoardManager.territoryDisconnection.test.ts`](../../tests/unit/BoardManager.territoryDisconnection.test.ts), [`tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts`](../../tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts), [`tests/scenarios/FAQ_Q15.test.ts`](../../tests/scenarios/FAQ_Q15.test.ts).
   - Victory and stalemate ladders → [`tests/unit/GameEngine.victory.scenarios.test.ts`](../../tests/unit/GameEngine.victory.scenarios.test.ts) and invariants under `ai-service/tests/invariants/**`.
 - Exercise parity suites:
   - Backend vs sandbox parity (`Seed17`, backend-vs-sandbox AI traces, etc.).

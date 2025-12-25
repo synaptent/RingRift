@@ -14,7 +14,7 @@
 > - [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1)
 > - [`game-creation.js`](../../tests/load/scenarios/game-creation.js:1)
 > - [`concurrent-games.js`](../../tests/load/scenarios/concurrent-games.js:1)
-> - [`playwright.config.ts`](playwright.config.ts:1)
+> - [`playwright.config.ts`](../../playwright.config.ts:1)
 
 ---
 
@@ -99,7 +99,7 @@ Three main tooling approaches are available for WebSocket gameplay load tests. T
 
 ### 2.2 Node/socket.io-client harness
 
-A second option is a **TypeScript harness** under a directory such as `tests/load/harnesses/`, built using [`socket.io-client`](package.json:1) and the shared WebSocket/game types:
+A second option is a **TypeScript harness** under a directory such as `tests/load/harnesses/`, built using [`socket.io-client`](../../package.json:1) and the shared WebSocket/game types:
 
 - [`websocket.ts`](../../src/shared/types/websocket.ts:1)
 - [`game.ts`](../../src/shared/types/game.ts:1)
@@ -137,7 +137,7 @@ This harness would act as a programmable client swarm that uses the **real Socke
 
 The third option is to extend the existing Playwright E2E infrastructure:
 
-- [`playwright.config.ts`](playwright.config.ts:1)
+- [`playwright.config.ts`](../../playwright.config.ts:1)
 - Existing specs under `tests/e2e` (for example, metrics, reconnection, and game-flow tests).
 
 These tests would use the **real React SPA** and the [`GameContext`](../../src/client/contexts/GameContext.tsx:1) WebSocket client.
@@ -460,7 +460,7 @@ This section describes what Code mode should implement for the MVP WebSocket gam
 
 **Behaviour**
 
-- Use existing Playwright helpers and fixtures (see `tests/e2e` and [`playwright.config.ts`](playwright.config.ts:1)) to:
+- Use existing Playwright helpers and fixtures (see `tests/e2e` and [`playwright.config.ts`](../../playwright.config.ts:1)) to:
   - Log in as a test user via the normal UI or API.
   - Create a **human-vs-AI** game using the same API surfaces as the SPA.
   - Navigate to the game page and wait until the WebSocket connection is active (for example, via UI state or network inspection).
@@ -482,7 +482,7 @@ This section describes what Code mode should implement for the MVP WebSocket gam
 
 **k6 WebSocket gameplay scenario**
 
-- Add npm scripts in [`package.json`](package.json:1) such as:
+- Add npm scripts in [`package.json`](../../package.json:1) such as:
   - `"load:websocket:gameplay:smoke": "k6 run tests/load/scenarios/websocket-gameplay.js --env MODE=smoke"`
   - `"load:websocket:gameplay:throughput": "k6 run tests/load/scenarios/websocket-gameplay.js --env MODE=throughput"`
 - Wire the **smoke** variant into CI as a fast check (for example, part of a “perf smoke” workflow).
@@ -544,7 +544,7 @@ This section outlines key risks and trade-offs for WebSocket gameplay load testi
 **Mitigations**
 
 - Centralise Socket.IO framing helpers in a single module (for example, a shared helper imported by both [`websocket-stress.js`](../../tests/load/scenarios/websocket-stress.js:1) and [`websocket-gameplay.js`](../../tests/load/scenarios/websocket-gameplay.js:1)).
-- Document and pin the expected Socket.IO/Engine.IO versions in [`package.json`](package.json:1) and/or a short protocol note, and review WebSocket load scripts whenever these dependencies change.
+- Document and pin the expected Socket.IO/Engine.IO versions in [`package.json`](../../package.json:1) and/or a short protocol note, and review WebSocket load scripts whenever these dependencies change.
 - Consider gradually moving the most complex WebSocket flows (for example, S4 decision phases) into the Node/socket.io-client harness where protocol details are handled by `socket.io-client`.
 
 ### 6.5 Observability gaps between tools

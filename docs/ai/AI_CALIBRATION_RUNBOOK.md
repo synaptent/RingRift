@@ -44,7 +44,7 @@ Primary users:
 You must be able to:
 
 - Read the **tier candidate registry**:
-  - [`tier_candidate_registry.square8_2p.json`](ai-service/config/tier_candidate_registry.square8_2p.json:1)
+  - [`tier_candidate_registry.square8_2p.json`](../../ai-service/config/tier_candidate_registry.square8_2p.json:1)
 - Read **tier evaluation and perf artefacts** for recently promoted Square‑8 2‑player candidates:
   - directories referenced by the registry’s `source_run_dir` fields, under some shared `--eval-root` (for example `ai-service/logs/`), containing:
     - `tier_eval_result.json`
@@ -108,7 +108,7 @@ How this JSON is produced (PromQL, SQL, batch job) is outside this runbook; trea
 
 The **Square‑8 2‑player tier candidate registry**:
 
-- Default path: [`tier_candidate_registry.square8_2p.json`](ai-service/config/tier_candidate_registry.square8_2p.json:1)
+- Default path: [`tier_candidate_registry.square8_2p.json`](../../ai-service/config/tier_candidate_registry.square8_2p.json:1)
 - Canonical loader: [`load_square8_two_player_registry()`](../../ai-service/app/training/tier_promotion_registry.py:29)
 
 This registry tells the calibration script:
@@ -209,7 +209,7 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
 
 2.  **Snapshot the tier candidate registry (optional but recommended).**
     - The script can read directly from the live registry:
-      - [`tier_candidate_registry.square8_2p.json`](ai-service/config/tier_candidate_registry.square8_2p.json:1)
+      - [`tier_candidate_registry.square8_2p.json`](../../ai-service/config/tier_candidate_registry.square8_2p.json:1)
 
     - For auditability, take a snapshot into the run directory:
 
@@ -464,7 +464,7 @@ Use this as a compact checklist when running calibration:
 
 2. **Gather inputs**
    - [ ] Export calibration aggregates JSON into the run directory.
-   - [ ] (Optional) Snapshot [`tier_candidate_registry.square8_2p.json`](ai-service/config/tier_candidate_registry.square8_2p.json:1) into the run directory.
+   - [ ] (Optional) Snapshot [`tier_candidate_registry.square8_2p.json`](../../ai-service/config/tier_candidate_registry.square8_2p.json:1) into the run directory.
    - [ ] Choose `--eval-root` and verify required `tier_eval_result.json` / `tier_perf_report.json` / `gate_report.json` exist for current ladder models.
 
 3. **Run analysis**

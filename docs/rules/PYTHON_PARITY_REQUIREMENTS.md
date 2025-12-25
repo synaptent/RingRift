@@ -140,7 +140,7 @@ AI‑only concern.
 | [`applyMarkerEffectsAlongPathOnBoard()`](../../src/shared/engine/core.ts)  | `core.ts` | [`_process_markers_along_path()`](../../ai-service/app/game_engine/__init__.py:971)                          | `game_engine/__init__.py` | ✅ MATCHED    | Different name       |
 | [`hasAnyLegalMoveOrCaptureFromOnBoard()`](../../src/shared/engine/core.ts) | `core.ts` | [`_has_any_legal_move_or_capture_from_on_board()`](../../ai-service/app/game_engine/__init__.py:1205)        | `game_engine/__init__.py` | ✅ MATCHED    | Direct port          |
 | [`validateCaptureSegmentOnBoard()`](../../src/shared/engine/core.ts)       | `core.ts` | [`_validate_capture_segment_on_board_for_reachability()`](../../ai-service/app/game_engine/__init__.py:1090) | `game_engine/__init__.py` | ✅ MATCHED    | Different name       |
-| `positionToString()`                                                       | `game.ts` | [`Position.to_key()`](../ai-service/app/models/core.py)                                                      | `models.py`               | ✅ MATCHED    | Method style         |
+| `positionToString()`                                                       | `game.ts` | [`Position.to_key()`](../../ai-service/app/models/core.py)                                                   | `models.py`               | ✅ MATCHED    | Method style         |
 | `stringToPosition()`                                                       | `game.ts` | -                                                                                                            | -                         | ⚠️ MISSING    | Not needed in Python |
 | `positionsEqual()`                                                         | `game.ts` | `==` operator                                                                                                | -                         | ✅ MATCHED    | Via Pydantic         |
 
@@ -366,7 +366,7 @@ AI‑only concern.
 
 ### 4.5 Victory Evaluation Parity
 
-**Critical Requirement:** [`evaluateVictory()`](../src/shared/engine/aggregates/VictoryAggregate.ts) and [`GameEngine._check_victory()`](../../ai-service/app/game_engine/__init__.py:269) must produce identical results.
+**Critical Requirement:** [`evaluateVictory()`](../../src/shared/engine/aggregates/VictoryAggregate.ts) and [`GameEngine._check_victory()`](../../ai-service/app/game_engine/__init__.py:269) must produce identical results.
 
 **Verification Points:**
 

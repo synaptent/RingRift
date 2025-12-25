@@ -824,8 +824,8 @@ Based on the current checklist status, the recommended action sequence:
 | [`docs/operations/SLO_VERIFICATION.md`](../operations/SLO_VERIFICATION.md)        | SLO framework                           |
 | [`docs/STAGING_ENVIRONMENT.md`](../operations/STAGING_ENVIRONMENT.md)             | Staging deployment                      |
 | [`docs/testing/BASELINE_CAPACITY.md`](../testing/BASELINE_CAPACITY.md)            | Capacity testing                        |
-| [`docs/runbooks/INDEX.md`](runbooks/INDEX.md)                                     | Operational runbooks                    |
-| [`docs/incidents/INDEX.md`](incidents/INDEX.md)                                   | Incident response                       |
+| [`docs/runbooks/INDEX.md`](../runbooks/INDEX.md)                                  | Operational runbooks                    |
+| [`docs/incidents/INDEX.md`](../incidents/INDEX.md)                                | Incident response                       |
 
 ---
 

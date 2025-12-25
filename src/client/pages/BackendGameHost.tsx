@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { BoardView } from '../components/BoardView';
@@ -20,16 +20,7 @@ import {
   useGameAnnouncements,
   useGameStateAnnouncements,
 } from '../components/ScreenReaderAnnouncer';
-import { gameApi } from '../services/api';
-import {
-  BoardState,
-  GameState,
-  GameResult,
-  Move,
-  Position,
-  positionToString,
-  positionsEqual,
-} from '../../shared/types/game';
+import { GameState, GameResult, Position, positionToString } from '../../shared/types/game';
 import {
   toBoardViewModel,
   toEventLogViewModel,
@@ -50,19 +41,9 @@ import {
   type GameEndRulesContextTag,
   type GameEndWeirdStateContext,
 } from '../../shared/engine/gameEndExplanation';
-import {
-  getWeirdStateReasonForGameResult,
-  isSurfaceableWeirdStateType,
-} from '../../shared/engine/weirdStateReasons';
+import { getWeirdStateReasonForGameResult } from '../../shared/engine/weirdStateReasons';
 import { useGameState } from '../hooks/useGameState';
 import { getWeirdStateBanner } from '../utils/gameStateWeirdness';
-import type { RulesUxWeirdStateType } from '../../shared/telemetry/rulesUxEvents';
-import { sendRulesUxEvent } from '../utils/rulesUxTelemetry';
-import {
-  sendDifficultyCalibrationEvent,
-  getDifficultyCalibrationSession,
-  clearDifficultyCalibrationSession,
-} from '../utils/difficultyCalibrationTelemetry';
 import { useGameConnection } from '../hooks/useGameConnection';
 import {
   useGameActions,
@@ -73,10 +54,7 @@ import {
 } from '../hooks/useGameActions';
 import { useDecisionCountdown } from '../hooks/useDecisionCountdown';
 import { useAutoMoveAnimation } from '../hooks/useMoveAnimation';
-import {
-  useInvalidMoveFeedback,
-  analyzeInvalidMove as analyzeInvalid,
-} from '../hooks/useInvalidMoveFeedback';
+import { useInvalidMoveFeedback } from '../hooks/useInvalidMoveFeedback';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useGameSoundEffects } from '../hooks/useGameSoundEffects';
 import { useGlobalGameShortcuts } from '../hooks/useKeyboardNavigation';
@@ -87,6 +65,14 @@ import type {
   DecisionPhaseTimeoutWarningPayload,
 } from '../../shared/types/websocket';
 import type { ConnectionStatus } from '../contexts/GameContext';
+
+// Import extracted hooks
+import { useBackendBoardSelection } from '../hooks/useBackendBoardSelection';
+import { useBackendBoardHandlers } from '../hooks/useBackendBoardHandlers';
+import { useBackendGameStatus } from '../hooks/useBackendGameStatus';
+import { useBackendChat } from '../hooks/useBackendChat';
+import { useBackendTelemetry } from '../hooks/useBackendTelemetry';
+
 /**
  * Get friendly display name for AI difficulty level with description.
  * Kept aligned with the ladder used elsewhere in the client.
@@ -218,17 +204,17 @@ function useBackendDiagnosticsLog(
   decisionPhaseTimeoutWarning: DecisionPhaseTimeoutWarningPayload | null,
   victoryState: GameResult | null
 ): BackendDiagnosticsState {
-  const [eventLog, setEventLog] = useState<string[]>([]);
-  const [showSystemEventsInLog, setShowSystemEventsInLog] = useState(true);
+  const [eventLog, setEventLog] = React.useState<string[]>([]);
+  const [showSystemEventsInLog, setShowSystemEventsInLog] = React.useState(true);
 
-  const lastPhaseRef = useRef<string | null>(null);
-  const lastCurrentPlayerRef = useRef<number | null>(null);
-  const lastChoiceIdRef = useRef<string | null>(null);
-  const lastAutoResolvedKeyRef = useRef<string | null>(null);
-  const lastConnectionStatusRef = useRef<ConnectionStatus | null>(null);
-  const lastTimeoutWarningKeyRef = useRef<string | null>(null);
-  const lastWeirdStateTypeRef = useRef<string | null>(null);
-  const forcedElimContextRef = useRef<{
+  const lastPhaseRef = React.useRef<string | null>(null);
+  const lastCurrentPlayerRef = React.useRef<number | null>(null);
+  const lastChoiceIdRef = React.useRef<string | null>(null);
+  const lastAutoResolvedKeyRef = React.useRef<string | null>(null);
+  const lastConnectionStatusRef = React.useRef<ConnectionStatus | null>(null);
+  const lastTimeoutWarningKeyRef = React.useRef<string | null>(null);
+  const lastWeirdStateTypeRef = React.useRef<string | null>(null);
+  const forcedElimContextRef = React.useRef<{
     active: boolean;
     startTotal: number;
     playerNumber: number | null;
@@ -560,24 +546,45 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   const connectionStatus = connection.connectionStatus;
   const { isConnecting, error, lastHeartbeatAt } = connection;
 
-  // Selection + valid target highlighting
-  const [selected, setSelected] = useState<Position | undefined>();
-  const [validTargets, setValidTargets] = useState<Position[]>([]);
+  // ================== Extracted Hook: Board Selection ==================
+  const boardSelection = useBackendBoardSelection(gameState, validMoves);
+  const {
+    selected,
+    validTargets,
+    mustMoveFrom: backendMustMoveFrom,
+    chainCapturePath,
+    setSelected,
+    setValidTargets,
+  } = boardSelection;
 
-  const [ringPlacementCountPrompt, setRingPlacementCountPrompt] = useState<{
-    maxCount: number;
-    hasStack: boolean;
-    placeMovesAtPos: Move[];
-  } | null>(null);
+  // ================== Extracted Hook: Telemetry ==================
+  const telemetry = useBackendTelemetry(gameState, victoryState, routeGameId);
 
-  // Diagnostics / host-level error banner
-  const [fatalGameError, setFatalGameError] = useState<{
-    message: string;
-    technical?: string;
-  } | null>(null);
+  // ================== Extracted Hook: Game Status ==================
+  const gameStatus = useBackendGameStatus({
+    gameId,
+    gameState,
+    victoryState,
+    routeGameId,
+    weirdStateType: telemetry.weirdStateType,
+    weirdStateFirstSeenAt: telemetry.weirdStateFirstSeenAt,
+    weirdStateResignReported: telemetry.weirdStateResignReported,
+    markWeirdStateResignReported: telemetry.markWeirdStateResignReported,
+  });
+  const {
+    fatalGameError,
+    setFatalGameError,
+    isVictoryModalDismissed,
+    dismissVictoryModal,
+    isResigning,
+    isResignConfirmOpen,
+    setIsResignConfirmOpen,
+    handleResign,
+  } = gameStatus;
 
-  // Victory modal dismissal (backend only)
-  const [isVictoryModalDismissed, setIsVictoryModalDismissed] = useState(false);
+  // ================== Extracted Hook: Chat ==================
+  const chat = useBackendChat(backendChatMessages, sendChatMessage);
+  const { chatInput, setChatInput, messages: chatMessages, handleSubmit: handleChatSubmit } = chat;
 
   // Help / controls overlay
   const [showBoardControls, setShowBoardControls] = useState(false);
@@ -605,25 +612,6 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
       // Storage might be disabled; ignore.
     }
   }, [backendAdvancedSidebarStorageKey, showAdvancedSidebarPanels]);
-
-  // Resignation state
-  const [isResigning, setIsResigning] = useState(false);
-  const [isResignConfirmOpen, setIsResignConfirmOpen] = useState(false);
-
-  // Weird-state tracking for rules-UX telemetry.
-  // We only care about coarse weird-state categories (ANM/FE/structural stalemate/LPS)
-  // and a single coarse timestamp for "seconds since weird state" on resign.
-  const weirdStateFirstSeenAtRef = useRef<number | null>(null);
-  const weirdStateTypeRef = useRef<RulesUxWeirdStateType | 'none'>('none');
-  const weirdStateResignReportedRef = useRef<Set<string>>(new Set());
-
-  // Difficulty calibration tracking: ensure we emit at most one
-  // game_completed event per calibration game.
-  const calibrationEventReportedRef = useRef(false);
-
-  // Chat UI state (backend chat only; GameContext always provides sendChatMessage)
-  const chatMessages = backendChatMessages;
-  const [chatInput, setChatInput] = useState('');
 
   // Screen reader announcements for accessibility - using priority queue
   const { queue: announcementQueue, announce, removeAnnouncement } = useGameAnnouncements();
@@ -772,89 +760,6 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     }
   };
 
-  // Track the first time each weird-state type appears so that we can emit
-  // coarse-grained rules-UX telemetry when the local player resigns while a
-  // weird state is active.
-  useEffect(() => {
-    if (!gameState) {
-      weirdStateTypeRef.current = 'none';
-      weirdStateFirstSeenAtRef.current = null;
-      return;
-    }
-
-    const weird = getWeirdStateBanner(gameState, { victoryState });
-    const nextType = weird.type;
-    const currentType = weirdStateTypeRef.current;
-
-    if (nextType === 'none') {
-      weirdStateTypeRef.current = 'none';
-      weirdStateFirstSeenAtRef.current = null;
-      return;
-    }
-
-    if (!isSurfaceableWeirdStateType(nextType as RulesUxWeirdStateType)) {
-      weirdStateTypeRef.current = 'none';
-      weirdStateFirstSeenAtRef.current = null;
-      return;
-    }
-
-    if (currentType !== nextType) {
-      weirdStateTypeRef.current = nextType as RulesUxWeirdStateType;
-      weirdStateFirstSeenAtRef.current = Date.now();
-    }
-  }, [gameState, victoryState]);
-
-  // Emit a single difficulty_calibration_game_completed event for calibration games
-  // that have a stored session (created from the Lobby). This remains purely
-  // client-driven for now and does not depend on server-side calibration flags.
-  useEffect(() => {
-    if (!victoryState || calibrationEventReportedRef.current) {
-      return;
-    }
-
-    const session = getDifficultyCalibrationSession(routeGameId);
-    if (!session || !session.isCalibrationOptIn) {
-      return;
-    }
-
-    if (!gameState) {
-      return;
-    }
-
-    let result: 'win' | 'loss' | 'draw' | 'abandoned' = 'abandoned';
-
-    if (victoryState.reason === 'draw') {
-      result = 'draw';
-    } else if (victoryState.reason === 'abandonment') {
-      result = 'abandoned';
-    } else if (typeof victoryState.winner === 'number') {
-      const winnerPlayer = gameState.players.find((p) => p.playerNumber === victoryState.winner);
-      if (winnerPlayer?.type === 'human') {
-        result = 'win';
-      } else if (winnerPlayer?.type === 'ai') {
-        result = 'loss';
-      }
-    }
-
-    const movesPlayed =
-      Array.isArray(gameState.moveHistory) && gameState.moveHistory.length > 0
-        ? gameState.moveHistory.length
-        : undefined;
-
-    calibrationEventReportedRef.current = true;
-    clearDifficultyCalibrationSession(routeGameId);
-
-    void sendDifficultyCalibrationEvent({
-      type: 'difficulty_calibration_game_completed',
-      boardType: session.boardType,
-      numPlayers: session.numPlayers,
-      difficulty: session.difficulty,
-      isCalibrationOptIn: true,
-      result,
-      movesPlayed,
-    });
-  }, [victoryState, gameState, routeGameId]);
-
   // Placeholder hook for future game_error events (kept for parity with previous GamePage logic)
   useEffect(() => {
     if (!routeGameId) return;
@@ -877,12 +782,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     return () => {
       // no-op cleanup; placeholder for future wiring
     };
-  }, [routeGameId]);
-
-  // Reset backend victory modal dismissal whenever the active game or victory state changes
-  useEffect(() => {
-    setIsVictoryModalDismissed(false);
-  }, [routeGameId, victoryState]);
+  }, [routeGameId, setFatalGameError]);
 
   // When a rematch has been accepted and the server provides a new gameId,
   // navigate to the fresh backend game route. The GameProvider connection
@@ -893,26 +793,6 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
       navigate(`/game/${rematchGameId}`);
     }
   }, [rematchGameId, navigate]);
-
-  // Auto-highlight valid placement targets during ring_placement
-  useEffect(() => {
-    if (!gameState) return;
-
-    if (gameState.currentPhase === 'ring_placement') {
-      if (Array.isArray(validMoves) && validMoves.length > 0) {
-        const placementTargets = validMoves.filter((m) => m.type === 'place_ring').map((m) => m.to);
-
-        setValidTargets((prev) => {
-          if (prev.length !== placementTargets.length) return placementTargets;
-          const allMatch = prev.every((p) => placementTargets.some((pt) => positionsEqual(p, pt)));
-          return allMatch ? prev : placementTargets;
-        });
-      } else {
-        // Only clear if not already empty, avoiding unnecessary re-renders
-        setValidTargets((prev) => (prev.length === 0 ? prev : []));
-      }
-    }
-  }, [gameState?.currentPhase, validMoves]);
 
   // Diagnostics for phase / choice / connection are handled by useBackendDiagnosticsLog.
   // Choice countdown is owned by useBackendDecisionUI.
@@ -946,410 +826,29 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     };
   }, [showBoardControls]);
 
-  // Approximate must-move stack highlighting: if all movement/capture moves
-  // originate from the same stack, treat that as the forced origin.
-  const backendMustMoveFrom: Position | undefined = useMemo(() => {
-    if (!Array.isArray(validMoves) || !gameState) return undefined;
-    if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'capture') {
-      return undefined;
-    }
-
-    const origins = validMoves
-      .filter((m) => m.from && (m.type === 'move_stack' || m.type === 'overtaking_capture'))
-      .map((m) => m.from as Position);
-
-    if (origins.length === 0) return undefined;
-    const first = origins[0];
-    const allSame = origins.every((p) => positionsEqual(p, first));
-    return allSame ? first : undefined;
-  }, [validMoves, gameState]);
-
-  // Extract chain capture path for visualisation during chain_capture phase.
-  // The path includes the starting position and all landing positions visited
-  // in order, mirroring the sandbox host semantics so overlays remain
-  // consistent between backend and local games.
-  const chainCapturePath: Position[] | undefined = useMemo(() => {
-    if (!gameState || gameState.currentPhase !== 'chain_capture') {
-      return undefined;
-    }
-
-    const moveHistory = gameState.moveHistory;
-    if (!moveHistory || moveHistory.length === 0) {
-      return undefined;
-    }
-
-    const currentPlayerNumber = gameState.currentPlayer;
-    const path: Position[] = [];
-
-    for (let i = moveHistory.length - 1; i >= 0; i--) {
-      const move = moveHistory[i];
-      if (!move) continue;
-
-      if (
-        move.player !== currentPlayerNumber ||
-        (move.type !== 'overtaking_capture' && move.type !== 'continue_capture_segment')
-      ) {
-        break;
-      }
-
-      if (move.to) {
-        path.unshift(move.to);
-      }
-
-      if (move.type === 'overtaking_capture' && move.from) {
-        path.unshift(move.from);
-      }
-    }
-
-    return path.length >= 2 ? path : undefined;
-  }, [gameState]);
-
-  // Backend board click handling
-  const handleBackendCellClick = (pos: Position, board: BoardState) => {
-    if (!gameState) return;
-    const posKey = positionToString(pos);
-
-    if (!isPlayer) {
-      toast.error('Spectators cannot submit moves', { id: 'interaction-locked' });
-      return;
-    }
-
-    if (!isConnectionActive) {
-      toast.error('Moves paused while disconnected', { id: 'interaction-locked' });
-      return;
-    }
-
-    // Ring placement phase: attempt canonical 1-ring placement on empties
-    if (gameState.currentPhase === 'ring_placement') {
-      if (!Array.isArray(validMoves) || validMoves.length === 0) {
-        return;
-      }
-
-      const hasStack = !!board.stacks.get(posKey);
-
-      if (!hasStack) {
-        const placeMovesAtPos = validMoves.filter(
-          (m) => m.type === 'place_ring' && positionsEqual(m.to, pos)
-        );
-        if (placeMovesAtPos.length === 0) {
-          // Use enhanced invalid move feedback with shake animation and explanatory toast
-          const reason = analyzeInvalid(gameState, pos, {
-            isPlayer,
-            isMyTurn,
-            isConnected: isConnectionActive,
-            selectedPosition: selected,
-            validMoves: validMoves ?? undefined,
-            mustMoveFrom: backendMustMoveFrom,
-          });
-          triggerInvalidMove(pos, reason);
-          return;
-        }
-
-        const preferred =
-          placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 1) || placeMovesAtPos[0];
-
-        submitMove({
-          type: 'place_ring',
-          to: preferred.to,
-          placementCount: preferred.placementCount,
-          placedOnStack: preferred.placedOnStack,
-        } as PartialMove);
-
-        setSelected(undefined);
-        setValidTargets([]);
-        return;
-      }
-
-      // Clicking stacks in placement phase just selects them.
-      setSelected(pos);
-      setValidTargets([]);
-      return;
-    }
-
-    // Movement/capture phases: select source, then target.
-    if (!selected) {
-      // When there are no valid moves at all, keep the previous behaviour and
-      // simply allow selection without special feedback.
-      if (!Array.isArray(validMoves) || validMoves.length === 0) {
-        setSelected(pos);
-        setValidTargets([]);
-        return;
-      }
-
-      const hasStack = !!board.stacks.get(posKey);
-      const hasMovesFromHere = validMoves.some(
-        (m) => m.from && positionsEqual(m.from as Position, pos)
-      );
-
-      if (hasStack && hasMovesFromHere) {
-        setSelected(pos);
-        const targets = validMoves
-          .filter((m) => m.from && positionsEqual(m.from as Position, pos))
-          .map((m) => m.to);
-        setValidTargets(targets);
-      } else {
-        const reason = analyzeInvalid(gameState, pos, {
-          isPlayer,
-          isMyTurn,
-          isConnected: isConnectionActive,
-          selectedPosition: null,
-          validMoves: validMoves ?? undefined,
-          mustMoveFrom: backendMustMoveFrom,
-        });
-        triggerInvalidMove(pos, reason);
-      }
-      return;
-    }
-
-    // Clicking the same cell clears selection.
-    if (positionsEqual(selected, pos)) {
-      setSelected(undefined);
-      setValidTargets([]);
-      return;
-    }
-
-    // If highlighted and a matching move exists, submit.
-    if (Array.isArray(validMoves) && validMoves.length > 0) {
-      const matching = validMoves.find(
-        (m) => m.from && positionsEqual(m.from, selected) && positionsEqual(m.to, pos)
-      );
-
-      if (matching) {
-        submitMove({
-          type: matching.type,
-          from: matching.from,
-          to: matching.to,
-        } as PartialMove);
-
-        setSelected(undefined);
-        setValidTargets([]);
-        return;
-      }
-    }
-
-    // Otherwise, treat either as a new (valid) selection or as an invalid
-    // landing/selection and surface feedback.
-    const hasStack = !!board.stacks.get(posKey);
-    const hasMovesFromHere =
-      Array.isArray(validMoves) &&
-      validMoves.some((m) => m.from && positionsEqual(m.from as Position, pos));
-
-    if (hasStack && hasMovesFromHere) {
-      setSelected(pos);
-      if (Array.isArray(validMoves) && validMoves.length > 0) {
-        const targets = validMoves
-          .filter((m) => m.from && positionsEqual(m.from as Position, pos))
-          .map((m) => m.to);
-        setValidTargets(targets);
-      } else {
-        setValidTargets([]);
-      }
-    } else {
-      const reason = analyzeInvalid(gameState, pos, {
-        isPlayer,
-        isMyTurn,
-        isConnected: isConnectionActive,
-        selectedPosition: selected ?? null,
-        validMoves: validMoves ?? undefined,
-        mustMoveFrom: backendMustMoveFrom,
-      });
-      triggerInvalidMove(pos, reason);
-    }
-  };
-
-  // Backend double-click handling for ring_placement (prefer 2-ring where legal)
-  const handleBackendCellDoubleClick = (pos: Position, board: BoardState) => {
-    if (!gameState) return;
-    if (!isPlayer || !isConnectionActive) {
-      toast.error('Cannot modify placements while disconnected or spectating', {
-        id: 'interaction-locked',
-      });
-      return;
-    }
-    if (gameState.currentPhase !== 'ring_placement') {
-      return;
-    }
-
-    if (!Array.isArray(validMoves) || validMoves.length === 0) {
-      return;
-    }
-
-    const key = positionToString(pos);
-    const hasStack = !!board.stacks.get(key);
-
-    const placeMovesAtPos = validMoves.filter(
-      (m) => m.type === 'place_ring' && positionsEqual(m.to, pos)
-    );
-    if (placeMovesAtPos.length === 0) {
-      return;
-    }
-
-    let chosen: Move | undefined;
-
-    if (!hasStack) {
-      const twoRing = placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 2);
-      const oneRing = placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 1);
-      chosen = twoRing || oneRing || placeMovesAtPos[0];
-    } else {
-      chosen = placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 1) || placeMovesAtPos[0];
-    }
-
-    if (!chosen) {
-      return;
-    }
-
-    submitMove({
-      type: 'place_ring',
-      to: chosen.to,
-      placementCount: chosen.placementCount,
-      placedOnStack: chosen.placedOnStack,
-    } as PartialMove);
-
-    setSelected(undefined);
-    setValidTargets([]);
-  };
-
-  // Backend context-menu placement handler
-  const handleBackendCellContextMenu = (pos: Position, board: BoardState) => {
-    if (!gameState) return;
-    if (!isPlayer || !isConnectionActive) {
-      toast.error('Cannot modify placements while disconnected or spectating', {
-        id: 'interaction-locked',
-      });
-      return;
-    }
-    if (gameState.currentPhase !== 'ring_placement') {
-      return;
-    }
-
-    if (!Array.isArray(validMoves) || validMoves.length === 0) {
-      return;
-    }
-
-    const key = positionToString(pos);
-    const hasStack = !!board.stacks.get(key);
-
-    const placeMovesAtPos = validMoves.filter(
-      (m) => m.type === 'place_ring' && positionsEqual(m.to, pos)
-    );
-    if (placeMovesAtPos.length === 0) {
-      return;
-    }
-
-    const counts = placeMovesAtPos.map((m) => m.placementCount ?? 1);
-    const maxCount = Math.max(...counts);
-
-    if (maxCount <= 1) {
-      const chosen =
-        placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 1) || placeMovesAtPos[0];
-      if (!chosen) return;
-
-      submitMove({
-        type: 'place_ring',
-        to: chosen.to,
-        placementCount: chosen.placementCount,
-        placedOnStack: chosen.placedOnStack,
-      } as PartialMove);
-
-      setSelected(undefined);
-      setValidTargets([]);
-      return;
-    }
-
-    setRingPlacementCountPrompt({
-      maxCount,
-      hasStack,
-      placeMovesAtPos,
-    });
-  };
-
-  const handleConfirmRingPlacementCount = (count: number) => {
-    const prompt = ringPlacementCountPrompt;
-    if (!prompt) return;
-
-    const chosen = prompt.placeMovesAtPos.find((m) => (m.placementCount ?? 1) === count);
-    if (!chosen) {
-      setRingPlacementCountPrompt(null);
-      return;
-    }
-
-    submitMove({
-      type: 'place_ring',
-      to: chosen.to,
-      placementCount: chosen.placementCount,
-      placedOnStack: chosen.placedOnStack,
-    } as PartialMove);
-
-    setSelected(undefined);
-    setValidTargets([]);
-    setRingPlacementCountPrompt(null);
-  };
-
-  // Handle resignation
-  const handleResign = async () => {
-    if (!gameId || isResigning) return;
-
-    setIsResigning(true);
-    try {
-      const weirdType = weirdStateTypeRef.current;
-      const firstSeenAt = weirdStateFirstSeenAtRef.current;
-
-      // Derive coarse board / difficulty context from the current GameState.
-      let boardTypeForTelemetry: GameState['boardType'] | undefined;
-      let numPlayersForTelemetry: number | undefined;
-      let aiDifficultyForTelemetry: number | undefined;
-
-      if (gameState) {
-        boardTypeForTelemetry = gameState.boardType;
-        numPlayersForTelemetry = gameState.players.length;
-
-        const aiPlayers = gameState.players.filter((p) => p.type === 'ai');
-        let maxDifficulty = 0;
-        for (const p of aiPlayers) {
-          const d = p.aiProfile?.difficulty ?? p.aiDifficulty;
-          if (typeof d === 'number' && Number.isFinite(d) && d > maxDifficulty) {
-            maxDifficulty = d;
-          }
-        }
-        if (maxDifficulty > 0) {
-          aiDifficultyForTelemetry = maxDifficulty;
-        }
-      }
-
-      if (
-        boardTypeForTelemetry &&
-        typeof numPlayersForTelemetry === 'number' &&
-        numPlayersForTelemetry > 0 &&
-        weirdType &&
-        weirdType !== 'none' &&
-        !weirdStateResignReportedRef.current.has(weirdType)
-      ) {
-        const secondsSinceWeirdState =
-          typeof firstSeenAt === 'number'
-            ? Math.max(0, Math.round((Date.now() - firstSeenAt) / 1000))
-            : undefined;
-
-        weirdStateResignReportedRef.current.add(weirdType);
-
-        void sendRulesUxEvent({
-          type: 'rules_weird_state_resign',
-          boardType: boardTypeForTelemetry,
-          numPlayers: numPlayersForTelemetry,
-          aiDifficulty: aiDifficultyForTelemetry,
-          weirdStateType: weirdType as RulesUxWeirdStateType,
-          secondsSinceWeirdState,
-        });
-      }
-
-      await gameApi.leaveGame(gameId);
-      toast.success('You have resigned from the game.');
-      // The server will broadcast victory/game over state via WebSocket
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to resign';
-      toast.error(message);
-      setIsResigning(false);
-    }
-  };
+  // ================== Extracted Hook: Board Handlers ==================
+  const boardHandlers = useBackendBoardHandlers({
+    gameState,
+    validMoves,
+    selected,
+    validTargets,
+    mustMoveFrom: backendMustMoveFrom,
+    setSelected,
+    setValidTargets,
+    submitMove,
+    isPlayer,
+    isConnectionActive,
+    isMyTurn,
+    triggerInvalidMove,
+  });
+  const {
+    ringPlacementCountPrompt,
+    handleCellClick: handleBackendCellClick,
+    handleCellDoubleClick: handleBackendCellDoubleClick,
+    handleCellContextMenu: handleBackendCellContextMenu,
+    handleConfirmRingPlacementCount,
+    closeRingPlacementPrompt,
+  } = boardHandlers;
 
   // Early-loading states
   if (isConnecting && !gameState) {
@@ -1842,9 +1341,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
         isOpen={!!victoryState && !isVictoryModalDismissed}
         viewModel={victoryViewModel}
         gameEndExplanation={gameEndExplanation}
-        onClose={() => {
-          setIsVictoryModalDismissed(true);
-        }}
+        onClose={dismissVictoryModal}
         onReturnToLobby={() => navigate('/lobby')}
         onRequestRematch={() => {
           requestRematch();
@@ -1990,7 +1487,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
                   </button>
                 </div>
                 <p className="mt-1 text-amber-100/80">
-                  As Player 2, you may use this once, immediately after Player 1’s first turn.
+                  As Player 2, you may use this once, immediately after Player 1's first turn.
                 </p>
               </div>
             )}
@@ -2075,16 +1572,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
                 ))
               )}
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!chatInput.trim()) return;
-
-                sendChatMessage(chatInput);
-                setChatInput('');
-              }}
-              className="flex gap-2"
-            >
+            <form onSubmit={handleChatSubmit} className="flex gap-2">
               <input
                 type="text"
                 value={chatInput}
@@ -2110,7 +1598,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             : Math.min(2, ringPlacementCountPrompt?.maxCount ?? 1)
         }
         isStackPlacement={ringPlacementCountPrompt?.hasStack ?? false}
-        onClose={() => setRingPlacementCountPrompt(null)}
+        onClose={closeRingPlacementPrompt}
         onConfirm={handleConfirmRingPlacementCount}
       />
 

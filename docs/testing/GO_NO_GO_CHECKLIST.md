@@ -122,7 +122,7 @@ These gates ensure the multiplayer lifecycle (lobby, join/leave, reconnection, s
     - Links to green CI runs for the candidate commit that include the multiplayer / reconnection / spectator suites listed in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
   - **References**
     - Multiplayer lifecycle and E2E coverage discussion in [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
-    - v1.0 environment & rollout success criteria in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:195-230).
+    - v1.0 environment & rollout success criteria in [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:195-230).
 
 ---
 
@@ -185,7 +185,7 @@ This gate ties the overall automated test surface and coverage targets to a sing
     - Output from a recent `./scripts/test-summary.sh` run (or CI equivalent) attached to the release ticket.
   - **References**
     - Test status and categories: [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
-    - v1.0 test coverage requirements: [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).
+    - v1.0 test coverage requirements: [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:164-174).
 
 - [ ] **Coverage meets or exceeds v1.0 targets**
   - **Automation / commands**
@@ -195,10 +195,10 @@ This gate ties the overall automated test surface and coverage targets to a sing
       - `node scripts/analyze-coverage.js` → [`scripts/analyze-coverage.js`](../../scripts/analyze-coverage.js:1).
   - **Evidence**
     - Coverage reports (for example Codecov summary and local `coverage/coverage-summary.json`) showing that:
-      - Overall coverage and key contexts meet or exceed the v1.0 targets defined in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).  
+      - Overall coverage and key contexts meet or exceed the v1.0 targets defined in [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:164-174).  
         (Do **not** change those targets here; this checklist only checks whether they are met.)
   - **References**
-    - Coverage status and targets: [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:164-174).
+    - Coverage status and targets: [`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md), [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md:164-174).
 
 ---
 
@@ -253,7 +253,7 @@ These gates connect the P‑01 k6 load scenarios, SLO documentation, and alertin
       - SLO metrics within thresholds and with sufficient headroom (per §2 of [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:296)).
     - No persistent critical alerts during the steady‑state portion of the P‑01 runs.
   - **References**
-    - SLO definitions and interpretation guidance in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:296-397) and [`ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:925-1077).
+    - SLO definitions and interpretation guidance in [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md:296-397) and [`ALERTING_THRESHOLDS.md`](../operations/ALERTING_THRESHOLDS.md:925-1077).
 
 ---
 

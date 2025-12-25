@@ -27,7 +27,10 @@ import { toast } from 'react-hot-toast';
 import type { Position, GameState, Move, BoardState } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import type { PartialMove } from './useGameActions';
-import { analyzeInvalidMove as analyzeInvalid } from './useInvalidMoveFeedback';
+import {
+  analyzeInvalidMove as analyzeInvalid,
+  type InvalidMoveReason,
+} from './useInvalidMoveFeedback';
 
 /**
  * Ring placement prompt state for the context-menu dialog.
@@ -65,7 +68,7 @@ export interface UseBackendBoardHandlersDeps {
   /** Whether it's the current user's turn */
   isMyTurn: boolean;
   /** Function to trigger invalid move feedback */
-  triggerInvalidMove: (pos: Position, reason: string) => void;
+  triggerInvalidMove: (pos: Position, reason: InvalidMoveReason) => void;
 }
 
 /**

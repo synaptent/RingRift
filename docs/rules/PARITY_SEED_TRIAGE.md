@@ -98,10 +98,10 @@ Use this document when deciding **which seeds/traces are worth preserving** as h
 | Seed | Board Type | First Diverging Move | Divergence Type | Root Cause Hypothesis                                  | Test File                                                                                                                         | Status       |
 | ---- | ---------- | -------------------- | --------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | 5    | square8    | Move 12              | capture         | Backend missing overtaking_capture enumeration         | [`TraceParity.seed5.firstDivergence.test.ts`](../../tests/unit/TraceParity.seed5.firstDivergence.test.ts)                         | **RESOLVED** |
-| 5    | square8    | Move 43              | territory       | Territory region detection/gating differences          | [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.checkpoints.test.ts)                      | **RESOLVED** |
+| 5    | square8    | Move 43              | territory       | Territory region detection/gating differences          | [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.checkpoints.test.ts)                 | **RESOLVED** |
 | 5    | square8    | Move 45              | territory       | Territory decision phase orchestration                 | [`TerritoryDecision.seed5Move45.parity.test.ts`](../../tests/unit/TerritoryDecision.seed5Move45.parity.test.ts)                   | **RESOLVED** |
-| 5    | square8    | Move 64              | phase           | Late-game move match failure at end of game            | [`Backend_vs_Sandbox.seed5.bisectParity.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.bisectParity.test.ts)                    | Open         |
-| 14   | square8    | Move ~31             | placement       | Multi-ring placement validation (`placementCount > 1`) | [`TraceParity.seed14.firstDivergence.test.ts`](../tests/unit/TraceParity.seed14.firstDivergence.test.ts)                          | Open         |
+| 5    | square8    | Move 64              | phase           | Late-game move match failure at end of game            | [`Backend_vs_Sandbox.seed5.bisectParity.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.bisectParity.test.ts)               | Open         |
+| 14   | square8    | Move ~31             | placement       | Multi-ring placement validation (`placementCount > 1`) | [`TraceParity.seed14.firstDivergence.test.ts`](../../archive/tests/unit/TraceParity.seed14.firstDivergence.test.ts)               | Open         |
 | 14   | square8    | Move 33              | line            | Line detection/processing differences                  | [`ParityDebug.seed14.trace.test.ts`](../../tests/unit/ParityDebug.seed14.trace.test.ts)                                           | Open         |
 | 17   | square8    | Move 16              | capture         | Missing `overtaking_capture` (c1×d2→f4)                | [`Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts) | Open         |
 | 17   | square8    | Move 33              | chain_capture   | Chain capture phase out-of-sync (h4×f4→c4)             | [`Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts) | Open         |
@@ -139,11 +139,11 @@ The first actual divergence for Seed 5 now occurs at move 64 (end of game), whic
 
 #### Related Skipped Tests
 
-- [`Backend_vs_Sandbox.seed5.bisectParity.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.bisectParity.test.ts) – `TODO-BISECT-PARITY`
-- [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.checkpoints.test.ts)
-- [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.internalStateParity.test.ts)
-- [`Backend_vs_Sandbox.seed5.move1Checkpoints.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.move1Checkpoints.test.ts)
-- [`Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts`](../tests/unit/Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts)
+- [`Backend_vs_Sandbox.seed5.bisectParity.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.bisectParity.test.ts) – `TODO-BISECT-PARITY`
+- [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.checkpoints.test.ts)
+- [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.internalStateParity.test.ts)
+- [`Backend_vs_Sandbox.seed5.move1Checkpoints.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.move1Checkpoints.test.ts)
+- [`Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts)
 - [`TerritoryDecision.seed5Move45.parity.test.ts`](../../tests/unit/TerritoryDecision.seed5Move45.parity.test.ts) – `.skip`
 - [`TerritoryDetection.seed5Move45.parity.test.ts`](../../tests/unit/TerritoryDetection.seed5Move45.parity.test.ts)
 
@@ -184,7 +184,7 @@ The first actual divergence for Seed 5 now occurs at move 64 (end of game), whic
 
 #### Related Skipped Tests
 
-- [`TraceParity.seed14.firstDivergence.test.ts`](../tests/unit/TraceParity.seed14.firstDivergence.test.ts) – `.skip`, `TODO-SEED14-DIVERGENCE`
+- [`TraceParity.seed14.firstDivergence.test.ts`](../../archive/tests/unit/TraceParity.seed14.firstDivergence.test.ts) – `.skip`, `TODO-SEED14-DIVERGENCE`
 - [`ParityDebug.seed14.trace.test.ts`](../../tests/unit/ParityDebug.seed14.trace.test.ts)
 - [`Seed14Move35LineParity.test.ts`](../../tests/unit/Seed14Move35LineParity.test.ts)
 
@@ -240,13 +240,13 @@ The first actual divergence for Seed 5 now occurs at move 64 (end of game), whic
 - [`TraceParity.seed17.firstDivergence.test.ts`](../../tests/unit/TraceParity.seed17.firstDivergence.test.ts) – `.skip`, `TODO-SEED17-STRICT-DIVERGENCE`
 - [`Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts) – `.skip`, `TODO-SEED17-CAPTURE-PARITY`
 - [`Seed17Move52Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move52Parity.GameEngine_vs_Sandbox.test.ts)
-- [`Sandbox_vs_Backend.seed17.traceDebug.test.ts`](../tests/unit/Sandbox_vs_Backend.seed17.traceDebug.test.ts)
+- [`Sandbox_vs_Backend.seed17.traceDebug.test.ts`](../../archive/tests/unit/Sandbox_vs_Backend.seed17.traceDebug.test.ts)
 - [`SInvariant.seed17FinalBoard.test.ts`](../../tests/unit/SInvariant.seed17FinalBoard.test.ts)
 
 #### Suspected Code Paths
 
 - [`src/server/game/RuleEngine.ts`](../../src/server/game/RuleEngine.ts) – capture enumeration, chain capture detection
-- [`src/shared/engine/chainCaptureTracking.ts`](../src/shared/engine/chainCaptureTracking.ts) – chain capture logic
+- [`src/shared/engine/chainCaptureTracking.ts`](../../src/shared/engine/chainCaptureTracking.ts) – chain capture logic
 - [`src/server/game/GameEngine.ts`](../../src/server/game/GameEngine.ts) – phase transitions after captures
 - [`src/shared/engine/turnLogic.ts`](../../src/shared/engine/turnLogic.ts) – turn advancement
 
@@ -355,9 +355,9 @@ The first actual divergence for Seed 5 now occurs at move 64 (end of game), whic
 
 | File                                                                                                                              | Seed(s) | TODO Marker                     | Description                  |
 | --------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- | ---------------------------- |
-| [`Backend_vs_Sandbox.traceParity.test.ts`](../tests/unit/Backend_vs_Sandbox.traceParity.test.ts)                                  | All     | `TODO-TRACE-PARITY`             | Full trace replay parity     |
+| [`Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts`](../../tests/parity/Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts)     | All     | `TODO-TRACE-PARITY`             | Full trace replay parity     |
 | [`TraceParity.seed5.firstDivergence.test.ts`](../../tests/unit/TraceParity.seed5.firstDivergence.test.ts)                         | 5       | None (active)                   | First divergence helper      |
-| [`TraceParity.seed14.firstDivergence.test.ts`](../tests/unit/TraceParity.seed14.firstDivergence.test.ts)                          | 14      | `TODO-SEED14-DIVERGENCE`        | First divergence helper      |
+| [`TraceParity.seed14.firstDivergence.test.ts`](../../archive/tests/unit/TraceParity.seed14.firstDivergence.test.ts)               | 14      | `TODO-SEED14-DIVERGENCE`        | First divergence helper      |
 | [`TraceParity.seed17.firstDivergence.test.ts`](../../tests/unit/TraceParity.seed17.firstDivergence.test.ts)                       | 17      | `TODO-SEED17-STRICT-DIVERGENCE` | First divergence (strict)    |
 | [`Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](../../tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts) | 17      | `TODO-SEED17-CAPTURE-PARITY`    | Focused capture parity       |
 | [`TerritoryDecision.seed5Move45.parity.test.ts`](../../tests/unit/TerritoryDecision.seed5Move45.parity.test.ts)                   | 5       | `.skip`                         | Territory decision parity    |
@@ -473,7 +473,7 @@ npx ts-node tests/scripts/dump_seed5_trace.ts
 
 ### 9.4 Full Parity Achieved When:
 
-- [ ] `Backend_vs_Sandbox.traceParity.test.ts` unskipped and passing for all board types
+- [ ] `Backend_vs_Sandbox.seed5.prefixDiagnostics.test.ts` unskipped and passing for all board types
 - [ ] Zero TODO markers with "PARITY" in tests/unit/
 - [ ] Trace-based debugging is reliable for any seed
 - [x] **DIV-008 (late-game phase/player) DEFERRED** – Within tolerance, does not affect gameplay correctness

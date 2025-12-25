@@ -28,7 +28,7 @@ The hierarchy below orders sources by normative authority. Higher bullets win on
 
 **2. Executable rules semantics SSoT (TS engine)**
 
-- Shared engine helpers and core: [`core.ts`](../../src/shared/engine/core.ts:1), [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts:1), [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts:1), [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts:21), [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts:36), [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts:1), [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts:1), [`victoryLogic.ts`](src/shared/engine/aggregates/VictoryAggregate.ts:45), placement helpers and related modules under [`src/shared/engine`](../../src/shared/engine).
+- Shared engine helpers and core: [`core.ts`](../../src/shared/engine/core.ts:1), [`movementLogic.ts`](../../src/shared/engine/movementLogic.ts:1), [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts:1), [`lineDetection.ts`](../../src/shared/engine/lineDetection.ts:21), [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts:36), [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts:1), [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts:1), [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45), placement helpers and related modules under [`src/shared/engine`](../../src/shared/engine).
 - Domain aggregates (single source of truth per domain):
   - Placement: [`PlacementAggregate.ts`](../../src/shared/engine/aggregates/PlacementAggregate.ts:1)
   - Movement: [`MovementAggregate.ts`](../../src/shared/engine/aggregates/MovementAggregate.ts:1)
@@ -67,7 +67,7 @@ The hierarchy below orders sources by normative authority. Higher bullets win on
 **6. Operational / rollout SSoTs (derived over engine + hosts)**
 
 - Orchestrator rollout and legacy shutdown: [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md) and [`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](../runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md).
-- Strict invariant soaks and termination guarantees: [`docs/STRICT_INVARIANT_SOAKS.md`](../testing/STRICT_INVARIANT_SOAKS.md), orchestrator soak harness in [`scripts/run-orchestrator-soak.ts`](../../scripts/run-orchestrator-soak.ts:1) with summaries under [`results/orchestrator_soak_summary.json`](results/orchestrator_soak_summary.json:1).
+- Strict invariant soaks and termination guarantees: [`docs/STRICT_INVARIANT_SOAKS.md`](../testing/STRICT_INVARIANT_SOAKS.md), orchestrator soak harness in [`scripts/run-orchestrator-soak.ts`](../../scripts/run-orchestrator-soak.ts:1) with summaries under [`results/orchestrator_soak_summary.json`](../../results/orchestrator_soak_summary.json:1).
 - Shared engine and aggregate design: [`RULES_ENGINE_ARCHITECTURE.md`](../architecture/RULES_ENGINE_ARCHITECTURE.md), [`docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`](../architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md), [`docs/DOMAIN_AGGREGATE_DESIGN.md`](../architecture/DOMAIN_AGGREGATE_DESIGN.md).
 
 **7. Implementation status / meta-docs (status only, non-semantic)**

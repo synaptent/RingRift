@@ -329,4 +329,4 @@ ringrift_current_temperature{config="square8_2p"} 0.45
 - [TRAINING_FEATURES.md](TRAINING_FEATURES.md) - Training parameters and CLI flags
 - [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - High-level pipeline overview
 - [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Orchestrator documentation
-- [scripts/README.md](../scripts/README.md) - Script reference
+- [scripts/README.md](../../scripts/README.md) - Script reference

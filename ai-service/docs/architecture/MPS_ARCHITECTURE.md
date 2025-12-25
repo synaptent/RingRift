@@ -45,7 +45,7 @@ with:
 - `148 = 128 + 20` → 128 filters, 20 global features (older/legacy default).
 
 **Canonical fix:** use the modern loader that infers architecture hyperparameters
-from checkpoint metadata/weights (see `app/ai/neural_net.py`), and use a
+from checkpoint metadata/weights (see `app/ai/neural_net/__init__.py`), and use a
 board-appropriate `nn_model_id`:
 
 - Square8 2p v2 family: `ringrift_v4_sq8_2p`
@@ -102,7 +102,7 @@ PYTHONPATH=ai-service python ai-service/scripts/inspect_nn_checkpoint.py --nn-mo
 ### Environment Variable Configuration
 
 Architecture/device selection is controlled via the `RINGRIFT_NN_ARCHITECTURE`
-environment variable (see `app/ai/neural_net.py`):
+environment variable (see `app/ai/neural_net/__init__.py`):
 
 **Option 1: Explicit MPS Selection**
 
@@ -222,7 +222,7 @@ Speedup: 1.9x
   `value_fc1 in_features: checkpoint=212 expected=148`
   it usually means the code instantiated a smaller legacy model (128 filters)
   and tried to load a canonical 192-filter checkpoint. Ensure you are running
-  the current `app/ai/neural_net.py` loader and that your scripts do not force
+  the current `app/ai/neural_net/__init__.py` loader and that your scripts do not force
   legacy defaults / deprecated model IDs.
 
 - If you see errors like:
@@ -307,9 +307,9 @@ INFO:app.ai.neural_net:Using MPS device with MPS-compatible architecture
 ## References
 
 - PyTorch MPS Backend: https://pytorch.org/docs/stable/notes/mps.html
-- Original Architecture: [`ai-service/app/ai/neural_net/__init__.py:202`](../app/ai/neural_net.py:202)
-- MPS Architecture: [`ai-service/app/ai/neural_net/__init__.py:325`](../app/ai/neural_net.py:325)
-- Tests: [`ai-service/tests/test_mps_architecture.py`](../tests/test_mps_architecture.py)
+- Original Architecture: [`ai-service/app/ai/neural_net/__init__.py:202`](../../app/ai/neural_net/__init__.py:202)
+- MPS Architecture: [`ai-service/app/ai/neural_net/__init__.py:325`](../../app/ai/neural_net/__init__.py:325)
+- Tests: [`ai-service/tests/test_mps_architecture.py`](../../tests/test_mps_architecture.py)
 
 ## V2 Memory-Tiered Architectures (Recommended)
 

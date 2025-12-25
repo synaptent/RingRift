@@ -486,7 +486,7 @@ The `ringsPerPlayer` cap applies only to **own-colour rings** in play, not captu
 
 - **Move generation** ([`game_engine/__init__.py`](../../ai-service/app/game_engine/__init__.py)): Ring placement validation uses `count_rings_in_play_for_player()` to enforce the per-player cap correctly.
 
-- **State encoding**: The neural network encoding in [`neural_net.py`](../ai-service/app/ai/neural_net/__init__.py) includes:
+- **State encoding**: The neural network encoding in [`neural_net.py`](../../ai-service/app/ai/neural_net/__init__.py) includes:
   - Stack heights (normalized) for my/opponent stacks (channels 0/1)
   - `rings_in_hand` per player (global features)
   - `eliminated_rings` per player (global features)

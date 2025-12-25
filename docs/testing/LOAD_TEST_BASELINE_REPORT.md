@@ -26,11 +26,11 @@
   - `GET /health` against `http://localhost:3000/health`
   - `POST /api/auth/login` via [`loginAndGetToken()`](../../tests/load/auth/helpers.js:30)
 - Both requests failed with `dial tcp 127.0.0.1:3000: connect: connection refused`, indicating the staging backend was not reachable at the time of the run.
-- [`loginAndGetToken()`](../../tests/load/auth/helpers.js:65) threw, and k6 aborted during setup (no scenario iterations ran), but [`makeHandleSummary()`](../../tests/load/summary.js:168) still produced a compact JSON summary at [`results/load/game-creation.staging.summary.json`](results/load/game-creation.staging.summary.json:1).
+- [`loginAndGetToken()`](../../tests/load/auth/helpers.js:65) threw, and k6 aborted during setup (no scenario iterations ran), but [`makeHandleSummary()`](../../tests/load/summary.js:168) still produced a compact JSON summary at [`results/load/game-creation.staging.summary.json`](../../results/load/game-creation.staging.summary.json:1).
 
 **Observed metrics vs SLOs – Game Creation (staging, backend unreachable):**
 
-Values below are from [`results/load/game-creation.staging.summary.json`](results/load/game-creation.staging.summary.json:1) and the `staging` thresholds in [`thresholds.json`](../../tests/load/config/thresholds.json:11):
+Values below are from [`results/load/game-creation.staging.summary.json`](../../results/load/game-creation.staging.summary.json:1) and the `staging` thresholds in [`thresholds.json`](../../tests/load/config/thresholds.json:11):
 
 | Metric                                      | Observed (this run)        | Staging SLO / threshold                                          | Verdict       | Notes                                                                                          |
 | ------------------------------------------- | -------------------------- | ---------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------- |

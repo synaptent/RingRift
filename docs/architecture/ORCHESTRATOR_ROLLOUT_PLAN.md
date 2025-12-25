@@ -201,8 +201,8 @@ This section enumerates remaining TS backend and sandbox modules that either:
 | `src/server/game/RuleEngine.ts`                     | Stateless rules facade for validation and enumeration. Delegates to shared aggregates and helpers but still exposes legacy `processMove`, `processLineFormation`, and `processTerritoryDisconnection` flows.                                                       | Y – contains historical orchestration and some pre-aggregate helpers, though main semantics now delegate to aggregates. | Partial – retain validation/enumeration entrypoints, but **delete or quarantine legacy `processMove` and post-processing helpers** once orchestrator-only path is stable. | Yes for legacy helpers – legacy helpers become diagnostics-only until removal. | Phase A (no production calls to `processMove`), Phase C (delete or move to diagnostics) |
 | `src/server/game/turn/TurnEngine.ts`                | Shared backend turn lifecycle built on `turnLogic` and shared aggregates. Used by `GameEngine.advanceGame`.                                                                                                                                                        | N – lifecycle orchestration only (semantics live in shared engine).                                                     | No.                                                                                                                                                                       | No.                                                                            | N/A (already canonical host lifecycle)                                                  |
 | `src/server/game/BoardManager.ts`                   | Backend board container and geometry bridge. Used by `GameEngine`, `RuleEngine`, and `TurnEngine`.                                                                                                                                                                 | N – uses shared core geometry and does not define independent rules.                                                    | No.                                                                                                                                                                       | No.                                                                            | N/A                                                                                     |
-| `src/server/game/rules/lineProcessing.ts`           | Historical backend line-processing module referenced in earlier passes. Marked as removed in [`docs/RULES_ENGINE_SURFACE_AUDIT.md`](./RULES_ENGINE_SURFACE_AUDIT.md:105).                                                                                          | Y (historical)                                                                                                          | Already removed (no current code path).                                                                                                                                   | N/A                                                                            | Historical only                                                                         |
-| `src/server/game/rules/territoryProcessing.ts`      | Historical backend territory-processing module. Marked as removed in [`docs/RULES_ENGINE_SURFACE_AUDIT.md`](./RULES_ENGINE_SURFACE_AUDIT.md:106).                                                                                                                  | Y (historical)                                                                                                          | Already removed.                                                                                                                                                          | N/A                                                                            | Historical only                                                                         |
+| `src/server/game/rules/lineProcessing.ts`           | Historical backend line-processing module referenced in earlier passes. Marked as removed in [`docs/RULES_ENGINE_SURFACE_AUDIT.md`](../rules/RULES_ENGINE_SURFACE_AUDIT.md:105).                                                                                   | Y (historical)                                                                                                          | Already removed (no current code path).                                                                                                                                   | N/A                                                                            | Historical only                                                                         |
+| `src/server/game/rules/territoryProcessing.ts`      | Historical backend territory-processing module. Marked as removed in [`docs/RULES_ENGINE_SURFACE_AUDIT.md`](../rules/RULES_ENGINE_SURFACE_AUDIT.md:106).                                                                                                           | Y (historical)                                                                                                          | Already removed.                                                                                                                                                          | N/A                                                                            | Historical only                                                                         |
 | `src/server/game/rules/captureChainEngine.ts`       | Historical backend capture-chain state helper. Replaced by `CaptureAggregate` and `GameEngine` wiring.                                                                                                                                                             | Y (historical)                                                                                                          | Already removed.                                                                                                                                                          | N/A                                                                            | Historical only                                                                         |
 | `src/server/game/RulesBackendFacade.ts`             | Backend rules/AI boundary; selects between TS and Python engines and coordinates shadow parity via `rulesParityMetrics`.                                                                                                                                           | N – engine selection and parity only.                                                                                   | No.                                                                                                                                                                       | No.                                                                            | N/A                                                                                     |
 | `src/server/services/OrchestratorRolloutService.ts` | Backend service controlling orchestrator rollout percentage, shadow mode, allow/deny lists, and circuit breaker wiring, surfaced via `/api/admin/orchestrator/status` and Prometheus metrics.                                                                      | N – rollout control only.                                                                                               | No.                                                                                                                                                                       | No.                                                                            | N/A                                                                                     |
@@ -281,7 +281,7 @@ The remaining orchestrator rollout and legacy shutdown work is organised into fo
   - Mark legacy helpers as deprecated with SSOT banners pointing to shared aggregates and orchestrator, and add TODOs assigning them to **Phase C** removal.
 
 - Tighten backend testing around the adapter:
-  - Ensure that existing backend tests for lines, territory, and LPS (`tests/unit/GameEngine.lines.scenarios.test.ts`, `tests/unit/GameEngine.territoryDisconnection.test.ts`, etc.) run with `ORCHESTRATOR_ADAPTER_ENABLED=true` and `RINGRIFT_RULES_MODE=ts`.
+  - Ensure that existing backend tests for lines, territory, and LPS (`tests/unit/GameEngine.lines.scenarios.test.ts`, `tests/unit/BoardManager.territoryDisconnection.test.ts`, etc.) run with `ORCHESTRATOR_ADAPTER_ENABLED=true` and `RINGRIFT_RULES_MODE=ts`.
   - Add or extend adapter-focused tests if needed to cover:
     - Capture chains including continuation and termination.
     - Line processing including overlength line rewards.
@@ -502,7 +502,7 @@ These conditions define "Success" for Phase 2 in the context of P18.4-4; moving 
     [`results/orchestrator_soak_smoke.json`](../../results/orchestrator_soak_smoke.json:1).
   - For deeper offline or scheduled runs (not required for this SLO) see
     `npm run soak:orchestrator:nightly`, which produces
-    [`results/orchestrator_soak_nightly.json`](../results/orchestrator_soak_nightly.json:1).
+    [`results/orchestrator_soak_summary.json`](../../results/orchestrator_soak_summary.json:1).
 - **Target:**
   - `totalInvariantViolations == 0` and no S-invariant or host-consistency
     violations recorded in the summary.
@@ -673,7 +673,7 @@ following suites must be green. These are explicitly tied to the **PASS18 Weakes
   - **Capture & Territory Host Parity:**
     - `tests/unit/captureSequenceEnumeration.test.ts`
     - `tests/unit/GameEngine.chainCapture*.test.ts`
-    - `tests/unit/GameEngine.territoryDisconnection.test.ts`
+    - `tests/unit/BoardManager.territoryDisconnection.test.ts`
     - `tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts`
   - **AI RNG Parity:**
     - `tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts`
@@ -744,7 +744,7 @@ Rollbacks should rely on:
   - Production deployments using the existing deployment runbooks and
     rollback procedures in
     [`docs/runbooks/DEPLOYMENT_ROUTINE.md`](../runbooks/DEPLOYMENT_ROUTINE.md:1)
-    and [`docs/runbooks/DEPLOYMENT_ROLLBACK.md`](runbooks/DEPLOYMENT_ROLLOUT.md:1).
+    and [`docs/runbooks/DEPLOYMENT_ROLLBACK.md`](../runbooks/DEPLOYMENT_ROLLBACK.md:1).
 
 These levers define the rollback targets referenced in the environment phases
 (§8).
@@ -889,12 +889,12 @@ orchestrator‑first rollout and TS↔Python parity guarantees.
   - Command: `npm run test:orchestrator-parity:ts`
   - Scope: backend and sandbox orchestrator multi‑phase scenarios plus core
     lines/territory unit suites:
-    - [`tests/scenarios/Orchestrator.Backend.multiPhase.test.ts`](tests/scenarios/Orchestrator.Backend.multiPhase.test.ts:1)
+    - [`tests/scenarios/MultiPhaseTurn.contractVectors.test.ts`](../../tests/scenarios/MultiPhaseTurn.contractVectors.test.ts:1)
     - [`tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts`](../../tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts:1)
     - [`tests/unit/GameEngine.lines.scenarios.test.ts`](../../tests/unit/GameEngine.lines.scenarios.test.ts:1)
-    - [`tests/unit/sandboxLines.test.ts`](tests/unit/sandboxLines.test.ts:1)
+    - [`tests/unit/sandboxLines.test.ts`](../../tests/unit/sandboxLines.test.ts:1)
     - [`tests/unit/territoryDecisionHelpers.shared.test.ts`](../../tests/unit/territoryDecisionHelpers.shared.test.ts:1)
-    - [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1)
+    - [`tests/unit/BoardManager.territoryDisconnection.test.ts`](../../tests/unit/BoardManager.territoryDisconnection.test.ts:1)
     - [`tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts`](../../tests/unit/ClientSandboxEngine.territoryDisconnection.hex.test.ts:1)
 
 - **Python contract vectors:**
@@ -988,7 +988,7 @@ sub‑waves:
   - Longer/staged soaks against `main` and staging images using
     `scripts/run-orchestrator-soak.ts` with `--failOnViolation` (for example
     `npm run soak:orchestrator:nightly`), producing
-    `results/orchestrator_soak_summary.json` / `results/orchestrator_soak_nightly.json`
+    `results/orchestrator_soak_summary.json` / `results/orchestrator_soak_smoke.json`
     for regression mining.
 - **4‑C – Rollout flags, topology & fallbacks**
   - Environment/flag wiring via `OrchestratorRolloutService` and

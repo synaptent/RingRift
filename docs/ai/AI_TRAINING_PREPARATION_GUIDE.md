@@ -39,21 +39,21 @@
 
 ## Current Infrastructure Summary
 
-| Component         | Current Implementation                                                                         |
-| ----------------- | ---------------------------------------------------------------------------------------------- |
-| AI Service        | Python microservice (FastAPI, uvicorn)                                                         |
-| ML Framework      | PyTorch 2.6.0                                                                                  |
-| RL Environment    | gymnasium 1.0.0                                                                                |
-| AI Types          | Random, Heuristic, Minimax, MCTS, Descent                                                      |
-| Difficulty Levels | 1-10 ladder                                                                                    |
-| Neural Network    | [`RingRiftCNN`](../ai-service/app/ai/neural_net/__init__.py) - 10 residual blocks, 128 filters |
-| Hex Neural Net    | [`HexNeuralNet`](../ai-service/app/ai/neural_net/__init__.py)                                  |
-| State Encoding    | 10 channels × 4 frames = 40 input channels                                                     |
-| Policy Size       | 55,000 actions (canonical encoding)                                                            |
-| Replay Buffer     | MAX_BUFFER_SIZE = 50,000 samples                                                               |
-| Storage Format    | Memory-mapped .npz datasets                                                                    |
-| Heuristic Weights | 17 weights with 4 profiles                                                                     |
-| Board Types       | SQUARE8 (8×8), SQUARE19 (19×19), HEXAGONAL (radius 12)                                         |
+| Component         | Current Implementation                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| AI Service        | Python microservice (FastAPI, uvicorn)                                                            |
+| ML Framework      | PyTorch 2.6.0                                                                                     |
+| RL Environment    | gymnasium 1.0.0                                                                                   |
+| AI Types          | Random, Heuristic, Minimax, MCTS, Descent                                                         |
+| Difficulty Levels | 1-10 ladder                                                                                       |
+| Neural Network    | [`RingRiftCNN`](../../ai-service/app/ai/neural_net/__init__.py) - 10 residual blocks, 128 filters |
+| Hex Neural Net    | [`HexNeuralNet`](../../ai-service/app/ai/neural_net/__init__.py)                                  |
+| State Encoding    | 10 channels × 4 frames = 40 input channels                                                        |
+| Policy Size       | 55,000 actions (canonical encoding)                                                               |
+| Replay Buffer     | MAX_BUFFER_SIZE = 50,000 samples                                                                  |
+| Storage Format    | Memory-mapped .npz datasets                                                                       |
+| Heuristic Weights | 17 weights with 4 profiles                                                                        |
+| Board Types       | SQUARE8 (8×8), SQUARE19 (19×19), HEXAGONAL (radius 12)                                            |
 
 ---
 
@@ -301,7 +301,7 @@ def augment_position(
 
 ### 2.1 CNN Architecture for Board Games
 
-The [`RingRiftCNN`](../ai-service/app/ai/neural_net/__init__.py) architecture follows AlphaZero-style design:
+The [`RingRiftCNN`](../../ai-service/app/ai/neural_net/__init__.py) architecture follows AlphaZero-style design:
 
 ```
 Input: 40 channels × H × W (history_length=3 → 4 frames × 10 channels)
@@ -695,7 +695,7 @@ def aggressive_gc() -> None:
 
 ### 3.8 MPS (Apple Silicon) Optimizations
 
-From current [`neural_net.py`](../ai-service/app/ai/neural_net/__init__.py):
+From current [`neural_net.py`](../../ai-service/app/ai/neural_net/__init__.py):
 
 ```python
 def get_device() -> torch.device:
@@ -2507,7 +2507,7 @@ python -m memory_profiler app/training/train.py
 
 | File                                                                                           | Purpose            | Key Functions                    |
 | ---------------------------------------------------------------------------------------------- | ------------------ | -------------------------------- |
-| [`neural_net.py`](../ai-service/app/ai/neural_net/__init__.py)                                 | CNN architecture   | `RingRiftCNN`, `HexNeuralNet`    |
+| [`neural_net.py`](../../ai-service/app/ai/neural_net/__init__.py)                              | CNN architecture   | `RingRiftCNN`, `HexNeuralNet`    |
 | [`config.py`](../../ai-service/app/training/config.py)                                         | Training config    | `TrainConfig`                    |
 | [`train.py`](../../ai-service/app/training/train.py)                                           | Training loop      | `train_model()`                  |
 | [`generate_data.py`](../../ai-service/app/training/generate_data.py)                           | Self-play data     | `generate_dataset()`             |

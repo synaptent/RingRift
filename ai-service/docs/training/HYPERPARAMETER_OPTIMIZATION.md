@@ -352,4 +352,4 @@ python scripts/run_gpu_cmaes.py --games-per-eval 20
 
 - [TRAINING_OPTIMIZATIONS.md](TRAINING_OPTIMIZATIONS.md) - Training pipeline
 - [COORDINATION_SYSTEM.md](../architecture/COORDINATION_SYSTEM.md) - Task coordination
-- [scripts/README.md](../scripts/README.md) - Script reference
+- [scripts/README.md](../../scripts/README.md) - Script reference

@@ -25,13 +25,13 @@ RingRift currently has no strong Neural Network (NN) based AI despite having sub
 
 ### 1.1 NN Architectures in Place
 
-| Architecture                                                             | Location        | Purpose                                   | Status      |
-| ------------------------------------------------------------------------ | --------------- | ----------------------------------------- | ----------- |
-| [`RingRiftCNN`](../ai-service/app/ai/neural_net/__init__.py)             | `neural_net.py` | Square board CNN (10 blocks, 128 filters) | Implemented |
-| [`RingRiftCNN_MPS`](../ai-service/app/ai/neural_net/__init__.py)         | `neural_net.py` | Apple Silicon variant                     | Implemented |
-| [`RingRiftCNN_v3`](../ai-service/app/ai/neural_net/__init__.py)          | `neural_net.py` | Spatial policy + rank distribution        | Implemented |
-| [`HexNeuralNet_v3`](../ai-service/app/ai/neural_net/__init__.py)         | `neural_net.py` | 16-channel hex encoder                    | Implemented |
-| [`RingRiftCNN_MultiPlayer`](../ai-service/app/ai/neural_net/__init__.py) | `neural_net.py` | Vector value head for 3-4P                | Implemented |
+| Architecture                                                                | Location        | Purpose                                   | Status      |
+| --------------------------------------------------------------------------- | --------------- | ----------------------------------------- | ----------- |
+| [`RingRiftCNN`](../../ai-service/app/ai/neural_net/__init__.py)             | `neural_net.py` | Square board CNN (10 blocks, 128 filters) | Implemented |
+| [`RingRiftCNN_MPS`](../../ai-service/app/ai/neural_net/__init__.py)         | `neural_net.py` | Apple Silicon variant                     | Implemented |
+| [`RingRiftCNN_v3`](../../ai-service/app/ai/neural_net/__init__.py)          | `neural_net.py` | Spatial policy + rank distribution        | Implemented |
+| [`HexNeuralNet_v3`](../../ai-service/app/ai/neural_net/__init__.py)         | `neural_net.py` | 16-channel hex encoder                    | Implemented |
+| [`RingRiftCNN_MultiPlayer`](../../ai-service/app/ai/neural_net/__init__.py) | `neural_net.py` | Vector value head for 3-4P                | Implemented |
 
 **Observation:** Architecture diversity is good. The infrastructure supports multiple board types and player counts.
 
