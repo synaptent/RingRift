@@ -140,10 +140,10 @@ class ClusterNode:
 
 ```python
 # Get best IP for connection (prefers Tailscale)
-ip = node.best_ip  # "100.123.183.70"
+ip = node.best_ip  # "100.x.x.x"
 
 # Get data server URL
-url = node.data_server_base_url  # "http://100.123.183.70:8766"
+url = node.data_server_base_url  # "http://100.x.x.x:8766"
 
 # Check if node is active
 if node.is_active:
@@ -207,7 +207,7 @@ if coord:
 
 # Get coordinator address (IP, port)
 ip, port = get_coordinator_address()
-# ("100.100.100.1", 8766)
+# ("100.x.x.x", 8766)
 
 # Elo sync configuration
 sync_config = get_elo_sync_config()
@@ -247,7 +247,7 @@ from app.sync.cluster_hosts import check_http_endpoint
 
 # Check specific endpoint
 status = check_http_endpoint(
-    ip="100.123.183.70",
+    ip="100.x.x.x",
     port=8766,
     path="/status",
     timeout=5,
@@ -267,7 +267,7 @@ from app.sync import get_elo_sync_urls
 
 # Get URLs for all reachable Elo sync endpoints
 urls = get_elo_sync_urls()
-# ["http://100.100.100.1:8766/db", "http://100.123.183.70:8766/db", ...]
+# ["http://100.x.x.1:8766/db", "http://100.x.x.2:8766/db", ...]
 ```
 
 ### Data Sync URLs
@@ -281,7 +281,7 @@ urls = get_data_sync_urls(
     reachable_only=True,    # Only include reachable nodes
     timeout=5,
 )
-# ["http://100.123.183.70:8766", "http://100.104.34.73:8766", ...]
+# ["http://100.x.x.1:8766", "http://100.x.x.2:8766", ...]
 ```
 
 ### Generic Sync URLs
@@ -398,7 +398,7 @@ for node in nodes:
 If the coordinator is not found in config:
 
 ```bash
-export RINGRIFT_COORDINATOR_IP=100.100.100.1
+export RINGRIFT_COORDINATOR_IP=<your-coordinator-ip>
 ```
 
 ```python

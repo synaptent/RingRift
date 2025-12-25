@@ -398,4 +398,16 @@ ai-service/scripts/monitor_cluster.sh
 ai-service/scripts/monitor_gumbel_cluster.sh
 ai-service/scripts/run_experimental_ai_tournament.sh
 ai-service/scripts/train_hex8_models.sh
+ai-service/scripts/train_from_gumbel.sh
 scripts/tunnel_metrics.sh
+
+# Python scripts with hardcoded cluster node IPs
+ai-service/scripts/deploy_gmo_training.py
+ai-service/scripts/sync_monitor.py
+ai-service/scripts/training_monitor.py
+ai-service/scripts/vast_lifecycle.py
+ai-service/scripts/vast_p2p_sync.py
+
+# Grafana dashboards with cluster-specific node IPs
+monitoring/grafana/dashboards/ai-cluster.json
+monitoring/grafana/dashboards/ringrift-full.json

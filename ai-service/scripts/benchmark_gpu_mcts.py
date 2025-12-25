@@ -6,7 +6,7 @@ Usage:
     PYTHONPATH=. python scripts/benchmark_gpu_mcts.py
 
     # On cluster with CUDA
-    ssh ubuntu@100.78.101.123
+    ssh ubuntu@<gpu-node-ip>
     cd ~/ringrift/ai-service
     PYTHONPATH=. python scripts/benchmark_gpu_mcts.py --device cuda
 """

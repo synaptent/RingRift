@@ -193,7 +193,7 @@ Direct node-to-node synchronization via the P2P service:
 from app.distributed import P2PSyncClient
 
 # Connect to peer's P2P service
-client = P2PSyncClient(host="100.123.183.70", port=8770)
+client = P2PSyncClient(host="100.x.x.1", port=8770)
 
 # Check peer status
 status = await client.get_status()
@@ -214,8 +214,8 @@ Automatic fallback when primary sync fails:
 from app.distributed import P2PFallbackSync
 
 sync = P2PFallbackSync(
-    primary_host="100.123.183.70",
-    fallback_hosts=["100.97.104.89", "100.88.35.19"],
+    primary_host="100.x.x.1",
+    fallback_hosts=["100.x.x.2", "100.x.x.3"],
     timeout=30.0,
 )
 
@@ -290,7 +290,7 @@ from app.distributed import (
 )
 
 # Get circuit breaker for a specific host
-breaker = get_host_breaker("100.123.183.70")
+breaker = get_host_breaker("100.x.x.1")
 
 # Check if circuit is open (failing)
 if breaker.state == CircuitState.OPEN:
@@ -299,7 +299,7 @@ if breaker.state == CircuitState.OPEN:
 # Execute with circuit breaker protection
 try:
     async with breaker:
-        result = await sync_to_host("100.123.183.70")
+        result = await sync_to_host("100.x.x.1")
 except CircuitOpenError:
     print("Circuit is open, skipping this host")
 ```
@@ -433,7 +433,7 @@ eligible = get_eligible_hosts_for_board(
 )
 
 # Check memory on a specific host
-memory = detect_host_memory("100.123.183.70")
+memory = detect_host_memory("100.x.x.1")
 print(f"GPU memory: {memory.gpu_memory_gb}GB")
 print(f"CPU memory: {memory.cpu_memory_gb}GB")
 ```
@@ -481,14 +481,14 @@ executor = get_ssh_executor()
 
 # Run command on remote host
 result = await executor.run(
-    host="100.123.183.70",
+    host="100.x.x.1",
     command="nvidia-smi --query-gpu=memory.used --format=csv",
 )
 print(result.stdout)
 
 # Run on multiple hosts
 results = await executor.run_parallel(
-    hosts=["100.123.183.70", "100.97.104.89"],
+    hosts=["100.x.x.1", "100.x.x.2"],
     command="df -h /data",
 )
 ```
@@ -700,7 +700,7 @@ stats = await full_cluster_sync(timeout=1200)
 from app.distributed import get_host_breaker
 
 # Reset a specific breaker
-breaker = get_host_breaker("100.123.183.70")
+breaker = get_host_breaker("100.x.x.1")
 breaker.reset()
 
 # Or reset all breakers
