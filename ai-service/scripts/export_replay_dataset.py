@@ -86,6 +86,7 @@ from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_b
 from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move, Position
 from app.training.canonical_sources import enforce_canonical_sources
+from app.training.data_quality import embed_checksums_in_save_kwargs
 
 # Unified game discovery
 try:
@@ -853,6 +854,9 @@ def export_replay_dataset_multi(
 
     # Add spatial_size to metadata for training validation
     save_kwargs["spatial_size"] = np.asarray(int(actual_spatial))
+
+    # Add data checksums for integrity verification (December 2025)
+    save_kwargs = embed_checksums_in_save_kwargs(save_kwargs)
 
     np.savez_compressed(output_path, **save_kwargs)
 

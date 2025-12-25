@@ -68,6 +68,8 @@ Last updated: December 2025
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
 import sqlite3
 import sys
@@ -79,6 +81,129 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Data Checksums (December 2025)
+# =============================================================================
+
+
+def compute_array_checksum(arr: np.ndarray) -> str:
+    """Compute SHA256 checksum for a numpy array.
+
+    Uses tobytes() for raw data + shape/dtype info for full reproducibility.
+
+    Args:
+        arr: NumPy array to checksum
+
+    Returns:
+        Hex digest of SHA256 hash
+    """
+    hasher = hashlib.sha256()
+    # Include array shape and dtype in hash to detect shape mismatches
+    hasher.update(str(arr.shape).encode())
+    hasher.update(str(arr.dtype).encode())
+    # For object arrays (like policy indices), serialize differently
+    if arr.dtype == np.object_:
+        # Serialize each element
+        for item in arr.flat:
+            if isinstance(item, np.ndarray):
+                hasher.update(item.tobytes())
+            else:
+                hasher.update(str(item).encode())
+    else:
+        hasher.update(arr.tobytes())
+    return hasher.hexdigest()
+
+
+def compute_npz_checksums(data: dict[str, np.ndarray]) -> dict[str, str]:
+    """Compute checksums for all arrays in an NPZ dataset.
+
+    Args:
+        data: Dictionary of array name -> array
+
+    Returns:
+        Dictionary of array name -> checksum hex digest
+    """
+    checksums = {}
+    for name, arr in data.items():
+        if isinstance(arr, np.ndarray):
+            checksums[name] = compute_array_checksum(arr)
+    return checksums
+
+
+def verify_npz_checksums(
+    npz_path: str | Path,
+    expected_checksums: dict[str, str] | None = None,
+) -> tuple[bool, dict[str, str], list[str]]:
+    """Verify checksums for arrays in an NPZ file.
+
+    If expected_checksums is provided, compare against those.
+    Otherwise, look for embedded checksums in the NPZ file itself.
+
+    Args:
+        npz_path: Path to NPZ file
+        expected_checksums: Optional dict of array name -> expected checksum
+
+    Returns:
+        Tuple of (all_valid, computed_checksums, errors)
+    """
+    errors = []
+    computed = {}
+
+    try:
+        with np.load(npz_path, allow_pickle=True) as data:
+            # Look for embedded checksums if not provided
+            if expected_checksums is None:
+                if "data_checksums" in data:
+                    checksums_arr = data["data_checksums"]
+                    # Parse JSON from array
+                    if isinstance(checksums_arr, np.ndarray):
+                        expected_checksums = json.loads(str(checksums_arr))
+                    else:
+                        expected_checksums = {}
+
+            # Compute checksums for all arrays
+            for name in data.files:
+                if name == "data_checksums":
+                    continue  # Skip the checksums array itself
+                arr = data[name]
+                if isinstance(arr, np.ndarray):
+                    computed[name] = compute_array_checksum(arr)
+
+            # Verify against expected
+            if expected_checksums:
+                for name, expected in expected_checksums.items():
+                    if name not in computed:
+                        errors.append(f"Missing array: {name}")
+                    elif computed[name] != expected:
+                        errors.append(
+                            f"Checksum mismatch for {name}: "
+                            f"expected {expected[:16]}..., got {computed[name][:16]}..."
+                        )
+
+    except Exception as e:
+        errors.append(f"Failed to load NPZ: {e}")
+
+    return len(errors) == 0, computed, errors
+
+
+def embed_checksums_in_save_kwargs(save_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Add checksums to save_kwargs before saving NPZ.
+
+    This computes checksums for all array data and adds a 'data_checksums'
+    field containing the JSON-serialized checksums.
+
+    Args:
+        save_kwargs: Dictionary of data to save to NPZ
+
+    Returns:
+        Updated save_kwargs with data_checksums added
+    """
+    checksums = compute_npz_checksums(save_kwargs)
+    checksums_json = json.dumps(checksums, sort_keys=True)
+    save_kwargs["data_checksums"] = np.asarray(checksums_json)
+    return save_kwargs
 
 
 # =============================================================================
@@ -1210,6 +1335,11 @@ Examples:
         action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--verify-checksums",
+        action="store_true",
+        help="Verify data checksums in NPZ file (requires --npz)"
+    )
 
     args = parser.parse_args()
 
@@ -1244,6 +1374,29 @@ Examples:
         valid = validator.validate_npz_file(args.npz)
         print(f"Structure valid: {valid}")
 
+        # Checksum verification (December 2025)
+        checksums_valid = True
+        if args.verify_checksums:
+            checksum_ok, computed, errors = verify_npz_checksums(args.npz)
+            checksums_valid = checksum_ok
+            if checksum_ok:
+                print(f"Checksums valid: True ({len(computed)} arrays verified)")
+            else:
+                print(f"Checksums valid: False")
+                for err in errors:
+                    print(f"  - {err}")
+        else:
+            # Check if checksums exist but skip verification
+            try:
+                with np.load(args.npz, allow_pickle=True) as data:
+                    has_checksums = "data_checksums" in data
+                    if has_checksums:
+                        print(f"Checksums present: Yes (use --verify-checksums to verify)")
+                    else:
+                        print(f"Checksums present: No (legacy export)")
+            except Exception:
+                pass
+
         # Label validation
         labels_valid = validator.validate_labels(args.npz)
         print(f"Labels valid: {labels_valid}")
@@ -1273,7 +1426,11 @@ Examples:
 
         print("-" * 70)
 
-        if valid and labels_valid:
+        all_valid = valid and labels_valid
+        if args.verify_checksums:
+            all_valid = all_valid and checksums_valid
+
+        if all_valid:
             print("Overall: PASS")
             sys.exit(0)
         else:
