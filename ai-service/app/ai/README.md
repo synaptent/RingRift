@@ -72,7 +72,7 @@ app/ai/
 │   └── improved_mcts_ai.py     # Enhanced MCTS features
 │
 ├── GPU Engine (Production-Ready)
-│   ├── gpu_parallel_games.py   # Parallel game execution (170KB, 6.5x speedup)
+│   ├── gpu_parallel_games.py   # Parallel game execution (170KB, 6.56x speedup on CUDA)
 │   ├── gpu_batch_state.py      # Batched game state tensors (80KB)
 │   ├── gpu_move_generation.py  # Vectorized move generation (103KB)
 │   ├── gpu_move_application.py # Vectorized move application (102KB)
@@ -231,7 +231,7 @@ GPU-accelerated parallel game execution for selfplay and CMA-ES.
 
 **Performance:**
 
-- 6.5x speedup on CUDA (production-ready with 100% parity)
+- 6.56x speedup on CUDA at batch 500 (production-ready with 100% parity)
 - 10-100 games/sec on RTX 3090
 - 50-500 games/sec on A100/RTX 5090
 - CPU fallback for systems without CUDA
