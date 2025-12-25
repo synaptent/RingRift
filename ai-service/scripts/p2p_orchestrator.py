@@ -151,6 +151,45 @@ def get_tier_calibrator():
             _tier_calibrator = None
     return _tier_calibrator
 
+
+# Board priority overrides from unified_loop.yaml
+# 0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW (lower value = higher priority)
+_board_priority_cache: dict[str, int] | None = None
+_board_priority_cache_time: float = 0
+
+
+def get_board_priority_overrides() -> dict[str, int]:
+    """Load board priority overrides from config, cached for 60 seconds.
+
+    Returns dict mapping config keys (e.g., 'hexagonal_2p') to priority levels.
+    Priority levels: 0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW
+    """
+    global _board_priority_cache, _board_priority_cache_time
+    now = time.time()
+
+    # Return cached value if fresh (60 second TTL)
+    if _board_priority_cache is not None and now - _board_priority_cache_time < 60:
+        return _board_priority_cache
+
+    try:
+        import yaml
+        config_path = Path(__file__).parent.parent / "config" / "unified_loop.yaml"
+        if config_path.exists():
+            with open(config_path) as f:
+                yaml_config = yaml.safe_load(f)
+            selfplay_config = yaml_config.get("selfplay", {})
+            overrides = selfplay_config.get("board_priority_overrides", {})
+            # Convert config keys like "hexagonal_2p" -> priority int
+            _board_priority_cache = {k: int(v) for k, v in overrides.items()}
+            _board_priority_cache_time = now
+            return _board_priority_cache
+    except Exception:
+        pass
+
+    # Default: empty (no overrides)
+    return {}
+
+
 # Add project root to path for scripts.lib imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -25377,6 +25416,9 @@ print(json.dumps({{
             except Exception:
                 pass  # Use empty weights on error
 
+        # Load board priority overrides from config (0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW)
+        board_priority_overrides = get_board_priority_overrides()
+
         for cfg in selfplay_configs:
             elo_boost = self._get_elo_based_priority_boost(
                 cfg.get("board_type", ""),
@@ -25392,7 +25434,12 @@ print(json.dumps({{
             curriculum_boost = int((curriculum_weight - 1.0) * 4)
             curriculum_boost = max(-2, min(3, curriculum_boost))  # Clamp to -2..+3
 
-            cfg["effective_priority"] = cfg.get("priority", 1) + elo_boost + curriculum_boost
+            # Apply board priority overrides from config
+            # 0=CRITICAL adds +6, 1=HIGH adds +4, 2=MEDIUM adds +2, 3=LOW adds 0
+            board_priority = board_priority_overrides.get(config_key, 3)  # Default to LOW (3)
+            board_priority_boost = (3 - board_priority) * 2  # 0->6, 1->4, 2->2, 3->0
+
+            cfg["effective_priority"] = cfg.get("priority", 1) + elo_boost + curriculum_boost + board_priority_boost
 
         # Build weighted list by effective priority
         weighted = []
@@ -25727,18 +25774,31 @@ print(json.dumps({{
         except ImportError:
             pass
 
-        # Rotate through diverse configurations instead of just square8 2p
-        # Priority order: hex and square19 first (underserved), then square8
+        # Rotate through diverse configurations with priority-based weighting
+        # Uses board_priority_overrides from config (0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW)
+        board_priority_overrides = get_board_priority_overrides()
+
         diverse_configs = [
-            ("hexagonal", 3), ("hexagonal", 2), ("hexagonal", 4),
-            ("square19", 3), ("square19", 2), ("square19", 4),
+            ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+            ("square19", 3), ("square19", 4), ("square19", 2),
+            ("hex8", 2), ("hex8", 3), ("hex8", 4),
             ("square8", 3), ("square8", 4), ("square8", 2),
         ]
-        # Round-robin selection based on node-specific counter
+
+        # Build weighted list based on priority overrides
+        # Lower priority value = more weight (0=CRITICAL gets 4x, 3=LOW gets 1x)
+        weighted_configs = []
+        for board_type, num_players in diverse_configs:
+            config_key = f"{board_type}_{num_players}p"
+            priority = board_priority_overrides.get(config_key, 3)  # Default LOW
+            weight = 4 - priority  # 0->4, 1->3, 2->2, 3->1
+            weighted_configs.extend([(board_type, num_players)] * weight)
+
+        # Round-robin through weighted list based on node-specific counter
         counter_key = f"_diverse_config_counter_{node_id}"
         counter = getattr(self, counter_key, 0)
         setattr(self, counter_key, counter + 1)
-        board_type, num_players = diverse_configs[counter % len(diverse_configs)]
+        board_type, num_players = weighted_configs[counter % len(weighted_configs)]
 
         try:
             timeout = ClientTimeout(total=30)
