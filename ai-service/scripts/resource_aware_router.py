@@ -2,7 +2,8 @@
 """Resource-Aware Work Router - Smart work assignment with CPU-first fallback.
 
 Key improvements over smart_work_router.py:
-1. Loads comprehensive node registry from cluster_nodes.yaml
+1. Loads node registry from distributed_hosts.yaml (canonical) with fallback
+   to cluster_nodes.yaml
 2. Tries to wake up CPU-rich nodes BEFORE falling back to GPU nodes for CPU work
 3. Uses GPU-accelerated CMA-ES (EvoTorch) on GPU nodes when optimization is needed
 4. Better tracking of what work is running where
@@ -128,34 +129,52 @@ class NodeState:
 # Configuration Loading
 # =============================================================================
 
+def _infer_node_type(name: str, gpu: str) -> str:
+    label = f"{name} {gpu}".lower()
+    if not gpu:
+        return "cpu_rich"
+    if any(token in label for token in ("gh200", "h100", "a100", "h200")):
+        return "gpu_heavy"
+    if any(token in label for token in ("a10", "a40", "3090", "4080", "4090", "4070", "rtx", "v100", "t4", "m1", "m2", "m3", "mps", "apple")):
+        return "gpu_medium"
+    return "gpu_medium"
+
+
 def load_cluster_config() -> dict[str, list[NodeConfig]]:
     """Load cluster configuration from YAML."""
-    config_path = CONFIG_DIR / "cluster_nodes.yaml"
+    distributed_path = CONFIG_DIR / "distributed_hosts.yaml"
+    cluster_nodes_path = CONFIG_DIR / "cluster_nodes.yaml"
 
-    if not config_path.exists():
-        logger.warning(f"Cluster config not found: {config_path}")
+    if not distributed_path.exists() and not cluster_nodes_path.exists():
+        logger.warning("Cluster config not found: distributed_hosts.yaml or cluster_nodes.yaml")
         return {"gpu_heavy": [], "gpu_medium": [], "cpu_rich": []}
 
     if not YAML_AVAILABLE:
         logger.warning("PyYAML not installed, using fallback config")
         return _get_fallback_config()
 
-    with open(config_path) as f:
-        data = yaml.safe_load(f)
-
     nodes = {"gpu_heavy": [], "gpu_medium": [], "cpu_rich": []}
 
-    for node_type in ["gpu_heavy", "gpu_medium", "cpu_rich"]:
-        for node_data in data.get(node_type, []):
+    if distributed_path.exists():
+        with open(distributed_path) as f:
+            data = yaml.safe_load(f) or {}
+
+        hosts = data.get("hosts", {})
+        for name, node_data in hosts.items():
+            if not isinstance(node_data, dict):
+                continue
+            gpu = node_data.get("gpu", node_data.get("gpu_type", "")) or ""
+            node_type = _infer_node_type(name, gpu)
+            host = node_data.get("tailscale_ip") or node_data.get("ssh_host") or node_data.get("host", "")
             node = NodeConfig(
-                name=node_data.get("name", "unknown"),
-                host=node_data.get("host", ""),
-                user=node_data.get("user", "ubuntu"),
-                gpu=node_data.get("gpu", ""),
-                gpu_memory_gb=node_data.get("gpu_memory_gb", 0),
-                cpu_cores=node_data.get("cpu_cores", 0),
+                name=name,
+                host=host,
+                user=node_data.get("ssh_user", node_data.get("user", "ubuntu")),
+                gpu=gpu,
+                gpu_memory_gb=node_data.get("vram_gb", 0),
+                cpu_cores=node_data.get("cpus", 0),
                 memory_gb=node_data.get("memory_gb", 0),
-                description=node_data.get("description", ""),
+                description=node_data.get("notes", ""),
                 priority=node_data.get("priority", 5),
                 wake_method=node_data.get("wake_method", "ssh"),
                 is_optional=node_data.get("is_optional", False),
@@ -163,8 +182,66 @@ def load_cluster_config() -> dict[str, list[NodeConfig]]:
             )
             nodes[node_type].append(node)
 
-    logger.info(f"Loaded cluster config: {len(nodes['gpu_heavy'])} GPU-heavy, "
-                f"{len(nodes['gpu_medium'])} GPU-medium, {len(nodes['cpu_rich'])} CPU-rich")
+        logger.info(
+            f"Loaded distributed hosts: {len(nodes['gpu_heavy'])} GPU-heavy, "
+            f"{len(nodes['gpu_medium'])} GPU-medium, {len(nodes['cpu_rich'])} CPU-rich"
+        )
+        return nodes
+
+    with open(cluster_nodes_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    if any(key in data for key in ("gpu_heavy", "gpu_medium", "cpu_rich")):
+        for node_type in ["gpu_heavy", "gpu_medium", "cpu_rich"]:
+            for node_data in data.get(node_type, []):
+                node = NodeConfig(
+                    name=node_data.get("name", "unknown"),
+                    host=node_data.get("host", ""),
+                    user=node_data.get("user", "ubuntu"),
+                    gpu=node_data.get("gpu", ""),
+                    gpu_memory_gb=node_data.get("gpu_memory_gb", 0),
+                    cpu_cores=node_data.get("cpu_cores", 0),
+                    memory_gb=node_data.get("memory_gb", 0),
+                    description=node_data.get("description", ""),
+                    priority=node_data.get("priority", 5),
+                    wake_method=node_data.get("wake_method", "ssh"),
+                    is_optional=node_data.get("is_optional", False),
+                    node_type=node_type,
+                )
+                nodes[node_type].append(node)
+    else:
+        for group in data.values():
+            if not isinstance(group, dict):
+                continue
+            group_nodes = group.get("nodes")
+            if not isinstance(group_nodes, list):
+                continue
+            for node_data in group_nodes:
+                if not isinstance(node_data, dict):
+                    continue
+                name = node_data.get("name", "unknown")
+                gpu = node_data.get("gpu", "") or ""
+                node_type = _infer_node_type(name, gpu)
+                node = NodeConfig(
+                    name=name,
+                    host=node_data.get("host", ""),
+                    user=node_data.get("user", "ubuntu"),
+                    gpu=gpu,
+                    gpu_memory_gb=node_data.get("gpu_memory_gb", 0),
+                    cpu_cores=node_data.get("cpu_cores", 0),
+                    memory_gb=node_data.get("memory_gb", 0),
+                    description=node_data.get("description", ""),
+                    priority=node_data.get("priority", 5),
+                    wake_method=node_data.get("wake_method", "ssh"),
+                    is_optional=node_data.get("is_optional", False),
+                    node_type=node_type,
+                )
+                nodes[node_type].append(node)
+
+    logger.info(
+        f"Loaded cluster config: {len(nodes['gpu_heavy'])} GPU-heavy, "
+        f"{len(nodes['gpu_medium'])} GPU-medium, {len(nodes['cpu_rich'])} CPU-rich"
+    )
 
     return nodes
 
@@ -172,12 +249,12 @@ def load_cluster_config() -> dict[str, list[NodeConfig]]:
 def _get_fallback_config() -> dict[str, list[NodeConfig]]:
     """Return empty config when YAML not available.
 
-    Node configuration should only come from config/cluster_nodes.yaml.
-    Copy config/cluster_nodes.yaml.example and fill in your node details.
+    Node configuration should come from config/distributed_hosts.yaml
+    (canonical) or config/cluster_nodes.yaml (fallback).
     """
     logger.error("No cluster configuration found!")
-    logger.error("Please copy config/cluster_nodes.yaml.example to config/cluster_nodes.yaml")
-    logger.error("and fill in your actual node IPs and hostnames.")
+    logger.error("Please configure config/distributed_hosts.yaml (recommended)")
+    logger.error("or config/cluster_nodes.yaml for legacy scripts.")
     return {"gpu_heavy": [], "gpu_medium": [], "cpu_rich": []}
 
 
