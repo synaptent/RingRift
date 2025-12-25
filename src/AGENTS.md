@@ -17,7 +17,7 @@ Single Source of Truth (SSoT) for the game.
     - Any rules options and AI/control metadata exposed across layers.
 - **Engine orchestration**:
   - `src/shared/engine/**`:
-    - Turn/phase logic (`orchestration/turnOrchestrator.ts`, `phaseStateMachine.ts`).
+    - Turn/phase logic (`orchestration/turnOrchestrator.ts`, `fsm/TurnStateMachine.ts`, `fsm/FSMAdapter.ts`).
     - LPS/ANM/FE evaluation and weird‑state detection.
     - Hashing, invariants, and helpers used by parity tooling.
 

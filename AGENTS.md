@@ -56,7 +56,7 @@ The rules semantics SSoT is:
 ### 2.2 Executable Engine SSoT
 
 - The executable engine SSoT lives in **TypeScript**:
-  - `src/shared/engine/**` (especially `orchestration/turnOrchestrator.ts`, `phaseStateMachine.ts`, and their helpers).
+  - `src/shared/engine/**` (especially `orchestration/turnOrchestrator.ts`, `fsm/TurnStateMachine.ts`, `fsm/FSMAdapter.ts`, and their helpers).
   - Types in `src/shared/types/game.ts`.
 - The **Python** side must mirror TS semantics; any divergence is a bug or non‑canonical data.
 
