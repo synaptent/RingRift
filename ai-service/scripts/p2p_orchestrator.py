@@ -5990,9 +5990,11 @@ class P2POrchestrator:
                 except Exception as e:
                     logger.error(f"Failed to stop job {job_id}: {e}")
 
-        # Wait for processes to terminate
+        # Wait for processes to terminate gracefully
+        # GPU games can take 1-10 minutes, so use a longer timeout (Dec 2025 fix)
+        grace_period = int(os.environ.get("RINGRIFT_JOB_GRACE_PERIOD", "60"))
         if stopped > 0:
-            await asyncio.sleep(5)
+            await asyncio.sleep(grace_period)
 
             # Force kill any remaining
             with self.jobs_lock:

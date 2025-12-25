@@ -255,7 +255,7 @@ Changes to dashboard JSON files are picked up within 10 seconds (see `updateInte
 
 ## Metrics Reference
 
-All metrics are exposed by [`src/server/services/MetricsService.ts`](../../src/server/services/MetricsService.ts).
+All metrics are exposed by [`src/server/services/MetricsService.ts`](../../../src/server/services/MetricsService.ts).
 
 **Key Metrics Used:**
 
@@ -295,7 +295,7 @@ All metrics are exposed by [`src/server/services/MetricsService.ts`](../../src/s
 ### Missing / Partially Wired Metrics
 
 The following metrics are referenced in dashboards and now exist in
-[`MetricsService.ts`](../../src/server/services/MetricsService.ts), but their
+[`MetricsService.ts`](../../../src/server/services/MetricsService.ts), but their
 instrumentation is either limited to specific harnesses or still being rolled
 out across all hosts:
 
@@ -406,27 +406,27 @@ chains are computed.
 
 Each dashboard panel references specific runbooks for alert investigation:
 
-- [High Error Rate](../../docs/runbooks/HIGH_ERROR_RATE.md) - 5xx errors >5%
-- [High Latency](../../docs/runbooks/HIGH_LATENCY.md) - API response times
-- [WebSocket Issues](../../docs/runbooks/WEBSOCKET_ISSUES.md) - Connection problems
-- [WebSocket Scaling](../../docs/runbooks/WEBSOCKET_SCALING.md) - High connection counts
-- [Database Performance](../../docs/runbooks/DATABASE_PERFORMANCE.md) - Slow queries
-- [AI Service Down](../../docs/runbooks/AI_SERVICE_DOWN.md) - AI unavailability
-- [High Memory](../../docs/runbooks/HIGH_MEMORY.md) - Memory usage alerts
-- [Event Loop Lag](../../docs/runbooks/EVENT_LOOP_LAG.md) - Event loop blocking
-- [Rules Parity](../../docs/runbooks/RULES_PARITY.md) - TS/Python divergence
-- [Game Performance](../../docs/runbooks/GAME_PERFORMANCE.md) - Game metrics
-- [Game Health](../../docs/runbooks/GAME_HEALTH.md) - Long-running games
-- [No Activity](../../docs/runbooks/NO_ACTIVITY.md) - Zero active games
+- [High Error Rate](../../../docs/runbooks/HIGH_ERROR_RATE.md) - 5xx errors >5%
+- [High Latency](../../../docs/runbooks/HIGH_LATENCY.md) - API response times
+- [WebSocket Issues](../../../docs/runbooks/WEBSOCKET_ISSUES.md) - Connection problems
+- [WebSocket Scaling](../../../docs/runbooks/WEBSOCKET_SCALING.md) - High connection counts
+- [Database Performance](../../../docs/runbooks/DATABASE_PERFORMANCE.md) - Slow queries
+- [AI Service Down](../../../docs/runbooks/AI_SERVICE_DOWN.md) - AI unavailability
+- [High Memory](../../../docs/runbooks/HIGH_MEMORY.md) - Memory usage alerts
+- [Event Loop Lag](../../../docs/runbooks/EVENT_LOOP_LAG.md) - Event loop blocking
+- [Rules Parity](../../../docs/runbooks/RULES_PARITY.md) - TS/Python divergence
+- [Game Performance](../../../docs/runbooks/GAME_PERFORMANCE.md) - Game metrics
+- [Game Health](../../../docs/runbooks/GAME_HEALTH.md) - Long-running games
+- [No Activity](../../../docs/runbooks/NO_ACTIVITY.md) - Zero active games
 
 ## Related Documentation
 
-- Alert Rules: [`monitoring/prometheus/alerts.yml`](../prometheus/alerts.yml)
-- Alerting Thresholds: [`docs/operations/ALERTING_THRESHOLDS.md`](../../docs/operations/ALERTING_THRESHOLDS.md)
-- PASS21 Assessment: [`docs/PASS21_ASSESSMENT_REPORT.md`](../../docs/PASS21_ASSESSMENT_REPORT.md) (Section 2.1)
-- Metrics Service: [`src/server/services/MetricsService.ts`](../../src/server/services/MetricsService.ts)
-- Contract Vectors: [`docs/CONTRACT_VECTORS_DESIGN.md`](../../docs/CONTRACT_VECTORS_DESIGN.md)
-- Invariants Framework: [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](../../docs/INVARIANTS_AND_PARITY_FRAMEWORK.md)
+- Alert Rules: [`monitoring/prometheus/alerts.yml`](../../prometheus/alerts.yml)
+- Alerting Thresholds: [`docs/operations/ALERTING_THRESHOLDS.md`](../../../docs/operations/ALERTING_THRESHOLDS.md)
+- PASS21 Assessment: [`docs/PASS21_ASSESSMENT_REPORT.md`](../../../docs/archive/assessments/PASS21_ASSESSMENT_REPORT.md) (Section 2.1)
+- Metrics Service: [`src/server/services/MetricsService.ts`](../../../src/server/services/MetricsService.ts)
+- Contract Vectors: [`docs/CONTRACT_VECTORS_DESIGN.md`](../../../docs/rules/CONTRACT_VECTORS_DESIGN.md)
+- Invariants Framework: [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](../../../docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md)
 
 ## Version History
 

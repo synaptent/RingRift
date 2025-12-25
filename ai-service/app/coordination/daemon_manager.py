@@ -105,6 +105,9 @@ class DaemonType(Enum):
     # Ephemeral sync for Vast.ai (December 2025 - Phase 4)
     EPHEMERAL_SYNC = "ephemeral_sync"
 
+    # P2P auto-deployment (December 2025) - ensure P2P runs on all nodes
+    P2P_AUTO_DEPLOY = "p2p_auto_deploy"
+
 
 class DaemonState(Enum):
     """State of a daemon."""

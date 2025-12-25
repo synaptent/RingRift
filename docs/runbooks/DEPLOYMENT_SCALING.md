@@ -262,7 +262,67 @@ docker compose up -d --scale ai-service=3
 # Update app to use multiple AI endpoints (requires custom config)
 ```
 
-### 2.4 Add Read Replicas for PostgreSQL
+### 2.4 GPU Proxy Configuration (Staging)
+
+For staging environments without GPU (e.g., AWS r5.xlarge), proxy AI requests to a GPU cluster:
+
+**Architecture:**
+
+```
+┌──────────────────────┐        ┌───────────────────────────┐
+│  Staging Server      │        │  Lambda GPU Cluster       │
+│  (CPU only)          │        │  (GH200 with 96GB GPU)    │
+│                      │        │                           │
+│  ┌────────────────┐  │        │  ┌─────────────────────┐  │
+│  │  Game Server   │  │        │  │  AI Inference       │  │
+│  │  Port 3001     ├──┼──────►─┼──►  Port 8765          │  │
+│  └────────────────┘  │        │  └─────────────────────┘  │
+│                      │ Tailscale│                         │
+└──────────────────────┘   VPN  └───────────────────────────┘
+```
+
+**Configuration Steps:**
+
+1. Start AI inference server on GPU cluster node:
+
+```bash
+# SSH to GPU node (via Tailscale)
+ssh ubuntu@100.88.35.19
+
+# Start AI service
+cd ~/ringrift/ai-service
+source venv/bin/activate
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8765 > logs/inference_server.log 2>&1 &
+```
+
+2. Update staging .env to proxy to cluster:
+
+```bash
+# On staging server
+AI_SERVICE_URL=http://100.88.35.19:8765
+AI_SERVICE_PORT=8765
+```
+
+3. Restart game server to pick up new config:
+
+```bash
+pm2 restart ringrift-server --update-env
+```
+
+**Verification:**
+
+```bash
+# From staging, verify cluster connectivity
+curl -s http://100.88.35.19:8765/health
+# Should return {"status":"healthy",...}
+```
+
+**Active Cluster Nodes (Dec 2025):**
+
+- GH200 nodes: 100.88.35.19 (active), 100.123.183.70, 100.88.176.74
+- Each has 96GB GPU memory, ideal for neural network inference
+
+### 2.5 Add Read Replicas for PostgreSQL
 
 For read-heavy workloads:
 

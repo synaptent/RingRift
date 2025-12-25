@@ -1167,7 +1167,7 @@ def _build_mixed_ai_pool(
         ai_by_player: dict[int, Any] = {}
         ai_metadata: dict[str, Any] = {"engine_mode": engine_mode}
 
-        for pnum in range(1, num_players + 1):
+        for pnum in player_numbers:
             difficulty = 5
             cfg = AIConfig(
                 difficulty=difficulty,

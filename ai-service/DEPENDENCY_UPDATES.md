@@ -3,8 +3,8 @@
 > **Doc Status (2025-12-14): Active (AI service dependency audit, non-semantics)**
 >
 > - Role: records the dependency stack and compatibility decisions for the Python AI microservice (NumPy/PyTorch/ Gymnasium, etc.) and outlines an aspirational RL roadmap. It guides environment setup and ML stack evolution, not game semantics.
-> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`../docs/rules/COMPLETE_RULES.md`](../docs/rules/COMPLETE_RULES.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
-> - Related docs: service-level overview in [`ai-service/README.md`](./README.md), AI architecture narrative in [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md), training and dataset docs in [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/AI_TRAINING_PREPARATION_GUIDE.md), strict‑invariant/self‑play guidance in [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/STRICT_INVARIANT_SOAKS.md), orchestrator rollout/SLO design in [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../docs/ORCHESTRATOR_ROLLOUT_PLAN.md) and [`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](../docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md), and security/supply-chain posture in [`docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`](../docs/SUPPLY_CHAIN_AND_CI_SECURITY.md).
+> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`../docs/rules/COMPLETE_RULES.md`](../docs/rules/COMPLETE_RULES.md), [`RULES_ENGINE_ARCHITECTURE.md`](../docs/architecture/RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../docs/rules/RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/architecture/CANONICAL_ENGINE_API.md).
+> - Related docs: service-level overview in [`ai-service/README.md`](./README.md), AI architecture narrative in [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md), training and dataset docs in [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/ai/AI_TRAINING_PREPARATION_GUIDE.md), strict‑invariant/self‑play guidance in [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/testing/STRICT_INVARIANT_SOAKS.md), orchestrator rollout/SLO design in [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md) and [`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`](../docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md), and security/supply-chain posture in [`docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`](../docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md).
 
 ## Overview
 
@@ -998,7 +998,7 @@ python-dependency-audit:
   - Run `pip-audit` successfully against `requirements.txt` with CI‑equivalent
     severity filtering.
   - Review any HIGH/CRITICAL findings in the context of
-    [`docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`](../docs/SUPPLY_CHAIN_AND_CI_SECURITY.md)
+    [`docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`](../docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md)
     and either:
     - Address them via dependency bumps in a subsequent wave, or
     - Document justified exceptions (for example, transitive vulnerabilities that are

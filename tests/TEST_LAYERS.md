@@ -4,9 +4,9 @@
 >
 > **Role:** Define a clear test layering strategy (unit → contract/scenario → integration → E2E) so that suites are classified consistently, redundancy is minimized, and CI profiles remain predictable. This doc is a **test/meta reference only** – it describes how tests are organised and which layers should run where; it does **not** define game rules or lifecycle semantics.
 >
-> **Not a semantics SSoT:** Canonical rules and lifecycle semantics are owned by the shared TypeScript rules engine and contracts/vectors (`src/shared/engine/**`, `src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) together with the written rules and lifecycle docs (`RULES_CANONICAL_SPEC.md`, `../docs/rules/COMPLETE_RULES.md`, `docs/CANONICAL_ENGINE_API.md`). This file should always defer to those SSoTs when describing “what is correct”; it only describes **how we test** that correctness.
+> **Not a semantics SSoT:** Canonical rules and lifecycle semantics are owned by the shared TypeScript rules engine and contracts/vectors (`src/shared/engine/**`, `src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) together with the written rules and lifecycle docs (`RULES_CANONICAL_SPEC.md`, `../docs/rules/COMPLETE_RULES.md`, `../docs/architecture/CANONICAL_ENGINE_API.md`). This file should always defer to those SSoTs when describing “what is correct”; it only describes **how we test** that correctness.
 >
-> **Related docs:** `tests/README.md`, `tests/TEST_SUITE_PARITY_PLAN.md`, `docs/PARITY_SEED_TRIAGE.md`, `RULES_SCENARIO_MATRIX.md`, `RULES_ENGINE_ARCHITECTURE.md`, and `DOCUMENTATION_INDEX.md`.
+> **Related docs:** `./README.md`, `./TEST_SUITE_PARITY_PLAN.md`, `../docs/rules/PARITY_SEED_TRIAGE.md`, `../docs/rules/RULES_SCENARIO_MATRIX.md`, `../docs/architecture/RULES_ENGINE_ARCHITECTURE.md`, and `../DOCUMENTATION_INDEX.md`.
 
 > **Purpose:** Define a clear test layering strategy to minimize redundancy, improve iteration speed, and ensure each layer has a specific purpose.
 
@@ -401,7 +401,7 @@ After full adapter migration:
 
 ## Related Documents
 
-- [`tests/README.md`](./README.md) - How to run tests
-- [`tests/TEST_SUITE_PARITY_PLAN.md`](./TEST_SUITE_PARITY_PLAN.md) - Detailed test classification
-- [`RULES_SCENARIO_MATRIX.md`](../RULES_SCENARIO_MATRIX.md) - Rules-to-test mapping
-- [`docs/drafts/LEGACY_CODE_ELIMINATION_PLAN.md`](../docs/drafts/LEGACY_CODE_ELIMINATION_PLAN.md) - Legacy removal plan
+- [`./README.md`](./README.md) - How to run tests
+- [`./TEST_SUITE_PARITY_PLAN.md`](./TEST_SUITE_PARITY_PLAN.md) - Detailed test classification
+- [`../docs/rules/RULES_SCENARIO_MATRIX.md`](../docs/rules/RULES_SCENARIO_MATRIX.md) - Rules-to-test mapping
+- [`../docs/archive/LEGACY_CODE_ELIMINATION_PLAN.md`](../docs/archive/LEGACY_CODE_ELIMINATION_PLAN.md) - Legacy removal plan

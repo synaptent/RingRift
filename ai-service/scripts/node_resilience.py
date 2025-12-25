@@ -66,8 +66,10 @@ logger = setup_script_logging("node_resilience", log_file=_log_file)
 
 # If a node reports hundreds/thousands of selfplay processes, it almost always
 # indicates job tracking was lost and stale processes are accumulating.
+# Increased from 128 to 500 (Dec 2025) to prevent false positives during
+# legitimate multi-game selfplay runs that may spawn many worker processes.
 RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(
-    os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD", "128") or 128
+    os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD", "500") or 500
 )
 
 STATE_DIR = Path(__file__).parent.parent / "logs" / "node_resilience"
@@ -1121,11 +1123,22 @@ class NodeResilience:
                     return True  # Give it time
 
                 idle_duration = time.time() - self.gpu_idle_since
-                if idle_duration > 300:  # 5 minutes of idle
+                # GPU idle threshold: 10 minutes default (increased Dec 2025)
+                # MCTS simulations can legitimately run for several minutes
+                gpu_idle_threshold = int(os.environ.get("RINGRIFT_GPU_IDLE_THRESHOLD", "600"))
+                if idle_duration > gpu_idle_threshold:
                     logger.error(f"Stuck processes detected: {selfplay_procs} procs, GPU idle for {idle_duration:.0f}s")
-                    logger.info("Killing stuck selfplay processes...")
+                    logger.info("Sending SIGTERM to stuck selfplay processes (graceful shutdown)...")
 
-                    # Kill tracked fallback processes.
+                    # Send SIGTERM first for graceful shutdown (Dec 2025 fix)
+                    for pid in self.local_selfplay_pids:
+                        try:
+                            os.kill(pid, signal.SIGTERM)
+                        except Exception:
+                            continue
+
+                    # Wait briefly for graceful shutdown before SIGKILL
+                    time.sleep(10)
                     for pid in self.local_selfplay_pids:
                         try:
                             os.kill(pid, signal.SIGKILL)
@@ -1292,7 +1305,8 @@ class NodeResilience:
                 self.p2p_unhealthy_since = now
 
             unhealthy_duration = now - self.p2p_unhealthy_since
-            grace_period = 600  # 10 minutes before taking action (increased from 5 min)
+            # Grace period reduced from 600s (10min) to 180s (3min) for faster failover (Dec 2025)
+            grace_period = int(os.environ.get("RINGRIFT_P2P_GRACE_PERIOD", "180"))
 
             if unhealthy_duration < grace_period:
                 # Still in grace period - just log and wait

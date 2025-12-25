@@ -1,6 +1,6 @@
 # BackendGameHost Decomposition Plan
 
-> **Doc Status (2025-12-25): Active**
+> **Doc Status (2025-12-25): Active - Phase 1 Complete**
 >
 > Detailed decomposition plan for refactoring `BackendGameHost.tsx` from 2,125 lines into composable, testable modules.
 >
@@ -14,22 +14,35 @@
 
 ## Executive Summary
 
-[`BackendGameHost.tsx`](../../src/client/pages/BackendGameHost.tsx) is a significant React component at **2,125 lines**, containing:
+[`BackendGameHost.tsx`](../../src/client/pages/BackendGameHost.tsx) has been partially decomposed following the successful SandboxGameHost pattern.
 
-- **~16 useState calls** for local state management
-- **~13 useEffect hooks** for side effects and synchronization
-- **~15 handler functions** for user interactions
-- **Mixed concerns**: WebSocket connection, game state, board interactions, decision UI, chat, diagnostics
+### Phase 1 Status: ✅ COMPLETE
 
-This plan proposes decomposing the component following the successful SandboxGameHost pattern:
+**5 custom hooks** have been extracted, reducing the host component by 24%:
 
-1. **5 custom hooks** extracting related state clusters
-2. **2 sub-components** for view composition
-3. **Reuse of existing backend-focused hooks** where available
+| Hook                                                                             | LOC       | Tests        |
+| -------------------------------------------------------------------------------- | --------- | ------------ |
+| [`useBackendBoardSelection`](../../src/client/hooks/useBackendBoardSelection.ts) | 184       | ✅           |
+| [`useBackendBoardHandlers`](../../src/client/hooks/useBackendBoardHandlers.ts)   | 448       | ✅           |
+| [`useBackendGameStatus`](../../src/client/hooks/useBackendGameStatus.ts)         | 210       | ✅           |
+| [`useBackendChat`](../../src/client/hooks/useBackendChat.ts)                     | 93        | ✅           |
+| [`useBackendTelemetry`](../../src/client/hooks/useBackendTelemetry.ts)           | 193       | ✅           |
+| **Total**                                                                        | **1,128** | **97 tests** |
 
-**Current LOC**: 2,125
-**Target LOC**: ~600 (orchestrator) + ~1,400 (distributed across hooks/components)
-**Target Reduction**: ~45-55%
+### Progress Metrics
+
+| Metric                      | Original | After Phase 1 | Target  |
+| --------------------------- | -------- | ------------- | ------- |
+| **BackendGameHost.tsx LOC** | 2,125    | 1,613         | ~600    |
+| **Reduction**               | —        | -512 (24%)    | ~45-55% |
+| **useState in host**        | ~16      | ~10           | ~5      |
+| **useEffect in host**       | ~13      | ~9            | ~3      |
+
+### Remaining Work
+
+- **Phase 2**: Promote internal hooks to standalone files (low risk)
+- **Phase 3**: Extract sub-components (medium risk)
+- **Phase 4**: Evaluate shared components (optional, deferred)
 
 ---
 
@@ -447,31 +460,42 @@ interface BackendGameSidebarProps {
 
 ## 3. Migration Strategy
 
-### Phase 1: Extract New Hooks (Low Risk)
+### Phase 1: Extract New Hooks (Low Risk) — ✅ COMPLETE
 
 **Goal**: Move state and effects into custom hooks without changing behavior.
 
-**Steps**:
+**Status**: ✅ Completed 2025-12-25
 
-1. Create `hooks/useBackendBoardSelection.ts`
-2. Create `hooks/useBackendBoardHandlers.ts`
-3. Create `hooks/useBackendGameStatus.ts`
-4. Create `hooks/useBackendChat.ts`
-5. Create `hooks/useBackendTelemetry.ts`
-6. Update BackendGameHost to use new hooks
-7. Run existing tests to verify no regressions
+**Execution Summary**:
 
-**Testing Strategy**:
+| Step                                 | Status | Notes                |
+| ------------------------------------ | ------ | -------------------- |
+| Create `useBackendBoardSelection.ts` | ✅     | 184 LOC              |
+| Create `useBackendBoardHandlers.ts`  | ✅     | 448 LOC              |
+| Create `useBackendGameStatus.ts`     | ✅     | 210 LOC              |
+| Create `useBackendChat.ts`           | ✅     | 93 LOC               |
+| Create `useBackendTelemetry.ts`      | ✅     | 193 LOC              |
+| Update BackendGameHost to use hooks  | ✅     | Import + integration |
+| Run E2E tests                        | ✅     | No regressions       |
+| Add unit tests for hooks             | ✅     | 97 tests total       |
 
-- Existing E2E tests should pass unchanged
-- Add unit tests for each extracted hook
-- Verify backend games work end-to-end
+**Results**:
 
-**Rollback**: Revert hook files and inline state back into BackendGameHost.
+- **Host component reduced**: 2,125 → 1,613 LOC (-24%)
+- **Total extracted code**: 1,128 LOC across 5 hooks
+- **Test coverage**: 97 unit tests for the new hooks
 
-### Phase 2: Promote Internal Hooks (Low Risk)
+### Phase 2: Promote Internal Hooks (Low Risk) — PLANNED
 
 **Goal**: Move the already-defined internal hooks to standalone files.
+
+**Current State**: These hooks are already defined _inside_ BackendGameHost.tsx (lines ~156-453):
+
+- `useBackendConnectionShell` (~31 LOC)
+- `useBackendDiagnosticsLog` (~222 LOC)
+- `useBackendDecisionUI` (~15 LOC)
+
+**Expected Impact**: Extracting these would reduce host by ~268 LOC (to ~1,345 LOC)
 
 **Steps**:
 
@@ -479,17 +503,22 @@ interface BackendGameSidebarProps {
 2. Extract `useBackendDiagnosticsLog` to `hooks/useBackendDiagnosticsLog.ts`
 3. Extract `useBackendDecisionUI` to `hooks/useBackendDecisionUI.ts`
 4. Update imports in BackendGameHost
+5. Add unit tests for each promoted hook
 
-**Note**: These are already well-encapsulated; this is a file organization change.
+**Note**: These are already well-encapsulated; this is primarily a file organization change.
 
-### Phase 3: Extract Sub-Components (Medium Risk)
+### Phase 3: Extract Sub-Components (Medium Risk) — PLANNED
 
 **Goal**: Split view rendering into composable sub-components.
 
+**Current State**: After Phase 2, the host would be ~1,345 LOC, with remaining view rendering in JSX.
+
+**Expected Impact**: Extracting components would reduce host to ~600 LOC target
+
 **Extraction Order** (safest first):
 
-1. `BackendBoardSection` (board rendering wrapper)
-2. `BackendGameSidebar` (complex but isolated)
+1. `BackendBoardSection` (board rendering wrapper, ~400 LOC estimate)
+2. `BackendGameSidebar` (sidebar + chat + panels, ~450 LOC estimate)
 
 **Per-Component Process**:
 
@@ -586,41 +615,41 @@ interface BackendGameSidebarProps {
 
 ## 6. Implementation Checklist
 
-### Phase 1: Extract New Hooks
+### Phase 1: Extract New Hooks — ✅ COMPLETE
 
-- [ ] Create `src/client/hooks/useBackendBoardSelection.ts`
-  - [ ] Extract selection state (Lines 564-565)
-  - [ ] Extract mustMoveFrom derivation (Lines 951-965)
-  - [ ] Extract chainCapturePath derivation (Lines 971-1005)
-  - [ ] Extract placement target highlighting (Lines 898-915)
-  - [ ] Add unit tests
-- [ ] Create `src/client/hooks/useBackendBoardHandlers.ts`
-  - [ ] Extract ring placement prompt state (Lines 567-571)
-  - [ ] Extract cell click handler (Lines 1008-1158)
-  - [ ] Extract double-click handler (Lines 1161-1210)
-  - [ ] Extract context menu handler (Lines 1213-1264)
-  - [ ] Extract confirm ring count handler (Lines 1266-1286)
-  - [ ] Add unit tests
-- [ ] Create `src/client/hooks/useBackendGameStatus.ts`
-  - [ ] Extract fatal error state (Lines 573-576)
-  - [ ] Extract victory modal dismissed state (Lines 580)
-  - [ ] Extract resign states (Lines 610-611)
-  - [ ] Extract resign handler (Lines 1289-1352)
-  - [ ] Extract victory modal reset effect (Lines 883-886)
-  - [ ] Add unit tests
-- [ ] Create `src/client/hooks/useBackendChat.ts`
-  - [ ] Extract chat input state (Line 627)
-  - [ ] Extract submit handler (from form submission)
-  - [ ] Add unit tests
-- [ ] Create `src/client/hooks/useBackendTelemetry.ts`
-  - [ ] Extract weird state tracking refs (Lines 616-618)
-  - [ ] Extract calibration ref (Line 623)
-  - [ ] Extract weird state tracking effect (Lines 778-805)
-  - [ ] Extract calibration event effect (Lines 810-856)
-  - [ ] Add unit tests
-- [ ] Update BackendGameHost to use hooks
-- [ ] Run E2E tests
-- [ ] Manual smoke test
+- [x] Create `src/client/hooks/useBackendBoardSelection.ts` (184 LOC)
+  - [x] Extract selection state
+  - [x] Extract mustMoveFrom derivation
+  - [x] Extract chainCapturePath derivation
+  - [x] Extract placement target highlighting
+  - [x] Add unit tests (`useBackendBoardSelection.test.ts`)
+- [x] Create `src/client/hooks/useBackendBoardHandlers.ts` (448 LOC)
+  - [x] Extract ring placement prompt state
+  - [x] Extract cell click handler
+  - [x] Extract double-click handler
+  - [x] Extract context menu handler
+  - [x] Extract confirm ring count handler
+  - [x] Add unit tests (`useBackendBoardHandlers.test.ts`)
+- [x] Create `src/client/hooks/useBackendGameStatus.ts` (210 LOC)
+  - [x] Extract fatal error state
+  - [x] Extract victory modal dismissed state
+  - [x] Extract resign states
+  - [x] Extract resign handler
+  - [x] Extract victory modal reset effect
+  - [x] Add unit tests (`useBackendGameStatus.test.ts`)
+- [x] Create `src/client/hooks/useBackendChat.ts` (93 LOC)
+  - [x] Extract chat input state
+  - [x] Extract submit handler
+  - [x] Add unit tests (`useBackendChat.test.ts`)
+- [x] Create `src/client/hooks/useBackendTelemetry.ts` (193 LOC)
+  - [x] Extract weird state tracking refs
+  - [x] Extract calibration ref
+  - [x] Extract weird state tracking effect
+  - [x] Extract calibration event effect
+  - [x] Add unit tests (`useBackendTelemetry.test.ts`)
+- [x] Update BackendGameHost to use hooks
+- [x] Run E2E tests
+- [x] Manual smoke test
 
 ### Phase 2: Promote Internal Hooks
 
@@ -648,13 +677,25 @@ interface BackendGameSidebarProps {
 
 ## 7. Success Metrics
 
-| Metric                             | Current | Target                  |
-| ---------------------------------- | ------- | ----------------------- |
-| BackendGameHost.tsx LOC            | 2,125   | ~600                    |
-| useState calls in BackendGameHost  | ~16     | ~5 (delegated to hooks) |
-| useEffect hooks in BackendGameHost | ~13     | ~3                      |
-| Internal helper functions in host  | 3       | 0 (extracted)           |
-| Time to understand backend flow    | ~1 hour | <20 min                 |
+| Metric                             | Original | After Phase 1 | Target                  |
+| ---------------------------------- | -------- | ------------- | ----------------------- |
+| BackendGameHost.tsx LOC            | 2,125    | 1,613         | ~600                    |
+| useState calls in BackendGameHost  | ~16      | ~10           | ~5 (delegated to hooks) |
+| useEffect hooks in BackendGameHost | ~13      | ~9            | ~3                      |
+| Internal helper functions in host  | 3        | 3             | 0 (extracted)           |
+| Unit tests for extracted hooks     | 0        | 97            | 100+                    |
+| Time to understand backend flow    | ~1 hour  | ~45 min       | <20 min                 |
+
+### Phase 1 Test Coverage
+
+| Test File                          | Tests        |
+| ---------------------------------- | ------------ |
+| `useBackendBoardSelection.test.ts` | ✅           |
+| `useBackendBoardHandlers.test.ts`  | ✅           |
+| `useBackendGameStatus.test.ts`     | ✅           |
+| `useBackendChat.test.ts`           | ✅           |
+| `useBackendTelemetry.test.ts`      | ✅           |
+| **Total**                          | **97 tests** |
 
 ---
 
@@ -752,18 +793,30 @@ graph LR
 
 ## Appendix A: File Locations
 
-| New File                                                | Purpose                          |
-| ------------------------------------------------------- | -------------------------------- |
-| `src/client/hooks/useBackendBoardSelection.ts`          | Board selection state            |
-| `src/client/hooks/useBackendBoardHandlers.ts`           | Cell interaction handlers        |
-| `src/client/hooks/useBackendGameStatus.ts`              | Game status and resign           |
-| `src/client/hooks/useBackendChat.ts`                    | Chat state management            |
-| `src/client/hooks/useBackendTelemetry.ts`               | Telemetry and tracking           |
-| `src/client/hooks/useBackendConnectionShell.ts`         | Connection lifecycle (extracted) |
-| `src/client/hooks/useBackendDiagnosticsLog.ts`          | Event logging (extracted)        |
-| `src/client/hooks/useBackendDecisionUI.ts`              | Decision UI (extracted)          |
-| `src/client/components/backend/BackendBoardSection.tsx` | Board section component          |
-| `src/client/components/backend/BackendGameSidebar.tsx`  | Sidebar component                |
+### Phase 1 Files (✅ Created)
+
+| File                                           | Purpose                   | LOC | Tests |
+| ---------------------------------------------- | ------------------------- | --- | ----- |
+| `src/client/hooks/useBackendBoardSelection.ts` | Board selection state     | 184 | ✅    |
+| `src/client/hooks/useBackendBoardHandlers.ts`  | Cell interaction handlers | 448 | ✅    |
+| `src/client/hooks/useBackendGameStatus.ts`     | Game status and resign    | 210 | ✅    |
+| `src/client/hooks/useBackendChat.ts`           | Chat state management     | 93  | ✅    |
+| `src/client/hooks/useBackendTelemetry.ts`      | Telemetry and tracking    | 193 | ✅    |
+
+### Phase 2 Files (Planned)
+
+| File                                            | Purpose              | Status           |
+| ----------------------------------------------- | -------------------- | ---------------- |
+| `src/client/hooks/useBackendConnectionShell.ts` | Connection lifecycle | Internal in host |
+| `src/client/hooks/useBackendDiagnosticsLog.ts`  | Event logging        | Internal in host |
+| `src/client/hooks/useBackendDecisionUI.ts`      | Decision UI          | Internal in host |
+
+### Phase 3 Files (Planned)
+
+| File                                                    | Purpose                 | Status      |
+| ------------------------------------------------------- | ----------------------- | ----------- |
+| `src/client/components/backend/BackendBoardSection.tsx` | Board section component | Not created |
+| `src/client/components/backend/BackendGameSidebar.tsx`  | Sidebar component       | Not created |
 
 ---
 
@@ -782,6 +835,7 @@ These modules could be made more generic for Backend/Sandbox sharing in future:
 
 ## Revision History
 
-| Date       | Author                  | Changes              |
-| ---------- | ----------------------- | -------------------- |
-| 2025-12-25 | Claude (Architect mode) | Initial plan created |
+| Date       | Author                  | Changes                                                                                                                                                                                                                                                                     |
+| ---------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2025-12-25 | Claude (Architect mode) | Initial plan created                                                                                                                                                                                                                                                        |
+| 2025-12-25 | Claude (Architect mode) | **Phase 1 Complete**: Marked Phase 1 as complete, added execution summary with actual LOC counts (184+448+210+93+193=1,128), documented 97 unit tests created, updated metrics showing 2,125→1,613 LOC (-24% reduction), updated Phase 2-3 estimates based on current state |

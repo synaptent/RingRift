@@ -39,15 +39,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SSHConfig:
-    """SSH connection configuration."""
+    """SSH connection configuration.
+
+    Network stability defaults (Dec 2025):
+    - connect_timeout=30: Lambda datacenter can be slow
+    - server_alive_interval=30: Detect dead connections
+    - server_alive_count_max=4: Allow more dropped keepalives
+    - tcp_keepalive=True: Enable TCP-level keepalives
+    """
     host: str
     port: int = 22
     user: str = "root"
     ssh_key: str | None = None
-    connect_timeout: int = 10
+    connect_timeout: int = 30  # Increased from 10 for Lambda reliability
     strict_host_key_checking: str = "accept-new"  # "no", "yes", or "accept-new"
     batch_mode: bool = True
-    server_alive_interval: int | None = None
+    server_alive_interval: int = 30  # Was None, now default for stability
+    server_alive_count_max: int = 4  # NEW: Allow more dropped keepalives
+    tcp_keepalive: bool = True  # NEW: Enable TCP-level keepalives
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> SSHConfig:
@@ -78,6 +87,12 @@ class SSHConfig:
 
         if self.server_alive_interval:
             args.extend(["-o", f"ServerAliveInterval={self.server_alive_interval}"])
+
+        if self.server_alive_count_max:
+            args.extend(["-o", f"ServerAliveCountMax={self.server_alive_count_max}"])
+
+        if self.tcp_keepalive:
+            args.extend(["-o", "TCPKeepAlive=yes"])
 
         # Port (if non-default)
         if self.port != 22:

@@ -331,7 +331,7 @@ class ClusterManifest:
         self.db_path = db_path
         self.node_id = socket.gethostname()
         self._conn: sqlite3.Connection | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # RLock allows reentrant locking (e.g., get_node_inventory -> get_node_capacity)
 
         # Load host configuration
         self._hosts_config: dict[str, Any] = {}

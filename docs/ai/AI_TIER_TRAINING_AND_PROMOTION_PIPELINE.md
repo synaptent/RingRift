@@ -1,20 +1,23 @@
 # AI Tier Training and Promotion Pipeline (H-AI-9 – Square-8 2-Player)
 
-> Status: partially implemented. Describes the intended training, evaluation, and promotion loop for Square-8 2-player D2/D4/D6/D8 tiers.  
+> Status: partially implemented. Describes the intended training, evaluation, and promotion loop for Square-8 2-player tiers D1–D10 (D11 reserved for internal benchmarks).  
 > Core building blocks (tier eval configs, perf budgets, curriculum harness) and the combined gating CLI are now implemented; remaining orchestration is incremental wiring on top.
 > Implementation reference: `ai-service/docs/training/TIER_PROMOTION_SYSTEM.md` (module/API overview).
 
-This document specifies a concrete, repeatable pipeline for training, evaluating, and promoting AI models for the Square-8 2-player difficulty ladder tiers D2, D4, D6, and D8.
+This document specifies a concrete, repeatable pipeline for training, evaluating, and promoting AI models for the Square-8 2-player difficulty ladder tiers D1–D10 (with D11 treated as internal-only).
 
-### Current runnable pieces (2025-12-06)
+### Current runnable pieces (2025-12-25)
 
-- **Tier gate path:** `ai-service/scripts/run_tier_gate.py` + `app/training/tier_eval_config.py` remain the canonical promotion gate for D2/D4/D6/D8 (Square-8 2p). Use `--output-json` and `--promotion-plan-out` for artefacts.
+- **Tier training + gating:** `ai-service/scripts/run_tier_training_pipeline.py` (D2–D10) + `ai-service/scripts/run_full_tier_gating.py` (wraps `run_tier_gate.py` + perf benchmark). Defaults live in `ai-service/config/tier_training_pipeline.square8_2p.json` and runs emit `training_report.json` + `gate_report.json`.
+- **Promotion tracking:** `ai-service/scripts/apply_tier_promotion_plan.py` records candidates in `ai-service/config/tier_candidate_registry.square8_2p.json` and emits `promotion_summary.json` + `promotion_patch_guide.txt`. Runtime ladder overrides (if used) live in `ai-service/data/ladder_runtime_overrides.json` and are applied by `get_effective_ladder_config`.
 - **NN baseline demos:** `ai-service/scripts/run_nn_training_baseline.py` with accompanying smokes `ai-service/tests/test_nn_training_baseline_demo.py` and `ai-service/tests/test_neural_net_ai_demo.py` run today but are **demo-scale only** (not production checkpoints). Treat outputs as experimental candidates until slotted into the gate.
 - **Distributed self-play soak:** `ai-service/scripts/run_distributed_selfplay_soak.py` is wired for Square-8 2p distributed self-play; use it for dataset generation ahead of tier gates. Promotion criteria below still apply.
 
 The design is constrained to existing infrastructure:
 
-- Ladder definitions in [`python.LadderTierConfig`](../../ai-service/app/config/ladder_config.py:26) and [`python.get_ladder_tier_config`](../../ai-service/app/config/ladder_config.py:279).
+- Ladder definitions in [`python.LadderTierConfig`](../../ai-service/app/config/ladder_config.py:26) and [`python.get_effective_ladder_config`](../../ai-service/app/config/ladder_config.py:1249) (runtime overrides live in `ai-service/data/ladder_runtime_overrides.json`).
+- Candidate registry in [`python.tier_promotion_registry`](../../ai-service/app/training/tier_promotion_registry.py:1) with default file `ai-service/config/tier_candidate_registry.square8_2p.json`.
+- Tier training defaults in `ai-service/config/tier_training_pipeline.square8_2p.json` (used by `scripts/run_tier_training_pipeline.py`).
 - Canonical training environment [`python.RingRiftEnv`](../../ai-service/app/training/env.py:274) via [`python.make_env`](../../ai-service/app/training/env.py:221) and [`python.TrainingEnvConfig`](../../ai-service/app/training/env.py:171).
 - Tier evaluation configs in [`python.TierEvaluationConfig`](../../ai-service/app/training/tier_eval_config.py:37) and runner [`python.run_tier_evaluation`](../../ai-service/app/training/tier_eval_runner.py:319).
 - Difficulty-tier gating CLI [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1).
@@ -31,7 +34,7 @@ This pipeline covers only:
 
 - Board type: `square8` (8×8, compact ruleset).
 - Players: 2.
-- Ladder difficulties: D2, D4, D6, D8 (logical difficulties 2, 4, 6, 8).
+- Ladder difficulties: D1–D10 (D11 reserved for internal benchmarks; not exposed via the public API).
 
 Future work can extend the same patterns to other boards and player counts using the multi-board tier configs already in [`python.tier_eval_config`](../../ai-service/app/training/tier_eval_config.py:196) and [`python.ladder_config`](../../ai-service/app/config/ladder_config.py:121).
 
@@ -47,20 +50,27 @@ Future work can extend the same patterns to other boards and player counts using
 
 For Square-8 2-player, the canonical ladder currently defines (simplified):
 
-| Tier | Difficulty | Ladder ai_type | Ladder model_id | heuristic_profile_id | Intended strength    |
-| ---- | ---------- | -------------- | --------------- | -------------------- | -------------------- |
-| D2   | 2          | HEURISTIC      | heuristic_v1_2p | heuristic_v1_2p      | Casual / learning    |
-| D4   | 4          | MINIMAX        | v1-minimax-4    | heuristic_v1_2p      | Intermediate         |
-| D6   | 6          | MINIMAX        | v1-minimax-6    | heuristic_v1_2p      | Advanced             |
-| D8   | 8          | MCTS           | v1-mcts-8       | heuristic_v1_2p      | Strong / near-expert |
+| Tier | Difficulty | Ladder ai_type | Ladder model_id      | heuristic_profile_id | Intended strength              |
+| ---- | ---------- | -------------- | -------------------- | -------------------- | ------------------------------ |
+| D1   | 1          | RANDOM         | —                    | —                    | Entry / baseline               |
+| D2   | 2          | HEURISTIC      | heuristic_v1_sq8_2p  | heuristic_v1_sq8_2p  | Casual / learning              |
+| D3   | 3          | MINIMAX        | v1-minimax-3         | heuristic_v1_sq8_2p  | Lower-mid (non-neural minimax) |
+| D4   | 4          | MINIMAX        | nnue_square8_2p      | heuristic_v1_sq8_2p  | Mid (NNUE minimax)             |
+| D5   | 5          | DESCENT        | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Upper-mid (neural Descent)     |
+| D6   | 6          | DESCENT        | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | High (neural Descent)          |
+| D7   | 7          | MCTS           | —                    | heuristic_v1_sq8_2p  | Expert (heuristic-only MCTS)   |
+| D8   | 8          | MCTS           | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Strong expert (neural MCTS)    |
+| D9   | 9          | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Master (Gumbel MCTS)           |
+| D10  | 10         | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Grandmaster (Gumbel MCTS)      |
+| D11  | 11         | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Internal-only stress tier      |
 
 (from [`python._build_default_square8_two_player_configs`](../../ai-service/app/config/ladder_config.py:47))
 
 Pipeline invariants:
 
-- **Ordering:** D2 < D4 < D6 < D8 in strength on Square-8 2-player.
+- **Ordering:** D1 < D2 < … < D10 in strength on Square-8 2-player (D11 is internal-only).
 - **Non-regression vs previous production version of each tier:** new Dn must not be substantially weaker than the previous Dn against shared baselines.
-- **Perf budgets for D4/D6/D8:** average and p95 move latencies must respect [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1) and [`python.TierPerfBudget`](../../ai-service/app/config/perf_budgets.py:20).
+- **Perf budgets for D3–D8:** average and p95 move latencies must respect [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1) and [`python.TierPerfBudget`](../../ai-service/app/config/perf_budgets.py:20).
 
 ---
 
@@ -80,7 +90,7 @@ Pipeline invariants:
 The FastAPI service endpoint [`python.get_ai_move`](../../ai-service/app/main.py:236):
 
 - Uses [`python._get_difficulty_profile`](../../ai-service/app/main.py:1048) for the global 1–10 mapping.
-- When possible, refines settings via board-aware [`python.get_ladder_tier_config`](../../ai-service/app/config/ladder_config.py:279) for `(difficulty, board_type, num_players)`.
+- When possible, refines settings via board-aware [`python.get_effective_ladder_config`](../../ai-service/app/config/ladder_config.py:1249) for `(difficulty, board_type, num_players)` (runtime overrides load from `ai-service/data/ladder_runtime_overrides.json`).
 - Constructs [`python.AIConfig`](../../ai-service/app/models/core.py:419) with:
   - `difficulty`, `randomness`, `think_time` from the ladder or profile.
   - `heuristic_profile_id` from ladder or difficulty profile.
@@ -88,7 +98,7 @@ The FastAPI service endpoint [`python.get_ai_move`](../../ai-service/app/main.py
 
 Neural-net-backed AIs (MCTS/Descent) resolve `nn_model_id` to a checkpoint under `ai-service/models` via [`python.NeuralNetAI`](../../ai-service/app/ai/neural_net/__init__.py:1049).
 
-Heuristic tiers use profiles in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1).
+Heuristic tiers use profiles in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1). If `RINGRIFT_TRAINED_HEURISTIC_PROFILES` points at a JSON bundle, trained profiles are loaded at startup and merged into the registry.
 
 ### 2.3 Training components
 
@@ -104,13 +114,13 @@ We reuse existing training infrastructure described in [`AI_TRAINING_AND_DATASET
 
 ### 2.4 Evaluation, gating, and perf
 
-- Tier evaluation configs: [`python.TIER_EVAL_CONFIGS`](../../ai-service/app/training/tier_eval_config.py:53) with [`python.TierEvaluationConfig`](../../ai-service/app/training/tier_eval_config.py:37), keyed by `"D2"`, `"D4"`, `"D6"`, `"D8"`.
+- Tier evaluation configs: [`python.TIER_EVAL_CONFIGS`](../../ai-service/app/training/tier_eval_config.py:53) with [`python.TierEvaluationConfig`](../../ai-service/app/training/tier_eval_config.py:37), keyed by `"D1"`–`"D11"`.
 - Runner: [`python.run_tier_evaluation`](../../ai-service/app/training/tier_eval_runner.py:319) returning [`python.TierEvaluationResult`](../../ai-service/app/training/tier_eval_runner.py:74).
 - Difficulty-tier gate CLI: [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1), difficulty mode via [`python._run_difficulty_mode`](../../ai-service/scripts/run_tier_gate.py:252).
   - Emits evaluation JSON via `--output-json`.
   - Emits promotion descriptor via `--promotion-plan-out`.
 - Perf budgets:
-  - [`python.TIER_PERF_BUDGETS`](../../ai-service/app/config/perf_budgets.py:101) with entries `"D4_SQ8_2P"`, `"D6_SQ8_2P"`, `"D8_SQ8_2P"`.
+  - [`python.TIER_PERF_BUDGETS`](../../ai-service/app/config/perf_budgets.py:101) with entries `"D3_SQ8_2P"`–`"D8_SQ8_2P"`.
   - Benchmarks via [`python.run_tier_perf_benchmark`](../../ai-service/app/training/tier_perf_benchmark.py:84) and CLI [`run_tier_perf_benchmark.py`](../../ai-service/scripts/run_tier_perf_benchmark.py:1).
 
 ### 2.5 Human calibration and telemetry
@@ -129,12 +139,19 @@ We standardise what a _candidate_ is at each tier and how it will be wired into 
 
 ### 3.1 Summary table
 
-| Tier | Engine family (Square-8 2p) | Candidate kind                               | Primary artefact(s)                                                                               | Ladder fields touched on promotion                             |
-| ---- | --------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| D2   | HEURISTIC                   | Heuristic profile                            | New entry in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1) | `heuristic_profile_id` (and optionally `model_id`)             |
-| D4   | MINIMAX                     | Search persona + heuristic profile           | Minimax config + optional D4-specific heuristic profile                                           | `model_id` (persona tag) and optionally `heuristic_profile_id` |
-| D6   | MINIMAX or MINIMAX+NN       | Neural eval checkpoint and/or search persona | Versioned NN checkpoint (`models/<nn_model_id>.pth`) and/or minimax config                        | `model_id` (mapped to `nn_model_id` or persona)                |
-| D8   | MCTS (+ optional NN)        | Strongest available model (NN+MCTS/Descent)  | Versioned NN checkpoint and MCTS config                                                           | `model_id` (mapped to `nn_model_id`)                           |
+| Tier | Engine family (Square-8 2p) | Candidate kind                     | Primary artefact(s)                                                                               | Ladder fields touched on promotion                             |
+| ---- | --------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| D1   | RANDOM                      | None (baseline)                    | —                                                                                                 | —                                                              |
+| D2   | HEURISTIC                   | Heuristic profile                  | New entry in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1) | `heuristic_profile_id` (and optionally `model_id`)             |
+| D3   | MINIMAX (non-neural)        | Search persona + heuristic profile | Minimax config snapshot + optional D3-specific heuristic profile                                  | `model_id` (persona tag) and optionally `heuristic_profile_id` |
+| D4   | MINIMAX (NNUE)              | NNUE checkpoint + search persona   | Versioned NNUE checkpoint (`models/nnue/<nn_model_id>.pt`) and/or minimax config                  | `model_id` (mapped to `nn_model_id`)                           |
+| D5   | DESCENT (neural)            | Neural checkpoint                  | Versioned NN checkpoint (`models/<nn_model_id>.pth`)                                              | `model_id` (mapped to `nn_model_id`)                           |
+| D6   | DESCENT (neural)            | Neural checkpoint                  | Versioned NN checkpoint (`models/<nn_model_id>.pth`)                                              | `model_id` (mapped to `nn_model_id`)                           |
+| D7   | MCTS (heuristic-only)       | Search persona + heuristic profile | MCTS config snapshot (search persona) + heuristic profile                                         | `model_id` (persona tag) and optionally `heuristic_profile_id` |
+| D8   | MCTS (neural)               | Neural checkpoint + MCTS config    | Versioned NN checkpoint (`models/<nn_model_id>.pth`) and MCTS config                              | `model_id` (mapped to `nn_model_id`)                           |
+| D9   | GUMBEL_MCTS (neural)        | Neural checkpoint + Gumbel config  | Versioned NN checkpoint (`models/<nn_model_id>.pth`) and Gumbel MCTS config                       | `model_id` (mapped to `nn_model_id`)                           |
+| D10  | GUMBEL_MCTS (neural)        | Neural checkpoint + Gumbel config  | Versioned NN checkpoint (`models/<nn_model_id>.pth`) and Gumbel MCTS config                       | `model_id` (mapped to `nn_model_id`)                           |
+| D11  | GUMBEL_MCTS (internal)      | Neural checkpoint + Gumbel config  | Same as D9/D10; reserved for internal benchmarks                                                  | `model_id` (mapped to `nn_model_id`)                           |
 
 Rules:
 
@@ -151,118 +168,135 @@ Rules:
 - Board: `BoardType.SQUARE8`, `num_players=2` in [`python.TrainingEnvConfig`](../../ai-service/app/training/env.py:171).
 - Reward: `"terminal"` for gating-oriented training (self-play for value/policy can still use shaping when appropriate).
 - Seeding: follow the RNG model from [`AI_TRAINING_AND_DATASETS.md`](AI_TRAINING_AND_DATASETS.md:284) and [`python.RingRiftEnv.reset`](../../ai-service/app/training/env.py:371).
-- Data provenance: all training / eval datasets generated through the Python rules host described in [`AI_TRAINING_AND_DATASETS.md`](AI_TRAINING_AND_DATASETS.md:19).
+- Data provenance: all training / eval datasets generated through the Python rules host described in [`AI_TRAINING_AND_DATASETS.md`](AI_TRAINING_AND_DATASETS.md:19), and only from DBs marked canonical in `ai-service/TRAINING_DATA_REGISTRY.md` (Square-8 2-player uses `ai-service/data/games/canonical_square8_2p.db` by default).
+- Tier pipeline defaults: `ai-service/config/tier_training_pipeline.square8_2p.json` is the default config for [`run_tier_training_pipeline.py`](../../ai-service/scripts/run_tier_training_pipeline.py:1) (override with `--config`).
+- CMA-ES workers: `cmaes_workers` in the tier config or `RINGRIFT_CMAES_WORKERS` env var.
 
-### 4.2 D2 – heuristic baseline
+### 4.2 Tier training modes (summary)
 
-**Model type**
+| Tier | Ladder AI type         | `run_tier_training_pipeline.py` mode | Primary artifact                                                   |
+| ---- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| D1   | RANDOM                 | —                                    | —                                                                  |
+| D2   | HEURISTIC              | `heuristic_cmaes`                    | Trained heuristic profile (`data/trained_heuristic_profiles.json`) |
+| D3   | MINIMAX (non-neural)   | `heuristic_cmaes`                    | Heuristic profile for minimax eval (plus optional persona)         |
+| D4   | MINIMAX (NNUE)         | `search_persona`                     | Minimax persona + NNUE checkpoint                                  |
+| D5   | DESCENT (neural)       | `neural`                             | NN checkpoint (`models/<nn_model_id>.pth`)                         |
+| D6   | DESCENT (neural)       | `neural`                             | NN checkpoint                                                      |
+| D7   | MCTS (heuristic-only)  | `search_persona`                     | MCTS persona JSON + heuristic profile                              |
+| D8   | MCTS (neural)          | `neural`                             | NN checkpoint + MCTS config                                        |
+| D9   | GUMBEL_MCTS (neural)   | `neural`                             | NN checkpoint + Gumbel config                                      |
+| D10  | GUMBEL_MCTS (neural)   | `neural`                             | NN checkpoint + Gumbel config                                      |
+| D11  | GUMBEL_MCTS (internal) | —                                    | Internal-only                                                      |
 
-- Pure heuristic AI using a Square-8 2-player profile in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1), currently `heuristic_v1_2p`.
+> **Note:** `config/tier_training_pipeline.square8_2p.json` currently lists D5 as `search_persona`; align it with the D5 ladder mapping (Descent) before promotion if D5 remains neural.
 
-**Training data & curriculum**
-
-- Primary dataset: territory / combined-margin JSONL as in [`python.generate_territory_dataset`](../../ai-service/app/training/generate_territory_dataset.py:1) and documented in [`AI_TRAINING_AND_DATASETS.md`](AI_TRAINING_AND_DATASETS.md:134).
-  - Board: `square8`.
-  - `num_players=2`.
-  - Engine mode: `descent-only` or `mixed` at low-to-mid difficulties.
-- Optional NPZ self-play dataset via [`python.generate_dataset`](../../ai-service/app/training/generate_data.py:1) for auxiliary supervision.
-- Curriculum:
-  - Start from current `heuristic_v1_2p`.
-  - Optimise weights via:
-    - [`python.train_heuristic_weights`](../../ai-service/app/training/train_heuristic_weights.py:1) over combined-margin targets; or
-    - [`python.run_cmaes_heuristic_optimization`](../../ai-service/app/training/train.py:231) with a Square-8 heuristic tier spec (for example `sq8_heuristic_baseline_v1`).
-
-**Training configuration**
-
-- Focus on gentle, forgiving behaviour:
-  - Loss: regression on combined margin with regularisation to avoid extreme weight oscillations.
-  - Conservative hyperparameters, early stopping on validation combined-margin error.
-- For CMA-ES, keep:
-  - Limited generations (for example 3–5).
-  - Small population per generation (for example 8), as defaulted in [`python.run_cmaes_heuristic_optimization`](../../ai-service/app/training/train.py:231).
-
-**Outputs & versioning**
-
-- Create a new `heuristic_profile_id` such as `sq8_2p_d2_vYYYYMMDD_N` and persist it to `trained_heuristic_profiles.json` (via future Code-mode tasks).
-- For gating, refer to the candidate by this `heuristic_profile_id`. Ladder D2 `heuristic_profile_id` will be updated to this id on promotion.
-
-### 4.3 D4 – intermediate minimax tier
+### 4.3 D2 – heuristic baseline
 
 **Model type**
 
-- Minimax search (`AIType.MINIMAX`) using:
-  - A search persona (depth, pruning, etc.).
-  - A Square-8 2-player heuristic profile (shared with D2 or D4-specific).
+- Pure heuristic AI using a Square-8 2-player profile in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1), currently `heuristic_v1_sq8_2p`.
 
-**Training data & curriculum**
+**Training data & method**
 
-- Data:
-  - Mixed self-play on `square8`, 2 players, with difficulties clustered around D2–D6 using [`python.generate_dataset`](../../ai-service/app/training/generate_data.py:1).
-- Tuning:
-  - Treat D4 primarily as a search-config tuning problem with minimal heuristic changes.
-  - Compare personas:
-    - Baseline: `v1-minimax-4`.
-    - Candidates: `v2-minimax-4a`, `v2-minimax-4b`, etc., each with specific depth / pruning parameters.
-
-**Training / tuning configuration**
-
-- For each persona:
-  - Fix `heuristic_profile_id`.
-  - Define search config (depth, pruning, etc.).
-  - Run quick tournaments vs:
-    - D1 random.
-    - D2 heuristic (current production).
-    - Previous D4 persona.
-  - Use [`run_tournament.py`](../../ai-service/scripts/run_tournament.py:1) in `basic` mode or [`evaluate_ai_models.py`](../../ai-service/scripts/evaluate_ai_models.py:1) to gather stats.
+- Primary dataset: territory / combined-margin JSONL as in [`python.generate_territory_dataset`](../../ai-service/app/training/generate_territory_dataset.py:1).
+- Optional NPZ self-play dataset via [`python.generate_dataset`](../../ai-service/app/training/generate_data.py:1).
+- Run via `run_tier_training_pipeline.py --tier D2` (CMA-ES). Distributed CMA-ES modes are selected by the tier config and `RINGRIFT_CMAES_WORKERS`.
 
 **Outputs & versioning**
 
-- Candidate D4 persona id, e.g. `v2-minimax-4a`.
-- Ladder D4 entry updated to `model_id="v2-minimax-4a"` and possibly a new `heuristic_profile_id` if D4-specific weights are introduced.
+- CMA-ES updates `data/trained_heuristic_profiles.json`; set `RINGRIFT_TRAINED_HEURISTIC_PROFILES` to load it (auto-set in `ai-service/run.sh` if the file exists).
+- The candidate id recorded in `training_report.json` is used for gating and promotion.
 
-### 4.4 D6 – advanced tier
+### 4.4 D3 – lower minimax tier (non-neural)
 
-**Model type (current)**
+**Model type**
 
-- High-budget minimax search with same heuristic profile as D2/D4, leveraging D6 perf budget.
+- Minimax search (`AIType.MINIMAX`) using heuristic evaluation only.
 
-**Model type (target)**
+**Training data & method**
 
-- NN-backed search (minimax or Descent), where `nn_model_id` selects a shared Square-8 2-player NN.
-
-**Training data & curriculum**
-
-- Self-play:
-  - Square-8 2-player NPZ datasets from [`python.generate_dataset`](../../ai-service/app/training/generate_data.py:1) using engine mixes centred around D4–D6.
-- Curriculum:
-  - Use [`python.CurriculumTrainer`](../../ai-service/app/training/curriculum.py:247) with:
-    - `board_type=BoardType.SQUARE8`.
-    - `num_players=2`.
-    - A teacher model id (for example the best existing D6 or a strong D4).
-  - Curriculum loops combine:
-    - Self-play via [`python.generate_data`](../../ai-service/app/training/generate_data.py:1) (curriculum-aware).
-    - NN training via [`python.train_model`](../../ai-service/app/training/train.py:1171).
-    - Promotion logic inside the curriculum harness.
-
-**Training configuration**
-
-- NN architecture:
-  - Use Square-8 configuration in [`python.TrainConfig`](../../ai-service/app/config/training_config.py:176) with `board_type=SQUARE8`.
-  - Write checkpoints to `models/<model_id>.pth` via [`python.save_model_checkpoint`](../../ai-service/app/training/model_versioning.py:865).
-- When training a D6 NN candidate, choose `model_id` names like `sq8_d6_v1`, `sq8_d6_v2` (set in [`python.TrainConfig`](../../ai-service/app/config/training_config.py:176)).
-- After training:
-  - Optionally register candidates into [`python.AutoTournamentPipeline`](../../ai-service/app/training/auto_tournament.py:327) for detailed Elo-based evaluation.
-  - Choose a champion checkpoint as the D6 candidate id `CANDIDATE_D6_ID`.
+- Use CMA-ES (same pipeline as D2) to produce a D3-specific heuristic profile for minimax evaluation.
+- If minimax depth/pruning changes are part of the candidate, capture them via the `search_persona.json` artifact and treat the persona tag as the `model_id`.
 
 **Outputs & versioning**
 
-- For NN-backed D6:
-  - `nn_model_id = "sq8_d6_vN"`.
-  - Ladder D6 `model_id` set to `sq8_d6_vN`.
-- For pure-minimax D6:
-  - Persona tag `v2-minimax-6` as `model_id`, possibly with D6-specific `heuristic_profile_id`.
+- Candidate includes `heuristic_profile_id` (and optionally a persona-tag `model_id`).
 
-**Baseline NN demo experiment (A2, non-production)**
+### 4.5 D4 – mid minimax tier (NNUE)
+
+**Model type**
+
+- Minimax with NNUE evaluation; default checkpoint `nnue_square8_2p`.
+
+**Training data & method**
+
+- `run_tier_training_pipeline.py --tier D4` produces a `search_persona.json` snapshot for minimax settings.
+- Optional: train a new NNUE checkpoint and update `model_id` to the candidate `nn_model_id`.
+
+**Outputs & versioning**
+
+- Persona tag (for search config) and/or `nn_model_id` checkpoint.
+
+### 4.6 D5 – upper-mid Descent tier (neural)
+
+**Model type**
+
+- Descent (`AIType.DESCENT`) with neural guidance (default `ringrift_best_sq8_2p`).
+
+**Training data & method**
+
+- `run_tier_training_pipeline.py --tier D5` should run neural training when D5 is Descent (override the tier config if needed).
+- Candidate is a new NN checkpoint plus any updated Descent parameters.
+
+### 4.7 D6 – high Descent tier (neural)
+
+**Model type**
+
+- Descent (`AIType.DESCENT`) with larger budget and stronger NN.
+
+**Training data & method**
+
+- Neural training via `run_tier_training_pipeline.py --tier D6` (GPU required for full runs).
+- Optional curriculum loops using [`python.CurriculumTrainer`](../../ai-service/app/training/curriculum.py:247).
+
+**Outputs & versioning**
+
+- `nn_model_id = "sq8_d6_vN"` (or similar) and updated ladder entry.
+
+### 4.8 D7 – heuristic-only MCTS tier
+
+**Model type**
+
+- MCTS without neural guidance; uses heuristic evaluation only.
+
+**Training data & method**
+
+- `run_tier_training_pipeline.py --tier D7` generates a `search_persona.json` with MCTS parameters.
+- Heuristic weights can be shared with D2/D3 or tuned separately.
+
+### 4.9 D8 – neural MCTS tier
+
+**Model type**
+
+- MCTS with neural guidance (NN checkpoint + MCTS params).
+
+**Training data & method**
+
+- Neural training via `run_tier_training_pipeline.py --tier D8`.
+- Capture MCTS settings in a persona tag; candidate uses `model_id` as `nn_model_id`.
+
+### 4.10 D9/D10 – Gumbel MCTS tiers (neural)
+
+**Model type**
+
+- Gumbel MCTS with neural guidance; strongest search budgets.
+
+**Training data & method**
+
+- Neural training via `run_tier_training_pipeline.py --tier D9/D10`.
+- No perf budgets today (see Section 6); rely on tier gating plus regression checks.
+
+### 4.11 Baseline NN demo experiment (A2, non-production)
 
 - For a cheap, smoke-testable Square-8 NN baseline, use the dedicated
   Python CLI:
@@ -295,38 +329,9 @@ Rules:
   - Construct `AIConfig` with `ai_type=NEURAL_DEMO` and an appropriate
     `nn_model_id` (for example the `model_id` emitted by the baseline
     script).
-  - The canonical difficulty ladder (D2–D8) does **not** select
+  - The canonical difficulty ladder (D1–D10) does **not** select
     `NEURAL_DEMO`; this path is reserved for private queues and
     experiments.
-
-### 4.5 D8 – strong / near-expert tier
-
-**Model type**
-
-- Strong MCTS (`AIType.MCTS`) on Square-8 2-player, optionally with NN guidance rerouted via `nn_model_id`.
-
-**Training data & curriculum**
-
-- Self-play:
-  - High-quality games produced by D6/D8 MCTS/Descent variants on Square-8 using [`python.generate_dataset`](../../ai-service/app/training/generate_data.py:1) or long soaks via [`run_self_play_soak.py`](../../ai-service/scripts/run_self_play_soak.py:1).
-- Curriculum:
-  - Start from best D6 NN weights (`sq8_d6_vN`), further train under enhanced search conditions and more challenging self-play opponents.
-  - Use auto-tournaments vs:
-    - Current best D6.
-    - Current best D8.
-    - Possibly experimental D9/D10 models (for research purposes, not gating).
-
-**Training configuration**
-
-- NN architecture: same as D6, with training hyperparameters adjusted for more complex positions (for example, more epochs, smaller learning rates).
-- MCTS config:
-  - Bound search budget to D8 perf budget via targeted profiling before candidate evaluation.
-  - Encode MCTS parameters into the persona string (`v2-mcts-8a`) coupled to `nn_model_id` if used.
-
-**Outputs & versioning**
-
-- Candidate id: `sq8_d8_vN` as `nn_model_id`.
-- Ladder D8 `model_id` set to this id and treated as both the NN and persona identifier.
 
 ---
 
@@ -336,12 +341,23 @@ Rules:
 
 [`python.TIER_EVAL_CONFIGS`](../../ai-service/app/training/tier_eval_config.py:53) includes:
 
-| Name | board_type | num_players | candidate_difficulty | Opponents (role)                                        | num_games | min_win_rate_vs_baseline | max_regression_vs_previous_tier |
-| ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------- | --------- | ------------------------ | ------------------------------- |
-| D2   | SQUARE8    | 2           | 2                    | D1 random (baseline)                                    | 200       | 0.60                     | None                            |
-| D4   | SQUARE8    | 2           | 4                    | D1 random (baseline), D2 (previous_tier)                | 400       | 0.70                     | 0.05                            |
-| D6   | SQUARE8    | 2           | 6                    | D1 random, D2 heuristic (baselines), D4 (previous_tier) | 400       | 0.75                     | 0.05                            |
-| D8   | SQUARE8    | 2           | 8                    | D1 random (baseline), D6 (previous_tier)                | 400       | 0.80                     | 0.05                            |
+Square-8 2-player tiers D1–D11 plus cross-board configs. Opponent mixes and roles live in the config; summary of Square-8 2-player thresholds:
+
+| Tier           | num_games | min_win_rate_vs_baseline | max_regression_vs_previous_tier |
+| -------------- | --------- | ------------------------ | ------------------------------- |
+| D1             | 100       | —                        | —                               |
+| D2             | 200       | 0.60                     | 0.05                            |
+| D3             | 200       | 0.55                     | 0.05                            |
+| D4             | 300       | 0.68                     | 0.05                            |
+| D5             | 300       | 0.60                     | 0.05                            |
+| D6             | 400       | 0.72                     | 0.05                            |
+| D7             | 400       | 0.65                     | 0.05                            |
+| D8             | 400       | 0.75                     | 0.05                            |
+| D9             | 400       | 0.75                     | 0.05                            |
+| D10            | 400       | 0.75                     | 0.05                            |
+| D11 (internal) | 400       | 0.75                     | 0.05                            |
+
+`min_win_rate_vs_baseline` is applied to the Wilson lower bound at `promotion_confidence=0.95`.
 
 These are consumed by:
 
@@ -350,27 +366,27 @@ These are consumed by:
 
 ### 5.2 Gating & promotion rules
 
-For each tier T ∈ {D2, D4, D6, D8}, the automated gate is:
+For each tier T ∈ {D2–D10} (D1 is a baseline, D11 is internal), the automated gate is:
 
-1. Run [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1) in difficulty-tier mode:
+1. **Preferred:** run the full wrapper after training completes:
 
    ```bash
    cd ai-service
-   python scripts/run_tier_gate.py \
+   python scripts/run_full_tier_gating.py \
      --tier D6 \
-     --seed 1 \
-     --candidate-model-id CANDIDATE_D6_ID \
-     --output-json logs/tier_eval/D6_candidate.json \
-     --promotion-plan-out logs/tier_eval/D6_promotion_plan.json
+     --candidate-id CANDIDATE_D6_ID \
+     --run-dir logs/tier_gate/D6_candidate
    ```
 
-2. [`python._run_difficulty_mode`](../../ai-service/scripts/run_tier_gate.py:252) will:
+   The wrapper reads `training_report.json`, enforces candidate artefacts, runs the tier evaluation, and executes perf checks when a budget exists.
+
+2. The wrapper invokes [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1), whose [`python._run_difficulty_mode`](../../ai-service/scripts/run_tier_gate.py:252) will:
    - Look up the TierEvaluationConfig via [`python.get_tier_config`](../../ai-service/app/training/tier_eval_config.py:436).
-   - Resolve current production ladder entry via [`python.get_ladder_tier_config`](../../ai-service/app/config/ladder_config.py:279) to find `current_model_id`.
+   - Resolve current production ladder entry via [`python.get_ladder_tier_config`](../../ai-service/app/config/ladder_config.py:279) to find `current_model_id` (runtime overrides are not applied here).
    - Call [`python.run_tier_evaluation`](../../ai-service/app/training/tier_eval_runner.py:319).
    - Print a human summary and emit:
-     - Full TierEvaluationResult JSON (`--output-json`).
-     - A promotion plan JSON via `--promotion-plan-out` with keys:
+     - Full TierEvaluationResult JSON (`tier_eval_result.json` in the wrapper run dir).
+     - A promotion plan JSON (`promotion_plan.json`) with keys:
        - `tier`, `board_type`, `num_players`.
        - `current_model_id`, `candidate_model_id`.
        - `decision`: `"promote"` or `"reject"`.
@@ -393,11 +409,20 @@ Process-level expectations added by H-AI-9:
 
 When a candidate passes automated gating (and perf, see below) and is approved:
 
-- Update [`python._build_default_square8_two_player_configs`](../../ai-service/app/config/ladder_config.py:47) in a Code-mode change:
-  - D2: set `heuristic_profile_id="CANDIDATE_D2_PROFILE"`, optionally `model_id` to the same id.
-  - D4: set `model_id="CANDIDATE_D4_PERSONA"`, optionally adjust `heuristic_profile_id`.
-  - D6: set `model_id="CANDIDATE_D6_ID"` (NN or minimax persona).
-  - D8: set `model_id="CANDIDATE_D8_ID"`.
+- Record the promotion plan in the candidate registry:
+
+  ```bash
+  cd ai-service
+  python scripts/apply_tier_promotion_plan.py \
+    --plan-path logs/tier_gate/D6_candidate/promotion_plan.json
+  ```
+
+  This updates `ai-service/config/tier_candidate_registry.square8_2p.json` and emits a `promotion_patch_guide.txt` next to the plan.
+
+- Apply the ladder update:
+  - **Runtime override:** write/update `ai-service/data/ladder_runtime_overrides.json` via `update_tier_model` / `update_tier_heuristic_profile` (no code change, immediate effect).
+  - **Permanent change:** update [`python._build_default_square8_two_player_configs`](../../ai-service/app/config/ladder_config.py:47) and commit the change.
+  - For heuristic tiers, ensure the promoted profile exists in `data/trained_heuristic_profiles.json` and is wired via `RINGRIFT_TRAINED_HEURISTIC_PROFILES`.
 
 Promotion plans written by `run_tier_gate.py` should be archived under something like `ai-service/data/promotions/square8_2p/` for traceability.
 
@@ -407,7 +432,7 @@ Promotion plans written by `run_tier_gate.py` should be archived under something
 
 ### 6.1 Running perf benchmarks
 
-For D4, D6, D8, perf budgets are defined in [`python._build_square8_two_player_budgets`](../../ai-service/app/config/perf_budgets.py:51) and described in [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1).
+For D3–D8, perf budgets are defined in [`python._build_square8_two_player_budgets`](../../ai-service/app/config/perf_budgets.py:51) and described in [`AI_TIER_PERF_BUDGETS.md`](AI_TIER_PERF_BUDGETS.md:1).
 
 For each candidate that _passes_ the tier gate, the pipeline must also run:
 
@@ -432,7 +457,7 @@ The CLI evaluates budgets via [`python._eval_budget`](../../ai-service/scripts/r
 - `within_p95 = p95_ms <= max_p95_move_ms`.
 - `overall_pass = within_avg and within_p95`.
 
-H-AI-9 treats `overall_pass` for perf as **required** for D4/D6/D8 promotions unless there is an explicit, documented adjustment of budgets.
+H-AI-9 treats `overall_pass` for perf as **required** for D3–D8 promotions unless there is an explicit, documented adjustment of budgets.
 
 In practice, instead of invoking the perf benchmark separately, the
 combined wrapper [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_tier_gating.py:1) can be used to run both the difficulty-tier gate and perf check in one step:
@@ -441,15 +466,15 @@ combined wrapper [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_t
 cd ai-service
 python scripts/run_full_tier_gating.py \
   --tier D6 \
-  --candidate-model-id CANDIDATE_D6_ID \
+  --candidate-id CANDIDATE_D6_ID \
   --run-dir logs/tier_gate/D6_candidate
 ```
 
 This writes:
 
-- `D6_tier_eval.json` and `D6_promotion_plan.json` – difficulty-tier gate outputs.
-- `D6_perf.json` – perf benchmark metrics and budget evaluation.
-- `D6_gate_report.json` – combined summary suitable for CI and manual review.
+- `tier_eval_result.json` and `promotion_plan.json` – difficulty-tier gate outputs.
+- `tier_perf_report.json` – perf benchmark metrics and budget evaluation (when a budget exists).
+- `gate_report.json` – combined summary suitable for CI and manual review.
 
 ### 6.2 Trade-offs and escalation
 
@@ -484,7 +509,7 @@ H-AI-9 integrates these as follows:
 
 Calibration-mode games in the client should:
 
-- Use Square-8, 2 players, ladder difficulties D2/D4/D6/D8, as recommended in [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:26).
+- Use Square-8, 2 players, **anchor tiers** D2/D4/D6/D8 by default (the public ladder is D1–D10); expand only when a specific tier is under study, as recommended in [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:26).
 - Attach `isCalibrationOptIn=true` in the payload to [`difficultyCalibrationEvents.ts`](../../src/shared/telemetry/difficultyCalibrationEvents.ts:1).
 
 During such games, the client sends:
@@ -528,18 +553,18 @@ Human calibration is **advisory but important**:
 
 ### 8.1 High-level pipeline stages
 
-For each tier T ∈ {D2, D4, D6, D8}, the pipeline is:
+For each tier T ∈ {D2–D10}, the pipeline is:
 
 1. **Train candidate for tier T:**
    - Run the appropriate training jobs (heuristic or NN) for Square-8 2-player using [`python.train_heuristic_weights`](../../ai-service/app/training/train_heuristic_weights.py:1), [`python.train_model`](../../ai-service/app/training/train.py:1171), or [`python.CurriculumTrainer`](../../ai-service/app/training/curriculum.py:247).
    - Produce candidate artefacts and assign a candidate id `CANDIDATE_T_ID`.
 
 2. **Run automated evaluation and gating:**
-   - `python scripts/run_tier_gate.py --tier T --candidate-model-id CANDIDATE_T_ID ...`.
-   - Inspect TierEvaluationResult JSON and promotion plan.
+   - `python scripts/run_full_tier_gating.py --tier T --candidate-id CANDIDATE_T_ID --run-dir RUN_DIR`.
+   - Inspect `tier_eval_result.json`, `promotion_plan.json`, and `gate_report.json`.
 
-3. **Run perf benchmarks:**
-   - For D4/D6/D8, run `python scripts/run_tier_perf_benchmark.py --tier T ...`.
+3. **Run perf benchmarks (where configured):**
+   - For D3–D8, run `python scripts/run_tier_perf_benchmark.py --tier T ...` (or rely on the wrapper).
    - Ensure `overall_pass=true`.
 
 4. **Optional cross-tier sanity evaluation:**
@@ -553,9 +578,9 @@ For each tier T ∈ {D2, D4, D6, D8}, the pipeline is:
    - Roll the candidate to calibration cohorts via feature flags or controlled environments.
    - Monitor aggregated telemetry for win-rate and perceived difficulty.
 
-6. **Approve and merge ladder update:**
-   - If all required stages succeed, update ladder configs in [`ladder_config.py`](../../ai-service/app/config/ladder_config.py:47) in a Code-mode change.
-   - Record promotion descriptor and supporting evidence (JSON, perf benchmark outputs, calibration summary).
+6. **Approve and apply ladder update:**
+   - If all required stages succeed, apply `promotion_plan.json` via `apply_tier_promotion_plan.py`.
+   - Promote via runtime override or by updating [`ladder_config.py`](../../ai-service/app/config/ladder_config.py:47).
 
 ### 8.2 Orchestration scripts / configs
 
@@ -563,10 +588,10 @@ To make the above reproducible, H-AI-9 defines the following orchestration entry
 
 1. **`ai-service/scripts/run_tier_training_pipeline.py`** (implemented)
    - Arguments:
-     - `--tier {D2,D4,D6,D8}`.
+     - `--tier {D2,D3,D4,D5,D6,D7,D8,D9,D10}`.
      - `--board square8`.
      - `--num-players 2`.
-     - `--run-dir PATH`.
+     - `--output-dir PATH` (script creates a timestamped run dir inside).
    - Behaviour (conceptual):
      - Generate training data for the tier (self-play, territory, etc.).
      - Run heuristic or NN training as appropriate.
@@ -579,25 +604,27 @@ To make the above reproducible, H-AI-9 defines the following orchestration entry
 
 2. **`ai-service/scripts/run_full_tier_gating.py`** (implemented wrapper around existing CLIs)
    - Arguments (current implementation):
-     - `--tier T` (e.g. `D4`, `D6`, `D8`).
-     - `--candidate-model-id CANDIDATE_T_ID`.
-     - `--run-dir PATH` (defaults to `logs/tier_gate`).
+     - `--tier T` (e.g. `D3`, `D5`, `D7`, `D9`).
+     - `--candidate-id CANDIDATE_T_ID`.
+     - `--run-dir PATH` (path containing `training_report.json`).
      - `--seed`, `--num-games` for the tier evaluation step.
-     - `--perf-num-games`, `--perf-moves-per-game` for the perf benchmark.
+     - `--no-perf` to skip perf even when a budget exists, `--demo` for CI-scale runs.
    - Behaviour:
-     - Runs [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1) in difficulty-tier mode and writes `TIER_tier_eval.json` and `TIER_promotion_plan.json` under `--run-dir`.
-     - Runs the tier perf benchmark via [`run_tier_perf_benchmark.py`](../../ai-service/scripts/run_tier_perf_benchmark.py:1) (where a `TierPerfBudget` exists) and writes `TIER_perf.json`.
-     - Aggregates into `TIER_gate_report.json`:
+     - Runs [`run_tier_gate.py`](../../ai-service/scripts/run_tier_gate.py:1) in difficulty-tier mode and writes `tier_eval_result.json` + `promotion_plan.json` under `--run-dir`.
+     - Runs the tier perf benchmark via [`run_tier_perf_benchmark.py`](../../ai-service/scripts/run_tier_perf_benchmark.py:1) (when a `TierPerfBudget` exists) and writes `tier_perf_report.json`.
+     - Aggregates into `gate_report.json`:
        - Embedded TierEvaluationResult metrics (`overall_pass`, `win_rate_vs_baseline`, `win_rate_vs_previous_tier`, etc.).
        - Perf metrics (`average_ms`, `p95_ms`) and budget evaluation (`within_avg`, `within_p95`, `overall_pass`) when a perf budget is defined for the tier.
    - Exit semantics:
      - Returns exit code `0` only when **both** the difficulty gate and perf budget pass; otherwise returns `1` so CI pipelines can key off a single orchestration step.
 
-3. **`ai-service/scripts/run_parity_promotion_gate.py`** (cross-board candidate-vs-baseline parity gate)
+3. **`ai-service/scripts/unified_promotion_daemon.py parity-gate`** (cross-board candidate-vs-baseline parity gate)
    - Purpose:
      - Run a small evaluation matrix of _candidate vs baseline_ AIs across one or more boards using the generic `evaluate_ai_models` harness.
      - Aggregate win-rate and Wilson CI metrics and emit a single JSON summary with `overall_pass` plus per-board breakdowns.
      - Provide an additional, optional non-regression check that can be run **before** tier-specific gating and perf budgets.
+   - Note:
+     - `scripts/run_parity_promotion_gate.py` remains for backward compatibility but is deprecated (see its module docstring).
    - Arguments (current implementation):
      - `--player1`, `--player2`: AI types for candidate and baseline (for example `neural_network` vs `neural_network`).
      - `--checkpoint`, `--checkpoint2`: optional checkpoints for candidate and baseline.
@@ -616,9 +643,9 @@ To make the above reproducible, H-AI-9 defines the following orchestration entry
 
 4. **Minimal config snippet**
    - Optional `ai-service/config/tier_training_pipeline.square8_2p.json` describing:
-     - Which generators to run per tier (NPZ / JSONL).
-     - Default evaluation seeds and num_games overrides.
-     - Paths for artefacts.
+     - Per-tier training modes (`heuristic_cmaes`, `search_persona`, `neural`).
+     - CMA-ES preferences and gating thresholds.
+     - Seeds and per-tier override knobs used by the tier pipeline.
 
 ### 8.3 Pipeline status artefacts
 
@@ -636,12 +663,12 @@ Within each `--run-dir`, it is useful to maintain a small status JSON, for examp
   },
   "automated_gate": {
     "status": "passed",
-    "eval_json": "tier_eval_D6.json",
-    "promotion_plan": "promotion_D6.json"
+    "eval_json": "tier_eval_result.json",
+    "promotion_plan": "promotion_plan.json"
   },
   "perf": {
     "status": "passed",
-    "perf_json": "tier_perf_D6.json"
+    "perf_json": "tier_perf_report.json"
   },
   "human_calibration": {
     "required": true,
@@ -655,7 +682,7 @@ This status file can be updated incrementally by the orchestration scripts and c
 
 ### 8.4 Running the tier training pipeline (Square-8 2-player)
 
-This section shows a concrete end-to-end invocation for a mid-tier on Square-8 2-player using the D4 minimax tier as an example. The same pattern applies to D2, D6, and D8 by changing the `--tier` argument.
+This section shows a concrete end-to-end invocation for a mid-tier on Square-8 2-player using the D4 minimax tier as an example. The same pattern applies to D2–D10 by changing the `--tier` argument.
 
 #### 8.4.1 Demo / smoke run (no heavy training or evaluation)
 
@@ -667,14 +694,14 @@ PYTHONPATH=. python scripts/run_tier_training_pipeline.py \
   --tier D4 \
   --board square8 \
   --num-players 2 \
-  --run-dir logs/tier_gate/D4_demo \
+  --output-dir logs/tier_gate \
   --demo \
   --seed 123
 ```
 
 This:
 
-- Writes `training_report.json` and `status.json` into `logs/tier_gate/D4_demo`.
+- Writes `training_report.json` and `status.json` into a timestamped run dir under `logs/tier_gate/`.
 - Records a `candidate_id` (for example `sq8_2p_d4_demo_YYYYMMDD_HHMMSS`) and a snapshot of the env + tier-specific training parameters.
 - Uses only stubbed, demo-friendly training logic (no long self-play or neural training); this is the safe path for CI and local smoke tests.
 
@@ -685,7 +712,7 @@ cd ai-service
 PYTHONPATH=. python scripts/run_full_tier_gating.py \
   --tier D4 \
   --candidate-id "<CANDIDATE_ID_FROM_TRAINING_REPORT>" \
-  --run-dir logs/tier_gate/D4_demo \
+  --run-dir "<RUN_DIR_WITH_TRAINING_REPORT>" \
   --demo
 ```
 
@@ -704,32 +731,40 @@ When canonical Square-8 2-player replay DBs exist and have passed the unified ga
 
 1. Run [`run_tier_training_pipeline.py`](../../ai-service/scripts/run_tier_training_pipeline.py:1) **without** `--demo` so that it can:
    - Generate or select training datasets derived **only** from DBs marked `canonical` in the registry.
-   - Invoke the appropriate heuristic / neural training loops for the tier (for example via [`python.train_model`](../../ai-service/app/training/train.py:1171) for D6/D8).
+   - Invoke the appropriate heuristic / neural training loops for the tier (for example via [`python.train_model`](../../ai-service/app/training/train.py:1171) for neural tiers D5–D10).
    - Emit a richer `training_report.json` with explicit data-source and hyperparameter fields alongside training metrics.
 
 2. Run [`run_full_tier_gating.py`](../../ai-service/scripts/run_full_tier_gating.py:1) **without** `--demo` (and without `--no-perf`) so that it:
    - Plays the full number of games from the tier’s [`TierEvaluationConfig`](../../ai-service/app/training/tier_eval_config.py:37).
-   - Enforces the relevant [`TierPerfBudget`](../../ai-service/app/config/perf_budgets.py:20) for D4/D6/D8.
+   - Enforces the relevant [`TierPerfBudget`](../../ai-service/app/config/perf_budgets.py:20) for D3–D8.
    - Produces a `gate_report.json` whose `final_decision` drives promotion proposals and ladder updates as described in §5.3.
 
 In both cases you should keep each candidate’s artefacts under a dedicated `--run-dir` such as `logs/tier_gate/D4_candidate_YYYYMMDD` so that `training_report.json`, `gate_report.json`, and `status.json` can be archived together.
 
 #### 8.4.3 Canonical data and compute constraints
 
-- **Canonical-only training data:** Real training runs for D4/D6/D8 must be wired so that all self-play or replay-derived datasets are generated from DBs whose status is `canonical` in [`TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md:18). DBs marked `legacy_noncanonical`, `pending_gate`, or `DEPRECATED_R10` must not be used for new ladder training.
+- **Canonical-only training data:** Real training runs for D2–D10 must be wired so that all self-play or replay-derived datasets are generated from DBs whose status is `canonical` in [`TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md:18). DBs marked `legacy_noncanonical`, `pending_gate`, or `DEPRECATED_R10` must not be used for new ladder training.
 - **Default to demo in CI:** CI and quick local checks should use the `--demo` pipeline described above; heavy training runs are reserved for dedicated training environments with explicit operator sign-off.
 - **Alignment with tier config JSON:** The small JSON descriptor [`tier_training_pipeline.square8_2p.json`](../../ai-service/config/tier_training_pipeline.square8_2p.json:1) mirrors the demo defaults (seeds, gating overrides) and is used by tests as a shape contract. Future Code-mode work can thread this config through the orchestrators to centralise per-tier settings.
 
 ---
 
-## 9. Tier-by-tier summary
+## 9. Tier-by-tier summary (public ladder)
 
-| Tier | Model type / candidate                           | Training data                                             | Gating criteria (automated)                                                              | Perf handling                                                                  | Human calibration role                                                                                    |
-| ---- | ------------------------------------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| D2   | Heuristic profile                                | Territory / combined-margin JSONL; optional NPZ self-play | ≥60% vs D1 random (`TierEvaluationConfig D2`); basic sanity that it clearly beats random | No dedicated perf budget; must feel responsive and stable                      | Template A with new players; ensure beginners can win at least some games and difficulty feels around 3   |
-| D4   | Minimax persona (+ heuristic profile)            | Mixed self-play on Square-8 2p; tournaments vs D2/random  | ≥70% vs baselines; no major regression vs D2 per TierEvaluationConfig                    | Hard D4 perf budget (`TierPerfBudget D4_SQ8_2P`); reject or retune if exceeded | Templates A+B with intermediates; target ~30–70% win rate for intended audience                           |
-| D6   | High minimax or NN-backed search (`nn_model_id`) | Self-play centred on D4–D6; curriculum loops              | ≥75% vs baselines; no major regression vs D4 per TierEvaluationConfig                    | Hard D6 perf budget; NN/search config must respect it                          | Templates B+C with strong players; target ~40–60% win rate, with intermediate players typically below 30% |
-| D8   | MCTS (+ optional NN) (`nn_model_id`)             | High-quality D6/D8 self-play; curriculum from D6          | ≥80% vs baselines; no major regression vs D6 per TierEvaluationConfig                    | Hard D8 perf budget; allowed near ceiling but not above                        | Template C with very strong players; even strong testers should struggle to exceed ~60% win rate          |
+| Tier | Ladder engine        | Training mode     | Gate baseline threshold | Perf budget | Calibration role       |
+| ---- | -------------------- | ----------------- | ----------------------- | ----------- | ---------------------- |
+| D1   | Random               | —                 | —                       | —           | Baseline only          |
+| D2   | Heuristic            | `heuristic_cmaes` | 0.60                    | No          | Anchor (Template A)    |
+| D3   | Minimax (non-neural) | `heuristic_cmaes` | 0.55                    | Yes         | Optional               |
+| D4   | Minimax (NNUE)       | `search_persona`  | 0.68                    | Yes         | Anchor (Templates A/B) |
+| D5   | Descent (neural)     | `neural`          | 0.60                    | Yes         | Optional               |
+| D6   | Descent (neural)     | `neural`          | 0.72                    | Yes         | Anchor (Templates B/C) |
+| D7   | MCTS (heuristic)     | `search_persona`  | 0.65                    | Yes         | Optional               |
+| D8   | MCTS (neural)        | `neural`          | 0.75                    | Yes         | Anchor (Template C)    |
+| D9   | Gumbel MCTS (neural) | `neural`          | 0.75                    | No          | Optional / expert      |
+| D10  | Gumbel MCTS (neural) | `neural`          | 0.75                    | No          | Optional / expert      |
+
+The internal D11 tier follows the same Gumbel MCTS configuration but is not exposed in the public ladder.
 
 ---
 
@@ -737,7 +772,7 @@ In both cases you should keep each candidate’s artefacts under a dedicated `--
 
 Follow-up doc work (in Code/Docs-mode) should:
 
-- Add a short “Training & promotion pipeline” subsection to the future `AI_DIFFICULTY_SPEC.md` that points at this document as the process SSoT for D2/D4/D6/D8 on Square-8 2-player.
+- Add a short “Training & promotion pipeline” subsection to the future `AI_DIFFICULTY_SPEC.md` that points at this document as the process SSoT for D1–D10 (public ladder) on Square-8 2-player, noting that calibration anchors focus on D2/D4/D6/D8.
 - Cross-link the calibration analysis process in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1) as the **human-facing difficulty tuning SSoT**, sitting on top of the automated training and gating loop defined here.
 - Add a note to [`AI_HUMAN_CALIBRATION_GUIDE.md`](AI_HUMAN_CALIBRATION_GUIDE.md:1) clarifying that:
   - calibration templates A/B/C feed into the H-AI-9 promotion loop; and
@@ -754,7 +789,7 @@ This section provides concrete commands for running full AI ladder calibration o
 
 ### A.1 Prerequisites
 
-1. **GPU Access**: D6/D8 neural tiers require GPU. Available hosts in `config/distributed_hosts.yaml`:
+1. **GPU Access**: D5–D10 neural tiers require GPU (D5, D6, D8–D10). D7 is heuristic MCTS but still CPU-intensive. Available hosts in `config/distributed_hosts.yaml`:
    - Lambda Cloud: GH200 (96GB), H100 (80GB), A10 (23GB)
    - Vast.ai: Various RTX cards for selfplay
 
@@ -767,10 +802,12 @@ source venv/bin/activate
 python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else None}')"
 ```
 
-3. **Canonical Dataset**: Verify training data exists:
+3. **Canonical Dataset**: Verify training data exists (or export from the canonical DB):
 
 ```bash
-ls -la data/training/canonical_square8_2p.npz  # Or generate with build_canonical_dataset.py
+ls -la data/training/canonical_square8_2p.npz
+# If missing: python scripts/export_replay_dataset.py --db data/games/canonical_square8_2p.db \
+#   --output data/training/canonical_square8_2p.npz
 ```
 
 ### A.2 Full Calibration Workflow
@@ -778,25 +815,33 @@ ls -la data/training/canonical_square8_2p.npz  # Or generate with build_canonica
 **Step 1: Training (per tier)**
 
 ```bash
+OUTPUT_DIR=./runs/calibration_$(date +%Y%m%d)
+
 # D2 (Heuristic) - CPU OK
 python scripts/run_tier_training_pipeline.py --tier D2 \
-  --run-dir ./runs/calibration_d2_$(date +%Y%m%d) \
-  --candidate-id sq8_2p_d2_cand_$(date +%Y%m%d_%H%M%S)
+  --output-dir "$OUTPUT_DIR" \
+  --board square8 \
+  --num-players 2
 
 # D4 (Minimax/NNUE) - CPU OK for sq8
 python scripts/run_tier_training_pipeline.py --tier D4 \
-  --run-dir ./runs/calibration_d4_$(date +%Y%m%d) \
-  --candidate-id sq8_2p_d4_cand_$(date +%Y%m%d_%H%M%S)
+  --output-dir "$OUTPUT_DIR" \
+  --board square8 \
+  --num-players 2
 
 # D6 (Neural) - GPU REQUIRED
 python scripts/run_tier_training_pipeline.py --tier D6 \
-  --run-dir ./runs/calibration_d6_$(date +%Y%m%d) \
-  --candidate-id sq8_2p_d6_cand_$(date +%Y%m%d_%H%M%S)
+  --output-dir "$OUTPUT_DIR" \
+  --board square8 \
+  --num-players 2
 
 # D8 (Neural/MCTS) - GPU REQUIRED
 python scripts/run_tier_training_pipeline.py --tier D8 \
-  --run-dir ./runs/calibration_d8_$(date +%Y%m%d) \
-  --candidate-id sq8_2p_d8_cand_$(date +%Y%m%d_%H%M%S)
+  --output-dir "$OUTPUT_DIR" \
+  --board square8 \
+  --num-players 2
+
+# Repeat for D3/D5/D7/D9/D10 as needed.
 ```
 
 **Step 2: Gating (per tier)**
@@ -805,9 +850,9 @@ python scripts/run_tier_training_pipeline.py --tier D8 \
 # Full gating includes evaluation + perf benchmark + promotion plan
 python scripts/run_full_tier_gating.py --tier D2 \
   --candidate-id <from_training_report> \
-  --run-dir ./runs/calibration_d2_$(date +%Y%m%d)
+  --run-dir <run_dir_with_training_report>
 
-# Repeat for D4, D6, D8
+# Repeat for D3, D4, D5, D6, D7, D8, D9, D10 as needed
 ```
 
 **Step 3: Promotion (if gates pass)**
@@ -820,6 +865,8 @@ python scripts/apply_tier_promotion_plan.py \
 
 ### A.3 Time Estimates
 
+> Note: Estimates below are for anchor tiers D2/D4/D6/D8. D3/D5/D7 are typically comparable to adjacent tiers; D9/D10 are longer due to Gumbel MCTS budgets.
+
 | Tier | Training  | Evaluation (400 games) | Total |
 | ---- | --------- | ---------------------- | ----- |
 | D2   | 30-60 min | 10-20 min              | ~1h   |
@@ -827,7 +874,7 @@ python scripts/apply_tier_promotion_plan.py \
 | D6   | 2-4 hours | 30-60 min              | ~4h   |
 | D8   | 3-6 hours | 40-80 min              | ~6h   |
 
-**Full calibration: 8-12 hours** (can parallelize D2/D4 on CPU while D6/D8 run on GPU)
+**Anchor-tier calibration: 8-12 hours** (can parallelize D2/D4 on CPU while D6/D8 run on GPU)
 
 ### A.4 Board-Specific Notes
 

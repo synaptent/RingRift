@@ -41,7 +41,7 @@ The RingRift test suite is organized into categories based on runtime requiremen
 
 **Excludes from core:** (see `test:core` script in `package.json`)
 
-- Heavy diagnostic suites (`GameEngine.decisionPhases.MoveDriven`, `RuleEngine.movementCapture`)
+- Heavy diagnostic suites (`ClientSandboxEngine.territoryDecisionPhases.MoveDriven`, `MovementCaptureParity.RuleEngine_vs_Sandbox`)
 - AI simulation tests
 - Parity/bisect diagnostic tests
 - E2E tests (run via Playwright separately)
@@ -193,8 +193,8 @@ NODE_OPTIONS="--max-old-space-size=8192" npm run test:diagnostics
 
 **Files:**
 
-- `tests/unit/GameEngine.decisionPhases.MoveDriven.test.ts`
-- `tests/unit/RuleEngine.movementCapture.test.ts`
+- `tests/unit/ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts`
+- `tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`
 
 **Issue:** Can cause OOM or Jest worker crashes
 

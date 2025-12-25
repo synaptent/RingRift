@@ -34,10 +34,12 @@ from fastapi import FastAPI
 
 # Import existing routers
 from app.routes.replay import router as replay_router
+from app.routes.cluster import router as cluster_router
 
 __all__ = [
     "include_all_routes",
     "replay_router",
+    "cluster_router",
 ]
 
 
@@ -52,6 +54,9 @@ def include_all_routes(app: FastAPI) -> None:
     """
     # Replay routes
     app.include_router(replay_router, tags=["replay"])
+
+    # Cluster monitoring routes (added Dec 2025)
+    app.include_router(cluster_router, prefix="/api", tags=["cluster"])
 
     # Note: AI and admin routes are still in main.py
     # They should be extracted as separate routers following

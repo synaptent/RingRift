@@ -488,8 +488,8 @@ class AutoSyncDaemon:
                 cursor = conn.execute("SELECT COUNT(*) FROM games")
                 total_games += cursor.fetchone()[0]
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to count games in {db_path}: {e}")
 
         return total_games
 

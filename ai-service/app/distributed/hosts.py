@@ -611,13 +611,20 @@ class SSHExecutor:
             ssh_target: The user@host SSH target
             use_cloudflare: If True, use Cloudflare Zero Trust ProxyCommand
         """
+        # Network stability tuning (Dec 2025):
+        # - ConnectTimeout=30: Lambda datacenter can be slow
+        # - ServerAliveInterval=30: Detect dead connections
+        # - ServerAliveCountMax=4: Allow more dropped keepalives before disconnect
+        # - TCPKeepAlive=yes: Enable TCP-level keepalives
+        connect_timeout = int(os.environ.get("RINGRIFT_SSH_CONNECT_TIMEOUT", "30"))
         cmd = [
             "ssh",
-            "-o", "ConnectTimeout=10",
+            "-o", f"ConnectTimeout={connect_timeout}",
             "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=accept-new",  # Secure: accept new, reject changed
-            "-o", "ServerAliveInterval=15",
-            "-o", "ServerAliveCountMax=3",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=4",
+            "-o", "TCPKeepAlive=yes",
         ]
 
         # Add Cloudflare ProxyCommand if using Zero Trust

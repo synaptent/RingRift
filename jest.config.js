@@ -74,8 +74,8 @@
 
  // Heavy diagnostic suite patterns (excluded from test:core, run by test:diagnostics)
 const HEAVY_DIAGNOSTIC_SUITES = [
-  'GameEngine\\.decisionPhases\\.MoveDriven\\.test\\.ts$',
-  'RuleEngine\\.movementCapture\\.test\\.ts$',
+  'ClientSandboxEngine\\.territoryDecisionPhases\\.MoveDriven\\.test\\.ts$',
+  'MovementCaptureParity\\.RuleEngine_vs_Sandbox\\.test\\.ts$',
 ];
 
 // Parity/diagnostic test patterns (excluded from default runs, run via test:diagnostic)

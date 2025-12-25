@@ -1,9 +1,9 @@
 > **Doc Status (2025-12-22): Active (AI host improvement plan, Python service only)**
 >
 > - Role: prioritized technical improvement and performance plan for the Python AI microservice (agents, search patterns, training pipeline). It informs work on the AI host, but does not redefine game rules.
-> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`../docs/rules/COMPLETE_RULES.md`](../docs/rules/COMPLETE_RULES.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
-> - For current AI architecture and assessment, pair this with [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md), the technical assessment in [`AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md), and the training/meta docs [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/AI_TRAINING_PREPARATION_GUIDE.md).
-> - Related docs: parity and invariants meta-docs such as [`docs/PYTHON_PARITY_REQUIREMENTS.md`](../docs/PYTHON_PARITY_REQUIREMENTS.md), [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/STRICT_INVARIANT_SOAKS.md), [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md), [`docs/PARITY_SEED_TRIAGE.md`](../docs/PARITY_SEED_TRIAGE.md), and the historical plan in [`archive/AI_IMPROVEMENT_PLAN.md`](../archive/AI_IMPROVEMENT_PLAN.md).
+> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`../docs/rules/COMPLETE_RULES.md`](../docs/rules/COMPLETE_RULES.md), [`RULES_ENGINE_ARCHITECTURE.md`](../docs/architecture/RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../docs/rules/RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/architecture/CANONICAL_ENGINE_API.md).
+> - For current AI architecture and assessment, pair this with [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md), the technical assessment in [`AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md), and the training/meta docs [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/ai/AI_TRAINING_PREPARATION_GUIDE.md).
+> - Related docs: parity and invariants meta-docs such as [`docs/PYTHON_PARITY_REQUIREMENTS.md`](../docs/rules/PYTHON_PARITY_REQUIREMENTS.md), [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/testing/STRICT_INVARIANT_SOAKS.md), [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md), [`docs/PARITY_SEED_TRIAGE.md`](../docs/rules/PARITY_SEED_TRIAGE.md), and the historical plan in [`archive/AI_IMPROVEMENT_PLAN.md`](../archive/AI_IMPROVEMENT_PLAN.md).
 
 # AI Service Improvement Plan
 
@@ -43,12 +43,12 @@ The AI Service implements a multi-tier difficulty system with six AI implementat
 
 ### 1.3 MPS-Compatible Architecture (Apple Silicon)
 
-For running on Apple Silicon (M1/M2/M3) Macs, an MPS-compatible variant of the neural network architecture is available. See [`docs/MPS_ARCHITECTURE.md`](./docs/MPS_ARCHITECTURE.md) for details.
+For running on Apple Silicon (M1/M2/M3) Macs, an MPS-compatible variant of the neural network architecture is available. See [`docs/architecture/MPS_ARCHITECTURE.md`](./docs/architecture/MPS_ARCHITECTURE.md) for details.
 
-| Architecture                                  | MPS Support | Pooling Method         | Use Case           |
-| --------------------------------------------- | ----------- | ---------------------- | ------------------ |
-| [`RingRiftCNN`](app/ai/neural_net.py:202)     | ❌ No       | `nn.AdaptiveAvgPool2d` | CUDA GPUs, CPU     |
-| [`RingRiftCNN_MPS`](app/ai/neural_net.py:325) | ✅ Yes      | `torch.mean()`         | Apple Silicon GPUs |
+| Architecture                                           | MPS Support | Pooling Method         | Use Case           |
+| ------------------------------------------------------ | ----------- | ---------------------- | ------------------ |
+| [`RingRiftCNN`](app/ai/neural_net/__init__.py:202)     | ❌ No       | `nn.AdaptiveAvgPool2d` | CUDA GPUs, CPU     |
+| [`RingRiftCNN_MPS`](app/ai/neural_net/__init__.py:325) | ✅ Yes      | `torch.mean()`         | Apple Silicon GPUs |
 
 **Usage:**
 
@@ -58,7 +58,7 @@ export RINGRIFT_NN_ARCHITECTURE=auto
 python scripts/run_self_play_soak.py ...
 ```
 
-| [`NeuralNetAI`](app/ai/neural_net.py) | Backend for 7–10 | ResNet CNN with policy/value heads |
+| [`NeuralNetAI`](app/ai/neural_net/__init__.py) | Backend for 7–10 | ResNet CNN with policy/value heads |
 
 ### 1.2 Canonical Difficulty Ladder & Product-Facing Profiles
 
@@ -119,7 +119,7 @@ The make/unmake pattern has been fully implemented in:
 
 #### 1.3.2 Neural Network Architecture Mismatch
 
-**Location:** [`neural_net.py:356-383`](app/ai/neural_net.py:356)
+**Location:** [`neural_net.py:356-383`](app/ai/neural_net/__init__.py:356)
 
 ```python
 try:
@@ -170,7 +170,7 @@ reproducible in isolation under a base seed while avoiding correlated streams.
 
 **Status (2025-12-22):** ✅ **UNBLOCKED** — Parity validation complete for all hex boards.
 
-**Location:** [`neural_net.py:1390-1519`](app/ai/neural_net.py:1390)
+**Location:** [`neural_net.py:1390-1519`](app/ai/neural_net/__init__.py:1390)
 
 The `HexNeuralNet` class exists with proper architecture. As of 2025-12-22:
 
@@ -316,9 +316,9 @@ Fresh parity-gated DBs:
 
 ### Priority 1: Implement Make/Unmake Move Pattern (High Impact, Medium Effort)
 
-> \*\*Status (2025-11-30): Core make/unmake pattern implemented for MinimaxAI, MCTSAI, and DescentAI; remaining extension work is tracked in [`ai-service/docs/MAKE_UNMAKE_EXTENSION_ANALYSIS.md`](docs/MAKE_UNMAKE_EXTENSION_ANALYSIS.md). The original proposal below is retained as historical context and for guiding further extensions (RL environment, heuristic AI, and training infrastructure) rather than as a description of the current implementation gap.
+> \*\*Status (2025-11-30): Core make/unmake pattern implemented for MinimaxAI, MCTSAI, and DescentAI; remaining extension work is tracked in [`ai-service/docs/archive/historical/MAKE_UNMAKE_EXTENSION_ANALYSIS.md`](docs/archive/historical/MAKE_UNMAKE_EXTENSION_ANALYSIS.md). The original proposal below is retained as historical context and for guiding further extensions (RL environment, heuristic AI, and training infrastructure) rather than as a description of the current implementation gap.
 
-**Current State:** The rules engine exposes a `MutableGameState` + `MoveUndo` make/unmake API, and the pattern has been integrated into MinimaxAI (initially) and extended to MCTSAI and DescentAI, yielding the documented speedups in [`MAKE_UNMAKE_EXTENSION_ANALYSIS.md`](docs/MAKE_UNMAKE_EXTENSION_ANALYSIS.md). Remaining opportunities are primarily:
+**Current State:** The rules engine exposes a `MutableGameState` + `MoveUndo` make/unmake API, and the pattern has been integrated into MinimaxAI (initially) and extended to MCTSAI and DescentAI, yielding the documented speedups in [`MAKE_UNMAKE_EXTENSION_ANALYSIS.md`](docs/archive/historical/MAKE_UNMAKE_EXTENSION_ANALYSIS.md). Remaining opportunities are primarily:
 
 - Extending make/unmake usage into the RL environment and selected training/self-play code paths.
 - Evaluating whether HeuristicAI benefits from a lightweight make/unmake integration in high-branching positions.
@@ -401,7 +401,7 @@ class IncrementalRulesEngine:
 
 - Enables neural-guided AI for hex boards
 - Improves difficulty 7-10 play quality on hex
-- Leverages existing [`HexNeuralNet`](app/ai/neural_net.py:1390) infrastructure
+- Leverages existing [`HexNeuralNet`](app/ai/neural_net/__init__.py:1390) infrastructure
 
 **Configuration Example:**
 
@@ -617,10 +617,10 @@ Implementing these changes would raise the AI Service rating from 3.2/5 to an es
 | State copy bottleneck | [`minimax_ai.py`](app/ai/minimax_ai.py)                                   | 137-141   |
 | Tree reuse            | [`mcts_ai.py`](app/ai/mcts_ai.py)                                         | 391-410   |
 | Minimax depth scaling | [`minimax_ai.py`](app/ai/minimax_ai.py)                                   | 82-89     |
-| Neural net loading    | [`neural_net.py`](app/ai/neural_net.py)                                   | 356-383   |
+| Neural net loading    | [`neural_net.py`](app/ai/neural_net/__init__.py)                          | 356-383   |
 | Zobrist computation   | [`zobrist.py`](app/ai/zobrist.py)                                         | 101-126   |
 | Self-play config      | [`train_loop.py`](app/training/train_loop.py)                             | 79-106    |
-| Hex neural net        | [`neural_net.py`](app/ai/neural_net.py)                                   | 1390-1519 |
+| Hex neural net        | [`neural_net.py`](app/ai/neural_net/__init__.py)                          | 1390-1519 |
 | Bounded transposition | [`bounded_transposition_table.py`](app/ai/bounded_transposition_table.py) | All       |
 
 ---
@@ -637,7 +637,7 @@ The following pipeline improvements are implemented and in active use:
 | ---------------------------------- | ----------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
 | Rank-aware value targets           | ✅ COMPLETE | `scripts/export_replay_dataset.py`                          | Scalar in `[-1,1]` from current player POV, rank-aware for 3–4p. |
 | Replay quality filtering           | ✅ COMPLETE | `scripts/export_replay_dataset.py`                          | Filters by `termination_reason` and move-count thresholds.       |
-| Robust territory / choice encoding | ✅ COMPLETE | `app/ai/neural_net.py`                                      | Encodes pie rule, line/territory options; `POLICY_SIZE`=67k.     |
+| Robust territory / choice encoding | ✅ COMPLETE | `app/ai/neural_net/__init__.py`                             | Encodes pie rule, line/territory options; `POLICY_SIZE`=67k.     |
 | Late-game / phase-aware sampling   | ✅ COMPLETE | `scripts/export_replay_dataset.py`, `app/training/train.py` | Weighted sampling via metadata + `WeightedRingRiftDataset`.      |
 
 **Rank-aware value targets (scalar v1):** For multiplayer games (3–4 players), the exporter uses a rank-based scalar value from the current player’s perspective:
@@ -797,7 +797,7 @@ captures the original design shape and remains a useful reference.
 
 - v1 model (`RingRiftCNN`) outputs a single scalar in `[-1, +1]` from the current player’s perspective and is still the default for training.
 - A v2 multi-player architecture (`RingRiftCNN_MultiPlayer`) and helper loss
-  (`multi_player_value_loss`) already exist in `app/ai/neural_net.py`.
+  (`multi_player_value_loss`) already exist in `app/ai/neural_net/__init__.py`.
 - Replay exporters compute richer, rank‑aware scalars per position today, and
   `compute_multi_player_values` in `scripts/export_replay_dataset.py` provides
   the per‑player vector encoding, but v2 datasets and training wiring have not
@@ -807,7 +807,7 @@ captures the original design shape and remains a useful reference.
 
 **Implementation Steps:**
 
-1. **Add a multi-player value variant** (`app/ai/neural_net.py`):
+1. **Add a multi-player value variant** (`app/ai/neural_net/__init__.py`):
 
    ```python
    class RingRiftCNN_MultiPlayer(nn.Module):
@@ -925,7 +925,7 @@ captures the original design shape and remains a useful reference.
 | ---------------------------------- | --------------------------------------------------------------------------- |
 | `app/ai/mcts_ai.py`                | Keep visit distribution API stable; minor cleanup/docs only.                |
 | `app/training/generate_data.py`    | Add `--engine {descent,mcts}` and wire `extract_mcts_visit_distribution`.   |
-| `app/ai/neural_net.py`             | Introduce `RingRiftCNN_MultiPlayer` or equivalent, value-head refactor.     |
+| `app/ai/neural_net/__init__.py`    | Introduce `RingRiftCNN_MultiPlayer` or equivalent, value-head refactor.     |
 | `app/training/train.py`            | Add multi-player value loss, handle vector/scalar values, curriculum hooks. |
 | `app/training/curriculum.py`       | New module implementing generation loop and model promotion.                |
 | `scripts/export_replay_dataset.py` | Extend to vector value targets + `num_players` metadata for v2.             |
@@ -1002,7 +1002,7 @@ Total: P_HEX = 91,876
 | `RingRiftCNN_MultiPlayer` | ResNet + AdaptivePool  | ❌             | Vector (4-player) |
 | `HexNeuralNet`            | ResNet + MaskedPool    | ❌             | Scalar            |
 
-**Factory Function** (`app/ai/neural_net.py`):
+**Factory Function** (`app/ai/neural_net/__init__.py`):
 
 ```python
 from app.ai.neural_net import create_model_for_board, get_model_config_for_board
@@ -1139,15 +1139,15 @@ ai_19x19 = NeuralNetAI(
 
 ### 8.8 Files Modified
 
-| File                     | Changes                                                                                                                                                                                                                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/ai/neural_net.py`   | Added `POLICY_SIZE_8x8`, `POLICY_SIZE_19x19`, `BOARD_POLICY_SIZES`, `BOARD_SPATIAL_SIZES`, `get_policy_size_for_board()`, `get_spatial_size_for_board()`, `create_model_for_board()`, `get_model_config_for_board()`. Updated all model classes to accept `policy_size` parameter. |
-| `app/training/config.py` | Added `num_res_blocks`, `num_filters`, `policy_size` to `TrainConfig`. Added `get_training_config_for_board()` and `BOARD_TRAINING_CONFIGS` preset dictionary.                                                                                                                     |
+| File                            | Changes                                                                                                                                                                                                                                                                            |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/ai/neural_net/__init__.py` | Added `POLICY_SIZE_8x8`, `POLICY_SIZE_19x19`, `BOARD_POLICY_SIZES`, `BOARD_SPATIAL_SIZES`, `get_policy_size_for_board()`, `get_spatial_size_for_board()`, `create_model_for_board()`, `get_model_config_for_board()`. Updated all model classes to accept `policy_size` parameter. |
+| `app/training/config.py`        | Added `num_res_blocks`, `num_filters`, `policy_size` to `TrainConfig`. Added `get_training_config_for_board()` and `BOARD_TRAINING_CONFIGS` preset dictionary.                                                                                                                     |
 
 ### 8.9 Compatibility Notes
 
 - **Checkpoint incompatibility:** Models with different `policy_size` cannot share checkpoints. The policy head linear layer has different dimensions.
-- **Runtime policy layout selection:** Inference/search AIs now choose the move→policy-index encoder based on the loaded checkpoint’s `model.policy_size` (Square8 `7000` vs legacy MAX_N layouts). See `app/ai/neural_net.py:NeuralNetAI.encode_move` and `tests/test_nn_policy_layout_selection.py`.
+- **Runtime policy layout selection:** Inference/search AIs now choose the move→policy-index encoder based on the loaded checkpoint’s `model.policy_size` (Square8 `7000` vs legacy MAX_N layouts). See `app/ai/neural_net/__init__.py:NeuralNetAI.encode_move` and `tests/test_nn_policy_layout_selection.py`.
 - **Architecture version:** Each model class has an `ARCHITECTURE_VERSION` attribute for checkpoint validation:
   - `RingRiftCNN`: v1.1.0
   - `RingRiftCNN_MPS`: v1.1.0-mps
@@ -1653,13 +1653,13 @@ P1 has real actions (movement/capture) and others do not.
 
 ### 11.7 Recommended Implementation Slices (Strength‑First)
 
-| Slice | Goal                                                          | Priority | Dependencies                | Primary files                                                                                       |
-| ----- | ------------------------------------------------------------- | -------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
-| S11‑A | Root Dirichlet noise + temperature schedules (self‑play only) | HIGH     | None                        | `app/ai/mcts_ai.py`, `scripts/run_self_play_soak.py`                                                |
-| S11‑B | Progressive widening for square19/hex                         | HIGH     | Policy priors stable        | `app/ai/mcts_ai.py`, `app/ai/descent_ai.py`                                                         |
-| S11‑C | Async/batched NN leaf evaluation                              | HIGH     | GPU parity + batching infra | `app/ai/gpu_batch.py`, `app/ai/mcts_ai.py`, `app/ai/descent_ai.py`                                  |
-| S11‑D | Vector value head end‑to‑end + enable multiplayer NN search   | HIGH     | v2 datasets                 | `app/ai/neural_net.py`, `app/training/train.py`, `scripts/export_replay_dataset.py`, search engines |
-| S11‑E | Canonical reanalysis pipeline                                 | MED      | S11‑C                       | `scripts/run_improvement_loop.py`, `scripts/export_replay_dataset.py`                               |
-| S11‑F | Significance‑gated promotion in curriculum/tier gates         | MED      | Distributed tournaments     | `app/training/curriculum.py`, `scripts/run_tier_gate.py`                                            |
-| S11‑G | RAVE tapering + dynamic c_puct/FPU                            | MED      | S11‑A                       | `app/ai/mcts_ai.py`                                                                                 |
-| S11‑H | Uncertainty‑aware Descent selection                           | MED      | S11‑D                       | `app/ai/descent_ai.py`                                                                              |
+| Slice | Goal                                                          | Priority | Dependencies                | Primary files                                                                                                |
+| ----- | ------------------------------------------------------------- | -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| S11‑A | Root Dirichlet noise + temperature schedules (self‑play only) | HIGH     | None                        | `app/ai/mcts_ai.py`, `scripts/run_self_play_soak.py`                                                         |
+| S11‑B | Progressive widening for square19/hex                         | HIGH     | Policy priors stable        | `app/ai/mcts_ai.py`, `app/ai/descent_ai.py`                                                                  |
+| S11‑C | Async/batched NN leaf evaluation                              | HIGH     | GPU parity + batching infra | `app/ai/gpu_batch.py`, `app/ai/mcts_ai.py`, `app/ai/descent_ai.py`                                           |
+| S11‑D | Vector value head end‑to‑end + enable multiplayer NN search   | HIGH     | v2 datasets                 | `app/ai/neural_net/__init__.py`, `app/training/train.py`, `scripts/export_replay_dataset.py`, search engines |
+| S11‑E | Canonical reanalysis pipeline                                 | MED      | S11‑C                       | `scripts/run_improvement_loop.py`, `scripts/export_replay_dataset.py`                                        |
+| S11‑F | Significance‑gated promotion in curriculum/tier gates         | MED      | Distributed tournaments     | `app/training/curriculum.py`, `scripts/run_tier_gate.py`                                                     |
+| S11‑G | RAVE tapering + dynamic c_puct/FPU                            | MED      | S11‑A                       | `app/ai/mcts_ai.py`                                                                                          |
+| S11‑H | Uncertainty‑aware Descent selection                           | MED      | S11‑D                       | `app/ai/descent_ai.py`                                                                                       |

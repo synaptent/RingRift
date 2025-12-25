@@ -70,8 +70,9 @@ class TransportDefaults:
 
     Used by: app/coordination/cluster_transport.py
     """
-    # Connection timeout (seconds) - increased for VAST.ai and slow networks
-    CONNECT_TIMEOUT: int = _env_int("RINGRIFT_CONNECT_TIMEOUT", 30)
+    # Connection timeout (seconds) - increased for Tailscale VPN stability
+    # Dec 2025: Increased from 30 to 45 for better Tailscale reconnection handling
+    CONNECT_TIMEOUT: int = _env_int("RINGRIFT_CONNECT_TIMEOUT", 45)
 
     # Operation timeout (seconds) - for large transfers
     OPERATION_TIMEOUT: int = _env_int("RINGRIFT_OPERATION_TIMEOUT", 180)
@@ -83,7 +84,8 @@ class TransportDefaults:
     CIRCUIT_BREAKER_RECOVERY: int = _env_int("RINGRIFT_CIRCUIT_BREAKER_RECOVERY", 300)
 
     # SSH timeout for remote operations
-    SSH_TIMEOUT: int = _env_int("RINGRIFT_SSH_TIMEOUT", 30)
+    # Dec 2025: Increased from 30 to 60 for Tailscale userland stability
+    SSH_TIMEOUT: int = _env_int("RINGRIFT_SSH_TIMEOUT", 60)
 
     # Maximum retries for failed operations
     MAX_RETRIES: int = _env_int("RINGRIFT_MAX_RETRIES", 3)

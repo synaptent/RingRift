@@ -127,7 +127,7 @@ All compute-intensive scripts require **64GB RAM minimum**:
 | `p2p_orchestrator.py`        | 64GB    | Filters nodes by memory       |
 
 > **Note**: `continuous_improvement_daemon.py` is deprecated. Use `unified_ai_loop.py` instead.
-> See [ORCHESTRATOR_SELECTION.md](../docs/ORCHESTRATOR_SELECTION.md) for guidance.
+> See [ORCHESTRATOR_SELECTION.md](../docs/infrastructure/ORCHESTRATOR_SELECTION.md) for guidance.
 
 Scripts will exit with an error message if system memory is below the threshold.
 
@@ -244,11 +244,11 @@ cat data/rollback_history.json | jq '.[0:5]'
 
 ## Related Documentation
 
-- [Orchestrator Selection](../docs/ORCHESTRATOR_SELECTION.md) - **Which script to use** (start here)
-- [Unified AI Loop](../docs/UNIFIED_AI_LOOP.md) - Detailed loop documentation
-- [Pipeline Orchestrator](../docs/PIPELINE_ORCHESTRATOR.md) - CI/CD pipeline orchestration
-- [Distributed Selfplay](../docs/DISTRIBUTED_SELFPLAY.md) - Remote host setup
-- [Cloud Infrastructure](../docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) - AWS/cloud deployment
+- [Orchestrator Selection](../docs/infrastructure/ORCHESTRATOR_SELECTION.md) - **Which script to use** (start here)
+- [Unified AI Loop](../docs/training/UNIFIED_AI_LOOP.md) - Detailed loop documentation
+- [Pipeline Orchestrator](../docs/infrastructure/PIPELINE_ORCHESTRATOR.md) - CI/CD pipeline orchestration
+- [Distributed Selfplay](../docs/training/DISTRIBUTED_SELFPLAY.md) - Remote host setup
+- [Cloud Infrastructure](../docs/infrastructure/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) - AWS/cloud deployment
 - [Cluster Monitoring](../scripts/monitoring/README.md) - CloudWatch setup
 
 ---

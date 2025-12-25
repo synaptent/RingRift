@@ -125,8 +125,9 @@ GPU_POWER_RANKINGS = {
 # Connection Robustness
 # ============================================
 
-HTTP_CONNECT_TIMEOUT = 10  # Fast timeout for connection phase
-HTTP_TOTAL_TIMEOUT = 30    # Total request timeout
+# HTTP timeouts increased (Dec 2025) for better cross-cloud reliability
+HTTP_CONNECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_HTTP_CONNECT_TIMEOUT", "15"))  # Was 10
+HTTP_TOTAL_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_HTTP_TOTAL_TIMEOUT", "45"))      # Was 30
 MAX_CONSECUTIVE_FAILURES = 5  # Mark node dead after 5 failures (increased from 3)
 RETRY_DEAD_NODE_INTERVAL = 120  # Retry dead nodes every 2 minutes (reduced from 5)
 
@@ -174,8 +175,9 @@ PEER_BOOTSTRAP_MIN_PEERS = 3
 
 GPU_IDLE_RESTART_TIMEOUT = 300
 GPU_IDLE_THRESHOLD = 2
+# Increased default from 0 to 500 (Dec 2025) to prevent false positives
 _runaway_threshold_env = (os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD") or "").strip()
-RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 0
+RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 500
 
 LOAD_AVERAGE_MAX_MULTIPLIER = float(os.environ.get("RINGRIFT_P2P_LOAD_AVG_MAX_MULT", "2.0") or 2.0)
 SPAWN_RATE_LIMIT_PER_MINUTE = int(os.environ.get("RINGRIFT_P2P_SPAWN_RATE_LIMIT", "5") or 5)

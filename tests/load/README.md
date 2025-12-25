@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory contains the k6 load testing framework for validating RingRift at production scale (100+ concurrent games, 200-300 players). The framework implements the load testing scenarios defined in [`STRATEGIC_ROADMAP.md §3`](../../STRATEGIC_ROADMAP.md) and validates SLOs from [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml).
+This directory contains the k6 load testing framework for validating RingRift at production scale (100+ concurrent games, 200-300 players). The framework implements the load testing scenarios defined in [`STRATEGIC_ROADMAP.md §3`](../../docs/planning/STRATEGIC_ROADMAP.md) and validates SLOs from [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml).
 
 ### Key Objectives
 
@@ -369,7 +369,7 @@ k6 run \
   - `ws_decision_timeout_failed_total`
   - `ws_decision_timeout_latency_ms`
 
-This scenario is implemented in [`websocket-gameplay.js`](scenarios/websocket-gameplay.js:1) and follows the strategy described in [`LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md`](../../docs/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md:1) and the transport decision ADR [`PLAYER_MOVE_TRANSPORT_DECISION.md`](../../docs/PLAYER_MOVE_TRANSPORT_DECISION.md:1).
+This scenario is implemented in [`websocket-gameplay.js`](scenarios/websocket-gameplay.js:1) and follows the strategy described in [`LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md`](../../docs/testing/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md:1) and the transport decision ADR [`PLAYER_MOVE_TRANSPORT_DECISION.md`](../../docs/architecture/PLAYER_MOVE_TRANSPORT_DECISION.md:1).
 
 **Optional spectator/timeout simulation:**
 
@@ -463,7 +463,7 @@ npx k6 run tests/load/scenarios/websocket-gameplay.js
 
 By default, only the smoke configuration is active; higher-intensity modes are enabled explicitly via `WS_GAMEPLAY_MODE` (preferred) or the legacy `ENABLE_WS_GAMEPLAY_THROUGHPUT` toggle.
 
-The concrete URLs and TLS configuration depend on your deployment topology (for example, whether WebSocket and HTTP traffic are served from the same origin). See [`DEPLOYMENT_REQUIREMENTS.md`](../../docs/DEPLOYMENT_REQUIREMENTS.md:1) and the topology notes in [`TOPOLOGY_MODES.md`](../../docs/architecture/TOPOLOGY_MODES.md:1) for environment-specific details.
+The concrete URLs and TLS configuration depend on your deployment topology (for example, whether WebSocket and HTTP traffic are served from the same origin). See [`DEPLOYMENT_REQUIREMENTS.md`](../../docs/planning/DEPLOYMENT_REQUIREMENTS.md:1) and the topology notes in [`TOPOLOGY_MODES.md`](../../docs/architecture/TOPOLOGY_MODES.md:1) for environment-specific details.
 
 ## Configuration
 
@@ -785,9 +785,9 @@ Example GitHub Actions workflow:
 
 ### Documentation
 
-- [`STRATEGIC_ROADMAP.md §3`](../../STRATEGIC_ROADMAP.md) - Load testing scenarios and SLOs
+- [`STRATEGIC_ROADMAP.md §3`](../../docs/planning/STRATEGIC_ROADMAP.md) - Load testing scenarios and SLOs
 - [`monitoring/prometheus/alerts.yml`](../../monitoring/prometheus/alerts.yml) - Alert definitions
-- [`docs/PASS21_ASSESSMENT_REPORT.md`](../../docs/PASS21_ASSESSMENT_REPORT.md) - Operations readiness assessment
+- [`docs/PASS21_ASSESSMENT_REPORT.md`](../../docs/archive/assessments/PASS21_ASSESSMENT_REPORT.md) - Operations readiness assessment
 
 ### External Resources
 

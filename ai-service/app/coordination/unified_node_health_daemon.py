@@ -54,6 +54,7 @@ from app.coordination.health_check_orchestrator import (
 )
 from app.coordination.recovery_orchestrator import RecoveryOrchestrator
 from app.coordination.utilization_optimizer import UtilizationOptimizer
+from app.coordination.p2p_auto_deployer import P2PAutoDeployer, P2PDeploymentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,12 @@ class DaemonConfig:
     recovery_check_interval: float = 120.0
     optimization_interval: float = 300.0
     config_sync_interval: float = 600.0
+    p2p_deploy_interval: float = 300.0  # Check P2P coverage every 5 minutes
 
     # Thresholds
     min_healthy_percent: float = 80.0  # Alert if < 80% healthy
     max_offline_count: int = 5  # Alert if > 5 nodes offline
+    min_p2p_coverage_percent: float = 90.0  # Alert if < 90% have P2P
 
     # Paths
     hosts_config_path: str = "config/distributed_hosts.yaml"
@@ -81,6 +84,7 @@ class DaemonConfig:
     enable_optimization: bool = True
     enable_config_sync: bool = True
     enable_alerting: bool = True
+    enable_p2p_auto_deploy: bool = True  # Auto-deploy P2P to missing nodes
 
     # P2P port
     p2p_port: int = 8770
@@ -125,12 +129,25 @@ class UnifiedNodeHealthDaemon:
             health_orchestrator=self.health_orchestrator,
         )
 
+        # P2P auto-deployer
+        p2p_config = P2PDeploymentConfig(
+            check_interval_seconds=self.config.p2p_deploy_interval,
+            p2p_port=self.config.p2p_port,
+            min_coverage_percent=self.config.min_p2p_coverage_percent,
+            hosts_config_path=self.config.hosts_config_path,
+        )
+        self.p2p_auto_deployer = P2PAutoDeployer(
+            config=p2p_config,
+            health_orchestrator=self.health_orchestrator,
+        )
+
         # State
         self._running = False
         self._last_health_check = 0.0
         self._last_recovery_check = 0.0
         self._last_optimization = 0.0
         self._last_config_sync = 0.0
+        self._last_p2p_deploy = 0.0
 
         # Tasks
         self._tasks: list[asyncio.Task] = []
@@ -140,6 +157,7 @@ class UnifiedNodeHealthDaemon:
         self._health_checks_run = 0
         self._recoveries_attempted = 0
         self._optimizations_run = 0
+        self._p2p_deploys_run = 0
 
     async def run(self) -> None:
         """Run the daemon main loop."""
@@ -153,8 +171,10 @@ class UnifiedNodeHealthDaemon:
         logger.info(f"Recovery check interval: {self.config.recovery_check_interval}s")
         logger.info(f"Optimization interval: {self.config.optimization_interval}s")
         logger.info(f"Config sync interval: {self.config.config_sync_interval}s")
+        logger.info(f"P2P deploy interval: {self.config.p2p_deploy_interval}s")
         logger.info(f"Recovery enabled: {self.config.enable_recovery}")
         logger.info(f"Optimization enabled: {self.config.enable_optimization}")
+        logger.info(f"P2P auto-deploy enabled: {self.config.enable_p2p_auto_deploy}")
         logger.info("=" * 60)
 
         # Initial health check
@@ -200,6 +220,13 @@ class UnifiedNodeHealthDaemon:
             and now - self._last_config_sync >= self.config.config_sync_interval
         ):
             await self._run_config_sync()
+
+        # P2P auto-deployment
+        if (
+            self.config.enable_p2p_auto_deploy
+            and now - self._last_p2p_deploy >= self.config.p2p_deploy_interval
+        ):
+            await self._run_p2p_deploy()
 
     async def _run_health_check(self) -> None:
         """Run health check cycle."""
@@ -263,6 +290,29 @@ class UnifiedNodeHealthDaemon:
             await self._sync_hosts_config()
         except Exception as e:
             logger.error(f"[Daemon] Config sync failed: {e}")
+
+    async def _run_p2p_deploy(self) -> None:
+        """Check P2P coverage and deploy to nodes missing it."""
+        logger.info("[Daemon] Running P2P auto-deployment check...")
+        self._last_p2p_deploy = time.time()
+        self._p2p_deploys_run += 1
+
+        try:
+            report = await self.p2p_auto_deployer.check_and_deploy()
+
+            # Alert if coverage below threshold
+            if (
+                self.config.enable_alerting
+                and report.coverage_percent < self.config.min_p2p_coverage_percent
+            ):
+                await self._send_alert(
+                    f"⚠️ P2P coverage low: {report.coverage_percent:.0f}% "
+                    f"({report.nodes_with_p2p}/{report.total_nodes} nodes with P2P). "
+                    f"Missing: {report.nodes_needing_deployment[:5]}"
+                )
+
+        except Exception as e:
+            logger.error(f"[Daemon] P2P deployment check failed: {e}")
 
     async def _sync_hosts_config(self) -> None:
         """Update distributed_hosts.yaml with current node health."""
@@ -356,11 +406,24 @@ class UnifiedNodeHealthDaemon:
         """Get daemon statistics."""
         uptime = time.time() - self._start_time if self._start_time else 0
 
+        # Get latest P2P coverage
+        p2p_coverage = None
+        latest_report = self.p2p_auto_deployer.get_latest_coverage()
+        if latest_report:
+            p2p_coverage = {
+                "coverage_percent": latest_report.coverage_percent,
+                "nodes_with_p2p": latest_report.nodes_with_p2p,
+                "total_nodes": latest_report.total_nodes,
+                "nodes_needing_deployment": latest_report.nodes_needing_deployment,
+            }
+
         return {
             "uptime_seconds": uptime,
             "health_checks_run": self._health_checks_run,
             "recoveries_attempted": self._recoveries_attempted,
             "optimizations_run": self._optimizations_run,
+            "p2p_deploys_run": self._p2p_deploys_run,
+            "p2p_coverage": p2p_coverage,
             "running": self._running,
         }
 

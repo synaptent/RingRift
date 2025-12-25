@@ -4,7 +4,7 @@
 This module provides a centralized configuration for diverse AI matchups
 across all training-related scripts: soaks, tournaments, gauntlets, CMAES.
 
-All 11 AI Types:
+All 23 AI Types (Dec 2025):
 - RANDOM: Pure random moves (weak baseline)
 - HEURISTIC: Fast heuristic evaluation
 - MINIMAX: Paranoid minimax search (assumes opponent collusion)
@@ -16,11 +16,23 @@ All 11 AI Types:
 - NEURAL_DEMO: Experimental neural-only mode
 - POLICY_ONLY: Direct NN policy without search
 - GUMBEL_MCTS: Gumbel AlphaZero with Sequential Halving
+- EBMO: Energy-Based Move Optimization
+- GMO: Gradient Move Optimization (entropy-guided gradient ascent)
+- GMO_V2: Enhanced GMO with attention and ensemble
+- GMO_MCTS: GMO-guided MCTS tree search
+- GMO_GUMBEL: GMO value network + Gumbel MCTS search
+- IG_GMO: Information-Gain GMO (mutual information exploration)
+- CAGE: Constraint-Aware Graph Energy-based optimization
+- IMPROVED_MCTS: Advanced MCTS with PUCT + progressive widening
+- HYBRID_NN: Fast heuristic + NN value ranking (hybrid)
+- GNN: Graph Neural Network (message passing for hex geometry)
+- HYBRID: CNN-GNN hybrid (CNN patterns + GNN connectivity)
 
 GPU-Optimized Distribution:
 - Prioritizes GUMBEL_MCTS (20%) and POLICY_ONLY (15%) for GPU utilization
 - Includes diverse weak/strong matchups for robust training
-- Supports hex8 board type
+- Includes all experimental AIs for maximum diversity
+- Supports all board types
 
 Usage:
     from app.training.diverse_ai_config import (
@@ -36,8 +48,9 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-# All 11 AI types
+# All 23 AI types (Dec 2025)
 ALL_AI_TYPES = [
+    # Core production types
     "random",
     "heuristic",
     "minimax",
@@ -49,6 +62,20 @@ ALL_AI_TYPES = [
     "neural_demo",
     "policy_only",
     "gumbel_mcts",
+    # Experimental energy/gradient-based types
+    "ebmo",
+    "gmo",
+    "gmo_v2",
+    "gmo_mcts",
+    "gmo_gumbel",
+    "ig_gmo",
+    "cage",
+    # Advanced search types
+    "improved_mcts",
+    "hybrid_nn",
+    # GNN-based types
+    "gnn",
+    "hybrid",
 ]
 
 # GPU-heavy AI types (prioritized for GPU utilization)
@@ -58,15 +85,26 @@ GPU_AI_TYPES = [
     "policy_only",
     "mcts",
     "descent",
+    "gmo",
+    "gmo_v2",
+    "gmo_mcts",
+    "gmo_gumbel",
+    "improved_mcts",
+    "hybrid_nn",
+    "gnn",
+    "hybrid",
 ]
 
-# CPU AI types
+# CPU AI types (can run without GPU)
 CPU_AI_TYPES = [
     "random",
     "heuristic",
     "minimax",
     "maxn",
     "brs",
+    "ebmo",
+    "ig_gmo",
+    "cage",
 ]
 
 # Strong AI types (for asymmetric matchups)
@@ -78,6 +116,26 @@ STRONG_AI_TYPES = [
     "descent",
     "minimax",
     "maxn",
+    "gmo_mcts",
+    "gmo_gumbel",
+    "improved_mcts",
+    "hybrid_nn",
+    "gnn",
+    "hybrid",
+]
+
+# Experimental AI types (novel architectures for diversity)
+EXPERIMENTAL_AI_TYPES = [
+    "ebmo",
+    "gmo",
+    "gmo_v2",
+    "gmo_mcts",
+    "gmo_gumbel",
+    "ig_gmo",
+    "cage",
+    "improved_mcts",
+    "gnn",
+    "hybrid",
 ]
 
 # Weak AI types (for diversity and baseline)
@@ -88,66 +146,132 @@ WEAK_AI_TYPES = [
 ]
 
 # GPU-optimized weight distribution
-# Prioritizes NN-guided types for high-quality training data (75% NN-guided)
+# Prioritizes NN-guided types for high-quality training data
+# Total must sum to 1.0
 GPU_OPTIMIZED_WEIGHTS: dict[str, float] = {
-    "gumbel_mcts": 0.30,    # 30% - Top priority, best quality search
-    "policy_only": 0.30,    # 30% - Fast GPU policy (volume)
-    "gpu_minimax": 0.08,    # 8% - GPU batched search
-    "mcts": 0.08,           # 8% - MCTS exploration
-    "descent": 0.07,        # 7% - Gradient search (NN-guided)
-    "minimax": 0.05,        # 5% - Paranoid search
+    # Core high-quality search (50%)
+    "gumbel_mcts": 0.20,    # 20% - Top priority, best quality search
+    "policy_only": 0.15,    # 15% - Fast GPU policy (volume)
+    "improved_mcts": 0.08,  # 8% - Advanced MCTS with PUCT
+    "gmo_gumbel": 0.04,     # 4% - GMO + Gumbel hybrid
+    "gmo_mcts": 0.03,       # 3% - GMO-guided MCTS
+    # Standard search (20%)
+    "gpu_minimax": 0.05,    # 5% - GPU batched search
+    "mcts": 0.05,           # 5% - MCTS exploration
+    "descent": 0.04,        # 4% - Gradient search (NN-guided)
+    "hybrid_nn": 0.03,      # 3% - Fast hybrid NN
+    "hybrid": 0.03,         # 3% - CNN-GNN hybrid
+    # Experimental (12%)
+    "gmo": 0.03,            # 3% - Gradient Move Optimization
+    "gmo_v2": 0.03,         # 3% - Enhanced GMO
+    "ebmo": 0.02,           # 2% - Energy-based
+    "ig_gmo": 0.02,         # 2% - Information-gain GMO
+    "gnn": 0.02,            # 2% - Graph Neural Network
+    # Baselines (18%)
+    "minimax": 0.04,        # 4% - Paranoid search
     "maxn": 0.04,           # 4% - Max-N search
     "brs": 0.03,            # 3% - Fast best-reply
     "heuristic": 0.03,      # 3% - Baseline
-    "random": 0.01,         # 1% - Weak diversity (minimal)
+    "cage": 0.02,           # 2% - Constraint-aware
     "neural_demo": 0.01,    # 1% - Experimental
+    "random": 0.01,         # 1% - Weak diversity (minimal)
 }
 
 # CPU-optimized weight distribution (for CPU-only nodes)
+# Total must sum to 1.0
 CPU_OPTIMIZED_WEIGHTS: dict[str, float] = {
-    "minimax": 0.20,
-    "maxn": 0.18,
-    "mcts": 0.15,
-    "descent": 0.12,
-    "brs": 0.12,
-    "heuristic": 0.10,
-    "random": 0.08,
-    "gumbel_mcts": 0.03,    # Can still run on CPU
+    # CPU-efficient search (60%)
+    "minimax": 0.15,
+    "maxn": 0.15,
+    "mcts": 0.12,
+    "descent": 0.10,
+    "brs": 0.08,
+    # Experimental CPU-friendly (18%)
+    "ebmo": 0.05,
+    "ig_gmo": 0.05,
+    "cage": 0.04,
+    "gmo": 0.04,            # Can run on CPU (slower)
+    # Baselines (15%)
+    "heuristic": 0.08,
+    "random": 0.05,
+    "neural_demo": 0.02,
+    # GPU types (run on CPU with reduced weight - 7%)
+    "gumbel_mcts": 0.03,
     "policy_only": 0.02,
-    "gpu_minimax": 0.00,    # Skip GPU types on CPU
-    "neural_demo": 0.00,
+    "gnn": 0.02,            # GNN can run on CPU
+    # Skip GPU-only types
+    "gpu_minimax": 0.00,
+    "gmo_v2": 0.00,
+    "gmo_mcts": 0.00,
+    "gmo_gumbel": 0.00,
+    "improved_mcts": 0.00,
+    "hybrid_nn": 0.00,
+    "hybrid": 0.00,
 }
 
 # Balanced distribution for tournaments
+# Includes ALL AI types for maximum diversity in matchups
+# Total must sum to 1.0
 TOURNAMENT_WEIGHTS: dict[str, float] = {
-    "gumbel_mcts": 0.15,
-    "policy_only": 0.12,
-    "mcts": 0.12,
-    "descent": 0.12,
-    "minimax": 0.10,
-    "gpu_minimax": 0.10,
-    "maxn": 0.10,
-    "brs": 0.08,
-    "heuristic": 0.06,
-    "random": 0.03,
-    "neural_demo": 0.02,
+    # Core search types (45%)
+    "gumbel_mcts": 0.10,
+    "policy_only": 0.08,
+    "mcts": 0.08,
+    "descent": 0.07,
+    "improved_mcts": 0.06,
+    "gmo_gumbel": 0.03,
+    "gmo_mcts": 0.03,
+    # Search variants (18%)
+    "minimax": 0.05,
+    "gpu_minimax": 0.05,
+    "maxn": 0.05,
+    "brs": 0.03,
+    # Experimental types (22%)
+    "gmo": 0.04,
+    "gmo_v2": 0.04,
+    "ebmo": 0.03,
+    "ig_gmo": 0.03,
+    "cage": 0.02,
+    "hybrid_nn": 0.03,
+    "gnn": 0.02,
+    "hybrid": 0.01,
+    # Baselines (15%)
+    "heuristic": 0.04,
+    "random": 0.01,
+    "neural_demo": 0.01,
 }
 
 # Robust training weights - emphasizes asymmetric matchups with random/heuristic
 # This helps models learn correct value semantics by training against weak opponents
 # where the value signal is clearer (NN should always beat random/heuristic)
+# Total must sum to 1.0
 ROBUST_TRAINING_WEIGHTS: dict[str, float] = {
-    "gumbel_mcts": 0.18,    # 18% - High quality NN search
-    "mcts": 0.12,           # 12% - MCTS exploration
-    "descent": 0.12,        # 12% - Gradient search
-    "policy_only": 0.10,    # 10% - Fast NN policy
-    "minimax": 0.08,        # 8% - Classic search
-    "maxn": 0.06,           # 6% - Multi-player search
-    "gpu_minimax": 0.06,    # 6% - GPU batched search
-    "brs": 0.05,            # 5% - Best-reply search
-    "heuristic": 0.12,      # 12% - Baseline for asymmetric
-    "random": 0.10,         # 10% - Weak baseline for asymmetric
-    "neural_demo": 0.01,    # 1% - Experimental
+    # High-quality search (40%)
+    "gumbel_mcts": 0.12,
+    "mcts": 0.08,
+    "descent": 0.08,
+    "policy_only": 0.06,
+    "improved_mcts": 0.04,
+    "gmo_gumbel": 0.02,
+    # Search variants (15%)
+    "minimax": 0.05,
+    "maxn": 0.04,
+    "gpu_minimax": 0.04,
+    "brs": 0.02,
+    # Experimental (13%)
+    "gmo": 0.03,
+    "gmo_v2": 0.02,
+    "gmo_mcts": 0.02,
+    "ebmo": 0.02,
+    "ig_gmo": 0.02,
+    "cage": 0.01,
+    "hybrid_nn": 0.01,
+    # Weak baselines for asymmetric matchups (30%)
+    "heuristic": 0.12,
+    "random": 0.10,
+    "gnn": 0.02,
+    "hybrid": 0.02,
+    "neural_demo": 0.02,
 }
 
 # Supported board types including hex8

@@ -251,10 +251,11 @@ class SSHTransport:
             cmd.extend([
                 "-o", f"ControlPath={control_path}",
                 "-o", "ControlMaster=auto",
-                "-o", "ControlPersist=60",  # Reduced from 300s for faster reconnection
-                # TCP keepalive settings to detect dead connections
-                "-o", "ServerAliveInterval=15",  # Send keepalive every 15 seconds
-                "-o", "ServerAliveCountMax=3",   # Fail after 3 missed keepalives (45s total)
+                "-o", "ControlPersist=300",  # Keep connections 5 min (was 60s) for Tailscale stability
+                # TCP keepalive settings - more aggressive for Tailscale VPN
+                # Dec 2025: Increased aggressiveness to handle Tailscale userland drops
+                "-o", "ServerAliveInterval=5",   # Send keepalive every 5 seconds (was 15)
+                "-o", "ServerAliveCountMax=6",   # Fail after 6 missed keepalives (30s total, was 45s)
                 "-o", "TCPKeepAlive=yes",        # Enable TCP-level keepalive
             ])
 
