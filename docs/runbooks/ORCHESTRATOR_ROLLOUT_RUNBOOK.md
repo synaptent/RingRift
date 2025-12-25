@@ -345,7 +345,7 @@ Run this checklist **before** promoting a new build to staging or production.
    - When in doubt about which combination of `NODE_ENV`, `RINGRIFT_APP_TOPOLOGY`,
      `RINGRIFT_RULES_MODE`, and orchestrator flags to use for a given phase,
      refer to the canonical presets in
-     [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md#811-environment-and-flag-presets-by-phase).
+     [`docs/archive/ORCHESTRATOR_ROLLOUT_PHASES.md` §8.1.1](../archive/ORCHESTRATOR_ROLLOUT_PHASES.md#811-environment-and-flag-presets-by-phase).
 
 6. **Optional AI evaluation overlay (non-blocking)**
    - For releases that materially change AI difficulty profiles or models, consider running the AI evaluation harness alongside the orchestrator gates:

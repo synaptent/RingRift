@@ -7,7 +7,7 @@
 > • **Rules semantics SSoT:** canonical rules spec (`RULES_CANONICAL_SPEC.md` together with `../rules/COMPLETE_RULES.md` / `../rules/COMPACT_RULES.md`) as the single source of truth for rules semantics, with the shared TS engine under `src/shared/engine/**` + contracts/vectors (`tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) as its primary executable implementation.  
 > • **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).  
 > • **Geometry helpers:** `src/shared/engine/core.ts` (movement directions, distance, paths), `src/shared/engine/movementLogic.ts`, `src/shared/engine/captureLogic.ts`, and their Python analogues under `ai-service/app/**`.
-> • **Environment / rollout presets:** For how topology choices are combined with orchestrator rollout flags across environments (CI, staging, production), see the canonical env/phase presets table in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1.
+> • **Environment / rollout presets (historical):** For how topology choices were combined with orchestrator rollout flags across environments (CI, staging, production), see the archived env/phase presets table in `docs/archive/ORCHESTRATOR_ROLLOUT_PHASES.md` §8.1.1.
 >
 > If this document ever disagrees with those SSoTs or the shared engine tests, **code + tests win** and this file must be updated.
 

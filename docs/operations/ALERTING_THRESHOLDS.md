@@ -566,12 +566,12 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 #### OrchestratorCircuitBreakerOpen
 
-| Property      | Value                                                    |
-| ------------- | -------------------------------------------------------- |
-| **Severity**  | critical                                                 |
-| **Threshold** | `ringrift_orchestrator_circuit_breaker_state == 1`       |
-| **Duration**  | 30 seconds                                               |
-| **Impact**    | Orchestrator path disabled; all traffic on legacy engine |
+| Property      | Value                                                  |
+| ------------- | ------------------------------------------------------ |
+| **Severity**  | critical                                               |
+| **Threshold** | `ringrift_orchestrator_circuit_breaker_state == 1`     |
+| **Duration**  | 30 seconds                                             |
+| **Impact**    | Circuit breaker indicates elevated orchestrator errors |
 
 **Rationale**: A tripped circuit breaker means orchestrator error rate exceeded the configured threshold (default 5% over a 5‑minute window). This is a direct breach of `SLO-STAGE-ORCH-ERROR` / `SLO-PROD-ORCH-ERROR`.
 
@@ -580,8 +580,9 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 1. Check orchestrator error logs and recent deploys (backend `GameEngine` / turn adapter changes).
 2. Verify Python rules and AI services are healthy to rule out dependency cascades.
 3. Follow `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`:
-   - Orchestrator is permanently enabled (100%); focus on circuit breaker posture.
+   - Orchestrator is permanently enabled (100%); routing does not change.
    - Investigate and fix the underlying error pattern.
+   - Roll back the deployment if a regression is confirmed.
    - Manually reset the circuit breaker via the admin APIs or config once resolved.
 
 ---
@@ -601,7 +602,7 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 1. Check `/metrics` and logs for specific orchestrator failure types (validation errors, timeouts, invariant violations).
 2. Correlate with recent code changes or configuration shifts (rules mode, circuit-breaker thresholds).
-3. If errors are increasing, use circuit-breaker telemetry and parity diagnostics per the rollout runbook while triaging. FSM is canonical and the orchestrator is permanently enabled (no rollback lever).
+3. If errors are increasing, use circuit-breaker telemetry and parity diagnostics per the rollout runbook while triaging. Roll back the deployment if a regression is confirmed.
 
 ---
 
@@ -613,7 +614,9 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 > **Note:** This alert has been deprecated. Shadow mode has been removed - FSM is now
 > the canonical game state orchestrator (RR-CANON compliance). The metric
-> `ringrift_orchestrator_shadow_mismatch_rate` is no longer emitted.
+> `ringrift_orchestrator_shadow_mismatch_rate` is no longer emitted. Use `RulesParity*`
+> alerts and `ringrift_rules_parity_mismatches_total{suite="runtime_python_mode",...}`
+> when running python-authoritative diagnostics.
 
 ---
 
@@ -651,9 +654,9 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 **Response**:
 
-1. Rollout percentage is fixed at 100% (flag removed); keep `RINGRIFT_RULES_MODE=ts` in production and use circuit-breaker telemetry + parity diagnostics per the rollout runbook while triaging.
+1. Keep `RINGRIFT_RULES_MODE=ts` in production and use circuit-breaker telemetry + parity diagnostics per the rollout runbook while triaging.
 2. Triage the violation using logs and, if available, invariant soak results against the production image.
-3. Add or update regression tests and only resume rollout once the issue is fully understood and fixed.
+3. Add or update regression tests and roll back the deployment if the violation is regression-caused.
 
 ---
 

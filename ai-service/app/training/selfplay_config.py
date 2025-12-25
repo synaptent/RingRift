@@ -191,6 +191,10 @@ class SelfplayConfig:
     # Pipeline automation (2025-12)
     emit_pipeline_events: bool = False  # Emit SELFPLAY_COMPLETE for auto-trigger pipeline
 
+    # PFSP opponent selection (December 2025)
+    # Prioritizes opponents with ~50% win rate for maximum learning signal
+    use_pfsp: bool = True  # Enabled by default
+
     # Gumbel MCTS simulation budget (overrides mcts_simulations for Gumbel engines)
     simulation_budget: int | None = None
 
@@ -651,6 +655,16 @@ def create_argument_parser(
              "Use with train_cli.py --enable-pipeline-auto-trigger for full automation.",
     )
 
+    # PFSP opponent selection (December 2025)
+    pfsp_group = parser.add_argument_group("PFSP Opponent Selection")
+    pfsp_group.add_argument(
+        "--disable-pfsp",
+        action="store_true",
+        help="Disable PFSP (Prioritized Fictitious Self-Play) opponent selection. "
+             "PFSP is enabled by default and prioritizes opponents with ~50%% win rate "
+             "for maximum learning signal. Not recommended to disable.",
+    )
+
     return parser
 
 
@@ -733,6 +747,8 @@ def parse_selfplay_args(
         difficulty_band=getattr(parsed, "difficulty_band", "light"),
         # Pipeline automation
         emit_pipeline_events=getattr(parsed, "emit_pipeline_events", False),
+        # PFSP opponent selection (enabled by default, use --disable-pfsp to turn off)
+        use_pfsp=not getattr(parsed, "disable_pfsp", False),
     )
 
     return config

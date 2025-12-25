@@ -137,10 +137,10 @@ class EvaluationDaemon:
                 logger.warning("[EvaluationDaemon] Event bus not available")
                 return
 
-            bus.subscribe(DataEventType.TRAINING_COMPLETE, self._on_training_complete)
+            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             self._subscribed = True
 
-            logger.debug("[EvaluationDaemon] Subscribed to TRAINING_COMPLETE events")
+            logger.debug("[EvaluationDaemon] Subscribed to TRAINING_COMPLETED events")
 
         except ImportError as e:
             logger.warning(f"[EvaluationDaemon] Event system not available: {e}")
@@ -158,7 +158,7 @@ class EvaluationDaemon:
 
             bus = get_event_bus()
             if bus:
-                bus.unsubscribe(DataEventType.TRAINING_COMPLETE, self._on_training_complete)
+                bus.unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             self._subscribed = False
 
         except Exception as e:

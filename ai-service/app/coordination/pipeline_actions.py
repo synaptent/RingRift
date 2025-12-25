@@ -131,8 +131,14 @@ def _get_ai_service_root() -> Path:
         if (current / "app").exists() and (current / "scripts").exists():
             return current
 
-    # Fallback to common location
-    return Path("/Users/armand/Development/RingRift/ai-service")
+    # Fallback to environment variable or raise
+    fallback = os.getenv("RINGRIFT_AI_SERVICE_PATH")
+    if fallback:
+        return Path(fallback)
+
+    raise RuntimeError(
+        "Could not locate ai-service directory. Set RINGRIFT_AI_SERVICE_PATH environment variable."
+    )
 
 
 async def _run_subprocess(

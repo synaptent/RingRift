@@ -653,7 +653,12 @@ class SyncRouter:
             ))
 
         except Exception as e:
-            logger.debug(f"[SyncRouter] Could not emit routing decision: {e}")
+            logger.warning(f"[SyncRouter] Could not emit routing decision: {e}")
+            # Still log the decision for debugging even if event emission failed
+            logger.info(
+                f"[SyncRouter] Routing decision: {len(targets)} targets for "
+                f"{game_count} games from {source_node}"
+            )
 
 
 # Module-level singleton

@@ -668,25 +668,24 @@ class ClusterManifest:
             return 0
 
         now = time.time()
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         registered = 0
-        for game_id, node_id, db_path in games:
-            try:
-                cursor.execute("""
-                    INSERT OR REPLACE INTO game_locations
-                    (game_id, node_id, db_path, board_type, num_players,
-                     engine_mode, registered_at, last_seen)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (game_id, node_id, db_path, board_type, num_players,
-                      engine_mode, now, now))
-                registered += 1
-            except sqlite3.Error as e:
-                logger.warning(f"Failed to register game {game_id}: {e}")
 
-        conn.commit()
-        conn.close()
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            for game_id, node_id, db_path in games:
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO game_locations
+                        (game_id, node_id, db_path, board_type, num_players,
+                         engine_mode, registered_at, last_seen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (game_id, node_id, db_path, board_type, num_players,
+                          engine_mode, now, now))
+                    registered += 1
+                except sqlite3.Error as e:
+                    logger.warning(f"Failed to register game {game_id}: {e}")
+            conn.commit()
+
         return registered
 
     def find_game(self, game_id: str) -> list[GameLocation]:

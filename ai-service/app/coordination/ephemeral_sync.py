@@ -334,6 +334,7 @@ class EphemeralSyncDaemon:
                 return
 
             # Push each DB to targets
+            successful_targets = []
             for db_path in db_paths:
                 for target in self._sync_targets:
                     try:
@@ -341,9 +342,18 @@ class EphemeralSyncDaemon:
                         if success:
                             self._stats.games_pushed += len(games_to_push)
                             self._stats.last_push_time = time.time()
+                            successful_targets.append(target)
                             break  # Only need one successful target
                     except Exception as e:
                         logger.debug(f"Push to {target} failed: {e}")
+
+            # Emit sync event if any pushes succeeded
+            if successful_targets:
+                await self._emit_sync_event(
+                    games_pushed=len(games_to_push),
+                    target_nodes=successful_targets,
+                    db_paths=list(db_paths),
+                )
 
     async def _rsync_to_target(self, db_path: str, target_node: str) -> bool:
         """Rsync a database to a target node.
@@ -433,6 +443,40 @@ class EphemeralSyncDaemon:
         except Exception as e:
             logger.debug(f"Rsync error: {e}")
             return False
+
+    async def _emit_sync_event(
+        self,
+        games_pushed: int,
+        target_nodes: list[str],
+        db_paths: list[str],
+    ) -> None:
+        """Emit GAME_SYNCED event for feedback loop coupling.
+
+        Args:
+            games_pushed: Number of games synced
+            target_nodes: Nodes that received the data
+            db_paths: Database paths that were synced
+        """
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_router()
+            if router:
+                await router.publish(
+                    event_type=DataEventType.GAME_SYNCED,
+                    payload={
+                        "node_id": self.node_id,
+                        "games_pushed": games_pushed,
+                        "target_nodes": target_nodes,
+                        "db_paths": db_paths,
+                        "is_ephemeral": self._is_ephemeral,
+                        "timestamp": time.time(),
+                    },
+                    source="EphemeralSyncDaemon",
+                )
+        except Exception as e:
+            logger.debug(f"Could not emit GAME_SYNCED event: {e}")
 
     def get_status(self) -> dict[str, Any]:
         """Get daemon status."""

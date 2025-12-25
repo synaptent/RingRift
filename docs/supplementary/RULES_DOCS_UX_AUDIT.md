@@ -128,7 +128,7 @@ Future UX and documentation remediation work referenced in this audit should tre
 Given the partial remediation to date (see §3.2 implementation snapshot), the next high-leverage items from this audit are:
 
 - **DOCUX-C1 / C2 – Rules mode and placement cap documentation:**
-  - Expand `README.md` and/or `RULES_ENGINE_ARCHITECTURE.md` with a short “Rules Engine Modes” subsection that references `RINGRIFT_RULES_MODE` and clarifies shadow-mode parity behaviour.
+  - Expand `README.md` and/or `RULES_ENGINE_ARCHITECTURE.md` with a short “Rules Engine Modes” subsection that references `RINGRIFT_RULES_MODE` and clarifies python‑authoritative parity diagnostics (shadow mode removed).
   - Add a brief comment in `BOARD_CONFIGS` or the placement validator describing the stack-height approximation (CCE-002), with a pointer back to `RULES_CONSISTENCY_EDGE_CASES.md`.
 - **CCE-001 / CCE-005 / CCE-006 / CCE-007 – Implementation compromises:**
   - Fold the remaining undocumented implementation compromises into targeted code comments and/or short subsections in the relevant rules/architecture docs, so future changes do not reintroduce the same edge cases.

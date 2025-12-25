@@ -69,6 +69,12 @@ class DataEventType(Enum):
     DATA_SYNC_STARTED = "sync_started"
     DATA_SYNC_COMPLETED = "sync_completed"
     DATA_SYNC_FAILED = "sync_failed"
+    GAME_SYNCED = "game_synced"  # Individual game(s) synced to targets
+
+    # Data freshness events
+    DATA_STALE = "data_stale"  # Training data is stale
+    DATA_FRESH = "data_fresh"  # Training data is fresh
+    SYNC_TRIGGERED = "sync_triggered"  # Sync triggered due to stale data
 
     # Training events
     TRAINING_THRESHOLD_REACHED = "training_threshold"
@@ -106,6 +112,10 @@ class DataEventType(Enum):
     NAS_TRIGGERED = "nas_triggered"
     PLATEAU_DETECTED = "plateau_detected"
     HYPERPARAMETER_UPDATED = "hyperparameter_updated"
+
+    # Elo momentum events (December 2025 - Phase 15)
+    ELO_VELOCITY_CHANGED = "elo_velocity_changed"  # Significant change in Elo improvement rate
+    ADAPTIVE_PARAMS_CHANGED = "adaptive_params_changed"  # Training params adjusted based on Elo
 
     # PBT events
     PBT_STARTED = "pbt_started"
@@ -665,6 +675,8 @@ CROSS_PROCESS_EVENT_TYPES = {
     DataEventType.PLATEAU_DETECTED,
     DataEventType.DATA_SYNC_COMPLETED,
     DataEventType.HYPERPARAMETER_UPDATED,
+    DataEventType.GAME_SYNCED,  # Ephemeral sync events
+    DataEventType.DATA_STALE,  # Training data freshness
     # Failure events - important for distributed health awareness
     DataEventType.TRAINING_FAILED,
     DataEventType.EVALUATION_FAILED,
@@ -1337,6 +1349,35 @@ async def emit_evaluation_failed(
 # =============================================================================
 # Promotion Events
 # =============================================================================
+
+async def emit_promotion_candidate(
+    model_id: str,
+    board_type: str,
+    num_players: int,
+    win_rate_vs_heuristic: float,
+    source: str = "",
+) -> None:
+    """Emit a PROMOTION_CANDIDATE event.
+
+    Args:
+        model_id: Model that is a promotion candidate
+        board_type: Board type (e.g., "hex8", "square8")
+        num_players: Number of players (2, 3, or 4)
+        win_rate_vs_heuristic: Win rate against heuristic baseline
+        source: Component emitting the event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.PROMOTION_CANDIDATE,
+        payload={
+            "model_id": model_id,
+            "board_type": board_type,
+            "num_players": num_players,
+            "config_key": f"{board_type}_{num_players}p",
+            "win_rate_vs_heuristic": win_rate_vs_heuristic,
+        },
+        source=source,
+    ))
+
 
 async def emit_promotion_started(
     config: str,

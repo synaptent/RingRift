@@ -315,15 +315,20 @@ class PromotionController:
                         f"{model_id} with {win_rate_vs_heuristic:.1%} vs heuristic"
                     )
                     # Emit PROMOTION_CANDIDATE for downstream handlers
-                    await router.publish(
-                        DataEventType.PROMOTION_CANDIDATE.value,
-                        {
-                            "model_id": model_id,
-                            "board_type": board_type,
-                            "num_players": num_players,
-                            "win_rate_vs_heuristic": win_rate_vs_heuristic,
-                            "source": "evaluation_completed",
-                        }
+                    from app.distributed.data_events import emit_promotion_candidate
+                    from app.core.async_context import fire_and_forget
+
+                    fire_and_forget(
+                        emit_promotion_candidate(
+                            model_id=model_id,
+                            board_type=board_type,
+                            num_players=num_players,
+                            win_rate_vs_heuristic=win_rate_vs_heuristic,
+                            source="PromotionController",
+                        ),
+                        error_callback=lambda e: logger.debug(
+                            f"Failed to emit PROMOTION_CANDIDATE: {e}"
+                        ),
                     )
                     # Queue for promotion evaluation
                     self._pending_promotion_checks[model_id] = win_rate_vs_heuristic

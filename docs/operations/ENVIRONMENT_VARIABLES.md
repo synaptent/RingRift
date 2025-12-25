@@ -828,7 +828,7 @@ still uses them to label engine-selection reasons in metrics and the
 For recommended combinations of `NODE_ENV`, `RINGRIFT_APP_TOPOLOGY`,
 `RINGRIFT_RULES_MODE`, and the orchestrator flags across CI, staging, and
 production phases, see the env/phase presets table in
-[`docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1](../architecture/ORCHESTRATOR_ROLLOUT_PLAN.md#811-environment-and-flag-presets-by-phase).
+[`docs/archive/ORCHESTRATOR_ROLLOUT_PHASES.md` §8.1.1](../archive/ORCHESTRATOR_ROLLOUT_PHASES.md#811-environment-and-flag-presets-by-phase).
 
 #### `ORCHESTRATOR_SHADOW_MODE_ENABLED` (REMOVED)
 

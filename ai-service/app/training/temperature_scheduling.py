@@ -448,6 +448,10 @@ class TemperatureScheduler:
         self._training_progress = 0.0
         self._game_count = 0
         self._move_temperatures: list[float] = []
+        # December 2025: Exploration boost from FeedbackLoopController
+        # Values > 1.0 increase exploration (e.g., after failed promotion)
+        # Values < 1.0 decrease exploration (e.g., after successful promotion)
+        self._exploration_boost: float = 1.0
 
     def _create_schedule(self) -> TemperatureSchedule:
         """Create schedule based on configuration."""
@@ -522,10 +526,22 @@ class TemperatureScheduler:
             return LinearDecaySchedule()
 
     def get_temperature(self, move_number: int, game_state: Any | None = None) -> float:
-        """Get temperature for a move."""
+        """Get temperature for a move.
+
+        Temperature is modified by:
+        1. Base schedule (linear, exponential, adaptive, etc.)
+        2. Exploration boost from FeedbackLoopController (1.0-2.0)
+        3. Optional noise
+        """
         temp = self.schedule.get_temperature(
             move_number, game_state, self._training_progress
         )
+
+        # December 2025: Apply exploration boost from feedback loop
+        # Boost > 1.0 increases temperature (more exploration after failed promotions)
+        # Boost < 1.0 decreases temperature (less exploration after success)
+        if self._exploration_boost != 1.0:
+            temp = temp * self._exploration_boost
 
         # Add noise if configured
         if self.config.add_noise:

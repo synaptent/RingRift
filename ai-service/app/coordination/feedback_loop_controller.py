@@ -145,7 +145,7 @@ class FeedbackLoopController:
 
             bus = get_event_bus()
             bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-            bus.subscribe(DataEventType.TRAINING_COMPLETE, self._on_training_complete)
+            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
             bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
 
@@ -164,7 +164,7 @@ class FeedbackLoopController:
 
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-            bus.unsubscribe(DataEventType.TRAINING_COMPLETE, self._on_training_complete)
+            bus.unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
             bus.unsubscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
 

@@ -234,6 +234,7 @@ try:
     from app.training.training_enhancements import (
         AdaptiveGradientClipper,
         CheckpointAverager,
+        EvaluationFeedbackHandler,
         TrainingAnomalyDetector,
     )
     HAS_TRAINING_ENHANCEMENTS = True
@@ -241,6 +242,7 @@ except ImportError:
     TrainingAnomalyDetector = None
     CheckpointAverager = None
     AdaptiveGradientClipper = None
+    EvaluationFeedbackHandler = None
     HAS_TRAINING_ENHANCEMENTS = False
 
 # DataCatalog for cluster-wide training data discovery (2025-12)
@@ -1976,6 +1978,25 @@ def train_model(
     plateau_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=2
     ) if epoch_scheduler is None else None
+
+    # Evaluation feedback handler - adjusts LR based on Elo trends (December 2025)
+    eval_feedback_handler: EvaluationFeedbackHandler | None = None
+    if HAS_TRAINING_ENHANCEMENTS and EvaluationFeedbackHandler is not None:
+        config_key = f"{config.board_type.value}_{num_players}p"
+        eval_feedback_handler = EvaluationFeedbackHandler(
+            optimizer=optimizer,
+            config_key=config_key,
+            min_lr=lr_min or 1e-6,
+            max_lr=config.learning_rate * 2,  # Allow 2x initial LR
+        )
+        if eval_feedback_handler.subscribe():
+            if not distributed or is_main_process():
+                logger.info(
+                    f"[EvaluationFeedbackHandler] Enabled for {config_key} "
+                    "(LR adjusted based on Elo trends)"
+                )
+        else:
+            eval_feedback_handler = None
 
     # Early stopping (supports both loss-based and Elo-based criteria)
     early_stopper: EarlyStopping | None = None
@@ -3891,6 +3912,15 @@ def train_model(
                 epoch_scheduler.step()
             elif plateau_scheduler is not None:
                 plateau_scheduler.step(avg_val_loss)
+
+            # Apply evaluation feedback LR adjustment (December 2025)
+            # This responds to EVALUATION_COMPLETED events and adjusts LR based on Elo trends
+            if eval_feedback_handler is not None and eval_feedback_handler.should_adjust_lr():
+                new_lr = eval_feedback_handler.apply_lr_adjustment(current_epoch=epoch)
+                if new_lr is not None and (not distributed or is_main_process()):
+                    logger.info(
+                        f"[EvaluationFeedback] LR adjusted to {new_lr:.2e} based on Elo trend"
+                    )
 
             # Always log current learning rate
             if not distributed or is_main_process():

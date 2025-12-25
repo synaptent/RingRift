@@ -502,7 +502,14 @@ class SelfplayRunner(ABC):
 
         December 2025: PFSP prioritizes opponents where win rate is near 50%,
         maximizing learning signal from each selfplay game.
+
+        PFSP is enabled by default. Use --disable-pfsp to turn off.
         """
+        # Check config option - PFSP enabled by default
+        if not getattr(self.config, "use_pfsp", True):
+            logger.info("[PFSP] Disabled via --disable-pfsp flag")
+            return
+
         try:
             from app.training.pfsp_opponent_selector import (
                 get_pfsp_selector,
@@ -513,7 +520,7 @@ class SelfplayRunner(ABC):
             wire_pfsp_events()  # Subscribe to MODEL_PROMOTED, EVALUATION_COMPLETED
             self._pfsp_enabled = True
 
-            logger.info(f"[PFSP] Initialized opponent selector for selfplay")
+            logger.info("[PFSP] Initialized opponent selector (enabled by default)")
 
         except ImportError as e:
             logger.debug(f"[PFSP] Module not available: {e}")
@@ -902,12 +909,15 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
             self.config.difficulty or 8
         )
 
-        # Apply curriculum difficulty multiplier (December 2025)
-        # Higher difficulty = more search budget for stronger opponents
-        budget = int(base_budget * self._curriculum_difficulty)
-        if self._curriculum_difficulty != 1.0:
+        # Apply difficulty multipliers (December 2025)
+        # curriculum_difficulty: increased when curriculum advances
+        # promotion_difficulty_boost: increased on failed promotions (harder opponents → stronger model)
+        combined_difficulty = self._curriculum_difficulty * self._promotion_difficulty_boost
+        budget = int(base_budget * combined_difficulty)
+        if combined_difficulty != 1.0:
             logger.info(
-                f"[Curriculum] Budget adjusted: {base_budget} * {self._curriculum_difficulty:.2f} = {budget}"
+                f"[Curriculum] Budget adjusted: {base_budget} * {combined_difficulty:.2f} = {budget} "
+                f"(curriculum={self._curriculum_difficulty:.2f}, promotion_boost={self._promotion_difficulty_boost:.2f})"
             )
 
         self._base_budget = base_budget  # Store for potential reinitialization
@@ -929,12 +939,13 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
         from ..models import BoardType
         from ..game_engine import GameEngine
 
-        # Check if curriculum difficulty changed and reinitialize MCTS if needed
-        new_budget = int(self._base_budget * self._curriculum_difficulty)
+        # Check if difficulty changed and reinitialize MCTS if needed
+        combined_difficulty = self._curriculum_difficulty * self._promotion_difficulty_boost
+        new_budget = int(self._base_budget * combined_difficulty)
         if new_budget != self._current_budget:
             logger.info(
                 f"[Curriculum] Reinitializing MCTS: budget {self._current_budget} -> {new_budget} "
-                f"(difficulty={self._curriculum_difficulty:.2f})"
+                f"(curriculum={self._curriculum_difficulty:.2f}, promotion_boost={self._promotion_difficulty_boost:.2f})"
             )
             from ..ai.factory import create_mcts
             self._current_budget = new_budget

@@ -499,9 +499,12 @@ class TrainingFreshnessChecker:
                 f"Training data for {config_key} is fresh: "
                 f"{result.games_available} games, age={result.data_age_hours:.1f}h"
             )
+            await self._emit_freshness_event("fresh", board_type, num_players, result)
             return result
 
         # Data is stale - trigger sync if configured
+        await self._emit_freshness_event("stale", board_type, num_players, result)
+
         if not self.config.trigger_sync:
             logger.warning(
                 f"Training data for {config_key} is stale "
@@ -519,6 +522,9 @@ class TrainingFreshnessChecker:
         sync_triggered = await self.trigger_sync(board_type, num_players)
         result.sync_triggered = sync_triggered
 
+        if sync_triggered:
+            await self._emit_freshness_event("sync_triggered", board_type, num_players, result)
+
         if not sync_triggered:
             result.error = "Failed to trigger sync"
             return result
@@ -534,6 +540,52 @@ class TrainingFreshnessChecker:
             num_players,
             timeout_seconds=self.config.sync_timeout_seconds,
         )
+
+    async def _emit_freshness_event(
+        self,
+        event_kind: str,
+        board_type: str,
+        num_players: int,
+        result: FreshnessResult,
+    ) -> None:
+        """Emit freshness event for feedback loop coupling.
+
+        Args:
+            event_kind: "fresh", "stale", or "sync_triggered"
+            board_type: Board type
+            num_players: Number of players
+            result: Freshness check result
+        """
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            event_type_map = {
+                "fresh": DataEventType.DATA_FRESH,
+                "stale": DataEventType.DATA_STALE,
+                "sync_triggered": DataEventType.SYNC_TRIGGERED,
+            }
+            event_type = event_type_map.get(event_kind)
+            if not event_type:
+                return
+
+            router = get_router()
+            if router:
+                await router.publish(
+                    event_type=event_type,
+                    payload={
+                        "node_id": self.node_id,
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "is_fresh": result.is_fresh,
+                        "data_age_hours": result.data_age_hours,
+                        "games_available": result.games_available,
+                        "timestamp": time.time(),
+                    },
+                    source="TrainingFreshnessChecker",
+                )
+        except Exception as e:
+            logger.debug(f"Could not emit {event_kind} event: {e}")
 
     def get_status(self) -> dict[str, Any]:
         """Get checker status."""

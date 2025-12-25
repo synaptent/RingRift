@@ -343,6 +343,19 @@ class DaemonManager:
             depends_on=[DaemonType.EVENT_ROUTER],
         )
 
+        # NPZ distribution daemon (December 2025) - syncs training data after export
+        self.register_factory(
+            DaemonType.NPZ_DISTRIBUTION,
+            self._create_npz_distribution,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Orphan detection daemon (December 2025) - detects unregistered game databases
+        self.register_factory(DaemonType.ORPHAN_DETECTION, self._create_orphan_detection)
+
+        # Node health monitor (December 2025) - unified cluster health maintenance
+        self.register_factory(DaemonType.NODE_HEALTH_MONITOR, self._create_node_health_monitor)
+
     def register_factory(
         self,
         daemon_type: DaemonType,
@@ -1416,6 +1429,68 @@ class DaemonManager:
             logger.error(f"ModelPerformanceWatchdog not available: {e}")
             raise
 
+    async def _create_npz_distribution(self) -> None:
+        """Create and run NPZ distribution daemon (December 2025).
+
+        Watches for NPZ_EXPORT_COMPLETE events and automatically distributes
+        exported NPZ files to all training-capable cluster nodes.
+
+        Subscribes to:
+            - NPZ_EXPORT_COMPLETE: Triggered after training data export
+
+        Emits:
+            - NPZ_DISTRIBUTION_COMPLETE: After successful distribution
+        """
+        try:
+            from app.coordination.npz_distribution_daemon import NPZDistributionDaemon
+
+            daemon = NPZDistributionDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.error(f"NPZDistributionDaemon not available: {e}")
+            raise
+
+    async def _create_orphan_detection(self) -> None:
+        """Create and run orphan detection daemon (December 2025).
+
+        Periodically scans for game databases that exist on disk but are
+        not registered in the ClusterManifest. Auto-registers valid orphans.
+
+        Emits:
+            - ORPHAN_GAMES_DETECTED: When orphaned databases are found
+        """
+        try:
+            from app.coordination.orphan_detection_daemon import OrphanDetectionDaemon
+
+            daemon = OrphanDetectionDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.error(f"OrphanDetectionDaemon not available: {e}")
+            raise
+
+    async def _create_node_health_monitor(self) -> None:
+        """Create and run unified node health daemon (December 2025).
+
+        Main daemon for maintaining cluster health across all providers:
+        - Continuous health monitoring (Lambda, Vast, Hetzner, AWS)
+        - Automated recovery with escalation ladder
+        - Utilization optimization to keep nodes productive
+        - P2P auto-deployment to nodes missing P2P daemon
+        """
+        try:
+            from app.coordination.unified_node_health_daemon import (
+                UnifiedNodeHealthDaemon,
+            )
+
+            daemon = UnifiedNodeHealthDaemon()
+            await daemon.run()
+
+        except ImportError as e:
+            logger.error(f"UnifiedNodeHealthDaemon not available: {e}")
+            raise
+
 
 # =============================================================================
 # Daemon Profiles (December 2025)
@@ -1434,6 +1509,9 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.FEEDBACK_LOOP,
         DaemonType.QUALITY_MONITOR,  # Monitor selfplay data quality
         DaemonType.MODEL_PERFORMANCE_WATCHDOG,  # Monitor model win rates
+        DaemonType.NPZ_DISTRIBUTION,  # Distribute training data after export
+        DaemonType.ORPHAN_DETECTION,  # Detect unregistered game databases
+        DaemonType.NODE_HEALTH_MONITOR,  # Unified cluster health maintenance
     ],
 
     # Training node profile - runs on GPU nodes
@@ -1445,6 +1523,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.TRAINING_NODE_WATCHER,
         DaemonType.EVALUATION,  # Auto-evaluate after training completes
         DaemonType.QUALITY_MONITOR,  # Monitor local selfplay quality
+        DaemonType.ORPHAN_DETECTION,  # Detect local orphaned databases
     ],
 
     # Ephemeral node profile - runs on Vast.ai/spot instances
