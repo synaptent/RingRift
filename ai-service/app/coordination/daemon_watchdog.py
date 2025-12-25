@@ -146,16 +146,19 @@ class DaemonWatchdog:
 
         # Emit through event router if available
         try:
-            from app.coordination.event_router import EventType, get_event_router
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
-            router = get_event_router()
-            await router.emit(
-                EventType.DAEMON_STATUS_CHANGED,
-                {
-                    "watchdog_alert": alert_type.value,
-                    **details,
-                },
-            )
+            router = get_router()
+            if router:
+                await router.publish(
+                    event_type=DataEventType.DAEMON_STATUS_CHANGED,
+                    payload={
+                        "watchdog_alert": alert_type.value,
+                        **details,
+                    },
+                    source="DaemonWatchdog",
+                )
         except Exception as e:
             logger.debug(f"Event router not available for alert: {e}")
 
@@ -332,6 +335,18 @@ class DaemonWatchdog:
 
         self._running = True
         self._task = asyncio.create_task(self._health_check_loop())
+        self._task.add_done_callback(self._handle_task_error)
+
+    def _handle_task_error(self, task: asyncio.Task) -> None:
+        """Handle errors from the watchdog task."""
+        try:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc:
+                logger.error(f"DaemonWatchdog task failed: {exc}")
+        except asyncio.InvalidStateError:
+            pass
 
     async def stop(self) -> None:
         """Stop the watchdog."""

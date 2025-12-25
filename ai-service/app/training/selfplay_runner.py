@@ -343,10 +343,11 @@ class SelfplayRunner(ABC):
         - TRAINING_BLOCKED_BY_QUALITY: Trigger data regeneration
         """
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import get_router, subscribe
+            from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
-            if bus is None:
+            router = get_router()
+            if router is None:
                 return
 
             config_key = f"{self.config.board_type}_{self.config.num_players}p"
@@ -398,11 +399,10 @@ class SelfplayRunner(ABC):
                     f"({quality_score:.2f}). Regeneration pending."
                 )
 
-            # Subscribe to feedback events using string event types
-            # These events are emitted via router.publish() with string types
-            bus.subscribe("CURRICULUM_ADVANCED", on_curriculum_advanced)
-            bus.subscribe("SELFPLAY_TARGET_UPDATED", on_selfplay_target_updated)
-            bus.subscribe("TRAINING_BLOCKED_BY_QUALITY", on_training_blocked_by_quality)
+            # Subscribe to feedback events using DataEventType enums
+            subscribe(DataEventType.CURRICULUM_ADVANCED, on_curriculum_advanced)
+            subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, on_selfplay_target_updated)
+            subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, on_training_blocked_by_quality)
 
             logger.debug(f"[SelfplayRunner] Subscribed to feedback events for {config_key}")
 

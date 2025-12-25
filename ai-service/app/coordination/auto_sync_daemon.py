@@ -31,6 +31,14 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from app.coordination.protocols import (
+    CoordinatorStatus,
+    HealthCheckResult,
+    register_coordinator,
+    unregister_coordinator,
+)
+from app.core.async_context import fire_and_forget
+
 if TYPE_CHECKING:
     from app.distributed.cluster_manifest import ClusterManifest
 
@@ -152,6 +160,13 @@ class AutoSyncDaemon:
         self._gossip_daemon = None
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_syncs)
 
+        # CoordinatorProtocol state (December 2025 - Phase 14)
+        self._coordinator_status = CoordinatorStatus.INITIALIZING
+        self._start_time: float = 0.0
+        self._events_processed: int = 0
+        self._errors_count: int = 0
+        self._last_error: str = ""
+
         # ClusterManifest integration
         self._cluster_manifest: ClusterManifest | None = None
         if self.config.use_cluster_manifest:
@@ -216,6 +231,27 @@ class AutoSyncDaemon:
         nfs_path = Path("/lambda/nfs/RingRift")
         return nfs_path.exists() and nfs_path.is_dir()
 
+    # =========================================================================
+    # CoordinatorProtocol Implementation (December 2025 - Phase 14)
+    # =========================================================================
+
+    @property
+    def name(self) -> str:
+        """Unique name identifying this coordinator."""
+        return "AutoSyncDaemon"
+
+    @property
+    def status(self) -> CoordinatorStatus:
+        """Current status of the coordinator."""
+        return self._coordinator_status
+
+    @property
+    def uptime_seconds(self) -> float:
+        """Time since daemon started, in seconds."""
+        if self._start_time <= 0:
+            return 0.0
+        return time.time() - self._start_time
+
     def is_running(self) -> bool:
         """Check if the daemon is running."""
         return self._running
@@ -223,10 +259,16 @@ class AutoSyncDaemon:
     async def start(self) -> None:
         """Start the auto sync daemon."""
         if not self.config.enabled:
+            self._coordinator_status = CoordinatorStatus.STOPPED
             logger.info("AutoSyncDaemon disabled by config")
             return
 
+        if self._coordinator_status == CoordinatorStatus.RUNNING:
+            return  # Already running
+
         self._running = True
+        self._coordinator_status = CoordinatorStatus.RUNNING
+        self._start_time = time.time()
         logger.info(f"Starting AutoSyncDaemon on {self.node_id}")
 
         # Start gossip sync daemon
@@ -234,6 +276,9 @@ class AutoSyncDaemon:
 
         # Start main sync loop
         self._sync_task = asyncio.create_task(self._sync_loop())
+
+        # Register with coordinator registry
+        register_coordinator(self)
 
         logger.info(
             f"AutoSyncDaemon started: "
@@ -243,6 +288,10 @@ class AutoSyncDaemon:
 
     async def stop(self) -> None:
         """Stop the auto sync daemon."""
+        if self._coordinator_status == CoordinatorStatus.STOPPED:
+            return  # Already stopped
+
+        self._coordinator_status = CoordinatorStatus.STOPPING
         logger.info("Stopping AutoSyncDaemon...")
         self._running = False
 
@@ -258,6 +307,10 @@ class AutoSyncDaemon:
         if self._gossip_daemon:
             await self._gossip_daemon.stop()
 
+        # Unregister from coordinator registry
+        unregister_coordinator(self.name)
+
+        self._coordinator_status = CoordinatorStatus.STOPPED
         logger.info("AutoSyncDaemon stopped")
 
     async def _start_gossip_sync(self) -> None:
@@ -294,34 +347,84 @@ class AutoSyncDaemon:
         except Exception as e:
             logger.error(f"Failed to start gossip sync: {e}")
 
+    async def _emit_sync_failed(self, error: str) -> None:
+        """Emit DATA_SYNC_FAILED event."""
+        try:
+            from app.distributed.data_events import emit_data_sync_failed
+            await emit_data_sync_failed(
+                host=self.node_id,
+                error=error,
+                retry_count=self._stats.failed_syncs,
+                source="AutoSyncDaemon",
+            )
+        except Exception as e:
+            logger.debug(f"Could not emit DATA_SYNC_FAILED: {e}")
+
+    async def _emit_sync_completed(self, games_synced: int, bytes_transferred: int = 0) -> None:
+        """Emit DATA_SYNC_COMPLETED event for feedback loop coupling."""
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_router()
+            if router:
+                await router.publish(
+                    event_type=DataEventType.DATA_SYNC_COMPLETED,
+                    payload={
+                        "node_id": self.node_id,
+                        "games_synced": games_synced,
+                        "bytes_transferred": bytes_transferred,
+                        "total_syncs": self._stats.total_syncs,
+                        "successful_syncs": self._stats.successful_syncs,
+                    },
+                    source="AutoSyncDaemon",
+                )
+        except Exception as e:
+            logger.debug(f"Could not emit DATA_SYNC_COMPLETED: {e}")
+
     async def _sync_loop(self) -> None:
         """Main sync loop."""
         while self._running:
             try:
-                await self._sync_cycle()
+                games_synced = await self._sync_cycle()
                 self._stats.total_syncs += 1
                 self._stats.successful_syncs += 1
                 self._stats.last_sync_time = time.time()
+                # Emit DATA_SYNC_COMPLETED event for feedback loop
+                if games_synced and games_synced > 0:
+                    fire_and_forget(
+                        self._emit_sync_completed(games_synced),
+                        error_callback=lambda exc: logger.debug(f"Failed to emit sync completed: {exc}"),
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 self._stats.failed_syncs += 1
                 self._stats.last_error = str(e)
                 logger.error(f"Sync cycle error: {e}")
+                # Emit DATA_SYNC_FAILED event
+                fire_and_forget(
+                    self._emit_sync_failed(str(e)),
+                    error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
+                )
 
             await asyncio.sleep(self.config.interval_seconds)
 
-    async def _sync_cycle(self) -> None:
-        """Execute one sync cycle."""
+    async def _sync_cycle(self) -> int:
+        """Execute one sync cycle.
+
+        Returns:
+            Number of games synced (0 if skipped or no data).
+        """
         # Skip if NFS node and skip_nfs_sync is enabled
         if self._is_nfs_node and self.config.skip_nfs_sync:
             logger.debug("Skipping sync cycle (NFS node)")
-            return
+            return 0
 
         # Skip if this node is excluded
         if self.node_id in self.config.exclude_hosts:
             logger.debug("Skipping sync cycle (excluded host)")
-            return
+            return 0
 
         # Check ClusterManifest exclusion rules
         if self._cluster_manifest:
@@ -331,17 +434,17 @@ class AutoSyncDaemon:
                 logger.debug(
                     f"Skipping sync cycle (manifest exclusion: {policy.exclusion_reason})"
                 )
-                return
+                return 0
 
         # Check disk capacity before syncing
         if not await self._check_disk_capacity():
-            return
+            return 0
 
         # Check for pending data to sync
         pending = await self._get_pending_sync_data()
         if pending < self.config.min_games_to_sync:
             logger.debug(f"Skipping sync: only {pending} games pending")
-            return
+            return 0
 
         logger.info(f"Sync cycle: {pending} games pending")
 
@@ -350,6 +453,8 @@ class AutoSyncDaemon:
 
         # Register synced data to manifest
         await self._register_synced_data()
+
+        return pending
 
     async def _check_disk_capacity(self) -> bool:
         """Check if disk has capacity for more data.
@@ -555,6 +660,90 @@ class AutoSyncDaemon:
             "gossip": gossip_status,
             "manifest": manifest_status,
         }
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Get daemon metrics in protocol-compliant format.
+
+        Returns:
+            Dictionary of metrics including sync-specific stats.
+        """
+        return {
+            "name": self.name,
+            "status": self._coordinator_status.value,
+            "uptime_seconds": self.uptime_seconds,
+            "start_time": self._start_time,
+            "events_processed": self._events_processed,
+            "errors_count": self._errors_count,
+            "last_error": self._last_error,
+            # Sync-specific metrics
+            "node_id": self.node_id,
+            "provider": self._provider,
+            "is_nfs_node": self._is_nfs_node,
+            "total_syncs": self._stats.total_syncs,
+            "successful_syncs": self._stats.successful_syncs,
+            "failed_syncs": self._stats.failed_syncs,
+            "games_synced": self._stats.games_synced,
+            "bytes_transferred": self._stats.bytes_transferred,
+            "last_sync_time": self._stats.last_sync_time,
+        }
+
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health.
+
+        Returns:
+            Health check result with status and sync details.
+        """
+        # Check for error state
+        if self._coordinator_status == CoordinatorStatus.ERROR:
+            return HealthCheckResult.unhealthy(
+                f"Daemon in error state: {self._last_error}"
+            )
+
+        # Check if stopped
+        if self._coordinator_status == CoordinatorStatus.STOPPED:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="Daemon is stopped",
+            )
+
+        # Check if disabled by config
+        if not self.config.enabled:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="Daemon disabled by configuration",
+            )
+
+        # Check sync health
+        if self._stats.failed_syncs > self._stats.successful_syncs * 0.5:
+            return HealthCheckResult.degraded(
+                f"High failure rate: {self._stats.failed_syncs} failures, "
+                f"{self._stats.successful_syncs} successes",
+                failure_rate=self._stats.failed_syncs / max(self._stats.total_syncs, 1),
+            )
+
+        # Check for stale sync
+        if self._stats.last_sync_time > 0:
+            sync_age = time.time() - self._stats.last_sync_time
+            if sync_age > self.config.interval_seconds * 3:
+                return HealthCheckResult.degraded(
+                    f"No sync in {sync_age:.0f}s (interval: {self.config.interval_seconds}s)",
+                    seconds_since_last_sync=sync_age,
+                )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=self._coordinator_status,
+            details={
+                "uptime_seconds": self.uptime_seconds,
+                "total_syncs": self._stats.total_syncs,
+                "games_synced": self._stats.games_synced,
+                "gossip_active": self._gossip_daemon is not None,
+                "manifest_active": self._cluster_manifest is not None,
+            },
+        )
 
 
 # Module-level instance for singleton access

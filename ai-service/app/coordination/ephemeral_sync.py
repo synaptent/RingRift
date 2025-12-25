@@ -481,13 +481,3 @@ def is_ephemeral_host() -> bool:
     """Check if current host is ephemeral."""
     daemon = get_ephemeral_sync_daemon()
     return daemon.is_ephemeral
-
-
-__all__ = [
-    "EphemeralSyncConfig",
-    "EphemeralSyncDaemon",
-    "EphemeralSyncStats",
-    "get_ephemeral_sync_daemon",
-    "reset_ephemeral_sync_daemon",
-    "is_ephemeral_host",
-]

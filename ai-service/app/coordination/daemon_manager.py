@@ -997,14 +997,26 @@ class DaemonManager:
             raise  # Propagate error so DaemonManager marks as FAILED
 
     async def _create_health_check(self) -> None:
-        """Create and run health check daemon."""
-        try:
-            from app.distributed.health_checks import HealthCheckDaemon
+        """Create and run health check daemon.
 
-            daemon = HealthCheckDaemon()
-            await daemon.start()
+        Uses HealthChecker from health_checks module and runs periodic checks.
+        """
+        try:
+            from app.distributed.health_checks import HealthChecker
+
+            checker = HealthChecker()
+
+            # Run periodic health checks
+            while True:
+                try:
+                    summary = await checker.get_health_summary()
+                    if not summary.get("healthy", True):
+                        logger.warning(f"Health check issues: {summary.get('issues', [])}")
+                except Exception as e:
+                    logger.error(f"Health check failed: {e}")
+                await asyncio.sleep(30)  # Check every 30 seconds
         except ImportError as e:
-            logger.error(f"HealthCheckDaemon not available: {e}")
+            logger.error(f"HealthChecker not available: {e}")
             raise  # Propagate error so DaemonManager marks as FAILED
 
     async def _create_queue_monitor(self) -> None:

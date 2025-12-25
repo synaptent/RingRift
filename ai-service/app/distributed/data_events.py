@@ -93,8 +93,12 @@ class DataEventType(Enum):
 
     # Curriculum events
     CURRICULUM_REBALANCED = "curriculum_rebalanced"
+    CURRICULUM_ADVANCED = "curriculum_advanced"  # Move to harder curriculum tier
     WEIGHT_UPDATED = "weight_updated"
     ELO_SIGNIFICANT_CHANGE = "elo_significant_change"  # Triggers curriculum rebalance
+
+    # Selfplay feedback events
+    SELFPLAY_TARGET_UPDATED = "selfplay_target_updated"  # Request more/fewer games
 
     # Optimization events
     CMAES_TRIGGERED = "cmaes_triggered"
@@ -133,6 +137,7 @@ class DataEventType(Enum):
     QUALITY_DISTRIBUTION_CHANGED = "quality_distribution_changed"  # Significant shift
     HIGH_QUALITY_DATA_AVAILABLE = "high_quality_data_available"  # Ready for training
     LOW_QUALITY_DATA_WARNING = "low_quality_data_warning"  # Below threshold
+    TRAINING_BLOCKED_BY_QUALITY = "training_blocked_by_quality"  # Quality too low to train
 
     # Registry & metrics events
     REGISTRY_UPDATED = "registry_updated"
@@ -157,6 +162,7 @@ class DataEventType(Enum):
     # System events
     DAEMON_STARTED = "daemon_started"
     DAEMON_STOPPED = "daemon_stopped"
+    DAEMON_STATUS_CHANGED = "daemon_status_changed"  # Watchdog alerts (stuck, crashed, restarted)
     HOST_ONLINE = "host_online"
     HOST_OFFLINE = "host_offline"
     ERROR = "error"
@@ -652,6 +658,8 @@ CROSS_PROCESS_EVENT_TYPES = {
     DataEventType.TRAINING_COMPLETED,
     DataEventType.EVALUATION_COMPLETED,
     DataEventType.CURRICULUM_REBALANCED,
+    DataEventType.CURRICULUM_ADVANCED,  # Curriculum tier progression
+    DataEventType.SELFPLAY_TARGET_UPDATED,  # Dynamic selfplay scaling
     DataEventType.ELO_SIGNIFICANT_CHANGE,
     DataEventType.P2P_MODEL_SYNCED,
     DataEventType.PLATEAU_DETECTED,
@@ -667,6 +675,7 @@ CROSS_PROCESS_EVENT_TYPES = {
     DataEventType.HOST_OFFLINE,
     DataEventType.DAEMON_STARTED,
     DataEventType.DAEMON_STOPPED,
+    DataEventType.DAEMON_STATUS_CHANGED,  # Watchdog alerts for daemon health
     # Trigger events - distributed optimization
     DataEventType.CMAES_TRIGGERED,
     DataEventType.NAS_TRIGGERED,

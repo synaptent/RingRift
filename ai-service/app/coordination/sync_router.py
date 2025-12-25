@@ -496,6 +496,165 @@ class SyncRouter:
             ),
         }
 
+    # =========================================================================
+    # Event Integration (December 2025)
+    # =========================================================================
+
+    def wire_to_event_router(self) -> None:
+        """Wire this router to the event system.
+
+        Subscribes to:
+        - NEW_GAMES_AVAILABLE: Route new games to appropriate nodes
+        - TRAINING_STARTED: Prioritize training nodes
+        - HOST_ONLINE/OFFLINE: Update node capabilities
+        """
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_event_router
+
+            router = get_event_router()
+
+            # Subscribe to game events
+            router.subscribe(
+                DataEventType.NEW_GAMES_AVAILABLE.value,
+                self._on_new_games_available,
+            )
+
+            # Subscribe to training events
+            router.subscribe(
+                DataEventType.TRAINING_STARTED.value,
+                self._on_training_started,
+            )
+
+            # Subscribe to host events
+            router.subscribe(
+                DataEventType.HOST_ONLINE.value,
+                self._on_host_online,
+            )
+            router.subscribe(
+                DataEventType.HOST_OFFLINE.value,
+                self._on_host_offline,
+            )
+
+            logger.info(
+                "[SyncRouter] Wired to event router "
+                "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE)"
+            )
+
+        except ImportError as e:
+            logger.warning(f"[SyncRouter] Event router not available: {e}")
+        except Exception as e:
+            logger.error(f"[SyncRouter] Failed to wire to event router: {e}")
+
+    async def _on_new_games_available(self, event: Any) -> None:
+        """Handle NEW_GAMES_AVAILABLE event - route games to targets."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            game_count = payload.get("count", 0)
+            source_node = payload.get("source", self.node_id)
+
+            if game_count > 0:
+                # Get sync targets for the new games
+                targets = self.get_sync_targets(
+                    data_type=DataType.GAME,
+                    exclude_nodes=[source_node],
+                    max_targets=5,
+                )
+
+                if targets:
+                    logger.info(
+                        f"[SyncRouter] New games ({game_count}) from {source_node}, "
+                        f"routing to {len(targets)} targets"
+                    )
+
+                    # Emit sync routing decision
+                    await self._emit_sync_routing_decision(
+                        source=source_node,
+                        targets=[t.node_id for t in targets],
+                        data_type=DataType.GAME,
+                        reason=f"new_games:{game_count}",
+                    )
+
+        except Exception as e:
+            logger.error(f"[SyncRouter] Error handling new games event: {e}")
+
+    async def _on_training_started(self, event: Any) -> None:
+        """Handle TRAINING_STARTED event - mark node as training priority."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            node_id = payload.get("node_id") or payload.get("host")
+
+            if node_id and node_id in self._node_capabilities:
+                cap = self._node_capabilities[node_id]
+                cap.is_training_node = True
+                cap.is_priority_node = True
+                logger.info(f"[SyncRouter] Marked {node_id} as training priority")
+
+        except Exception as e:
+            logger.error(f"[SyncRouter] Error handling training started: {e}")
+
+    async def _on_host_online(self, event: Any) -> None:
+        """Handle HOST_ONLINE event - add/update node capabilities."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            node_id = payload.get("host")
+
+            if node_id and node_id not in self._node_capabilities:
+                # Create default capability for new node
+                cap = NodeSyncCapability(node_id=node_id)
+                self._node_capabilities[node_id] = cap
+                logger.info(f"[SyncRouter] Added new node: {node_id}")
+
+        except Exception as e:
+            logger.debug(f"[SyncRouter] Error handling host online: {e}")
+
+    async def _on_host_offline(self, event: Any) -> None:
+        """Handle HOST_OFFLINE event - mark node as unavailable."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            node_id = payload.get("host")
+
+            if node_id and node_id in self._node_capabilities:
+                # Mark node as unavailable rather than removing
+                cap = self._node_capabilities[node_id]
+                cap.can_receive_games = False
+                cap.can_receive_models = False
+                cap.can_receive_npz = False
+                logger.info(f"[SyncRouter] Marked {node_id} as offline")
+
+        except Exception as e:
+            logger.debug(f"[SyncRouter] Error handling host offline: {e}")
+
+    async def _emit_sync_routing_decision(
+        self,
+        source: str,
+        targets: list[str],
+        data_type: DataType,
+        reason: str,
+    ) -> None:
+        """Emit a sync routing decision event."""
+        try:
+            from app.coordination.event_router import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            await get_event_bus().publish(DataEvent(
+                event_type=DataEventType.SYNC_REQUEST.value,
+                payload={
+                    "source": source,
+                    "targets": targets,
+                    "data_type": data_type.value,
+                    "reason": reason,
+                    "router": "SyncRouter",
+                },
+                source="SyncRouter",
+            ))
+
+        except Exception as e:
+            logger.debug(f"[SyncRouter] Could not emit routing decision: {e}")
+
 
 # Module-level singleton
 _sync_router: SyncRouter | None = None
@@ -513,12 +672,3 @@ def reset_sync_router() -> None:
     """Reset the singleton (for testing)."""
     global _sync_router
     _sync_router = None
-
-
-__all__ = [
-    "SyncRoute",
-    "SyncRouter",
-    "NodeSyncCapability",
-    "get_sync_router",
-    "reset_sync_router",
-]

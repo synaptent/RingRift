@@ -366,6 +366,8 @@ def export_replay_dataset_multi(
     victory_types_list: list[str] = []  # For victory-type-balanced sampling
     engine_modes_list: list[str] = []  # For source-based sample weighting (Gumbel 3x weight)
     move_types_list: list[str] = []  # For chain-aware sample weighting
+    opponent_elo_list: list[float] = []  # For ELO-weighted training (December 2025)
+    quality_score_list: list[float] = []  # For quality-weighted training (December 2025)
 
     # Track seen game_ids for deduplication across databases
     seen_game_ids: set = set()
@@ -465,8 +467,9 @@ def export_replay_dataset_multi(
                     games_skipped += 1
                     continue
 
-            # Quality filtering (December 2025)
-            if min_quality is not None and HAS_QUALITY_SCORER:
+            # Quality scoring (December 2025) - always compute for weighted training
+            game_quality_score = 1.0  # Default to max quality if scorer unavailable
+            if HAS_QUALITY_SCORER:
                 quality = compute_game_quality_from_params(
                     game_id=game_id or "unknown",
                     game_status=str(meta.get("game_status", "")),
@@ -476,7 +479,9 @@ def export_replay_dataset_multi(
                     board_type=board_type.value if hasattr(board_type, "value") else str(board_type),
                     source=str(meta.get("source", "")),
                 )
-                if quality.score < min_quality:
+                game_quality_score = quality.quality_score
+                # Quality filtering: skip games below threshold
+                if min_quality is not None and game_quality_score < min_quality:
                     games_skipped += 1
                     continue
 
@@ -512,6 +517,10 @@ def export_replay_dataset_multi(
                 engine_mode = "heuristic"  # GPU selfplay uses heuristic
             else:
                 engine_mode = "unknown"
+
+            # Extract opponent ELO for ELO-weighted training (December 2025)
+            # Use 1500.0 as default (baseline ELO) if not available
+            opponent_elo = float(meta.get("opponent_elo", meta.get("model_elo", 1500.0)))
 
             total_moves = meta.get("total_moves")
             if total_moves is None:
@@ -713,6 +722,8 @@ def export_replay_dataset_multi(
                 victory_types_list.append(victory_type)
                 engine_modes_list.append(engine_mode)
                 move_types_list.append(move_type_str)
+                opponent_elo_list.append(opponent_elo)
+                quality_score_list.append(game_quality_score)
 
             samples_added = len(features_list) - samples_before
             if samples_added > 0:
@@ -748,6 +759,8 @@ def export_replay_dataset_multi(
     victory_types_arr = np.array(victory_types_list, dtype=object)  # For balanced sampling
     engine_modes_arr = np.array(engine_modes_list, dtype=object)  # For source-based sample weighting
     move_types_arr = np.array(move_types_list, dtype=object)  # For chain-aware sample weighting
+    opponent_elo_arr = np.array(opponent_elo_list, dtype=np.float32)  # For ELO-weighted training
+    quality_score_arr = np.array(quality_score_list, dtype=np.float32)  # For quality-weighted training
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
@@ -844,6 +857,8 @@ def export_replay_dataset_multi(
         "victory_types": victory_types_arr,  # For victory-type-balanced sampling
         "engine_modes": engine_modes_arr,  # For source-based sample weighting (Gumbel 3x weight)
         "move_types": move_types_arr,  # For chain-aware sample weighting
+        "opponent_elo": opponent_elo_arr,  # For ELO-weighted training (December 2025)
+        "quality_score": quality_score_arr,  # For quality-weighted training (December 2025)
         # Phase 5 Metadata: Additional fields for training compatibility validation
         "encoder_type": np.asarray(encoder_type_str),
         "encoder_version": np.asarray(effective_encoder),  # v2 or v3 - for model selection
@@ -896,6 +911,31 @@ def export_replay_dataset_multi(
     print(f"Exported {features_arr.shape[0]} samples from {games_processed} games "
           f"({games_deduplicated} deduplicated) into {output_path}")
     print(f"Engine modes: {dict(mode_counts)} | Gumbel/MCTS: {gumbel_pct:.1f}% (3x weight in training)")
+
+    # Register NPZ file with ClusterManifest for cluster-wide tracking
+    try:
+        from app.distributed.cluster_manifest import get_cluster_manifest, DataType
+
+        manifest = get_cluster_manifest()
+        file_size = os.path.getsize(output_path)
+        manifest.register_data(
+            data_type=DataType.NPZ,
+            path=output_path,
+            metadata={
+                "board_type": board_type.value,
+                "num_players": num_players,
+                "samples": int(features_arr.shape[0]),
+                "games": games_processed,
+                "gumbel_pct": gumbel_pct,
+                "encoder_version": effective_encoder,
+                "policy_encoding": "board_aware" if use_board_aware_encoding else "legacy_max_n",
+            },
+            size_bytes=file_size,
+        )
+        print(f"[ClusterManifest] Registered NPZ: {output_path} ({file_size // 1024 // 1024}MB)")
+    except Exception as e:
+        # Don't fail export if manifest registration fails
+        print(f"[ClusterManifest] Warning: Failed to register NPZ: {e}")
 
 
 def export_replay_dataset(

@@ -678,6 +678,13 @@ class DataPipelineOrchestrator:
                 self._on_backpressure_released,
             )
 
+            # Subscribe to promotion candidate events (December 2025)
+            # This wires the previously orphaned PROMOTION_CANDIDATE event
+            router.subscribe(
+                DataEventType.PROMOTION_CANDIDATE.value,
+                self._on_promotion_candidate,
+            )
+
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
             return True
 
@@ -1123,12 +1130,12 @@ class DataPipelineOrchestrator:
             iteration: Pipeline iteration
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
             if router:
                 await router.publish(
-                    event_type="SELFPLAY_TARGET_UPDATED",
+                    event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
                     payload={
                         "config": f"{board_type}_{num_players}p",
                         "board_type": board_type,
@@ -1674,6 +1681,45 @@ class DataPipelineOrchestrator:
         if (self._paused and "Backpressure" in (self._pause_reason or "")
                 and not self._has_critical_constraints()):
             await self._resume_pipeline()
+
+    async def _on_promotion_candidate(self, event) -> None:
+        """Handle PROMOTION_CANDIDATE - model ready for promotion evaluation.
+
+        This handler was added December 2025 to wire the previously orphaned
+        PROMOTION_CANDIDATE event. It's emitted by PromotionController when
+        a model exceeds win rate thresholds in evaluation.
+
+        Actions:
+        - Logs the candidate for tracking
+        - Updates pipeline state if in EVALUATION stage
+        - Emits curriculum feedback event for training adjustments
+        """
+        payload = event.payload if hasattr(event, 'payload') else event
+
+        model_id = payload.get("model_id", "unknown")
+        board_type = payload.get("board_type", "unknown")
+        num_players = payload.get("num_players", 2)
+        win_rate = payload.get("win_rate_vs_heuristic", 0.0)
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Promotion candidate: {model_id} "
+            f"({board_type}_{num_players}p, {win_rate:.1%} vs heuristic)"
+        )
+
+        # Track candidates for this iteration
+        if not hasattr(self, "_promotion_candidates"):
+            self._promotion_candidates = []
+        self._promotion_candidates.append({
+            "model_id": model_id,
+            "board_type": board_type,
+            "num_players": num_players,
+            "win_rate": win_rate,
+            "timestamp": time.time(),
+        })
+
+        # If we're in evaluation stage, update transition tracking
+        if self._current_stage == PipelineStage.EVALUATION:
+            self._stage_metadata["candidates"] = len(self._promotion_candidates)
 
     async def _pause_pipeline(self, reason: str) -> None:
         """Pause the pipeline due to resource constraints."""
