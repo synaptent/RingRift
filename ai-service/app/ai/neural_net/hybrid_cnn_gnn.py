@@ -216,6 +216,7 @@ class HybridPolicyNet(nn.Module):
         action_space_size: int = 6158,
         num_players: int = 4,
         is_hex: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__()
 
@@ -223,6 +224,7 @@ class HybridPolicyNet(nn.Module):
         self.hidden_channels = hidden_channels
         self.is_hex = is_hex
         self.action_space_size = action_space_size
+        self.dropout_rate = dropout
 
         # CNN backbone
         self.cnn = CNNBackbone(
@@ -238,11 +240,12 @@ class HybridPolicyNet(nn.Module):
             num_layers=gnn_layers,
         )
 
-        # Feature fusion
+        # Feature fusion with optional dropout
         self.fusion = nn.Sequential(
             nn.Linear(hidden_channels * 2, hidden_channels),
             nn.LayerNorm(hidden_channels),
             nn.ReLU(),
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
         )
 
         # Global feature encoder
@@ -262,18 +265,23 @@ class HybridPolicyNet(nn.Module):
             action_space_size
         )
 
-        # Value head
+        # Value head with dropout for regularization
         self.value_conv = nn.Sequential(
             nn.Conv2d(hidden_channels, 4, 1, bias=False),
             nn.BatchNorm2d(4),
             nn.ReLU(),
         )
-        self.value_fc = nn.Sequential(
+        value_fc_layers = [
             nn.Linear(4 * board_size * board_size + hidden_channels, 256),
             nn.ReLU(),
+        ]
+        if dropout > 0:
+            value_fc_layers.append(nn.Dropout(dropout))
+        value_fc_layers.extend([
             nn.Linear(256, num_players),
             nn.Tanh(),
-        )
+        ])
+        self.value_fc = nn.Sequential(*value_fc_layers)
 
         # Pre-compute edge index for board
         self._edge_index = self._build_edge_index()

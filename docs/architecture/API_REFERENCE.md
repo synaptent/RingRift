@@ -89,6 +89,15 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 > exercised by `tests/unit/gameHistory.routes.test.ts` alongside the core
 > WebSocket lifecycle suites.
 
+#### Move history payloads
+
+- `GET /games/:gameId/moves` returns raw `Move` rows with joined player info (each move includes `player: { id, username }`).
+- `GET /games/:gameId/history` returns a structured history payload:
+  - `moves[]` entries with `moveNumber`, `playerId`, `playerName`, `moveType`, `moveData`, `timestamp`.
+  - Optional `autoResolved` badge data when the move was auto-resolved (`reason`, `choiceKind?`, `choiceType?`).
+  - `totalMoves` count.
+  - Optional `result { reason, winner? }` for completed/abandoned games with a stored final state.
+
 ### Sandbox Helpers (`/api/games`)
 
 > Sandbox helper endpoints are intended for local/dev tooling (the client sandbox
@@ -574,35 +583,57 @@ const socket = io('http://localhost:3000', {
 
 ### Client → Server Events
 
-| Event                    | Payload                                      | Description                        |
-| ------------------------ | -------------------------------------------- | ---------------------------------- |
-| `join_game`              | `{ gameId: string }`                         | Join a game room                   |
-| `leave_game`             | `{ gameId: string }`                         | Leave a game room                  |
-| `player_move`            | `{ gameId, move: { from?, to } }`            | Submit a move (geometry-based)     |
-| `player_move_by_id`      | `{ gameId, moveId: string }`                 | Submit a move by canonical Move.id |
-| `chat_message`           | `{ gameId, text: string }`                   | Send chat message                  |
-| `player_choice_response` | `{ choiceId, playerNumber, selectedOption }` | Respond to a player choice prompt  |
-| `lobby:subscribe`        | (none)                                       | Subscribe to lobby updates         |
-| `lobby:unsubscribe`      | (none)                                       | Unsubscribe from lobby updates     |
+| Event                    | Payload                                                           | Description                                               |
+| ------------------------ | ----------------------------------------------------------------- | --------------------------------------------------------- |
+| `join_game`              | `{ gameId: string }`                                              | Join a game room                                          |
+| `leave_game`             | `{ gameId: string }`                                              | Leave a game room                                         |
+| `player_move`            | `{ gameId, move: MovePayload }`                                   | Submit a move using the wire-level MoveSchema payload     |
+| `player_move_by_id`      | `{ gameId, moveId: string }`                                      | Submit a move by canonical `Move.id`                      |
+| `player_choice_response` | `{ choiceId, playerNumber, selectedOption, choiceType? }`         | Respond to a `player_choice_required` prompt              |
+| `chat_message`           | `{ gameId, text: string }`                                        | Send chat message                                         |
+| `rematch_request`        | `{ gameId: string }`                                              | Request a rematch after `game_over`                       |
+| `rematch_respond`        | `{ requestId: string, accept: boolean }`                          | Accept/decline a rematch request                          |
+| `matchmaking:join`       | `{ preferences: { boardType, ratingRange, timeControl } }`        | Join the matchmaking queue                                |
+| `matchmaking:leave`      | (none)                                                            | Leave the matchmaking queue                               |
+| `lobby:subscribe`        | (none)                                                            | Subscribe to lobby updates                                |
+| `lobby:unsubscribe`      | (none)                                                            | Unsubscribe from lobby updates                            |
+| `diagnostic:ping`        | `{ timestamp: number, vu?: string \| number, sequence?: number }` | Transport-only ping (see Diagnostic / Load-Testing below) |
+
+**MovePayload (wire-level MoveSchema):**
+
+- `{ moveType, position, moveNumber? }`
+- `position` can be `"x,y"` (string key) or `{ from?: {x,y[,z]}, to: {x,y[,z]} }`
+- `moveType` is one of: `place_ring`, `move_stack`, `overtaking_capture`, `continue_capture_segment`, `skip_placement`, `swap_sides`, `recovery_slide`, `skip_recovery`
+
+**player_choice_response:**
+
+- `choiceType` is optional and, when supplied, must be one of: `line_order`, `line_reward_option`, `ring_elimination`, `region_order`, `capture_direction`.
 
 ### Server → Client Events
 
-| Event                            | Description                                                                                                                                                                                                                                                             |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `game_state`                     | Full game state update (on join and after moves)                                                                                                                                                                                                                        |
-| `game_over`                      | Game ended (includes final state and result)                                                                                                                                                                                                                            |
-| `game_error`                     | Fatal game error (e.g., AI service failure)                                                                                                                                                                                                                             |
-| `player_joined`                  | Another player joined the game room                                                                                                                                                                                                                                     |
-| `player_left`                    | A player left the game room                                                                                                                                                                                                                                             |
-| `player_disconnected`            | A player disconnected (may reconnect)                                                                                                                                                                                                                                   |
-| `player_reconnected`             | A player reconnected to the same game within the configured reconnection window (see connection state machine in `docs/STATE_MACHINES.md` and `tests/unit/WebSocketServer.connectionState.test.ts`)                                                                     |
-| `chat_message`                   | Broadcast chat message                                                                                                                                                                                                                                                  |
-| `time_update`                    | Time control update for a player                                                                                                                                                                                                                                        |
-| `player_choice_required`         | Server requests a decision from a player                                                                                                                                                                                                                                |
-| `player_choice_canceled`         | A pending choice was canceled                                                                                                                                                                                                                                           |
-| `decision_phase_timeout_warning` | Warning before auto-resolution of a decision. Emitted a short time (for example, ~5 seconds) before the server will auto-resolve a pending decision due to timeout; carries phase, player, and remaining time metadata so clients can surface a countdown.              |
-| `decision_phase_timed_out`       | Decision phase timed out; auto-resolved. Emitted when a pending decision has exceeded its timeout and the engine has applied a default Move (for example, a line reward or region order) on behalf of the player; the auto-selected move id is included in the payload. |
-| `error`                          | Structured error payload                                                                                                                                                                                                                                                |
+| Event                            | Description                                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `game_state`                     | Full game state update (on join and after moves). Includes `validMoves` (empty array for spectators) and optional `meta.diffSummary.decisionAutoResolved`.                           |
+| `game_over`                      | Game ended (includes final state and result)                                                                                                                                         |
+| `game_error`                     | Fatal game error (e.g., AI service failure)                                                                                                                                          |
+| `player_joined`                  | Another player joined the game room                                                                                                                                                  |
+| `player_left`                    | A player left the game room                                                                                                                                                          |
+| `player_disconnected`            | A player disconnected; payload includes `reconnectionWindowMs`                                                                                                                       |
+| `player_reconnected`             | A player reconnected within the configured reconnection window; payload includes `playerNumber`                                                                                      |
+| `player_choice_required`         | Server requests a decision from a player (PlayerChoice payload)                                                                                                                      |
+| `player_choice_canceled`         | A pending choice was canceled                                                                                                                                                        |
+| `decision_phase_timeout_warning` | Warning before auto-resolution of a decision; payload includes `phase`, `playerNumber`, `remainingMs`, and optional `choiceId`                                                       |
+| `decision_phase_timed_out`       | Decision phase timed out; auto-resolved. Payload includes `phase`, `playerNumber`, and `autoSelectedMoveId`. The subsequent `game_state` includes decision auto-resolution metadata. |
+| `chat_message`                   | Broadcast chat message (non-persisted)                                                                                                                                               |
+| `chat_message_persisted`         | Persisted chat message with IDs and timestamps                                                                                                                                       |
+| `chat_history`                   | Chat history emitted on join (only when messages exist)                                                                                                                              |
+| `rematch_requested`              | Rematch request created for the finished game                                                                                                                                        |
+| `rematch_response`               | Rematch accepted/declined/expired (includes new game id on accept)                                                                                                                   |
+| `matchmaking-status`             | Queue status updates for the requesting player                                                                                                                                       |
+| `match-found`                    | Match found; includes the new `gameId`                                                                                                                                               |
+| `time_update`                    | Time control update for a player (legacy/experimental)                                                                                                                               |
+| `position_evaluation`            | Optional analysis-mode evaluation stream (when enabled)                                                                                                                              |
+| `error`                          | Structured error payload (`WebSocketErrorPayload`)                                                                                                                                   |
 
 #### Worked example: `player_choice_required` → `player_choice_response`
 

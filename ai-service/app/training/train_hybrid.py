@@ -174,6 +174,8 @@ def main():
     parser.add_argument("--gnn-layers", type=int, default=3)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers (0=main process)")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout rate for regularization (0.0-0.5)")
+    parser.add_argument("--early-stop-patience", type=int, default=5, help="Early stopping patience (0=disabled)")
     args = parser.parse_args()
 
     # Load data
@@ -232,6 +234,7 @@ def main():
         action_space_size=action_space_size,
         num_players=2,
         is_hex=is_hex,
+        dropout=args.dropout,
     ).to(args.device)
 
     n_params = sum(p.numel() for p in model.parameters())
@@ -245,6 +248,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_acc = 0
+    epochs_without_improvement = 0
 
     for epoch in range(args.epochs):
         t0 = time.time()
@@ -264,6 +268,7 @@ def main():
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
+            epochs_without_improvement = 0
             torch.save({
                 "model_state_dict": model.state_dict(),
                 "epoch": epoch,
@@ -274,8 +279,14 @@ def main():
                 "hidden_channels": args.hidden_channels,
                 "cnn_blocks": args.cnn_blocks,
                 "gnn_layers": args.gnn_layers,
+                "dropout": args.dropout,
             }, output_dir / "hybrid_policy_best.pt")
             logger.info(f"  -> New best model saved (val_acc={val_acc:.4f})")
+        else:
+            epochs_without_improvement += 1
+            if args.early_stop_patience > 0 and epochs_without_improvement >= args.early_stop_patience:
+                logger.info(f"Early stopping after {epochs_without_improvement} epochs without improvement")
+                break
 
     logger.info(f"Training complete. Best val_acc: {best_val_acc:.4f}")
 

@@ -24,6 +24,7 @@ describe('CanonicalReplayEngine', () => {
     expect(result.success).toBe(true);
     expect(result.state.currentPlayer).toBe(1);
     expect(result.state.currentPhase).toBe('movement');
-    expect(result.state.gameStatus).toBe('waiting');
+    // CanonicalReplayEngine uses 'active' for parity with Python's selfplay state
+    expect(result.state.gameStatus).toBe('active');
   });
 });

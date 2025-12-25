@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts import debug_ts_python_state_diff as dbg  # type: ignore
+from app.db.parity_validator import _find_npx
 
 
 @dataclass
@@ -66,12 +67,17 @@ def _run_ts_dump(
     environment variables.
     """
     env = os.environ.copy()
+    npx_path = _find_npx()
+    if not npx_path:
+        raise RuntimeError(
+            "npx executable not found. Install Node.js or set RINGRIFT_NPX_PATH."
+        )
     env.setdefault("TS_NODE_PROJECT", "tsconfig.server.json")
     env["RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K"] = str(ts_k)
     env["RINGRIFT_TS_REPLAY_DUMP_DIR"] = str(dump_dir)
 
     cmd = [
-        "npx",
+        npx_path,
         "ts-node",
         "-T",
         "scripts/selfplay-db-ts-replay.ts",

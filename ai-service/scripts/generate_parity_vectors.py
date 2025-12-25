@@ -47,6 +47,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
+from app.db.parity_validator import _find_npx
 from scripts.lib.paths import REPO_ROOT
 
 
@@ -143,8 +144,13 @@ def run_ts_replay(db_path: Path, game_id: str) -> tuple[int, dict[int, StateSumm
         where k=0 is initial state, k=1 is after move 0, etc.
     """
     root = REPO_ROOT
+    npx_path = _find_npx()
+    if not npx_path:
+        raise RuntimeError(
+            "npx executable not found. Install Node.js or set RINGRIFT_NPX_PATH."
+        )
     cmd = [
-        "npx",
+        npx_path,
         "ts-node",
         "-T",
         "scripts/selfplay-db-ts-replay.ts",

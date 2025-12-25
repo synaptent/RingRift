@@ -942,11 +942,12 @@ At the WebSocket boundary, **all rules interactions are expressed in terms of ca
 
 - The `game_state` event (`GameStateUpdateMessage`) always includes:
   - `gameState: GameState` – full authoritative state.
-  - `validMoves: Move[]` – the orchestrator/adapter-provided set of legal actions for the active player.
+  - `validMoves: Move[]` – the orchestrator/adapter-provided set of legal actions for the active player (empty array for spectators).
+  - Optional `meta.diffSummary.decisionAutoResolved` when a pending decision was auto-resolved (timeout/disconnect/fallback).
 - Clients submit actions via:
   - `player_move` with a `PlayerMovePayload` that carries a `MovePayload` (type + positions).
   - `player_move_by_id` with a `PlayerMoveByIdPayload` that references a previously-advertised `Move.id`.
-- Decision phases that require structured choices (line order, line reward, territory order, ring elimination, capture direction) are surfaced as:
+- Decision phases that require structured choices (line order, line reward option, region order, ring elimination, capture direction) are surfaced as:
   - `player_choice_required` events with a concrete `PlayerChoice` variant whose `options` each map back to **one canonical `Move.id`** when a canonical Move exists for that decision.
   - `player_choice_response` events from the client, carrying `PlayerChoiceResponse.selectedOption` that must match one of the advertised `options` (validated server-side in `WebSocketInteractionHandler`).
 
@@ -1292,13 +1293,13 @@ stateDiagram-v2
 
 ##### Reconnection
 
-Players who disconnect during an active game have a **reconnection window** of **30 seconds** (`RECONNECTION_TIMEOUT_MS`) to reconnect before being treated as abandoned:
+Players who disconnect during an active game have a **reconnection window** of **30 seconds** (`WS_RECONNECTION_TIMEOUT_MS`) to reconnect before being treated as abandoned:
 
 - On disconnect, the server updates the player’s `PlayerConnectionState` to `disconnected_pending_reconnect` and starts a reconnection timer for the affected `(gameId, userId)`.
 - If the player reconnects within the window:
   - Their session state is preserved (pending choices, timers, board state).
-  - Any pending `player_choice_required` events are re‑emitted.
   - The reconnection timer is cancelled and the state returns to `CONNECTED_PLAYER`.
+  - Pending `player_choice_required` prompts are **not** re-emitted; the server will either receive the original response or auto-resolve on timeout, and the next `game_state` update carries any auto-resolution metadata.
 - If the window expires:
   - The player’s connection state becomes `DISCONNECTED_FINAL`.
   - Pending decisions for that player are cancelled or auto‑resolved according to timeout policy.
@@ -1569,11 +1570,11 @@ Adapters (Server GameEngine, Client Sandbox, Python AI Service) must handle:
 
 ### 5.1 Player Interaction
 
-| Requirement             | Description                                                                      |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| **Choice Presentation** | Surface `PlayerChoice` objects for line order, region order, elimination choices |
-| **Timeout Handling**    | Enforce decision timeouts with auto-selection fallback                           |
-| **AI Integration**      | Route AI turn decisions through appropriate engines                              |
+| Requirement             | Description                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Choice Presentation** | Surface `PlayerChoice` objects for line order, line reward options, region order, ring elimination, capture direction |
+| **Timeout Handling**    | Enforce decision timeouts with auto-selection fallback                                                                |
+| **AI Integration**      | Route AI turn decisions through appropriate engines                                                                   |
 
 ### 5.2 State Management
 
@@ -1607,20 +1608,20 @@ Adapters (Server GameEngine, Client Sandbox, Python AI Service) must handle:
 - **Connection & game join**
   - `join_game` – client requests to join a particular game room (as player or spectator).
   - `leave_game` – client leaves a game room; may trigger abandonment logic when initiated by players.
-  - `game_state` – server → client authoritative `GameStateUpdateMessage`, including the canonical `GameState`, optional `validMoves`, and diff metadata.
+  - `game_state` – server → client authoritative `GameStateUpdateMessage`, including the canonical `GameState`, `validMoves` (empty for spectators), and optional diff metadata.
   - `game_over` – server → client terminal `GameOverMessage`, carrying the final `GameState` (for inspection) and `GameResult` (winner, reason).
 
 - **Move submission**
-  - `player_move` – geometry‑based move payload (`from`/`to`/`captureTarget`), validated and mapped to canonical `Move` via `GameEngine.makeMove`.
+  - `player_move` – wire‑level `MoveSchema` payload (`moveType` + `position`), validated and mapped to canonical `Move` via `GameEngine.makeMove`.
   - `player_move_by_id` – canonical move selection (`{ gameId, moveId }`), where `moveId` comes directly from `GameState.validMoves[*].id`.
   - Both flows ultimately call into the orchestrator adapter (`TurnEngineAdapter`) so that all rules processing is driven by canonical `Move` objects.
 
 - **Decision phases**
-  - `player_choice_required` – server → client `PlayerChoice` payload indicating an interactive decision derived from a `PendingDecision` (`line_order`, `line_reward`, `region_order`, `elimination_target`, `capture_direction`, `chain_capture`).
+  - `player_choice_required` – server → client `PlayerChoice` payload indicating an interactive decision derived from a `PendingDecision` (`line_order`, `line_reward_option`, `region_order`, `ring_elimination`, `capture_direction`).
   - `player_choice_response` – client → server `PlayerChoiceResponse`, carrying:
     - `choiceId`
     - `selectedOption` (UI‑oriented discriminant such as `option_1_collapse_all_and_eliminate`)
-    - optionally `choiceType` and auxiliary fields
+    - optionally `choiceType` (`line_order`, `line_reward_option`, `ring_elimination`, `region_order`, `capture_direction`)
   - The backend maps `selectedOption` back to a canonical `Move.id` via the `moveId` fields on the `PlayerChoice` options and feeds that `Move` back into the orchestrator.
 
 - **Decision‑phase timeouts**
@@ -1633,15 +1634,15 @@ The backend maintains a **bounded reconnection window** for players via
 `pendingReconnections` and a connection state machine (`PlayerConnectionState`):
 
 - **Disconnect handling**
-  - When a player disconnects from a game room:
-    - The WebSocket server emits `player_disconnected` to the remaining participants.
-    - A reconnection window is started for that `(gameId, userId)` pair; the default window is `RECONNECTION_TIMEOUT_MS = 30_000` ms.
-    - `playerConnectionStates` is updated to `disconnected_pending_reconnect` for that player.
+- When a player disconnects from a game room:
+  - The WebSocket server emits `player_disconnected` to the remaining participants (payload includes `reconnectionWindowMs`).
+  - A reconnection window is started for that `(gameId, userId)` pair; the default window is `WS_RECONNECTION_TIMEOUT_MS = 30_000` ms.
+  - `playerConnectionStates` is updated to `disconnected_pending_reconnect` for that player.
   - Spectators do **not** receive a reconnection window; their disconnect simply clears any diagnostics entry. They may reconnect at any time via `join_game` as long as the underlying session and auth token remain valid.
 
 - **Reconnect handling**
   - If the same user reconnects (via a fresh `join_game` and authenticated socket) before the window expires:
-    - The server restores their player slot, re‑joins them to the room, and emits `player_reconnected` to other participants.
+    - The server restores their player slot, re‑joins them to the room, and emits `player_reconnected` (payload includes `playerNumber`) to other participants.
     - `playerConnectionStates` is updated back to `connected`.
     - The reconnection timeout entry in `pendingReconnections` is cleared.
 

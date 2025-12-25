@@ -85,6 +85,7 @@ if str(AI_SERVICE_ROOT) not in sys.path:
 import contextlib
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
+from app.db.parity_validator import _find_npx
 from app.game_engine import GameEngine
 from app.models import BoardType
 from app.rules import global_actions as ga
@@ -695,8 +696,14 @@ def run_ts_replay(
     this mode is intended for tooling and detailed debugging only.
     """
     root = REPO_ROOT
+    npx_path = _find_npx()
+    if not npx_path:
+        raise RuntimeError(
+            "npx executable not found. Install Node.js or set RINGRIFT_NPX_PATH. "
+            "Cannot perform TS parity validation."
+        )
     cmd = [
-        "npx",
+        npx_path,
         "ts-node",
         "-T",
         "scripts/selfplay-db-ts-replay.ts",
@@ -921,6 +928,12 @@ def _dump_ts_states_for_ks(
         return
 
     root = REPO_ROOT
+    npx_path = _find_npx()
+    if not npx_path:
+        raise RuntimeError(
+            "npx executable not found. Install Node.js or set RINGRIFT_NPX_PATH. "
+            "Cannot dump TS states."
+        )
     env = os.environ.copy()
     env.setdefault("TS_NODE_PROJECT", "tsconfig.server.json")
     env["RINGRIFT_TS_REPLAY_DUMP_DIR"] = str(dump_dir)
@@ -929,7 +942,7 @@ def _dump_ts_states_for_ks(
     dump_arg = ",".join(str(k) for k in unique_sorted)
 
     cmd = [
-        "npx",
+        npx_path,
         "ts-node",
         "-T",
         "scripts/selfplay-db-ts-replay.ts",

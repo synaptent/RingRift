@@ -24,28 +24,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { BoardView } from '../components/BoardView';
 import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal } from '../components/VictoryModal';
-import { GameEventLog } from '../components/GameEventLog';
-import { MoveHistory } from '../components/MoveHistory';
-import type { MoveNotationOptions } from '../../shared/engine/notation';
-import { SandboxTouchControlsPanel } from '../components/SandboxTouchControlsPanel';
 import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { ScenarioPickerModal } from '../components/ScenarioPickerModal';
 import { SelfPlayBrowser } from '../components/SelfPlayBrowser';
 import { SaveStateDialog } from '../components/SaveStateDialog';
-import { SandboxDevTools } from '../components/SandboxDevTools';
 import { RingPlacementCountDialog } from '../components/RingPlacementCountDialog';
 import { RecoveryLineChoiceDialog } from '../components/RecoveryLineChoiceDialog';
 import { TerritoryRegionChoiceDialog } from '../components/TerritoryRegionChoiceDialog';
 import { StatusBanner } from '../components/ui/StatusBanner';
 import { Button } from '../components/ui/Button';
-import { ReplayPanel } from '../components/ReplayPanel';
-import { HistoryPlaybackPanel } from '../components/HistoryPlaybackPanel';
 import { OnboardingModal } from '../components/OnboardingModal';
-// Sandbox components available but not currently used in this layout
-// import { SandboxBoardSection, SandboxGameSidebar } from '../components/sandbox';
+// Sandbox components for decomposed view
+import { SandboxBoardSection, SandboxGameSidebar } from '../components/sandbox';
 import { useFirstTimePlayer } from '../hooks/useFirstTimePlayer';
 import {
   SandboxGameConfig,
@@ -75,17 +67,11 @@ import {
   toHUDViewModel,
   deriveBoardDecisionHighlights,
 } from '../adapters/gameViewModels';
-import { GameHUD, VictoryConditionsPanel } from '../components/GameHUD';
-import { MobileGameHUD } from '../components/MobileGameHUD';
-import { AIThinkTimeProgress } from '../components/AIThinkTimeProgress';
 import {
   ScreenReaderAnnouncer,
   useGameAnnouncements,
   useGameStateAnnouncements,
 } from '../components/ScreenReaderAnnouncer';
-// gameApi is available for potential backend integration but not currently used in sandbox
-// import { gameApi } from '../services/api';
-import { GameSyncService } from '../services/GameSyncService';
 import type {
   ClientSandboxEngine,
   SandboxInteractionHandler,
@@ -108,24 +94,6 @@ import { useSandboxBoardSelection } from '../hooks/useSandboxBoardSelection';
 import { useSandboxGameLifecycle } from '../hooks/useSandboxGameLifecycle';
 import { useGlobalGameShortcuts } from '../hooks/useKeyboardNavigation';
 import { useSoundOptional } from '../contexts/SoundContext';
-
-const PLAYER_TYPE_META: Record<
-  LocalPlayerType,
-  { label: string; description: string; accent: string; chip: string }
-> = {
-  human: {
-    label: 'Human',
-    description: 'You control every move',
-    accent: 'border-emerald-500 text-emerald-200',
-    chip: 'bg-emerald-900/40 text-emerald-200',
-  },
-  ai: {
-    label: 'Computer',
-    description: 'Local heuristic AI',
-    accent: 'border-sky-500 text-sky-200',
-    chip: 'bg-sky-900/40 text-sky-200',
-  },
-};
 
 const PHASE_COPY: Record<
   string,
@@ -1374,16 +1342,6 @@ export const SandboxGameHost: React.FC = () => {
       )
     : null;
 
-  const sandboxModeNotes = [
-    `Board: ${boardDisplayLabel}`,
-    `${humanSeatCount} human seat${humanSeatCount === 1 ? '' : 's'} · ${aiSeatCount} AI`,
-    sandboxEngine
-      ? 'Engine parity mode with local AI and choice handler.'
-      : 'Legacy local sandbox fallback (no backend).',
-    'Runs entirely in-browser; use "Change Setup" to switch configurations.',
-    !user ? 'You’re not logged in; this game runs as a local sandbox only.' : null,
-  ].filter(Boolean) as string[];
-
   // Create unified HUD view model using toHUDViewModel (matches backend host pattern)
   const sandboxLpsTracking = sandboxEngine?.getLpsTrackingState();
   let sandboxHudVM = sandboxGameState
@@ -1707,704 +1665,205 @@ export const SandboxGameHost: React.FC = () => {
         />
 
         <main className="flex flex-col lg:flex-row lg:gap-8 gap-4">
-          {/* Board container - centers on mobile, takes available space on desktop */}
-          <section className="flex-shrink-0 flex justify-center lg:justify-start">
-            {sandboxBoardState && (
-              <div className="inline-block space-y-3">
-                <div className="p-3 sm:p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg">
-                  <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-                    <div>
-                      <p className="text-[10px] sm:text-xs uppercase tracking-wide text-slate-400">
-                        Local Sandbox
-                      </p>
-                      <h1 className="text-lg sm:text-2xl font-bold text-white">
-                        Game – {boardDisplayLabel}
-                      </h1>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* Beginner/Debug Mode Toggle */}
-                      <div className="inline-flex rounded-lg border border-slate-600 p-0.5 bg-slate-900/60">
-                        <button
-                          type="button"
-                          onClick={() => setSandboxMode('beginner')}
-                          className={`px-2 py-1 text-[10px] font-medium rounded-md transition ${
-                            isBeginnerMode
-                              ? 'bg-emerald-600 text-white'
-                              : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                          aria-pressed={isBeginnerMode}
-                          title="Hide debug panels, show teaching features"
-                        >
-                          🎓 Beginner
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSandboxMode('debug')}
-                          className={`px-2 py-1 text-[10px] font-medium rounded-md transition ${
-                            !isBeginnerMode
-                              ? 'bg-sky-600 text-white'
-                              : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                          aria-pressed={!isBeginnerMode}
-                          title="Show all developer tools and diagnostics"
-                        >
-                          🔧 Debug
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {/* Save State - always visible for undo/redo */}
-                        <button
-                          type="button"
-                          onClick={() => diagnosticsActions.setShowSaveStateDialog(true)}
-                          className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-sky-400 hover:text-sky-200 transition"
-                        >
-                          Save State
-                        </button>
-                        {/* Debug-only buttons - hidden in beginner mode */}
-                        {!isBeginnerMode && developerToolsEnabled && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={diagnosticsActions.exportScenarioJson}
-                              className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-sky-400 hover:text-sky-200 transition"
-                            >
-                              Export Scenario JSON
-                            </button>
-                            <button
-                              type="button"
-                              onClick={diagnosticsActions.copyTestFixture}
-                              className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-                            >
-                              Copy Test Fixture
-                            </button>
-                            {sandboxGameEndExplanation && (
-                              <details
-                                className="absolute top-full right-0 mt-2 w-96 p-4 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 text-xs font-mono overflow-auto max-h-96"
-                                data-testid="sandbox-game-end-explanation-debug"
-                              >
-                                <summary className="cursor-pointer text-slate-400 hover:text-slate-200 mb-2">
-                                  Debug: GameEndExplanation
-                                </summary>
-                                <pre className="whitespace-pre-wrap text-emerald-300">
-                                  {JSON.stringify(sandboxGameEndExplanation, null, 2)}
-                                </pre>
-                              </details>
-                            )}
-                          </>
-                        )}
-                        {/* Load Scenario - hidden in beginner mode */}
-                        {!isBeginnerMode && (
-                          <button
-                            type="button"
-                            onClick={() => setShowScenarioPicker(true)}
-                            className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-amber-400 hover:text-amber-200 transition"
-                          >
-                            Load Scenario
-                          </button>
-                        )}
-                        {lastLoadedScenario && (
-                          <button
-                            type="button"
-                            onClick={handleResetScenario}
-                            className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-                          >
-                            Reset Scenario
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetSandboxEngine();
-                            setSelected(undefined);
-                            setValidTargets([]);
-                            setBackendSandboxError(null);
-                            setSandboxPendingChoice(null);
-                            setSandboxStallWarning(null);
-                            setSandboxLastProgressAt(null);
-                            setIsSandboxVictoryModalDismissed(false);
-                          }}
-                          className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-                        >
-                          Change Setup
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Show board controls"
-                          data-testid="board-controls-button"
-                          onClick={() => setShowBoardControls(true)}
-                          className="h-8 w-8 rounded-full border border-slate-600 text-[11px] leading-none text-slate-200 hover:bg-slate-800/80"
-                        >
-                          ?
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {isInReplayMode && (
-                  <div className="mb-2 p-2 rounded-lg bg-emerald-900/40 border border-emerald-700/50 text-xs text-emerald-200 flex items-center justify-between">
-                    <span>Viewing replay - board is read-only</span>
-                    <span className="text-emerald-400/70">Use playback controls in sidebar</span>
-                  </div>
-                )}
-
-                {sandboxBoardState && sandboxBoardViewModel && (
-                  <BoardView
-                    boardType={sandboxBoardState.type}
-                    board={sandboxBoardState}
-                    viewModel={sandboxBoardViewModel}
-                    selectedPosition={isInReplayMode ? undefined : selected}
-                    validTargets={isInReplayMode ? [] : displayedValidTargets}
-                    onCellClick={isInReplayMode ? undefined : (pos) => handleSandboxCellClick(pos)}
-                    onCellDoubleClick={
-                      isInReplayMode ? undefined : (pos) => handleSandboxCellDoubleClick(pos)
-                    }
-                    onCellContextMenu={
-                      isInReplayMode ? undefined : (pos) => handleSandboxCellContextMenu(pos)
-                    }
-                    onShowKeyboardHelp={() => setShowBoardControls(true)}
-                    showMovementGrid={overlays.showMovementGrid}
-                    showCoordinateLabels={
-                      sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
-                    }
-                    squareRankFromBottom={
-                      sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
-                        ? true
-                        : false
-                    }
-                    showLineOverlays={overlays.showLineOverlays}
-                    showTerritoryRegionOverlays={overlays.showTerritoryOverlays}
-                    pendingAnimation={
-                      isInReplayMode
-                        ? (replayAnimation ?? undefined)
-                        : (pendingAnimation ?? undefined)
-                    }
-                    onAnimationComplete={
-                      isInReplayMode ? () => setReplayAnimation(null) : clearAnimation
-                    }
-                    chainCapturePath={isInReplayMode ? undefined : chainCapturePath}
-                    shakingCellKey={isInReplayMode ? null : sandboxShakingCellKey}
-                  />
-                )}
-
-                <section className="mt-1 p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 text-xs text-slate-200">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(() => {
-                      let primarySubtitleText = boardDisplaySubtitle;
-                      let primarySubtitleClass =
-                        'px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600';
-
-                      if (isRingEliminationChoice) {
-                        primarySubtitleText = 'Select stack cap to eliminate';
-                        primarySubtitleClass =
-                          'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
-                      } else if (isRegionOrderChoice) {
-                        primarySubtitleText = 'Territory claimed – choose region to process';
-                        primarySubtitleClass =
-                          'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
-                      } else if (isChainCaptureContinuationStep) {
-                        primarySubtitleText = 'Continue Chain Capture';
-                        primarySubtitleClass =
-                          'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
-                      }
-
-                      return <span className={primarySubtitleClass}>{primarySubtitleText}</span>;
-                    })()}
-                    <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
-                      Players: {config.numPlayers} ({humanSeatCount} human, {aiSeatCount} AI)
-                    </span>
-                    <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600 min-w-[10rem] inline-flex justify-center text-center">
-                      Phase: {sandboxPhaseDetails.label}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {sandboxPlayersList.map((player) => {
-                      const typeKey = player.type === 'ai' ? 'ai' : 'human';
-                      const meta = PLAYER_TYPE_META[typeKey as LocalPlayerType];
-                      const isCurrent = player.playerNumber === sandboxCurrentPlayerNumber;
-                      const nameLabel = player.username || `Player ${player.playerNumber}`;
-                      return (
-                        <span
-                          key={player.playerNumber}
-                          className={`px-3 py-1 rounded-full border transition ${
-                            isCurrent ? 'border-white text-white bg-white/15' : meta.chip
-                          }`}
-                        >
-                          P{player.playerNumber} • {nameLabel} ({meta.label})
-                        </span>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {/* Victory Conditions - placed below game info panel */}
-                <VictoryConditionsPanel className="mt-3" />
-              </div>
-            )}
-          </section>
-
-          <aside className="w-full lg:w-80 flex-shrink-0 space-y-3 sm:space-y-4 text-sm text-slate-100">
-            {/* Unified Game HUD - full HUD on desktop, compact HUD on mobile */}
-            {sandboxHudVM &&
-              (isMobile ? (
-                <MobileGameHUD
-                  isLocalSandboxOnly={!user}
-                  viewModel={sandboxHudVM}
-                  timeControl={sandboxTimeControlForHud}
-                  onShowBoardControls={() => setShowBoardControls(true)}
-                  rulesUxContext={{
-                    boardType: boardTypeValue,
-                    numPlayers: sandboxPlayersList.length,
-                    aiDifficulty: undefined,
-                    rulesConcept:
-                      lastLoadedScenario && lastLoadedScenario.onboarding
-                        ? lastLoadedScenario.rulesConcept
-                        : undefined,
-                    scenarioId:
-                      lastLoadedScenario && lastLoadedScenario.onboarding
-                        ? lastLoadedScenario.id
-                        : undefined,
-                  }}
-                />
-              ) : (
-                <GameHUD
-                  isLocalSandboxOnly={!user}
-                  viewModel={sandboxHudVM}
-                  timeControl={sandboxTimeControlForHud}
-                  onShowBoardControls={() => setShowBoardControls(true)}
-                  hideVictoryConditions={true}
-                  rulesUxContext={{
-                    boardType: boardTypeValue,
-                    numPlayers: sandboxPlayersList.length,
-                    aiDifficulty: undefined,
-                    rulesConcept:
-                      lastLoadedScenario && lastLoadedScenario.onboarding
-                        ? lastLoadedScenario.rulesConcept
-                        : undefined,
-                    scenarioId:
-                      lastLoadedScenario && lastLoadedScenario.onboarding
-                        ? lastLoadedScenario.id
-                        : undefined,
-                  }}
-                />
-              ))}
-
-            {/* AI Think Time Progress Bar - shows when AI is thinking */}
-            {(() => {
-              if (!sandboxGameState || sandboxGameState.gameStatus !== 'active') return null;
-              const currentAiPlayer = sandboxGameState.players.find(
-                (p) => p.playerNumber === sandboxGameState.currentPlayer && p.type === 'ai'
-              );
-              if (!currentAiPlayer) return null;
-              const aiDifficulty = config.aiDifficulties[currentAiPlayer.playerNumber - 1] ?? 5;
-              const aiPlayerName =
-                currentAiPlayer.username || `AI Player ${currentAiPlayer.playerNumber}`;
-              return (
-                <AIThinkTimeProgress
-                  isAiThinking={aiTrackingState.aiThinkingStartedAt !== null}
-                  thinkingStartedAt={aiTrackingState.aiThinkingStartedAt}
-                  aiDifficulty={aiDifficulty}
-                  aiPlayerName={aiPlayerName}
-                />
-              );
-            })()}
-
-            {/* Dynamic alerts zone - smooth transitions prevent jarring layout bounce when chips appear/disappear */}
-            <div className="flex flex-col justify-end transition-all duration-200 ease-in-out">
-              {/* Onboarding scenario context for curated rules/FAQ scenarios */}
-              {lastLoadedScenario &&
-                lastLoadedScenario.onboarding &&
-                lastLoadedScenario.rulesSnippet && (
-                  <div className="p-4 border border-emerald-700 rounded-2xl bg-emerald-950/60 space-y-2 mb-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="font-semibold text-sm text-emerald-100">
-                        Scenario: {lastLoadedScenario.name}
-                      </h2>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-emerald-900/80 text-emerald-300 border border-emerald-600/80">
-                        Rules context
-                      </span>
-                    </div>
-                    {lastLoadedScenario.description && (
-                      <p className="text-xs text-emerald-100/90">
-                        {lastLoadedScenario.description}
-                      </p>
-                    )}
-                    <p className="text-xs text-emerald-50">{lastLoadedScenario.rulesSnippet}</p>
-                  </div>
-                )}
-
-              {sandboxEngine &&
-                sandboxGameState &&
-                sandboxGameState.gameStatus === 'active' &&
-                sandboxGameState.players.length === 2 &&
-                sandboxGameState.rulesOptions?.swapRuleEnabled === true &&
-                sandboxEngine.canCurrentPlayerSwapSides() && (
-                  <div className="p-3 border border-amber-500/60 rounded-2xl bg-amber-900/40 text-xs space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-amber-100">
-                        Pie rule available: swap colours with Player 1.
-                      </span>
-                      <button
-                        type="button"
-                        className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold"
-                        onClick={() => {
-                          sandboxEngine.applySwapSidesForCurrentPlayer();
-                          setSelected(undefined);
-                          setValidTargets([]);
-                          setSandboxPendingChoice(null);
-                          setSandboxStateVersion((v) => v + 1);
-                        }}
-                      >
-                        Swap colours
-                      </button>
-                    </div>
-                    <p className="text-amber-100/80">
-                      As Player 2, you may use this once, immediately after Player 1's first turn.
-                    </p>
-                  </div>
-                )}
-            </div>
-
-            <details
-              className="p-3 border border-slate-700 rounded-2xl bg-slate-900/60"
-              open={showAdvancedSidebarPanels || isInReplayMode}
-              onToggle={(event) => {
-                setShowAdvancedSidebarPanels(event.currentTarget.open);
+          {/* Board Section - extracted component */}
+          {sandboxBoardState && sandboxBoardViewModel && sandboxGameState && (
+            <SandboxBoardSection
+              boardState={sandboxBoardState}
+              boardViewModel={sandboxBoardViewModel}
+              gameState={sandboxGameState}
+              selectedPosition={selected}
+              validTargets={displayedValidTargets}
+              isInReplayMode={isInReplayMode}
+              pendingAnimation={pendingAnimation}
+              replayAnimation={replayAnimation}
+              chainCapturePath={chainCapturePath}
+              shakingCellKey={sandboxShakingCellKey}
+              overlays={{
+                showMovementGrid: overlays.showMovementGrid,
+                showLineOverlays: overlays.showLineOverlays,
+                showTerritoryOverlays: overlays.showTerritoryOverlays,
               }}
-              data-testid="sandbox-advanced-sidebar-panels"
-            >
-              <summary className="cursor-pointer select-none text-sm font-semibold text-slate-200">
-                Advanced panels
-                <span className="ml-2 text-[11px] font-normal text-slate-400">
-                  (replays, logs, recording)
-                </span>
-              </summary>
-              {(showAdvancedSidebarPanels || isInReplayMode) && (
-                <div className="mt-3 space-y-3">
-                  {/* Replay Panel - Game Database Browser */}
-                  <ReplayPanel
-                    onStateChange={setReplayState}
-                    onReplayModeChange={setIsInReplayMode}
-                    onForkFromPosition={handleForkFromReplay}
-                    onAnimationChange={setReplayAnimation}
-                    defaultCollapsed={true}
-                  />
+              boardDisplayLabel={boardDisplayLabel}
+              boardDisplaySubtitle={boardDisplaySubtitle}
+              config={config}
+              playersList={sandboxPlayersList}
+              currentPlayerNumber={sandboxCurrentPlayerNumber}
+              phaseDetails={sandboxPhaseDetails}
+              humanSeatCount={humanSeatCount}
+              aiSeatCount={aiSeatCount}
+              isBeginnerMode={isBeginnerMode}
+              developerToolsEnabled={developerToolsEnabled}
+              lastLoadedScenario={lastLoadedScenario}
+              gameEndExplanation={sandboxGameEndExplanation}
+              isRingEliminationChoice={isRingEliminationChoice}
+              isRegionOrderChoice={isRegionOrderChoice}
+              isChainCaptureContinuationStep={isChainCaptureContinuationStep}
+              onCellClick={handleSandboxCellClick}
+              onCellDoubleClick={handleSandboxCellDoubleClick}
+              onCellContextMenu={handleSandboxCellContextMenu}
+              onAnimationComplete={clearAnimation}
+              onReplayAnimationComplete={() => setReplayAnimation(null)}
+              onShowBoardControls={() => setShowBoardControls(true)}
+              onSaveState={() => diagnosticsActions.setShowSaveStateDialog(true)}
+              onExportScenario={diagnosticsActions.exportScenarioJson}
+              onCopyFixture={diagnosticsActions.copyTestFixture}
+              onLoadScenario={() => setShowScenarioPicker(true)}
+              onResetScenario={handleResetScenario}
+              onChangeSetup={() => {
+                resetSandboxEngine();
+                setSelected(undefined);
+                setValidTargets([]);
+                setBackendSandboxError(null);
+                setSandboxPendingChoice(null);
+                setSandboxStallWarning(null);
+                setSandboxLastProgressAt(null);
+                setIsSandboxVictoryModalDismissed(false);
+              }}
+              onModeChange={setSandboxMode}
+            />
+          )}
 
-                  {/* History Playback Controls - visible when there's move history.
-                    When no internal snapshots are available (e.g. imported self-play
-                    snapshots), we render the panel in a disabled state with a hint
-                    instead of allowing a no-op slider. */}
-                  {!isInReplayMode &&
-                    sandboxGameState &&
-                    sandboxGameState.moveHistory.length > 0 && (
-                      <HistoryPlaybackPanel
-                        totalMoves={sandboxGameState.moveHistory.length}
-                        currentMoveIndex={
-                          isViewingHistory ? historyViewIndex : sandboxGameState.moveHistory.length
-                        }
-                        isViewingHistory={isViewingHistory}
-                        onMoveIndexChange={(index) => {
-                          setHistoryViewIndex(index);
-                          // If at end, exit history view
-                          if (index >= sandboxGameState.moveHistory.length) {
-                            setIsViewingHistory(false);
-                          }
-                        }}
-                        onExitHistoryView={() => {
-                          setIsViewingHistory(false);
-                          setHistoryViewIndex(sandboxGameState.moveHistory.length);
-                        }}
-                        onEnterHistoryView={() => {
-                          setIsViewingHistory(true);
-                        }}
-                        // New: pass a flag so the panel can disable scrubbing for
-                        // scenarios without snapshots (self-play snapshots, some fixtures).
-                        hasSnapshots={hasHistorySnapshots}
-                      />
-                    )}
-
-                  {/* Move History - compact notation display */}
-                  {!isInReplayMode && sandboxGameState && (
-                    <MoveHistory
-                      moves={sandboxGameState.moveHistory}
-                      boardType={sandboxGameState.boardType}
-                      currentMoveIndex={
-                        isViewingHistory
-                          ? historyViewIndex - 1
-                          : sandboxGameState.moveHistory.length - 1
-                      }
-                      onMoveClick={(index) => {
-                        // Jump to the state after this move (index+1)
-                        // With snapshot reconstruction, snapshots should always be available
-                        // for loaded fixtures. If not, the useEffect safety check will disable
-                        // hasHistorySnapshots and playback controls will be disabled.
-                        if (hasHistorySnapshots) {
-                          setIsViewingHistory(true);
-                          setHistoryViewIndex(index + 1);
-                        }
-                      }}
-                      notationOptions={((): MoveNotationOptions | undefined => {
-                        if (
-                          sandboxGameState.boardType === 'square8' ||
-                          sandboxGameState.boardType === 'square19'
-                        ) {
-                          const size = sandboxBoardState?.size ?? 0;
-                          return {
-                            boardType: sandboxGameState.boardType,
-                            boardSizeOverride: size > 0 ? size : undefined,
-                            squareRankFromBottom: true,
-                          };
-                        }
-                        return undefined;
-                      })()}
-                    />
-                  )}
-
-                  <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60">
-                    <GameEventLog viewModel={sandboxEventLogViewModel} />
-                  </div>
-
-                  {/* Recording Status Panel */}
-                  <div className="p-3 border border-slate-700 rounded-2xl bg-slate-900/60">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">Recording:</span>
-                        {gameSaveStatus === 'idle' && autoSaveGames && (
-                          <span className="flex items-center gap-1 text-xs text-slate-400">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            Ready
-                          </span>
-                        )}
-                        {gameSaveStatus === 'idle' && !autoSaveGames && (
-                          <span className="text-xs text-slate-500">Disabled</span>
-                        )}
-                        {gameSaveStatus === 'saving' && (
-                          <span className="flex items-center gap-1 text-xs text-amber-400">
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                            Saving...
-                          </span>
-                        )}
-                        {gameSaveStatus === 'saved' && (
-                          <span className="flex items-center gap-1 text-xs text-emerald-400">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                            Saved to server
-                          </span>
-                        )}
-                        {gameSaveStatus === 'saved-local' && (
-                          <span className="flex items-center gap-1 text-xs text-amber-300">
-                            <span className="w-2 h-2 rounded-full bg-amber-300" />
-                            Saved locally
-                          </span>
-                        )}
-                        {gameSaveStatus === 'error' && (
-                          <span className="flex items-center gap-1 text-xs text-red-400">
-                            <span className="w-2 h-2 rounded-full bg-red-400" />
-                            Failed
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setAutoSaveGames(!autoSaveGames)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-                          autoSaveGames
-                            ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700'
-                            : 'bg-slate-800 text-slate-400 border border-slate-600'
-                        }`}
-                        title={
-                          autoSaveGames ? 'Click to disable recording' : 'Click to enable recording'
-                        }
-                      >
-                        {autoSaveGames ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    {pendingLocalGames > 0 && (
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          {syncState?.status === 'syncing' ? (
-                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                          ) : syncState?.status === 'offline' ? (
-                            <span className="w-2 h-2 rounded-full bg-slate-500" />
-                          ) : syncState?.status === 'error' ? (
-                            <span className="w-2 h-2 rounded-full bg-red-400" />
-                          ) : (
-                            <span className="w-2 h-2 rounded-full bg-amber-400" />
-                          )}
-                          <span className="text-[10px] text-amber-400">
-                            {pendingLocalGames} game{pendingLocalGames !== 1 ? 's' : ''}{' '}
-                            {syncState?.status === 'syncing'
-                              ? 'syncing...'
-                              : syncState?.status === 'offline'
-                                ? '(offline)'
-                                : 'pending'}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => GameSyncService.triggerSync()}
-                          disabled={
-                            syncState?.status === 'syncing' || syncState?.status === 'offline'
-                          }
-                          className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-900/40 text-blue-300 border border-blue-700 hover:bg-blue-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                          title="Sync pending games to server"
-                        >
-                          Sync
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {!isBeginnerMode && developerToolsEnabled && (
-                    <SandboxDevTools
-                      aiLadderHealth={aiTrackingState.aiLadderHealth}
-                      aiLadderHealthError={aiTrackingState.aiLadderHealthError}
-                      aiLadderHealthLoading={aiTrackingState.aiLadderHealthLoading}
-                      onRefreshLadderHealth={aiTrackingActions.refreshLadderHealth}
-                      onCopyLadderHealth={aiTrackingActions.copyLadderHealth}
-                      onCopyAiTrace={diagnosticsActions.copyAiTrace}
-                      onCopyAiMeta={diagnosticsActions.copyAiMeta}
-                      onExportScenario={diagnosticsActions.exportScenarioJson}
-                      onCopyTestFixture={diagnosticsActions.copyTestFixture}
-                      evaluationHistory={sandboxEvaluationHistory}
-                      evaluationError={sandboxEvaluationError}
-                      isEvaluating={isSandboxAnalysisRunning}
-                      onRequestEvaluation={requestSandboxEvaluation}
-                      gameState={sandboxGameState}
-                      sandboxEngine={sandboxEngine}
-                      aiDifficulties={config.aiDifficulties}
-                    />
-                  )}
-                </div>
-              )}
-            </details>
-
-            {(isMobile || showAdvancedSidebarPanels) && (
-              <SandboxTouchControlsPanel
-                selectedPosition={selected}
-                selectedStackDetails={selectedStackDetails}
-                validTargets={primaryValidTargets}
-                isCaptureDirectionPending={!!sandboxCaptureChoice}
-                captureTargets={sandboxCaptureTargets}
-                // Multi-segment capture undo is not yet exposed by the sandbox
-                // engine; this remains a no-op until the underlying rules
-                // pipeline supports segment-level rewind.
-                canUndoSegment={false}
-                onClearSelection={() => {
-                  clearSandboxSelection();
-                }}
-                onUndoSegment={() => {
-                  // no-op for now
-                }}
-                // For now, treat "Finish move" as an explicit selection reset that
-                // clears highlights without issuing additional engine actions.
-                onApplyMove={() => {
-                  clearSandboxSelection();
-                }}
-                showMovementGrid={overlays.showMovementGrid}
-                onToggleMovementGrid={(next) => setShowMovementGrid(next)}
-                showValidTargets={overlays.showValidTargets}
-                onToggleValidTargets={(next) => setShowValidTargets(next)}
-                showLineOverlays={overlays.showLineOverlays}
-                onToggleLineOverlays={
-                  developerToolsEnabled ? (next) => setShowLineOverlays(next) : undefined
-                }
-                showTerritoryOverlays={overlays.showTerritoryOverlays}
-                onToggleTerritoryOverlays={
-                  developerToolsEnabled ? (next) => setShowTerritoryOverlays(next) : undefined
-                }
-                phaseLabel={sandboxPhaseDetails.label}
-                phaseHint={sandboxTouchPhaseHint}
-                canSkipTerritoryProcessing={canSkipTerritoryProcessing}
-                onSkipTerritoryProcessing={() => {
-                  if (!sandboxPendingChoice || sandboxPendingChoice.type !== 'region_order') {
-                    return;
+          {/* Sidebar - extracted component */}
+          <SandboxGameSidebar
+            hudViewModel={sandboxHudVM}
+            gameState={sandboxGameState}
+            config={config}
+            timeControl={sandboxTimeControlForHud}
+            boardState={
+              sandboxBoardState
+                ? { type: sandboxBoardState.type, size: sandboxBoardState.size }
+                : null
+            }
+            isMobile={isMobile}
+            isLoggedIn={!!user}
+            isBeginnerMode={isBeginnerMode}
+            developerToolsEnabled={developerToolsEnabled}
+            lastLoadedScenario={lastLoadedScenario}
+            boardTypeValue={boardTypeValue}
+            numPlayers={sandboxPlayersList.length}
+            selectedPosition={selected}
+            selectedStackDetails={selectedStackDetails}
+            validTargets={validTargets}
+            primaryValidTargets={primaryValidTargets}
+            isCaptureDirectionPending={!!sandboxCaptureChoice}
+            captureTargets={sandboxCaptureTargets}
+            overlays={overlays}
+            phaseLabel={sandboxPhaseDetails.label}
+            phaseHint={sandboxTouchPhaseHint}
+            canSkipCapture={canSkipCaptureForTouch}
+            canSkipTerritoryProcessing={canSkipTerritoryProcessing}
+            canSkipRecovery={canSkipRecoveryForTouch}
+            isInReplayMode={isInReplayMode}
+            isViewingHistory={isViewingHistory}
+            historyViewIndex={historyViewIndex}
+            hasHistorySnapshots={hasHistorySnapshots}
+            showAdvancedSidebarPanels={showAdvancedSidebarPanels}
+            autoSaveGames={autoSaveGames}
+            gameSaveStatus={gameSaveStatus}
+            pendingLocalGames={pendingLocalGames}
+            syncState={syncState}
+            aiThinkingStartedAt={aiTrackingState.aiThinkingStartedAt}
+            aiLadderHealth={aiTrackingState.aiLadderHealth}
+            aiLadderHealthError={aiTrackingState.aiLadderHealthError}
+            aiLadderHealthLoading={aiTrackingState.aiLadderHealthLoading}
+            evaluationHistory={sandboxEvaluationHistory}
+            evaluationError={sandboxEvaluationError}
+            isEvaluating={isSandboxAnalysisRunning}
+            eventLogViewModel={sandboxEventLogViewModel}
+            sandboxEngine={sandboxEngine}
+            onSwapSides={() => {
+              if (sandboxEngine) {
+                sandboxEngine.applySwapSidesForCurrentPlayer();
+                setSelected(undefined);
+                setValidTargets([]);
+                setSandboxPendingChoice(null);
+                setSandboxStateVersion((v) => v + 1);
+              }
+            }}
+            onReplayStateChange={setReplayState}
+            onReplayModeChange={setIsInReplayMode}
+            onReplayAnimationChange={setReplayAnimation}
+            onForkFromReplay={handleForkFromReplay}
+            onHistoryIndexChange={(index) => {
+              setHistoryViewIndex(index);
+              if (sandboxGameState && index >= sandboxGameState.moveHistory.length) {
+                setIsViewingHistory(false);
+              }
+            }}
+            onExitHistoryView={() => {
+              setIsViewingHistory(false);
+              if (sandboxGameState) {
+                setHistoryViewIndex(sandboxGameState.moveHistory.length);
+              }
+            }}
+            onEnterHistoryView={() => setIsViewingHistory(true)}
+            onClearSelection={clearSandboxSelection}
+            onShowBoardControls={() => setShowBoardControls(true)}
+            onToggleMovementGrid={setShowMovementGrid}
+            onToggleValidTargets={setShowValidTargets}
+            onToggleLineOverlays={developerToolsEnabled ? setShowLineOverlays : undefined}
+            onToggleTerritoryOverlays={developerToolsEnabled ? setShowTerritoryOverlays : undefined}
+            onSkipCapture={
+              canSkipCaptureForTouch && sandboxEngine && sandboxGameState
+                ? async () => {
+                    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
+                    const skipMove = moves.find((m) => m.type === 'skip_capture');
+                    if (!skipMove) return;
+                    await sandboxEngine.applyCanonicalMove(skipMove as Move);
+                    setSandboxStateVersion((v) => v + 1);
+                    clearSandboxSelection();
+                    maybeRunSandboxAiIfNeeded();
                   }
-                  const currentChoice = sandboxPendingChoice;
-                  const options = (currentChoice.options ?? []) as Array<{
-                    regionId: string;
-                    size: number;
-                    representativePosition: Position;
-                    moveId: string;
-                  }>;
-                  const skipOption =
-                    options.find((opt) => opt.regionId === 'skip' || opt.size <= 0) ?? options[0];
-                  const resolver = sandboxChoiceResolverRef.current;
-                  if (resolver) {
-                    resolver({
-                      choiceId: currentChoice.id,
-                      playerNumber: currentChoice.playerNumber,
-                      choiceType: currentChoice.type,
-                      selectedOption: skipOption,
-                    } as PlayerChoiceResponseFor<PlayerChoice>);
-                    sandboxChoiceResolverRef.current = null;
+                : undefined
+            }
+            onSkipTerritoryProcessing={() => {
+              if (!sandboxPendingChoice || sandboxPendingChoice.type !== 'region_order') return;
+              const currentChoice = sandboxPendingChoice;
+              const options = (currentChoice.options ?? []) as Array<{
+                regionId: string;
+                size: number;
+                representativePosition: Position;
+                moveId: string;
+              }>;
+              const skipOption =
+                options.find((opt) => opt.regionId === 'skip' || opt.size <= 0) ?? options[0];
+              const resolver = sandboxChoiceResolverRef.current;
+              if (resolver) {
+                resolver({
+                  choiceId: currentChoice.id,
+                  playerNumber: currentChoice.playerNumber,
+                  choiceType: currentChoice.type,
+                  selectedOption: skipOption,
+                } as PlayerChoiceResponseFor<PlayerChoice>);
+                sandboxChoiceResolverRef.current = null;
+              }
+              setSandboxPendingChoice(null);
+              setSandboxStateVersion((v) => v + 1);
+              maybeRunSandboxAiIfNeeded();
+            }}
+            onSkipRecovery={
+              canSkipRecoveryForTouch && sandboxEngine && sandboxGameState
+                ? async () => {
+                    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
+                    const skipMove = moves.find((m) => m.type === 'skip_recovery');
+                    if (!skipMove) return;
+                    await sandboxEngine.applyCanonicalMove(skipMove as Move);
+                    setSandboxStateVersion((v) => v + 1);
+                    clearSandboxSelection();
+                    maybeRunSandboxAiIfNeeded();
                   }
-                  setSandboxPendingChoice(null);
-                  setSandboxStateVersion((v) => v + 1);
-                  maybeRunSandboxAiIfNeeded();
-                }}
-                canSkipCapture={canSkipCaptureForTouch}
-                onSkipCapture={
-                  canSkipCaptureForTouch && sandboxEngine && sandboxGameState
-                    ? async () => {
-                        const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-                        const skipMove = moves.find((m) => m.type === 'skip_capture');
-                        if (!skipMove) {
-                          return;
-                        }
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move accepts polymorphic move type
-                        await sandboxEngine.applyCanonicalMove(skipMove as any);
-                        setSandboxStateVersion((v) => v + 1);
-                        clearSandboxSelection();
-                        maybeRunSandboxAiIfNeeded();
-                      }
-                    : undefined
-                }
-                canSkipRecovery={canSkipRecoveryForTouch}
-                onSkipRecovery={
-                  canSkipRecoveryForTouch && sandboxEngine && sandboxGameState
-                    ? async () => {
-                        const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-                        const skipMove = moves.find((m) => m.type === 'skip_recovery');
-                        if (!skipMove) {
-                          return;
-                        }
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move accepts polymorphic move type
-                        await sandboxEngine.applyCanonicalMove(skipMove as any);
-                        setSandboxStateVersion((v) => v + 1);
-                        clearSandboxSelection();
-                        maybeRunSandboxAiIfNeeded();
-                      }
-                    : undefined
-                }
-                autoSaveGames={autoSaveGames}
-                onToggleAutoSave={(next) => setAutoSaveGames(next)}
-                gameSaveStatus={gameSaveStatus}
-              />
-            )}
-
-            <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
-              <h2 className="font-semibold">Phase Guide</h2>
-              <p className="text-xs uppercase tracking-wide text-slate-400">
-                {sandboxHudVM?.phase.label ?? 'Initializing...'}
-              </p>
-              <p className="text-sm text-slate-200">
-                {sandboxHudVM?.phase.description ?? 'Setting up game state.'}
-              </p>
-              <p className="text-xs text-slate-400">
-                Complete the current requirement to advance the turn (chain captures, line rewards,
-                etc.).
-              </p>
-            </div>
-
-            <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
-              <h2 className="font-semibold">Sandbox Notes</h2>
-              <ul className="list-disc list-inside text-slate-300 space-y-1 text-xs">
-                {sandboxModeNotes.map((note, idx) => (
-                  <li key={idx}>{note}</li>
-                ))}
-              </ul>
-            </div>
-          </aside>
+                : undefined
+            }
+            onAdvancedPanelsToggle={setShowAdvancedSidebarPanels}
+            onToggleAutoSave={setAutoSaveGames}
+            onRefreshLadderHealth={aiTrackingActions.refreshLadderHealth}
+            onCopyLadderHealth={aiTrackingActions.copyLadderHealth}
+            onCopyAiTrace={diagnosticsActions.copyAiTrace}
+            onCopyAiMeta={diagnosticsActions.copyAiMeta}
+            onExportScenario={diagnosticsActions.exportScenarioJson}
+            onCopyTestFixture={diagnosticsActions.copyTestFixture}
+            onRequestEvaluation={requestSandboxEvaluation}
+          />
         </main>
 
         <RingPlacementCountDialog

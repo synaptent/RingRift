@@ -44,15 +44,17 @@
   - `stalled_moves_total` (moves taking >2s)
   - `turn_processing_latency_ms`
 
-### 1.3 Current limitation: HTTP moves disabled
+### 1.3 Current limitation: HTTP move harness is feature-flagged
 
-- Today, **all production gameplay moves are carried over WebSockets** via `player_move` / `player_move_by_id` events (see the WebSocket API section of [`API_REFERENCE.md`](./API_REFERENCE.md:489)).
-- The HTTP-based move submission path in [`player-moves.js`](../tests/load/scenarios/player-moves.js:1) is intentionally guarded:
-  - `const MOVE_HTTP_ENDPOINT_ENABLED = false;` in [`player-moves.js`](../tests/load/scenarios/player-moves.js:86) keeps the hypothetical `POST /api/games/:gameId/moves` path inactive.
-  - No HTTP move endpoint is currently implemented in [`game.ts`](../src/server/routes/game.ts:1).
+- **All production gameplay moves are carried over WebSockets** via `player_move` / `player_move_by_id` (see the WebSocket API section of [`API_REFERENCE.md`](./API_REFERENCE.md:489)).
+- A thin HTTP move harness is implemented in [`game.ts`](../src/server/routes/game.ts:1) as `POST /api/games/:gameId/moves`, but it is gated by:
+  - `ENABLE_HTTP_MOVE_HARNESS` (feature flag)
+  - `HTTP_MOVE_HARNESS_TIMEOUT_MS` (timeout guard)
+- The HTTP-based move submission path in [`player-moves.js`](../tests/load/scenarios/player-moves.js:1) is still intentionally guarded:
+  - `const MOVE_HTTP_ENDPOINT_ENABLED = false;` in [`player-moves.js`](../tests/load/scenarios/player-moves.js:86) keeps the harness inactive unless explicitly enabled.
 - As a result:
-  - The `player-moves` scenario acts as **"game creation + polling under load"** rather than a true move-throughput test.
-  - Move-related k6 metrics remain effectively zero and thresholds trivially pass, even though real WebSocket move paths are not being exercised end-to-end.
+  - The `player-moves` scenario often acts as **"game creation + polling under load"** rather than a true move-throughput test.
+  - Move-related k6 metrics remain effectively zero unless the harness is enabled, even though real WebSocket move paths are not being exercised end-to-end.
 
 ### 1.4 Goals and non-goals
 
@@ -164,8 +166,7 @@ The following decisions are **accepted** and should be treated as the canonical 
      - It should be clearly documented as such in [`API_REFERENCE.md`](./API_REFERENCE.md:1) under an "Internal / Test harness APIs" section.
 
 4. **Environment and feature-flag controls**
-   - Harness availability is controlled by an explicit feature flag, conceptually:
-     - `ENABLE_HTTP_MOVE_HARNESS` (name subject to implementation details).
+   - Harness availability is controlled by `ENABLE_HTTP_MOVE_HARNESS` (implemented), with `HTTP_MOVE_HARNESS_TIMEOUT_MS` providing a timeout guard for the HTTP adapter path.
    - Recommended behaviour:
      - **Local / CI / dedicated loadtest environments:**
        - Harness **enabled by default** to simplify instrumentation and experimentation.
@@ -260,10 +261,10 @@ The following decisions are **accepted** and should be treated as the canonical 
 
 The following tasks are **out of scope** for this document but are expected to be implemented by Code/Debug mode in follow-up subtasks. They are listed here to bind this decision to concrete next steps.
 
-1. **Implement HTTP move harness endpoint**
-   - Add `POST /api/games/:gameId/moves` to [`game.ts`](../src/server/routes/game.ts:1) as a thin adapter over [`GameSessionManager.applyMove()`](../src/server/game/GameSessionManager.ts:1).
-   - Wire an `ENABLE_HTTP_MOVE_HARNESS` feature flag and environment-specific defaults into the route registration.
-   - Ensure route-level auth and authorization logic matches the WebSocket move handlers.
+1. **HTTP move harness endpoint (implemented)**
+   - `POST /api/games/:gameId/moves` exists in [`game.ts`](../src/server/routes/game.ts:1) as a thin adapter over the canonical move pipeline (`WebSocketServer.handlePlayerMoveFromHttp` → `GameSession.handlePlayerMoveFromHttp`).
+   - Feature-flagged by `ENABLE_HTTP_MOVE_HARNESS` with `HTTP_MOVE_HARNESS_TIMEOUT_MS` protecting long-running requests.
+   - Auth and seat/spectator authorization follow the same invariants as other game routes.
 
 2. **Update k6 `player-moves` scenario**
    - Replace the hard-coded `MOVE_HTTP_ENDPOINT_ENABLED = false` in [`player-moves.js`](../tests/load/scenarios/player-moves.js:86) with an environment-driven toggle (for example, `__ENV.MOVE_HTTP_ENDPOINT_ENABLED`).
@@ -280,9 +281,7 @@ The following tasks are **out of scope** for this document but are expected to b
    - Ensure these tests run (at least) in staging as part of the P-01 performance gate defined in [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:590).
 
 4. **Document harness configuration and runbooks**
-   - Update [`ENVIRONMENT_VARIABLES.md`](./ENVIRONMENT_VARIABLES.md:1) with:
-     - `ENABLE_HTTP_MOVE_HARNESS` and any related flags.
-     - Recommended defaults per environment.
+   - Keep [`ENVIRONMENT_VARIABLES.md`](./ENVIRONMENT_VARIABLES.md:1) and [`API_REFERENCE.md`](./API_REFERENCE.md:1) aligned with the harness flags (`ENABLE_HTTP_MOVE_HARNESS`, `HTTP_MOVE_HARNESS_TIMEOUT_MS`).
    - Add runbook entries (for example, under `docs/runbooks/`) describing:
      - How to safely enable the harness for a specific load test.
      - How to verify that it is disabled again afterwards.

@@ -485,7 +485,7 @@ This model is used to:
 On the backend, `WebSocketServer` drives this state machine in three places:
 
 - `handleJoinGame` – calls `markConnected` whenever a player joins or successfully reconnects, and emits `player_joined` or `player_reconnected` to the room.
-- `handleDisconnect` – calls `markDisconnectedPendingReconnect` with the configured reconnection window (`RECONNECTION_TIMEOUT_MS`) and schedules `handleReconnectionTimeout`.
+- `handleDisconnect` – calls `markDisconnectedPendingReconnect` with the configured reconnection window (`WS_RECONNECTION_TIMEOUT_MS`) and schedules `handleReconnectionTimeout`.
 - `handleReconnectionTimeout` – calls `markDisconnectedExpired` and asks the interaction handler to `cancelAllChoicesForPlayer` so stale decisions cannot block the game.
 
 The concrete connect → disconnect → reconnect behaviour is exercised by:
