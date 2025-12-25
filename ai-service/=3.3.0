@@ -1,6 +1,0 @@
-Collecting cma
-  Downloading cma-4.4.0-py3-none-any.whl.metadata (8.7 kB)
-Requirement already satisfied: numpy in /Users/armand/.pyenv/versions/3.10.13/lib/python3.10/site-packages (from cma) (2.2.1)
-Downloading cma-4.4.0-py3-none-any.whl (303 kB)
-Installing collected packages: cma
-Successfully installed cma-4.4.0
