@@ -82,6 +82,8 @@ class LeafRequest:
     simulation_idx: int
     game_state: GameState
     is_opponent_perspective: bool
+    is_terminal: bool = False
+    terminal_value: float = 0.0  # Value from perspective of current player at root
 
 
 @dataclass
@@ -391,10 +393,28 @@ class MultiGameGumbelRunner:
             logger.warning(f"Failed to apply move: {e}")
             return None
 
-        # Check if terminal
+        # Check if terminal - compute value directly without NN
         if child_state.is_game_over():
-            # Handle terminal directly - no NN needed
-            return None  # TODO: Handle terminal values differently
+            winner = child_state.winner
+            if winner is None:
+                # Draw
+                terminal_value = 0.0
+            elif winner == game.current_player:
+                # Current player (at root) wins
+                terminal_value = 1.0
+            else:
+                # Current player loses
+                terminal_value = -1.0
+
+            return LeafRequest(
+                game_idx=game.game_idx,
+                action_idx=action_idx,
+                simulation_idx=simulation_idx,
+                game_state=immutable,
+                is_opponent_perspective=False,  # N/A for terminal
+                is_terminal=True,
+                terminal_value=terminal_value,
+            )
 
         return LeafRequest(
             game_idx=game.game_idx,
@@ -407,28 +427,47 @@ class MultiGameGumbelRunner:
         )
 
     def _batch_evaluate_leaves(self, leaves: list[LeafRequest]) -> list[float]:
-        """Evaluate all leaves in a single batch."""
-        if not leaves or not self.neural_net:
-            return [0.0] * len(leaves)
+        """Evaluate all leaves in a single batch.
 
-        self.total_nn_calls += 1
-        self.total_leaves_evaluated += len(leaves)
+        Terminal leaves use their precomputed terminal_value directly.
+        Non-terminal leaves are sent to the neural network for evaluation.
+        """
+        if not leaves:
+            return []
 
-        states = [leaf.game_state for leaf in leaves]
-
-        try:
-            values, _ = self.neural_net.evaluate_batch(states)
-        except Exception as e:
-            logger.warning(f"Batch eval failed: {e}")
-            return [0.0] * len(leaves)
-
-        # Apply perspective flipping
-        result = []
+        # Separate terminal and non-terminal leaves
+        non_terminal_indices = []
+        non_terminal_leaves = []
         for i, leaf in enumerate(leaves):
-            v = float(values[i]) if i < len(values) else 0.0
-            if leaf.is_opponent_perspective:
-                v = -v
-            result.append(v)
+            if not leaf.is_terminal:
+                non_terminal_indices.append(i)
+                non_terminal_leaves.append(leaf)
+
+        # Initialize result with terminal values
+        result = [0.0] * len(leaves)
+        for i, leaf in enumerate(leaves):
+            if leaf.is_terminal:
+                result[i] = leaf.terminal_value
+
+        # Evaluate non-terminal leaves with NN
+        if non_terminal_leaves and self.neural_net:
+            self.total_nn_calls += 1
+            self.total_leaves_evaluated += len(non_terminal_leaves)
+
+            states = [leaf.game_state for leaf in non_terminal_leaves]
+
+            try:
+                values, _ = self.neural_net.evaluate_batch(states)
+            except Exception as e:
+                logger.warning(f"Batch eval failed: {e}")
+                values = [0.0] * len(non_terminal_leaves)
+
+            # Apply perspective flipping and store results
+            for idx, (orig_idx, leaf) in enumerate(zip(non_terminal_indices, non_terminal_leaves)):
+                v = float(values[idx]) if idx < len(values) else 0.0
+                if leaf.is_opponent_perspective:
+                    v = -v
+                result[orig_idx] = v
 
         return result
 

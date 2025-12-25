@@ -1,5 +1,9 @@
 """Unit tests for GMO v2 AI (Enhanced Gradient Move Optimization).
 
+.. deprecated:: December 2025
+    GMO v2 is deprecated. These tests are skipped.
+    For GNN-based AI tests, see: tests/unit/ai/test_gnn_ai.py
+
 Tests cover:
 - GMOv2Config configuration
 - AttentionStateEncoder network
@@ -12,6 +16,11 @@ Tests cover:
 
 import pytest
 import torch
+
+# Skip entire module - GMO v2 is deprecated
+pytestmark = pytest.mark.skip(
+    reason="GMO v2 is deprecated. See tests/unit/ai/test_gnn_ai.py for GNN AI tests."
+)
 
 from app.ai.gmo_v2 import (
     AttentionStateEncoder,

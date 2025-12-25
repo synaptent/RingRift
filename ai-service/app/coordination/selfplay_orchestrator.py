@@ -749,6 +749,100 @@ class SelfplayOrchestrator:
 # Singleton and convenience functions
 # =============================================================================
 
+# =============================================================================
+# Engine Selection for Large Boards (December 2025)
+# =============================================================================
+
+# Default large boards - these use Gumbel MCTS for quality selfplay
+_DEFAULT_LARGE_BOARDS: set[str] = {"square19", "hexagonal", "full_hex", "fullhex"}
+
+# Default engine override for large boards
+_DEFAULT_LARGE_BOARD_ENGINE = "gumbel_mcts"
+
+# Default simulation budget for large boards
+_DEFAULT_LARGE_BOARD_BUDGET = 64  # THROUGHPUT tier
+
+
+def _load_large_board_config() -> dict:
+    """Load large board configuration from unified_loop.yaml."""
+    try:
+        import yaml
+        from pathlib import Path
+
+        config_path = Path(__file__).parents[2] / "config" / "unified_loop.yaml"
+        if config_path.exists():
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            return config.get("selfplay", {}).get("large_board_config", {})
+    except Exception as e:
+        logger.debug(f"[SelfplayOrchestrator] Could not load large board config: {e}")
+    return {}
+
+
+def is_large_board(board_type: str) -> bool:
+    """Check if a board type is classified as 'large'.
+
+    Large boards require specialized engine selection (Gumbel MCTS) for
+    quality selfplay due to their size (sq19=361 cells, hexagonal=469 cells).
+
+    Args:
+        board_type: Board type string (e.g., "square19", "hexagonal", "full hex")
+
+    Returns:
+        True if board is classified as large
+    """
+    # Normalize board type to canonical form (handles "full hex" -> "hexagonal")
+    try:
+        from app.utils.canonical_naming import normalize_board_type
+        canonical = normalize_board_type(board_type)
+    except Exception:
+        canonical = board_type.lower()
+
+    config = _load_large_board_config()
+    large_boards = set(config.get("large_boards", _DEFAULT_LARGE_BOARDS))
+    return canonical in large_boards
+
+
+def get_engine_for_board(board_type: str, num_players: int = 2) -> str:
+    """Get the recommended selfplay engine for a board configuration.
+
+    For large boards (sq19, hexagonal, full hex), returns Gumbel MCTS which
+    provides the best quality training data at acceptable speed.
+
+    For small boards, returns empty string to use the default weighted selection
+    from ai_type_weights config.
+
+    Args:
+        board_type: Board type string (e.g., "square19", "full hex")
+        num_players: Number of players
+
+    Returns:
+        Engine name string (e.g., "gumbel_mcts") or empty string for default
+    """
+    if is_large_board(board_type):
+        config = _load_large_board_config()
+        return config.get("engine_override", _DEFAULT_LARGE_BOARD_ENGINE)
+    return ""  # Use default weighted selection
+
+
+def get_simulation_budget_for_board(board_type: str) -> int:
+    """Get the Gumbel MCTS simulation budget for a board type.
+
+    Large boards use THROUGHPUT tier (64 sims) by default for 5-10 games/sec.
+    Small boards use the standard budget from gpu_mcts config.
+
+    Args:
+        board_type: Board type string (e.g., "square19", "full hex")
+
+    Returns:
+        Simulation budget (number of MCTS simulations per move)
+    """
+    if is_large_board(board_type):
+        config = _load_large_board_config()
+        return config.get("simulation_budget", _DEFAULT_LARGE_BOARD_BUDGET)
+    return _DEFAULT_LARGE_BOARD_BUDGET
+
+
 _selfplay_orchestrator: SelfplayOrchestrator | None = None
 
 
@@ -849,7 +943,10 @@ __all__ = [
     "SelfplayTaskInfo",
     "SelfplayType",
     "emit_selfplay_completion",
+    "get_engine_for_board",
     "get_selfplay_orchestrator",
     "get_selfplay_stats",
+    "get_simulation_budget_for_board",
+    "is_large_board",
     "wire_selfplay_events",
 ]

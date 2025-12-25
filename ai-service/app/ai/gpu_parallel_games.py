@@ -860,17 +860,21 @@ class ParallelGameRunner:
             board_size = self.board_size
             num_positions = board_size * board_size
 
-            current_player = self.state.current_player[game_idx].item()
+            # Pre-extract to numpy to avoid per-cell .item() syncs (Dec 2025 optimization)
+            current_player = int(self.state.current_player[game_idx].cpu().numpy())
             if current_player < 1:
                 current_player = 1
+            stack_owner_np = self.state.stack_owner[game_idx].cpu().numpy()
+            stack_height_np = self.state.stack_height[game_idx].cpu().numpy()
+            territory_owner_np = self.state.territory_owner[game_idx].cpu().numpy()
 
             # Extract stack ownership for each player (simplified)
             # Planes 0-3: Ring presence, 4-7: Stack presence, 8-11: Territory
             for y in range(board_size):
                 for x in range(board_size):
                     pos_idx = y * board_size + x
-                    owner = self.state.stack_owner[game_idx, y, x].item()
-                    height = self.state.stack_height[game_idx, y, x].item()
+                    owner = int(stack_owner_np[y, x])
+                    height = int(stack_height_np[y, x])
 
                     if owner > 0 and height > 0:
                         # Rotate perspective so current player is always plane 0
@@ -886,7 +890,7 @@ class ParallelGameRunner:
                             features[stack_plane] = min(float(height) / 5.0, 1.0)
 
                     # Territory
-                    territory_owner = self.state.territory_owner[game_idx, y, x].item()
+                    territory_owner = int(territory_owner_np[y, x])
                     if territory_owner > 0:
                         plane_offset = ((territory_owner - current_player) % self.num_players)
                         territory_plane = (8 + plane_offset) * num_positions + pos_idx
@@ -1045,9 +1049,11 @@ class ParallelGameRunner:
                 # Find games where move_count has advanced past last_snapshot + interval
                 need_snapshot = (current_moves >= last_snapshot_move + snapshot_interval) & active_mask
                 if need_snapshot.any():
+                    # Pre-extract to numpy to avoid per-game .item() syncs (Dec 2025 optimization)
+                    current_moves_np = current_moves.cpu().numpy()
                     for g in need_snapshot.nonzero(as_tuple=True)[0].tolist():
                         try:
-                            move_num = current_moves[g].item()
+                            move_num = int(current_moves_np[g])
                             game_state = self.state.to_game_state(g)
                             snapshot_callback(g, move_num, game_state)
                             last_snapshot_move[g] = move_num
@@ -1360,16 +1366,23 @@ class ParallelGameRunner:
 
         Note: For better performance, use _check_real_actions_batch() which
         batches move generation across multiple games.
+
+        Optimized Dec 2025: Pre-extract to numpy to minimize .item() calls.
         """
+        # Pre-extract to numpy (Dec 2025 optimization)
+        rings_in_hand_np = self.state.rings_in_hand[g].cpu().numpy()
+        stack_owner_np = self.state.stack_owner[g].cpu().numpy()
+        current_player_np = int(self.state.current_player[g].cpu().numpy())
+
         # Placement: treat any remaining rings in hand as a real action.
-        if self.state.rings_in_hand[g, player].item() > 0:
+        if rings_in_hand_np[player] > 0:
             return True
 
         # Without controlled stacks, there is no movement/capture.
-        if not (self.state.stack_owner[g] == player).any().item():
+        if not (stack_owner_np == player).any():
             return False
 
-        prev_player = int(self.state.current_player[g].item())
+        prev_player = current_player_np
         self.state.current_player[g] = player
         try:
             single_mask = torch.zeros(
@@ -1378,10 +1391,10 @@ class ParallelGameRunner:
             single_mask[g] = True
             movement_moves = generate_movement_moves_batch(self.state, single_mask)
             capture_moves = generate_capture_moves_batch(self.state, single_mask)
-            return bool(
-                (movement_moves.moves_per_game[g].item() > 0)
-                or (capture_moves.moves_per_game[g].item() > 0)
-            )
+            # Pre-extract move counts (Dec 2025 optimization)
+            movement_count = int(movement_moves.moves_per_game[g].cpu().numpy())
+            capture_count = int(capture_moves.moves_per_game[g].cpu().numpy())
+            return movement_count > 0 or capture_count > 0
         finally:
             self.state.current_player[g] = prev_player
 
@@ -2865,19 +2878,25 @@ class ParallelGameRunner:
 
         Returns:
             True if player has any rings anywhere, False if permanently eliminated
+
+        Optimized Dec 2025: Pre-extract to numpy to minimize .item() calls.
         """
+        # Pre-extract to numpy (Dec 2025 optimization)
+        rings_in_hand_np = self.state.rings_in_hand[g].cpu().numpy()
+        stack_owner_np = self.state.stack_owner[g].cpu().numpy()
+        buried_rings_np = self.state.buried_rings[g].cpu().numpy()
+
         # Check rings in hand
-        if self.state.rings_in_hand[g, player].item() > 0:
+        if rings_in_hand_np[player] > 0:
             return True
 
         # Check controlled stacks (rings in stacks we control)
-        has_controlled_stacks = (self.state.stack_owner[g] == player).any().item()
-        if has_controlled_stacks:
+        if (stack_owner_np == player).any():
             return True
 
         # Check buried rings (rings in opponent-controlled stacks)
         # buried_rings uses 1-indexed players (shape is batch_size x num_players+1)
-        return self.state.buried_rings[g, player].item() > 0
+        return buried_rings_np[player] > 0
 
     def _apply_single_capture(self, g: int, move_idx: int, moves: BatchMoves) -> None:
         """Apply a single capture move for game g at global index move_idx.

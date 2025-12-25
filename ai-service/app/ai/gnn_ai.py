@@ -52,6 +52,20 @@ except ImportError:
     logger.warning("PyTorch Geometric not installed - GNN AI unavailable")
 
 
+def _load_checkpoint(model_path: str | Path, device: str):
+    """Load a torch checkpoint with PyTorch 2.6+ weights_only fallback."""
+    try:
+        return torch.load(model_path, map_location=device)
+    except Exception as exc:
+        if "Weights only load failed" in str(exc):
+            try:
+                return torch.load(model_path, map_location=device, weights_only=False)
+            except TypeError:
+                # Older torch without weights_only argument.
+                return torch.load(model_path, map_location=device)
+        raise
+
+
 class GNNAI(BaseAI):
     """Graph Neural Network AI player.
 
@@ -94,7 +108,11 @@ class GNNAI(BaseAI):
         """Load trained GNN model."""
         from app.ai.neural_net.gnn_policy import GNNPolicyNet
 
-        ckpt = torch.load(model_path, map_location=self.device)
+        if not HAS_PYG:
+            logger.warning("PyTorch Geometric not installed; skipping GNN model load")
+            return
+
+        ckpt = _load_checkpoint(model_path, self.device)
 
         self.model = GNNPolicyNet(
             node_feature_dim=32,

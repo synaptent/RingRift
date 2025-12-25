@@ -78,7 +78,7 @@ class HybridAI(BaseAI):
 
     def load_model(self, model_path: str | Path):
         """Load trained hybrid model."""
-        from app.ai.neural_net.hybrid_cnn_gnn import HybridPolicyNet
+        from app.ai.neural_net.hybrid_cnn_gnn import HybridPolicyNet, HAS_PYG as HAS_HYBRID_PYG
 
         ckpt = torch.load(model_path, map_location=self.device, weights_only=False)
 
@@ -114,7 +114,7 @@ class HybridAI(BaseAI):
             num_players=ckpt.get("num_players", 2),
             is_hex=ckpt.get("is_hex", True),
         )
-        self.model.load_state_dict(ckpt["model_state_dict"])
+        self.model.load_state_dict(ckpt["model_state_dict"], strict=HAS_HYBRID_PYG)
         self.model.to(self.device)
         self.model.eval()
 

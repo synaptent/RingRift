@@ -627,8 +627,43 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check for container orchestration"""
-    return {"status": "healthy"}
+    """Health check with component status for container orchestration.
+
+    Returns 200 if healthy, 503 if degraded/unhealthy.
+    """
+    from fastapi.responses import JSONResponse
+    from app.distributed.health_registry import health_endpoint_handler
+
+    result = health_endpoint_handler()
+    status_code = 200 if result["status"] == "healthy" else 503
+    return JSONResponse(content=result, status_code=status_code)
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Kubernetes readiness probe - is service ready to handle requests?
+
+    Returns 200 if ready, 503 if not ready.
+    """
+    from fastapi.responses import JSONResponse
+    from app.distributed.health_registry import readiness_check as check_ready
+
+    is_ready = check_ready()
+    return JSONResponse(
+        content={"ready": is_ready},
+        status_code=200 if is_ready else 503,
+    )
+
+
+@app.get("/live")
+async def liveness_check():
+    """Kubernetes liveness probe - is process alive?
+
+    Always returns 200 if the process is running.
+    """
+    from app.distributed.health_registry import liveness_check as check_live
+
+    return {"live": check_live()}
 
 
 @app.get("/metrics")

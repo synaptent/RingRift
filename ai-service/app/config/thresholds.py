@@ -725,7 +725,7 @@ MIN_INTENSITY_MULTIPLIER = 0.5
 # Consolidated from app/monitoring/thresholds.py
 
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 class AlertLevel(str, Enum):
@@ -825,7 +825,7 @@ THRESHOLDS = MONITORING_THRESHOLDS
 def get_threshold(
     category: str,
     key: str,
-    default: Any | None = None,
+    default: Optional[Any] = None,
 ) -> Any:
     """Get a specific monitoring threshold value.
 

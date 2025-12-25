@@ -556,6 +556,11 @@ def detect_lines_kernel(
     # Only check 4 directions (N, NE, E, SE) to avoid duplicates
     check_dirs = [0, 1, 2, 3]
 
+    # Pre-extract to numpy to avoid per-element .item() syncs (Dec 2025 optimization)
+    marker_owner_np = marker_owner.cpu().numpy()
+    dir_y_np = dir_y.cpu().numpy()
+    dir_x_np = dir_x.cpu().numpy()
+
     all_game_idx = []
     all_player = []
     all_start_y = []
@@ -564,13 +569,13 @@ def detect_lines_kernel(
     for g in range(batch_size):
         for y in range(board_size):
             for x in range(board_size):
-                owner = marker_owner[g, y, x].item()
+                owner = int(marker_owner_np[g, y, x])
                 if owner == 0:
                     continue
 
                 for d in check_dirs:
-                    dy = dir_y[d].item()
-                    dx = dir_x[d].item()
+                    dy = int(dir_y_np[d])
+                    dx = int(dir_x_np[d])
 
                     # Count consecutive markers
                     length = 1
@@ -579,7 +584,7 @@ def detect_lines_kernel(
                         nx = x + dx * dist
                         if not (0 <= ny < board_size and 0 <= nx < board_size):
                             break
-                        if marker_owner[g, ny, nx].item() != owner:
+                        if marker_owner_np[g, ny, nx] != owner:
                             break
                         length += 1
 
@@ -648,8 +653,14 @@ def check_victory_conditions_kernel(
 
     # Check last standing victory
     # Count players with any rings (controlled, in hand, or buried)
+    # Pre-extract to numpy to avoid per-element .item() syncs (Dec 2025 optimization)
+    winner_np = winner.cpu().numpy()
+    rings_in_hand_np = rings_in_hand.cpu().numpy()
+    buried_rings_np = buried_rings.cpu().numpy()
+    stack_owner_np = stack_owner.cpu().numpy()
+
     for g in range(batch_size):
-        if winner[g] != 0:
+        if winner_np[g] != 0:
             continue
 
         players_with_rings = 0
@@ -657,9 +668,9 @@ def check_victory_conditions_kernel(
 
         for player in range(1, num_players + 1):
             # Check if player has any rings anywhere
-            has_controlled = (stack_owner[g] == player).any().item()
-            has_in_hand = rings_in_hand[g, player].item() > 0
-            has_buried = buried_rings[g, player].item() > 0
+            has_controlled = (stack_owner_np[g] == player).any()
+            has_in_hand = rings_in_hand_np[g, player] > 0
+            has_buried = buried_rings_np[g, player] > 0
 
             if has_controlled or has_in_hand or has_buried:
                 players_with_rings += 1
@@ -698,11 +709,17 @@ def apply_placement_batch(
     stack_height = stack_height.clone()
     rings_in_hand = rings_in_hand.clone()
 
-    for i in range(game_idx.shape[0]):
-        g = game_idx[i].item()
-        y = to_y[i].item()
-        x = to_x[i].item()
-        player = current_player[g].item()
+    # Pre-extract to numpy to avoid per-element .item() syncs (Dec 2025 optimization)
+    game_idx_np = game_idx.cpu().numpy()
+    to_y_np = to_y.cpu().numpy()
+    to_x_np = to_x.cpu().numpy()
+    current_player_np = current_player.cpu().numpy()
+
+    for i in range(len(game_idx_np)):
+        g = int(game_idx_np[i])
+        y = int(to_y_np[i])
+        x = int(to_x_np[i])
+        player = int(current_player_np[g])
 
         # Place ring
         stack_owner[g, y, x] = player
@@ -730,16 +747,25 @@ def apply_movement_batch(
     stack_owner = stack_owner.clone()
     stack_height = stack_height.clone()
 
-    for i in range(game_idx.shape[0]):
-        g = game_idx[i].item()
-        fy = from_y[i].item()
-        fx = from_x[i].item()
-        ty = to_y[i].item()
-        tx = to_x[i].item()
-        player = current_player[g].item()
+    # Pre-extract to numpy to avoid per-element .item() syncs (Dec 2025 optimization)
+    game_idx_np = game_idx.cpu().numpy()
+    from_y_np = from_y.cpu().numpy()
+    from_x_np = from_x.cpu().numpy()
+    to_y_np = to_y.cpu().numpy()
+    to_x_np = to_x.cpu().numpy()
+    current_player_np = current_player.cpu().numpy()
+    stack_height_np = stack_height.cpu().numpy()
+
+    for i in range(len(game_idx_np)):
+        g = int(game_idx_np[i])
+        fy = int(from_y_np[i])
+        fx = int(from_x_np[i])
+        ty = int(to_y_np[i])
+        tx = int(to_x_np[i])
+        player = int(current_player_np[g])
 
         # Move stack
-        moving_height = stack_height[g, fy, fx].item()
+        moving_height = int(stack_height_np[g, fy, fx])
         stack_owner[g, fy, fx] = 0
         stack_height[g, fy, fx] = 0
         stack_owner[g, ty, tx] = player
@@ -772,17 +798,27 @@ def apply_capture_batch(
     eliminated_rings = eliminated_rings.clone()
     buried_rings = buried_rings.clone()
 
-    for i in range(game_idx.shape[0]):
-        g = game_idx[i].item()
-        fy = from_y[i].item()
-        fx = from_x[i].item()
-        ty = to_y[i].item()
-        tx = to_x[i].item()
-        player = current_player[g].item()
+    # Pre-extract to numpy to avoid per-element .item() syncs (Dec 2025 optimization)
+    game_idx_np = game_idx.cpu().numpy()
+    from_y_np = from_y.cpu().numpy()
+    from_x_np = from_x.cpu().numpy()
+    to_y_np = to_y.cpu().numpy()
+    to_x_np = to_x.cpu().numpy()
+    current_player_np = current_player.cpu().numpy()
+    stack_height_np = stack_height.cpu().numpy()
+    stack_owner_np = stack_owner.cpu().numpy()
 
-        attacker_height = stack_height[g, fy, fx].item()
-        defender = stack_owner[g, ty, tx].item()
-        defender_height = stack_height[g, ty, tx].item()
+    for i in range(len(game_idx_np)):
+        g = int(game_idx_np[i])
+        fy = int(from_y_np[i])
+        fx = int(from_x_np[i])
+        ty = int(to_y_np[i])
+        tx = int(to_x_np[i])
+        player = int(current_player_np[g])
+
+        attacker_height = int(stack_height_np[g, fy, fx])
+        defender = int(stack_owner_np[g, ty, tx])
+        defender_height = int(stack_height_np[g, ty, tx])
 
         # Clear source
         stack_owner[g, fy, fx] = 0

@@ -1235,7 +1235,7 @@ class MutableGameState:
             else:
                 # No stacks - end turn
                 self._end_turn_for_search()
-        elif move.type == MoveType.MOVE_STACK:
+        elif move.type in (MoveType.MOVE_STACK, MoveType.MOVE_RING):
             # After movement, check for lines or end turn
             # Simplified: end turn (line detection would need BoardManager)
             self._end_turn_for_search()
@@ -1247,6 +1247,10 @@ class MutableGameState:
             # After capture, could continue capture chain or end turn
             # Simplified: end turn
             self._end_turn_for_search()
+        elif move.type == MoveType.SKIP_CAPTURE:
+            # Player declined capture opportunity - proceed to line processing
+            # Simplified: end turn (line detection would need BoardManager)
+            self._end_turn_for_search()
         elif move.type in (
             MoveType.PROCESS_LINE,
             MoveType.CHOOSE_LINE_REWARD,
@@ -1255,12 +1259,22 @@ class MutableGameState:
         ):
             # After line processing, could go to territory or end turn
             self._end_turn_for_search()
+        elif move.type == MoveType.NO_LINE_ACTION:
+            # No line to process - transition to territory or end turn
+            # Per RR-CANON: NO_LINE_ACTION indicates line phase complete
+            self._end_turn_for_search()
         elif move.type in (
             MoveType.PROCESS_TERRITORY_REGION,
             MoveType.TERRITORY_CLAIM,
             MoveType.CHOOSE_TERRITORY_OPTION,
         ):
             # After territory processing, end turn
+            self._end_turn_for_search()
+        elif move.type in (
+            MoveType.SKIP_TERRITORY_PROCESSING,
+            MoveType.NO_TERRITORY_ACTION,
+        ):
+            # Territory phase skipped or no action available - end turn
             self._end_turn_for_search()
         elif move.type == MoveType.ELIMINATE_RINGS_FROM_STACK:
             # After explicit elimination, end turn

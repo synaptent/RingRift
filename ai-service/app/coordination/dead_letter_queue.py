@@ -568,3 +568,151 @@ async def run_retry_daemon(
             logger.error(f"[DLQ] Retry cycle error: {e}")
 
         await asyncio.sleep(interval_seconds)
+
+
+class DLQRetryDaemon:
+    """DLQ retry daemon with proper lifecycle management.
+
+    Features:
+    - Periodic retry of failed events with exponential backoff
+    - Automatic abandonment after max_attempts
+    - Metrics for monitoring
+    - Integration with DaemonManager
+
+    Usage:
+        daemon = DLQRetryDaemon()
+        await daemon.start()
+        ...
+        await daemon.stop()
+    """
+
+    def __init__(
+        self,
+        dlq: DeadLetterQueue | None = None,
+        interval_seconds: float = 60.0,
+        max_events_per_cycle: int = 10,
+        max_attempts: int = 5,
+    ):
+        self.dlq = dlq or get_dead_letter_queue()
+        self.interval = interval_seconds
+        self.max_events = max_events_per_cycle
+        self.max_attempts = max_attempts
+        self._running = False
+        self._task: asyncio.Task | None = None
+        self._metrics = {
+            "cycles": 0,
+            "total_recovered": 0,
+            "total_failed": 0,
+            "total_abandoned": 0,
+        }
+
+    async def start(self) -> None:
+        """Start the retry daemon."""
+        if self._running:
+            return
+
+        self._running = True
+        self._task = asyncio.create_task(self._run_loop())
+        logger.info(
+            f"[DLQRetryDaemon] Started (interval={self.interval}s, "
+            f"max_attempts={self.max_attempts})"
+        )
+
+    async def stop(self) -> None:
+        """Stop the retry daemon."""
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("[DLQRetryDaemon] Stopped")
+
+    async def _run_loop(self) -> None:
+        """Main retry loop."""
+        while self._running:
+            try:
+                await self._process_cycle()
+            except Exception as e:
+                logger.error(f"[DLQRetryDaemon] Cycle error: {e}")
+
+            await asyncio.sleep(self.interval)
+
+    async def _process_cycle(self) -> None:
+        """Process one retry cycle."""
+        self._metrics["cycles"] += 1
+
+        # First, abandon events that have exceeded max_attempts
+        abandoned = self._abandon_exhausted_events()
+        if abandoned > 0:
+            self._metrics["total_abandoned"] += abandoned
+            logger.info(f"[DLQRetryDaemon] Abandoned {abandoned} exhausted events")
+
+        # Then retry pending events
+        stats = await self.dlq.retry_failed_events(max_events=self.max_events)
+
+        self._metrics["total_recovered"] += stats["recovered"]
+        self._metrics["total_failed"] += stats["failed"]
+
+        if stats["recovered"] or stats["failed"]:
+            logger.info(
+                f"[DLQRetryDaemon] Cycle {self._metrics['cycles']}: "
+                f"{stats['recovered']} recovered, {stats['failed']} failed, "
+                f"{stats['skipped']} skipped"
+            )
+
+    def _abandon_exhausted_events(self) -> int:
+        """Mark events with max_attempts as abandoned.
+
+        Returns:
+            Number of events abandoned
+        """
+        with sqlite3.connect(self.dlq.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE dead_letter
+                SET status = 'abandoned'
+                WHERE status = 'pending' AND retry_count >= ?
+                """,
+                (self.max_attempts,),
+            )
+            abandoned = cursor.rowcount
+            conn.commit()
+        return abandoned
+
+    def get_metrics(self) -> dict:
+        """Get daemon metrics.
+
+        Returns:
+            Dictionary with daemon statistics
+        """
+        dlq_stats = self.dlq.get_stats()
+        return {
+            **self._metrics,
+            "dlq": dlq_stats,
+            "running": self._running,
+        }
+
+
+# Daemon factory for DaemonManager integration
+def create_dlq_retry_daemon(
+    interval_seconds: float = 60.0,
+    max_events_per_cycle: int = 10,
+    max_attempts: int = 5,
+) -> DLQRetryDaemon:
+    """Create a DLQ retry daemon instance.
+
+    Args:
+        interval_seconds: Time between retry cycles
+        max_events_per_cycle: Max events to retry per cycle
+        max_attempts: Max retry attempts before abandoning
+
+    Returns:
+        DLQRetryDaemon instance
+    """
+    return DLQRetryDaemon(
+        interval_seconds=interval_seconds,
+        max_events_per_cycle=max_events_per_cycle,
+        max_attempts=max_attempts,
+    )

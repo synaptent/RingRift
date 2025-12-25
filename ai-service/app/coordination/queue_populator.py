@@ -30,6 +30,11 @@ class BoardType(str, Enum):
     HEXAGONAL = "hexagonal"
 
 
+# Large boards require specialized engine selection (Gumbel MCTS)
+# These have many more cells (361-469) and benefit from quality over quantity
+LARGE_BOARDS = frozenset({"square19", "hexagonal", "fullhex", "full_hex"})
+
+
 @dataclass
 class ConfigTarget:
     """Target for a specific board/player configuration."""
@@ -382,8 +387,17 @@ class QueuePopulator:
         best_model = target.best_model_id if target else None
         model_elo = target.current_best_elo if target else 1500.0
 
-        # Only use NN-guided selfplay if we have a decent model (1600+ Elo)
-        engine_mode = "nnue-guided" if model_elo >= 1600 and best_model else "gpu_heuristic"
+        # Engine selection:
+        # - Large boards (sq19, hexagonal): ALWAYS use gumbel_mcts for quality
+        # - Small boards with good model (1600+ Elo): use nnue-guided
+        # - Small boards without good model: use gpu_heuristic
+        if board_type in LARGE_BOARDS:
+            # Large boards need quality selfplay - Gumbel MCTS is 100% parity verified
+            engine_mode = "gumbel"
+        elif model_elo >= 1600 and best_model:
+            engine_mode = "nnue-guided"
+        else:
+            engine_mode = "gpu_heuristic"
 
         config = {
             "board_type": board_type,

@@ -273,6 +273,17 @@ class TaskInfo:
     pid: int = 0
     status: str = "running"
     metadata: dict[str, Any] = field(default_factory=dict)
+    timeout_seconds: float = 3600.0  # Default 1 hour max runtime
+
+    def is_timed_out(self) -> bool:
+        """Check if task has exceeded its timeout."""
+        if self.status in ("completed", "failed", "cancelled", "orphaned"):
+            return False
+        return time.time() - self.started_at > self.timeout_seconds
+
+    def runtime_seconds(self) -> float:
+        """Get task runtime in seconds."""
+        return time.time() - self.started_at
 
 
 class CoordinatorState(Enum):
@@ -628,6 +639,7 @@ class TaskRegistry:
 
     def _row_to_task(self, row) -> TaskInfo:
         """Convert database row to TaskInfo."""
+        metadata = json.loads(row['metadata_json'] or '{}')
         return TaskInfo(
             task_id=row['task_id'],
             task_type=TaskType(row['task_type']),
@@ -635,7 +647,8 @@ class TaskRegistry:
             started_at=row['started_at'],
             pid=row['pid'],
             status=row['status'],
-            metadata=json.loads(row['metadata_json'] or '{}')
+            metadata=metadata,
+            timeout_seconds=metadata.get('timeout_seconds', 3600.0),
         )
 
     def update_heartbeat(self, task_id: str) -> None:
@@ -670,13 +683,31 @@ class TaskRegistry:
         """, (cutoff, cutoff))
         return [self._row_to_task(row) for row in cursor.fetchall()]
 
+    def get_timed_out_tasks(self) -> list[TaskInfo]:
+        """Get tasks that have exceeded their timeout.
+
+        Returns:
+            List of timed-out TaskInfo objects
+        """
+        cursor = self.conn.execute("""
+            SELECT * FROM tasks
+            WHERE status = 'running'
+        """)
+        tasks = [self._row_to_task(row) for row in cursor.fetchall()]
+        return [t for t in tasks if t.is_timed_out()]
+
 
 # ============================================
 # Task Heartbeat Monitor (December 2025)
 # ============================================
 
 class TaskHeartbeatMonitor:
-    """Monitors tasks for heartbeat timeouts and emits orphan events.
+    """Monitors tasks for heartbeat timeouts and task duration timeouts.
+
+    Features:
+    - Detects orphaned tasks (no heartbeat within timeout)
+    - Detects timed-out tasks (exceeded their maximum runtime)
+    - Emits events for monitoring/alerting
 
     Usage:
         monitor = TaskHeartbeatMonitor(registry, timeout=300)
@@ -725,6 +756,7 @@ class TaskHeartbeatMonitor:
         while self._running:
             try:
                 self.check_for_orphans()
+                self.check_for_timeouts()
             except Exception as e:
                 logger.warning(f"[HeartbeatMonitor] Check failed: {e}")
             time.sleep(self.check_interval)
@@ -758,6 +790,40 @@ class TaskHeartbeatMonitor:
                     pass  # No event loop
 
         return orphans
+
+    def check_for_timeouts(self) -> list[TaskInfo]:
+        """Check for tasks that have exceeded their timeout and cancel them.
+
+        Tasks are marked as 'timed_out' and a TASK_TIMEOUT event is emitted.
+        """
+        timed_out = self.registry.get_timed_out_tasks()
+
+        for task in timed_out:
+            runtime = task.runtime_seconds()
+            logger.warning(
+                f"[HeartbeatMonitor] Task timed out: {task.task_id} "
+                f"(type={task.task_type.value}, runtime={runtime:.0f}s, "
+                f"timeout={task.timeout_seconds}s)"
+            )
+
+            # Mark as timed out
+            self.registry.update_task_status(task.task_id, "timed_out")
+
+            # Emit event (using orphaned event for now, could add dedicated event)
+            if self._emit_orphaned is not None:
+                try:
+                    import asyncio
+                    asyncio.get_event_loop().create_task(self._emit_orphaned(
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        node_id=task.node_id,
+                        last_heartbeat_seconds_ago=0,  # N/A for timeout
+                        source="timeout_monitor",
+                    ))
+                except RuntimeError:
+                    pass  # No event loop
+
+        return timed_out
 
 
 # ============================================

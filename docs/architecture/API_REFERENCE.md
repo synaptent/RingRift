@@ -89,6 +89,54 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 > exercised by `tests/unit/gameHistory.routes.test.ts` alongside the core
 > WebSocket lifecycle suites.
 
+### Sandbox Helpers (`/api/games`)
+
+> Sandbox helper endpoints are intended for local/dev tooling (the client sandbox
+> host and diagnostics panels). They are unauthenticated but gated by environment
+> flags or dev/test mode. See `ENABLE_SANDBOX_AI_ENDPOINTS` in
+> [`ENVIRONMENT_VARIABLES.md`](../operations/ENVIRONMENT_VARIABLES.md).
+
+| Method | Endpoint                          | Description                                    | Auth Required |
+| ------ | --------------------------------- | ---------------------------------------------- | ------------- |
+| POST   | `/games/sandbox/evaluate`         | Evaluate a serialized sandbox state (dev/test) | ❌            |
+| POST   | `/games/sandbox/ai/move`          | Get AI move for a sandbox state                | ❌            |
+| GET    | `/games/sandbox/ai/ladder/health` | Inspect AI ladder availability for sandbox     | ❌            |
+
+### Self-Play (`/api/selfplay`)
+
+| Method | Endpoint                        | Description                                          | Auth Required |
+| ------ | ------------------------------- | ---------------------------------------------------- | ------------- |
+| GET    | `/selfplay/databases`           | List available self-play databases                   | ❌            |
+| GET    | `/selfplay/games`               | List games in a DB (requires `db` query param)       | ❌            |
+| GET    | `/selfplay/games/:gameId`       | Fetch full game replay (requires `db` query param)   | ❌            |
+| GET    | `/selfplay/games/:gameId/state` | Reconstruct state at a move (requires `db` + `move`) | ❌            |
+| GET    | `/selfplay/stats`               | Aggregate stats for a DB (requires `db` query param) | ❌            |
+
+### Telemetry (`/api/telemetry`)
+
+| Method | Endpoint                            | Description                                | Auth Required |
+| ------ | ----------------------------------- | ------------------------------------------ | ------------- |
+| POST   | `/telemetry/rules-ux`               | Record rules UX telemetry event            | ❌            |
+| POST   | `/telemetry/difficulty-calibration` | Record AI difficulty calibration telemetry | ❌            |
+
+> Payloads are defined in `src/shared/telemetry/rulesUxEvents.ts` and
+> `src/shared/telemetry/difficultyCalibrationEvents.ts`, with UX context
+> guidance in `../ux/UX_RULES_TELEMETRY_SPEC.md`.
+
+### Admin (`/api/admin`)
+
+| Method | Endpoint                     | Description                         | Auth Required |
+| ------ | ---------------------------- | ----------------------------------- | ------------- |
+| GET    | `/admin/orchestrator/status` | Orchestrator rollout/circuit status | ✅ (admin)    |
+
+### Internal (`/api/internal`)
+
+| Method | Endpoint                  | Description                      | Auth Required |
+| ------ | ------------------------- | -------------------------------- | ------------- |
+| GET    | `/internal/health/live`   | Internal liveness probe          | ❌            |
+| GET    | `/internal/health/ready`  | Internal readiness probe         | ❌            |
+| POST   | `/internal/alert-webhook` | Alertmanager webhook (dev/local) | ❌            |
+
 ### Utility Endpoints
 
 | Method | Endpoint         | Description                         | Auth Required |
@@ -98,7 +146,19 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 
 ### Internal / Test harness APIs
 
-> An internal HTTP move harness endpoint (`POST /api/games/:gameId/moves`) **may be enabled** in certain environments (for example, local, CI, dedicated loadtest, or tightly scoped staging) to support load testing and internal tools. It is a thin adapter over the same shared domain `applyMove` API used by WebSocket move handlers, is typically gated by the environment flag ENABLE_HTTP_MOVE_HARNESS (see [`ENVIRONMENT_VARIABLES.md`](../operations/ENVIRONMENT_VARIABLES.md) for details), and is **not** a general public HTTP move API for interactive clients. See [`PLAYER_MOVE_TRANSPORT_DECISION.md`](./PLAYER_MOVE_TRANSPORT_DECISION.md) for the canonical scope and constraints.
+| Method | Endpoint                         | Description                                   | Auth Required |
+| ------ | -------------------------------- | --------------------------------------------- | ------------- |
+| POST   | `/games/:gameId/moves`           | Internal HTTP move harness (feature-flagged)  | ✅            |
+| POST   | `/games/fixtures/decision-phase` | Create decision-phase fixture game (dev/test) | ✅            |
+
+> The HTTP move harness endpoint (`POST /api/games/:gameId/moves`) **may be enabled**
+> in certain environments (for example, local, CI, dedicated loadtest, or tightly
+> scoped staging) to support load testing and internal tools. It is a thin adapter
+> over the same shared domain `applyMove` API used by WebSocket move handlers, is
+> gated by `ENABLE_HTTP_MOVE_HARNESS` (see [`ENVIRONMENT_VARIABLES.md`](../operations/ENVIRONMENT_VARIABLES.md)
+> for details), and is **not** a general public HTTP move API for interactive clients.
+> See [`PLAYER_MOVE_TRANSPORT_DECISION.md`](./PLAYER_MOVE_TRANSPORT_DECISION.md) for
+> the canonical scope and constraints.
 
 ---
 

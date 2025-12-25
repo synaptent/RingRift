@@ -476,3 +476,132 @@ def readiness_check() -> bool:
     """
     summary = get_health_summary()
     return summary.healthy
+
+
+# =============================================================================
+# Default Health Checks (registered at module load)
+# =============================================================================
+
+@register_health_check("memory")
+def check_memory() -> HealthStatus:
+    """Check system memory usage."""
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        pct = mem.percent
+
+        if pct >= 95:
+            return HealthStatus.error(
+                f"Memory critically high: {pct:.1f}%",
+                percent=pct,
+                available_mb=mem.available / (1024 * 1024),
+            )
+        elif pct >= 85:
+            return HealthStatus.warning(
+                f"Memory high: {pct:.1f}%",
+                percent=pct,
+                available_mb=mem.available / (1024 * 1024),
+            )
+        return HealthStatus.ok(
+            f"Memory OK: {pct:.1f}%",
+            percent=pct,
+            available_mb=mem.available / (1024 * 1024),
+        )
+    except ImportError:
+        return HealthStatus.unknown("psutil not installed")
+    except Exception as e:
+        return HealthStatus.error(f"Memory check failed: {e}")
+
+
+@register_health_check("disk")
+def check_disk() -> HealthStatus:
+    """Check disk usage for data directory."""
+    try:
+        import psutil
+        from app.utils.paths import DATA_DIR
+
+        disk = psutil.disk_usage(str(DATA_DIR))
+        pct = disk.percent
+
+        if pct >= 95:
+            return HealthStatus.error(
+                f"Disk critically full: {pct:.1f}%",
+                percent=pct,
+                free_gb=disk.free / (1024 ** 3),
+                path=str(DATA_DIR),
+            )
+        elif pct >= 85:
+            return HealthStatus.warning(
+                f"Disk usage high: {pct:.1f}%",
+                percent=pct,
+                free_gb=disk.free / (1024 ** 3),
+                path=str(DATA_DIR),
+            )
+        return HealthStatus.ok(
+            f"Disk OK: {pct:.1f}%",
+            percent=pct,
+            free_gb=disk.free / (1024 ** 3),
+            path=str(DATA_DIR),
+        )
+    except ImportError:
+        return HealthStatus.unknown("psutil not installed")
+    except Exception as e:
+        return HealthStatus.error(f"Disk check failed: {e}")
+
+
+@register_health_check("database")
+def check_database() -> HealthStatus:
+    """Check SQLite database connectivity."""
+    try:
+        import sqlite3
+        from app.utils.paths import DATA_DIR
+
+        # Try to connect to the main games database
+        games_dir = DATA_DIR / "games"
+        if not games_dir.exists():
+            return HealthStatus.warning("No games directory found", path=str(games_dir))
+
+        db_files = list(games_dir.glob("*.db"))
+        if not db_files:
+            return HealthStatus.ok("No databases to check", db_count=0)
+
+        # Quick connectivity test - find first valid SQLite database
+        valid_count = 0
+        invalid_files = []
+        test_db = None
+
+        for db_file in db_files[:5]:  # Only check first 5 to keep it fast
+            try:
+                conn = sqlite3.connect(str(db_file), timeout=2)
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+                conn.close()
+                valid_count += 1
+                if test_db is None:
+                    test_db = db_file
+            except sqlite3.DatabaseError:
+                invalid_files.append(db_file.name)
+
+        if valid_count == 0:
+            return HealthStatus.warning(
+                "No valid SQLite databases found",
+                db_count=len(db_files),
+                invalid_files=invalid_files[:3],
+            )
+
+        if invalid_files:
+            return HealthStatus.warning(
+                f"Database OK but {len(invalid_files)} invalid files",
+                valid_count=valid_count,
+                total_count=len(db_files),
+                invalid_files=invalid_files[:3],
+            )
+
+        return HealthStatus.ok(
+            f"Database OK ({len(db_files)} DBs found)",
+            db_count=len(db_files),
+            test_db=test_db.name if test_db else None,
+        )
+    except Exception as e:
+        return HealthStatus.error(f"Database check failed: {e}")

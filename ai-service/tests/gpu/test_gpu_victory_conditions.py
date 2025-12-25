@@ -206,7 +206,7 @@ class TestVictoryTypeDerivation:
         state.rings_caused_eliminated[0, 1] = threshold
 
         victory_type, _details = state.derive_victory_type(0, max_moves=500)
-        assert victory_type == "elimination"
+        assert victory_type == "ring_elimination"
 
     def test_derive_stalemate_at_max_moves(self, device):
         """Correctly identifies stalemate when max moves reached with a winner."""

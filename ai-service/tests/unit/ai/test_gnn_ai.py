@@ -7,11 +7,20 @@ These tests verify:
 4. Difficulty tier integration works correctly
 """
 
-import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+import torch
 
 from app.models import AIConfig
 from app.ai.base import BaseAI
+from app.ai.canonical_move_encoding import encode_move_for_board
+from app.ai.neural_net.constants import get_policy_size_for_board
+from app.game_engine import GameEngine
+from app.models import BoardType
+from app.training.initial_state import create_initial_state
 
 
 class TestGNNAIInheritance:
@@ -158,6 +167,87 @@ class TestGNNAIFunctionality:
         ai = GNNAI(player_number=1, config=config, temperature=0.5)
 
         assert ai.temperature == 0.5
+
+
+class _FakeGNNModel:
+    """Minimal GNN policy stub that prefers a specific action index."""
+
+    def __init__(self, action_space_size: int, preferred_idx: int):
+        self._action_space_size = action_space_size
+        self._preferred_idx = preferred_idx
+
+    def __call__(self, **_: object):
+        logits = torch.full((1, self._action_space_size), -1e9, dtype=torch.float32)
+        logits[0, self._preferred_idx] = 0.0
+        value = torch.zeros((1, 4), dtype=torch.float32)
+        return logits, value
+
+
+class TestGNNAIPolicySelection:
+    """Tests for GNNAI policy selection with canonical encoding."""
+
+    def test_gnnai_selects_highest_logit_move_square8(self, monkeypatch):
+        from app.ai.gnn_ai import GNNAI
+
+        state = create_initial_state(board_type=BoardType.SQUARE8, num_players=2)
+        legal_moves = GameEngine.get_valid_moves(state, 1)
+        assert legal_moves, "Expected legal moves in initial state."
+
+        preferred_move = legal_moves[0]
+        preferred_idx = encode_move_for_board(preferred_move, state)
+        assert preferred_idx >= 0
+
+        action_space_size = get_policy_size_for_board(BoardType.SQUARE8)
+
+        ai = GNNAI(player_number=1, config=AIConfig(difficulty=8), model_path=None)
+        ai.action_space_size = action_space_size
+        ai.model = _FakeGNNModel(action_space_size, preferred_idx)
+
+        dummy_graph = SimpleNamespace(
+            x=torch.zeros((1, 32), dtype=torch.float32),
+            edge_index=torch.zeros((2, 1), dtype=torch.long),
+        )
+        monkeypatch.setattr(ai, "_state_to_graph", lambda _: dummy_graph)
+
+        np.random.seed(0)
+
+        selected = ai.select_move(state)
+        assert selected == preferred_move
+
+    def test_gnnai_selects_highest_logit_move_hex8(self, monkeypatch):
+        from app.ai.gnn_ai import GNNAI
+
+        state = create_initial_state(board_type=BoardType.HEX8, num_players=2)
+        legal_moves = GameEngine.get_valid_moves(state, 1)
+        assert legal_moves, "Expected legal moves in initial state."
+
+        preferred_move = None
+        preferred_idx = -1
+        for move in legal_moves:
+            idx = encode_move_for_board(move, state)
+            if idx >= 0:
+                preferred_move = move
+                preferred_idx = idx
+                break
+
+        assert preferred_move is not None
+
+        action_space_size = get_policy_size_for_board(BoardType.HEX8)
+
+        ai = GNNAI(player_number=1, config=AIConfig(difficulty=8), model_path=None)
+        ai.action_space_size = action_space_size
+        ai.model = _FakeGNNModel(action_space_size, preferred_idx)
+
+        dummy_graph = SimpleNamespace(
+            x=torch.zeros((1, 32), dtype=torch.float32),
+            edge_index=torch.zeros((2, 1), dtype=torch.long),
+        )
+        monkeypatch.setattr(ai, "_state_to_graph", lambda _: dummy_graph)
+
+        np.random.seed(0)
+
+        selected = ai.select_move(state)
+        assert selected == preferred_move
 
 
 class TestHybridAIFunctionality:

@@ -1,5 +1,21 @@
 """Incremental NPZ export system for efficient training data generation.
 
+.. deprecated::
+    This module is deprecated since December 2025.
+    Use `app.training.export_cache.ExportCache` instead for simpler
+    file-level caching. This module will be removed in Q2 2026.
+
+    Migration:
+        # Old (incremental_export):
+        exporter = IncrementalExporter("square8", 2)
+        new_games = exporter.get_unexported_game_ids(all_game_ids)
+
+        # New (export_cache):
+        cache = ExportCache()
+        if cache.needs_export(db_paths, output_path, board_type, num_players):
+            # Perform export
+            pass
+
 This module provides incremental export functionality that:
 1. Tracks which game_ids have already been exported (SQLite-backed)
 2. Only processes new games since last export
@@ -17,6 +33,15 @@ Usage:
     # ... process only new_games ...
     exporter.mark_exported(new_game_ids)
 """
+import warnings
+
+warnings.warn(
+    "app.training.incremental_export is deprecated since December 2025. "
+    "Use app.training.export_cache.ExportCache instead for simpler file-level caching. "
+    "This module will be removed in Q2 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from __future__ import annotations
 

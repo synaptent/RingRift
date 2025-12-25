@@ -36,12 +36,57 @@ This document provides a high-level overview of the RingRift AI Service architec
 
 FastAPI endpoints serving AI move requests and game evaluation:
 
-| Endpoint            | Purpose                    |
-| ------------------- | -------------------------- |
-| `POST /ai/move`     | Get AI move for game state |
-| `POST /ai/evaluate` | Evaluate position          |
-| `GET /health`       | Service health check       |
-| `GET /metrics`      | Prometheus metrics         |
+Core gameplay endpoints:
+
+| Endpoint                     | Purpose                             |
+| ---------------------------- | ----------------------------------- |
+| `POST /ai/move`              | Get AI move for game state          |
+| `POST /ai/moves_batch`       | Batch move generation               |
+| `POST /ai/evaluate`          | Evaluate position (all players)     |
+| `POST /ai/evaluate_position` | Evaluate a single position          |
+| `POST /rules/evaluate_move`  | Rules parity/shadow move evaluation |
+
+Choice endpoints (decision-phase helpers):
+
+| Endpoint                             | Purpose                          |
+| ------------------------------------ | -------------------------------- |
+| `POST /ai/choice/line_reward_option` | Choose line reward option        |
+| `POST /ai/choice/line_order`         | Choose line processing order     |
+| `POST /ai/choice/region_order`       | Choose territory region order    |
+| `POST /ai/choice/ring_elimination`   | Choose ring elimination target   |
+| `POST /ai/choice/capture_direction`  | Choose capture landing direction |
+
+Replay + sandbox endpoints:
+
+| Endpoint                                  | Purpose                     |
+| ----------------------------------------- | --------------------------- |
+| `GET /api/replay/games`                   | List games in replay DB     |
+| `GET /api/replay/games/{game_id}`         | Fetch replay metadata       |
+| `GET /api/replay/games/{game_id}/state`   | Reconstruct state at a move |
+| `GET /api/replay/games/{game_id}/moves`   | Fetch move list             |
+| `GET /api/replay/games/{game_id}/choices` | Fetch choice history        |
+| `POST /api/replay/games`                  | Store sandbox game          |
+| `GET /api/replay/stats`                   | Replay DB stats             |
+
+Diagnostics + admin endpoints:
+
+| Endpoint                             | Purpose                                            |
+| ------------------------------------ | -------------------------------------------------- |
+| `GET /health`                        | Service health check                               |
+| `GET /ready`                         | Readiness probe                                    |
+| `GET /live`                          | Liveness probe                                     |
+| `GET /metrics`                       | Prometheus metrics                                 |
+| `GET /internal/ladder/health`        | Ladder config + artifact availability              |
+| `GET /ai/models`                     | Loaded model versions                              |
+| `GET /ai/cache/stats`                | AI instance cache stats                            |
+| `DELETE /ai/cache`                   | Clear AI cache (requires X-Admin-Key)              |
+| `GET /admin/health/coordinators`     | Coordinator health (requires X-Admin-Key)          |
+| `GET /admin/health/full`             | Full pipeline health (requires X-Admin-Key)        |
+| `GET /admin/sync/status`             | Data sync status (requires X-Admin-Key)            |
+| `POST /admin/sync/trigger`           | Trigger data sync (requires X-Admin-Key)           |
+| `POST /admin/sync/data-server/start` | Start data server (requires X-Admin-Key)           |
+| `POST /admin/sync/data-server/stop`  | Stop data server (requires X-Admin-Key)            |
+| `GET /admin/velocity`                | Training velocity dashboard (requires X-Admin-Key) |
 
 ### 2. AI Engine (`app/ai/`)
 

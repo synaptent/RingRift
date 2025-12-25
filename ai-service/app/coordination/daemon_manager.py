@@ -64,10 +64,12 @@ class DaemonType(Enum):
     HEALTH_CHECK = "health_check"
     CLUSTER_MONITOR = "cluster_monitor"
     QUEUE_MONITOR = "queue_monitor"
+    NODE_HEALTH_MONITOR = "node_health_monitor"
 
     # Event processing
     EVENT_ROUTER = "event_router"
     CROSS_PROCESS_POLLER = "cross_process_poller"
+    DLQ_RETRY = "dlq_retry"
 
     # Pipeline daemons
     DATA_PIPELINE = "data_pipeline"

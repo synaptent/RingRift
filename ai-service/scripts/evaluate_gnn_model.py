@@ -44,6 +44,19 @@ def _resolve_board_type(value: str | BoardType | None) -> BoardType:
     return BoardType.HEX8
 
 
+def _load_checkpoint(path: str):
+    """Load a torch checkpoint with PyTorch 2.6+ weights_only fallback."""
+    try:
+        return torch.load(path, map_location="cpu")
+    except Exception as exc:
+        if "Weights only load failed" in str(exc):
+            try:
+                return torch.load(path, map_location="cpu", weights_only=False)
+            except TypeError:
+                return torch.load(path, map_location="cpu")
+        raise
+
+
 def _build_gnn_ai(model_path: str, player_number: int, device: str) -> GNNAI:
     """Instantiate a GNNAI player with the given checkpoint."""
     return GNNAI(
@@ -94,6 +107,7 @@ def evaluate_against_baseline(
     num_games: int = 20,
     board_type: BoardType = BoardType.HEXAGONAL,
     device: str = "cpu",
+    max_moves: int = 300,
 ):
     """Evaluate GNN model against a baseline."""
 
@@ -115,7 +129,7 @@ def evaluate_against_baseline(
         else:
             opponent = HeuristicAI(player_number=2, config=AIConfig(difficulty=3))
 
-        winner, moves = play_game(gnn_p1, opponent, f"gnn_p1_{i}", board_type)
+        winner, moves = play_game(gnn_p1, opponent, f"gnn_p1_{i}", board_type, max_moves=max_moves)
         if winner == 1:
             wins_as_p1 += 1
 
@@ -127,7 +141,7 @@ def evaluate_against_baseline(
         else:
             opponent = HeuristicAI(player_number=1, config=AIConfig(difficulty=3))
 
-        winner, moves = play_game(opponent, gnn_p2, f"gnn_p2_{i}", board_type)
+        winner, moves = play_game(opponent, gnn_p2, f"gnn_p2_{i}", board_type, max_moves=max_moves)
         if winner == 2:
             wins_as_p2 += 1
 
@@ -152,6 +166,7 @@ def main():
     parser.add_argument("--model", default="models/gnn_hex8_2p/gnn_policy_best.pt")
     parser.add_argument("--games", type=int, default=20)
     parser.add_argument("--baselines", default="random,heuristic")
+    parser.add_argument("--max-moves", type=int, default=200)
     args = parser.parse_args()
 
     if not HAS_PYG:
@@ -168,7 +183,7 @@ def main():
     print()
 
     # Load model info
-    ckpt = torch.load(args.model, map_location="cpu")
+    ckpt = _load_checkpoint(args.model)
     print(f"GNN Validation Accuracy: {ckpt['val_acc']*100:.2f}%")
     print(f"Architecture: {ckpt['conv_type'].upper()}, {ckpt['num_layers']} layers")
     print()
@@ -183,6 +198,7 @@ def main():
             args.games,
             board_type,
             device="cpu",
+            max_moves=args.max_moves,
         )
         results.append(result)
 

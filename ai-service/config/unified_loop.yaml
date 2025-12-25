@@ -567,6 +567,70 @@ selfplay:
     heuristic: 0.03 # 3% - Baseline comparison
     nnue_guided: 0.02 # 2% - NNUE evaluation
 
+  # Large board configuration (sq19=361 cells, hexagonal=469 cells)
+  # These boards require specialized engine selection for quality selfplay
+  large_board_config:
+    # Boards classified as "large" - use Gumbel MCTS exclusively
+    large_boards:
+      - square19
+      - hexagonal
+      - full_hex
+      - fullhex
+
+    # Engine override for large boards (Gumbel MCTS is best for quality+speed)
+    engine_override: gumbel_mcts
+
+    # Simulation budget tiers for Gumbel MCTS
+    # THROUGHPUT (64) for fast generation, QUALITY (800) for tournaments
+    simulation_budget: 64 # THROUGHPUT tier: 5-10 games/sec
+
+    # AI type weights override for large boards (100% Gumbel)
+    ai_type_weights:
+      gumbel_mcts: 1.00 # 100% Gumbel for best quality on large boards
+
+    # Lower training threshold for large boards (fewer games needed initially)
+    min_games_for_training: 200
+
+    # Prioritize data-starved large board configs
+    priority: HIGH
+
+  # Board-specific priority overrides (0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW)
+  # Used by orchestrators to prioritize selfplay/training for data-starved configs
+  # Updated: Dec 2025 based on model coverage assessment
+  board_priority_overrides:
+    # CRITICAL: No models, critically low data (10-112 games)
+    hexagonal_2p: 0
+    hexagonal_3p: 0
+    hexagonal_4p: 0
+    # HIGH: No models, low data (16-126 games)
+    square19_3p: 1
+    square19_4p: 1
+    # MEDIUM: Has model, needs more data
+    square8_3p: 2
+    square19_2p: 2
+    # LOW: Has model, adequate data
+    square8_2p: 3
+    square8_4p: 3
+    hex8_2p: 3
+    hex8_3p: 3
+    hex8_4p: 3
+
+  # Minimum games required before training can start (per config)
+  # Aligned with board_priority_overrides
+  min_games_by_config:
+    hexagonal_2p: 200
+    hexagonal_3p: 200
+    hexagonal_4p: 200
+    square19_2p: 200
+    square19_3p: 200
+    square19_4p: 200
+    hex8_2p: 300
+    hex8_3p: 300
+    hex8_4p: 300
+    square8_2p: 500
+    square8_3p: 300
+    square8_4p: 500
+
   # GPU MCTS selfplay settings (app/training/gpu_mcts_selfplay.py)
   # Produces high-quality soft policy targets from visit distributions
   gpu_mcts:

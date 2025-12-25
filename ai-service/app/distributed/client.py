@@ -55,6 +55,8 @@ BOARD_MEMORY_REQUIREMENTS: dict[str, int] = {
     "square19": 48,    # 48GB minimum for 19x19 games
     "hexagonal": 48,   # 48GB minimum for hex games
     "hex": 48,         # Alias for hexagonal
+    "full_hex": 48,    # Alias for hexagonal (469 cells)
+    "hex24": 48,       # Alias for hexagonal (radius 12, diameter 24)
 }
 
 
