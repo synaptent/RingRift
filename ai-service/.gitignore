@@ -5,6 +5,12 @@ scripts/*.plist
 
 # Host configuration with private IPs and credentials (use .example files as templates)
 config/distributed_hosts.yaml
+config/.tailscale-authkey
+config/.cloudflare*
+config/cluster_env.sh
+config/*_token*
+config/*_secret*
+config/*_key*
 config/remote_hosts.yaml
 config/orchestrator_hosts.yaml
 config/orchestrator_hosts.sh
