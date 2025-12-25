@@ -96,6 +96,63 @@ class BandwidthConfig:
         TransferPriority.CRITICAL: 2.0,
     })
 
+    # Adaptive bandwidth settings (Phase 8: December 2025)
+    enable_adaptive: bool = True
+    host_bandwidth_hints: dict[str, int] = field(default_factory=dict)  # host -> KB/s
+
+
+def load_host_bandwidth_hints() -> dict[str, int]:
+    """Load per-host bandwidth hints from distributed_hosts.yaml.
+
+    Returns:
+        Dictionary mapping host names to bandwidth limits in KB/s
+    """
+    from pathlib import Path
+    import yaml
+
+    hints: dict[str, int] = {}
+
+    config_paths = [
+        Path(__file__).resolve().parent.parent.parent / "config" / "distributed_hosts.yaml",
+        Path.home() / ".ringrift" / "distributed_hosts.yaml",
+    ]
+
+    for config_path in config_paths:
+        if not config_path.exists():
+            continue
+
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+
+            hosts = config.get("hosts", {})
+            for host_name, host_config in hosts.items():
+                # Look for bandwidth_mbps in host config
+                if "bandwidth_mbps" in host_config:
+                    hints[host_name] = host_config["bandwidth_mbps"] * 1000  # Convert to KB/s
+                # Fallback: infer from provider type
+                elif host_config.get("ssh_host", "").startswith("100."):
+                    # Tailscale internal = high bandwidth
+                    hints[host_name] = 100000  # 100 MB/s
+                elif "lambda" in host_name.lower():
+                    # Lambda nodes have fast internal network
+                    hints[host_name] = 100000  # 100 MB/s
+                elif "vast" in host_name.lower():
+                    # Vast.ai varies, use moderate default
+                    hints[host_name] = 50000  # 50 MB/s
+                elif "hetzner" in host_name.lower():
+                    # Hetzner has good network
+                    hints[host_name] = 80000  # 80 MB/s
+
+            if hints:
+                logger.debug(f"Loaded bandwidth hints for {len(hints)} hosts")
+                break
+
+        except Exception as e:
+            logger.debug(f"Failed to load bandwidth hints from {config_path}: {e}")
+
+    return hints
+
 
 class BandwidthManager:
     """Manages bandwidth allocations across sync operations."""
@@ -107,6 +164,14 @@ class BandwidthManager:
         self._allocations: dict[str, BandwidthAllocation] = {}
         self._host_usage: dict[str, int] = {}  # host -> current KB/s
         self._host_transfers: dict[str, int] = {}  # host -> concurrent count
+
+        # Load adaptive bandwidth hints (Phase 8)
+        if self.config.enable_adaptive and not self.config.host_bandwidth_hints:
+            self.config.host_bandwidth_hints = load_host_bandwidth_hints()
+            if self.config.host_bandwidth_hints:
+                logger.info(
+                    f"Adaptive bandwidth enabled: {len(self.config.host_bandwidth_hints)} hosts"
+                )
         self._lock = asyncio.Lock()
         self._allocation_counter = 0
 
@@ -184,13 +249,18 @@ class BandwidthManager:
         self._allocation_counter += 1
         transfer_id = f"transfer_{self._allocation_counter}_{int(time.time())}"
 
-        # Calculate bandwidth limit
-        base_limit = self.config.per_host_limit_kbps
+        # Calculate bandwidth limit - use adaptive hints if available (Phase 8)
+        if self.config.enable_adaptive and host in self.config.host_bandwidth_hints:
+            base_limit = self.config.host_bandwidth_hints[host]
+        else:
+            base_limit = self.config.per_host_limit_kbps
+
         multiplier = self.config.priority_multipliers.get(priority, 1.0)
 
         # Adjust for current host usage
         current_host_usage = self._host_usage.get(host, 0)
-        available = self.config.per_host_limit_kbps - current_host_usage
+        host_max = self.config.host_bandwidth_hints.get(host, self.config.per_host_limit_kbps)
+        available = host_max - current_host_usage
 
         # Apply priority multiplier but cap at available
         bwlimit = int(min(base_limit * multiplier, available, self.config.max_bwlimit_kbps))

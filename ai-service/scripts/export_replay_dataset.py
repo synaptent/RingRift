@@ -355,6 +355,7 @@ def export_replay_dataset_multi(
     phases_list: list[str] = []
     victory_types_list: list[str] = []  # For victory-type-balanced sampling
     engine_modes_list: list[str] = []  # For source-based sample weighting (Gumbel 3x weight)
+    move_types_list: list[str] = []  # For chain-aware sample weighting
 
     # Track seen game_ids for deduplication across databases
     seen_game_ids: set = set()
@@ -583,9 +584,11 @@ def export_replay_dataset_multi(
                     if hasattr(state_before.current_phase, "value")
                     else str(state_before.current_phase)
                 )
+                # Extract move type for chain-aware weighting
+                move_type_str = str(getattr(move, "type", "unknown"))
                 game_samples.append((
                     stacked, globals_vec, idx, state_before.current_player,
-                    move_index, phase_str
+                    move_index, phase_str, move_type_str
                 ))
 
             # Skip this game if replay failed
