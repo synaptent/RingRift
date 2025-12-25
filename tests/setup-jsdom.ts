@@ -3,6 +3,29 @@
  * Runs BEFORE test framework is installed
  */
 
+// CRITICAL: Clear rate limit env vars FIRST before any modules are loaded.
+// The .env file and docker-compose.yml set these to 100000 for dev, but tests
+// expect the defaults (~50). Must be done before any module caches the values.
+[
+  'RATE_LIMIT_API_POINTS',
+  'RATE_LIMIT_API_DURATION',
+  'RATE_LIMIT_API_AUTH_POINTS',
+  'RATE_LIMIT_API_AUTH_DURATION',
+  'RATE_LIMIT_AUTH_POINTS',
+  'RATE_LIMIT_AUTH_DURATION',
+  'RATE_LIMIT_AUTH_LOGIN_POINTS',
+  'RATE_LIMIT_AUTH_LOGIN_DURATION',
+  'RATE_LIMIT_AUTH_REGISTER_POINTS',
+  'RATE_LIMIT_GAME_POINTS',
+  'RATE_LIMIT_GAME_MOVES_POINTS',
+  'RATE_LIMIT_WS_POINTS',
+  'RATE_LIMIT_GAME_CREATE_USER_POINTS',
+  'RATE_LIMIT_GAME_CREATE_IP_POINTS',
+  'RATE_LIMIT_WEBSOCKET_POINTS',
+].forEach((key) => {
+  delete process.env[key];
+});
+
 // Silence dotenv v17+ noisy startup logs in Jest runs.
 process.env.DOTENV_CONFIG_QUIET = 'true';
 

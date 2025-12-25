@@ -13,6 +13,19 @@
  * HTTP surface.
  */
 
+// MUST clear env vars BEFORE any imports to prevent docker-compose.yml values
+// from being cached in the rate limiter module
+const RATE_LIMIT_ENV_KEYS = [
+  'RATE_LIMIT_API_POINTS',
+  'RATE_LIMIT_API_DURATION',
+  'RATE_LIMIT_AUTH_LOGIN_POINTS',
+];
+const savedEnv: Record<string, string | undefined> = {};
+RATE_LIMIT_ENV_KEYS.forEach((key) => {
+  savedEnv[key] = process.env[key];
+  delete process.env[key];
+});
+
 import express from 'express';
 import request from 'supertest';
 
@@ -22,6 +35,14 @@ jest.mock('../../../src/server/services/MetricsService', () => ({
     recordRateLimitHit: jest.fn(),
   }),
 }));
+
+afterAll(() => {
+  RATE_LIMIT_ENV_KEYS.forEach((key) => {
+    if (savedEnv[key] !== undefined) {
+      process.env[key] = savedEnv[key];
+    }
+  });
+});
 
 describe('Rate limiter + errorHandler integration', () => {
   let originalBypassEnabled: string | undefined;
@@ -57,6 +78,8 @@ describe('Rate limiter + errorHandler integration', () => {
         require('../../../src/server/middleware/rateLimiter') as typeof import('../../../src/server/middleware/rateLimiter');
     });
 
+    // Clear config cache first to pick up the cleared env vars
+    rateLimiterModule.__testClearConfigCache();
     rateLimiterModule.initializeMemoryRateLimiters();
     rateLimiterModule.__testResetRateLimiters();
   });
@@ -99,6 +122,16 @@ describe('Rate limiter + errorHandler integration', () => {
     const app = createTestApp();
     const config = rateLimiterModule.getRateLimitConfig('api');
     const maxRequests = config?.points ?? 50;
+
+    // Safety check: if env vars weren't properly cleared, the config might have a huge value
+    // from docker-compose.yml (100000). Fail fast rather than timeout.
+    if (maxRequests > 100) {
+      throw new Error(
+        `Unexpected API rate limit config: ${maxRequests}. ` +
+        `Expected ~50. Environment variables may not have been cleared. ` +
+        `Check RATE_LIMIT_API_POINTS env var.`
+      );
+    }
 
     // Exhaust the in-memory quota for this IP.
     for (let i = 0; i < maxRequests; i++) {

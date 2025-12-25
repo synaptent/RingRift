@@ -9,6 +9,29 @@
 // This line can be removed in a future cleanup pass (P20.7-2+).
 process.env.ORCHESTRATOR_ADAPTER_ENABLED = 'true';
 
+// Clear rate limit env vars from .env/docker-compose.yml to ensure tests use defaults.
+// The dev environment sets these to 100000 which causes tests to timeout.
+const RATE_LIMIT_ENV_KEYS = [
+  'RATE_LIMIT_API_POINTS',
+  'RATE_LIMIT_API_DURATION',
+  'RATE_LIMIT_API_AUTH_POINTS',
+  'RATE_LIMIT_API_AUTH_DURATION',
+  'RATE_LIMIT_AUTH_POINTS',
+  'RATE_LIMIT_AUTH_DURATION',
+  'RATE_LIMIT_AUTH_LOGIN_POINTS',
+  'RATE_LIMIT_AUTH_LOGIN_DURATION',
+  'RATE_LIMIT_AUTH_REGISTER_POINTS',
+  'RATE_LIMIT_GAME_POINTS',
+  'RATE_LIMIT_GAME_MOVES_POINTS',
+  'RATE_LIMIT_WS_POINTS',
+  'RATE_LIMIT_GAME_CREATE_USER_POINTS',
+  'RATE_LIMIT_GAME_CREATE_IP_POINTS',
+  'RATE_LIMIT_WEBSOCKET_POINTS',
+];
+RATE_LIMIT_ENV_KEYS.forEach((key) => {
+  delete process.env[key];
+});
+
 // Import Testing Library jest-dom matchers
 import '@testing-library/jest-dom';
 

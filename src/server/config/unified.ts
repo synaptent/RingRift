@@ -34,7 +34,11 @@ import {
 } from './env';
 
 // Load .env into process.env before we read anything from it.
-dotenv.config();
+// Skip in test mode to prevent .env from overriding test-specific env vars
+// (e.g., rate limit settings are set to 100000 in .env for dev but tests expect defaults).
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config();
+}
 
 // Parse the raw environment with comprehensive Zod schema validation.
 // Uses the centralized schema from config/env.ts for consistency.

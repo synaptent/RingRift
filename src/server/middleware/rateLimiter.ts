@@ -1027,6 +1027,14 @@ export const __testResetRateLimiters = () => {
 };
 
 /**
+ * Utility to clear config cache for testing purposes.
+ * Call this before initializeMemoryRateLimiters() to pick up new env vars.
+ */
+export const __testClearConfigCache = () => {
+  cachedConfigs = null;
+};
+
+/**
  * Get the current rate limit config for a specific limiter.
  * Useful for tests and debugging.
  */
