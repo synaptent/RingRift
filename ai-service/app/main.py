@@ -211,23 +211,60 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Could not install signal handlers: {e}")
 
-    # Start daemon manager (optional - daemons can be started on demand)
-    if HAS_DAEMON_MANAGER and os.environ.get("RINGRIFT_START_DAEMONS", "0") == "1":
+    # Phase 18: Auto-start critical daemons for full automation (December 2025)
+    # EVENT_ROUTER is required for all event-driven daemons
+    # FeedbackLoopController orchestrates the entire SELFPLAY→TRAINING→EVALUATION→PROMOTION chain
+    if HAS_DAEMON_MANAGER:
         try:
             daemon_manager = get_daemon_manager()
-            # Start core daemons only (not all daemons)
-            core_daemons = [
-                DaemonType.HEALTH_CHECK,
-                DaemonType.QUEUE_MONITOR,
-            ]
-            for daemon_type in core_daemons:
+
+            # 18.1: Always start EVENT_ROUTER - required for all event-driven daemons
+            try:
+                await daemon_manager.start(DaemonType.EVENT_ROUTER)
+                logger.info("[Startup] EVENT_ROUTER started")
+            except Exception as e:
+                logger.warning(f"[Startup] Failed to start EVENT_ROUTER: {e}")
+
+            # 18.2: Initialize FeedbackLoopController - orchestrates the full training loop
+            try:
+                from app.coordination.feedback_loop_controller import get_feedback_loop_controller
+                controller = get_feedback_loop_controller()
+                await controller.start()
+                logger.info("[Startup] FeedbackLoopController started")
+            except ImportError:
+                logger.debug("[Startup] FeedbackLoopController not available")
+            except Exception as e:
+                logger.warning(f"[Startup] Failed to start FeedbackLoopController: {e}")
+
+            # 18.3: Auto-start daemon profile based on node role
+            node_role = os.environ.get("RINGRIFT_NODE_ROLE", "")
+            if node_role:
                 try:
-                    await daemon_manager.start(daemon_type)
+                    from app.coordination.daemon_manager import DAEMON_PROFILES
+                    if node_role in DAEMON_PROFILES:
+                        results = await daemon_manager.start_all(DAEMON_PROFILES[node_role])
+                        started = sum(1 for v in results.values() if v)
+                        logger.info(f"[Startup] Started {node_role} profile: {started}/{len(results)} daemons")
+                    else:
+                        logger.warning(f"[Startup] Unknown node role: {node_role}")
                 except Exception as e:
-                    logger.warning(f"Failed to start {daemon_type.value}: {e}")
-            logger.info("Daemon manager started core daemons")
+                    logger.warning(f"[Startup] Failed to start {node_role} profile: {e}")
+
+            # Legacy: Start core daemons if RINGRIFT_START_DAEMONS=1
+            if os.environ.get("RINGRIFT_START_DAEMONS", "0") == "1":
+                core_daemons = [
+                    DaemonType.HEALTH_CHECK,
+                    DaemonType.QUEUE_MONITOR,
+                ]
+                for daemon_type in core_daemons:
+                    try:
+                        await daemon_manager.start(daemon_type)
+                    except Exception as e:
+                        logger.warning(f"Failed to start {daemon_type.value}: {e}")
+                logger.info("Daemon manager started core daemons")
+
         except Exception as e:
-            logger.warning(f"Could not start daemon manager: {e}")
+            logger.warning(f"Could not initialize daemon manager: {e}")
 
     logger.info("RingRift AI Service started")
 

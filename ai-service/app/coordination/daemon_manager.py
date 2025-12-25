@@ -134,6 +134,9 @@ class DaemonType(Enum):
     # Model performance watchdog (December 2025) - monitors model win rates
     MODEL_PERFORMANCE_WATCHDOG = "model_performance_watchdog"
 
+    # Job scheduler (December 2025) - centralized job scheduling with PID-based resource allocation
+    JOB_SCHEDULER = "job_scheduler"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -376,6 +379,13 @@ class DaemonManager:
         self.register_factory(
             DaemonType.CLUSTER_DATA_SYNC,
             self._create_cluster_data_sync,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Job scheduler - centralized job scheduling with PID-based resource allocation
+        self.register_factory(
+            DaemonType.JOB_SCHEDULER,
+            self._create_job_scheduler,
             depends_on=[DaemonType.EVENT_ROUTER],
         )
 
@@ -1596,6 +1606,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.NPZ_DISTRIBUTION,  # Distribute training data after export
         DaemonType.ORPHAN_DETECTION,  # Detect unregistered game databases
         DaemonType.NODE_HEALTH_MONITOR,  # Unified cluster health maintenance
+        DaemonType.UNIFIED_PROMOTION,  # Phase 18.4: Auto-promote models after evaluation
     ],
 
     # Training node profile - runs on GPU nodes
@@ -1608,6 +1619,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.EVALUATION,  # Auto-evaluate after training completes
         DaemonType.QUALITY_MONITOR,  # Monitor local selfplay quality
         DaemonType.ORPHAN_DETECTION,  # Detect local orphaned databases
+        DaemonType.UNIFIED_PROMOTION,  # Phase 18.4: Auto-promote models after evaluation
     ],
 
     # Ephemeral node profile - runs on Vast.ai/spot instances
