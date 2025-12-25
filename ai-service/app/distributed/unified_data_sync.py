@@ -1145,7 +1145,7 @@ class UnifiedDataSyncService:
 
         if HAS_SYNC_LOCK:
             try:
-                sync_lock_acquired = acquire_sync_lock(host.name, "unified-sync", wait=True, wait_timeout=60.0)
+                sync_lock_acquired = acquire_sync_lock(host.name, timeout=60.0)
                 if not sync_lock_acquired:
                     logger.debug(f"{host.name}: could not acquire sync lock")
                     return 0

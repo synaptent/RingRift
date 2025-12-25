@@ -437,7 +437,8 @@ class ClusterMonitor:
                 timeout=self.ssh_timeout,
             )
             return result.returncode == 0
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Connectivity check failed for {host_name}: {e}")
             return False
 
     def _check_training_status(self, host_name: str) -> dict[str, Any]:
@@ -716,8 +717,8 @@ class ClusterMonitor:
             local_db = AI_SERVICE_ROOT / "data" / "games" / "selfplay.db"
             if local_db.exists():
                 return local_db.stat().st_mtime
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to get local db mtime: {e}")
         return 0.0
 
     def print_dashboard(self, status: ClusterStatus | None = None):

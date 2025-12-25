@@ -813,12 +813,20 @@ def _validate_paths_vectorized(
 
     valid = torch.ones(N, dtype=torch.bool, device=device)
 
+    # =========================================================================
+    # Phase 2 Optimization: Batch pre-extraction to numpy for path validation
+    # =========================================================================
+    game_indices_np = game_indices.cpu().numpy()
+    from_positions_np = from_positions.cpu().numpy()
+    to_positions_np = to_positions.cpu().numpy()
+    stack_owner_np = state.stack_owner.cpu().numpy()
+
     # Process in chunks for better memory efficiency
     # For each move, we need to check all intermediate cells along the path
     for i in range(N):
-        g = game_indices[i].item()
-        from_y, from_x = from_positions[i, 0].item(), from_positions[i, 1].item()
-        to_y, to_x = to_positions[i, 0].item(), to_positions[i, 1].item()
+        g = int(game_indices_np[i])
+        from_y, from_x = int(from_positions_np[i, 0]), int(from_positions_np[i, 1])
+        to_y, to_x = int(to_positions_np[i, 0]), int(to_positions_np[i, 1])
 
         dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
         dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
@@ -829,7 +837,7 @@ def _validate_paths_vectorized(
         for step in range(1, dist):  # Exclude destination (dist)
             check_y = from_y + dy * step
             check_x = from_x + dx * step
-            cell_owner = state.stack_owner[g, check_y, check_x].item()
+            cell_owner = stack_owner_np[g, check_y, check_x]
 
             # ANY stack blocks the path (own or opponent)
             if cell_owner != 0:
@@ -893,23 +901,35 @@ def _generate_movement_moves_batch_legacy(
     candidate_to = []
     candidate_player = []
 
+    # =========================================================================
+    # Phase 2 Optimization: Batch pre-extraction to numpy for legacy movement gen
+    # =========================================================================
+    current_player_np = state.current_player.cpu().numpy()
+    must_move_from_y_np = state.must_move_from_y.cpu().numpy()
+    must_move_from_x_np = state.must_move_from_x.cpu().numpy()
+    stack_height_np = state.stack_height.cpu().numpy()
+    is_collapsed_np = state.is_collapsed.cpu().numpy()
+    stack_owner_np = state.stack_owner.cpu().numpy()
+    active_mask_np = active_mask.cpu().numpy()
+
     for g in range(batch_size):
-        if not active_mask[g]:
+        if not active_mask_np[g]:
             continue
 
-        player = state.current_player[g].item()
-        must_y = int(state.must_move_from_y[g].item())
-        must_x = int(state.must_move_from_x[g].item())
+        player = int(current_player_np[g])
+        must_y = int(must_move_from_y_np[g])
+        must_x = int(must_move_from_x_np[g])
 
         my_stacks = (state.stack_owner[g] == player)
         stack_positions = torch.nonzero(my_stacks, as_tuple=False)
+        stack_positions_np = stack_positions.cpu().numpy()
 
-        for pos_idx in range(stack_positions.shape[0]):
-            from_y = stack_positions[pos_idx, 0].item()
-            from_x = stack_positions[pos_idx, 1].item()
+        for pos_idx in range(len(stack_positions_np)):
+            from_y = int(stack_positions_np[pos_idx, 0])
+            from_x = int(stack_positions_np[pos_idx, 1])
             if must_y >= 0 and (from_y != must_y or from_x != must_x):
                 continue
-            stack_height = state.stack_height[g, from_y, from_x].item()
+            stack_height = int(stack_height_np[g, from_y, from_x])
 
             if stack_height <= 0:
                 continue
@@ -922,10 +942,10 @@ def _generate_movement_moves_batch_legacy(
                     if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                         break
 
-                    if state.is_collapsed[g, to_y, to_x].item():
+                    if is_collapsed_np[g, to_y, to_x]:
                         break
 
-                    dest_owner = state.stack_owner[g, to_y, to_x].item()
+                    dest_owner = stack_owner_np[g, to_y, to_x]
                     if dest_owner != 0:
                         break
 
@@ -1333,24 +1353,37 @@ def _generate_capture_moves_batch_legacy(
     all_to_y = []
     all_to_x = []
 
+    # =========================================================================
+    # Phase 2 Optimization: Batch pre-extraction to numpy for legacy capture gen
+    # =========================================================================
+    current_player_np = state.current_player.cpu().numpy()
+    must_move_from_y_np = state.must_move_from_y.cpu().numpy()
+    must_move_from_x_np = state.must_move_from_x.cpu().numpy()
+    stack_height_np = state.stack_height.cpu().numpy()
+    cap_height_np = state.cap_height.cpu().numpy()
+    is_collapsed_np = state.is_collapsed.cpu().numpy()
+    stack_owner_np = state.stack_owner.cpu().numpy()
+    active_mask_np = active_mask.cpu().numpy()
+
     for g in range(batch_size):
-        if not active_mask[g]:
+        if not active_mask_np[g]:
             continue
 
-        player = state.current_player[g].item()
-        must_y = int(state.must_move_from_y[g].item())
-        must_x = int(state.must_move_from_x[g].item())
+        player = int(current_player_np[g])
+        must_y = int(must_move_from_y_np[g])
+        must_x = int(must_move_from_x_np[g])
 
         my_stacks = (state.stack_owner[g] == player)
         stack_positions = torch.nonzero(my_stacks, as_tuple=False)
+        stack_positions_np = stack_positions.cpu().numpy()
 
-        for pos_idx in range(stack_positions.shape[0]):
-            from_y = stack_positions[pos_idx, 0].item()
-            from_x = stack_positions[pos_idx, 1].item()
+        for pos_idx in range(len(stack_positions_np)):
+            from_y = int(stack_positions_np[pos_idx, 0])
+            from_x = int(stack_positions_np[pos_idx, 1])
             if must_y >= 0 and (from_y != must_y or from_x != must_x):
                 continue
-            my_height = state.stack_height[g, from_y, from_x].item()
-            my_cap_height = state.cap_height[g, from_y, from_x].item()
+            my_height = int(stack_height_np[g, from_y, from_x])
+            my_cap_height = int(cap_height_np[g, from_y, from_x])
 
             if my_height <= 0:
                 continue
@@ -1366,12 +1399,12 @@ def _generate_capture_moves_batch_legacy(
                     if not (0 <= check_y < board_size and 0 <= check_x < board_size):
                         break
 
-                    if state.is_collapsed[g, check_y, check_x].item():
+                    if is_collapsed_np[g, check_y, check_x]:
                         break
 
-                    cell_owner = state.stack_owner[g, check_y, check_x].item()
+                    cell_owner = stack_owner_np[g, check_y, check_x]
                     if cell_owner != 0:
-                        target_cap = state.cap_height[g, check_y, check_x].item()
+                        target_cap = int(cap_height_np[g, check_y, check_x])
                         if my_cap_height >= target_cap:
                             target_y = check_y
                             target_dist = step
@@ -1389,24 +1422,24 @@ def _generate_capture_moves_batch_legacy(
                     if not (0 <= landing_y < board_size and 0 <= landing_x < board_size):
                         break
 
-                    if state.is_collapsed[g, landing_y, landing_x].item():
+                    if is_collapsed_np[g, landing_y, landing_x]:
                         break
 
                     path_clear = True
                     for step in range(target_dist + 1, landing_dist):
                         check_y = from_y + dy * step
                         check_x = from_x + dx * step
-                        if state.stack_owner[g, check_y, check_x].item() != 0:
+                        if stack_owner_np[g, check_y, check_x] != 0:
                             path_clear = False
                             break
-                        if state.is_collapsed[g, check_y, check_x].item():
+                        if is_collapsed_np[g, check_y, check_x]:
                             path_clear = False
                             break
 
                     if not path_clear:
                         break
 
-                    landing_owner = state.stack_owner[g, landing_y, landing_x].item()
+                    landing_owner = stack_owner_np[g, landing_y, landing_x]
                     if landing_owner != 0:
                         break
 
