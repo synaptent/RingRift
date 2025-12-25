@@ -374,32 +374,82 @@ class GameWriter:
 
 ### TypeScript Integration (Sandbox Replay)
 
-The sandbox UI can consume replays via a REST API:
+The sandbox UI consumes replays via the `/api/replay/*` REST API. The canonical
+TypeScript shapes live in `src/client/types/replay.ts` and are wrapped by
+`src/client/services/ReplayService.ts`.
 
 ```typescript
-// GET /api/replay/:gameId/metadata
+// GET /api/replay/games?board_type=...&num_players=...&limit=...
+interface GameListResponse {
+  games: GameMetadata[];
+  total: number;
+  hasMore: boolean;
+}
+
+// GET /api/replay/games/{gameId}
 interface GameMetadata {
   gameId: string;
   boardType: BoardType;
   numPlayers: number;
   winner: number | null;
-  terminationReason: string;
+  terminationReason: string | null;
   totalMoves: number;
+  totalTurns: number;
   createdAt: string;
-  players: PlayerMetadata[];
+  completedAt?: string | null;
+  durationMs?: number | null;
+  source?: string | null;
+  timeControlType?: string;
+  initialTimeMs?: number;
+  timeIncrementMs?: number;
+  metadata?: Record<string, unknown>;
+  players?: PlayerMetadata[];
 }
 
-// GET /api/replay/:gameId/state?moveNumber=N&legacy=true
+// GET /api/replay/games/{gameId}/state?move_number=N&legacy=false
 interface ReplayState {
   gameState: GameState;
   moveNumber: number;
-  availableChoices?: Choice[]; // Choices available at this state
+  totalMoves: number;
+  engineEval?: number;
+  enginePV?: string[];
 }
 
-// GET /api/replay/:gameId/moves?start=0&end=100
+// GET /api/replay/games/{gameId}/moves?start=0&end=100&limit=1000
 interface MovesResponse {
-  moves: Move[];
+  moves: MoveRecord[];
   hasMore: boolean;
+}
+
+// GET /api/replay/games/{gameId}/choices?move_number=N
+interface ChoicesResponse {
+  choices: ChoiceRecord[];
+}
+
+// POST /api/replay/games
+interface StoreGameRequest {
+  gameId?: string;
+  initialState: GameState;
+  finalState: GameState;
+  moves: Move[];
+  choices?: ChoiceRecord[];
+  metadata?: Record<string, unknown>;
+}
+
+interface StoreGameResponse {
+  gameId: string;
+  totalMoves: number;
+  success: boolean;
+}
+
+// GET /api/replay/stats
+interface StatsResponse {
+  totalGames: number;
+  gamesByBoardType: Record<string, number>;
+  gamesByStatus: Record<string, number>;
+  gamesByTermination: Record<string, number>;
+  totalMoves: number;
+  schemaVersion: number;
 }
 ```
 

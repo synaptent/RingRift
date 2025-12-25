@@ -482,6 +482,44 @@ Response headers:
 | `RATE_LIMIT_GAME_CREATE_IP_DURATION`       | 600     | Window duration (seconds) |
 | `RATE_LIMIT_GAME_CREATE_IP_BLOCK_DURATION` | 600     | Block duration (seconds)  |
 
+### Specialized Endpoints
+
+| Variable                                    | Default | Description                       |
+| ------------------------------------------- | ------- | --------------------------------- |
+| `RATE_LIMIT_DATA_EXPORT_POINTS`             | 1       | GDPR export requests per window   |
+| `RATE_LIMIT_DATA_EXPORT_DURATION`           | 3600    | GDPR export window (seconds)      |
+| `RATE_LIMIT_DATA_EXPORT_BLOCK_DURATION`     | 3600    | GDPR export block (seconds)       |
+| `RATE_LIMIT_TELEMETRY_POINTS`               | 100     | Telemetry events per window       |
+| `RATE_LIMIT_TELEMETRY_DURATION`             | 60      | Telemetry window (seconds)        |
+| `RATE_LIMIT_TELEMETRY_BLOCK_DURATION`       | 300     | Telemetry block (seconds)         |
+| `RATE_LIMIT_CLIENT_ERRORS_POINTS`           | 20      | Client error reports per window   |
+| `RATE_LIMIT_CLIENT_ERRORS_DURATION`         | 60      | Client error window (seconds)     |
+| `RATE_LIMIT_CLIENT_ERRORS_BLOCK_DURATION`   | 300     | Client error block (seconds)      |
+| `RATE_LIMIT_INTERNAL_HEALTH_POINTS`         | 30      | Internal health probes per window |
+| `RATE_LIMIT_INTERNAL_HEALTH_DURATION`       | 60      | Health probe window (seconds)     |
+| `RATE_LIMIT_INTERNAL_HEALTH_BLOCK_DURATION` | 60      | Health probe block (seconds)      |
+| `RATE_LIMIT_ALERT_WEBHOOK_POINTS`           | 10      | Alert webhook calls per window    |
+| `RATE_LIMIT_ALERT_WEBHOOK_DURATION`         | 60      | Alert webhook window (seconds)    |
+| `RATE_LIMIT_ALERT_WEBHOOK_BLOCK_DURATION`   | 300     | Alert webhook block (seconds)     |
+| `RATE_LIMIT_USER_RATING_POINTS`             | 30      | User rating lookups per window    |
+| `RATE_LIMIT_USER_RATING_DURATION`           | 60      | User rating window (seconds)      |
+| `RATE_LIMIT_USER_RATING_BLOCK_DURATION`     | 120     | User rating block (seconds)       |
+| `RATE_LIMIT_USER_SEARCH_POINTS`             | 20      | User search queries per window    |
+| `RATE_LIMIT_USER_SEARCH_DURATION`           | 60      | User search window (seconds)      |
+| `RATE_LIMIT_USER_SEARCH_BLOCK_DURATION`     | 120     | User search block (seconds)       |
+| `RATE_LIMIT_SANDBOX_AI_POINTS`              | 1000    | Sandbox AI requests per window    |
+| `RATE_LIMIT_SANDBOX_AI_DURATION`            | 60      | Sandbox AI window (seconds)       |
+| `RATE_LIMIT_SANDBOX_AI_BLOCK_DURATION`      | 60      | Sandbox AI block (seconds)        |
+
+### Rate Limit Bypass (staging/dev only)
+
+| Variable                         | Default                            | Description                             |
+| -------------------------------- | ---------------------------------- | --------------------------------------- |
+| `RATE_LIMIT_BYPASS_ENABLED`      | `false`                            | Master switch for bypass                |
+| `RATE_LIMIT_BYPASS_TOKEN`        | None                               | Shared bypass token (min 16 chars)      |
+| `RATE_LIMIT_BYPASS_USER_PATTERN` | `^loadtest[._].+@loadtest\.local$` | Regex for load-test users               |
+| `RATE_LIMIT_BYPASS_IPS`          | None                               | Comma-separated IP allowlist for bypass |
+
 ### Fallback Limiter
 
 | Variable                           | Default | Description            |
@@ -604,6 +642,17 @@ Enable health check endpoints.
 | Required | No       |
 
 Prometheus metrics server port.
+
+### `METRICS_API_KEY`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+When set, requests to `/metrics` must include the key in either the
+`Authorization: Bearer <key>` header or the `X-Metrics-Key` header.
 
 ### `WS_RECONNECTION_TIMEOUT_MS`
 

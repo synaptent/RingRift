@@ -14,11 +14,21 @@ config = get_config()
 
 ## Environment Variable Overrides
 
-| Variable                      | Description                | Default                    |
-| ----------------------------- | -------------------------- | -------------------------- |
-| `RINGRIFT_CONFIG_PATH`        | Override config file path  | `config/unified_loop.yaml` |
-| `RINGRIFT_TRAINING_THRESHOLD` | Training trigger threshold | 500                        |
-| `RINGRIFT_ELO_DB`             | Elo database path          | `data/elo/elo.db`          |
+| Variable                              | Description                                 | Default                     |
+| ------------------------------------- | ------------------------------------------- | --------------------------- |
+| `RINGRIFT_CONFIG_PATH`                | Override config file path                   | `config/unified_loop.yaml`  |
+| `RINGRIFT_TRAINING_THRESHOLD`         | Training trigger threshold                  | 500                         |
+| `RINGRIFT_ELO_DB`                     | Elo database path                           | `data/elo/elo.db`           |
+| `ADMIN_API_KEY`                       | Admin API key (`X-Admin-Key`) for /admin/\* | Generated per boot if unset |
+| `CORS_ORIGINS`                        | Comma-separated CORS allowlist              | `*`                         |
+| `GAME_REPLAY_DB_PATH`                 | Replay DB path for `/api/replay/*`          | `data/games/selfplay.db`    |
+| `RINGRIFT_START_DAEMONS`              | Start daemon manager on boot (`1` = on)     | `0`                         |
+| `RINGRIFT_ENV`                        | Environment label for error sanitization    | `development`               |
+| `RINGRIFT_AI_TIMEOUT`                 | AI operation timeout (seconds)              | `30.0`                      |
+| `RINGRIFT_AI_INSTANCE_CACHE`          | Enable AI instance cache (`1` = on)         | `1`                         |
+| `RINGRIFT_AI_INSTANCE_CACHE_TTL_SEC`  | AI instance cache TTL (seconds)             | `1800`                      |
+| `RINGRIFT_AI_INSTANCE_CACHE_MAX`      | Max cached AI instances                     | `512`                       |
+| `RINGRIFT_TRAINED_HEURISTIC_PROFILES` | Path to trained heuristic profiles JSON     | None                        |
 
 ---
 
