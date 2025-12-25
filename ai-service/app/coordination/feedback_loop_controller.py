@@ -123,6 +123,9 @@ class FeedbackLoopController:
         # Wire all curriculum feedback integrations
         self._wire_curriculum_feedback()
 
+        # Wire exploration boost to active temperature schedulers
+        self._wire_exploration_boost()
+
         logger.info("[FeedbackLoopController] Started feedback loop orchestration")
 
     async def stop(self) -> None:
@@ -194,6 +197,52 @@ class FeedbackLoopController:
             )
         except Exception as e:
             logger.warning(f"[FeedbackLoopController] Failed to wire curriculum feedback: {e}")
+
+    def _wire_exploration_boost(self) -> None:
+        """Wire exploration boost events to active temperature schedulers.
+
+        December 2025: Connects MODEL_PROMOTED and PROMOTION_FAILED events
+        to the temperature scheduler's set_exploration_boost() method.
+
+        When promotion succeeds: exploration boost resets to 1.0
+        When promotion fails: exploration boost increases by 1.2x (up to 2.0)
+
+        This closes the feedback loop: poor performance → more exploration → diverse data
+        """
+        try:
+            from app.training.temperature_scheduling import (
+                get_active_schedulers,
+                wire_exploration_boost,
+            )
+
+            schedulers = get_active_schedulers()
+            if not schedulers:
+                logger.debug(
+                    "[FeedbackLoopController] No active schedulers to wire "
+                    "(normal if no selfplay running)"
+                )
+                return
+
+            wired_count = 0
+            for config_key, scheduler in schedulers.items():
+                if wire_exploration_boost(scheduler, config_key):
+                    wired_count += 1
+                    logger.info(
+                        f"[FeedbackLoopController] Wired exploration boost for {config_key}"
+                    )
+
+            if wired_count > 0:
+                logger.info(
+                    f"[FeedbackLoopController] Wired exploration boost to "
+                    f"{wired_count} scheduler(s)"
+                )
+
+        except ImportError:
+            logger.debug(
+                "[FeedbackLoopController] Temperature scheduling not available"
+            )
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Could not wire exploration boost: {e}")
 
     # =========================================================================
     # Event Handlers
