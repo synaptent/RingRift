@@ -55,6 +55,9 @@ class GameResult:
     initial_state: Any = None  # GameState at start
     final_state: Any = None    # GameState at end
     move_objects: list = field(default_factory=list)  # Actual Move objects
+    # MCTS distribution data for training (v10-v11 schema)
+    move_probs: list[dict[str, float] | None] = field(default_factory=list)  # Policy targets per move
+    search_stats: list[dict | None] = field(default_factory=list)  # Rich stats per move
 
     @property
     def games_per_second(self) -> float:
@@ -225,18 +228,66 @@ class SelfplayRunner(ABC):
             return
 
         try:
-            self._db.store_game(
-                game_id=result.game_id,
-                initial_state=result.initial_state,
-                final_state=result.final_state,
-                moves=result.move_objects,
-                metadata=result.metadata,
-                store_history_entries=self.config.store_history_entries,
-                snapshot_interval=getattr(self.config, 'snapshot_interval', 20),
-            )
+            # Check if we have MCTS distribution data - use incremental storage
+            has_mcts_data = result.move_probs and any(p is not None for p in result.move_probs)
+
+            if has_mcts_data:
+                # Use incremental storage to preserve MCTS distribution data
+                self._save_game_with_mcts_data(result)
+            else:
+                # Use bulk storage for games without MCTS data
+                self._db.store_game(
+                    game_id=result.game_id,
+                    initial_state=result.initial_state,
+                    final_state=result.final_state,
+                    moves=result.move_objects,
+                    metadata=result.metadata,
+                    store_history_entries=self.config.store_history_entries,
+                    snapshot_interval=getattr(self.config, 'snapshot_interval', 20),
+                )
             logger.debug(f"Saved game {result.game_id} to database")
         except Exception as e:
             logger.warning(f"Failed to save game {result.game_id} to database: {e}")
+
+    def _save_game_with_mcts_data(self, result: GameResult) -> None:
+        """Save game using incremental storage to preserve MCTS distribution data.
+
+        This method uses GameWriter.add_move() which supports move_probs and search_stats
+        columns (schema v10-v11) for storing soft policy targets and rich statistics.
+        """
+        from ..game_engine import GameEngine
+
+        with self._db.store_game_incremental(
+            game_id=result.game_id,
+            initial_state=result.initial_state,
+            store_history_entries=self.config.store_history_entries,
+        ) as writer:
+            # Replay through moves, applying each and recording with MCTS data
+            state = result.initial_state
+            for i, move in enumerate(result.move_objects):
+                # Get MCTS data for this move if available
+                move_probs = result.move_probs[i] if i < len(result.move_probs) else None
+                search_stats = result.search_stats[i] if i < len(result.search_stats) else None
+
+                # Apply move
+                state_after = GameEngine.apply_move(state, move)
+
+                # Record move with MCTS data
+                writer.add_move(
+                    move=move,
+                    state_after=state_after,
+                    move_probs=move_probs,
+                    search_stats=search_stats,
+                )
+
+                state = state_after
+
+            # Finalize with winner
+            writer.finalize(
+                final_state=state,
+                winner=result.winner,
+                metadata=result.metadata,
+            )
 
     def on_game_complete(self, callback: Callable[[GameResult], None]) -> None:
         """Register callback for game completion events."""
@@ -462,6 +513,9 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
         moves = []
         move_objects = []  # Actual Move objects for DB storage
         samples = []
+        # MCTS distribution data for training
+        move_probs_list = []  # Policy distributions per move
+        search_stats_list = []  # Rich search stats per move
 
         from ..rules.core import GameStatus
         while state.game_status != GameStatus.COMPLETED and len(moves) < self.config.max_moves:
@@ -471,6 +525,27 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
 
             # Get move from MCTS (GumbelMCTSAI only takes game_state, computes valid moves internally)
             move = self._mcts.select_move(state)
+
+            # Extract MCTS distribution data after move selection
+            # These methods return the data from the last search
+            try:
+                policy_dist = self._mcts.get_policy_distribution()
+                if policy_dist:
+                    # Convert to dict format: {move_key: probability}
+                    move_keys, probs = policy_dist
+                    move_probs = {str(m): float(p) for m, p in zip(move_keys, probs)}
+                else:
+                    move_probs = None
+            except (AttributeError, TypeError):
+                move_probs = None
+
+            try:
+                search_stats = self._mcts.get_search_stats()
+            except AttributeError:
+                search_stats = None
+
+            move_probs_list.append(move_probs)
+            search_stats_list.append(search_stats)
 
             # Record sample for training
             if self.config.record_samples:
@@ -506,6 +581,8 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
             initial_state=initial_state,
             final_state=state,
             move_objects=move_objects,
+            move_probs=move_probs_list,
+            search_stats=search_stats_list,
         )
 
 
