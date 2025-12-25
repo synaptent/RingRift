@@ -118,7 +118,7 @@ Before introducing or changing rules behaviour:
 | [`territoryDetection.ts`](../../src/shared/engine/territoryDetection.ts)             | `findDisconnectedRegions`                                                                                                                                                                         | Territory region detection                     |
 | [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts)           | `applyTerritoryRegion`, `filterProcessableTerritoryRegions`                                                                                                                                       | Territory collapse logic                       |
 | [`territoryDecisionHelpers.ts`](../../src/shared/engine/territoryDecisionHelpers.ts) | `enumerateProcessTerritoryRegionMoves`, `applyProcessTerritoryRegionDecision`                                                                                                                     | Territory decision moves                       |
-| [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts)          | `evaluateVictory`                                                                                                                                                                                 | Victory condition evaluation                   |
+| [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts)      | `evaluateVictory`                                                                                                                                                                                 | Victory condition evaluation                   |
 | `validators/`                                                                        | `PlacementValidator` (board-level + GameState-level placement & skip-placement validation); other move families validate via shared helpers and aggregates rather than separate validator classes | Move validation                                |
 | `mutators/`                                                                          | `PlacementMutator`, `MovementMutator`, `CaptureMutator`, `LineMutator`, `TerritoryMutator`                                                                                                        | State mutation used by aggregates              |
 
@@ -148,16 +148,16 @@ function evaluateVictory(state: GameState): VictoryVerdict;
 
 #### Key Files and Functions
 
-| File                                                                                | Key Exports                                  | Purpose                                                                                                                                                  |
-| ----------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`GameEngine.ts`](../../src/server/game/GameEngine.ts) (~3,329 lines)               | `GameEngine` class                           | Stateful orchestrator with player interaction                                                                                                            |
-| [`RuleEngine.ts`](../../src/server/game/RuleEngine.ts) (~1,564 lines)               | `RuleEngine` class                           | Stateless validation, move enumeration                                                                                                                   |
-| [`RulesBackendFacade.ts`](../../src/server/game/RulesBackendFacade.ts) (~364 lines) | `RulesBackendFacade` class                   | Parity bridge (TS/Python shadow modes)                                                                                                                   |
-| [`BoardManager.ts`](../../src/server/game/BoardManager.ts) (~1,283 lines)           | `BoardManager` class                         | Board state CRUD, adjacency                                                                                                                              |
-| `rules/captureChainEngine.ts` (legacy; historical, file removed)                    | `updateChainCaptureStateAfterCapture`        | Historical backend chain-capture state tracking module; superseded by `GameEngine` + shared `captureChainHelpers` and kept here only as a naming anchor. |
-| `rules/lineProcessing.ts` (legacy; historical, file removed)                        | `processLinesForCurrentPlayer`               | Historical backend line-processing orchestration; modern flows use shared `lineDecisionHelpers` + aggregates and backend adapters.                       |
-| `rules/territoryProcessing.ts` (legacy; historical, file removed)                   | `processDisconnectedRegionsForCurrentPlayer` | Historical backend territory-processing orchestration; modern flows use shared `territoryDetection`/`territoryProcessing`/`territoryDecisionHelpers`.    |
-| [`turn/TurnEngine.ts`](../../src/server/game/turn/TurnEngine.ts)                    | `advanceGameForCurrentPlayer`                | Turn orchestration                                                                                                                                       |
+| File                                                                                | Key Exports                                  | Purpose                                                                                                                                                   |
+| ----------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`GameEngine.ts`](../../src/server/game/GameEngine.ts) (~3,329 lines)               | `GameEngine` class                           | Stateful orchestrator with player interaction                                                                                                             |
+| [`RuleEngine.ts`](../../src/server/game/RuleEngine.ts) (~1,564 lines)               | `RuleEngine` class                           | Stateless validation, move enumeration                                                                                                                    |
+| [`RulesBackendFacade.ts`](../../src/server/game/RulesBackendFacade.ts) (~364 lines) | `RulesBackendFacade` class                   | Parity bridge (TS/Python shadow modes)                                                                                                                    |
+| [`BoardManager.ts`](../../src/server/game/BoardManager.ts) (~1,283 lines)           | `BoardManager` class                         | Board state CRUD, adjacency                                                                                                                               |
+| `rules/captureChainEngine.ts` (legacy; historical, file removed)                    | `updateChainCaptureStateAfterCapture`        | Historical backend chain-capture state tracking module; superseded by `GameEngine` + shared `chainCaptureTracking` and kept here only as a naming anchor. |
+| `rules/lineProcessing.ts` (legacy; historical, file removed)                        | `processLinesForCurrentPlayer`               | Historical backend line-processing orchestration; modern flows use shared `lineDecisionHelpers` + aggregates and backend adapters.                        |
+| `rules/territoryProcessing.ts` (legacy; historical, file removed)                   | `processDisconnectedRegionsForCurrentPlayer` | Historical backend territory-processing orchestration; modern flows use shared `territoryDetection`/`territoryProcessing`/`territoryDecisionHelpers`.     |
+| [`turn/TurnEngine.ts`](../../src/server/game/turn/TurnEngine.ts)                    | `advanceGameForCurrentPlayer`                | Turn orchestration                                                                                                                                        |
 
 #### Delegation Pattern to Shared Engine
 
@@ -193,7 +193,7 @@ import {
   applyProcessLineDecision,
 } from '../../../shared/engine/lineDecisionHelpers';
 import { findLinesForPlayer } from '../../../shared/engine/lineDetection';
-import { evaluateVictory } from '../../../shared/engine/victoryLogic';
+import { evaluateVictory } from '../../../shared/engine/aggregates/VictoryAggregate';
 import { enumerateCaptureMoves } from '../../../shared/engine/captureLogic';
 import { enumerateSimpleMoveTargetsFromStack } from '../../../shared/engine/movementLogic';
 import { validatePlacementOnBoard } from '../../../shared/engine/validators/PlacementValidator';
@@ -322,7 +322,7 @@ class PlacementMutator(Mutator):
 
 ```typescript
 // sandboxVictory.ts
-import { evaluateVictory } from '../../shared/engine/victoryLogic';
+import { evaluateVictory } from '../../shared/engine/aggregates/VictoryAggregate';
 
 // sandboxTerritory.ts
 import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
@@ -404,7 +404,7 @@ graph TB
         SE_Capture[captureLogic.ts]
         SE_Lines[lineDetection.ts + lineDecisionHelpers.ts]
         SE_Territory[territoryDetection.ts + territoryProcessing.ts + territoryDecisionHelpers.ts]
-        SE_Victory[victoryLogic.ts]
+        SE_Victory[VictoryAggregate.ts]
         SE_Validators[validators/]
         SE_Mutators[mutators/]
         SE_Orchestrator[orchestration/turnOrchestrator.ts + aggregates/]
@@ -540,7 +540,7 @@ Both Server Game and Client Sandbox documentation explicitly reference shared mo
 | `territoryDetection.ts`       | ✅ Keep | Territory region detection   |
 | `territoryProcessing.ts`      | ✅ Keep | Territory collapse logic     |
 | `territoryDecisionHelpers.ts` | ✅ Keep | Territory decision moves     |
-| `victoryLogic.ts`             | ✅ Keep | Victory evaluation           |
+| `VictoryAggregate.ts`         | ✅ Keep | Victory evaluation           |
 | `core.ts`                     | ✅ Keep | Utilities, geometry, hashing |
 | `validators/`                 | ✅ Keep | Move validation              |
 | `mutators/`                   | ✅ Keep | State mutation               |
@@ -640,7 +640,7 @@ Both Server Game and Client Sandbox documentation explicitly reference shared mo
 | **Shared**  | territoryDetection.ts                                                             | ~250   |
 | **Shared**  | territoryProcessing.ts                                                            | ~300   |
 | **Shared**  | territoryDecisionHelpers.ts                                                       | ~400   |
-| **Shared**  | victoryLogic.ts                                                                   | ~150   |
+| **Shared**  | VictoryAggregate.ts                                                               | ~890   |
 | **Server**  | GameEngine.ts                                                                     | ~3,329 |
 | **Server**  | RuleEngine.ts                                                                     | ~1,564 |
 | **Server**  | BoardManager.ts                                                                   | ~1,283 |

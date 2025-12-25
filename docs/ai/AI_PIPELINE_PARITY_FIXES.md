@@ -281,7 +281,7 @@ When a game is recorded to the DB, it should stop recording moves once victory i
 2. **State hash documentation** - Document the state hash algorithm for cross-language consistency
 3. **Recording pipeline fix** - Stop recording moves after victory detection in selfplay
 4. **Comprehensive parity gate** - Add early victory scenarios to the parity gate test suite
-5. **Remove victoryLogic.ts** - Once all consumers are verified migrated (Phase 4 of refactoring plan)
+5. **Verify victoryLogic.ts removal** - Confirm no lingering imports (victoryLogic.ts removed Dec 2025)
 6. **Extract common victory evaluation helper** - Consolidate duplicate victory+LPS evaluation in replay script
 
 ---

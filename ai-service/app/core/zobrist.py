@@ -134,3 +134,143 @@ class ZobristHash:
         h ^= self.get_phase_hash(game_state.current_phase)
 
         return h
+
+    # =========================================================================
+    # Incremental Hash Updates (O(1) per change)
+    # =========================================================================
+    #
+    # These methods update the hash incrementally by XOR-ing out the old value
+    # and XOR-ing in the new value. Since XOR is its own inverse, this allows
+    # O(1) hash updates instead of recomputing O(N) from scratch.
+    #
+    # Usage pattern in game state:
+    #   hash = zobrist.update_stack_incremental(hash, pos, old_stack, new_stack)
+    #   hash = zobrist.update_player_incremental(hash, old_player, new_player)
+    # =========================================================================
+
+    def update_stack_incremental(
+        self,
+        current_hash: int,
+        pos_key: str,
+        old_stack: tuple[int, int, tuple[int, ...]] | None,
+        new_stack: tuple[int, int, tuple[int, ...]] | None,
+    ) -> int:
+        """Incrementally update hash when a stack changes. O(1).
+
+        Args:
+            current_hash: The current hash value
+            pos_key: Position key (e.g., "3,4")
+            old_stack: (controlling_player, height, rings_tuple) or None if no old stack
+            new_stack: (controlling_player, height, rings_tuple) or None if stack removed
+
+        Returns:
+            Updated hash value
+        """
+        # XOR out old stack hash
+        if old_stack is not None:
+            player, height, rings = old_stack
+            current_hash ^= self.get_stack_hash(pos_key, player, height, rings)
+
+        # XOR in new stack hash
+        if new_stack is not None:
+            player, height, rings = new_stack
+            current_hash ^= self.get_stack_hash(pos_key, player, height, rings)
+
+        return current_hash
+
+    def update_marker_incremental(
+        self,
+        current_hash: int,
+        pos_key: str,
+        old_player: int | None,
+        new_player: int | None,
+    ) -> int:
+        """Incrementally update hash when a marker changes. O(1).
+
+        Args:
+            current_hash: The current hash value
+            pos_key: Position key
+            old_player: Player who had marker, or None if no old marker
+            new_player: Player placing marker, or None if marker removed
+
+        Returns:
+            Updated hash value
+        """
+        # XOR out old marker hash
+        if old_player is not None:
+            current_hash ^= self.get_marker_hash(pos_key, old_player)
+
+        # XOR in new marker hash
+        if new_player is not None:
+            current_hash ^= self.get_marker_hash(pos_key, new_player)
+
+        return current_hash
+
+    def update_collapsed_incremental(
+        self,
+        current_hash: int,
+        pos_key: str,
+        was_collapsed: bool,
+        is_collapsed: bool,
+    ) -> int:
+        """Incrementally update hash when a space collapse state changes. O(1).
+
+        Args:
+            current_hash: The current hash value
+            pos_key: Position key
+            was_collapsed: True if space was previously collapsed
+            is_collapsed: True if space is now collapsed
+
+        Returns:
+            Updated hash value
+        """
+        # Only update if state actually changed
+        if was_collapsed != is_collapsed:
+            # XOR toggles the bit - works for both adding and removing
+            current_hash ^= self.get_collapsed_hash(pos_key)
+
+        return current_hash
+
+    def update_player_incremental(
+        self,
+        current_hash: int,
+        old_player: int,
+        new_player: int,
+    ) -> int:
+        """Incrementally update hash when current player changes. O(1).
+
+        Args:
+            current_hash: The current hash value
+            old_player: Previous current player
+            new_player: New current player
+
+        Returns:
+            Updated hash value
+        """
+        if old_player != new_player:
+            current_hash ^= self.get_player_hash(old_player)
+            current_hash ^= self.get_player_hash(new_player)
+
+        return current_hash
+
+    def update_phase_incremental(
+        self,
+        current_hash: int,
+        old_phase: str,
+        new_phase: str,
+    ) -> int:
+        """Incrementally update hash when game phase changes. O(1).
+
+        Args:
+            current_hash: The current hash value
+            old_phase: Previous phase
+            new_phase: New phase
+
+        Returns:
+            Updated hash value
+        """
+        if old_phase != new_phase:
+            current_hash ^= self.get_phase_hash(old_phase)
+            current_hash ^= self.get_phase_hash(new_phase)
+
+        return current_hash

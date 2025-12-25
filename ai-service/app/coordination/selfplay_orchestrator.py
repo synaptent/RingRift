@@ -158,6 +158,12 @@ class SelfplayOrchestrator:
         self._paused_for_regression: bool = False
         self._resource_constrained_nodes: dict[str, float] = {}  # node_id -> timestamp
 
+        # Curriculum weights (December 2025 - Phase 1 feedback loop)
+        # Maps config_key (e.g., "square8_2p") to weight (0.5 to 2.0)
+        # Higher weight = more selfplay jobs allocated to this config
+        self._curriculum_weights: dict[str, float] = {}
+        self._curriculum_weights_updated_at: float = 0.0
+
     def subscribe_to_events(self) -> bool:
         """Subscribe to selfplay-related events from the event router.
 
@@ -187,6 +193,9 @@ class SelfplayOrchestrator:
             router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
             router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, self._on_resource_constraint)
             router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
+
+            # Subscribe to curriculum events (December 2025 - Phase 1 feedback loop)
+            router.subscribe(DataEventType.CURRICULUM_REBALANCED.value, self._on_curriculum_rebalanced)
 
             self._subscribed = True
             logger.info("[SelfplayOrchestrator] Subscribed to task lifecycle and resource events via event router")
@@ -551,6 +560,54 @@ class SelfplayOrchestrator:
                 f"[SelfplayOrchestrator] Minor regression detected in {metric_name}"
             )
 
+    async def _on_curriculum_rebalanced(self, event) -> None:
+        """Handle CURRICULUM_REBALANCED - update selfplay allocation weights.
+
+        December 2025: Phase 1 of self-improvement feedback loop.
+        This closes the gap between curriculum feedback and selfplay allocation.
+        Weights are used by get_config_weight() for job allocation.
+        """
+        payload = event.payload
+        new_weights = payload.get("new_weights") or payload.get("all_weights", {})
+        config_key = payload.get("config_key") or payload.get("config", "")
+        trigger = payload.get("trigger", "unknown")
+
+        if new_weights:
+            # Update all weights
+            old_weights = dict(self._curriculum_weights)
+            self._curriculum_weights.update(new_weights)
+            self._curriculum_weights_updated_at = time.time()
+
+            # Log significant changes
+            changed_configs = []
+            for config, weight in new_weights.items():
+                old_weight = old_weights.get(config, 1.0)
+                if abs(weight - old_weight) >= 0.1:
+                    changed_configs.append(f"{config}: {old_weight:.2f}→{weight:.2f}")
+
+            if changed_configs:
+                logger.info(
+                    f"[SelfplayOrchestrator] Curriculum weights updated (trigger={trigger}): "
+                    f"{', '.join(changed_configs)}"
+                )
+            else:
+                logger.debug(
+                    f"[SelfplayOrchestrator] Curriculum weights updated (trigger={trigger}), "
+                    f"{len(new_weights)} configs"
+                )
+        elif config_key:
+            # Single config update
+            new_weight = payload.get("new_weight", 1.0)
+            old_weight = self._curriculum_weights.get(config_key, 1.0)
+            self._curriculum_weights[config_key] = new_weight
+            self._curriculum_weights_updated_at = time.time()
+
+            if abs(new_weight - old_weight) >= 0.1:
+                logger.info(
+                    f"[SelfplayOrchestrator] Curriculum weight for {config_key}: "
+                    f"{old_weight:.2f}→{new_weight:.2f} (trigger={trigger})"
+                )
+
     def is_node_under_backpressure(self, node_id: str) -> bool:
         """Check if a node is under backpressure.
 
@@ -592,6 +649,125 @@ class SelfplayOrchestrator:
             for node_id, timestamp in self._resource_constrained_nodes.items()
             if timestamp > cutoff
         ]
+
+    # =========================================================================
+    # Curriculum Weight Methods (December 2025 - Phase 1 Feedback Loop)
+    # =========================================================================
+
+    def get_config_weight(self, config_key: str) -> float:
+        """Get the curriculum weight for a specific config.
+
+        Weights control selfplay job allocation:
+        - 1.0 = normal allocation
+        - >1.0 = higher priority (needs more training)
+        - <1.0 = lower priority (already performing well)
+
+        Args:
+            config_key: Config identifier (e.g., "square8_2p", "hex8_4p")
+
+        Returns:
+            Weight value (0.5 to 2.0), defaults to 1.0 if not set
+        """
+        return self._curriculum_weights.get(config_key, 1.0)
+
+    def get_all_curriculum_weights(self) -> dict[str, float]:
+        """Get all curriculum weights.
+
+        Returns:
+            Dict mapping config_key to weight
+        """
+        return dict(self._curriculum_weights)
+
+    def set_curriculum_weight(self, config_key: str, weight: float) -> None:
+        """Manually set a curriculum weight (for testing or override).
+
+        Args:
+            config_key: Config identifier
+            weight: Weight value (will be clamped to 0.5-2.0)
+        """
+        weight = max(0.5, min(2.0, weight))
+        self._curriculum_weights[config_key] = weight
+        self._curriculum_weights_updated_at = time.time()
+        logger.debug(f"[SelfplayOrchestrator] Set curriculum weight {config_key}={weight:.2f}")
+
+    def load_curriculum_weights_from_feedback(self) -> bool:
+        """Load curriculum weights from CurriculumFeedback singleton.
+
+        Call this at startup to initialize weights from the feedback system.
+
+        Returns:
+            True if weights were loaded successfully
+        """
+        try:
+            from app.training.curriculum_feedback import get_curriculum_weights
+            weights = get_curriculum_weights()
+            if weights:
+                self._curriculum_weights.update(weights)
+                self._curriculum_weights_updated_at = time.time()
+                logger.info(
+                    f"[SelfplayOrchestrator] Loaded {len(weights)} curriculum weights from feedback"
+                )
+                return True
+        except ImportError:
+            logger.debug("[SelfplayOrchestrator] curriculum_feedback not available")
+        except Exception as e:
+            logger.warning(f"[SelfplayOrchestrator] Failed to load curriculum weights: {e}")
+        return False
+
+    def calculate_job_allocation(
+        self,
+        base_jobs_per_config: int,
+        configs: list[str] | None = None,
+    ) -> dict[str, int]:
+        """Calculate job allocation for each config based on curriculum weights.
+
+        This is the main method for applying curriculum weights to selfplay
+        job distribution. Higher-weighted configs get more jobs.
+
+        Args:
+            base_jobs_per_config: Base number of jobs per config (before weighting)
+            configs: List of configs to allocate (None = all known configs)
+
+        Returns:
+            Dict mapping config_key to number of jobs
+
+        Example:
+            >>> orchestrator.set_curriculum_weight("square8_2p", 1.5)
+            >>> orchestrator.set_curriculum_weight("hex8_2p", 0.8)
+            >>> orchestrator.calculate_job_allocation(10, ["square8_2p", "hex8_2p"])
+            {"square8_2p": 15, "hex8_2p": 8}
+        """
+        if configs is None:
+            configs = list(self._curriculum_weights.keys())
+
+        if not configs:
+            return {}
+
+        allocation = {}
+        for config in configs:
+            weight = self.get_config_weight(config)
+            jobs = int(round(base_jobs_per_config * weight))
+            allocation[config] = max(1, jobs)  # At least 1 job per config
+
+        logger.debug(
+            f"[SelfplayOrchestrator] Job allocation: {allocation} "
+            f"(base={base_jobs_per_config})"
+        )
+        return allocation
+
+    def get_curriculum_status(self) -> dict[str, Any]:
+        """Get curriculum weight status for monitoring.
+
+        Returns:
+            Dict with curriculum weight info
+        """
+        return {
+            "weights": dict(self._curriculum_weights),
+            "num_configs": len(self._curriculum_weights),
+            "updated_at": self._curriculum_weights_updated_at,
+            "age_seconds": time.time() - self._curriculum_weights_updated_at
+            if self._curriculum_weights_updated_at > 0 else None,
+        }
 
     def register_task(
         self,
@@ -736,6 +912,9 @@ class SelfplayOrchestrator:
             "backpressure_levels": dict(self._backpressure_nodes),
             "paused_for_regression": self._paused_for_regression,
             "constrained_nodes": self.get_constrained_nodes(),
+            # Curriculum weights (December 2025 - Phase 1 feedback loop)
+            "curriculum_weights": dict(self._curriculum_weights),
+            "curriculum_weights_updated_at": self._curriculum_weights_updated_at,
         }
 
     def clear_history(self) -> int:

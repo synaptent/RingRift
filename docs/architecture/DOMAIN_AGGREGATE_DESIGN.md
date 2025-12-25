@@ -28,7 +28,7 @@ This document specifies the **domain aggregate structure** for the shared RingRi
 
 Today, the implementation sits in the following shape:
 
-- **Shared helpers**: `core.ts`, `movementLogic.ts`, `movementApplication.ts`, `captureLogic.ts`, `lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts`, `victoryLogic.ts`, `placementHelpers.ts`, `notation.ts`, `moveActionAdapter.ts`, `types.ts`, etc.
+- **Shared helpers**: `core.ts`, `movementLogic.ts`, `movementApplication.ts`, `captureLogic.ts`, `lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts`, `VictoryAggregate.ts`, `placementHelpers.ts`, `notation.ts`, `moveActionAdapter.ts`, `types.ts`, etc.
 - **Single-file aggregates** (implemented):
   - `aggregates/PlacementAggregate.ts`
   - `aggregates/MovementAggregate.ts`
@@ -895,9 +895,9 @@ Owns all victory condition evaluation and tie-breaker logic.
 
 #### Source Modules (conceptual consolidation)
 
-| File                                                                        | Status in design        |
-| --------------------------------------------------------------------------- | ----------------------- |
-| [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts) | Absorbed into aggregate |
+| File                                                                            | Status in design   |
+| ------------------------------------------------------------------------------- | ------------------ |
+| [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts) | Victory evaluation |
 
 #### Public Interface (design sketch)
 
@@ -951,7 +951,7 @@ VictoryAggregate/
 
 #### Migration Notes
 
-- Current implementation relies on `victoryLogic.ts` and `aggregates/VictoryAggregate.ts`.
+- Current implementation relies on `aggregates/VictoryAggregate.ts` (victoryLogic.ts removed).
 - Tests in `tests/unit/victory.shared.test.ts`, `tests/unit/GameEngine.victory.scenarios.test.ts`, and `tests/scenarios/RulesMatrix.Victory.*.test.ts` are the parity spine.
 
 ---
@@ -1417,7 +1417,7 @@ AI/evaluation modules live alongside aggregates as **consumers** of these semant
 
 **Goal:** Complete consolidation and verify parity.
 
-1. Implement `VictoryAggregate` over `victoryLogic.ts`.
+1. Implement `VictoryAggregate` (victoryLogic.ts removed).
 2. Gradually deprecate/remove modules in `validators/` and `mutators/` once hosts and tests are fully orchestrator/aggregate-backed.
 3. Update all imports in adapters (Server `GameEngine`, client sandbox) to call aggregates/orchestrator directly.
 4. Run full test suite and parity checks.

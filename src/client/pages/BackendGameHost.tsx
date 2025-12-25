@@ -1,20 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { BoardView } from '../components/BoardView';
-import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal, type RematchStatus } from '../components/VictoryModal';
-import { GameHUD } from '../components/GameHUD';
-import { MobileGameHUD } from '../components/MobileGameHUD';
-import { GameEventLog } from '../components/GameEventLog';
-import { MoveHistory } from '../components/MoveHistory';
-import { GameHistoryPanel } from '../components/GameHistoryPanel';
-import { EvaluationPanel } from '../components/EvaluationPanel';
 import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
-import { ResignButton } from '../components/ResignButton';
 import { RingPlacementCountDialog } from '../components/RingPlacementCountDialog';
 import { Button } from '../components/ui/Button';
 import { StatusBanner } from '../components/ui/StatusBanner';
+import { BackendBoardSection } from '../components/backend/BackendBoardSection';
+import { BackendGameSidebar } from '../components/backend/BackendGameSidebar';
 import {
   ScreenReaderAnnouncer,
   useGameAnnouncements,
@@ -32,7 +25,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
 import { useGame } from '../contexts/GameContext';
 import { getGameOverBannerText } from '../utils/gameCopy';
-import { formatPosition } from '../../shared/engine/notation';
 import {
   buildGameEndExplanationFromEngineView,
   type GameEndEngineView,
@@ -62,10 +54,7 @@ import { useBackendGameStatus } from '../hooks/useBackendGameStatus';
 import { useBackendChat } from '../hooks/useBackendChat';
 import { useBackendTelemetry } from '../hooks/useBackendTelemetry';
 import { useBackendConnectionShell } from '../hooks/useBackendConnectionShell';
-import {
-  useBackendDiagnosticsLog,
-  describeDecisionAutoResolved,
-} from '../hooks/useBackendDiagnosticsLog';
+import { useBackendDiagnosticsLog } from '../hooks/useBackendDiagnosticsLog';
 import { useBackendDecisionUI } from '../hooks/useBackendDecisionUI';
 
 /**
@@ -1014,235 +1003,91 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
       <main className="flex flex-col lg:flex-row lg:gap-8 gap-4">
         {/* Board container - centers on mobile, takes available space on desktop */}
-        <section className="flex-shrink-0 flex justify-center lg:justify-start">
-          <BoardView
-            boardType={boardType}
-            board={board}
-            viewModel={backendBoardViewModel}
-            selectedPosition={selected || backendMustMoveFrom}
-            validTargets={validTargets}
-            onCellClick={(pos) => handleBackendCellClick(pos, board)}
-            onCellDoubleClick={(pos) => handleBackendCellDoubleClick(pos, board)}
-            onCellContextMenu={(pos) => handleBackendCellContextMenu(pos, board)}
-            isSpectator={!isPlayer}
-            pendingAnimation={pendingAnimation ?? undefined}
-            onAnimationComplete={clearAnimation}
-            chainCapturePath={chainCapturePath}
-            shakingCellKey={shakingCellKey}
-            onShowKeyboardHelp={() => setShowBoardControls(true)}
-          />
-        </section>
+        <BackendBoardSection
+          boardType={boardType}
+          board={board}
+          viewModel={backendBoardViewModel}
+          selectedPosition={selected || backendMustMoveFrom}
+          validTargets={validTargets}
+          isSpectator={!isPlayer}
+          pendingAnimation={pendingAnimation ?? undefined}
+          chainCapturePath={chainCapturePath}
+          shakingCellKey={shakingCellKey}
+          onCellClick={(pos) => handleBackendCellClick(pos, board)}
+          onCellDoubleClick={(pos) => handleBackendCellDoubleClick(pos, board)}
+          onCellContextMenu={(pos) => handleBackendCellContextMenu(pos, board)}
+          onAnimationComplete={clearAnimation}
+          onShowBoardControls={() => setShowBoardControls(true)}
+        />
 
-        <aside className="w-full lg:w-80 flex-shrink-0 space-y-3 text-sm text-slate-100">
-          {/* Primary HUD band – placed at the top of the sidebar so phase/turn/time
-              are always visible alongside the board. On mobile, render the
-              compact MobileGameHUD; on larger screens, use the full GameHUD. */}
-          {isMobile ? (
-            <MobileGameHUD
-              viewModel={hudViewModel}
-              timeControl={gameState.timeControl}
-              onShowBoardControls={() => setShowBoardControls(true)}
-              rulesUxContext={rulesUxContext}
-            />
-          ) : (
-            <GameHUD
-              viewModel={hudViewModel}
-              timeControl={gameState.timeControl}
-              onShowBoardControls={() => setShowBoardControls(true)}
-              rulesUxContext={rulesUxContext}
-            />
+        <BackendGameSidebar
+          hudViewModel={hudViewModel}
+          gameState={gameState}
+          boardType={boardType}
+          timeControl={gameState.timeControl}
+          isMobile={isMobile}
+          isPlayer={isPlayer}
+          isMyTurn={isMyTurn}
+          isConnectionActive={isConnectionActive}
+          rulesUxContext={rulesUxContext}
+          selectedPosition={selected}
+          selectedStackDetails={backendSelectedStackDetails}
+          boardInteractionMessage={boardInteractionMessage}
+          pendingChoice={pendingChoice}
+          pendingChoiceView={pendingChoiceView}
+          choiceDeadline={choiceDeadline}
+          reconciledDecisionTimeRemainingMs={reconciledDecisionTimeRemainingMs}
+          isDecisionServerCapped={decisionCountdown.isServerCapped}
+          decisionAutoResolved={decisionAutoResolved}
+          moveHistory={gameState.moveHistory}
+          currentMoveIndex={gameState.moveHistory.length - 1}
+          eventLogViewModel={toEventLogViewModel(
+            gameState.history,
+            showSystemEventsInLog ? eventLog : [],
+            victoryState,
+            { maxEntries: 40 }
           )}
-
-          {isPlayer && (
-            <ChoiceDialog
-              choice={pendingChoice}
-              choiceViewModel={pendingChoiceView?.viewModel}
-              deadline={choiceDeadline}
-              timeRemainingMs={reconciledDecisionTimeRemainingMs}
-              isServerCapped={decisionCountdown.isServerCapped}
-              onSelectOption={(choice, option) => respondToChoice(choice, option)}
-            />
-          )}
-
-          <div className="p-3 border border-slate-700 rounded bg-slate-900/50">
-            <h2 className="font-semibold mb-2">Selection</h2>
-            {selected ? (
-              <div className="space-y-2">
-                <div className="text-lg font-mono font-semibold text-white">
-                  {formatPosition(selected, { boardType })}
-                </div>
-                {backendSelectedStackDetails ? (
-                  <ul className="text-xs text-slate-300 space-y-1">
-                    <li>Stack height: {backendSelectedStackDetails.height}</li>
-                    <li>Cap height: {backendSelectedStackDetails.cap}</li>
-                    <li>Controlled by: P{backendSelectedStackDetails.controllingPlayer}</li>
-                  </ul>
-                ) : (
-                  <p className="text-xs text-slate-300">Empty cell – choose a placement target.</p>
-                )}
-                <p className="text-xs text-slate-400">
-                  Click a highlighted destination to commit the move, or select a new source.
-                </p>
-              </div>
-            ) : (
-              <div className="text-slate-200">Click a cell to inspect it.</div>
-            )}
-            {boardInteractionMessage && (
-              <div className="mt-3 text-xs text-amber-300">{boardInteractionMessage}</div>
-            )}
-          </div>
-
-          {/* Move History - compact notation display */}
-          <MoveHistory
-            moves={gameState.moveHistory}
-            boardType={gameState.boardType}
-            currentMoveIndex={gameState.moveHistory.length - 1}
-          />
-
-          {/* Resign button - visible to players during active games */}
-          {isPlayer && gameState.gameStatus === 'active' && (
-            <div className="mt-2 flex justify-end">
-              <ResignButton
-                onResign={handleResign}
-                disabled={!isConnectionActive}
-                isResigning={isResigning}
-                isConfirmOpen={isResignConfirmOpen}
-                onConfirmOpenChange={setIsResignConfirmOpen}
-              />
-            </div>
-          )}
-
-          {isPlayer &&
+          showSystemEventsInLog={showSystemEventsInLog}
+          isResigning={isResigning}
+          isResignConfirmOpen={isResignConfirmOpen}
+          showAdvancedSidebarPanels={showAdvancedSidebarPanels}
+          gameId={gameId}
+          hasVictoryState={!!victoryState}
+          evaluationHistory={evaluationHistory}
+          showSwapSidesPrompt={
+            isPlayer &&
             isConnectionActive &&
             gameState.gameStatus === 'active' &&
             gameState.players.length === 2 &&
             gameState.rulesOptions?.swapRuleEnabled === true &&
-            hudCurrentPlayer &&
+            !!hudCurrentPlayer &&
             hudCurrentPlayer.playerNumber === gameState.currentPlayer &&
             hudCurrentPlayer.playerNumber === 2 &&
-            // One-time, immediately after Player 1's first turn:
             !gameState.moveHistory.some((m) => m.type === 'swap_sides') &&
             gameState.moveHistory.some((m) => m.player === 1) &&
-            !gameState.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides') && (
-              <div className="mt-2 p-2 border border-amber-500/60 rounded bg-amber-900/40 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-amber-100">
-                    Pie rule available: swap colours with Player 1.
-                  </span>
-                  <button
-                    type="button"
-                    className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold"
-                    onClick={() => {
-                      submitMove({
-                        type: 'swap_sides',
-                        to: { x: 0, y: 0 },
-                      } as PartialMove);
-                    }}
-                  >
-                    Swap colours
-                  </button>
-                </div>
-                <p className="mt-1 text-amber-100/80">
-                  As Player 2, you may use this once, immediately after Player 1's first turn.
-                </p>
-              </div>
-            )}
-
-          {decisionAutoResolved && (
-            <div className="mt-1 text-[11px] text-amber-300">
-              {describeDecisionAutoResolved(decisionAutoResolved)}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
-            <span>Log view</span>
-            <button
-              type="button"
-              onClick={() => setShowSystemEventsInLog((prev) => !prev)}
-              className="px-2 py-0.5 rounded border border-slate-600 bg-slate-900/70 text-xs hover:border-emerald-400 hover:text-emerald-200 transition"
-            >
-              {showSystemEventsInLog ? 'Moves + system' : 'Moves only'}
-            </button>
-          </div>
-
-          <GameEventLog
-            viewModel={toEventLogViewModel(
-              gameState.history,
-              showSystemEventsInLog ? eventLog : [],
-              victoryState,
-              { maxEntries: 40 }
-            )}
-          />
-
-          <details
-            className="p-3 border border-slate-700 rounded bg-slate-900/50"
-            open={showAdvancedSidebarPanels}
-            onToggle={(event) => {
-              setShowAdvancedSidebarPanels(event.currentTarget.open);
-            }}
-            data-testid="backend-advanced-sidebar-panels"
-          >
-            <summary className="cursor-pointer select-none text-sm font-semibold text-slate-200">
-              Advanced diagnostics
-              <span className="ml-2 text-[11px] font-normal text-slate-400">
-                (history, evaluation)
-              </span>
-            </summary>
-            {showAdvancedSidebarPanels && (
-              <div className="mt-3 space-y-3">
-                {/* Full move history panel with expandable details */}
-                <GameHistoryPanel
-                  gameId={gameId}
-                  defaultCollapsed={true}
-                  onError={(err) => {
-                    // Log but don't block – history is supplementary
-                    console.warn('Failed to load game history:', err.message);
-                  }}
-                />
-
-                {/* AI analysis/evaluation panel – enabled for spectators and finished games.
-                    When no evaluation data has been streamed yet, the panel renders a
-                    placeholder message instead of remaining hidden. */}
-                {(!isPlayer || !!victoryState) && gameState && (
-                  <EvaluationPanel
-                    evaluationHistory={evaluationHistory}
-                    players={gameState.players}
-                    className="mt-2"
-                  />
-                )}
-              </div>
-            )}
-          </details>
-
-          <div className="p-3 border border-slate-700 rounded bg-slate-900/50 flex flex-col h-64">
-            <h2 className="font-semibold mb-2">Chat</h2>
-            <div className="flex-1 overflow-y-auto mb-2 space-y-1">
-              {chatMessages.length === 0 ? (
-                <div className="text-slate-400 text-xs italic">No messages yet.</div>
-              ) : (
-                chatMessages.map((msg, idx) => (
-                  <div key={idx} className="text-xs">
-                    <span className="font-bold text-slate-300">{msg.sender}: </span>
-                    <span className="text-slate-200">{msg.text}</span>
-                  </div>
-                ))
-              )}
-            </div>
-            <form onSubmit={handleChatSubmit} className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Type a message..."
-                aria-label="Chat message"
-                className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
-              />
-              <Button type="submit" size="sm">
-                Send
-              </Button>
-            </form>
-          </div>
-        </aside>
+            !gameState.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides')
+          }
+          hudCurrentPlayer={hudCurrentPlayer}
+          chatMessages={chatMessages}
+          chatInput={chatInput}
+          onRespondToChoice={respondToChoice}
+          onResign={handleResign}
+          onResignConfirmOpenChange={setIsResignConfirmOpen}
+          onSwapSides={() => {
+            submitMove({
+              type: 'swap_sides',
+              to: { x: 0, y: 0 },
+            } as PartialMove);
+          }}
+          onToggleSystemEventsInLog={() => setShowSystemEventsInLog((prev) => !prev)}
+          onAdvancedPanelsToggle={(open) => setShowAdvancedSidebarPanels(open)}
+          onHistoryError={(err) => {
+            console.warn('Failed to load game history:', err.message);
+          }}
+          onChatInputChange={setChatInput}
+          onChatSubmit={handleChatSubmit}
+          onShowBoardControls={() => setShowBoardControls(true)}
+        />
       </main>
 
       <RingPlacementCountDialog

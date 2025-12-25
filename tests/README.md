@@ -186,8 +186,8 @@ npm run test:verbose
 # Run only the client-local sandbox engine suites
 npm test -- ClientSandboxEngine
 
-# Run only GameEngine territory/region tests
-npm test -- GameEngine.territoryDisconnection
+# Run only backend territory/region tests
+npm test -- BoardManager.territoryDisconnection
 ```
 
 #### Orchestrator-focused lanes
@@ -1243,8 +1243,7 @@ This matrix links key sections of `../docs/rules/COMPLETE_RULES.md` and FAQ entr
 - **Section 11 (Line Formation & Collapse)**, **FAQ 7, 22**, **Sections 16.5/16.9.4.3**
   - (existing) `tests/unit/lineDecisionHelpers.shared.test.ts` — canonical line‑decision enumeration and application over the shared helpers (`process_line`, `choose_line_option`, and when eliminations are granted).
   - (existing) `tests/unit/ClientSandboxEngine.lines.test.ts` — sandbox line processing driven by the shared helpers.
-  - (existing) `tests/unit/GameEngine.lineRewardChoiceAIService.integration.test.ts` — backend + AI choice for line rewards.
-  - (existing) `tests/unit/GameEngine.lineRewardChoiceWebSocketIntegration.test.ts` — backend + WebSocket choice flow.
+  - (existing) `tests/scenarios/RulesMatrix.GameEngine.test.ts` — RulesMatrix line‑reward scenarios (Q7/Q22) for backend.
   - (existing) `tests/unit/GameEngine.lines.scenarios.test.ts` — backend line semantics aligned with Section 11 and FAQ Q7/Q22 on `square8`, using the same shared decision helpers.
 
 ### Territory disconnection & chain reactions
@@ -1255,7 +1254,7 @@ This matrix links key sections of `../docs/rules/COMPLETE_RULES.md` and FAQ entr
   - (existing) `tests/unit/ClientSandboxEngine.territoryDisconnection.test.ts` / `.hex.test.ts` — engine‑level region processing order and interaction with the shared helpers.
   - (existing) `tests/unit/ClientSandboxEngine.territoryDisconnection.test.ts` / `.hex.test.ts` — sandbox parity.
   - (existing) `tests/unit/ClientSandboxEngine.regionOrderChoice.test.ts` — region‑order PlayerChoice in sandbox.
-  - (existing) `tests/unit/GameEngine.territory.scenarios.test.ts` — explicit self‑elimination prerequisite and multi‑region chain reactions mapped to Q15, Q20, Q23.
+  - (existing) `tests/unit/territoryProcessing.shared.test.ts` — explicit self‑elimination prerequisite and multi‑region chain reactions mapped to Q15, Q20, Q23.
   - (existing, diagnostic; `TerritoryParity` archived) `archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`, `tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`, and related seed‑based parity suites — backend↔sandbox Q23 parity on larger boards and specific seeds (**diagnostic; canonical semantics live in the shared decision‑helper tests and RulesMatrix/FAQ territory suites such as `RulesMatrix.Territory.MiniRegion.test.ts` and `FAQ_Q22_Q23.test.ts`**).
   - (existing) `tests/parity/Backend_vs_Sandbox.CaptureAndTerritoryParity.test.ts` — advanced-phase backend↔sandbox parity harness for capture chains, single‑region line→territory, and mixed line+multi‑region territory flows (including Q20/Q23‑style two‑region scenarios on square8/19/hex).
 
@@ -1263,7 +1262,7 @@ This matrix links key sections of `../docs/rules/COMPLETE_RULES.md` and FAQ entr
 
 - **Section 13 (Victory Conditions)**, **FAQ 11, 18, 21, 24**, **Sections 16.6, 16.9.4.5**
   - (existing) `tests/unit/ClientSandboxEngine.victory.test.ts` — sandbox ring‑elimination & territory victories
-  - (planned) `tests/unit/GameEngine.victory.scenarios.test.ts` — ring‑elimination, territory‑majority, last‑player‑standing, stalemate tiebreaker examples
+  - (existing) `tests/unit/GameEngine.victory.scenarios.test.ts`, `tests/unit/GameEngine.victory.LPS.crossInteraction.test.ts` — ring‑elimination, territory‑majority, LPS, stalemate tiebreaker examples
 
 ### Connection lifecycle & reconnection
 
@@ -1278,10 +1277,8 @@ This matrix links key sections of `../docs/rules/COMPLETE_RULES.md` and FAQ entr
 ### PlayerChoice flows (engine + transport + sandbox)
 
 - **Sections 4.5, 10.3, 11–12 (Lines, Territory, Chain choices)**, **FAQ 7, 15, 22–23**
-  - (existing) `tests/unit/GameEngine.lineRewardChoiceAIService.integration.test.ts`
-  - (existing) `tests/unit/GameEngine.lineRewardChoiceWebSocketIntegration.test.ts`
   - (existing) `tests/unit/GameEngine.regionOrderChoiceIntegration.test.ts`
-  - (existing) `tests/unit/GameEngine.captureDirectionChoice.test.ts` / `.captureDirectionChoiceWebSocketIntegration.test.ts` — helper-level capture_direction logic plus a full orthogonal chain capture scenario driven end-to-end over WebSockets
+  - (existing) `tests/unit/GameEngine.captureDirectionChoice.test.ts`, `tests/unit/GameEngine.chainCaptureChoiceIntegration.test.ts` — capture_direction logic + multi-branch chain capture integration (no dedicated WebSocket flow test yet)
   - (existing) `tests/unit/PlayerInteractionManager.test.ts`
   - (existing) `tests/unit/WebSocketInteractionHandler.test.ts`
   - (existing) `tests/unit/AIInteractionHandler.test.ts`

@@ -375,6 +375,68 @@ class SelfplayModelSelector:
 # Global selector cache
 _selectors: dict[str, SelfplayModelSelector] = {}
 
+# Event subscription flag
+_event_subscription_initialized = False
+
+
+def _on_model_promoted(event) -> None:
+    """Handle MODEL_PROMOTED event and invalidate relevant caches.
+
+    This provides hot-reload capability: when a model is promoted,
+    all selectors for that config immediately pick up the new model
+    instead of waiting for cache TTL expiry.
+
+    Args:
+        event: The MODEL_PROMOTED event with board_type, num_players, model_path
+    """
+    try:
+        # Extract config from event
+        board_type = getattr(event, "board_type", None) or event.get("board_type")
+        num_players = getattr(event, "num_players", None) or event.get("num_players")
+        model_path = getattr(event, "model_path", None) or event.get("model_path")
+
+        if not board_type or not num_players:
+            logger.warning("[SelfplayModelSelector] MODEL_PROMOTED event missing board_type or num_players")
+            return
+
+        config_key = f"{board_type.lower()}_{num_players}p"
+        logger.info(f"[SelfplayModelSelector] MODEL_PROMOTED for {config_key}, invalidating cache")
+
+        # Notify all selectors matching this config
+        for key, selector in _selectors.items():
+            if config_key in key:
+                new_path = Path(model_path) if model_path else None
+                selector.notify_update(new_path)
+                logger.debug(f"[SelfplayModelSelector] Notified selector {key}")
+
+    except Exception as e:
+        logger.warning(f"[SelfplayModelSelector] Error handling MODEL_PROMOTED: {e}")
+
+
+def _init_event_subscription() -> None:
+    """Initialize subscription to MODEL_PROMOTED events.
+
+    Called lazily on first selector creation to avoid import cycles.
+    """
+    global _event_subscription_initialized
+
+    if _event_subscription_initialized:
+        return
+
+    try:
+        from app.coordination.event_router import get_router
+        from app.coordination.data_events import DataEventType
+
+        router = get_router()
+        router.subscribe(DataEventType.MODEL_PROMOTED.value, _on_model_promoted)
+        _event_subscription_initialized = True
+        logger.info("[SelfplayModelSelector] Subscribed to MODEL_PROMOTED events for hot-reload")
+
+    except ImportError as e:
+        logger.debug(f"[SelfplayModelSelector] Event router not available: {e}")
+    except Exception as e:
+        logger.warning(f"[SelfplayModelSelector] Could not subscribe to MODEL_PROMOTED: {e}")
+
 
 def get_model_for_config(
     board_type: str,
@@ -393,6 +455,9 @@ def get_model_for_config(
     Returns:
         Path to model or None.
     """
+    # Initialize event subscription on first use (for hot-reload)
+    _init_event_subscription()
+
     cache_key = f"{board_type.lower()}_{num_players}p_{prefer_nnue}"
 
     if cache_key not in _selectors:

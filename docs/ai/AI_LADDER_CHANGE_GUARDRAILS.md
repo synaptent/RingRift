@@ -139,16 +139,17 @@ Before proceeding with a Category B change:
 
 - [ ] **Tier gate evaluation completed** for all affected tier(s)
   ```bash
-  python -m ai-service.scripts.run_tier_gate \
+  cd ai-service
+  python scripts/run_full_tier_gating.py \
     --tier D4 \
-    --candidate-model-id <candidate_id> \
-    --output-json logs/tier_gate/D4_gate.json \
-    --promotion-plan-out logs/tier_gate/D4_promotion.json
+    --candidate-id <candidate_id> \
+    --run-dir logs/tier_gate/D4_candidate
   ```
 - [ ] **Win rate within acceptable band** vs target (±10% as per [`AI_LADDER_HEALTH_MONITORING_SPEC.md`](AI_LADDER_HEALTH_MONITORING_SPEC.md:49))
-- [ ] **Latency within budget** (for D4/D6/D8 tiers):
+- [ ] **Latency within budget** (for D3–D8 tiers):
   ```bash
-  python -m ai-service.scripts.run_tier_perf_benchmark \
+  cd ai-service
+  python scripts/run_tier_perf_benchmark.py \
     --tier D4 \
     --output-json logs/tier_perf/D4_perf.json
   ```
@@ -173,12 +174,18 @@ Before proceeding with a Category C change:
     --candidate-id <candidate_id> \
     --run-dir logs/tier_gate/D6_full
   ```
-- [ ] **Cross-tier monotonicity validated** for all tier pairs:
+- [ ] **Cross-tier monotonicity validated** for adjacent tiers:
       | Matchup | Required Win Rate |
       |---------|------------------|
-      | D4 vs D2 | ≥55% |
-      | D6 vs D4 | ≥55% |
-      | D8 vs D6 | ≥55% |
+      | D2 vs D1 | ≥55% |
+      | D3 vs D2 | ≥55% |
+      | D4 vs D3 | ≥55% |
+      | D5 vs D4 | ≥55% |
+      | D6 vs D5 | ≥55% |
+      | D7 vs D6 | ≥55% |
+      | D8 vs D7 | ≥55% |
+      | D9 vs D8 | ≥55% |
+      | D10 vs D9 | ≥55% |
 - [ ] **Human calibration consideration** (if calibration cohort data available):
   - Review perceived difficulty ratings
   - Check abandonment rates by tier

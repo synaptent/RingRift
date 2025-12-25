@@ -43,9 +43,11 @@ __all__ = [
     "RetryContext",
     "TimeoutContext",
     "cancellation_scope",
+    "fire_and_forget",
     "gather_with_limit",
     "rate_limiter",
     "retry_context",
+    "safe_create_task",
     "timeout_context",
 ]
 
@@ -639,3 +641,115 @@ async def async_timeout_iter(
             yield item
         except StopAsyncIteration:
             break
+
+
+# =============================================================================
+# Safe Task Creation (December 2025 - async/sync bridge hardening)
+# =============================================================================
+
+
+def _default_task_error_handler(task: asyncio.Task) -> None:
+    """Default error handler for fire-and-forget tasks.
+
+    Logs exceptions from tasks that would otherwise be silently dropped.
+    This prevents the "Task exception was never retrieved" warning.
+    """
+    try:
+        exc = task.exception()
+        if exc is not None:
+            task_name = task.get_name() if hasattr(task, 'get_name') else str(task)
+            logger.error(
+                f"[AsyncTask] Fire-and-forget task '{task_name}' failed: {exc}",
+                exc_info=exc,
+            )
+    except asyncio.CancelledError:
+        pass  # Task was cancelled, not an error
+    except asyncio.InvalidStateError:
+        pass  # Task not done yet (shouldn't happen in done callback)
+
+
+def safe_create_task(
+    coro: Awaitable[T],
+    *,
+    name: str | None = None,
+    error_callback: Callable[[asyncio.Task], None] | None = None,
+    suppress_errors: bool = False,
+) -> asyncio.Task[T]:
+    """Create an asyncio task with automatic error handling.
+
+    This is a drop-in replacement for asyncio.create_task() that adds
+    error callbacks to prevent silent failures in fire-and-forget patterns.
+
+    Args:
+        coro: The coroutine to run as a task
+        name: Optional name for the task (for debugging)
+        error_callback: Custom error handler (default: logs to error level)
+        suppress_errors: If True, don't log errors (just consume them)
+
+    Returns:
+        The created task
+
+    Example:
+        # Instead of:
+        asyncio.create_task(send_notification())  # Errors silently dropped!
+
+        # Use:
+        safe_create_task(send_notification())  # Errors logged
+
+        # With custom handler:
+        safe_create_task(
+            send_notification(),
+            error_callback=lambda t: alert_admin(t.exception())
+        )
+    """
+    task = asyncio.create_task(coro, name=name)
+
+    if not suppress_errors:
+        callback = error_callback or _default_task_error_handler
+        task.add_done_callback(callback)
+
+    return task
+
+
+def fire_and_forget(
+    coro: Awaitable[Any],
+    *,
+    name: str | None = None,
+    on_error: Callable[[Exception], None] | None = None,
+) -> asyncio.Task:
+    """Fire-and-forget a coroutine with explicit error handling.
+
+    This makes the intent clear that we don't await the result,
+    while ensuring errors are not silently dropped.
+
+    Args:
+        coro: The coroutine to run
+        name: Optional name for debugging
+        on_error: Optional callback when error occurs (receives the exception)
+
+    Returns:
+        The created task (usually ignored by caller)
+
+    Example:
+        # Fire and forget with logging
+        fire_and_forget(emit_event(data))
+
+        # With error callback
+        fire_and_forget(
+            send_notification(),
+            on_error=lambda e: metrics.increment("notification_errors")
+        )
+    """
+    def error_handler(task: asyncio.Task) -> None:
+        try:
+            exc = task.exception()
+            if exc is not None:
+                if on_error:
+                    on_error(exc)
+                else:
+                    task_name = name or (task.get_name() if hasattr(task, 'get_name') else "unnamed")
+                    logger.error(f"[FireAndForget] Task '{task_name}' failed: {exc}")
+        except (asyncio.CancelledError, asyncio.InvalidStateError):
+            pass
+
+    return safe_create_task(coro, name=name, error_callback=error_handler)

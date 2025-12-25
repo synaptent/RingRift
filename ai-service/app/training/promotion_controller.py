@@ -211,6 +211,10 @@ class PromotionController:
         self._event_subscribed = False
         self._pending_promotion_checks: dict[str, float] = {}  # model_id -> elo_delta
 
+        # Auto-wire to event bus for ELO-triggered promotion checks (December 2025)
+        # This enables automatic promotion evaluation when ELO ratings change significantly
+        self.setup_event_subscriptions()
+
     @property
     def elo_service(self):
         """Lazy-load EloService."""

@@ -234,7 +234,7 @@ This section describes a **single calibration cycle** for Square‑8 2‑player 
 
       ```text
       &lt;eval-root&gt;/&lt;source_run_dir&gt;/tier_eval_result.json
-      &lt;eval-root&gt;/&lt;source_run_dir&gt;/tier_perf_report.json   # D4/D6/D8
+      &lt;eval-root&gt;/&lt;source_run_dir&gt;/tier_perf_report.json   # D3–D8
       &lt;eval-root&gt;/&lt;source_run_dir&gt;/gate_report.json
       ```
 
@@ -314,7 +314,7 @@ The Markdown is produced by [`build_markdown_report()`](../../ai-service/scripts
 
 - **Ladder model**: model id, AI type, heuristic profile.
 - **Evaluation summary**: gate status (`PASS`/`FAIL`) and win‑rates vs baseline / previous tier, if available.
-- **Perf summary**: perf budget pass/fail and observed `avg_ms`, `p95_ms`, if the tier has a perf budget (D4/D6/D8).
+- **Perf summary**: perf budget pass/fail and observed `avg_ms`, `p95_ms`, if the tier has a perf budget (D3–D8).
 - **Segment table**: rows per segment with:
   - `n_games`
   - `human_win_rate`

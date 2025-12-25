@@ -89,7 +89,7 @@
     },
     "D5": {
       "training": {
-        "mode": "search_persona",
+        "mode": "neural",
         "cmaes_mode": "auto",
         "seed": 123
       },

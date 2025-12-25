@@ -1883,6 +1883,46 @@ async def emit_training_rollback_completed(
         return False
 
 
+async def emit_curriculum_updated(
+    config_key: str,
+    new_weight: float,
+    trigger: str = "automatic",
+    all_weights: dict[str, float] | None = None,
+    **metadata,
+) -> bool:
+    """Emit CURRICULUM_REBALANCED event for a single config update.
+
+    This is a convenience wrapper for emit_curriculum_rebalanced when
+    updating a single config's weight. Used by the curriculum feedback
+    system to notify the selfplay orchestrator of weight changes.
+
+    December 2025: Added for Phase 1 self-improvement feedback loop.
+
+    Args:
+        config_key: Config identifier (e.g., "square8_2p")
+        new_weight: New weight for this config
+        trigger: What triggered the update (promotion, elo_change, plateau, etc.)
+        all_weights: Optional dict of all current weights
+        **metadata: Additional event metadata
+
+    Returns:
+        True if event was emitted successfully
+
+    Example:
+        await emit_curriculum_updated("square8_2p", 1.3, trigger="promotion")
+    """
+    return await emit_curriculum_rebalanced(
+        config=config_key,
+        old_weights={},  # Old weights often not available for single updates
+        new_weights=all_weights or {config_key: new_weight},
+        reason=f"config_update_{config_key}",
+        trigger=trigger,
+        config_key=config_key,
+        new_weight=new_weight,
+        **metadata,
+    )
+
+
 async def emit_curriculum_rebalanced(
     config: str,
     old_weights: dict,
@@ -2006,6 +2046,7 @@ __all__ = [
     "emit_coordinator_shutdown",
     # Curriculum events (December 2025)
     "emit_curriculum_rebalanced",
+    "emit_curriculum_updated",
     # Evaluation events
     "emit_evaluation_complete",
     "emit_handler_failed",

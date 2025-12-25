@@ -285,15 +285,15 @@ AI‑only concern.
 
 ### 3.3 Domain Result Types
 
-| TS Type             | TS File                 | Python Type         | Python File | Parity Status |
-| ------------------- | ----------------------- | ------------------- | ----------- | ------------- |
-| `TurnAdvanceResult` | `turnLogic.ts`          | -                   | -           | ⚠️ INLINE     |
-| `PerTurnState`      | `turnLogic.ts`          | GameState fields    | `models.py` | ✅ MATCHED    |
-| `VictoryResult`     | `victoryLogic.ts`       | GameState fields    | `models.py` | ✅ MATCHED    |
-| `VictoryReason`     | `victoryLogic.ts`       | -                   | -           | ⚠️ MISSING    |
-| `PlacementContext`  | `PlacementValidator.ts` | -                   | -           | ⚠️ INLINE     |
-| `SimpleMoveTarget`  | `movementLogic.ts`      | `Move`              | `models.py` | ✅ MATCHED    |
-| `ChainCaptureState` | `game.ts`               | `ChainCaptureState` | `models.py` | ✅ MATCHED    |
+| TS Type             | TS File                          | Python Type         | Python File | Parity Status |
+| ------------------- | -------------------------------- | ------------------- | ----------- | ------------- |
+| `TurnAdvanceResult` | `turnLogic.ts`                   | -                   | -           | ⚠️ INLINE     |
+| `PerTurnState`      | `turnLogic.ts`                   | GameState fields    | `models.py` | ✅ MATCHED    |
+| `VictoryResult`     | `aggregates/VictoryAggregate.ts` | GameState fields    | `models.py` | ✅ MATCHED    |
+| `VictoryReason`     | `aggregates/VictoryAggregate.ts` | -                   | -           | ⚠️ MISSING    |
+| `PlacementContext`  | `PlacementValidator.ts`          | -                   | -           | ⚠️ INLINE     |
+| `SimpleMoveTarget`  | `movementLogic.ts`               | `Move`              | `models.py` | ✅ MATCHED    |
+| `ChainCaptureState` | `game.ts`                        | `ChainCaptureState` | `models.py` | ✅ MATCHED    |
 
 ---
 
@@ -563,21 +563,21 @@ For each TypeScript engine change:
 
 ### TypeScript Canonical Engine (`src/shared/engine/`)
 
-| File                          | Lines | Purpose                    |
-| ----------------------------- | ----- | -------------------------- |
-| `index.ts`                    | ~350  | Public API exports         |
-| `core.ts`                     | ~650  | Core utilities             |
-| `turnLogic.ts`                | ~250  | Turn/phase state machine   |
-| `movementLogic.ts`            | ~200  | Movement reachability      |
-| `captureLogic.ts`             | ~350  | Capture enumeration        |
-| `lineDetection.ts`            | ~200  | Line geometry              |
-| `lineDecisionHelpers.ts`      | ~400  | Line decision moves        |
-| `territoryDetection.ts`       | ~250  | Territory region detection |
-| `territoryProcessing.ts`      | ~300  | Territory collapse         |
-| `territoryDecisionHelpers.ts` | ~400  | Territory decision moves   |
-| `victoryLogic.ts`             | ~150  | Victory evaluation         |
-| `validators/*.ts`             | ~600  | Move validation            |
-| `mutators/*.ts`               | ~800  | State mutation             |
+| File                             | Lines | Purpose                    |
+| -------------------------------- | ----- | -------------------------- |
+| `index.ts`                       | ~350  | Public API exports         |
+| `core.ts`                        | ~650  | Core utilities             |
+| `turnLogic.ts`                   | ~250  | Turn/phase state machine   |
+| `movementLogic.ts`               | ~200  | Movement reachability      |
+| `captureLogic.ts`                | ~350  | Capture enumeration        |
+| `lineDetection.ts`               | ~200  | Line geometry              |
+| `lineDecisionHelpers.ts`         | ~400  | Line decision moves        |
+| `territoryDetection.ts`          | ~250  | Territory region detection |
+| `territoryProcessing.ts`         | ~300  | Territory collapse         |
+| `territoryDecisionHelpers.ts`    | ~400  | Territory decision moves   |
+| `aggregates/VictoryAggregate.ts` | ~890  | Victory evaluation         |
+| `validators/*.ts`                | ~600  | Move validation            |
+| `mutators/*.ts`                  | ~800  | State mutation             |
 
 ### Python AI Service (`ai-service/app/rules/`)
 

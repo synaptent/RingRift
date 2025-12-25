@@ -156,7 +156,7 @@ The scenarios below capture concrete shapes that have historically exercised the
     - Then last player to have taken a real action.
   - This is the **only** situation in which a true “no actions for anyone” ANM shape is permitted; it is immediately followed by game termination.
 - **Implementations / tests:**
-  - Victory logic in [`TypeScript.victoryLogic.evaluateVictory`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45).
+  - Victory logic in [`TypeScript.VictoryAggregate.evaluateVictory`](../../src/shared/engine/aggregates/VictoryAggregate.ts:45).
   - Stalemate scenarios in [`tests/unit/GameEngine.victory.scenarios.test.ts`](../../tests/unit/GameEngine.victory.scenarios.test.ts:1) and Python parity tests.
 - **RR-CANON mapping:**
   - `RR-CANON-R173` plus the global ANM property that no non-terminal ACTIVE state may be a global stalemate.

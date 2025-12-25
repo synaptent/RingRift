@@ -86,7 +86,7 @@ The following domain aggregates under `src/shared/engine/aggregates/**` are the 
 - [`EliminationAggregate`](../../src/shared/engine/aggregates/EliminationAggregate.ts:1) – ring elimination semantics for line, territory, and forced elimination contexts.
 - [`VictoryAggregate`](../../src/shared/engine/aggregates/VictoryAggregate.ts:1) – victory evaluation and tie-breaking, surfaced via `evaluateVictory`.
 
-All hosts and helpers (backend, sandbox, Python mirror, diagnostics scripts) **must** treat these aggregates and their helper modules (`movementLogic.ts`, `captureLogic.ts`, `lineDecisionHelpers.ts`, `territoryDecisionHelpers.ts`, `victoryLogic.ts`, etc.) as the **only authoritative implementation of placement, movement, recovery, capture, line, territory, elimination, and victory semantics**.
+All hosts and helpers (backend, sandbox, Python mirror, diagnostics scripts) **must** treat these aggregates and their helper modules (`movementLogic.ts`, `captureLogic.ts`, `lineDecisionHelpers.ts`, `territoryDecisionHelpers.ts`, `VictoryAggregate.ts`, etc.) as the **only authoritative implementation of placement, movement, recovery, capture, line, territory, elimination, and victory semantics**.
 
 ### 2.3 Host adapters and hosts
 

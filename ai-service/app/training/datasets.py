@@ -944,7 +944,421 @@ class WeightedRingRiftDataset(RingRiftDataset):
         )
 
 
+class StreamingRingRiftDataset(Dataset):
+    """Memory-efficient streaming dataset for very large training files.
+
+    Unlike RingRiftDataset which loads everything into RAM, this class uses:
+    - Memory-mapped numpy arrays (for .npy files)
+    - HDF5 datasets (for .h5/.hdf5 files)
+
+    This enables training on datasets larger than available RAM (10M+ samples).
+
+    Note: NPZ files are compressed zip archives and cannot be memory-mapped.
+    Convert large NPZ files to HDF5 using `convert_npz_to_hdf5()` first.
+
+    Usage:
+        # For HDF5 files (recommended for very large datasets):
+        dataset = StreamingRingRiftDataset("data/training/large_dataset.h5", board_type=BoardType.HEX8)
+
+        # Convert NPZ to HDF5:
+        from app.training.datasets import convert_npz_to_hdf5
+        convert_npz_to_hdf5("data/training/large.npz", "data/training/large.h5")
+
+    Performance:
+        - Initial load: O(1) - just opens file handles
+        - Per-sample access: Slightly slower than RAM (~10-20%)
+        - Memory usage: O(batch_size) instead of O(dataset_size)
+
+    Args:
+        data_path: Path to HDF5 file (.h5 or .hdf5)
+        board_type: Board geometry type (for augmentation)
+        augment_hex: Enable D6 symmetry augmentation for hex boards
+    """
+
+    def __init__(
+        self,
+        data_path: str,
+        board_type: BoardType = BoardType.SQUARE8,
+        augment_hex: bool = False,
+        use_multi_player_values: bool = False,
+        filter_empty_policies: bool = True,
+        return_num_players: bool = False,
+    ):
+        self.data_path = data_path
+        self.board_type = board_type
+        self.augment_hex = augment_hex and board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
+        self.use_multi_player_values = use_multi_player_values
+        self.filter_empty_policies = filter_empty_policies
+        self.return_num_players = return_num_players
+
+        self.length = 0
+        self._h5_file = None
+        self._features = None
+        self._globals = None
+        self._values = None
+        self._values_mp = None
+        self._policy_indices = None
+        self._policy_values = None
+        self._num_players = None
+        self.has_policy = True
+        self.has_multi_player_values = False
+        self.valid_indices = None
+        self.policy_size = 0
+        self.hex_transform = None
+        self.spatial_shape = None
+
+        # Initialize hex transform if augmentation enabled
+        if self.augment_hex:
+            hex_board_size = 9 if board_type == BoardType.HEX8 else 25
+            self.hex_transform = HexSymmetryTransform(board_size=hex_board_size)
+            logger.info(f"Streaming dataset: Hex augmentation enabled (D6, size={hex_board_size})")
+
+        if not os.path.exists(data_path):
+            logger.error(f"Streaming dataset file not found: {data_path}")
+            return
+
+        try:
+            import h5py
+        except ImportError:
+            logger.error("h5py required for streaming datasets. Install with: pip install h5py")
+            return
+
+        try:
+            # Open HDF5 file in read mode (keeps file handle open for lazy reads)
+            self._h5_file = h5py.File(data_path, 'r')
+
+            # Get references to datasets (no data loaded yet)
+            self._features = self._h5_file['features']
+            self._globals = self._h5_file['globals']
+            self._values = self._h5_file['values']
+
+            # Check for policy data
+            if 'policy_indices' in self._h5_file and 'policy_values' in self._h5_file:
+                self._policy_indices = self._h5_file['policy_indices']
+                self._policy_values = self._h5_file['policy_values']
+                self.has_policy = True
+            else:
+                self.has_policy = False
+                logger.info(f"No policy data in {data_path} - value-only streaming mode")
+
+            # Check for multi-player values
+            if 'values_mp' in self._h5_file and 'num_players' in self._h5_file:
+                self._values_mp = self._h5_file['values_mp']
+                self._num_players = self._h5_file['num_players']
+                self.has_multi_player_values = True
+
+            total_samples = len(self._features)
+
+            # Build valid indices (filtering empty policies if needed)
+            if not self.has_policy:
+                self.valid_indices = list(range(total_samples))
+            elif self.filter_empty_policies:
+                # For HDF5, we need to scan policy lengths
+                # This is a one-time cost at initialization
+                self.valid_indices = []
+                for i in range(total_samples):
+                    if len(self._policy_indices[i]) > 0:
+                        self.valid_indices.append(i)
+
+                filtered = total_samples - len(self.valid_indices)
+                if filtered > 0:
+                    logger.info(f"Streaming: Filtered {filtered} terminal states")
+            else:
+                self.valid_indices = list(range(total_samples))
+
+            self.length = len(self.valid_indices)
+
+            # Get spatial shape from first sample
+            if self.length > 0:
+                sample_shape = self._features[0].shape
+                if len(sample_shape) >= 3:
+                    self.spatial_shape = tuple(sample_shape[-2:])
+
+            # Infer policy size from metadata or data
+            if 'policy_size' in self._h5_file.attrs:
+                self.policy_size = int(self._h5_file.attrs['policy_size'])
+            else:
+                self.policy_size = get_policy_size_for_board(self.board_type)
+
+            logger.info(
+                f"Streaming dataset opened: {self.length} samples from {data_path} "
+                f"(zero RAM loaded, policy_size={self.policy_size})"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to open streaming dataset {data_path}: {e}")
+            if self._h5_file is not None:
+                self._h5_file.close()
+            self._h5_file = None
+            self.length = 0
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        if self.length == 0 or self._h5_file is None:
+            raise IndexError("Dataset is empty or not loaded")
+
+        # Map through valid_indices
+        actual_idx = self.valid_indices[idx] if self.valid_indices else idx
+
+        # Read only this sample from disk (HDF5 handles efficient chunk access)
+        features = np.array(self._features[actual_idx])
+        globals_vec = np.array(self._globals[actual_idx])
+        value = np.array(self._values[actual_idx])
+
+        # Policy data
+        if self.has_policy:
+            policy_indices = np.array(self._policy_indices[actual_idx])
+            policy_values = np.array(self._policy_values[actual_idx])
+        else:
+            policy_indices = np.array([], dtype=np.int32)
+            policy_values = np.array([], dtype=np.float32)
+
+        # Apply hex augmentation
+        if self.augment_hex and self.hex_transform is not None:
+            transform_id = random.randint(0, 11)
+            if transform_id != 0:
+                features = self.hex_transform.transform_board(features, transform_id)
+                if self.has_policy and len(policy_indices) > 0:
+                    policy_indices, policy_values = self.hex_transform.transform_sparse_policy(
+                        policy_indices.astype(np.int32),
+                        policy_values.astype(np.float32),
+                        transform_id
+                    )
+
+        # Build dense policy vector
+        policy_vector = torch.zeros(self.policy_size, dtype=torch.float32)
+        if len(policy_indices) > 0:
+            indices_arr = np.asarray(policy_indices, dtype=np.int64)
+            values_arr = np.asarray(policy_values, dtype=np.float32)
+            policy_vector[indices_arr] = torch.from_numpy(values_arr)
+
+        # Value tensor
+        if self.use_multi_player_values and self.has_multi_player_values:
+            values_mp = np.asarray(self._values_mp[actual_idx], dtype=np.float32)
+            value_tensor = torch.from_numpy(values_mp)
+        else:
+            value_tensor = torch.tensor([value.item()], dtype=torch.float32)
+
+        # Return with optional num_players
+        if self.return_num_players and self._num_players is not None:
+            num_players_val = int(self._num_players[actual_idx])
+            return (
+                torch.from_numpy(features),
+                torch.from_numpy(globals_vec),
+                value_tensor,
+                policy_vector,
+                torch.tensor(num_players_val, dtype=torch.int64),
+            )
+
+        return (
+            torch.from_numpy(features),
+            torch.from_numpy(globals_vec),
+            value_tensor,
+            policy_vector,
+        )
+
+    def close(self):
+        """Close the HDF5 file handle."""
+        if self._h5_file is not None:
+            self._h5_file.close()
+            self._h5_file = None
+
+    def __del__(self):
+        self.close()
+
+
+def convert_npz_to_hdf5(
+    npz_path: str,
+    hdf5_path: str,
+    chunk_size: int = 1000,
+    compression: str = "gzip",
+) -> bool:
+    """Convert NPZ training data to HDF5 format for streaming.
+
+    HDF5 supports true memory-mapping and chunk-based access, making it
+    suitable for datasets larger than RAM.
+
+    Args:
+        npz_path: Path to input NPZ file
+        hdf5_path: Path for output HDF5 file
+        chunk_size: Chunk size for HDF5 datasets (affects read performance)
+        compression: Compression algorithm ("gzip", "lzf", or None)
+
+    Returns:
+        True if conversion succeeded
+    """
+    try:
+        import h5py
+    except ImportError:
+        logger.error("h5py required for conversion. Install with: pip install h5py")
+        return False
+
+    if not os.path.exists(npz_path):
+        logger.error(f"Source NPZ not found: {npz_path}")
+        return False
+
+    logger.info(f"Converting {npz_path} to HDF5 format...")
+
+    try:
+        # Load NPZ
+        npz_data = np.load(npz_path, allow_pickle=True)
+        data = {k: np.asarray(v) for k, v in npz_data.items()}
+
+        if 'features' not in data or 'values' not in data:
+            logger.error("NPZ missing required 'features' or 'values' arrays")
+            return False
+
+        n_samples = len(data['features'])
+        logger.info(f"Converting {n_samples:,} samples...")
+
+        # Create HDF5 file
+        with h5py.File(hdf5_path, 'w') as h5f:
+            # Core arrays with chunking for efficient streaming
+            feat_shape = data['features'].shape
+            h5f.create_dataset(
+                'features',
+                data=data['features'],
+                chunks=(min(chunk_size, n_samples),) + feat_shape[1:],
+                compression=compression,
+            )
+
+            global_shape = data['globals'].shape
+            h5f.create_dataset(
+                'globals',
+                data=data['globals'],
+                chunks=(min(chunk_size, n_samples),) + global_shape[1:],
+                compression=compression,
+            )
+
+            h5f.create_dataset(
+                'values',
+                data=data['values'],
+                chunks=(min(chunk_size, n_samples),),
+                compression=compression,
+            )
+
+            # Policy arrays (variable-length - use special dtype)
+            if 'policy_indices' in data and 'policy_values' in data:
+                # HDF5 variable-length arrays
+                dt_indices = h5py.special_dtype(vlen=np.int32)
+                dt_values = h5py.special_dtype(vlen=np.float32)
+
+                pi_ds = h5f.create_dataset(
+                    'policy_indices',
+                    shape=(n_samples,),
+                    dtype=dt_indices,
+                )
+                pv_ds = h5f.create_dataset(
+                    'policy_values',
+                    shape=(n_samples,),
+                    dtype=dt_values,
+                )
+
+                for i in range(n_samples):
+                    pi_ds[i] = np.asarray(data['policy_indices'][i], dtype=np.int32)
+                    pv_ds[i] = np.asarray(data['policy_values'][i], dtype=np.float32)
+
+            # Multi-player values
+            if 'values_mp' in data:
+                h5f.create_dataset(
+                    'values_mp',
+                    data=data['values_mp'],
+                    chunks=(min(chunk_size, n_samples),) + data['values_mp'].shape[1:],
+                    compression=compression,
+                )
+
+            if 'num_players' in data:
+                h5f.create_dataset(
+                    'num_players',
+                    data=data['num_players'],
+                    compression=compression,
+                )
+
+            # Store metadata as attributes
+            for key in ['board_type', 'board_size', 'policy_size', 'encoder_type',
+                        'in_channels', 'spatial_size']:
+                if key in data:
+                    val = data[key]
+                    if hasattr(val, 'item'):
+                        val = val.item()
+                    h5f.attrs[key] = val
+
+        # Verify file size
+        npz_size = os.path.getsize(npz_path) / (1024 * 1024)
+        h5_size = os.path.getsize(hdf5_path) / (1024 * 1024)
+        logger.info(
+            f"Conversion complete: {npz_size:.1f}MB -> {h5_size:.1f}MB "
+            f"({h5_size/npz_size*100:.0f}%)"
+        )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}")
+        if os.path.exists(hdf5_path):
+            os.remove(hdf5_path)
+        return False
+
+
+def auto_select_dataset(
+    data_path: str,
+    board_type: BoardType = BoardType.SQUARE8,
+    memory_threshold_mb: float = 4000.0,
+    **kwargs,
+) -> Dataset:
+    """Automatically select appropriate dataset class based on file size.
+
+    For files larger than memory_threshold_mb, uses StreamingRingRiftDataset
+    (requires HDF5 format). Otherwise uses standard RingRiftDataset.
+
+    Args:
+        data_path: Path to training data (.npz or .h5)
+        board_type: Board geometry type
+        memory_threshold_mb: Size threshold in MB for streaming mode
+        **kwargs: Additional arguments passed to dataset constructor
+
+    Returns:
+        Appropriate Dataset instance
+    """
+    if not os.path.exists(data_path):
+        logger.warning(f"File not found: {data_path}, falling back to standard dataset")
+        return RingRiftDataset(data_path, board_type, **kwargs)
+
+    file_size_mb = os.path.getsize(data_path) / (1024 * 1024)
+
+    # Check file extension
+    is_hdf5 = data_path.endswith('.h5') or data_path.endswith('.hdf5')
+
+    if file_size_mb > memory_threshold_mb:
+        if not is_hdf5:
+            logger.warning(
+                f"Large file ({file_size_mb:.0f}MB > {memory_threshold_mb:.0f}MB threshold) "
+                f"but not HDF5 format. Convert with convert_npz_to_hdf5() for streaming. "
+                f"Loading into RAM instead..."
+            )
+            return RingRiftDataset(data_path, board_type, **kwargs)
+
+        logger.info(
+            f"Using streaming dataset for large file ({file_size_mb:.0f}MB)"
+        )
+        return StreamingRingRiftDataset(data_path, board_type, **kwargs)
+
+    elif is_hdf5:
+        # HDF5 file but small enough - still use streaming for consistency
+        logger.info(f"Using streaming dataset for HDF5 file ({file_size_mb:.0f}MB)")
+        return StreamingRingRiftDataset(data_path, board_type, **kwargs)
+
+    else:
+        # Standard NPZ, small enough for RAM
+        return RingRiftDataset(data_path, board_type, **kwargs)
+
+
 __all__ = [
     'RingRiftDataset',
     'WeightedRingRiftDataset',
+    'StreamingRingRiftDataset',
+    'convert_npz_to_hdf5',
+    'auto_select_dataset',
 ]

@@ -17,7 +17,7 @@ import { territoryRuleScenarios, TerritoryRuleScenario } from './rulesMatrix';
  * These tests replay Section 12 / FAQ Q23-style disconnected-region examples
  * using the data-only TerritoryRuleScenario definitions from rulesMatrix.ts.
  *
- * They complement tests/unit/GameEngine.territory.scenarios.test.ts by making
+ * They complement tests/unit/territoryProcessing.shared.test.ts by making
  * the self-elimination prerequisite explicit in the shared scenario matrix.
  */
 
@@ -25,7 +25,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
   function createPlayers(boardType: BoardType): Player[] {
-    // Match the shape used in GameEngine.territory.scenarios.test.ts: three
+    // Match the shape used in shared territoryProcessing tests: three
     // human players with full ringsInHand and zero eliminated/territory.
     const ringsInHand = BOARD_CONFIGS[boardType].ringsPerPlayer;
     return [

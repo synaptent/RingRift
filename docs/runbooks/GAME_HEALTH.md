@@ -240,7 +240,7 @@ If rules semantics are technically respected but allow **practically endless** g
    - Introduce maximum move counts or repetition rules.
    - Offer or enforce draws after N moves without material progress, consistent with rules decisions documented in `RULES_CANONICAL_SPEC.md` and supplementary clarifications.
 2. **Implement draw / stalemate detection:**
-   - Extend victory and stalemate logic (`victoryLogic.ts`, aggregates, and orchestrator) to detect agreed-upon stalemate patterns.
+   - Extend victory and stalemate logic (`VictoryAggregate.ts`, aggregates, and orchestrator) to detect agreed-upon stalemate patterns.
    - Add regression tests and, where appropriate, parity fixtures to enforce the new behaviour.
 3. **Update AI behaviour (for AI games):**
    - For modes that are clearly prone to looped games, adjust AI evaluation or exploration settings (in the AI service) to favour progress and game termination.

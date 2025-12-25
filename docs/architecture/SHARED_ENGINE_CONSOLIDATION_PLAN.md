@@ -184,7 +184,7 @@ Implementation for this task was completed by consolidating all TS capture‑cha
 - Legacy helpers now acting as shims:
   - [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts)
     - Reduced to a thin wrapper that re‑exports `CaptureBoardAdapters` and forwards [`enumerateCaptureMoves`](../../src/shared/engine/captureLogic.ts:22) to the aggregate implementation. All ray‑walk and geometry logic was removed from this file.
-  - [`captureChainHelpers.ts`](../../src/shared/engine/chainCaptureTracking.ts)
+  - [`chainCaptureTracking.ts`](../../src/shared/engine/chainCaptureTracking.ts)
     - Refactored into a compatibility layer that:
       - Defines a legacy [`ChainCaptureStateSnapshot`](../../src/shared/engine/chainCaptureTracking.ts:41) with `visitedTargets?: string[]` and maps it to the canonical snapshot’s `capturedThisChain: Position[]` via `stringToPosition`.
       - Adapts [`ChainCaptureEnumerationOptions`](../../src/shared/engine/chainCaptureTracking.ts:68) to the aggregate’s `ChainCaptureEnumerationOptions`, with explicit property copying to keep `exactOptionalPropertyTypes` happy.
@@ -202,7 +202,7 @@ Implementation for this task was completed by consolidating all TS capture‑cha
 
 - All capture ray‑walk and reachability logic in legacy helpers has been removed in favour of [`enumerateCaptureMoves`](../../src/shared/engine/aggregates/CaptureAggregate.ts:382) and [`enumerateChainCaptureSegments`](../../src/shared/engine/aggregates/CaptureAggregate.ts:535). Backend and sandbox enumeration already flow through these helpers (directly or via adapters), so future P1.3/P1.4 work can safely delete any remaining host‑side capture geometry.
 - Capture mutation semantics (departure marker, intermediate marker processing, ring transfer, landing‑on‑own‑marker elimination) are now implemented only in [`mutateCapture`](../../src/shared/engine/aggregates/CaptureAggregate.ts:632). Backend and sandbox mutators are thin adapters over this core.
-- [`captureChainHelpers.ts`](../../src/shared/engine/chainCaptureTracking.ts) is explicitly documented as:
+- [`chainCaptureTracking.ts`](../../src/shared/engine/chainCaptureTracking.ts) is explicitly documented as:
   - A UI/AI convenience layer for approximate chain inspection.
   - A strict delegator for enumeration and validation, not an independent rules surface.
 
@@ -212,9 +212,9 @@ Implementation for this task was completed by consolidating all TS capture‑cha
   - Using [`validateCaptureSegmentOnBoard`](../../src/shared/engine/core.ts:243) for all segment legality checks.
   - [`mutateCapture`](../../src/shared/engine/aggregates/CaptureAggregate.ts:632) removes any marker found at the landing cell and eliminates the top ring of the attacking stack's cap.
 - **Visited‑set policy:** the aggregate keeps `capturedThisChain` and an optional `disallowRevisitedTargets` flag (used only by analysis tools such as [`scripts/findCyclicCaptures.js`](../../scripts/findCyclicCaptures.js:1)). Rules‑level helpers such as [`getChainCaptureContinuationInfo`](../../src/shared/engine/aggregates/CaptureAggregate.ts:579) call `enumerateChainCaptureSegments` without this flag, ensuring cyclic and revisiting chains remain legal as required by [`RR-CANON-R103`](../../RULES_CANONICAL_SPEC.md:317).
-- **TS coverage:** targeted Jest runs over capture‑focused suites (including `captureLogic.shared`, `captureChainHelpers.shared`, `captureSequenceEnumeration`, `GameEngine.chainCapture`, and [`CaptureAggregate.chainCapture.shared`](../../tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1)) now report:
+- **TS coverage:** targeted Jest runs over capture‑focused suites (including `captureLogic.shared`, `chainCaptureTracking.test.ts`, `captureSequenceEnumeration`, `GameEngine.chainCapture`, and [`CaptureAggregate.chainCapture.shared`](../../tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1)) now report:
   - [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts:1) — 100% statements/branches/functions/lines.
-  - [`captureChainHelpers.ts`](../../src/shared/engine/chainCaptureTracking.ts:1) — ~92% statements/lines and >80% branches.
+  - [`chainCaptureTracking.ts`](../../src/shared/engine/chainCaptureTracking.ts:1) — ~92% statements/lines and >80% branches.
   - [`CaptureAggregate.ts`](../../src/shared/engine/aggregates/CaptureAggregate.ts:1) — ≈93% statements, ≈94% branches, ≈94% lines.
   - Global Jest coverage thresholds for the entire repository remain below 80%, but the capture modules themselves meet the ≥90% line/branch target for this phase.
 
@@ -340,7 +340,7 @@ This subphase aligns the **TS sandbox capture implementation** with the shared c
   - Its header comment explicitly documents:
     - This is an **analysis/debug‑only** helper.
     - It must **not** be used to drive `getValidMoves`, `ClientSandboxEngine.handleMovementClick`, AI legality checks, or any other user‑visible rules surfaces.
-    - All canonical legality and continuation semantics must instead come from `CaptureAggregate` (or shims in [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts:1) / [`captureChainHelpers.ts`](../../src/shared/engine/chainCaptureTracking.ts:1)).
+    - All canonical legality and continuation semantics must instead come from `CaptureAggregate` (or shims in [`captureLogic.ts`](../../src/shared/engine/captureLogic.ts:1) / [`chainCaptureTracking.ts`](../../src/shared/engine/chainCaptureTracking.ts:1)).
 
 **Tests updated / extended for sandbox–core parity**
 

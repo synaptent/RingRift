@@ -49,6 +49,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.core.async_context import fire_and_forget, safe_create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,6 +112,9 @@ class DaemonType(Enum):
 
     # Replication monitor (December 2025) - monitor data replication health
     REPLICATION_MONITOR = "replication_monitor"
+
+    # Tournament daemon (December 2025) - automatic tournament scheduling
+    TOURNAMENT_DAEMON = "tournament_daemon"
 
 
 class DaemonState(Enum):
@@ -208,7 +213,10 @@ class DaemonManager:
         if cls._instance is not None:
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(cls._instance.shutdown())
+                fire_and_forget(
+                    cls._instance.shutdown(),
+                    name="daemon_manager_reset_shutdown",
+                )
             except RuntimeError:
                 cls._instance._sync_shutdown()
         cls._instance = None
@@ -246,6 +254,9 @@ class DaemonManager:
 
         # Replication monitor (December 2025)
         self.register_factory(DaemonType.REPLICATION_MONITOR, self._create_replication_monitor)
+
+        # Tournament daemon (December 2025)
+        self.register_factory(DaemonType.TOURNAMENT_DAEMON, self._create_tournament_daemon)
 
     def register_factory(
         self,
@@ -310,7 +321,7 @@ class DaemonManager:
             # Start daemon
             info.state = DaemonState.STARTING
             try:
-                info.task = asyncio.create_task(
+                info.task = safe_create_task(
                     self._run_daemon(daemon_type, factory),
                     name=f"daemon_{daemon_type.value}"
                 )
@@ -501,12 +512,15 @@ class DaemonManager:
         # Start health check loop
         if not self._health_task or self._health_task.done():
             self._running = True
-            self._health_task = asyncio.create_task(self._health_loop())
+            self._health_task = safe_create_task(
+                self._health_loop(),
+                name="daemon_health_loop"
+            )
 
         # Start daemon watchdog for active monitoring
         try:
             from app.coordination.daemon_watchdog import start_watchdog
-            asyncio.create_task(start_watchdog())
+            safe_create_task(start_watchdog(), name="daemon_watchdog")
             logger.info("Daemon watchdog started")
         except Exception as e:
             logger.warning(f"Failed to start daemon watchdog: {e}")
@@ -559,7 +573,10 @@ class DaemonManager:
         try:
             loop = asyncio.get_running_loop()
             if loop.is_running():
-                loop.create_task(self.shutdown())
+                fire_and_forget(
+                    self.shutdown(),
+                    name="daemon_manager_atexit_shutdown",
+                )
         except RuntimeError:
             # No running loop
             pass
@@ -906,6 +923,30 @@ class DaemonManager:
             logger.error(f"ReplicationMonitorDaemon not available: {e}")
             raise  # Propagate error so DaemonManager marks as FAILED
 
+    async def _create_tournament_daemon(self) -> None:
+        """Create and run tournament scheduling daemon (December 2025).
+
+        Automatically schedules evaluation tournaments when:
+        - New models are trained (TRAINING_COMPLETED event)
+        - Periodic ladder tournaments (configurable interval)
+
+        Integrates with EloService to update ratings and emits
+        EVALUATION_COMPLETED events for downstream consumers.
+        """
+        try:
+            from app.coordination.tournament_daemon import get_tournament_daemon
+
+            daemon = get_tournament_daemon()
+            await daemon.start()
+
+            # Wait for daemon to complete (or be stopped)
+            while daemon.is_running():
+                await asyncio.sleep(10)
+
+        except ImportError as e:
+            logger.error(f"TournamentDaemon not available: {e}")
+            raise  # Propagate error so DaemonManager marks as FAILED
+
 
 # Singleton accessor
 _daemon_manager: DaemonManager | None = None
@@ -942,7 +983,10 @@ def setup_signal_handlers() -> None:
         manager = get_daemon_manager()
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(manager.shutdown())
+            fire_and_forget(
+                manager.shutdown(),
+                name="daemon_manager_signal_shutdown",
+            )
         except RuntimeError:
             # No running loop
             manager._sync_shutdown()

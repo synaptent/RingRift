@@ -73,6 +73,44 @@ def _ensure_game_modules():
     _game_modules_loaded = True
 
 
+# ============================================
+# Adaptive Resource Management (Dec 2025)
+# ============================================
+# Prevents resource exhaustion by scaling workers based on system load
+
+
+def get_adaptive_max_workers(requested: int = 4) -> int:
+    """Reduce workers if system is under load.
+
+    This helps prevent resource exhaustion when multiple gauntlets run
+    concurrently or when the system is already under heavy load.
+
+    Args:
+        requested: Requested number of workers (default: 4)
+
+    Returns:
+        Adjusted worker count based on system load
+    """
+    try:
+        import os
+        load_avg = os.getloadavg()[0]
+        cpu_count = os.cpu_count() or 1
+        load_ratio = load_avg / cpu_count
+
+        if load_ratio > 0.8:
+            # Heavy load: use minimal workers
+            return max(1, requested // 4)
+        elif load_ratio > 0.5:
+            # Moderate load: use half workers
+            return max(2, requested // 2)
+        else:
+            # Normal load: use requested workers
+            return requested
+    except Exception:
+        # If we can't check load, use conservative default
+        return min(requested, 2)
+
+
 class BaselineOpponent(Enum):
     """Standard baseline opponents for evaluation."""
     RANDOM = "random"

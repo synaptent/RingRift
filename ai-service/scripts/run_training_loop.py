@@ -31,7 +31,7 @@ Pipeline Flow:
     2. NPZ export from databases
     3. Training with early stopping
     4. Evaluation (Elo rating)
-    5. Promotion (if --auto-promote and wins gauntlet)
+    5. Promotion (automatic if model wins gauntlet, disable with --no-auto-promote)
 """
 
 from __future__ import annotations
@@ -128,7 +128,14 @@ def parse_args() -> argparse.Namespace:
     pipeline_group.add_argument(
         "--auto-promote",
         action="store_true",
-        help="Automatically promote model if it wins gauntlet evaluation",
+        default=True,
+        help="Automatically promote model if it wins gauntlet evaluation (default: True)",
+    )
+    pipeline_group.add_argument(
+        "--no-auto-promote",
+        action="store_false",
+        dest="auto_promote",
+        help="Disable automatic model promotion after evaluation",
     )
     pipeline_group.add_argument(
         "--skip-evaluation",

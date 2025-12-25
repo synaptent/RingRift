@@ -208,7 +208,7 @@ If AI latency is elevated and aligns with move latency spikes:
 If AI and external dependencies are healthy but move latency is high:
 
 - Review recent changes to:
-  - Shared engine core and helpers (`src/shared/engine/core.ts`, `movementLogic.ts`, `captureLogic.ts`, `territoryProcessing.ts`, `victoryLogic.ts`, aggregates under `aggregates/**`).
+  - Shared engine core and helpers (`src/shared/engine/core.ts`, `movementLogic.ts`, `captureLogic.ts`, `territoryProcessing.ts`, `aggregates/VictoryAggregate.ts`, aggregates under `aggregates/**`).
   - Server‑side GameEngine and RuleEngine (`src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`, `src/server/game/turn/TurnEngine.ts`).
 - Consider the complexity of known heavy scenarios:
   - Large capture chains and complex territories.

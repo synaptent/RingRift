@@ -615,7 +615,7 @@ Historically, the engine was described as:
 - Domain-specific modules were grouped as:
   - **Placement:** `validators/PlacementValidator.ts`, `mutators/PlacementMutator.ts`, `placementHelpers.ts`.
   - **Movement:** `movementLogic.ts`, `validators/MovementValidator.ts`, `mutators/MovementMutator.ts`, `movementApplication.ts`.
-  - **Capture:** `captureLogic.ts`, `captureChainHelpers.ts`, `validators/CaptureValidator.ts`, `mutators/CaptureMutator.ts`.
+  - **Capture:** `captureLogic.ts`, `chainCaptureTracking.ts`, `validators/CaptureValidator.ts`, `mutators/CaptureMutator.ts`.
   - **Line:** `lineDetection.ts`, `lineDecisionHelpers.ts`, `validators/LineValidator.ts`, `mutators/LineMutator.ts`.
   - **Territory:** `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts` (canonical helpers), plus legacy plumbing `validators/TerritoryValidator.ts` and `mutators/TerritoryMutator.ts` used as implementation details under `TerritoryAggregate`.
   - **Victory:** `aggregates/VictoryAggregate.ts`.

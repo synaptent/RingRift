@@ -743,10 +743,10 @@ These issues have been addressed but are kept here for context:
     MUST have a winner via ring elimination, territory control, LPS, or stalemate.
 
   **Root Cause (likely):**
-  - `evaluateVictory()` in `victoryLogic.ts:102-135` falls through to stalemate
+  - `evaluateVictory()` in `aggregates/VictoryAggregate.ts` falls through to stalemate
     logic when no player "can act", but the logic doesn't count players with
-    only forced-elimination as having actions. Line 126: `!hasForcedEliminationAction`
-    makes `somePlayerCanAct = false` when FE is the only available action.
+    only forced-elimination as having actions. The `!hasForcedEliminationAction`
+    check makes `somePlayerCanAct = false` when FE is the only available action.
   - Per RR-CANON-R072/R100/R203, forced elimination IS a valid action that should
     continue the game, not trigger stalemate.
 
@@ -754,7 +754,7 @@ These issues have been addressed but are kept here for context:
   because the FSM doesn't check victory condition validity. This is a RULES BUG.
 
   **Resolution Path:**
-  1. ✅ FIXED: `evaluateVictory()` trapped-position check (lines 102-135) now treats
+  1. ✅ FIXED: `evaluateVictory()` trapped-position check now treats
      players with stacks as "can act" (either real moves or forced elimination).
      Changed `!hasForcedEliminationAction` to just `playerHasStacks` (Dec 10, 2025).
   2. ✅ FIXED: `enumerateProcessLineMoves()` in TS (`src/shared/engine/aggregates/LineAggregate.ts`)
@@ -795,8 +795,8 @@ These issues have been addressed but are kept here for context:
     935-1000 of `ai-service/app/game_engine.py`), using `lps_consecutive_exclusive_rounds`
     and `lps_consecutive_exclusive_player` state fields.
   - TypeScript has a complete `lpsTracking.ts` module with `evaluateLpsVictory()` but
-    the TS replay script was using only `evaluateVictory()` from `victoryLogic.ts` which
-    returns `{ isGameOver: false }` at line 108 if `state.board.stacks.size > 0`, bypassing
+    the TS replay script was using only `evaluateVictory()` from `aggregates/VictoryAggregate.ts` which
+    returns `{ isGameOver: false }` when `state.board.stacks.size > 0`, bypassing
     round-based LPS entirely.
   - The result: Python declared LPS victory after 3 consecutive rounds where one player
     is the exclusive real-action holder, while TS continued the game.

@@ -69,7 +69,7 @@ important groups are:
   - Board‑level placement mutators: [`PlacementMutator.ts`](../../src/shared/engine/mutators/PlacementMutator.ts:1)
 
 - **Victory**
-  - Ring‑elimination, Territory‑majority, and stalemate ladder: [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51)
+  - Ring‑elimination, Territory‑majority, and stalemate ladder: [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51)
 
 - **Turn sequencing & orchestration**
   - Shared phase/turn state machine: [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts:132)
@@ -175,7 +175,7 @@ truth:
   [`PlacementMutator.ts`](../../src/shared/engine/mutators/PlacementMutator.ts:1),
   [`PlacementAggregate.ts`](../../src/shared/engine/aggregates/PlacementAggregate.ts:1) (canonical `place_ring` / `skip_placement` validation and mutation, including no-dead-placement and skip-eligibility helpers now consumed directly by backend `RuleEngine`, `GameEngine`, and `ClientSandboxEngine`),
   [`placementHelpers.ts`](../../src/shared/engine/placementHelpers.ts:1).
-- Victory: [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51),
+- Victory: [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51),
   [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:1).
 - Turn orchestration: [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts:132),
   [`phaseStateMachine.ts`](../../src/shared/engine/orchestration/phaseStateMachine.ts:1),
@@ -990,20 +990,19 @@ shared turn sequencer, they enforce the rules-level condition
 Several test suites and harnesses work together to enforce the termination
 ladder and detect stalls:
 
-- **Single-seed debug harness:**
-  - `tests/unit/ClientSandboxEngine.aiSingleSeedDebug.test.ts` drives a single
-    sandbox AI-vs-AI game for `square8` / `2p` / `seed=18`.
+- **Single-seed debug harness (archived):**
+  - `archive/tests/unit/ClientSandboxEngine.aiStall.seed1.test.ts` drives a
+    single sandbox AI-vs-AI game as an opt-in diagnostic regression harness.
   - After each AI action, it:
     - Asserts S-invariant non-decrease (`computeProgressSnapshot`).
     - Tracks consecutive stagnant steps (unchanged state hash while active)
       and breaks early when a stall threshold is reached.
     - Calls `engineAny.assertBoardInvariants(...)` to enforce board
       exclusivity.
-    - At failure time (pre-fix), logged rich diagnostics including
-      `legalPlacements`, movement options on hypothetical boards, and a
-      rolling `recentHistory` of S and resource snapshots.
-  - Post-fix, this test now **terminates within the action budget** and the
-    final `gameStatus` is not `active`.
+    - Logs rich diagnostics including `legalPlacements`, movement options on
+      hypothetical boards, and a rolling `recentHistory` of S/resource snapshots.
+  - This harness is intentionally archived to keep CI lightweight while
+    preserving deep, seed-specific stall diagnostics.
 
 - **Fuzz AI simulation harness:**
   - `tests/unit/ClientSandboxEngine.aiSimulation.test.ts` fuzzes across
@@ -1016,17 +1015,14 @@ ladder and detect stalls:
   - This harness is gated behind `RINGRIFT_ENABLE_SANDBOX_AI_SIM=1` due to
     its cost but is the primary long-run stall detector.
 
-- **Targeted regression test:**
-  - `tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts` encodes the
-    historical seed-18 stall as a fast, CI-friendly regression:
-    - Replays the same `square8` / `2p` / `seed=18` setup with the shared LCG.
-    - Calls `maybeRunAITurn` up to a modest `MAX_AI_ACTIONS`.
-    - Tracks consecutive no-op AI turns (unchanged hash while active) and
-      fails if a long no-op run is observed.
-    - Asserts that the final `gameStatus` is **not** `active`.
-  - This test ensures that any future change to sandbox AI ring_placement or
-    forced-elimination control flow that would reintroduce a stall is caught
-    quickly.
+- **Targeted regression tests:**
+  - `tests/unit/ClientSandboxEngine.aiStallDiagnostics.test.ts` verifies that
+    no-op AI turns are surfaced in the sandbox trace buffer and use the shared
+    stall-window length.
+  - `tests/unit/ClientSandboxEngine.aiStallNormalization.test.ts` guards the
+    stall normalization logic for AI turn counts under sandbox hooks.
+  - Together these tests ensure that sandbox AI stall detection remains robust
+    without relying on a single seed-specific replay.
 
 Together, these tests and diagnostics ensure that the **practical** behaviour
 of the sandbox AI matches the theoretical termination guarantees in
@@ -1047,7 +1043,7 @@ of the sandbox AI matches the theoretical termination guarantees in
   - [`CaptureMutator.ts`](../../src/shared/engine/mutators/CaptureMutator.ts:1)
   - [`territoryBorders.ts`](../../src/shared/engine/territoryBorders.ts:35)
   - [`territoryProcessing.ts`](../../src/shared/engine/territoryProcessing.ts:1)
-  - [`victoryLogic.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51)
+  - [`VictoryAggregate.ts`](../../src/shared/engine/aggregates/VictoryAggregate.ts:51)
   - [`turnLogic.ts`](../../src/shared/engine/turnLogic.ts:132)
 - Backend:
   - [`BoardManager.ts`](../../src/server/game/BoardManager.ts:1)
@@ -1062,6 +1058,6 @@ of the sandbox AI matches the theoretical termination guarantees in
   - `docs/supplementary/RULES_TERMINATION_ANALYSIS.md`
   - `src/client/sandbox/sandboxAI.ts`
   - `src/client/sandbox/ClientSandboxEngine.ts` (turn helpers)
-  - `tests/unit/ClientSandboxEngine.aiSingleSeedDebug.test.ts`
   - `tests/unit/ClientSandboxEngine.aiSimulation.test.ts`
-  - `tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts`
+  - `tests/unit/ClientSandboxEngine.aiStallDiagnostics.test.ts`
+  - `tests/unit/ClientSandboxEngine.aiStallNormalization.test.ts`

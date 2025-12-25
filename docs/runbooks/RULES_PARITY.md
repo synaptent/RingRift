@@ -239,7 +239,7 @@ If in doubt, convene a short rules review and document the decision in `docs/PAR
 Once you know the domain and suspect side:
 
 - **TypeScript side:**
-  - `src/shared/engine/core.ts`, `movementLogic.ts`, `captureLogic.ts`, `lineDetection.ts`, `territoryProcessing.ts`, `victoryLogic.ts`.
+  - `src/shared/engine/core.ts`, `movementLogic.ts`, `captureLogic.ts`, `lineDetection.ts`, `territoryProcessing.ts`, `aggregates/VictoryAggregate.ts`.
   - Aggregates and mutators under `src/shared/engine/aggregates/**` and `src/shared/engine/mutators/**`.
   - Orchestrator and state machines in `src/shared/engine/orchestration/**`, `src/shared/stateMachines/**`.
 
