@@ -305,7 +305,7 @@ def trigger_manual_pipeline(args: argparse.Namespace) -> bool:
     Returns:
         True if triggered successfully
     """
-    from app.coordination.stage_events import StageEvent, get_stage_bus
+    from app.coordination.event_router import get_router, StageEvent
 
     config_key = f"{args.board_type}_{args.num_players}p"
 
@@ -316,10 +316,10 @@ def trigger_manual_pipeline(args: argparse.Namespace) -> bool:
         return True
 
     # Emit a synthetic SELFPLAY_COMPLETE event to trigger the pipeline
-    bus = get_stage_bus()
-    bus.emit(
-        StageEvent.SELFPLAY_COMPLETE,
-        result={
+    router = get_router()
+    router.publish(
+        event_type=StageEvent.SELFPLAY_COMPLETE,
+        payload={
             "config_key": config_key,
             "board_type": args.board_type,
             "num_players": args.num_players,
@@ -369,6 +369,20 @@ def main() -> int:
     try:
         # Step 1: Bootstrap coordination
         bootstrap_pipeline(args)
+
+        # Step 1b: Start daemons (sync, health check, etc.) if not dry-run
+        if not args.dry_run:
+            try:
+                from app.coordination.daemon_manager import get_daemon_manager, DaemonType
+                manager = get_daemon_manager()
+                # Start essential daemons for pipeline operation
+                asyncio.run(manager.start(DaemonType.EVENT_ROUTER))
+                asyncio.run(manager.start(DaemonType.DATA_PIPELINE))
+                if args.sync_from_cluster:
+                    asyncio.run(manager.start(DaemonType.SYNC_COORDINATOR))
+                logger.info("Essential daemons started")
+            except Exception as e:
+                logger.warning(f"Could not start daemons: {e}")
 
         # Step 2: Run selfplay or trigger manual pipeline
         if args.skip_selfplay:

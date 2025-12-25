@@ -28205,34 +28205,48 @@ def main():
     if args.relay_peers:
         relay_peers = [p.strip() for p in args.relay_peers.split(',')]
 
-    orchestrator = P2POrchestrator(
-        node_id=args.node_id,
-        host=args.host,
-        port=args.port,
-        known_peers=known_peers,
-        relay_peers=relay_peers,
-        ringrift_path=args.ringrift_path,
-        advertise_host=args.advertise_host,
-        advertise_port=args.advertise_port,
-        auth_token=args.auth_token,
-        require_auth=args.require_auth,
-        storage_type=args.storage_type,
-        sync_to_disk_interval=args.sync_to_disk_interval,
-    )
+    # Wrap orchestrator creation and run in try/except to ensure crashes are logged
+    orchestrator = None
+    try:
+        logger.info(f"Initializing P2P orchestrator: node_id={args.node_id}")
+        orchestrator = P2POrchestrator(
+            node_id=args.node_id,
+            host=args.host,
+            port=args.port,
+            known_peers=known_peers,
+            relay_peers=relay_peers,
+            ringrift_path=args.ringrift_path,
+            advertise_host=args.advertise_host,
+            advertise_port=args.advertise_port,
+            auth_token=args.auth_token,
+            require_auth=args.require_auth,
+            storage_type=args.storage_type,
+            sync_to_disk_interval=args.sync_to_disk_interval,
+        )
+        logger.info(f"P2P orchestrator initialized successfully: {args.node_id}")
+    except Exception as e:
+        logger.exception(f"Failed to initialize P2P orchestrator: {e}")
+        sys.exit(1)
 
     # Handle shutdown
     def signal_handler(sig, frame):
         logger.info("Shutting down...")
-        orchestrator.running = False
-        # Stop ramdrive syncer with final sync
-        orchestrator.stop_ramdrive_syncer(final_sync=True)
+        if orchestrator:
+            orchestrator.running = False
+            # Stop ramdrive syncer with final sync
+            orchestrator.stop_ramdrive_syncer(final_sync=True)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Run
-    asyncio.run(orchestrator.run())
+    # Run with exception logging
+    try:
+        logger.info(f"Starting P2P orchestrator main loop: {args.node_id}")
+        asyncio.run(orchestrator.run())
+    except Exception as e:
+        logger.exception(f"P2P orchestrator crashed: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

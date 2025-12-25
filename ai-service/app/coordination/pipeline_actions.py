@@ -766,12 +766,16 @@ async def _emit_sync_complete(result: StageCompletionResult) -> None:
         from app.coordination.event_emitters import emit_sync_complete
 
         await emit_sync_complete(
-            iteration=result.iteration,
+            sync_type="data",  # Required: type of sync
+            items_synced=result.metadata.get("files_synced", 0),  # Required
             success=result.success,
-            metadata=result.metadata,
+            duration_seconds=result.duration_seconds,
+            source="pipeline_actions",
+            iteration=result.iteration,
+            **result.metadata,
         )
     except Exception as e:
-        logger.debug(f"[PipelineActions] Could not emit sync_complete: {e}")
+        logger.warning(f"[PipelineActions] Could not emit sync_complete: {e}")
 
 
 async def _emit_npz_export_complete(result: StageCompletionResult) -> None:
@@ -780,14 +784,19 @@ async def _emit_npz_export_complete(result: StageCompletionResult) -> None:
         from app.coordination.event_emitters import emit_npz_export_complete
 
         await emit_npz_export_complete(
-            iteration=result.iteration,
+            board_type=result.metadata.get("board_type", "unknown"),
+            num_players=result.metadata.get("num_players", 2),
+            samples_exported=result.metadata.get("samples_exported", 0),
+            games_exported=result.metadata.get("games_exported", 0),
+            output_path=result.output_path or "",
             success=result.success,
-            output_path=result.output_path,
-            samples=result.metadata.get("samples_exported", 0),
-            metadata=result.metadata,
+            duration_seconds=result.duration_seconds,
+            iteration=result.iteration,
+            **{k: v for k, v in result.metadata.items()
+               if k not in ("board_type", "num_players", "samples_exported", "games_exported")},
         )
     except Exception as e:
-        logger.debug(f"[PipelineActions] Could not emit npz_export_complete: {e}")
+        logger.warning(f"[PipelineActions] Could not emit npz_export_complete: {e}")
 
 
 async def _emit_training_complete(result: StageCompletionResult) -> None:
@@ -796,29 +805,39 @@ async def _emit_training_complete(result: StageCompletionResult) -> None:
         from app.coordination.event_emitters import emit_training_complete
 
         await emit_training_complete(
-            iteration=result.iteration,
-            model_id=result.metadata.get("model_id", ""),
+            job_id=result.metadata.get("model_id", f"training_iter{result.iteration}"),
+            board_type=result.metadata.get("board_type", "unknown"),
+            num_players=result.metadata.get("num_players", 2),
             success=result.success,
-            train_loss=result.metadata.get("train_loss", 0.0),
-            val_loss=result.metadata.get("val_loss", 0.0),
-            metadata=result.metadata,
+            final_loss=result.metadata.get("val_loss"),
+            model_path=result.output_path,
+            epochs_completed=result.metadata.get("epochs_completed", 0),
+            iteration=result.iteration,
+            **{k: v for k, v in result.metadata.items()
+               if k not in ("model_id", "board_type", "num_players", "val_loss", "epochs_completed")},
         )
     except Exception as e:
-        logger.debug(f"[PipelineActions] Could not emit training_complete: {e}")
+        logger.warning(f"[PipelineActions] Could not emit training_complete: {e}")
 
 
 async def _emit_training_failed(result: StageCompletionResult) -> None:
     """Emit TRAINING_FAILED event."""
     try:
-        from app.coordination.event_emitters import emit_training_failed
+        from app.coordination.event_emitters import emit_training_complete
 
-        await emit_training_failed(
+        # Use emit_training_complete with success=False
+        await emit_training_complete(
+            job_id=result.metadata.get("model_id", f"training_iter{result.iteration}"),
+            board_type=result.metadata.get("board_type", "unknown"),
+            num_players=result.metadata.get("num_players", 2),
+            success=False,
             iteration=result.iteration,
             error=result.error or "Unknown error",
-            metadata=result.metadata,
+            **{k: v for k, v in result.metadata.items()
+               if k not in ("model_id", "board_type", "num_players")},
         )
     except Exception as e:
-        logger.debug(f"[PipelineActions] Could not emit training_failed: {e}")
+        logger.warning(f"[PipelineActions] Could not emit training_failed: {e}")
 
 
 async def _emit_evaluation_complete(result: StageCompletionResult) -> None:
@@ -827,14 +846,19 @@ async def _emit_evaluation_complete(result: StageCompletionResult) -> None:
         from app.coordination.event_emitters import emit_evaluation_complete
 
         await emit_evaluation_complete(
-            iteration=result.iteration,
+            model_id=result.metadata.get("model_id", f"eval_iter{result.iteration}"),
+            board_type=result.metadata.get("board_type", "unknown"),
+            num_players=result.metadata.get("num_players", 2),
             success=result.success,
-            win_rate=result.metadata.get("win_rates", {}).get("heuristic", 0),
-            elo_delta=result.metadata.get("elo_delta", 0),
-            metadata=result.metadata,
+            win_rate=result.metadata.get("win_rates", {}).get("heuristic"),
+            elo_delta=result.metadata.get("elo_delta"),
+            games_played=result.metadata.get("games_played", 0),
+            iteration=result.iteration,
+            **{k: v for k, v in result.metadata.items()
+               if k not in ("model_id", "board_type", "num_players", "win_rates", "elo_delta", "games_played")},
         )
     except Exception as e:
-        logger.debug(f"[PipelineActions] Could not emit evaluation_complete: {e}")
+        logger.warning(f"[PipelineActions] Could not emit evaluation_complete: {e}")
 
 
 async def _emit_promotion_complete(result: StageCompletionResult) -> None:

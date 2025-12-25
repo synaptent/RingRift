@@ -74,7 +74,7 @@ class CircuitBreaker:
     """
 
     failure_threshold: int = 3
-    reset_timeout_seconds: float = 300.0  # 5 minutes
+    reset_timeout_seconds: float = 60.0  # Reduced from 5 min to 1 min for faster recovery
     half_open_max_requests: int = 1
 
     # Internal state
@@ -263,7 +263,7 @@ class DataPipelineOrchestrator:
     def __init__(
         self,
         max_history: int = 100,
-        auto_trigger: bool = False,  # Automatically trigger downstream stages
+        auto_trigger: bool = True,  # Automatically trigger downstream stages
         config: "PipelineConfig | None" = None,  # Use coordinator_config if None
     ):
         """Initialize DataPipelineOrchestrator.
@@ -358,6 +358,65 @@ class DataPipelineOrchestrator:
         self._cluster_monitor_ttl: float = 30.0  # Cache for 30 seconds
         self._last_constraint_emit: dict[str, float] = {}  # Dedup event emission
 
+    def _get_board_config(
+        self, result: Any = None, metadata: dict | None = None
+    ) -> tuple[str | None, int | None]:
+        """Get board configuration from various sources.
+
+        Tries to infer board_type and num_players from:
+        1. Current tracked state
+        2. Result object attributes
+        3. Metadata dict (config_key, board_type, num_players)
+        4. Parsing config_key format (e.g., "hex8_2p")
+
+        Returns:
+            Tuple of (board_type, num_players), either may be None
+        """
+        board_type = self._current_board_type
+        num_players = self._current_num_players
+
+        # Already have config from tracked state
+        if board_type and num_players:
+            return board_type, num_players
+
+        # Try to get from result object
+        if result is not None:
+            if hasattr(result, "board_type") and result.board_type:
+                board_type = result.board_type
+            if hasattr(result, "num_players") and result.num_players:
+                num_players = result.num_players
+
+        # Try to get from metadata dict
+        if metadata:
+            if not board_type and "board_type" in metadata:
+                board_type = metadata["board_type"]
+            if not num_players and "num_players" in metadata:
+                num_players = metadata["num_players"]
+
+            # Try to parse from config_key (e.g., "hex8_2p" or "square8_4p")
+            if (not board_type or not num_players) and "config_key" in metadata:
+                config_key = metadata["config_key"]
+                if "_" in config_key and config_key.endswith("p"):
+                    parts = config_key.rsplit("_", 1)
+                    if len(parts) == 2:
+                        if not board_type:
+                            board_type = parts[0]
+                        if not num_players:
+                            try:
+                                num_players = int(parts[1].rstrip("p"))
+                            except ValueError:
+                                pass
+
+        # Log if we successfully inferred missing config
+        if (board_type and num_players) and (
+            not self._current_board_type or not self._current_num_players
+        ):
+            logger.debug(
+                f"[DataPipelineOrchestrator] Inferred board config: {board_type}_{num_players}p"
+            )
+
+        return board_type, num_players
+
     def subscribe_to_events(self) -> bool:
         """Subscribe to pipeline stage events.
 
@@ -391,9 +450,10 @@ class DataPipelineOrchestrator:
             logger.info("[DataPipelineOrchestrator] Subscribed to stage events")
             return True
 
-        except ImportError:
-            logger.warning("[DataPipelineOrchestrator] stage_events not available")
-            return False
+        except ImportError as e:
+            logger.error(f"[DataPipelineOrchestrator] Cannot subscribe to events - stage_events not available: {e}")
+            # This is a critical failure - orchestrator cannot function without events
+            raise RuntimeError(f"EventRouter not available - pipeline cannot function: {e}")
         except Exception as e:
             logger.error(f"[DataPipelineOrchestrator] Failed to subscribe: {e}")
             return False
@@ -554,8 +614,7 @@ class DataPipelineOrchestrator:
         if not self._can_auto_trigger():
             return
 
-        board_type = self._current_board_type
-        num_players = self._current_num_players
+        board_type, num_players = self._get_board_config()
         if not board_type or not num_players:
             logger.warning("[DataPipelineOrchestrator] Cannot auto-trigger sync: missing board config")
             return
@@ -601,8 +660,7 @@ class DataPipelineOrchestrator:
         if not self._can_auto_trigger():
             return
 
-        board_type = self._current_board_type
-        num_players = self._current_num_players
+        board_type, num_players = self._get_board_config()
         if not board_type or not num_players:
             logger.warning("[DataPipelineOrchestrator] Cannot auto-trigger export: missing board config")
             return
@@ -654,8 +712,7 @@ class DataPipelineOrchestrator:
         if not self._can_auto_trigger():
             return
 
-        board_type = self._current_board_type
-        num_players = self._current_num_players
+        board_type, num_players = self._get_board_config()
         if not board_type or not num_players:
             logger.warning("[DataPipelineOrchestrator] Cannot auto-trigger training: missing board config")
             return
@@ -720,8 +777,7 @@ class DataPipelineOrchestrator:
         if not self._can_auto_trigger():
             return
 
-        board_type = self._current_board_type
-        num_players = self._current_num_players
+        board_type, num_players = self._get_board_config()
         if not board_type or not num_players:
             logger.warning("[DataPipelineOrchestrator] Cannot auto-trigger evaluation: missing board config")
             return
@@ -794,8 +850,7 @@ class DataPipelineOrchestrator:
         if not self._can_auto_trigger():
             return
 
-        board_type = self._current_board_type
-        num_players = self._current_num_players
+        board_type, num_players = self._get_board_config()
         if not board_type or not num_players:
             logger.warning("[DataPipelineOrchestrator] Cannot auto-trigger promotion: missing board config")
             return
