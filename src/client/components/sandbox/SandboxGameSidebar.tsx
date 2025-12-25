@@ -212,7 +212,7 @@ export const SandboxGameSidebar: React.FC<SandboxGameSidebarProps> = ({
   numPlayers,
   selectedPosition,
   selectedStackDetails,
-  validTargets,
+  validTargets: _validTargets,
   primaryValidTargets,
   isCaptureDirectionPending,
   captureTargets,

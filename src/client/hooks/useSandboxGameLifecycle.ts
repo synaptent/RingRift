@@ -196,7 +196,7 @@ export function useSandboxGameLifecycle(deps: GameLifecycleDeps): UseSandboxGame
     setSandboxCaptureTargets,
     setSandboxStallWarning,
     setSandboxLastProgressAt,
-    setSandboxStateVersion,
+    setSandboxStateVersion: _setSandboxStateVersion,
     setLastLoadedScenario,
     setIsSandboxVictoryModalDismissed,
   } = deps;

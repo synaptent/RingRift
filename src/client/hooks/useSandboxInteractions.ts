@@ -122,7 +122,7 @@ export function useSandboxInteractions({
 
     const stateBefore = engine.getGameState();
     const current = stateBefore.players.find(
-      (p: any) => p.playerNumber === stateBefore.currentPlayer
+      (p: { playerNumber: number; type?: string }) => p.playerNumber === stateBefore.currentPlayer
     );
 
     // If it's an AI player's turn, run AI instead

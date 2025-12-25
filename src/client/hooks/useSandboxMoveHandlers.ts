@@ -24,10 +24,12 @@
 import { useCallback } from 'react';
 import type { Position } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
-import type { InvalidMoveReason } from './useInvalidMoveFeedback';
+import type { InvalidMoveReason, AnalyzeInvalidMoveOptions } from './useInvalidMoveFeedback';
+import type { GameState, Move } from '../../shared/types/game';
+import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
 
 export interface UseSandboxMoveHandlersOptions {
-  sandboxEngine: any;
+  sandboxEngine: ClientSandboxEngine | null;
   selected: Position | undefined;
   setSelected: React.Dispatch<React.SetStateAction<Position | undefined>>;
   validTargets: Position[];
@@ -36,7 +38,7 @@ export interface UseSandboxMoveHandlersOptions {
   setSandboxStateVersion: (fn: (v: number) => number) => void;
   maybeRunSandboxAiIfNeeded: () => void;
   requestRecoveryChoice: () => Promise<'option1' | 'option2' | null>;
-  analyzeInvalidMove: (state: any, pos: Position, opts: any) => InvalidMoveReason;
+  analyzeInvalidMove: (state: GameState, pos: Position, opts: AnalyzeInvalidMoveOptions) => InvalidMoveReason;
   triggerInvalidMove: (pos: Position, reason: InvalidMoveReason) => void;
 }
 
@@ -101,7 +103,7 @@ export function useSandboxMoveHandlers({
 
               const validMoves = engine.getValidMoves(afterSkip.currentPlayer);
               const moveFromSelected = validMoves.find(
-                (m: any) =>
+                (m: Move) =>
                   m.from && positionsEqual(m.from, selected) && m.to && positionsEqual(m.to, pos)
               );
               if (moveFromSelected) await engine.applyCanonicalMove(moveFromSelected);
@@ -212,9 +214,9 @@ export function useSandboxMoveHandlers({
 
       // Capture phase: direct landing click
       if (phaseBefore === 'capture') {
-        const captureMoves = validMoves.filter((m: any) => m.type === 'overtaking_capture');
+        const captureMoves = validMoves.filter((m: Move) => m.type === 'overtaking_capture');
         const isCaptureLanding = captureMoves.some(
-          (m: any) => m.to && positionsEqual(m.to as Position, pos)
+          (m: Move) => m.to && positionsEqual(m.to as Position, pos)
         );
         if (isCaptureLanding) {
           setSelected(undefined);
@@ -236,9 +238,9 @@ export function useSandboxMoveHandlers({
 
       const key = positionToString(pos);
       const hasStack = !!board.stacks.get(key);
-      const hasMovesFromHere = validMoves.some((m: any) => m.from && positionsEqual(m.from, pos));
+      const hasMovesFromHere = validMoves.some((m: Move) => m.from && positionsEqual(m.from, pos));
       const hasRecoveryFromHere = validMoves.some(
-        (m: any) => m.type === 'recovery_slide' && m.from && positionsEqual(m.from, pos)
+        (m: Move) => m.type === 'recovery_slide' && m.from && positionsEqual(m.from, pos)
       );
 
       if ((hasStack && hasMovesFromHere) || hasRecoveryFromHere) {
@@ -274,7 +276,7 @@ export function useSandboxMoveHandlers({
       void (async () => {
         // Check for recovery_slide moves
         const matchingRecoveryMoves = validMoves.filter(
-          (m: any) =>
+          (m: Move) =>
             m.type === 'recovery_slide' &&
             m.from &&
             positionsEqual(m.from, sourcePos) &&
@@ -286,8 +288,8 @@ export function useSandboxMoveHandlers({
           let selectedMove = matchingRecoveryMoves[0];
 
           if (matchingRecoveryMoves.length > 1) {
-            const option1Move = matchingRecoveryMoves.find((m: any) => m.recoveryOption === 1);
-            const option2Move = matchingRecoveryMoves.find((m: any) => m.recoveryOption === 2);
+            const option1Move = matchingRecoveryMoves.find((m: Move) => m.recoveryOption === 1);
+            const option2Move = matchingRecoveryMoves.find((m: Move) => m.recoveryOption === 2);
             if (option1Move && option2Move) {
               const choice = await requestRecoveryChoice();
               if (choice === 'option2') selectedMove = option2Move;

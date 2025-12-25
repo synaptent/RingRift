@@ -44,25 +44,23 @@ import { Button } from '../components/ui/Button';
 import { ReplayPanel } from '../components/ReplayPanel';
 import { HistoryPlaybackPanel } from '../components/HistoryPlaybackPanel';
 import { OnboardingModal } from '../components/OnboardingModal';
-import { SandboxBoardSection, SandboxGameSidebar } from '../components/sandbox';
+// Sandbox components available but not currently used in this layout
+// import { SandboxBoardSection, SandboxGameSidebar } from '../components/sandbox';
 import { useFirstTimePlayer } from '../hooks/useFirstTimePlayer';
 import {
   SandboxGameConfig,
   BOARD_PRESETS,
   QUICK_START_PRESETS,
-  type QuickStartPreset,
 } from '../components/SandboxGameConfig';
 import type { LoadableScenario } from '../sandbox/scenarioTypes';
 import {
   BoardState,
-  BoardType,
   GameState,
   Move,
   PlayerChoice,
   PlayerChoiceResponseFor,
   Position,
   positionToString,
-  CreateGameRequest,
   TimeControl,
 } from '../../shared/types/game';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,10 +69,7 @@ import {
   useSandbox,
   LocalConfig,
   LocalPlayerType,
-  DEFAULT_AI_DIFFICULTY,
 } from '../contexts/SandboxContext';
-import { AIDifficultySelector, AIDifficultyBadge } from '../components/AIDifficultySelector';
-import { getDifficultyDescriptor } from '../utils/difficultyUx';
 import { useSandboxInteractions } from '../hooks/useSandboxInteractions';
 import { useAutoMoveAnimation } from '../hooks/useMoveAnimation';
 import {
@@ -92,7 +87,8 @@ import {
   useGameAnnouncements,
   useGameStateAnnouncements,
 } from '../components/ScreenReaderAnnouncer';
-import { gameApi } from '../services/api';
+// gameApi is available for potential backend integration but not currently used in sandbox
+// import { gameApi } from '../services/api';
 import { GameSyncService } from '../services/GameSyncService';
 import type {
   ClientSandboxEngine,
@@ -188,7 +184,7 @@ const PHASE_COPY: Record<
  * sandbox UI and engine lifecycle.
  */
 export const SandboxGameHost: React.FC = () => {
-  const navigate = useNavigate();
+  const _navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { colorVisionMode, effectiveReducedMotion } = useAccessibility();

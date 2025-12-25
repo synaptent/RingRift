@@ -115,7 +115,7 @@ export interface SandboxBoardSectionProps {
 export const SandboxBoardSection: React.FC<SandboxBoardSectionProps> = ({
   boardState,
   boardViewModel,
-  gameState,
+  gameState: _gameState,
   selectedPosition,
   validTargets,
   isInReplayMode,
