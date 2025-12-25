@@ -129,6 +129,12 @@ class SelfplayRunner(ABC):
         self._curriculum_difficulty = 1.0  # Multiplier for opponent difficulty
         self._extra_games_requested = 0  # Extra games from weak model feedback
         self._regeneration_pending = False  # True when quality blocked training
+        self._base_budget = 150  # Default base budget for curriculum scaling
+        self._current_budget = 150  # Current effective budget
+
+        # Phase 2 Feedback Loop: Promotion → Selfplay difficulty coupling (December 2025)
+        self._promotion_difficulty_boost = 1.0  # Increased on failed promotion
+        self._consecutive_promotion_failures = 0  # Track consecutive failures
 
         # PFSP opponent selection (December 2025)
         self._pfsp_enabled = False
@@ -170,6 +176,7 @@ class SelfplayRunner(ABC):
         """Called before run loop. Override for custom initialization."""
         logger.info(f"SelfplayRunner starting: {self.config.board_type}_{self.config.num_players}p")
         logger.info(f"  Engine: {self.config.engine_mode.value}")
+        self._apply_elo_adaptive_config()  # Set model_elo for Elo-adaptive budget/temperature
         self._apply_selfplay_rate_adjustment()  # Adjust num_games based on Elo momentum
         logger.info(f"  Target games: {self.config.num_games}")
         self._load_model()
@@ -784,9 +791,20 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
         board_type = BoardType(self.config.board_type)
 
         # Use budget based on config or difficulty
-        budget = self.config.simulation_budget or get_budget_for_difficulty(
+        base_budget = self.config.simulation_budget or get_budget_for_difficulty(
             self.config.difficulty or 8
         )
+
+        # Apply curriculum difficulty multiplier (December 2025)
+        # Higher difficulty = more search budget for stronger opponents
+        budget = int(base_budget * self._curriculum_difficulty)
+        if self._curriculum_difficulty != 1.0:
+            logger.info(
+                f"[Curriculum] Budget adjusted: {base_budget} * {self._curriculum_difficulty:.2f} = {budget}"
+            )
+
+        self._base_budget = base_budget  # Store for potential reinitialization
+        self._current_budget = budget
 
         # Use "standard" mode which has select_move() interface
         # "tensor" mode is for batch game processing with search_batch()
@@ -803,6 +821,23 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
         from ..training.initial_state import create_initial_state
         from ..models import BoardType
         from ..game_engine import GameEngine
+
+        # Check if curriculum difficulty changed and reinitialize MCTS if needed
+        new_budget = int(self._base_budget * self._curriculum_difficulty)
+        if new_budget != self._current_budget:
+            logger.info(
+                f"[Curriculum] Reinitializing MCTS: budget {self._current_budget} -> {new_budget} "
+                f"(difficulty={self._curriculum_difficulty:.2f})"
+            )
+            from ..ai.factory import create_mcts
+            self._current_budget = new_budget
+            self._mcts = create_mcts(
+                board_type=self.config.board_type,
+                num_players=self.config.num_players,
+                mode="standard",
+                simulation_budget=new_budget,
+                device=self.config.device or "cuda",
+            )
 
         start_time = time.time()
         game_id = str(uuid.uuid4())

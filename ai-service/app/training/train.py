@@ -766,6 +766,7 @@ def train_model(
     check_data_freshness: bool = False,
     max_data_age_hours: float = 1.0,
     warn_on_stale_data: bool = True,
+    fail_on_stale_data: bool = False,
 ):
     """
     Train the RingRift neural network model.
@@ -883,7 +884,12 @@ def train_model(
                         f"(threshold={max_data_age_hours}h), "
                         f"games={freshness_result.games_available}"
                     )
-                    if warn_on_stale_data:
+                    if fail_on_stale_data:
+                        raise ValueError(
+                            f"{msg}. Set --fail-on-stale-data=False or "
+                            "run data sync: python scripts/run_training_loop.py --sync-only"
+                        )
+                    elif warn_on_stale_data:
                         logger.warning(msg)
                         logger.warning(
                             "Consider running data sync before training: "
@@ -2535,6 +2541,79 @@ def train_model(
             )
             use_weighted_sampling = True
 
+        # Phase 5b: Load ELO weights if available (December 2025)
+        # This strengthens the self-improvement loop by weighting samples from
+        # games against stronger opponents more heavily
+        elo_sample_weights: np.ndarray | None = None
+        if enable_elo_weighting and data_path_str and os.path.exists(data_path_str):
+            try:
+                with np.load(data_path_str, mmap_mode="r", allow_pickle=True) as npz_data:
+                    if "opponent_elo" in npz_data:
+                        from app.training.elo_weighting import compute_elo_weights
+                        opponent_elos = np.array(npz_data["opponent_elo"])
+                        # Use model_elo=1500 as baseline reference
+                        elo_sample_weights = compute_elo_weights(
+                            opponent_elos,
+                            model_elo=1500.0,
+                            elo_scale=400.0,
+                            min_weight=0.2,
+                            max_weight=3.0,
+                        )
+                        if not distributed or is_main_process():
+                            logger.info(
+                                f"ELO weighting enabled: {len(elo_sample_weights)} samples, "
+                                f"weight range [{elo_sample_weights.min():.3f}, {elo_sample_weights.max():.3f}]"
+                            )
+                    else:
+                        if not distributed or is_main_process():
+                            logger.info(
+                                "ELO weighting requested but dataset lacks 'opponent_elo' field. "
+                                "Regenerate with export_replay_dataset.py to include opponent ELO data."
+                            )
+            except Exception as e:
+                if not distributed or is_main_process():
+                    logger.warning(f"Failed to load ELO weights: {e}")
+
+        # Phase 5c: Load quality scores if available (December 2025)
+        # This strengthens the self-improvement loop by weighting samples from
+        # higher-quality games more heavily
+        quality_sample_weights: np.ndarray | None = None
+        if data_path_str and os.path.exists(data_path_str):
+            try:
+                with np.load(data_path_str, mmap_mode="r", allow_pickle=True) as npz_data:
+                    if "quality_score" in npz_data:
+                        quality_scores = np.array(npz_data["quality_score"])
+                        # Apply min_quality_score filter as a mask
+                        if min_quality_score > 0.0:
+                            quality_mask = quality_scores >= min_quality_score
+                            num_filtered = np.sum(~quality_mask)
+                            if not distributed or is_main_process():
+                                logger.info(
+                                    f"Quality filtering: {num_filtered} samples below threshold "
+                                    f"({min_quality_score:.2f}) will be weighted to 0"
+                                )
+                            # Zero out weights for low-quality samples
+                            quality_sample_weights = np.where(quality_mask, quality_scores, 0.0)
+                        else:
+                            # Use quality scores directly as weights
+                            quality_sample_weights = quality_scores
+                        if not distributed or is_main_process():
+                            nonzero = quality_sample_weights[quality_sample_weights > 0]
+                            if len(nonzero) > 0:
+                                logger.info(
+                                    f"Quality weighting enabled: {len(quality_sample_weights)} samples, "
+                                    f"weight range [{nonzero.min():.3f}, {nonzero.max():.3f}]"
+                                )
+                    else:
+                        if not distributed or is_main_process():
+                            logger.debug(
+                                "Dataset lacks 'quality_score' field - quality weighting disabled. "
+                                "Regenerate with export_replay_dataset.py to include quality data."
+                            )
+            except Exception as e:
+                if not distributed or is_main_process():
+                    logger.warning(f"Failed to load quality scores: {e}")
+
         if len(full_dataset) == 0:
             if not distributed or is_main_process():
                 logger.warning(
@@ -2635,17 +2714,54 @@ def train_model(
             )
         else:
             # Non-distributed: optionally use weighted sampling for training.
-            if use_weighted_sampling and isinstance(train_dataset, torch.utils.data.Subset):
-                base_dataset = cast(WeightedRingRiftDataset, train_dataset.dataset)
-                if base_dataset.sample_weights is None:
-                    train_weights = torch.ones(len(train_dataset), dtype=torch.float32)
-                else:
-                    subset_indices = np.array(train_dataset.indices, dtype=np.int64)
-                    train_weights_np = base_dataset.sample_weights[subset_indices]
-                    train_weights = torch.from_numpy(
-                        train_weights_np.astype(np.float32)
-                    )
+            # December 2025: Combine position, ELO, and quality weights
+            use_any_weighting = (
+                use_weighted_sampling
+                or (elo_sample_weights is not None)
+                or (quality_sample_weights is not None)
+            )
 
+            if use_any_weighting and isinstance(train_dataset, torch.utils.data.Subset):
+                subset_indices = np.array(train_dataset.indices, dtype=np.int64)
+
+                # Start with position-based weights if available
+                if use_weighted_sampling:
+                    base_dataset = cast(WeightedRingRiftDataset, train_dataset.dataset)
+                    if base_dataset.sample_weights is None:
+                        train_weights_np = np.ones(len(train_dataset), dtype=np.float32)
+                    else:
+                        train_weights_np = base_dataset.sample_weights[subset_indices].astype(np.float32)
+                else:
+                    train_weights_np = np.ones(len(train_dataset), dtype=np.float32)
+
+                # Apply ELO weights multiplicatively if available
+                if elo_sample_weights is not None:
+                    elo_weights_subset = elo_sample_weights[subset_indices].astype(np.float32)
+                    train_weights_np = train_weights_np * elo_weights_subset
+
+                # Apply quality weights multiplicatively if available
+                if quality_sample_weights is not None:
+                    quality_weights_subset = quality_sample_weights[subset_indices].astype(np.float32)
+                    train_weights_np = train_weights_np * quality_weights_subset
+
+                # Log final combined weights
+                if not distributed or is_main_process():
+                    weight_sources = []
+                    if use_weighted_sampling:
+                        weight_sources.append("position")
+                    if elo_sample_weights is not None:
+                        weight_sources.append("ELO")
+                    if quality_sample_weights is not None:
+                        weight_sources.append("quality")
+                    nonzero = train_weights_np[train_weights_np > 0]
+                    if len(nonzero) > 0:
+                        logger.info(
+                            f"Combined weights ({' * '.join(weight_sources)}): "
+                            f"{len(nonzero)}/{len(train_weights_np)} samples with weight > 0, "
+                            f"range [{nonzero.min():.3f}, {nonzero.max():.3f}]"
+                        )
+
+                train_weights = torch.from_numpy(train_weights_np)
                 train_sampler = WeightedRandomSampler(
                     weights=train_weights,
                     num_samples=len(train_dataset),
@@ -2964,6 +3080,67 @@ def train_model(
                 val_streaming_loader.set_epoch(epoch)
 
             # Track epoch failure state for circuit breaker (2025-12)
+
+            # Phase 2 Feedback Loop: Check improvement optimizer for training adjustments
+            # December 2025: Training now responds to evaluation signals (promotion streaks, regressions)
+            if epoch % 5 == 0:  # Check every 5 epochs to minimize overhead
+                # Check for pending gauntlet feedback events (Phase 3, December 2025)
+                try:
+                    from app.coordination.gauntlet_feedback_controller import get_pending_hyperparameter_updates
+                    pending_updates = get_pending_hyperparameter_updates(config_label)
+                    for param, update in pending_updates.items():
+                        value = update.get("value")
+                        reason = update.get("reason", "gauntlet_feedback")
+                        if param == "learning_rate" and isinstance(value, (int, float)):
+                            for param_group in optimizer.param_groups:
+                                old_lr = param_group["lr"]
+                                param_group["lr"] = float(value)
+                            if not distributed or is_main_process():
+                                logger.info(
+                                    f"[GauntletFeedback] LR adjusted: {old_lr:.2e} -> {value:.2e} (reason: {reason})"
+                                )
+                        elif param == "lr_multiplier" and isinstance(value, (int, float)):
+                            for param_group in optimizer.param_groups:
+                                old_lr = param_group["lr"]
+                                param_group["lr"] = old_lr * float(value)
+                            if not distributed or is_main_process():
+                                logger.info(
+                                    f"[GauntletFeedback] LR scaled: {old_lr:.2e} * {value:.2f} (reason: {reason})"
+                                )
+                except ImportError:
+                    pass  # Gauntlet feedback not available
+                except Exception as e:
+                    if not distributed or is_main_process():
+                        logger.debug(f"[GauntletFeedback] Failed to check updates: {e}")
+
+                try:
+                    from app.training.improvement_optimizer import get_training_adjustment
+
+                    adjustment = get_training_adjustment(config_label)
+                    if adjustment.get("lr_multiplier", 1.0) != 1.0:
+                        lr_mult = adjustment["lr_multiplier"]
+                        reason = adjustment.get("reason", "unknown")
+                        for param_group in optimizer.param_groups:
+                            old_lr = param_group["lr"]
+                            param_group["lr"] = old_lr * lr_mult
+                        if not distributed or is_main_process():
+                            logger.info(
+                                f"[ImprovementOptimizer] LR adjustment: {lr_mult:.2f}x (reason: {reason})"
+                            )
+
+                    if adjustment.get("regularization_boost", 0.0) > 0:
+                        # Add extra weight decay for overfit mitigation
+                        reg_boost = adjustment["regularization_boost"]
+                        for param_group in optimizer.param_groups:
+                            param_group["weight_decay"] = param_group.get("weight_decay", 0) + reg_boost
+                        if not distributed or is_main_process():
+                            logger.info(f"[ImprovementOptimizer] Regularization boost: +{reg_boost:.4f}")
+
+                except ImportError:
+                    pass  # Improvement optimizer not available
+                except Exception as e:
+                    if not distributed or is_main_process():
+                        logger.debug(f"[ImprovementOptimizer] Check failed: {e}")
 
             # Training
             model.train()
