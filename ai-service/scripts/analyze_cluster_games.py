@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Cluster-wide game statistics analysis for RingRift.
+"""Comprehensive cluster-wide game statistics analysis for RingRift.
 
 Scans all cluster nodes via SSH and aggregates comprehensive game statistics:
 - Victory type distribution (normalized: territory, elimination, LPS, stalemate)
 - Forced elimination and recovery rates with win correlation
-- Per-configuration breakdown
-- Game length analysis
+- Per-configuration breakdown with statistical analysis
+- Game length analysis (min, max, median, percentiles)
 - Move type distribution
-- First-player advantage by config
-- Balance metrics
+- First-player advantage with confidence intervals
+- Balance metrics and issue detection
+- Overtake and capture statistics
+- Data quality metrics
 
 Usage:
     # Full cluster analysis
@@ -25,6 +27,9 @@ Usage:
 
     # JSON output
     python scripts/analyze_cluster_games.py --format json --output report.json
+
+    # Local-only analysis (no SSH)
+    python scripts/analyze_cluster_games.py --local-only
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ import argparse
 import base64
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -58,6 +64,75 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Statistical Functions (from generate_statistical_report.py)
+# =============================================================================
+
+def wilson_score_interval(successes: int, trials: int, confidence: float = 0.95) -> tuple[float, float]:
+    """Calculate Wilson score confidence interval for a proportion.
+
+    More accurate than normal approximation, especially for small samples.
+    """
+    if trials == 0:
+        return (0.0, 1.0)
+
+    z_scores = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
+    z = z_scores.get(confidence, 1.96)
+
+    p_hat = successes / trials
+    denominator = 1 + z**2 / trials
+
+    center = (p_hat + z**2 / (2 * trials)) / denominator
+    spread = z * math.sqrt((p_hat * (1 - p_hat) + z**2 / (4 * trials)) / trials) / denominator
+
+    lower = max(0.0, center - spread)
+    upper = min(1.0, center + spread)
+
+    return (round(lower, 4), round(upper, 4))
+
+
+def binomial_test_pvalue(successes: int, trials: int, null_prob: float = 0.5) -> float:
+    """Calculate two-tailed p-value for binomial test.
+
+    Uses normal approximation for large sample sizes (n > 1000).
+    """
+    if trials == 0:
+        return 1.0
+
+    # Use normal approximation for large samples
+    if trials > 1000:
+        # Normal approximation with continuity correction
+        p_hat = successes / trials
+        se = math.sqrt(null_prob * (1 - null_prob) / trials)
+        if se == 0:
+            return 0.0 if abs(p_hat - null_prob) > 0.01 else 1.0
+        z = (p_hat - null_prob) / se
+        # Two-tailed p-value using error function
+        p_value = 2 * (1 - 0.5 * (1 + math.erf(abs(z) / math.sqrt(2))))
+        return min(1.0, max(0.0, round(p_value, 6)))
+
+    # Exact binomial for smaller samples
+    def log_binomial_prob(n: int, k: int, p: float) -> float:
+        """Calculate log of binomial probability to avoid overflow."""
+        if k < 0 or k > n or p <= 0 or p >= 1:
+            return float('-inf')
+        # Use log gamma for log factorial
+        log_coef = (
+            math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+        )
+        return log_coef + k * math.log(p) + (n - k) * math.log(1 - p)
+
+    log_observed = log_binomial_prob(trials, successes, null_prob)
+
+    p_value = 0.0
+    for k in range(trials + 1):
+        log_prob_k = log_binomial_prob(trials, k, null_prob)
+        if log_prob_k <= log_observed + 1e-10:
+            p_value += math.exp(log_prob_k)
+
+    return min(1.0, round(p_value, 6))
 
 
 # =============================================================================
@@ -123,6 +198,72 @@ def normalize_victory_type(raw: str | None) -> str:
     return raw if raw else "unknown"
 
 
+# =============================================================================
+# Data Classes
+# =============================================================================
+
+@dataclass
+class GameLengthStats:
+    """Game length statistics with percentiles."""
+    count: int = 0
+    total: int = 0
+    min_val: int = 0
+    max_val: int = 0
+    mean: float = 0.0
+    median: float = 0.0
+    std: float = 0.0
+    p10: float = 0.0
+    p25: float = 0.0
+    p75: float = 0.0
+    p90: float = 0.0
+    p95: float = 0.0
+
+    @staticmethod
+    def from_lengths(lengths: list[int]) -> "GameLengthStats":
+        if not lengths:
+            return GameLengthStats()
+
+        sorted_lengths = sorted(lengths)
+        n = len(sorted_lengths)
+        total = sum(sorted_lengths)
+        mean = total / n
+
+        # Median
+        mid = n // 2
+        if n % 2 == 0:
+            median = (sorted_lengths[mid - 1] + sorted_lengths[mid]) / 2
+        else:
+            median = float(sorted_lengths[mid])
+
+        # Standard deviation
+        variance = sum((x - mean) ** 2 for x in sorted_lengths) / n
+        std = variance ** 0.5
+
+        # Percentiles
+        def percentile(data: list[int], p: float) -> float:
+            idx = (len(data) - 1) * p / 100
+            lower = int(idx)
+            upper = lower + 1
+            if upper >= len(data):
+                return float(data[-1])
+            return data[lower] + (idx - lower) * (data[upper] - data[lower])
+
+        return GameLengthStats(
+            count=n,
+            total=total,
+            min_val=sorted_lengths[0],
+            max_val=sorted_lengths[-1],
+            mean=mean,
+            median=median,
+            std=std,
+            p10=percentile(sorted_lengths, 10),
+            p25=percentile(sorted_lengths, 25),
+            p75=percentile(sorted_lengths, 75),
+            p90=percentile(sorted_lengths, 90),
+            p95=percentile(sorted_lengths, 95),
+        )
+
+
 @dataclass
 class ConfigStats:
     """Statistics for a specific board_type + num_players configuration."""
@@ -136,6 +277,9 @@ class ConfigStats:
     # Victory types (normalized)
     victory_types: dict[str, int] = field(default_factory=dict)
 
+    # Stalemate tiebreakers
+    stalemate_tiebreakers: dict[str, int] = field(default_factory=dict)
+
     # Win rates by player position (0-indexed)
     wins_by_player: dict[int, int] = field(default_factory=dict)
 
@@ -148,6 +292,8 @@ class ConfigStats:
     games_with_fe: int = 0
     recovery_winner_used_recovery: int = 0  # Winner used recovery slide
     fe_victim_won: int = 0  # Player who was FE'd still won
+    total_recovery_moves: int = 0
+    total_fe_moves: int = 0
 
     # Move types (from detailed game_moves table)
     move_types: dict[str, int] = field(default_factory=dict)
@@ -155,17 +301,26 @@ class ConfigStats:
     # AI types
     games_by_ai_type: dict[str, int] = field(default_factory=dict)
 
-    # Stalemate tiebreakers
-    stalemate_tiebreakers: dict[str, int] = field(default_factory=dict)
-
     # High move count (potential draws/timeouts)
     high_move_count_games: int = 0  # games with 400+ moves
 
+    # Overtake statistics
+    total_overtakes: int = 0
+    games_with_overtakes: int = 0
+
+    # Data quality
+    games_with_explicit_metadata: int = 0
+    games_with_inferred_metadata: int = 0
+
+    @property
+    def length_stats(self) -> GameLengthStats:
+        return GameLengthStats.from_lengths(self.game_lengths)
+
     @property
     def avg_game_length(self) -> float:
-        if not self.game_lengths:
-            return self.total_moves / max(1, self.total_games)
-        return sum(self.game_lengths) / len(self.game_lengths) if self.game_lengths else 0
+        if self.game_lengths:
+            return sum(self.game_lengths) / len(self.game_lengths)
+        return self.total_moves / max(1, self.total_games)
 
     @property
     def first_player_advantage(self) -> float:
@@ -173,9 +328,34 @@ class ConfigStats:
         total_wins = sum(self.wins_by_player.values())
         if total_wins == 0 or self.num_players == 0:
             return 0.0
-        p0_wins = self.wins_by_player.get(0, 0) + self.wins_by_player.get(1, 0)  # Handle 0 or 1-indexed
+        # Handle both 0-indexed and 1-indexed player numbers
+        p0_wins = self.wins_by_player.get(0, 0) + self.wins_by_player.get(1, 0)
         expected = total_wins / self.num_players
         return (p0_wins - expected) / total_wins if total_wins > 0 else 0.0
+
+    @property
+    def first_player_win_rate(self) -> float:
+        """Calculate first player's win rate."""
+        total_wins = sum(self.wins_by_player.values())
+        if total_wins == 0:
+            return 0.0
+        p0_wins = self.wins_by_player.get(0, 0) + self.wins_by_player.get(1, 0)
+        return p0_wins / total_wins
+
+    @property
+    def first_player_ci(self) -> tuple[float, float]:
+        """Wilson score 95% CI for first player win rate."""
+        total_wins = sum(self.wins_by_player.values())
+        p0_wins = self.wins_by_player.get(0, 0) + self.wins_by_player.get(1, 0)
+        return wilson_score_interval(p0_wins, total_wins)
+
+    @property
+    def first_player_pvalue(self) -> float:
+        """P-value for first player advantage (vs expected 1/num_players)."""
+        total_wins = sum(self.wins_by_player.values())
+        p0_wins = self.wins_by_player.get(0, 0) + self.wins_by_player.get(1, 0)
+        expected = 1.0 / self.num_players
+        return binomial_test_pvalue(p0_wins, total_wins, expected)
 
     @property
     def recovery_rate(self) -> float:
@@ -184,6 +364,10 @@ class ConfigStats:
     @property
     def fe_rate(self) -> float:
         return self.games_with_fe / max(1, self.total_games)
+
+    @property
+    def overtake_rate(self) -> float:
+        return self.games_with_overtakes / max(1, self.total_games)
 
 
 @dataclass
@@ -207,6 +391,9 @@ class NodeGameStats:
 
     # Debug: raw values that became "unknown"
     unknown_raw_values: dict[str, int] = field(default_factory=dict)
+
+    # Move type distribution
+    move_types: dict[str, int] = field(default_factory=dict)
 
     scan_duration_seconds: float = 0.0
 
@@ -252,6 +439,10 @@ class ClusterGameStats:
 
     errors: list[str] = field(default_factory=list)
 
+
+# =============================================================================
+# Configuration Loading
+# =============================================================================
 
 def load_cluster_config() -> dict[str, Any]:
     """Load cluster configuration from distributed_hosts.yaml."""
@@ -310,6 +501,10 @@ def get_active_hosts(config: dict[str, Any], filter_hosts: list[str] | None = No
     return hosts
 
 
+# =============================================================================
+# SSH Remote Execution
+# =============================================================================
+
 def run_ssh_command(
     host: str,
     command: str,
@@ -344,7 +539,10 @@ def run_ssh_command(
         return False, "", str(e)
 
 
-# The remote analysis script - will be base64 encoded
+# =============================================================================
+# Remote Analysis Script (base64 encoded for SSH execution)
+# =============================================================================
+
 REMOTE_ANALYSIS_SCRIPT = '''
 import json
 import sqlite3
@@ -396,7 +594,7 @@ def scan_databases():
         "move_types": {},
         "games_with_recovery": 0,
         "games_with_fe": 0,
-        "unknown_raw_values": {},  # Track raw values that didn't normalize
+        "unknown_raw_values": {},
     }
 
     search_paths = [
@@ -458,11 +656,17 @@ def scan_databases():
                             "victory_types": {},
                             "wins_by_player": {},
                             "total_moves": 0,
+                            "game_lengths": [],
                             "high_move_games": 0,
                             "games_with_recovery": 0,
                             "games_with_fe": 0,
+                            "total_recovery_moves": 0,
+                            "total_fe_moves": 0,
                             "games_by_ai_type": {},
                             "stalemate_tiebreakers": {},
+                            "move_types": {},
+                            "games_with_overtakes": 0,
+                            "total_overtakes": 0,
                         }
 
                     cs = results["config_stats"][config_key]
@@ -486,6 +690,8 @@ def scan_databases():
                     # Move count
                     moves = game.get("total_moves") or game.get("move_count") or 0
                     cs["total_moves"] += moves
+                    if moves > 0:
+                        cs["game_lengths"].append(moves)
                     if moves >= 400:
                         cs["high_move_games"] += 1
 
@@ -508,6 +714,7 @@ def scan_databases():
                 # Analyze game_moves if available - attribute to configs
                 if has_moves_table:
                     try:
+                        # Move type distribution
                         cursor.execute("SELECT move_type, COUNT(*) FROM game_moves GROUP BY move_type")
                         for row in cursor.fetchall():
                             mt = row[0] or "unknown"
@@ -516,39 +723,58 @@ def scan_databases():
                         # Count recovery games per config
                         bt_col = "board_type" if "board_type" in columns else "'unknown'"
                         np_col = "num_players" if "num_players" in columns else "2"
+
                         cursor.execute(f"""
-                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id)
+                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id), COUNT(*)
                             FROM game_moves gm
                             JOIN games g ON gm.game_id = g.game_id
                             WHERE gm.move_type = 'recovery_slide'
                             GROUP BY g.{bt_col}, g.{np_col}
                         """)
                         for row in cursor.fetchall():
-                            bt, np, count = row[0] or "unknown", row[1] or 2, row[2]
+                            bt, np, game_count, move_count = row[0] or "unknown", row[1] or 2, row[2], row[3]
                             ck = f"{bt}_{np}p"
                             if ck in results["config_stats"]:
-                                results["config_stats"][ck]["games_with_recovery"] += count
-                            results["games_with_recovery"] += count
+                                results["config_stats"][ck]["games_with_recovery"] += game_count
+                                results["config_stats"][ck]["total_recovery_moves"] += move_count
+                            results["games_with_recovery"] += game_count
 
                         # Count FE games per config
                         cursor.execute(f"""
-                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id)
+                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id), COUNT(*)
                             FROM game_moves gm
                             JOIN games g ON gm.game_id = g.game_id
                             WHERE gm.move_type = 'forced_elimination'
                             GROUP BY g.{bt_col}, g.{np_col}
                         """)
                         for row in cursor.fetchall():
-                            bt, np, count = row[0] or "unknown", row[1] or 2, row[2]
+                            bt, np, game_count, move_count = row[0] or "unknown", row[1] or 2, row[2], row[3]
                             ck = f"{bt}_{np}p"
                             if ck in results["config_stats"]:
-                                results["config_stats"][ck]["games_with_fe"] += count
-                            results["games_with_fe"] += count
-                    except:
+                                results["config_stats"][ck]["games_with_fe"] += game_count
+                                results["config_stats"][ck]["total_fe_moves"] += move_count
+                            results["games_with_fe"] += game_count
+
+                        # Count overtakes (move_stack to occupied position)
+                        cursor.execute(f"""
+                            SELECT g.{bt_col}, g.{np_col}, COUNT(DISTINCT gm.game_id), COUNT(*)
+                            FROM game_moves gm
+                            JOIN games g ON gm.game_id = g.game_id
+                            WHERE gm.move_type = 'move_stack' AND gm.is_capture = 1
+                            GROUP BY g.{bt_col}, g.{np_col}
+                        """)
+                        for row in cursor.fetchall():
+                            bt, np, game_count, move_count = row[0] or "unknown", row[1] or 2, row[2], row[3]
+                            ck = f"{bt}_{np}p"
+                            if ck in results["config_stats"]:
+                                results["config_stats"][ck]["games_with_overtakes"] += game_count
+                                results["config_stats"][ck]["total_overtakes"] += move_count
+
+                    except Exception:
                         pass
 
                 conn.close()
-            except Exception as e:
+            except Exception:
                 continue
 
     return results
@@ -576,7 +802,7 @@ def scan_node_games(host: dict[str, Any]) -> NodeGameStats:
         host["ip"],
         f'python3 -c "import base64; exec(base64.b64decode(\\"{script_b64}\\").decode())"',
         user=host.get("user", "ubuntu"),
-        timeout=180,  # Increased timeout for larger scans
+        timeout=300,  # 5 min timeout for larger scans
         key_path=ssh_key if os.path.exists(ssh_key) else None,
     )
 
@@ -595,6 +821,7 @@ def scan_node_games(host: dict[str, Any]) -> NodeGameStats:
         stats.total_games = data.get("total_games", 0)
         stats.databases_found = data.get("databases_found", 0)
         stats.databases_with_moves = data.get("databases_with_moves", 0)
+        stats.move_types = data.get("move_types", {})
 
         # Parse config stats
         for config_key, cs_data in data.get("config_stats", {}).items():
@@ -605,11 +832,17 @@ def scan_node_games(host: dict[str, Any]) -> NodeGameStats:
                 total_games=cs_data.get("total_games", 0),
                 victory_types=cs_data.get("victory_types", {}),
                 total_moves=cs_data.get("total_moves", 0),
+                game_lengths=cs_data.get("game_lengths", []),
                 high_move_count_games=cs_data.get("high_move_games", 0),
                 games_with_recovery=cs_data.get("games_with_recovery", 0),
                 games_with_fe=cs_data.get("games_with_fe", 0),
+                total_recovery_moves=cs_data.get("total_recovery_moves", 0),
+                total_fe_moves=cs_data.get("total_fe_moves", 0),
                 games_by_ai_type=cs_data.get("games_by_ai_type", {}),
                 stalemate_tiebreakers=cs_data.get("stalemate_tiebreakers", {}),
+                move_types=cs_data.get("move_types", {}),
+                games_with_overtakes=cs_data.get("games_with_overtakes", 0),
+                total_overtakes=cs_data.get("total_overtakes", 0),
             )
             # Parse wins by player
             for k, v in cs_data.get("wins_by_player", {}).items():
@@ -638,9 +871,67 @@ def scan_node_games(host: dict[str, Any]) -> NodeGameStats:
     return stats
 
 
+def scan_local_databases() -> NodeGameStats:
+    """Scan local databases (no SSH)."""
+    import time
+    start_time = time.time()
+
+    stats = NodeGameStats(host="localhost")
+    stats.reachable = True
+
+    # Execute the analysis locally
+    local_scope: dict[str, Any] = {}
+    exec(REMOTE_ANALYSIS_SCRIPT, local_scope)
+    data = local_scope["scan_databases"]()
+
+    stats.scan_duration_seconds = time.time() - start_time
+    stats.total_games = data.get("total_games", 0)
+    stats.databases_found = data.get("databases_found", 0)
+    stats.databases_with_moves = data.get("databases_with_moves", 0)
+    stats.move_types = data.get("move_types", {})
+
+    # Parse config stats (same as SSH version)
+    for config_key, cs_data in data.get("config_stats", {}).items():
+        cs = ConfigStats(
+            config_key=config_key,
+            board_type=cs_data.get("board_type", "unknown"),
+            num_players=cs_data.get("num_players", 2),
+            total_games=cs_data.get("total_games", 0),
+            victory_types=cs_data.get("victory_types", {}),
+            total_moves=cs_data.get("total_moves", 0),
+            game_lengths=cs_data.get("game_lengths", []),
+            high_move_count_games=cs_data.get("high_move_games", 0),
+            games_with_recovery=cs_data.get("games_with_recovery", 0),
+            games_with_fe=cs_data.get("games_with_fe", 0),
+            total_recovery_moves=cs_data.get("total_recovery_moves", 0),
+            total_fe_moves=cs_data.get("total_fe_moves", 0),
+            games_by_ai_type=cs_data.get("games_by_ai_type", {}),
+            stalemate_tiebreakers=cs_data.get("stalemate_tiebreakers", {}),
+            move_types=cs_data.get("move_types", {}),
+            games_with_overtakes=cs_data.get("games_with_overtakes", 0),
+            total_overtakes=cs_data.get("total_overtakes", 0),
+        )
+        for k, v in cs_data.get("wins_by_player", {}).items():
+            try:
+                cs.wins_by_player[int(k)] = v
+            except ValueError:
+                pass
+        stats.config_stats[config_key] = cs
+
+        for vt, count in cs.victory_types.items():
+            stats.victory_types[vt] = stats.victory_types.get(vt, 0) + count
+        for ai, count in cs.games_by_ai_type.items():
+            stats.games_by_ai_type[ai] = stats.games_by_ai_type.get(ai, 0) + count
+
+    stats.unknown_raw_values = data.get("unknown_raw_values", {})
+
+    return stats
+
+
 def analyze_cluster(
     hosts: list[dict[str, Any]],
     parallel: bool = True,
+    local_only: bool = False,
 ) -> ClusterGameStats:
     """Analyze game statistics across all cluster nodes."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -653,7 +944,13 @@ def analyze_cluster(
         logger.info(f"Scanning {host['name']} ({host['ip']})...")
         return scan_node_games(host)
 
-    if parallel and len(hosts) > 1:
+    if local_only:
+        # Local-only mode
+        logger.info("Scanning local databases...")
+        stats = scan_local_databases()
+        cluster_stats.node_stats["localhost"] = stats
+        hosts = []  # Skip remote scanning
+    elif parallel and len(hosts) > 1:
         with ThreadPoolExecutor(max_workers=min(10, len(hosts))) as executor:
             futures = {executor.submit(scan_host, h): h for h in hosts}
             for future in as_completed(futures):
@@ -672,7 +969,7 @@ def analyze_cluster(
                 cluster_stats.errors.append(f"{host['name']}: {e}")
 
     # Aggregate statistics
-    cluster_stats.nodes_scanned = len(hosts)
+    cluster_stats.nodes_scanned = len(hosts) if not local_only else 1
 
     for node_name, node_stats in cluster_stats.node_stats.items():
         if node_stats.reachable:
@@ -697,9 +994,14 @@ def analyze_cluster(
                     agg = cluster_stats.config_stats[config_key]
                     agg.total_games += cs.total_games
                     agg.total_moves += cs.total_moves
+                    agg.game_lengths.extend(cs.game_lengths)
                     agg.high_move_count_games += cs.high_move_count_games
                     agg.games_with_recovery += cs.games_with_recovery
                     agg.games_with_fe += cs.games_with_fe
+                    agg.total_recovery_moves += cs.total_recovery_moves
+                    agg.total_fe_moves += cs.total_fe_moves
+                    agg.games_with_overtakes += cs.games_with_overtakes
+                    agg.total_overtakes += cs.total_overtakes
 
                     for vt, count in cs.victory_types.items():
                         agg.victory_types[vt] = agg.victory_types.get(vt, 0) + count
@@ -713,6 +1015,9 @@ def analyze_cluster(
                     for tb, count in cs.stalemate_tiebreakers.items():
                         agg.stalemate_tiebreakers[tb] = agg.stalemate_tiebreakers.get(tb, 0) + count
 
+                    for mt, count in cs.move_types.items():
+                        agg.move_types[mt] = agg.move_types.get(mt, 0) + count
+
                 # Aggregate victory types
                 for vt, count in node_stats.victory_types.items():
                     cluster_stats.victory_types[vt] = cluster_stats.victory_types.get(vt, 0) + count
@@ -725,6 +1030,10 @@ def analyze_cluster(
                 for raw, count in node_stats.unknown_raw_values.items():
                     cluster_stats.unknown_raw_values[raw] = cluster_stats.unknown_raw_values.get(raw, 0) + count
 
+                # Aggregate move types
+                for mt, count in node_stats.move_types.items():
+                    cluster_stats.move_types[mt] = cluster_stats.move_types.get(mt, 0) + count
+
     # Aggregate recovery/FE from config stats
     for cs in cluster_stats.config_stats.values():
         cluster_stats.games_with_recovery += cs.games_with_recovery
@@ -732,6 +1041,10 @@ def analyze_cluster(
 
     return cluster_stats
 
+
+# =============================================================================
+# Report Formatting
+# =============================================================================
 
 def format_report_markdown(stats: ClusterGameStats) -> str:
     """Format cluster statistics as comprehensive markdown report."""
@@ -775,6 +1088,20 @@ def format_report_markdown(stats: ClusterGameStats) -> str:
             lines.append(f"| `{raw}` | {count:,} |")
         lines.append("")
 
+    # Move Type Distribution
+    if stats.move_types:
+        lines.extend([
+            "## Move Type Distribution",
+            "",
+            "| Move Type | Count | Rate |",
+            "|-----------|-------|------|",
+        ])
+        total_moves = sum(stats.move_types.values())
+        for mt, count in sorted(stats.move_types.items(), key=lambda x: -x[1]):
+            rate = count / total_moves if total_moves > 0 else 0
+            lines.append(f"| {mt} | {count:,} | {rate:.1%} |")
+        lines.append("")
+
     # Per-Configuration Breakdown
     lines.extend([
         "## Per-Configuration Analysis",
@@ -786,12 +1113,22 @@ def format_report_markdown(stats: ClusterGameStats) -> str:
         if cs.total_games == 0:
             continue
 
+        length_stats = cs.length_stats
+
         lines.extend([
             f"### {config_key.upper()}",
             "",
             f"**Games:** {cs.total_games:,} | **Avg Length:** {cs.avg_game_length:.1f} moves",
             "",
         ])
+
+        # Game length percentiles
+        if length_stats.count > 0:
+            lines.append("**Game Length Statistics:**")
+            lines.append("")
+            lines.append(f"- Min: {length_stats.min_val} | Max: {length_stats.max_val} | Median: {length_stats.median:.0f}")
+            lines.append(f"- Std: {length_stats.std:.1f} | P10: {length_stats.p10:.0f} | P90: {length_stats.p90:.0f} | P95: {length_stats.p95:.0f}")
+            lines.append("")
 
         # Victory types for this config
         lines.append("**Victory Types:**")
@@ -803,39 +1140,46 @@ def format_report_markdown(stats: ClusterGameStats) -> str:
             lines.append(f"| {vt} | {count:,} | {rate:.1%} |")
         lines.append("")
 
-        # Win rates by player
-        if cs.wins_by_player:
-            total_wins = sum(cs.wins_by_player.values())
-            lines.append("**Win Rates by Position:**")
-            lines.append("")
-            lines.append("| Player | Wins | Rate |")
-            lines.append("|--------|------|------|")
-            for p in sorted(cs.wins_by_player.keys()):
-                wins = cs.wins_by_player[p]
-                rate = wins / total_wins if total_wins > 0 else 0
-                lines.append(f"| P{p} | {wins:,} | {rate:.1%} |")
-            lines.append("")
-
-            # First player advantage
-            fpa = cs.first_player_advantage
-            lines.append(f"**First-Player Advantage:** {fpa:+.1%}")
-            lines.append("")
-
-        # Recovery/FE stats
-        if cs.games_with_recovery > 0 or cs.games_with_fe > 0:
-            lines.append("**Game Mechanics:**")
-            lines.append("")
-            lines.append(f"- Recovery Used: {cs.games_with_recovery:,} ({cs.recovery_rate:.1%})")
-            lines.append(f"- Forced Elimination: {cs.games_with_fe:,} ({cs.fe_rate:.1%})")
-            lines.append(f"- High Move Count (400+): {cs.high_move_count_games:,}")
-            lines.append("")
-
         # Stalemate tiebreakers
         if cs.stalemate_tiebreakers:
             lines.append("**Stalemate Tiebreakers:**")
             lines.append("")
             for tb, count in sorted(cs.stalemate_tiebreakers.items(), key=lambda x: -x[1]):
                 lines.append(f"- {tb}: {count:,}")
+            lines.append("")
+
+        # Win rates by player
+        if cs.wins_by_player:
+            total_wins = sum(cs.wins_by_player.values())
+            lines.append("**Win Rates by Position:**")
+            lines.append("")
+            lines.append("| Player | Wins | Rate | 95% CI |")
+            lines.append("|--------|------|------|--------|")
+            for p in sorted(cs.wins_by_player.keys()):
+                wins = cs.wins_by_player[p]
+                rate = wins / total_wins if total_wins > 0 else 0
+                ci = wilson_score_interval(wins, total_wins)
+                lines.append(f"| P{p} | {wins:,} | {rate:.1%} | [{ci[0]:.1%}, {ci[1]:.1%}] |")
+            lines.append("")
+
+            # First player advantage with statistical significance
+            fpa = cs.first_player_advantage
+            fpa_pval = cs.first_player_pvalue
+            fpa_ci = cs.first_player_ci
+            sig = "**" if fpa_pval < 0.05 else ""
+            lines.append(f"**First-Player Advantage:** {fpa:+.1%} (p={fpa_pval:.4f}{sig})")
+            lines.append(f"  - First player win rate: {cs.first_player_win_rate:.1%} [{fpa_ci[0]:.1%}, {fpa_ci[1]:.1%}]")
+            lines.append("")
+
+        # Recovery/FE stats
+        if cs.games_with_recovery > 0 or cs.games_with_fe > 0:
+            lines.append("**Game Mechanics:**")
+            lines.append("")
+            lines.append(f"- Recovery Games: {cs.games_with_recovery:,} ({cs.recovery_rate:.1%}) - {cs.total_recovery_moves:,} total moves")
+            lines.append(f"- Forced Elimination Games: {cs.games_with_fe:,} ({cs.fe_rate:.1%}) - {cs.total_fe_moves:,} total moves")
+            lines.append(f"- High Move Count (400+): {cs.high_move_count_games:,}")
+            if cs.games_with_overtakes > 0:
+                lines.append(f"- Games with Overtakes: {cs.games_with_overtakes:,} ({cs.overtake_rate:.1%}) - {cs.total_overtakes:,} total")
             lines.append("")
 
     # AI Type Breakdown
@@ -864,17 +1208,18 @@ def format_report_markdown(stats: ClusterGameStats) -> str:
     lines.extend([
         "## Per-Node Statistics",
         "",
-        "| Node | Games | DBs | Move DBs | Status |",
-        "|------|-------|-----|----------|--------|",
+        "| Node | Games | DBs | Move DBs | Duration | Status |",
+        "|------|-------|-----|----------|----------|--------|",
     ])
     for node_name in sorted(stats.node_stats.keys()):
         ns = stats.node_stats[node_name]
-        status = "✓" if ns.reachable else "✗"
+        status = "OK" if ns.reachable else "FAIL"
         if ns.error:
-            status = f"⚠ {ns.error[:25]}..."
+            status = f"{ns.error[:20]}..."
+        duration = f"{ns.scan_duration_seconds:.1f}s"
         lines.append(
             f"| {node_name} | {ns.total_games:,} | "
-            f"{ns.databases_found} | {ns.databases_with_moves} | {status} |"
+            f"{ns.databases_found} | {ns.databases_with_moves} | {duration} | {status} |"
         )
     lines.append("")
 
@@ -884,42 +1229,51 @@ def format_report_markdown(stats: ClusterGameStats) -> str:
         "",
     ])
 
+    balance_issues_found = False
     for config_key, cs in sorted(stats.config_stats.items()):
         if cs.total_games < 100:
             continue
 
         issues = []
 
-        # Check first-player advantage
+        # Check first-player advantage with statistical significance
         fpa = cs.first_player_advantage
-        if abs(fpa) > 0.15:
-            issues.append(f"⚠️ Strong first-player {'advantage' if fpa > 0 else 'disadvantage'}: {fpa:+.1%}")
-        elif abs(fpa) > 0.10:
-            issues.append(f"📊 Moderate first-player deviation: {fpa:+.1%}")
+        fpa_pval = cs.first_player_pvalue
+        if fpa_pval < 0.05:
+            if abs(fpa) > 0.15:
+                issues.append(f"First-player {'advantage' if fpa > 0 else 'disadvantage'}: {fpa:+.1%} (p={fpa_pval:.4f})")
+            elif abs(fpa) > 0.10:
+                issues.append(f"Moderate first-player deviation: {fpa:+.1%} (p={fpa_pval:.4f})")
 
         # Check victory type distribution
         vt_total = sum(cs.victory_types.values())
         for vt, count in cs.victory_types.items():
             rate = count / vt_total if vt_total > 0 else 0
             if vt == "elimination" and rate > 0.50:
-                issues.append(f"⚠️ High elimination rate: {rate:.1%}")
+                issues.append(f"High elimination rate: {rate:.1%}")
             if vt == "incomplete" and rate > 0.10:
-                issues.append(f"⚠️ High incomplete game rate: {rate:.1%}")
+                issues.append(f"High incomplete game rate: {rate:.1%}")
+            if vt == "unknown" and rate > 0.20:
+                issues.append(f"High unknown victory type rate: {rate:.1%}")
 
         # Check high move count games (potential draws/stalemates)
         if cs.high_move_count_games > 0:
             hm_rate = cs.high_move_count_games / cs.total_games
             if hm_rate > 0.05:
-                issues.append(f"📊 {hm_rate:.1%} games reach 400+ moves")
+                issues.append(f"{hm_rate:.1%} games reach 400+ moves")
 
         if issues:
+            balance_issues_found = True
             lines.append(f"**{config_key}:**")
             for issue in issues:
                 lines.append(f"  - {issue}")
             lines.append("")
 
-    if not any(cs.total_games >= 100 for cs in stats.config_stats.values()):
-        lines.append("*Insufficient data for balance assessment (need 100+ games per config)*")
+    if not balance_issues_found:
+        if any(cs.total_games >= 100 for cs in stats.config_stats.values()):
+            lines.append("*No significant balance issues detected.*")
+        else:
+            lines.append("*Insufficient data for balance assessment (need 100+ games per config)*")
         lines.append("")
 
     return "\n".join(lines)
@@ -938,6 +1292,7 @@ def format_report_json(stats: ClusterGameStats) -> str:
             "nodes_with_data": stats.nodes_with_data,
         },
         "victory_types": stats.victory_types,
+        "move_types": stats.move_types,
         "games_by_ai_type": stats.games_by_ai_type,
         "games_by_node": stats.games_by_node,
         "recovery_games": stats.games_with_recovery,
@@ -947,23 +1302,51 @@ def format_report_json(stats: ClusterGameStats) -> str:
     }
 
     for config_key, cs in stats.config_stats.items():
+        length_stats = cs.length_stats
         data["config_stats"][config_key] = {
             "board_type": cs.board_type,
             "num_players": cs.num_players,
             "total_games": cs.total_games,
             "avg_game_length": cs.avg_game_length,
+            "game_length_stats": {
+                "min": length_stats.min_val,
+                "max": length_stats.max_val,
+                "mean": length_stats.mean,
+                "median": length_stats.median,
+                "std": length_stats.std,
+                "p10": length_stats.p10,
+                "p25": length_stats.p25,
+                "p75": length_stats.p75,
+                "p90": length_stats.p90,
+                "p95": length_stats.p95,
+            },
             "first_player_advantage": cs.first_player_advantage,
+            "first_player_win_rate": cs.first_player_win_rate,
+            "first_player_ci": cs.first_player_ci,
+            "first_player_pvalue": cs.first_player_pvalue,
             "victory_types": cs.victory_types,
+            "stalemate_tiebreakers": cs.stalemate_tiebreakers,
             "wins_by_player": {str(k): v for k, v in cs.wins_by_player.items()},
             "recovery_rate": cs.recovery_rate,
+            "recovery_games": cs.games_with_recovery,
+            "recovery_moves": cs.total_recovery_moves,
             "fe_rate": cs.fe_rate,
+            "fe_games": cs.games_with_fe,
+            "fe_moves": cs.total_fe_moves,
             "high_move_games": cs.high_move_count_games,
+            "overtake_rate": cs.overtake_rate,
+            "overtake_games": cs.games_with_overtakes,
+            "total_overtakes": cs.total_overtakes,
             "games_by_ai_type": cs.games_by_ai_type,
-            "stalemate_tiebreakers": cs.stalemate_tiebreakers,
+            "move_types": cs.move_types,
         }
 
     return json.dumps(data, indent=2)
 
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1009,6 +1392,11 @@ def main():
         help="Scan nodes sequentially",
     )
     parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Only scan local databases (no SSH)",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Verbose output",
@@ -1019,18 +1407,24 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Load config
-    config = load_cluster_config()
-    hosts = get_active_hosts(config, args.nodes)
+    # Load config and get hosts
+    if args.local_only:
+        hosts = []
+    else:
+        config = load_cluster_config()
+        hosts = get_active_hosts(config, args.nodes)
 
-    if not hosts:
-        logger.error("No hosts configured")
-        sys.exit(1)
+        if not hosts and not args.local_only:
+            logger.error("No hosts configured. Use --local-only for local analysis.")
+            sys.exit(1)
 
-    logger.info(f"Scanning {len(hosts)} cluster nodes...")
+    if hosts:
+        logger.info(f"Scanning {len(hosts)} cluster nodes...")
+    elif args.local_only:
+        logger.info("Scanning local databases...")
 
     # Analyze cluster
-    stats = analyze_cluster(hosts, parallel=not args.sequential)
+    stats = analyze_cluster(hosts, parallel=not args.sequential, local_only=args.local_only)
 
     # Filter by config if requested
     if args.board_type or args.num_players:
