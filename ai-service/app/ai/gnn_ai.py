@@ -32,6 +32,7 @@ import torch.nn.functional as F
 
 from app.models import AIConfig, BoardType
 from app.game_engine import GameEngine
+from app.ai.base import BaseAI
 from app.ai.canonical_move_encoding import encode_move_for_board
 from app.ai.neural_net.graph_encoding import board_to_graph, board_to_graph_hex
 
@@ -49,11 +50,16 @@ except ImportError:
     logger.warning("PyTorch Geometric not installed - GNN AI unavailable")
 
 
-class GNNAI:
+class GNNAI(BaseAI):
     """Graph Neural Network AI player.
 
     Uses a trained GNN policy network to select moves.
     Naturally handles hex board connectivity through message passing.
+
+    Inherits from BaseAI to comply with factory contract, providing:
+    - RNG seeding and reproducibility
+    - Rules engine integration
+    - Standard AI interface (select_move, evaluate_position)
     """
 
     def __init__(
@@ -73,8 +79,7 @@ class GNNAI:
             device: Device to use (cpu, cuda, mps)
             temperature: Softmax temperature for action selection
         """
-        self.player_number = player_number
-        self.config = config
+        super().__init__(player_number, config)
         self.device = device
         self.temperature = temperature
         self.model = None
@@ -261,6 +266,20 @@ class GNNAI:
 
         # Return value for current player
         return value[0, 0].item()
+
+    def evaluate_position(self, game_state: "GameState") -> float:
+        """Evaluate the current position from this AI's perspective.
+
+        Required by BaseAI contract. Delegates to get_value() which
+        returns the neural network's value estimate.
+
+        Args:
+            game_state: Current game state
+
+        Returns:
+            Evaluation score (positive = good for this AI)
+        """
+        return self.get_value(game_state)
 
 
 def create_gnn_ai(

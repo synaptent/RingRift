@@ -269,6 +269,37 @@ CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
         "profile_id": "v3-gmo-gumbel-21-experimental",
         "use_neural_net": True,
     },
+    # -------------------------------------------------------------------------
+    # GNN-based AI Slots (22-24)
+    # Graph Neural Networks with native hex/connectivity handling
+    # -------------------------------------------------------------------------
+    22: {
+        # GNN: Graph Neural Network policy
+        # Uses message passing for native hex geometry and territory connectivity
+        # 18x smaller model size, 4x faster training than CNN
+        "ai_type": AIType.GNN,
+        "randomness": 0.1,
+        "think_time_ms": 1000,
+        "profile_id": "v3-gnn-22-experimental",
+        "use_neural_net": True,
+    },
+    23: {
+        # GNN High Quality: GNN with lower temperature for stronger play
+        "ai_type": AIType.GNN,
+        "randomness": 0.0,
+        "think_time_ms": 2000,
+        "profile_id": "v3-gnn-23-experimental-strong",
+        "use_neural_net": True,
+    },
+    24: {
+        # Hybrid CNN-GNN: Combines CNN local patterns with GNN connectivity
+        # Best of both worlds: pattern recognition + territory understanding
+        "ai_type": AIType.HYBRID,
+        "randomness": 0.0,
+        "think_time_ms": 2500,
+        "profile_id": "v3-hybrid-24-experimental",
+        "use_neural_net": True,
+    },
 }
 
 # Overrides for 3-4 player games where MaxN/BRS outperform Minimax
@@ -395,6 +426,9 @@ DIFFICULTY_DESCRIPTIONS: dict[int, str] = {
     19: "Experimental - GMO v2 Explorer (high exploration variant)",
     20: "Experimental - Improved MCTS (PUCT + progressive widening + transposition)",
     21: "Experimental - GMO-Gumbel (GMO value network + Gumbel MCTS search)",
+    22: "Experimental - GNN (Graph Neural Network with native hex geometry)",
+    23: "Experimental - GNN Strong (GNN with lower temperature)",
+    24: "Experimental - Hybrid CNN-GNN (CNN patterns + GNN connectivity)",
 }
 
 # Board types considered "large" (Minimax too slow)
