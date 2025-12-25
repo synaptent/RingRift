@@ -45,6 +45,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from app.core.async_context import fire_and_forget
+
 if TYPE_CHECKING:
     from app.distributed.db_utils import ThreadLocalConnectionPool
 
@@ -903,7 +905,10 @@ class CoordinatorRegistry:
             # Schedule the async shutdown
             try:
                 event_loop = loop or asyncio.get_running_loop()
-                event_loop.create_task(self.shutdown_all())
+                fire_and_forget(
+                    self.shutdown_all(),
+                    name="coordinator_base_signal_shutdown",
+                )
             except RuntimeError:
                 # No running loop, try to run synchronously
                 logger.warning("No event loop running, attempting sync shutdown")

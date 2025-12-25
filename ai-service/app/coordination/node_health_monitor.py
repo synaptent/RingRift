@@ -40,6 +40,8 @@ from typing import Any
 
 import aiohttp
 
+from app.core.async_context import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,7 +175,10 @@ class NodeHealthMonitor:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._monitor_loop())
+        self._task = safe_create_task(
+            self._monitor_loop(),
+            name="node_health_monitor_loop",
+        )
         logger.info(f"[NodeHealthMonitor] Started (interval={self.check_interval}s)")
 
     async def stop(self) -> None:

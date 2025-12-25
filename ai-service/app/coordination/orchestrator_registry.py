@@ -70,6 +70,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
+from app.core.async_context import fire_and_forget
+
 logger = logging.getLogger(__name__)
 
 # Import DataCatalog for data availability tracking (December 2025)
@@ -1289,7 +1291,10 @@ class CrossCoordinatorHealthProtocol:
             import asyncio
             try:
                 asyncio.get_running_loop()
-                asyncio.create_task(bus.publish(event))
+                fire_and_forget(
+                    bus.publish(event),
+                    name="orchestrator_health_event",
+                )
             except RuntimeError:
                 if hasattr(bus, 'publish_sync'):
                     bus.publish_sync(event)

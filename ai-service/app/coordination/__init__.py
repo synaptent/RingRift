@@ -999,11 +999,16 @@ def initialize_all_coordinators(
 
     # Start UnifiedEventCoordinator
     try:
+        from app.core.async_context import fire_and_forget
+
         stats = get_event_coordinator_stats()
         if not stats.get("is_running", False):
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(start_event_coordinator())
+                asyncio.get_running_loop()
+                fire_and_forget(
+                    start_event_coordinator(),
+                    name="event_coordinator_startup",
+                )
                 status["event_coordinator"] = True
             except RuntimeError:
                 status["event_coordinator"] = asyncio.run(start_event_coordinator())
@@ -1020,6 +1025,7 @@ def initialize_all_coordinators(
             import time as _time
 
             from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+            from app.core.async_context import fire_and_forget
 
             bus = get_event_bus()
             for name, error in errors.items():
@@ -1033,8 +1039,11 @@ def initialize_all_coordinators(
                     source="initialize_all_coordinators",
                 )
                 try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.create_task(bus.publish(event))
+                    asyncio.get_running_loop()
+                    fire_and_forget(
+                        bus.publish(event),
+                        name=f"emit_coordinator_init_failed_{name}",
+                    )
                 except RuntimeError:
                     asyncio.run(bus.publish(event))
         except Exception:
@@ -1464,15 +1473,18 @@ def start_coordinator_heartbeats(interval_seconds: float = 30.0) -> bool:
     """
     import asyncio
 
+    from app.core.async_context import safe_create_task
+
     global _heartbeat_task
 
     if _heartbeat_task is not None and not _heartbeat_task.done():
         return True  # Already running
 
     try:
-        loop = asyncio.get_running_loop()
-        _heartbeat_task = loop.create_task(
-            _emit_coordinator_heartbeats(interval_seconds)
+        asyncio.get_running_loop()
+        _heartbeat_task = safe_create_task(
+            _emit_coordinator_heartbeats(interval_seconds),
+            name="coordinator_heartbeat_emitter",
         )
         return True
     except RuntimeError:

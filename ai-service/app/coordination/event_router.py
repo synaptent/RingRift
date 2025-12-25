@@ -47,6 +47,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Union
 
+from app.core.async_context import fire_and_forget
+
 logger = logging.getLogger(__name__)
 
 # Import the 3 event systems
@@ -901,7 +903,10 @@ def emit_training_started_sync(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(emit_training_started(config_key, node_name, **extra_payload))
+            fire_and_forget(
+                emit_training_started(config_key, node_name, **extra_payload),
+                name=f"emit_training_started_{config_key}",
+            )
         else:
             loop.run_until_complete(emit_training_started(config_key, node_name, **extra_payload))
     except RuntimeError:
@@ -919,7 +924,10 @@ def emit_training_completed_sync(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))
+            fire_and_forget(
+                emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload),
+                name=f"emit_training_completed_{config_key}",
+            )
         else:
             loop.run_until_complete(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))
     except RuntimeError:

@@ -45,6 +45,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.core.async_context import fire_and_forget
+
 logger = logging.getLogger(__name__)
 
 # Import centralized defaults (December 2025)
@@ -486,13 +488,16 @@ class ResourceMonitoringCoordinator:
 
                 try:
                     asyncio.get_running_loop()
-                    asyncio.create_task(emit_backpressure_activated(
-                        node_id=node_id,
-                        level=level.value,
-                        reason=reason,
-                        resource_type="",
-                        utilization=0.0,
-                    ))
+                    fire_and_forget(
+                        emit_backpressure_activated(
+                            node_id=node_id,
+                            level=level.value,
+                            reason=reason,
+                            resource_type="",
+                            utilization=0.0,
+                        ),
+                        name=f"emit_backpressure_activated_{node_id}",
+                    )
                 except RuntimeError:
                     asyncio.run(emit_backpressure_activated(
                         node_id=node_id,
@@ -506,10 +511,13 @@ class ResourceMonitoringCoordinator:
 
                 try:
                     asyncio.get_running_loop()
-                    asyncio.create_task(emit_backpressure_released(
-                        node_id=node_id,
-                        previous_level=level.value,
-                    ))
+                    fire_and_forget(
+                        emit_backpressure_released(
+                            node_id=node_id,
+                            previous_level=level.value,
+                        ),
+                        name=f"emit_backpressure_released_{node_id}",
+                    )
                 except RuntimeError:
                     asyncio.run(emit_backpressure_released(
                         node_id=node_id,
