@@ -48,7 +48,7 @@ class TierPerfBudget:
 
 
 def _build_square8_two_player_budgets() -> dict[str, TierPerfBudget]:
-    """Construct perf budgets for Square8 2‑player D4/D6/D8 tiers.
+    """Construct perf budgets for Square8 2‑player D3/D4/D5/D6/D7/D8 tiers.
 
     Budgets are derived from the canonical LadderTierConfig entries for
     (difficulty, BoardType.SQUARE8, num_players=2). For each tier we
@@ -83,11 +83,14 @@ def _build_square8_two_player_budgets() -> dict[str, TierPerfBudget]:
             notes=notes,
         )
 
+    d3 = _from_ladder(3, "D3_SQ8_2P")
     d4 = _from_ladder(4, "D4_SQ8_2P")
+    d5 = _from_ladder(5, "D5_SQ8_2P")
     d6 = _from_ladder(6, "D6_SQ8_2P")
+    d7 = _from_ladder(7, "D7_SQ8_2P")
     d8 = _from_ladder(8, "D8_SQ8_2P")
 
-    for budget in (d4, d6, d8):
+    for budget in (d3, d4, d5, d6, d7, d8):
         # Canonical name keyed by full tier descriptor.
         budgets[budget.tier_name.upper()] = budget
         # Convenience alias keyed by bare difficulty ("D4", "D6", "D8").

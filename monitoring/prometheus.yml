@@ -3,7 +3,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: 'ringrift-p2p-monitor'
-    leader_node: 'lambda-h100'
+    leader_node: 'lambda-gh200-a'
 
 rule_files:
   # - /etc/prometheus/alerting-rules.yaml
@@ -20,59 +20,37 @@ scrape_configs:
   - job_name: 'ringrift-p2p'
     static_configs:
       - targets: ['100.92.222.49:9091']
-        labels:
-          node: 'mbp-64gb'
-      - targets: ['100.91.25.13:9091']
-        labels:
-          node: 'lambda-a10'
-      - targets: ['100.123.183.70:9091']
-        labels:
-          node: 'lambda-gh200-a'
-      - targets: ['100.75.84.47:9091']
-        labels:
-          node: 'lambda-gh200-d'
-      - targets: ['100.88.176.74:9091']
-        labels:
-          node: 'lambda-gh200-e'
-      - targets: ['100.104.165.116:9091']
-        labels:
-          node: 'lambda-gh200-f'
-      - targets: ['100.88.35.19:9091']
-        labels:
-          node: 'lambda-gh200-c'
+        labels: node="mbp-64gb"
+      - targets: ['100.104.126.58:9091']
+        labels: node="lambda-gh200-g"
+      - targets: ['100.97.98.26:9091']
+        labels: node="lambda-gh200-o"
+      - targets: ['100.66.65.33:9091']
+        labels: node="lambda-gh200-q"
+      - targets: ['100.106.0.3:9091']
+        labels: node="lambda-gh200-r"
+      - targets: ['100.94.174.19:9091']
+        labels: node="hetzner-cpu1"
       - targets: ['localhost:8770']
-        labels:
-          node: 'lambda-h100'
-          role: 'leader'
+        labels: node="lambda-gh200-a", role="leader"
 
   # Node exporter on all nodes
   - job_name: 'node_exporter'
     static_configs:
       - targets: ['100.92.222.49:9100']
-        labels:
-          node: 'mbp-64gb'
-      - targets: ['100.91.25.13:9100']
-        labels:
-          node: 'lambda-a10'
-      - targets: ['100.123.183.70:9100']
-        labels:
-          node: 'lambda-gh200-a'
-      - targets: ['100.75.84.47:9100']
-        labels:
-          node: 'lambda-gh200-d'
-      - targets: ['100.88.176.74:9100']
-        labels:
-          node: 'lambda-gh200-e'
-      - targets: ['100.104.165.116:9100']
-        labels:
-          node: 'lambda-gh200-f'
-      - targets: ['100.88.35.19:9100']
-        labels:
-          node: 'lambda-gh200-c'
+        labels: node="mbp-64gb"
+      - targets: ['100.104.126.58:9100']
+        labels: node="lambda-gh200-g"
+      - targets: ['100.97.98.26:9100']
+        labels: node="lambda-gh200-o"
+      - targets: ['100.66.65.33:9100']
+        labels: node="lambda-gh200-q"
+      - targets: ['100.106.0.3:9100']
+        labels: node="lambda-gh200-r"
+      - targets: ['100.94.174.19:9100']
+        labels: node="hetzner-cpu1"
       - targets: ['localhost:9100']
-        labels:
-          node: 'lambda-h100'
-          role: 'leader'
+        labels: node="lambda-gh200-a", role="leader"
 
   # Unified AI loop (leader only by default)
   - job_name: 'ringrift-unified-loop'
@@ -112,11 +90,11 @@ scrape_configs:
         - '{job="node_exporter"}' # Node hardware metrics
         - '{__name__=~".*_total|.*_seconds|.*_bytes"}' # Standard metrics
     static_configs:
-      - targets: ['100.97.104.89:9090']
-        labels:
-          source_node: 'lambda-2xh100'
-      - targets: ['100.105.151.58:9090']
-        labels:
-          source_node: 'mac-studio'
+      - targets: ['100.115.97.24:9090']
+        labels: source_node="aws-staging"
+      - targets: ['100.91.25.13:9090']
+        labels: source_node="lambda-a10"
+      - targets: ['100.78.101.123:9090']
+        labels: source_node="lambda-h100"
     scrape_interval: 30s
     scrape_timeout: 25s

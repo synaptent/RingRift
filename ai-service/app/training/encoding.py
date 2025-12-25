@@ -434,6 +434,7 @@ class HexStateEncoder:
             GamePhase.RING_PLACEMENT: 0,
             GamePhase.MOVEMENT: 1,
             GamePhase.CAPTURE: 2,
+            GamePhase.CHAIN_CAPTURE: 2,  # Sub-phase of CAPTURE, shares index
             GamePhase.LINE_PROCESSING: 3,
             GamePhase.TERRITORY_PROCESSING: 4,
             GamePhase.FORCED_ELIMINATION: 4,
@@ -1033,6 +1034,7 @@ class HexStateEncoderV3:
             GamePhase.RING_PLACEMENT: 0,
             GamePhase.MOVEMENT: 1,
             GamePhase.CAPTURE: 2,
+            GamePhase.CHAIN_CAPTURE: 2,  # Sub-phase of CAPTURE, shares index
             GamePhase.LINE_PROCESSING: 3,
             GamePhase.TERRITORY_PROCESSING: 4,
             GamePhase.FORCED_ELIMINATION: 4,

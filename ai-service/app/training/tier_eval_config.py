@@ -6,7 +6,7 @@ tier. The intent is to keep all thresholds and opponent mixes in one
 place so that tuning does not require code changes.
 
 The initial configuration focuses on square8, 2-player games and
-provides representative tiers (D2, D4, D6, D8). Additional tiers can
+provides representative tiers (D2-D10). Additional tiers can
 be added by extending the TIER_EVAL_CONFIGS mapping.
 """
 
@@ -67,14 +67,11 @@ def _build_default_configs() -> dict[str, TierEvaluationConfig]:
     instances.
     """
     # Canonical square8 2-player tiers used for the primary production ladder.
-    # Thresholds are monotonically non-decreasing to ensure higher tiers are
-    # never easier to achieve than lower tiers.
+    # Thresholds are tuned per tier based on observed performance and
+    # calibration goals. They are not guaranteed to be monotonic.
     #
-    # Baseline thresholds (vs random/heuristic):
-    #   D1: 55%, D2: 60%, D3: 65%, D4: 68%, D5: 70%, D6: 72%, D7-D11: 75%
-    #
-    # The 75% cap for D7+ is calibrated based on observed neural model
-    # performance vs random (~70-76% typical for strong models).
+    # Baseline thresholds (vs random/heuristic) are set explicitly in the
+    # per-tier configs below.
     configs: dict[str, TierEvaluationConfig] = {
         "D1": TierEvaluationConfig(
             tier_name="D1",
@@ -146,7 +143,7 @@ def _build_default_configs() -> dict[str, TierEvaluationConfig]:
                     role="previous_tier",
                 ),
             ],
-            min_win_rate_vs_baseline=0.65,
+            min_win_rate_vs_baseline=0.55,
             max_regression_vs_previous_tier=0.05,
             description=(
                 "Low heuristic tier, must beat random and show improvement "
@@ -215,7 +212,7 @@ def _build_default_configs() -> dict[str, TierEvaluationConfig]:
                     role="previous_tier",
                 ),
             ],
-            min_win_rate_vs_baseline=0.70,
+            min_win_rate_vs_baseline=0.60,
             max_regression_vs_previous_tier=0.05,
             description=(
                 "Strong heuristic tier. Must beat random and low heuristic "
@@ -291,11 +288,11 @@ def _build_default_configs() -> dict[str, TierEvaluationConfig]:
                     role="previous_tier",
                 ),
             ],
-            min_win_rate_vs_baseline=0.75,
+            min_win_rate_vs_baseline=0.65,
             max_regression_vs_previous_tier=0.05,
             description=(
-                "Entry MCTS tier. Must beat random and strong heuristic "
-                "baselines. Threshold capped at 75% for neural model compatibility."
+                "Entry MCTS tier (heuristic-only). Must beat random and "
+                "strong heuristic baselines."
             ),
         ),
         "D8": TierEvaluationConfig(

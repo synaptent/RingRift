@@ -2336,12 +2336,12 @@ _CANONICAL_DIFFICULTY_PROFILES: dict[int, DifficultyProfile] = {
         "use_neural_net": True,
     },
     7: {
-        # Expert: MCTS with neural guidance and higher budget
+        # Expert: MCTS with heuristic rollouts only (no neural net)
         "ai_type": AIType.MCTS,
         "randomness": 0.0,
         "think_time_ms": 7500,
-        "profile_id": "v1-mcts-7-neural",
-        "use_neural_net": True,
+        "profile_id": "v1-mcts-7",
+        "use_neural_net": False,
     },
     8: {
         # Strong expert: MCTS with neural guidance and large search budget

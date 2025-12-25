@@ -319,21 +319,13 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         GameEngine._end_turn(game_state, trace_mode=trace_mode)
 
     elif normalized_type == MoveType.PLACE_RING:
-        # After placement, decide whether to enter movement or, if no
-        # movement/capture is available, advance directly to line
-        # processing. Mirrors TurnEngine.advanceGameForCurrentPlayer.
-        has_moves = GameEngine._has_valid_movements(
-            game_state,
-            current_player,
-        )
-        has_captures = GameEngine._has_valid_captures(
-            game_state,
-            current_player,
-        )
-        if has_moves or has_captures:
-            game_state.current_phase = GamePhase.MOVEMENT
-        else:
-            GameEngine._advance_to_line_processing(game_state, trace_mode=trace_mode)
+        # RR-PARITY-FIX-2025-12-25: Per RR-CANON-R075, all phases must be
+        # visited with explicit moves. Always transition to MOVEMENT after
+        # placement - if no movement/capture options exist, the player must
+        # emit NO_MOVEMENT_ACTION which advances to line_processing.
+        # No phase skipping is permitted. This matches TS turnLogic.ts
+        # lines 171-178 which unconditionally sets currentPhase: 'movement'.
+        game_state.current_phase = GamePhase.MOVEMENT
 
     elif normalized_type == MoveType.SKIP_PLACEMENT:
         # Skipping placement is only allowed when movement or capture is

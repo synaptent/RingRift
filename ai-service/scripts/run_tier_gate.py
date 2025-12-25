@@ -60,13 +60,13 @@ def _get_heuristic_tier_spec(tier_id: str) -> HeuristicTierSpec:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a difficulty-tier gate (D2/D4/D6/D8) or a heuristic " "eval-pool tier gate and emit a JSON summary."
+            "Run a difficulty-tier gate (D2-D10) or a heuristic " "eval-pool tier gate and emit a JSON summary."
         ),
     )
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument(
         "--tier",
-        help="Difficulty tier name (e.g. D2, D4, D6, D8) for ladder gating.",
+        help="Difficulty tier name (e.g. D2-D10) for ladder gating.",
     )
     mode_group.add_argument(
         "--tier-id",
@@ -309,16 +309,24 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
             except Exception:
                 candidate_override_id = None
         elif ai_type == AIType.MINIMAX:
-            import os as _os
+            if bool(getattr(production_ladder, "use_neural_net", False)):
+                import os as _os
 
-            nnue_path = _os.path.join(
-                PROJECT_ROOT,
-                "models",
-                "nnue",
-                f"{candidate_id}.pt",
-            )
-            if _os.path.exists(nnue_path):
+                nnue_path = _os.path.join(
+                    PROJECT_ROOT,
+                    "models",
+                    "nnue",
+                    f"{candidate_id}.pt",
+                )
+                if _os.path.exists(nnue_path):
+                    candidate_override_id = candidate_id
+            else:
                 candidate_override_id = candidate_id
+        elif (
+            ai_type == AIType.MCTS
+            and not bool(getattr(production_ladder, "use_neural_net", False))
+        ):
+            candidate_override_id = candidate_id
         else:
             import os as _os
 
@@ -477,7 +485,7 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         payload["ladder"]["candidate_model_id"] = args.candidate_model_id
     payload.setdefault("ladder", {})
     payload["ladder"]["candidate_artifact_present"] = bool(
-        candidate_override_id is not None
+        candidate_artifact_present
     )
     payload["ladder"]["use_candidate_artifact"] = bool(args.use_candidate_artifact)
     if candidate_artifact_loaded is not None:
@@ -497,7 +505,7 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         ts = datetime.now(timezone.utc).isoformat()
         reason = {
             "overall_pass": result.overall_pass,
-            "candidate_artifact_present": bool(candidate_override_id is not None),
+            "candidate_artifact_present": bool(candidate_artifact_present),
             "use_candidate_artifact": bool(args.use_candidate_artifact),
             "candidate_artifact_loaded": (
                 bool(candidate_artifact_loaded) if candidate_artifact_loaded is not None else None

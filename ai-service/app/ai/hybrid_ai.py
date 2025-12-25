@@ -54,7 +54,7 @@ class HybridAI(BaseAI):
         config: AIConfig,
         model_path: str | Path | None = None,
         device: str = "cpu",
-        temperature: float = 1.0,
+        temperature: float = 1.0,  # Note: 1.0 recommended; lower values cause underflow on MOVEMENT/CHAIN_CAPTURE phases
     ):
         """Initialize Hybrid AI.
 
@@ -104,6 +104,10 @@ class HybridAI(BaseAI):
             self._encoder_version = "v2"
             self._base_channels = 10
 
+        # Detect if checkpoint was trained with fallback GNN (without PyG)
+        state_dict = ckpt["model_state_dict"]
+        uses_fallback_gnn = any(k.startswith("gnn.fallback") for k in state_dict.keys())
+
         self.model = HybridPolicyNet(
             in_channels=in_channels,
             global_features=ckpt.get("global_features", 20),
@@ -114,8 +118,20 @@ class HybridAI(BaseAI):
             action_space_size=self.action_space_size,
             num_players=ckpt.get("num_players", 2),
             is_hex=ckpt.get("is_hex", True),
+            dropout=ckpt.get("dropout", 0.0),
         )
-        self.model.load_state_dict(ckpt["model_state_dict"], strict=HAS_HYBRID_PYG)
+
+        # If checkpoint uses fallback but we have PyG, force fallback mode
+        if uses_fallback_gnn and HAS_HYBRID_PYG:
+            logger.info("Checkpoint uses fallback GNN, disabling PyG layers for compatibility")
+            self.model.gnn.enabled = False
+            self.model.gnn.fallback = torch.nn.Sequential(
+                torch.nn.Linear(128, 128),
+                torch.nn.ReLU(),
+                torch.nn.Linear(128, 128),
+            )
+
+        self.model.load_state_dict(state_dict, strict=False)
         self.model.to(self.device)
         self.model.eval()
 

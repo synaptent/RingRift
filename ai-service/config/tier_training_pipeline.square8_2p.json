@@ -61,7 +61,33 @@
         "win_rate_threshold": 0.6
       }
     },
+    "D3": {
+      "training": {
+        "mode": "heuristic_cmaes",
+        "cmaes_mode": "auto",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games": 50,
+        "win_rate_threshold": 0.55
+      }
+    },
     "D4": {
+      "training": {
+        "mode": "search_persona",
+        "cmaes_mode": "auto",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games": 50,
+        "win_rate_threshold": 0.6
+      }
+    },
+    "D5": {
       "training": {
         "mode": "search_persona",
         "cmaes_mode": "auto",
@@ -85,6 +111,19 @@
         "seed": 1,
         "num_games": 50,
         "win_rate_threshold": 0.6
+      }
+    },
+    "D7": {
+      "training": {
+        "mode": "search_persona",
+        "cmaes_mode": "auto",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games": 50,
+        "win_rate_threshold": 0.65
       }
     },
     "D8": {

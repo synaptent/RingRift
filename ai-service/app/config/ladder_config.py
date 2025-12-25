@@ -67,6 +67,22 @@ def _build_default_square8_two_player_configs() -> dict[
     ``use_neural_net``, ``randomness`` and ``think_time_ms``.
     """
     return {
+        # D1 – random baseline on square8, 2-player.
+        (1, BoardType.SQUARE8, 2): LadderTierConfig(
+            difficulty=1,
+            board_type=BoardType.SQUARE8,
+            num_players=2,
+            ai_type=AIType.RANDOM,
+            model_id=None,
+            heuristic_profile_id=None,
+            randomness=0.5,
+            think_time_ms=150,
+            use_neural_net=False,
+            notes=(
+                "Random baseline tier used for entry-level difficulty and "
+                "gating baselines."
+            ),
+        ),
         # D2 – easy heuristic baseline on square8, 2-player.
         (2, BoardType.SQUARE8, 2): LadderTierConfig(
             difficulty=2,
@@ -148,19 +164,19 @@ def _build_default_square8_two_player_configs() -> dict[
                 "and larger search budget."
             ),
         ),
-        # D7 – expert MCTS on square8, 2-player (neural).
+        # D7 – heuristic-only MCTS on square8, 2-player.
         (7, BoardType.SQUARE8, 2): LadderTierConfig(
             difficulty=7,
             board_type=BoardType.SQUARE8,
             num_players=2,
             ai_type=AIType.MCTS,
-            model_id="ringrift_best_sq8_2p",
+            model_id=None,
             heuristic_profile_id="heuristic_v1_sq8_2p",
             randomness=0.0,
             think_time_ms=7500,
-            use_neural_net=True,
+            use_neural_net=False,
             notes=(
-                "Expert square8 2p tier using MCTS with neural guidance."
+                "Expert square8 2p tier using MCTS without neural guidance."
             ),
         ),
         # D8 – strong expert MCTS on square8, 2-player (neural).

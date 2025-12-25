@@ -9,7 +9,7 @@ AI_TIER_TRAINING_AND_PROMOTION_PIPELINE for a single difficulty tier:
 2) Run the canonical difficulty-tier gate via ``run_tier_gate.py`` in
    difficulty mode for the given candidate.
 3) Run the small tier perf benchmark for tiers with configured budgets
-   (D4/D6/D8) unless ``--no-perf`` is supplied.
+   (D3/D4/D5/D6/D7/D8) unless ``--no-perf`` is supplied.
 4) Optionally perform cross-tier sanity probes (currently stubbed).
 5) Aggregate everything into a ``gate_report.json`` plus an updated
    ``status.json`` under the same ``--run-dir``.
@@ -62,7 +62,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tier",
         required=True,
-        help="Difficulty tier name (e.g. D2, D4, D6, D8).",
+        help="Difficulty tier name (e.g. D2-D10).",
     )
     parser.add_argument(
         "--candidate-id",
