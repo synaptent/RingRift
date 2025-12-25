@@ -279,6 +279,7 @@ class RingRiftCNN_v2_Lite(nn.Module):
         self.global_features = global_features
 
         self.total_in_channels = in_channels * (history_length + 1)
+        self.in_channels = self.total_in_channels  # For forward() validation
 
         # Initial convolution
         self.conv1 = nn.Conv2d(self.total_in_channels, num_filters, kernel_size=3, padding=1)
@@ -766,6 +767,7 @@ class RingRiftCNN_v3_Lite(nn.Module):
 
         self._register_policy_indices(board_size)
 
+        self.in_channels = self.total_in_channels  # For forward() validation
         self.conv1 = nn.Conv2d(self.total_in_channels, num_filters, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(num_filters)
         self.relu = nn.ReLU()
@@ -1067,6 +1069,8 @@ class RingRiftCNN_v4(nn.Module):
             self.policy_size = POLICY_SIZE
 
         self._register_policy_indices(board_size)
+
+        self.in_channels = self.total_in_channels  # For forward() validation
 
         # Initial convolution with larger kernel (NAS optimal: 5x5)
         self.conv1 = nn.Conv2d(

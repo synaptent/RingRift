@@ -278,6 +278,20 @@ class HybridPolicyNet(nn.Module):
         # Pre-compute edge index for board
         self._edge_index = self._build_edge_index()
 
+        # Initialize weights
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m: nn.Module) -> None:
+        """Initialize network weights using Kaiming/Xavier."""
+        if isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+
     def _build_edge_index(self) -> Tensor:
         """Build edge index for the board connectivity."""
         edges = []

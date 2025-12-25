@@ -302,7 +302,7 @@ def _create_gnn_model(
         if GNNPolicyNet is None:
             raise ImportError("GNNPolicyNet not available - PyTorch Geometric required")
         return GNNPolicyNet(
-            node_feature_dim=32,  # GNN uses node features, not image channels
+            node_feature_dim=in_channels,  # Must match encoder output dimension
             hidden_dim=128,
             num_layers=6,
             action_space_size=policy_size,
