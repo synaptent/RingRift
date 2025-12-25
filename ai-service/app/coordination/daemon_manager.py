@@ -90,6 +90,9 @@ class DaemonType(Enum):
     # Continuous training loop (December 2025)
     CONTINUOUS_TRAINING_LOOP = "continuous_training_loop"
 
+    # Cluster-wide data sync (December 2025)
+    CLUSTER_DATA_SYNC = "cluster_data_sync"
+
 
 class DaemonState(Enum):
     """State of a daemon."""

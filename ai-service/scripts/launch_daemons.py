@@ -61,6 +61,7 @@ DAEMON_CATEGORIES = {
         DaemonType.HIGH_QUALITY_SYNC,
         DaemonType.ELO_SYNC,
         DaemonType.MODEL_SYNC,
+        DaemonType.CLUSTER_DATA_SYNC,
     ],
     "training": [
         DaemonType.DATA_PIPELINE,
@@ -133,6 +134,8 @@ Examples:
     cat_group.add_argument("--external", action="store_true", help="Start external daemons")
     cat_group.add_argument("--continuous", action="store_true",
                             help="Start continuous training loop daemon only")
+    cat_group.add_argument("--sync-cluster", action="store_true",
+                            help="Start cluster-wide data sync daemon only")
 
     # Actions
     action_group = parser.add_argument_group("Actions")
@@ -182,6 +185,8 @@ def get_daemons_to_start(args: argparse.Namespace) -> list[DaemonType]:
         daemons.update(DAEMON_CATEGORIES["external"])
     if args.continuous:
         daemons.add(DaemonType.CONTINUOUS_TRAINING_LOOP)
+    if args.sync_cluster:
+        daemons.add(DaemonType.CLUSTER_DATA_SYNC)
 
     # Handle specific daemons
     if args.daemons:

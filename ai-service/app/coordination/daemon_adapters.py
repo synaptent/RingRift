@@ -318,6 +318,54 @@ class VastCpuPipelineAdapter(DaemonAdapter):
                 await asyncio.sleep(self.config.poll_interval_seconds)
 
 
+class ClusterDataSyncAdapter(DaemonAdapter):
+    """Adapter for cluster-wide data sync daemon.
+
+    Ensures game databases are synchronized to all cluster nodes with
+    adequate storage, excluding development machines.
+    """
+
+    @property
+    def daemon_type(self) -> DaemonType:
+        return DaemonType.CLUSTER_DATA_SYNC
+
+    @property
+    def role(self) -> OrchestratorRole:
+        return OrchestratorRole.CLUSTER_DATA_SYNC_LEADER
+
+    async def _create_daemon(self) -> Any:
+        try:
+            from app.coordination.cluster_data_sync import ClusterDataSyncDaemon
+
+            return ClusterDataSyncDaemon()
+        except ImportError:
+            logger.warning("[ClusterDataSyncAdapter] ClusterDataSyncDaemon not available")
+            return None
+
+    async def _run_daemon(self, daemon: Any) -> None:
+        if hasattr(daemon, "run"):
+            await daemon.run()
+        elif hasattr(daemon, "start"):
+            await daemon.start()
+        else:
+            while self._running:
+                await asyncio.sleep(self.config.poll_interval_seconds)
+
+    async def _health_check(self) -> bool:
+        """Check if sync daemon is healthy."""
+        if not self._daemon_instance:
+            return False
+        # Check if it's running and has synced recently (within 2 intervals)
+        from app.coordination.cluster_data_sync import SYNC_INTERVAL_SECONDS
+        stats = self._daemon_instance.stats
+        if not stats.get("running"):
+            return False
+        last_sync = stats.get("last_sync_time", 0)
+        if time.time() - last_sync > SYNC_INTERVAL_SECONDS * 2:
+            return False
+        return True
+
+
 # =============================================================================
 # Adapter Registry
 # =============================================================================
@@ -327,6 +375,7 @@ _ADAPTER_CLASSES: dict[DaemonType, type[DaemonAdapter]] = {
     DaemonType.UNIFIED_PROMOTION: PromotionDaemonAdapter,
     DaemonType.EXTERNAL_DRIVE_SYNC: ExternalDriveSyncAdapter,
     DaemonType.VAST_CPU_PIPELINE: VastCpuPipelineAdapter,
+    DaemonType.CLUSTER_DATA_SYNC: ClusterDataSyncAdapter,
 }
 
 

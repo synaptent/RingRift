@@ -148,6 +148,9 @@ class OrchestratorRole(Enum):
     EXTERNAL_SYNC_LEADER = "external_sync_leader"
     VAST_PIPELINE_LEADER = "vast_pipeline_leader"
 
+    # Cluster-wide data sync (December 2025)
+    CLUSTER_DATA_SYNC_LEADER = "cluster_data_sync_leader"
+
 
 class OrchestratorState(Enum):
     """State of an orchestrator."""
