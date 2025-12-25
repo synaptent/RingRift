@@ -301,6 +301,20 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
              'Requires bootstrap_coordination() to be called. Also respects COORDINATOR_AUTO_TRIGGER_PIPELINE env var.'
     )
 
+    # Training data freshness check (2025-12)
+    parser.add_argument(
+        '--check-data-freshness', action='store_true',
+        help='Check training data freshness before starting (warn if data is stale)'
+    )
+    parser.add_argument(
+        '--max-data-age-hours', type=float, default=1.0,
+        help='Maximum age in hours for "fresh" training data (default: 1.0)'
+    )
+    parser.add_argument(
+        '--fail-on-stale-data', action='store_true',
+        help='Fail if training data is stale (instead of just warning)'
+    )
+
     # Regularization (2025-12)
     parser.add_argument(
         '--dropout', type=float, default=0.08,

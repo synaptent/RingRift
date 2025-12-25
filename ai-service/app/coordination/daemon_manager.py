@@ -96,6 +96,12 @@ class DaemonType(Enum):
     # Automated P2P data sync (December 2025)
     AUTO_SYNC = "auto_sync"
 
+    # Training node watcher (December 2025 - Phase 6)
+    TRAINING_NODE_WATCHER = "training_node_watcher"
+
+    # Ephemeral sync for Vast.ai (December 2025 - Phase 4)
+    EPHEMERAL_SYNC = "ephemeral_sync"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -820,6 +826,46 @@ class DaemonManager:
 
         except ImportError as e:
             logger.error(f"AutoSyncDaemon not available: {e}")
+            raise  # Propagate error so DaemonManager marks as FAILED
+
+    async def _create_training_node_watcher(self) -> None:
+        """Create and run training node watcher daemon (Phase 6, December 2025).
+
+        Monitors for training activity across the cluster and triggers
+        priority sync to ensure training nodes have fresh data.
+        """
+        try:
+            from app.coordination.cluster_data_sync import get_training_node_watcher
+
+            watcher = get_training_node_watcher()
+            await watcher.start()
+
+            # Wait for watcher to complete (or be stopped)
+            while watcher._running:
+                await asyncio.sleep(10)
+
+        except ImportError as e:
+            logger.error(f"TrainingNodeWatcher not available: {e}")
+            raise  # Propagate error so DaemonManager marks as FAILED
+
+    async def _create_ephemeral_sync(self) -> None:
+        """Create and run ephemeral sync daemon (Phase 4, December 2025).
+
+        Provides aggressive sync for Vast.ai and spot instances with
+        short termination notice (15-30 seconds).
+        """
+        try:
+            from app.coordination.ephemeral_sync import get_ephemeral_sync_daemon
+
+            daemon = get_ephemeral_sync_daemon()
+            await daemon.start()
+
+            # Wait for daemon to complete (or be stopped)
+            while daemon._running:
+                await asyncio.sleep(5)
+
+        except ImportError as e:
+            logger.error(f"EphemeralSyncDaemon not available: {e}")
             raise  # Propagate error so DaemonManager marks as FAILED
 
 

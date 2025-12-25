@@ -624,7 +624,7 @@ def export_replay_dataset_multi(
             # and the inference code (which expects current player's value and
             # flips it if needed, see gumbel_mcts_ai.py lines 790-791).
             # For multi-player training, values_mp provides per-player values.
-            for stacked, globals_vec, idx, perspective, move_index, phase_str in game_samples:
+            for stacked, globals_vec, idx, perspective, move_index, phase_str, move_type_str in game_samples:
                 # Use current player's perspective (stored in 'perspective' variable)
                 if use_rank_aware_values:
                     value = value_from_final_ranking(
@@ -681,6 +681,7 @@ def export_replay_dataset_multi(
                 phases_list.append(phase_str)
                 victory_types_list.append(victory_type)
                 engine_modes_list.append(engine_mode)
+                move_types_list.append(move_type_str)
 
             samples_added = len(features_list) - samples_before
             if samples_added > 0:
@@ -715,6 +716,7 @@ def export_replay_dataset_multi(
     phases_arr = np.array(phases_list, dtype=object)
     victory_types_arr = np.array(victory_types_list, dtype=object)  # For balanced sampling
     engine_modes_arr = np.array(engine_modes_list, dtype=object)  # For source-based sample weighting
+    move_types_arr = np.array(move_types_list, dtype=object)  # For chain-aware sample weighting
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
@@ -810,6 +812,7 @@ def export_replay_dataset_multi(
         "phases": phases_arr,
         "victory_types": victory_types_arr,  # For victory-type-balanced sampling
         "engine_modes": engine_modes_arr,  # For source-based sample weighting (Gumbel 3x weight)
+        "move_types": move_types_arr,  # For chain-aware sample weighting
         # Phase 5 Metadata: Additional fields for training compatibility validation
         "encoder_type": np.asarray(encoder_type_str),
         "encoder_version": np.asarray(effective_encoder),  # v2 or v3 - for model selection

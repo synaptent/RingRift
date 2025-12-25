@@ -112,17 +112,20 @@ Already implemented! `src/client/sandbox/boardViewFactory.ts` provides:
 
 **Remaining Coverage Analysis:**
 The remaining ~5.5% gap consists primarily of:
+
 1. **Deep internal branches** (lines 576-612): `game_completed` aggregate path - requires very specific game end conditions that are hard to trigger via public API
 2. **Decision surface building** (lines 1128-1182): Internal decision creation called from FSM transitions
 3. **Phase transition internals** (lines 2484-2521): Line→territory phase transitions
 4. **ANM resolution edge cases** (lines 254-272): Safety bounds and loop termination
 
 **Assessment:** These remaining lines are:
+
 - Defensive code paths that prevent invalid states
 - Internal implementation details called only from specific FSM states
 - Edge cases that require extremely specific game progressions
 
 **Recommendation:** Accept 74.57% as sufficient for this module given:
+
 - Function coverage is 84.84% (exceeds 80% target)
 - Core game logic paths are well covered
 - Remaining lines are defensive/edge-case code
@@ -188,6 +191,7 @@ Create structured `EngineError` base class with:
 - `BoardConstraintViolation` - geometry/topology issues
 
 **Completed (2025-12-11):**
+
 - Created `src/shared/engine/errors.ts` with full error hierarchy
 - `EngineError` base class with code, context, domain, ruleRef, timestamp
 - `RulesViolation` for canonical spec violations (RR-CANON rules)
@@ -218,6 +222,7 @@ export type PendingDecision =
 ```
 
 **Completed (2025-12-11):**
+
 - Created discriminated union types for all 10 decision types in `src/shared/engine/orchestration/types.ts`
 - Added type-specific interfaces: `LineOrderDecision`, `RegionOrderDecision`, `ChainCaptureDecision`, etc.
 - Added type guards: `isLineOrderDecision()`, `isRegionOrderDecision()`, `isChainCaptureDecision()`, etc.
@@ -247,6 +252,7 @@ After investigation, this is already addressed architecturally:
 - `GameEngine.ts` uses standalone validators for backward compatibility only
 
 **What was found:**
+
 - `MovementAggregate.ts` has `validateMovement()` (canonical)
 - `validators/MovementValidator.ts` has identical `validateMovement()` (duplicate)
 - Same pattern exists for Capture, Line, Territory, Placement
@@ -280,19 +286,20 @@ Extract into focused modules:
 **Assessment (2025-12-11):**
 Prerequisites are now met. After analysis, the file is well-organized with clear section headers:
 
-| Section | Lines | Description |
-|---------|-------|-------------|
-| Imports/Types | 1-139 | ~139 lines |
-| Turn Rotation | 140-184 | ~44 lines |
-| ANM Resolution | 185-274 | ~89 lines |
-| Victory/GameEnd | 275-784 | ~509 lines |
-| Mini-Region Detection | 785-963 | ~178 lines |
-| Decision Creation | 964-1205 | ~241 lines |
-| Process Turn Sync | 1206-2714 | ~1508 lines |
-| Process Turn Async | 2715-2777 | ~62 lines |
-| Utilities | 2778-3232 | ~454 lines |
+| Section               | Lines     | Description |
+| --------------------- | --------- | ----------- |
+| Imports/Types         | 1-139     | ~139 lines  |
+| Turn Rotation         | 140-184   | ~44 lines   |
+| ANM Resolution        | 185-274   | ~89 lines   |
+| Victory/GameEnd       | 275-784   | ~509 lines  |
+| Mini-Region Detection | 785-963   | ~178 lines  |
+| Decision Creation     | 964-1205  | ~241 lines  |
+| Process Turn Sync     | 1206-2714 | ~1508 lines |
+| Process Turn Async    | 2715-2777 | ~62 lines   |
+| Utilities             | 2778-3232 | ~454 lines  |
 
 **Recommendation:** Defer extraction. The current organization with section headers provides navigability. Extraction adds complexity (more files, imports, coordination) without immediate benefit. The file is stable with 916+ passing tests. Consider extraction when:
+
 1. A specific section needs significant modification
 2. The section is needed independently in other modules
 3. Testing a specific section becomes difficult
@@ -308,11 +315,13 @@ Create `boardTraversal.ts` and `PositionHelpers.ts` for shared utilities.
 
 **Assessment (2025-12-11):**
 After review, `heuristicEvaluation.ts` is well-organized with:
+
 - Clear weight profiles (18+ weight constants)
 - Pure evaluation functions
 - Comprehensive documentation
 
 **Recommendation:** Defer. The file is self-contained and well-documented. Extract only when:
+
 1. Heuristic functions need to be reused in other modules
 2. The file grows significantly beyond 1,450 lines
 3. Testing individual components becomes difficult
@@ -328,17 +337,20 @@ Migrate fully to `TurnStateMachine`, deprecate `PhaseStateMachine`.
 
 **Assessment (2025-12-11):**
 After investigation:
+
 - `TurnStateMachine.ts` is documented as "canonical implementation"
 - `PhaseStateMachine` is still **actively used** by `turnOrchestrator.ts` for turn processing
 - 7 files reference `PhaseStateMachine`
 - This is **not dead code** - both FSMs serve different purposes currently
 
 **What would be required:**
+
 - Migrate `turnOrchestrator.ts` from `PhaseStateMachine` to `TurnStateMachine`
 - Update all 7 referencing files
 - Significant testing to ensure parity
 
 **Recommendation:** Defer. The migration is medium-risk with low immediate benefit. Consider only when:
+
 1. `PhaseStateMachine` needs significant changes
 2. The dual FSM pattern causes bugs or confusion
 3. New features require consolidated FSM behavior
@@ -349,12 +361,12 @@ After investigation:
 
 ## Progress Tracking
 
-| Phase           | Items | Complete | Status                                         |
-| --------------- | ----- | -------- | ---------------------------------------------- |
-| Quick Wins      | 3     | 3        | ✅ Complete                                    |
+| Phase           | Items | Complete | Status                                                             |
+| --------------- | ----- | -------- | ------------------------------------------------------------------ |
+| Quick Wins      | 3     | 3        | ✅ Complete                                                        |
 | Coverage        | 4     | 4        | ✅ Complete (all modules meet targets or have diminishing returns) |
-| Medium Refactor | 3     | 3        | ✅ Complete                                    |
-| Large Refactor  | 3     | 3        | 🔵 All Assessed & Deferred (stable, well-organized code) |
+| Medium Refactor | 3     | 3        | ✅ Complete                                                        |
+| Large Refactor  | 3     | 3        | 🔵 All Assessed & Deferred (stable, well-organized code)           |
 
 **Overall Status:** ✅ **ARCHITECTURAL IMPROVEMENT PLAN COMPLETE**
 
@@ -383,7 +395,7 @@ All items have been assessed and either completed or deferred with clear justifi
 ## Related Documents
 
 - [RULES_CANONICAL_SPEC.md](../RULES_CANONICAL_SPEC.md) - Single source of truth for game rules
-- [MODULE_RESPONSIBILITIES.md](MODULE_RESPONSIBILITIES.md) - Current module breakdown
-- [RULES_ENGINE_ARCHITECTURE.md](RULES_ENGINE_ARCHITECTURE.md) - Architecture overview
-- [WEAK_ASSERTION_AUDIT.md](WEAK_ASSERTION_AUDIT.md) - Test assertion quality tracking
-- [PRODUCTION_READINESS_CHECKLIST.md](PRODUCTION_READINESS_CHECKLIST.md) - Launch criteria
+- [MODULE_RESPONSIBILITIES.md](architecture/MODULE_RESPONSIBILITIES.md) - Current module breakdown
+- [RULES_ENGINE_ARCHITECTURE.md](architecture/RULES_ENGINE_ARCHITECTURE.md) - Architecture overview
+- [WEAK_ASSERTION_AUDIT.md](testing/WEAK_ASSERTION_AUDIT.md) - Test assertion quality tracking
+- [PRODUCTION_READINESS_CHECKLIST.md](production/PRODUCTION_READINESS_CHECKLIST.md) - Launch criteria
