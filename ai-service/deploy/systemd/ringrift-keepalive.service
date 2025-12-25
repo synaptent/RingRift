@@ -4,6 +4,9 @@ Documentation=https://github.com/an0mium/RingRift
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
+# Keepalive is critical for cluster health - start early
+DefaultDependencies=no
+
 [Service]
 Type=simple
 User=ubuntu
@@ -11,21 +14,36 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/ringrift/ai-service
 Environment="PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
 
-# Auto-detect node-id from hostname
-ExecStart=/bin/bash -c 'exec python3 scripts/universal_keepalive.py --node-id "$(hostname)" --daemon'
+# Read node-specific config if available
+EnvironmentFile=-/etc/ringrift/node.conf
+
+# Auto-detect node-id from hostname or use config
+ExecStart=/bin/bash -c 'exec python3 scripts/universal_keepalive.py --node-id "${NODE_ID:-$(hostname)}" --daemon'
 
 # Restart policy - always restart on failure
 Restart=always
 RestartSec=10
 StartLimitIntervalSec=300
-StartLimitBurst=5
+StartLimitBurst=10
+
+# Watchdog - restart if unresponsive for 2 minutes
+WatchdogSec=120
+NotifyAccess=main
+
+# Resource limits (keepalive is lightweight)
+MemoryMax=256M
+CPUQuota=10%
 
 # Logging
 StandardOutput=append:/var/log/ringrift/keepalive.log
 StandardError=append:/var/log/ringrift/keepalive.log
 
-# Security hardening
+# Create log directory if needed
+ExecStartPre=/bin/mkdir -p /var/log/ringrift
+
+# Security hardening (minimal - needs sudo for service restarts)
 NoNewPrivileges=false
 ProtectSystem=false
 ProtectHome=false

@@ -121,7 +121,6 @@ Added defensive recovery in `RingRiftEnv.legal_moves()` (`ai-service/app/trainin
 
 - Ongoing maintenance of the **systematic scenario matrix** in `RULES_SCENARIO_MATRIX.md` as rules docs evolve, including any newly added FAQ examples or clarifications.
 - Additional emblematic scenarios for especially intricate combinations (for example, late-game line + territory interactions and near-victory territory margins across all board types), beyond the already-covered Q1–Q24 set.
-- Broader coverage across all turn phases and choice sequences in a single turn (e.g. chain → line → territory with several PlayerChoices in between), to complement the existing focused suites.
 - Clear, per-module coverage targets and CI-enforced minimums for the rules
   axis (BoardManager/RuleEngine/GameEngine), tied back to the scenario matrix.
 

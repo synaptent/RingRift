@@ -135,31 +135,55 @@ TERMINATION_REASON_MAP = {
 
 # AI type inference from file paths
 AI_PATH_PATTERNS = {
+    # Gumbel MCTS variants (high-quality training data)
+    "gumbel_mcts": "gumbel",
+    "gumbel-mcts": "gumbel",
+    "gumbel_nn": "gumbel",
+    "gumbel-nn": "gumbel",
+    "gumbel_selfplay": "gumbel",
+    "gumbel-selfplay": "gumbel",
+    "gumbel_": "gumbel",
+    "gumbel-": "gumbel",
+    # Standard MCTS variants
     "mcts_nn": "mcts+nn",
     "mcts-nn": "mcts+nn",
     "mcts_only": "mcts",
     "mcts-only": "mcts",
+    # Descent variants
     "descent_nn": "descent+nn",
     "descent-nn": "descent+nn",
     "descent_only": "descent",
     "descent-only": "descent",
+    # Neural net only
     "nn_only": "neural_net",
     "nn-only": "neural_net",
+    "policy_only": "neural_net",
+    "policy-only": "neural_net",
+    # Heuristic variants
     "heuristic_only": "heuristic",
     "heuristic-only": "heuristic",
+    # Random
     "random_only": "random",
     "random-only": "random",
+    # GPU-based engines
     "gpu_heuristic": "gpu_heuristic",
     "gpu_selfplay": "gpu_heuristic",
+    "gpu_gumbel": "gumbel",
+    "gpu_mcts": "mcts",
     "gpu_": "gpu_heuristic",
+    # CPU-based engines
     "cpu_canonical": "cpu_heuristic",
     "fresh_cpu": "cpu_heuristic",
+    "cpu_gumbel": "gumbel",
+    # Hybrid
     "hybrid": "hybrid_gpu",
     # Host-based inference (from selfplay repository structure)
     "lambda-h100": "gpu_heuristic",
     "lambda-a10": "gpu_heuristic",
     "lambda-2xh100": "gpu_heuristic",
+    "lambda-gh200": "gpu_heuristic",
     "vast-5090": "gpu_heuristic",
+    "vast-4x5090": "gpu_heuristic",
     "vast-3090": "gpu_heuristic",
     "vast-3080": "gpu_heuristic",
     "vast-3070": "gpu_heuristic",
@@ -190,11 +214,24 @@ def infer_ai_type(game: dict[str, Any], file_path: str = "") -> str:
     if engine_mode:
         engine_mode = _normalize_engine_mode(engine_mode)
         mode_map = {
-            "heuristic-only": "heuristic",
+            # Gumbel MCTS variants
+            "gumbel-mcts": "gumbel",
+            "gumbel_mcts": "gumbel",
+            "gumbel": "gumbel",
+            # Standard MCTS
             "mcts-only": "mcts",
+            "mcts": "mcts",
+            # Heuristic
+            "heuristic-only": "heuristic",
+            "heuristic": "heuristic",
+            # Other engines
             "descent-only": "descent",
+            "descent": "descent",
             "random-only": "random",
+            "random": "random",
             "nn-only": "neural_net",
+            "policy-only": "neural_net",
+            "nnue-guided": "nnue",
             "mixed": "mixed",
         }
         return mode_map.get(engine_mode, engine_mode)
@@ -202,7 +239,13 @@ def infer_ai_type(game: dict[str, Any], file_path: str = "") -> str:
     # Check ai_config or similar fields
     ai_config = game.get("ai_config") or game.get("ai_type") or game.get("opponent_type")
     if ai_config:
-        return str(ai_config)
+        ai_str = str(ai_config).lower()
+        # Normalize common variations
+        if "gumbel" in ai_str:
+            return "gumbel"
+        if "mcts" in ai_str and "gumbel" not in ai_str:
+            return "mcts"
+        return ai_str
 
     # Infer from file path
     if file_path:

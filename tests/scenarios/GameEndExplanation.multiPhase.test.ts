@@ -23,6 +23,7 @@ import {
   deserializeGameState,
   type ContractTestVector,
 } from '../../src/shared/engine/contracts';
+import { CoordinateUtils } from '../../src/shared/types/gameRecord';
 import type {
   GameState,
   GameHistoryEntry,
@@ -309,6 +310,99 @@ function buildPhaseHints(vector: ContractTestVector): PhaseTransitionHint[] {
   return phaseHints;
 }
 
+type DrivenMultiPhaseResult = {
+  state: GameState;
+  phases: string[];
+  decisionTypes: Set<string>;
+};
+
+function driveInitialMoveVector(vector: ContractTestVector): DrivenMultiPhaseResult {
+  const phaseHints = buildPhaseHints(vector);
+  const state = deserializeGameState((vector.input as any).state);
+  const initialMove = convertVectorMove((vector.input as any).initialMove);
+
+  const phases: string[] = [];
+  const decisionTypes = new Set<string>();
+  const turnSequenceRealMoves: Move[] = [];
+
+  let result = processTurn(state, initialMove, { turnSequenceRealMoves });
+  phases.push(...result.metadata.phasesTraversed);
+  let currentState = result.nextState;
+  if (!isBookkeepingMoveType(initialMove.type)) {
+    turnSequenceRealMoves.push(initialMove);
+  }
+
+  while (result.status === 'awaiting_decision' && result.pendingDecision) {
+    decisionTypes.add(result.pendingDecision.type);
+    const chosen = pickDecisionMove(result.pendingDecision, currentState, phaseHints);
+    result = processTurn(currentState, chosen, { turnSequenceRealMoves });
+    phases.push(...result.metadata.phasesTraversed);
+    currentState = result.nextState;
+    if (!isBookkeepingMoveType(chosen.type)) {
+      turnSequenceRealMoves.push(chosen);
+    }
+  }
+
+  if (result.status !== 'complete') {
+    throw new Error(`Multi-phase vector ${vector.id} did not complete (status=${result.status})`);
+  }
+
+  return { state: currentState, phases, decisionTypes };
+}
+
+function syncTerritoryCounts(state: GameState): void {
+  const counts = new Map<number, number>();
+  for (const owner of state.board.collapsedSpaces.values()) {
+    counts.set(owner, (counts.get(owner) ?? 0) + 1);
+  }
+  for (const player of state.players) {
+    player.territorySpaces = counts.get(player.playerNumber) ?? 0;
+  }
+}
+
+function ensureTerritoryVictory(
+  state: GameState,
+  winner: number,
+  preferredPositions: Position[] = []
+): void {
+  const opponentCounts = state.players
+    .filter((p) => p.playerNumber !== winner)
+    .map((p) => {
+      let count = 0;
+      for (const owner of state.board.collapsedSpaces.values()) {
+        if (owner === p.playerNumber) count += 1;
+      }
+      return count;
+    });
+  const opponentMax = opponentCounts.length > 0 ? Math.max(...opponentCounts) : 0;
+
+  let winnerCount = 0;
+  for (const owner of state.board.collapsedSpaces.values()) {
+    if (owner === winner) winnerCount += 1;
+  }
+
+  let needed = Math.max(1, opponentMax + 1 - winnerCount);
+  const candidates = [...preferredPositions, ...CoordinateUtils.getAllPositions(state.boardType)];
+
+  for (const pos of candidates) {
+    if (needed <= 0) break;
+    const key = positionToString(pos);
+    if (state.board.stacks.has(key)) continue;
+    if (state.board.markers.has(key)) continue;
+    if (state.board.collapsedSpaces.has(key)) continue;
+    state.board.collapsedSpaces.set(key, winner);
+    needed -= 1;
+  }
+
+  if (needed > 0) {
+    throw new Error('Unable to allocate enough empty territory spaces for victory check.');
+  }
+
+  state.territoryVictoryMinimum = 1;
+  state.territoryVictoryThreshold = 1;
+  syncTerritoryCounts(state);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Test Suites
 // ═══════════════════════════════════════════════════════════════════════════
@@ -358,6 +452,59 @@ describe('GameEndExplanation for multi-phase turn scenarios', () => {
             shortSummaryKey: expect.any(String),
           }),
         });
+      }
+    );
+  });
+
+  describe('Chain → line → territory contract vectors (all boards)', () => {
+    const vectors = loadMultiPhaseVectors();
+    const scenarios = [
+      { boardType: 'square8', id: 'multi_phase.full_sequence_with_territory' },
+      { boardType: 'square19', id: 'multi_phase.full_sequence_with_territory_square19' },
+      { boardType: 'hexagonal', id: 'multi_phase.full_sequence_with_territory_hex' },
+    ] as const;
+
+    it.each(scenarios)(
+      'builds territory GameEndExplanation after %s multi-phase turn',
+      ({ boardType, id }) => {
+        const vector = vectors.find((v) => v.id === id);
+        expect(vector).toBeDefined();
+        if (!vector) return;
+
+        const { state, phases, decisionTypes } = driveInitialMoveVector(vector);
+
+        expect(phases).toEqual(
+          expect.arrayContaining(['chain_capture', 'line_processing', 'territory_processing'])
+        );
+        const sawLineDecision = decisionTypes.has('line_reward') || decisionTypes.has('line_order');
+        expect(sawLineDecision).toBe(true);
+
+        const preferredPositions =
+          ((vector.input as any).territoryExpectation?.potentiallyDisconnectedRegion as
+            | Position[]
+            | undefined) ?? [];
+        ensureTerritoryVictory(state, 1, preferredPositions);
+
+        const victory = toVictoryState(state);
+        expect(victory.isGameOver).toBe(true);
+        expect(victory.reason).toBe('territory_control');
+        expect(victory.winner).toBe(1);
+
+        const explanation = victory.gameEndExplanation;
+        expect(explanation).toBeDefined();
+        expect(explanation).toMatchObject({
+          outcomeType: 'territory_control',
+          victoryReasonCode: 'victory_territory_majority',
+          winnerPlayerId: 'P1',
+          boardType,
+          numPlayers: 2,
+          uxCopy: expect.objectContaining({
+            shortSummaryKey: expect.any(String),
+          }),
+        });
+
+        const p1Score = explanation?.scoreBreakdown?.P1;
+        expect(p1Score?.territorySpaces ?? 0).toBeGreaterThan(0);
       }
     );
   });
