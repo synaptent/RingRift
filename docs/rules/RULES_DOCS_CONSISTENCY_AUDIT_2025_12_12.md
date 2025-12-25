@@ -5,7 +5,7 @@
 > **Purpose:** Quick audit that the four primary rules documents stay mutually consistent (and consistent with the canonical spec), with a focused check of adjacent rules/docs that commonly drift.
 >
 > **Re-verified:** 2025-12-13 (post recovery + selfplay doc updates). No new inconsistencies found.
-> **Updated:** 2025-12-17 (territory processing eligibility contradiction fixed).
+> **Updated:** 2025-12-17 (territory processing eligibility contradiction fixed; residual Complete Rules drift in FAQ Q15 and 16.x summaries corrected).
 
 ---
 
@@ -68,13 +68,14 @@ Spot-check confirms the executable configs match the docs:
 
 - `AGENTS.md` quick-reference tables match the canonical ring supplies and thresholds.
 
-### F) Territory processing stack eligibility ✅ NOW CONSISTENT (Fixed 2025-12-17)
+### F) Territory processing stack eligibility ✅ consistent (Complete Rules drift corrected)
 
 **Issue found:** Multiple documents and code comments incorrectly stated that height-1 standalone rings are NOT eligible for territory processing. This contradicted RR-CANON-R022 and RR-CANON-R145, which state all controlled stacks (including height-1) are eligible.
 
 **Affected locations fixed:**
 
 - `HUMAN_RULES.md` (line 89) - now correctly states all controlled stacks eligible
+- `COMPLETE_RULES.md` (FAQ Q15 and simplified summaries) - updated to allow height-1 standalone rings as eligible cap targets
 - `TerritoryAggregate.ts` header comments - updated to match canonical spec
 - `EliminationAggregate.ts` - actual implementation already correct (allowing height-1)
 - `territoryProcessing.ts` comments - already correct

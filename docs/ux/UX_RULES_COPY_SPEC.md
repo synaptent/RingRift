@@ -181,7 +181,7 @@ Used in [`SandboxGameHost.PHASE_COPY.movement.summary`](src/client/pages/Sandbox
 **TeachingOverlay – Capturing description**
 Used in [`TeachingOverlay.TEACHING_CONTENT.capturing`](src/client/components/TeachingOverlay.tsx:48):
 
-- `"To capture, jump over an adjacent opponent stack in a straight line and land on the empty space just beyond it. You take the top ring from the jumped stack and add it to the bottom of your own stack. Captured rings stay in play – only later *eliminations* move rings out of the game."`
+- `"To capture, jump over an adjacent opponent stack in a straight line and land on the empty or marker space just beyond it. You take the top ring from the jumped stack and add it to the bottom of your own stack. Captured rings stay in play – only later *eliminations* move rings out of the game."`
 
 **TeachingOverlay – Chain Capture description**
 Used in [`TeachingOverlay.TEACHING_CONTENT.chain_capture`](src/client/components/TeachingOverlay.tsx:60):

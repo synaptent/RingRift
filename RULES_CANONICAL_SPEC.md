@@ -1161,11 +1161,11 @@ Any localized prose that diverges from these parameterized values in the Complet
 
 Below are the most important differences, categorized by type, with canonical interpretation.
 
-1. **Movement landing flexibility (non-capture).**
-   - Complete Rules: Older text in §10.2 claims that capture landing flexibility "differs from non-capture movement in 19×19/Hex", implying a first-valid-landing constraint for some versions.
+1. **Landing flexibility (movement + capture).**
+   - Complete Rules: FAQ Q3 and simplified 8×8 / quick-comparison sections previously limited capture landing to empty or own-marker spaces, contradicting the unified landing rule.
    - Compact Spec: §3.2 unifies the rule: **all** versions allow landing on any valid space beyond markers meeting the distance requirement; you are not required to stop at the first such space.
-   - Category: **Genuine contradiction** (outdated prose vs updated rule).
-   - Canonical: Follow the unified rule from the Compact Spec (RR-CANON-R091–R092). The note in the Complete Rules is treated as obsolete.
+   - Category: **Resolved doc drift**.
+   - Canonical: Follow the unified rule from the Compact Spec (RR-CANON-R091–R092).
 
 2. **Line-length wording ("4 or 5" vs required length).**
    - Complete Rules: §4.5 and some examples sometimes speak of "lines of exactly the required length (4 or 5)" in a way that conflates 8×8 and 19×19 requirements.
@@ -1194,10 +1194,10 @@ Below are the most important differences, categorized by type, with canonical in
      affect the recorded game history or training data.
 
 5. **Forced elimination impossibility edge case.**
-   - Complete Rules: FAQ Q24 mentions the possibility that a player "cannot perform" forced elimination because "all caps have already been eliminated", suggesting a skip.
+   - Complete Rules: FAQ Q24 now aligns with RR-CANON; the earlier contradiction has been removed.
    - Compact Spec: §2.3 assumes that if a player controls a stack, they always have at least one ring in the cap to eliminate.
-   - Category: **Genuine contradiction**, but the Complete Rules scenario is structurally impossible under the stack model.
-   - Canonical: Treat forced elimination as always applicable whenever a player controls any stack (RR-CANON-R100), and treat the Q24 skip example as unreachable commentary.
+   - Category: **Resolved doc drift**.
+   - Canonical: Treat forced elimination as always applicable whenever a player controls any stack (RR-CANON-R100).
 
 6. **Territory border marker collapse scope.**
    - Complete Rules: §12.2 states that only spaces occupied by markers of the single color that "actually forms the disconnecting border" are collapsed, but does not fully define "actually forms".

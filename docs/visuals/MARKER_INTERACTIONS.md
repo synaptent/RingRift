@@ -82,6 +82,7 @@ DIAGONAL LINE
 | Board | 2-Player | 3-4 Player |
 |-------|----------|------------|
 | 8×8 | 4 | 3 |
+| Hex8 | 4 | 3 |
 | 19×19 | 4 | 4 |
 | Hex | 4 | 4 |
 
@@ -103,7 +104,7 @@ BEFORE: Line detected                  AFTER: Collapsed to territory
    ● = Red marker
    ▓ = Red collapsed territory
 
-   COST: Player MUST eliminate 1 ring from any controlled stack
+   COST: Player MUST eliminate 1 ring from any controlled stack (unless you control no stacks)
 ```
 
 ---
@@ -183,13 +184,13 @@ CELL STATES:
 
 ## 8. Marker Interaction Summary
 
-| Action                       | Result                                       |
-| ---------------------------- | -------------------------------------------- |
-| Move stack                   | Leave marker at origin                       |
-| Land on marker (any color)   | Remove marker, eliminate top ring            |
-| Form line of markers         | Line processing (collapse options)           |
-| Surround region with markers | Territory processing (if no opponent inside) |
-| Move through marker          | NOT allowed (must land on it)                |
+| Action                       | Result                                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Move stack                   | Leave marker at origin                                                                                            |
+| Land on marker (any color)   | Remove marker, eliminate top ring                                                                                 |
+| Form line of markers         | Line processing (collapse options)                                                                                |
+| Surround region with markers | Territory processing (if the region lacks at least one active color; in 2p, that means no opponent stacks inside) |
+| Move through marker          | Markers don't block movement; landing on one removes it and eliminates your top ring.                             |
 
 ---
 

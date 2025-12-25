@@ -987,8 +987,8 @@ _1. With no markers (Example 1): A stack with height 3 must move at least 3 spac
   • **Empty Spaces**:
 - Remain unchanged when jumped over.
 - Count toward minimum distance requirement.
-  • **Landing on Same-Color Markers**:
-- If a move or overtaking capture segment concludes by landing on a space occupied by a single marker of the moving stack's color (and all other movement conditions like distance and path legality are met), first the marker occupying that space is removed from the board, then the stack lands on that space, and immediately after landing the moving stack must eliminate its top ring, crediting that eliminated ring to the moving player. This removal and elimination occurs _before_ the Post-Movement Processing phase (checking for lines and disconnections).
+  • **Landing on Markers (any color)**:
+- If a move or overtaking capture segment concludes by landing on a space occupied by a single marker of any color (and all other movement conditions like distance and path legality are met), first the marker occupying that space is removed from the board, then the stack lands on that space, and immediately after landing the moving stack must eliminate its top ring, crediting that eliminated ring to the moving player. This removal and elimination occurs _before_ the Post-Movement Processing phase (checking for lines and disconnections).
 
 ## 9. Capture Types: Overtaking vs Elimination (All Versions)
 
@@ -1776,7 +1776,7 @@ A complete turn in RingRift consists of the following phases, which must be exec
       - On 8×8/hex8, line processing starts from `lineLength`‑in‑a‑row: 4‑in‑a‑row in 2‑player games, 3‑in‑a‑row in 3–4 player games.
       - On 19×19/Hex, line processing starts from 4‑in‑a‑row.
       - For each eligible line, collapse markers and (for exact‑length and Option‑1 overlength lines) eliminate one ring from any controlled stack as described in Section 11.2. Option 2 (partial collapse with no elimination) is always available for overlength lines.
-    - Check for disconnected regions → collapse any regions you choose to process → eliminate **entire cap** from an eligible stack per processed region (recovery: one buried ring instead), subject to the prerequisites in Section 12.2. Eligible targets for territory are multicolor stacks or single-color stacks of height > 1.
+    - Check for disconnected regions → collapse any regions you choose to process → eliminate **entire cap** from an eligible stack per processed region (recovery: one buried ring instead), subject to the prerequisites in Section 12.2. Eligible targets for territory are any controlled stack, including height-1 standalone rings.
 5.  **Victory Check**
     - If rings eliminated >= victory threshold (round((2/3) × ringsPerPlayer + (1/3) × opponentsCombinedStartingRings)) or territory victory conditions met (see Section 13.2), game ends
     - Otherwise, next player's turn
@@ -1952,12 +1952,11 @@ Yes, with restrictions. You may land on **any valid space beyond the captured pi
 
 - The total distance traveled (including the jump) is **at least your stack's height**.
 - The path to the landing space (excluding the target itself) is clear of other rings/stacks and collapsed spaces.
-- The landing space itself is either **(a) empty and not collapsed**, or **(b) occupied by a single marker of the moving stack's color and not collapsed**.
+- The landing space itself is either **(a) empty and not collapsed**, or **(b) occupied by a single marker of any color and not collapsed**.
 - You cannot land closer than your stack height.
 - You are **not required to stop at the first valid space** after the captured piece.
 - If landing on a marker, it is removed and then the moving stack must eliminate its top ring, with that ring credited to you for victory-condition purposes.
 
-**(Note:** The core landing flexibility during captures is now consistent across versions, allowing landing on empty spaces or marker (any color)s beyond the target, provided distance and path rules are met.)
 **In Both Versions**: The captured ring is always taken from the top of the target stack and added to the bottom of your stack, changing the stack height for subsequent captures.
 
 #### Q4: What happens to rings under the top one in an Overtaken (captured) stack?
@@ -2060,7 +2059,7 @@ A region is considered disconnected when it meets two criteria:
 
 When a region satisfies these two criteria, it is processed exactly as described in **Section 12.2 (Disconnection Process)**:
 • **Self-Elimination Prerequisite Check (see also Q23):** _Before_ processing a region, perform the hypothetical check from Section 12.2: if all rings within the region were eliminated, would the moving player still have at least one controlled stack elsewhere on the board? If not, the region **cannot** be processed at all.
-• If the prerequisite is satisfied, the moving player may choose to process that region (and any other qualifying regions one at a time): collapse the region and any single-color border markers to their color, eliminate all rings inside (regardless of color), and _then_ perform the mandatory self-elimination of the **entire cap** (all consecutive top rings of their colour) from one of their remaining stacks outside that region. The stack used for cap elimination must either: (a) be a mixed-colour stack with rings of other colours buried beneath the player's cap, or (b) be a single-colour stack of height greater than one consisting entirely of the player's rings. Single-ring stacks cannot be used for cap elimination. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap. All eliminated rings (internal + self-eliminated cap) count toward the moving player's victory total.
+• If the prerequisite is satisfied, the moving player may choose to process that region (and any other qualifying regions one at a time): collapse the region and any single-color border markers to their color, eliminate all rings inside (regardless of color), and _then_ perform the mandatory self-elimination of the **entire cap** (all consecutive top rings of their colour) from one of their remaining stacks outside that region. The stack used for cap elimination can be **any controlled stack, including height-1 standalone rings**. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap. All eliminated rings (internal + self-eliminated cap) count toward the moving player's victory total.
 
 #### Q16: How does control transfer in a multicolored ring stack?
 
@@ -2146,18 +2145,18 @@ Note that by definition, any stack you control must have at least one ring of yo
 
 ### 16.1 **Quick Version Comparison:**
 
-| Feature                  | 19×19 Full Version                           | 8×8 Simplified Version                       | Hex8 Version                                 | Hexagonal Version                            |
-| ------------------------ | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
-| Board Size               | 361 spaces (19×19)                           | 64 spaces (8×8)                              | 61 spaces (radius 4)                         | 469 spaces (13 per side)                     |
-| Rings per Player         | 72 rings                                     | 18 rings                                     | 18 rings                                     | 96 rings                                     |
-| Victory Threshold        | 72 (2p), 96 (3p), 120 (4p) rings             | 18 (2p), 24 (3p), 30 (4p) rings              | 18 (2p), 24 (3p), 30 (4p) rings              | 96 (2p), 128 (3p), 160 (4p) rings            |
-| Movement Adjacency       | Moore (8-direction)                          | Moore (8-direction)                          | Hexagonal (6-direction)                      | Hexagonal (6-direction)                      |
-| Line Formation Adjacency | Moore (8-direction)                          | Moore (8-direction)                          | Hexagonal (6-direction)                      | Hexagonal (6-direction)                      |
-| Territory Adjacency      | Von Neumann (4-direction)                    | Von Neumann (4-direction)                    | Hexagonal (6-direction)                      | Hexagonal (6-direction)                      |
-| Movement Landing Rule    | Min distance, any valid space beyond markers | Min distance, any valid space beyond markers | Min distance, any valid space beyond markers | Min distance, any valid space beyond markers |
-| Capture Landing Rule     | Min distance, any empty beyond target        | Min distance, any empty beyond target        | Min distance, any empty beyond target        | Min distance, any empty beyond target        |
-| Tactical Complexity      | Highest                                      | Moderate                                     | Moderate                                     | High                                         |
-| Strategic Complexity     | High                                         | Low                                          | Moderate                                     | Highest                                      |
+| Feature                  | 19×19 Full Version                              | 8×8 Simplified Version                          | Hex8 Version                                    | Hexagonal Version                               |
+| ------------------------ | ----------------------------------------------- | ----------------------------------------------- | ----------------------------------------------- | ----------------------------------------------- |
+| Board Size               | 361 spaces (19×19)                              | 64 spaces (8×8)                                 | 61 spaces (radius 4)                            | 469 spaces (13 per side)                        |
+| Rings per Player         | 72 rings                                        | 18 rings                                        | 18 rings                                        | 96 rings                                        |
+| Victory Threshold        | 72 (2p), 96 (3p), 120 (4p) rings                | 18 (2p), 24 (3p), 30 (4p) rings                 | 18 (2p), 24 (3p), 30 (4p) rings                 | 96 (2p), 128 (3p), 160 (4p) rings               |
+| Movement Adjacency       | Moore (8-direction)                             | Moore (8-direction)                             | Hexagonal (6-direction)                         | Hexagonal (6-direction)                         |
+| Line Formation Adjacency | Moore (8-direction)                             | Moore (8-direction)                             | Hexagonal (6-direction)                         | Hexagonal (6-direction)                         |
+| Territory Adjacency      | Von Neumann (4-direction)                       | Von Neumann (4-direction)                       | Hexagonal (6-direction)                         | Hexagonal (6-direction)                         |
+| Movement Landing Rule    | Min distance, any valid space beyond markers    | Min distance, any valid space beyond markers    | Min distance, any valid space beyond markers    | Min distance, any valid space beyond markers    |
+| Capture Landing Rule     | Min distance, any empty or marker beyond target | Min distance, any empty or marker beyond target | Min distance, any empty or marker beyond target | Min distance, any empty or marker beyond target |
+| Tactical Complexity      | Highest                                         | Moderate                                        | Moderate                                        | High                                            |
+| Strategic Complexity     | High                                            | Low                                             | Moderate                                        | Highest                                         |
 
 ### 16.2 Core Mechanics Reference (All Versions)
 
@@ -2167,7 +2166,7 @@ Note that by definition, any stack you control must have at least one ring of yo
 2. Move a ring/stack (mandatory) - either the newly placed ring or a stack you control
 3. (Optional) Begin Overtaking capture from the landing position only → chain captures (mandatory once started)
 4. Check for lines of required length (**3+ for 8×8/hex8 in 3–4p games**, **4+ for 8×8/hex8 in 2p games**, **4+ for 19×19/Hex**) → collapse → eliminate one ring per line (with graduated rewards for longer lines).
-5. Check for disconnected regions → collapse → eliminate entire cap from eligible stack per region (recovery: one buried ring instead). Eligible targets for territory are multicolor stacks or single-color stacks of height > 1.
+5. Check for disconnected regions → collapse → eliminate entire cap from eligible stack per region (recovery: one buried ring instead). Eligible targets for territory are any controlled stack, including height-1 standalone rings.
 6. Victory check: elimination threshold reached (varies by player count), territory victory conditions met (see Section 13.2), or last player standing.
 
 **Victory Conditions:**
@@ -2216,16 +2215,16 @@ Turn Flow Summary:
 3.  (Optional) Begin Overtaking from the landing position if a capture is possible from there.
 4.  Chain Overtaking until no more captures.
 5.  Check Lines of required length (`lineLength`: 4‑in‑a‑row in 2‑player 8×8, 3‑in‑a‑row in 3–4 player 8×8). Collapse them, Eliminate one ring from any controlled stack for each (with graduated reward for longer lines).
-6.  Check Territory (using Von Neumann neighborhood). Collapse disconnected regions, Eliminate entire cap from an eligible stack for each. Eligible targets for territory are multicolor stacks or single-color stacks of height > 1.
+6.  Check Territory (using Von Neumann neighborhood). Collapse disconnected regions, Eliminate entire cap from an eligible stack for each. Eligible targets for territory are any controlled stack, including height-1 standalone rings.
 7.  Check for Win or pass to next player.
 
 #### 16.5.1 Movement (8×8)
 
 • Select a ring or ring stack you control.
 • Leave a marker of your color on its starting space.
-• Move in a straight line (orthogonal or diagonal) any distance, landing on a space that is at least your stack's height away from your start. The landing space must be either **(a) empty** or **(b) occupied by a single marker of the moving stack's color**. You cannot pass through collapsed spaces or ring stacks.
+• Move in a straight line (orthogonal or diagonal) any distance, landing on a space that is at least your stack's height away from your start. The landing space must be either **(a) empty** or **(b) occupied by a single marker of any color**. You cannot pass through collapsed spaces or ring stacks.
 • Markers jumped over: Opponent markers flip to your color, your own markers become collapsed territory of your color.
-• Landing on a marker: If the move concludes by landing on a space occupied by a single marker of your color (and meets distance/path rules), the stack lands there, the marker is removed from the board, and then the stack must eliminate its top ring, with that ring credited to you for victory-condition purposes. This removal and elimination happens _before_ checking for lines/disconnections.
+• Landing on a marker: If the move concludes by landing on a space occupied by a single marker of any color (and meets distance/path rules), the stack lands there, the marker is removed from the board, and then the stack must eliminate its top ring, with that ring credited to you for victory-condition purposes. This removal and elimination happens _before_ checking for lines/disconnections.
 
 #### 16.5.2 Overtaking (Stack Capture)
 

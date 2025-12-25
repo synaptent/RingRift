@@ -46,17 +46,23 @@ This section reviews text visible to end-users in the web client and the primary
 
 ### Public Rulebook (`../rules/COMPLETE_RULES.md`)
 
-| ID           | Severity   | Location                             | Issue                                                                                                                                                                                                                                             | Remediation                                                                                 |
-| :----------- | :--------- | :----------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------ |
-| **DOCUX-P5** | **Medium** | `../rules/COMPLETE_RULES.md` §10.2   | **Movement Landing:** States capture landing "differs from non-capture movement in 19×19/Hex", implying non-capture must stop at first valid space. RR‑CANON-R091/R101 unifies this: **all** movement can land on any valid space beyond markers. | Update §10.2 to reflect the Unified Landing Rule (RR‑CANON-R091) matching the Compact Spec. |
-| **DOCUX-P6** | Low        | `../rules/COMPLETE_RULES.md` FAQ Q24 | **Forced Elimination:** Suggests a player might be unable to perform forced elimination because "all caps have already been eliminated". RR‑CANON-R100/R022 clarifies any stack has a cap.                                                        | Update FAQ Q24 to state forced elimination is always possible if you control a stack.       |
-| **DOCUX-P7** | Low        | `../rules/COMPLETE_RULES.md` §11.2   | **Line Length:** Uses "4 or 5" loosely.                                                                                                                                                                                                           | Standardize to "Required Length (3 for 8x8, 4 for 19x19/Hex)" to match RR‑CANON-R001.       |
+| ID           | Severity   | Location                                            | Issue                                                                                                                                                                                      | Remediation                                                                               |
+| :----------- | :--------- | :-------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------- |
+| **DOCUX-P5** | **Medium** | `../rules/COMPLETE_RULES.md` FAQ Q3, §16.1, §16.5.1 | **Landing Rule Drift:** Capture/movement landing is limited to empty or own-marker spaces in these summaries, conflicting with RR‑CANON-R091/R101 (landing on any marker is legal).        | Update those sections to allow landing on empty or any marker (own or opponent).          |
+| **DOCUX-P6** | Low        | `../rules/COMPLETE_RULES.md` FAQ Q24                | **Forced Elimination:** Suggests a player might be unable to perform forced elimination because "all caps have already been eliminated". RR‑CANON-R100/R022 clarifies any stack has a cap. | Update FAQ Q24 to state forced elimination is always possible if you control a stack.     |
+| **DOCUX-P7** | Low        | `../rules/COMPLETE_RULES.md` §11.2                  | **Line Length:** Uses "4 or 5" loosely.                                                                                                                                                    | Standardize to "Required Length (3 for 8x8, 4 for 19x19/Hex)" to match RR‑CANON-R001.     |
+| **DOCUX-P8** | Low        | `../rules/COMPLETE_RULES.md` FAQ Q15, §16.2, §16.5  | **Territory Eligibility Drift:** Summaries restrict cap elimination to multicolor or height>1 stacks, but RR‑CANON-R022/R145 allows any controlled stack (including height-1).             | Update those sections to allow any controlled stack, including height-1 standalone rings. |
 
-**Implementation status snapshot (2025‑12‑08, post‑canonical alignment):**
+**Implementation status snapshot (2025-12-08, post-canonical alignment):**
 
 - DOCUX‑P5 – **Resolved**: §10.2 now explicitly states the unified landing rule: "This landing flexibility matches the unified non‑capture movement rule for all board types: in both movement and capture, any landing that satisfies the distance and landing constraints is legal."
 - DOCUX‑P6 – **Resolved**: FAQ Q24 now includes the clarification: "Note that by definition, any stack you control must have at least one ring of your colour at the top—that's what 'control' means. Therefore, there is always a non-empty cap to eliminate."
 - DOCUX‑P7 – **Resolved**: §11.2 now consistently uses "Required Length (3 for 8×8, 4 for 19×19/Hex)" throughout, with no ambiguous "4 or 5" references.
+
+**Update (post-2025-12-08):**
+
+- DOCUX-P5 – Landing rule drift reappeared in FAQ Q3 and simplified/quick-comparison sections; these now align to "empty or any marker" landing.
+- DOCUX-P8 – Territory eligibility drift reappeared in FAQ Q15 and simplified summaries; these now align to "any controlled stack, including height-1".
 
 ---
 
