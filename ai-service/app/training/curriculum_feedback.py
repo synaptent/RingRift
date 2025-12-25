@@ -475,6 +475,149 @@ class CurriculumFeedback:
         )
         return total_recent >= min_games
 
+    def detect_stuck_configs(
+        self,
+        min_plateau_hours: int = 48,
+        elo_change_threshold: float = 5.0,
+        min_models: int = 3,
+    ) -> dict[str, dict]:
+        """Detect configs that are permanently stuck (Elo plateau).
+
+        December 2025: Added for Phase 4 weak config detection.
+        Identifies configs that have been stuck for the specified time period
+        and should have their resource allocation reduced.
+
+        Args:
+            min_plateau_hours: Minimum hours of plateau to be considered stuck
+            elo_change_threshold: Max Elo change to be considered plateau
+            min_models: Minimum model count to consider (bootstrapping configs exempt)
+
+        Returns:
+            Dict mapping config_key to stuck info:
+            {
+                "is_stuck": True,
+                "stuck_hours": 52.3,
+                "elo_slope": 0.3,
+                "total_elo_change": 2.1,
+                "model_count": 5,
+                "current_weight": 0.8,
+                "recommended_weight": 0.5,
+            }
+        """
+        stuck_configs = {}
+
+        try:
+            from app.training.elo_service import get_elo_trend_for_config
+        except ImportError:
+            logger.warning("Cannot detect stuck configs: elo_service not available")
+            return stuck_configs
+
+        all_metrics = self.get_all_metrics()
+
+        for config_key, metrics in all_metrics.items():
+            # Skip configs still bootstrapping
+            if metrics.model_count < min_models:
+                continue
+
+            # Get Elo trend for this config
+            trend = get_elo_trend_for_config(config_key, hours=min_plateau_hours)
+
+            if trend.get("error"):
+                continue
+
+            # Check if stuck (plateau with enough data)
+            is_plateau = trend.get("is_plateau", False)
+            duration_hours = trend.get("duration_hours", 0)
+            total_change = abs(trend.get("total_change", 0))
+            confidence = trend.get("confidence", 0)
+
+            # A config is stuck if:
+            # 1. It's in plateau state
+            # 2. Has been tracked for min_plateau_hours
+            # 3. Total Elo change is below threshold
+            # 4. Confidence is reasonable
+            is_stuck = (
+                is_plateau
+                and duration_hours >= min_plateau_hours * 0.8  # Allow 20% slack
+                and total_change <= elo_change_threshold
+                and confidence >= 0.3
+            )
+
+            if is_stuck:
+                current_weight = self._current_weights.get(config_key, 1.0)
+                # Recommend reducing to minimum weight
+                recommended_weight = max(self.weight_min, current_weight * 0.5)
+
+                stuck_configs[config_key] = {
+                    "is_stuck": True,
+                    "stuck_hours": duration_hours,
+                    "elo_slope": trend.get("slope", 0),
+                    "total_elo_change": trend.get("total_change", 0),
+                    "start_elo": trend.get("start_elo", 0),
+                    "end_elo": trend.get("end_elo", 0),
+                    "model_count": metrics.model_count,
+                    "current_weight": current_weight,
+                    "recommended_weight": recommended_weight,
+                    "confidence": confidence,
+                }
+
+                logger.info(
+                    f"[CurriculumFeedback] Stuck config detected: {config_key} "
+                    f"(stuck {duration_hours:.1f}h, Elo change {total_change:.1f})"
+                )
+
+        return stuck_configs
+
+    def get_stuck_config_keys(
+        self,
+        min_plateau_hours: int = 48,
+    ) -> set[str]:
+        """Get set of config keys that are currently stuck.
+
+        December 2025: Convenience method for selfplay_orchestrator filtering.
+
+        Returns:
+            Set of config keys identified as stuck
+        """
+        stuck = self.detect_stuck_configs(min_plateau_hours=min_plateau_hours)
+        return set(stuck.keys())
+
+    def apply_stuck_config_weights(
+        self,
+        min_plateau_hours: int = 48,
+    ) -> dict[str, float]:
+        """Detect stuck configs and apply reduced weights.
+
+        December 2025: Proactive stuck config handling.
+        Detects stuck configs and updates their weights to minimum.
+
+        Returns:
+            Dict of config_key -> new_weight for modified configs
+        """
+        stuck_configs = self.detect_stuck_configs(min_plateau_hours=min_plateau_hours)
+        modified = {}
+
+        for config_key, info in stuck_configs.items():
+            old_weight = self._current_weights.get(config_key, 1.0)
+            new_weight = info["recommended_weight"]
+
+            if new_weight < old_weight:
+                self._current_weights[config_key] = new_weight
+                modified[config_key] = new_weight
+
+                logger.info(
+                    f"[CurriculumFeedback] Reduced weight for stuck config "
+                    f"{config_key}: {old_weight:.2f} → {new_weight:.2f}"
+                )
+
+                # Emit curriculum update
+                self._emit_curriculum_updated(config_key, new_weight, "stuck_config")
+
+        if modified:
+            self._last_update_time = time.time()
+
+        return modified
+
 
 # Singleton instance (thread-safe)
 _feedback_instance: CurriculumFeedback | None = None
@@ -1417,3 +1560,643 @@ def wire_tournament_to_curriculum(
 def get_tournament_curriculum_watcher() -> TournamentToCurriculumWatcher | None:
     """Get the global tournament-to-curriculum watcher if configured."""
     return _tournament_watcher
+
+
+# =============================================================================
+# Promotion Outcome → Curriculum & Training Intensity Integration (December 2025)
+# =============================================================================
+
+class PromotionToCurriculumWatcher:
+    """Watches for promotion outcomes and adjusts curriculum + training intensity.
+
+    Subscribes to PROMOTION_COMPLETE events and:
+    1. Updates curriculum weights based on promotion success/failure
+    2. Signals FeedbackAccelerator with urgency when promotion fails
+
+    This creates a tight feedback loop:
+    - Successful promotion → reduce training weight (model is strong)
+    - Failed promotion → boost training weight + signal high urgency training
+
+    Usage:
+        from app.training.curriculum_feedback import wire_promotion_to_curriculum
+
+        # Wire promotion events
+        watcher = wire_promotion_to_curriculum()
+    """
+
+    def __init__(
+        self,
+        feedback: CurriculumFeedback | None = None,
+        auto_export: bool = True,
+        export_path: str = "data/curriculum_weights.json",
+        failure_urgency: str = "high",
+    ):
+        """Initialize the promotion-to-curriculum watcher.
+
+        Args:
+            feedback: CurriculumFeedback instance (uses singleton if None)
+            auto_export: Whether to auto-export weights after promotion
+            export_path: Path to export weights JSON
+            failure_urgency: Training urgency level on promotion failure
+        """
+        self.feedback = feedback or get_curriculum_feedback()
+        self.auto_export = auto_export
+        self.export_path = export_path
+        self.failure_urgency = failure_urgency
+
+        self._promotion_history: dict[str, list[dict]] = defaultdict(list)
+        self._subscribed = False
+        self._promotions_processed = 0
+        self._failures_processed = 0
+
+    def subscribe_to_promotion_events(self) -> bool:
+        """Subscribe to PROMOTION_COMPLETE events from the event bus.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.coordination.event_router import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+            self._subscribed = True
+            logger.info("[PromotionToCurriculumWatcher] Subscribed to PROMOTION_COMPLETE events")
+            return True
+        except Exception as e:
+            logger.warning(f"[PromotionToCurriculumWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from promotion events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.coordination.event_router import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.unsubscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+            self._subscribed = False
+        except Exception:
+            pass
+
+    def _on_promotion_complete(self, event: Any) -> None:
+        """Handle PROMOTION_COMPLETE event.
+
+        Updates curriculum weights and signals training intensity.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+        metadata = payload.get("metadata", payload)
+
+        # Extract promotion details
+        config_key = metadata.get("config") or metadata.get("config_key", "")
+        board_type = metadata.get("board_type", "")
+        num_players = metadata.get("num_players", 2)
+        promoted = metadata.get("promoted", False)
+        new_elo = metadata.get("new_elo") or metadata.get("elo")
+        reason = metadata.get("reason", "")
+
+        # Build config_key if not provided
+        if not config_key and board_type:
+            config_key = f"{board_type}_{num_players}p"
+
+        if not config_key:
+            logger.debug("[PromotionToCurriculumWatcher] No config_key in event, skipping")
+            return
+
+        logger.info(
+            f"[PromotionToCurriculumWatcher] Promotion result for {config_key}: "
+            f"promoted={promoted}, elo={new_elo}, reason={reason}"
+        )
+
+        # Track in history
+        self._promotion_history[config_key].append({
+            "promoted": promoted,
+            "elo": new_elo,
+            "reason": reason,
+            "timestamp": time.time(),
+        })
+        if len(self._promotion_history[config_key]) > 20:
+            self._promotion_history[config_key] = self._promotion_history[config_key][-20:]
+
+        # Update counters
+        if promoted:
+            self._promotions_processed += 1
+        else:
+            self._failures_processed += 1
+
+        # Update curriculum feedback
+        self.feedback.record_promotion(
+            config_key=config_key,
+            promoted=promoted,
+            new_elo=new_elo,
+            promotion_reason=reason,
+        )
+
+        # Signal FeedbackAccelerator on failure
+        if not promoted:
+            self._signal_training_needed(config_key, reason)
+
+        # Auto-export if enabled
+        if self.auto_export:
+            try:
+                self.feedback.export_weights_json(self.export_path)
+            except Exception as e:
+                logger.warning(f"Failed to export weights: {e}")
+
+    def _signal_training_needed(self, config_key: str, reason: str) -> None:
+        """Signal FeedbackAccelerator that training is urgently needed.
+
+        Called when promotion fails to accelerate the training loop.
+        """
+        try:
+            from app.training.feedback_accelerator import get_feedback_accelerator
+
+            accelerator = get_feedback_accelerator()
+            accelerator.signal_training_needed(
+                config_key=config_key,
+                urgency=self.failure_urgency,
+                reason=f"promotion_failed:{reason}",
+            )
+
+            logger.info(
+                f"[PromotionToCurriculumWatcher] Signaled {self.failure_urgency} urgency "
+                f"training for {config_key} after failed promotion"
+            )
+        except ImportError:
+            logger.debug("FeedbackAccelerator not available for training signal")
+        except Exception as e:
+            logger.warning(f"Failed to signal training urgency: {e}")
+
+    def get_promotion_stats(self, config_key: str | None = None) -> dict[str, Any]:
+        """Get promotion statistics.
+
+        Args:
+            config_key: Specific config to get stats for, or None for all
+
+        Returns:
+            Dict with promotion statistics
+        """
+        if config_key:
+            history = self._promotion_history.get(config_key, [])
+            if not history:
+                return {"config": config_key, "promotions": 0, "failures": 0}
+
+            promotions = sum(1 for h in history if h["promoted"])
+            failures = len(history) - promotions
+
+            return {
+                "config": config_key,
+                "promotions": promotions,
+                "failures": failures,
+                "success_rate": promotions / len(history) if history else 0,
+                "last_result": history[-1] if history else None,
+            }
+        else:
+            return {
+                "total_processed": self._promotions_processed + self._failures_processed,
+                "promotions": self._promotions_processed,
+                "failures": self._failures_processed,
+                "success_rate": (
+                    self._promotions_processed / max(1, self._promotions_processed + self._failures_processed)
+                ),
+                "configs_tracked": len(self._promotion_history),
+            }
+
+
+# Singleton promotion watcher
+_promotion_watcher: PromotionToCurriculumWatcher | None = None
+
+
+def wire_promotion_to_curriculum(
+    auto_export: bool = True,
+    failure_urgency: str = "high",
+) -> PromotionToCurriculumWatcher:
+    """Wire promotion outcomes to curriculum + training intensity adjustments.
+
+    This closes the feedback loop from promotion decisions:
+    - Successful promotion → reduce training weight (model is performing)
+    - Failed promotion → boost weight + signal urgent training
+
+    Args:
+        auto_export: Whether to auto-export weights after promotion
+        failure_urgency: Training urgency level on failure ("low", "normal", "high", "critical")
+
+    Returns:
+        PromotionToCurriculumWatcher instance
+    """
+    global _promotion_watcher
+
+    _promotion_watcher = PromotionToCurriculumWatcher(
+        auto_export=auto_export,
+        failure_urgency=failure_urgency,
+    )
+    _promotion_watcher.subscribe_to_promotion_events()
+
+    logger.info(
+        f"[wire_promotion_to_curriculum] PROMOTION_COMPLETE events wired to curriculum "
+        f"(failure_urgency={failure_urgency})"
+    )
+
+    return _promotion_watcher
+
+
+def get_promotion_curriculum_watcher() -> PromotionToCurriculumWatcher | None:
+    """Get the global promotion-to-curriculum watcher if configured."""
+    return _promotion_watcher
+
+
+# =============================================================================
+# All-in-one wiring function (December 2025)
+# =============================================================================
+
+
+def wire_all_curriculum_feedback(
+    elo_significant_change: float = 30.0,
+    plateau_cooldown_seconds: float = 600.0,
+    tournament_cooldown_seconds: float = 300.0,
+    promotion_failure_urgency: str = "high",
+    auto_export: bool = True,
+) -> dict[str, Any]:
+    """Wire all curriculum feedback integrations at once.
+
+    This is the recommended way to set up the full curriculum feedback loop,
+    connecting ELO changes, plateaus, tournaments, and promotions to
+    curriculum weight adjustments.
+
+    Args:
+        elo_significant_change: ELO change threshold for rebalance
+        plateau_cooldown_seconds: Cooldown between plateau rebalances
+        tournament_cooldown_seconds: Cooldown between tournament rebalances
+        promotion_failure_urgency: Urgency level on promotion failure
+        auto_export: Auto-export weights after changes
+
+    Returns:
+        Dict with all watcher instances:
+        {
+            "elo": EloToCurriculumWatcher,
+            "plateau": PlateauToCurriculumWatcher,
+            "tournament": TournamentToCurriculumWatcher,
+            "promotion": PromotionToCurriculumWatcher,
+        }
+    """
+    watchers = {}
+
+    # Wire ELO changes
+    try:
+        watchers["elo"] = wire_elo_to_curriculum(
+            significant_elo_change=elo_significant_change,
+            auto_export=auto_export,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to wire ELO to curriculum: {e}")
+
+    # Wire plateau detection
+    try:
+        watchers["plateau"] = wire_plateau_to_curriculum(
+            rebalance_cooldown_seconds=plateau_cooldown_seconds,
+            auto_export=auto_export,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to wire plateau to curriculum: {e}")
+
+    # Wire tournament results
+    try:
+        watchers["tournament"] = wire_tournament_to_curriculum(
+            rebalance_cooldown_seconds=tournament_cooldown_seconds,
+            auto_export=auto_export,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to wire tournament to curriculum: {e}")
+
+    # Wire promotion outcomes
+    try:
+        watchers["promotion"] = wire_promotion_to_curriculum(
+            auto_export=auto_export,
+            failure_urgency=promotion_failure_urgency,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to wire promotion to curriculum: {e}")
+
+    # Wire quality feedback
+    try:
+        watchers["quality"] = wire_quality_to_curriculum(
+            auto_export=auto_export,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to wire quality to curriculum: {e}")
+
+    logger.info(
+        f"[wire_all_curriculum_feedback] Wired {len(watchers)} curriculum feedback integrations"
+    )
+
+    return watchers
+
+
+# =============================================================================
+# QUALITY_SCORE → Selfplay Budget Adjustment (December 2025)
+# =============================================================================
+
+class QualityFeedbackWatcher:
+    """Watches quality scores and adjusts selfplay opponent budget.
+
+    Low-quality games indicate that opponents are too weak or games are
+    too short/predictable. This watcher increases opponent search budget
+    when quality is low to produce better training data.
+
+    Quality-to-Budget Mapping:
+    - quality < 0.4: 1.5x opponent budget (boost weak opponents)
+    - quality 0.4-0.6: 1.2x opponent budget (moderate boost)
+    - quality 0.6-0.8: 1.0x opponent budget (normal)
+    - quality > 0.8: 0.8x opponent budget (save compute, games are good)
+
+    Usage:
+        from app.training.curriculum_feedback import (
+            wire_quality_to_curriculum,
+            get_quality_budget_multiplier,
+        )
+
+        # Wire quality events to budget adjustment
+        watcher = wire_quality_to_curriculum()
+
+        # Get budget multiplier for selfplay
+        multiplier = get_quality_budget_multiplier("hex8_2p")
+        budget = base_budget * multiplier
+    """
+
+    # Quality thresholds for budget adjustment
+    LOW_QUALITY_THRESHOLD = 0.4
+    MEDIUM_QUALITY_THRESHOLD = 0.6
+    HIGH_QUALITY_THRESHOLD = 0.8
+
+    # Budget multipliers
+    LOW_QUALITY_MULTIPLIER = 1.5
+    MEDIUM_QUALITY_MULTIPLIER = 1.2
+    NORMAL_QUALITY_MULTIPLIER = 1.0
+    HIGH_QUALITY_MULTIPLIER = 0.8
+
+    def __init__(
+        self,
+        feedback: CurriculumFeedback | None = None,
+        rolling_window_size: int = 100,
+        auto_export: bool = True,
+        export_path: str = "data/quality_budget_multipliers.json",
+    ):
+        """Initialize the quality feedback watcher.
+
+        Args:
+            feedback: CurriculumFeedback instance (uses singleton if None)
+            rolling_window_size: Number of games for rolling average
+            auto_export: Whether to auto-export multipliers
+            export_path: Path to export multipliers JSON
+        """
+        self.feedback = feedback or get_curriculum_feedback()
+        self.rolling_window_size = rolling_window_size
+        self.auto_export = auto_export
+        self.export_path = export_path
+
+        # Quality history per config (rolling window)
+        self._quality_history: dict[str, list[float]] = defaultdict(list)
+
+        # Computed multipliers per config
+        self._budget_multipliers: dict[str, float] = {}
+
+        # Last update times
+        self._last_update_time: float = 0.0
+
+        self._subscribed = False
+
+    def subscribe_to_quality_events(self) -> bool:
+        """Subscribe to quality score events from the event bus.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.subscribe("QUALITY_SCORE_UPDATED", self._on_quality_score_updated)
+            router.subscribe("quality_score_updated", self._on_quality_score_updated)
+            self._subscribed = True
+            logger.info("[QualityFeedbackWatcher] Subscribed to QUALITY_SCORE_UPDATED events")
+            return True
+        except Exception as e:
+            logger.warning(f"[QualityFeedbackWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from quality events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.unsubscribe("QUALITY_SCORE_UPDATED", self._on_quality_score_updated)
+            router.unsubscribe("quality_score_updated", self._on_quality_score_updated)
+            self._subscribed = False
+        except Exception:
+            pass
+
+    def _on_quality_score_updated(self, event: Any) -> None:
+        """Handle QUALITY_SCORE_UPDATED event."""
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config_key = payload.get("config") or payload.get("config_key", "")
+        quality_score = payload.get("quality_score", payload.get("new_score", 0.5))
+
+        if not config_key:
+            return
+
+        # Track in rolling window
+        history = self._quality_history[config_key]
+        history.append(quality_score)
+
+        # Trim to window size
+        if len(history) > self.rolling_window_size:
+            self._quality_history[config_key] = history[-self.rolling_window_size:]
+
+        # Update multiplier
+        self._update_multiplier(config_key)
+        self._last_update_time = time.time()
+
+    def _update_multiplier(self, config_key: str) -> None:
+        """Update budget multiplier based on rolling quality average."""
+        history = self._quality_history.get(config_key, [])
+
+        if not history:
+            self._budget_multipliers[config_key] = self.NORMAL_QUALITY_MULTIPLIER
+            return
+
+        avg_quality = sum(history) / len(history)
+
+        # Compute multiplier based on quality
+        if avg_quality < self.LOW_QUALITY_THRESHOLD:
+            multiplier = self.LOW_QUALITY_MULTIPLIER
+        elif avg_quality < self.MEDIUM_QUALITY_THRESHOLD:
+            multiplier = self.MEDIUM_QUALITY_MULTIPLIER
+        elif avg_quality < self.HIGH_QUALITY_THRESHOLD:
+            multiplier = self.NORMAL_QUALITY_MULTIPLIER
+        else:
+            multiplier = self.HIGH_QUALITY_MULTIPLIER
+
+        old_multiplier = self._budget_multipliers.get(config_key, 1.0)
+        if abs(multiplier - old_multiplier) > 0.05:
+            logger.info(
+                f"[QualityFeedbackWatcher] {config_key} quality={avg_quality:.2f}, "
+                f"budget multiplier: {old_multiplier:.2f} → {multiplier:.2f}"
+            )
+
+            # Emit event for downstream listeners
+            self._emit_quality_feedback_adjusted(config_key, multiplier, avg_quality)
+
+        self._budget_multipliers[config_key] = multiplier
+
+    def _emit_quality_feedback_adjusted(
+        self,
+        config_key: str,
+        multiplier: float,
+        avg_quality: float,
+    ) -> None:
+        """Emit quality feedback adjusted event."""
+        try:
+            from app.coordination.event_router import get_router, RouterEvent, EventSource
+
+            router = get_router()
+            event = RouterEvent(
+                event_type="QUALITY_FEEDBACK_ADJUSTED",
+                payload={
+                    "config_key": config_key,
+                    "budget_multiplier": multiplier,
+                    "avg_quality": avg_quality,
+                    "timestamp": time.time(),
+                },
+                source="quality_feedback_watcher",
+                origin=EventSource.ROUTER,
+            )
+            router.publish_sync("QUALITY_FEEDBACK_ADJUSTED", event.payload, "quality_feedback_watcher")
+            logger.debug(f"Emitted QUALITY_FEEDBACK_ADJUSTED for {config_key}")
+        except Exception as e:
+            logger.debug(f"Failed to emit quality feedback event: {e}")
+
+    def get_budget_multiplier(self, config_key: str) -> float:
+        """Get the current budget multiplier for a config.
+
+        Args:
+            config_key: Config identifier (e.g., "hex8_2p")
+
+        Returns:
+            Budget multiplier (1.0 = normal, >1 = boost, <1 = reduce)
+        """
+        return self._budget_multipliers.get(config_key, self.NORMAL_QUALITY_MULTIPLIER)
+
+    def get_all_multipliers(self) -> dict[str, float]:
+        """Get all current budget multipliers."""
+        return dict(self._budget_multipliers)
+
+    def get_quality_summary(self, config_key: str) -> dict[str, Any]:
+        """Get quality summary for a config.
+
+        Returns:
+            Dict with avg_quality, multiplier, history_size
+        """
+        history = self._quality_history.get(config_key, [])
+        avg_quality = sum(history) / len(history) if history else 0.5
+
+        return {
+            "config_key": config_key,
+            "avg_quality": avg_quality,
+            "history_size": len(history),
+            "budget_multiplier": self.get_budget_multiplier(config_key),
+            "last_update": self._last_update_time,
+        }
+
+    def export_multipliers_json(self, output_path: str | None = None) -> None:
+        """Export budget multipliers to JSON.
+
+        Args:
+            output_path: Path to output file (uses default if None)
+        """
+        output_path = output_path or self.export_path
+
+        export_data = {
+            "timestamp": datetime.now().isoformat(),
+            "multipliers": self._budget_multipliers,
+            "summaries": {
+                config_key: self.get_quality_summary(config_key)
+                for config_key in self._budget_multipliers
+            },
+        }
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w") as f:
+            json.dump(export_data, f, indent=2)
+
+        logger.debug(f"Exported quality budget multipliers to {output_path}")
+
+
+# Singleton watcher
+_quality_watcher: QualityFeedbackWatcher | None = None
+
+
+def wire_quality_to_curriculum(
+    rolling_window_size: int = 100,
+    auto_export: bool = True,
+) -> QualityFeedbackWatcher:
+    """Wire quality score events to selfplay budget adjustment.
+
+    This is the main entry point for connecting quality metrics to
+    automatic selfplay opponent budget adjustment.
+
+    Args:
+        rolling_window_size: Number of games for rolling quality average
+        auto_export: Whether to auto-export multipliers
+
+    Returns:
+        QualityFeedbackWatcher instance
+    """
+    global _quality_watcher
+
+    _quality_watcher = QualityFeedbackWatcher(
+        rolling_window_size=rolling_window_size,
+        auto_export=auto_export,
+    )
+    _quality_watcher.subscribe_to_quality_events()
+
+    logger.info(
+        f"[wire_quality_to_curriculum] Quality events wired to selfplay budget adjustment "
+        f"(window={rolling_window_size})"
+    )
+
+    return _quality_watcher
+
+
+def get_quality_feedback_watcher() -> QualityFeedbackWatcher | None:
+    """Get the global quality feedback watcher if configured."""
+    return _quality_watcher
+
+
+def get_quality_budget_multiplier(config_key: str) -> float:
+    """Get the budget multiplier for a config (convenience function).
+
+    If no watcher is configured, returns 1.0 (no adjustment).
+
+    Args:
+        config_key: Config identifier (e.g., "hex8_2p")
+
+    Returns:
+        Budget multiplier for selfplay opponent budget
+    """
+    if _quality_watcher is None:
+        return 1.0
+    return _quality_watcher.get_budget_multiplier(config_key)

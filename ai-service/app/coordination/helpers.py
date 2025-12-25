@@ -350,7 +350,8 @@ def get_role_holder(role: Any) -> Any | None:
 
     try:
         return registry.get_role_holder(role)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Could not get role holder for {role}: {e}")
         return None
 
 
@@ -444,8 +445,8 @@ def warn_if_orchestrator_running(daemon_name: str = "daemon") -> None:
             existing_pid = holder.pid if holder else "unknown"
             print(f"[{daemon_name}] WARNING: Unified orchestrator is running (PID {existing_pid})")
             print(f"[{daemon_name}] The orchestrator handles this work - this {daemon_name} may duplicate work")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not check orchestrator status: {e}")
 
 
 # =============================================================================

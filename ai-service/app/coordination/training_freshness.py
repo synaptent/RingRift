@@ -310,7 +310,8 @@ class TrainingFreshnessChecker:
             with sqlite3.connect(db_path, timeout=5.0) as conn:
                 cursor = conn.execute("SELECT COUNT(*) FROM games")
                 return cursor.fetchone()[0]
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to get game count from {db_path}: {e}")
             return 0
 
     def check_freshness(

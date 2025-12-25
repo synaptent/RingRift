@@ -89,6 +89,11 @@ class PipelineConfig:
     circuit_breaker_reset_timeout_seconds: float = 300.0  # 5 minutes
     circuit_breaker_half_open_max_requests: int = 1
 
+    # Training configuration (December 2025 - wired from CLI)
+    training_epochs: int = 50
+    training_batch_size: int = 512
+    training_model_version: str = "v2"
+
 
 @dataclass
 class OptimizationConfig:
@@ -363,10 +368,151 @@ def validate_config(config: CoordinatorConfig | None = None) -> tuple:
     return (len(issues) == 0, issues)
 
 
+# =============================================================================
+# Daemon Exclusion Policy (December 2025)
+# =============================================================================
+
+# Default excluded nodes - dev machines and low storage nodes
+_DEFAULT_EXCLUDED_NODES: frozenset[str] = frozenset({
+    "mbp-16gb",        # Low storage laptop
+    "mbp-64gb",        # Dev machine laptop
+    "mbp-128gb",       # M4 Max MacBook Pro - don't fill disk
+    "macbook-pro-2",   # Same machine, alternate node-id
+    "aws-proxy",       # Relay-only node
+})
+
+
+@dataclass
+class DaemonExclusionConfig:
+    """Configuration for daemon node exclusions.
+
+    Provides a unified exclusion policy for all daemons, replacing
+    hardcoded frozensets in individual daemon files.
+    """
+
+    # Nodes that should NEVER receive synced data
+    excluded_nodes: set[str] = field(default_factory=lambda: set(_DEFAULT_EXCLUDED_NODES))
+
+    # NFS-connected nodes (skip sync between them)
+    nfs_nodes: set[str] = field(default_factory=set)
+
+    # Nodes marked as retired (skip entirely)
+    retired_nodes: set[str] = field(default_factory=set)
+
+    # Minimum free disk space (GB) for sync eligibility
+    min_disk_free_gb: float = 50.0
+
+    def should_exclude(self, node_id: str) -> bool:
+        """Check if a node should be excluded from sync operations."""
+        return (
+            node_id in self.excluded_nodes or
+            node_id in self.retired_nodes
+        )
+
+    def is_nfs_node(self, node_id: str) -> bool:
+        """Check if a node is NFS-connected (skip inter-NFS sync)."""
+        return node_id in self.nfs_nodes
+
+    def add_excluded_node(self, node_id: str) -> None:
+        """Add a node to the exclusion list."""
+        self.excluded_nodes.add(node_id)
+
+    def remove_excluded_node(self, node_id: str) -> None:
+        """Remove a node from the exclusion list."""
+        self.excluded_nodes.discard(node_id)
+
+
+# Global exclusion policy singleton
+_exclusion_policy: DaemonExclusionConfig | None = None
+
+
+def get_exclusion_policy() -> DaemonExclusionConfig:
+    """Get the global daemon exclusion policy.
+
+    Loads from config files on first call:
+    - unified_loop.yaml (auto_sync.exclude_hosts, data_aggregation.excluded_nodes)
+    - distributed_hosts.yaml (nfs_nodes, retired)
+
+    Returns:
+        The global DaemonExclusionConfig instance
+    """
+    global _exclusion_policy
+    if _exclusion_policy is None:
+        _exclusion_policy = _load_exclusion_config()
+        logger.info("[DaemonExclusionPolicy] Loaded exclusion config")
+    return _exclusion_policy
+
+
+def _load_exclusion_config() -> DaemonExclusionConfig:
+    """Load exclusion configuration from config files."""
+    from pathlib import Path
+
+    config = DaemonExclusionConfig()
+
+    # Try to find config directory
+    base_dir = Path(__file__).resolve().parents[2]  # ai-service root
+    config_dir = base_dir / "config"
+
+    # Load from unified_loop.yaml
+    unified_config_path = config_dir / "unified_loop.yaml"
+    if unified_config_path.exists():
+        try:
+            import yaml
+            with open(unified_config_path) as f:
+                data = yaml.safe_load(f) or {}
+
+            # auto_sync.exclude_hosts
+            auto_sync = data.get("auto_sync", {})
+            for node in auto_sync.get("exclude_hosts", []):
+                config.excluded_nodes.add(node)
+
+            # data_aggregation.excluded_nodes
+            data_agg = data.get("data_aggregation", {})
+            for node in data_agg.get("excluded_nodes", []):
+                config.excluded_nodes.add(node)
+
+        except Exception as e:
+            logger.debug(f"Could not load unified_loop.yaml: {e}")
+
+    # Load from distributed_hosts.yaml
+    hosts_config_path = config_dir / "distributed_hosts.yaml"
+    if hosts_config_path.exists():
+        try:
+            import yaml
+            with open(hosts_config_path) as f:
+                data = yaml.safe_load(f) or {}
+
+            # Find NFS nodes
+            for host in data.get("hosts", []):
+                if host.get("is_nfs", False):
+                    node_id = host.get("node_id") or host.get("name", "")
+                    if node_id:
+                        config.nfs_nodes.add(node_id)
+
+                # Find retired nodes
+                if host.get("retired", False):
+                    node_id = host.get("node_id") or host.get("name", "")
+                    if node_id:
+                        config.retired_nodes.add(node_id)
+
+        except Exception as e:
+            logger.debug(f"Could not load distributed_hosts.yaml: {e}")
+
+    return config
+
+
+def reset_exclusion_policy() -> None:
+    """Reset the exclusion policy (for testing)."""
+    global _exclusion_policy
+    _exclusion_policy = None
+
+
 __all__ = [
     "CacheConfig",
     # Unified config
     "CoordinatorConfig",
+    # Daemon exclusion policy
+    "DaemonExclusionConfig",
     "EventBusConfig",
     "HandlerResilienceConfig",
     "HeartbeatConfig",
@@ -379,7 +525,9 @@ __all__ = [
     "TaskLifecycleConfig",
     # Functions
     "get_config",
+    "get_exclusion_policy",
     "reset_config",
+    "reset_exclusion_policy",
     "set_config",
     "update_config",
     "validate_config",

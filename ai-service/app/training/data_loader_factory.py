@@ -59,6 +59,10 @@ class DataLoaderConfig:
     data_path: str | list[str] | None = None
     data_dir: str | None = None
 
+    # Curriculum weights (December 2025)
+    use_curriculum_weights: bool = False
+    curriculum_weights: dict[str, float] | None = None  # config_key -> weight
+
 
 @dataclass
 class DataLoaderResult:
@@ -115,6 +119,72 @@ def should_use_streaming(
         return True
 
     return False
+
+
+def infer_config_key_from_path(file_path: str) -> str | None:
+    """Infer config_key from a data file path.
+
+    Looks for patterns like:
+    - hex8_2p_games.npz -> hex8_2p
+    - canonical_square8_4p.npz -> square8_4p
+    - training_hexagonal_3p_v2.npz -> hexagonal_3p
+
+    Returns:
+        config_key like "hex8_2p" or None if not detectable
+    """
+    import re
+
+    filename = Path(file_path).stem.lower()
+
+    # Pattern: board_type_Np
+    board_types = ["hex8", "hexagonal", "square8", "square19"]
+    for board in board_types:
+        # Match board type followed by _Np
+        pattern = rf"{board}_(\d)p"
+        match = re.search(pattern, filename)
+        if match:
+            num_players = match.group(1)
+            return f"{board}_{num_players}p"
+
+    return None
+
+
+def compute_curriculum_file_weights(
+    data_paths: list[str],
+    curriculum_weights: dict[str, float],
+    default_weight: float = 1.0,
+) -> dict[str, float]:
+    """Compute per-file weights based on curriculum weights.
+
+    Maps each data file to its config_key and applies the corresponding
+    curriculum weight. Files without detectable config_keys use default_weight.
+
+    Args:
+        data_paths: List of data file paths
+        curriculum_weights: Dict mapping config_key to weight
+        default_weight: Weight for files with unknown config_key
+
+    Returns:
+        Dict mapping file path to weight
+    """
+    file_weights = {}
+
+    for path in data_paths:
+        config_key = infer_config_key_from_path(path)
+
+        if config_key and config_key in curriculum_weights:
+            weight = curriculum_weights[config_key]
+            logger.debug(f"[CurriculumWeights] {Path(path).name} -> {config_key} = {weight:.2f}")
+        else:
+            weight = default_weight
+            if config_key:
+                logger.debug(f"[CurriculumWeights] {Path(path).name} -> {config_key} (no weight, using {weight})")
+            else:
+                logger.debug(f"[CurriculumWeights] {Path(path).name} -> unknown config (using {weight})")
+
+        file_weights[path] = weight
+
+    return file_weights
 
 
 def collect_data_paths(
@@ -192,8 +262,36 @@ def create_streaming_loaders(
     stream_rank = config.rank if config.distributed else 0
     stream_world_size = config.world_size if config.distributed else 1
 
+    # Compute curriculum-based file weights if enabled (December 2025)
+    file_weights: dict[str, float] | None = None
+    if config.use_curriculum_weights and config.curriculum_weights:
+        file_weights = compute_curriculum_file_weights(
+            data_paths=data_paths,
+            curriculum_weights=config.curriculum_weights,
+        )
+        if file_weights:
+            logger.info(
+                f"[CurriculumWeights] Applied curriculum weights to {len(file_weights)} files"
+            )
+    elif config.use_curriculum_weights:
+        # Load curriculum weights from default location
+        try:
+            from app.training.curriculum_feedback import get_curriculum_weights
+            curriculum_weights = get_curriculum_weights()
+            if curriculum_weights:
+                file_weights = compute_curriculum_file_weights(
+                    data_paths=data_paths,
+                    curriculum_weights=curriculum_weights,
+                )
+                logger.info(
+                    f"[CurriculumWeights] Loaded {len(curriculum_weights)} curriculum weights"
+                )
+        except ImportError:
+            logger.debug("curriculum_feedback not available for weight loading")
+
     # Create train loader
-    if config.sampling_weights != 'uniform':
+    use_weighted = config.sampling_weights != 'uniform' or file_weights is not None
+    if use_weighted:
         train_loader = WeightedStreamingDataLoader(
             data_paths=data_paths,
             batch_size=config.batch_size,
@@ -205,10 +303,15 @@ def create_streaming_loaders(
             world_size=stream_world_size,
             filter_empty_policies=config.filter_empty_policies,
             sampling_weights=config.sampling_weights,
+            file_weights=file_weights,  # Apply curriculum weights
         )
+        weight_info = []
+        if config.sampling_weights != 'uniform':
+            weight_info.append(f"sampling={config.sampling_weights}")
+        if file_weights:
+            weight_info.append(f"curriculum_files={len(file_weights)}")
         logger.info(
-            f"Using WeightedStreamingDataLoader with "
-            f"sampling_weights={config.sampling_weights}"
+            f"Using WeightedStreamingDataLoader with {', '.join(weight_info)}"
         )
     else:
         train_loader = StreamingDataLoader(

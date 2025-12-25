@@ -5,10 +5,15 @@ that have adequate storage, excluding development machines like mac-studio.
 
 Features:
 - Push-based sync (proactive, not pull-based)
-- Filters by available disk space (MIN_DISK_FREE_GB)
-- Excludes specified nodes (EXCLUDED_NODES)
+- Filters by available disk space (via DaemonExclusionPolicy)
+- Excludes specified nodes (via DaemonExclusionPolicy)
 - Both event-driven and periodic sync
 - Integrates with existing transport infrastructure (SSH/rsync, aria2, P2P)
+
+Note: As of December 2025, exclusion configuration is loaded from
+coordinator_config.DaemonExclusionPolicy which reads from:
+- unified_loop.yaml (auto_sync.exclude_hosts, data_aggregation.excluded_nodes)
+- distributed_hosts.yaml (nfs_nodes, retired)
 
 Usage:
     # Via DaemonManager
@@ -38,18 +43,17 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 
-# Nodes that should NEVER receive synced data (dev machines, low storage)
-EXCLUDED_NODES: frozenset[str] = frozenset({
-    "mbp-16gb",        # Low storage laptop
-    "mbp-64gb",        # Dev machine laptop
-    "mbp-128gb",       # M4 Max MacBook Pro - don't fill disk
-    "macbook-pro-2",   # Same machine, alternate node-id
-    "aws-proxy",       # Relay-only node
-})
-# Note: mac-studio IS eligible - has OWC external drive for storage
+# Import unified exclusion policy (December 2025)
+# This replaces the hardcoded EXCLUDED_NODES frozenset
+from app.coordination.coordinator_config import get_exclusion_policy
 
-# Minimum free disk space (GB) to be eligible for sync
-MIN_DISK_FREE_GB = 50
+# Legacy alias for backwards compatibility - do not use directly
+# Use get_exclusion_policy().excluded_nodes instead
+EXCLUDED_NODES: frozenset[str] = frozenset()  # Deprecated - loaded dynamically
+
+# Legacy constant for backwards compatibility - do not use directly
+# Use get_exclusion_policy().min_disk_free_gb instead
+MIN_DISK_FREE_GB = 50  # Deprecated - loaded dynamically
 
 # Sync interval (seconds) - 5 minutes
 SYNC_INTERVAL_SECONDS = 300
@@ -119,9 +123,11 @@ def get_p2p_status() -> dict[str, Any]:
 def get_sync_targets() -> list[SyncTarget]:
     """Get nodes eligible to receive synced data.
 
+    Uses DaemonExclusionPolicy from coordinator_config for filtering.
+
     Filters:
-    - Not in EXCLUDED_NODES
-    - Has at least MIN_DISK_FREE_GB free
+    - Not excluded by policy (should_exclude())
+    - Has sufficient free disk space (policy.min_disk_free_gb)
     - Not retired
     - Is reachable (recent heartbeat)
     """
@@ -135,22 +141,25 @@ def get_sync_targets() -> list[SyncTarget]:
     self_info = status.get("self", {})
     self_node_id = self_info.get("node_id", "")
 
+    # Get unified exclusion policy
+    exclusion_policy = get_exclusion_policy()
+
     # Check peers
     peers = status.get("peers", {})
     for node_id, info in peers.items():
-        # Skip excluded nodes
-        if node_id in EXCLUDED_NODES:
+        # Skip excluded nodes (using unified policy)
+        if exclusion_policy.should_exclude(node_id):
             logger.debug(f"Skipping excluded node: {node_id}")
             continue
 
-        # Skip retired nodes
+        # Skip retired nodes (also checked by policy, but P2P may report this too)
         if info.get("retired", False):
             logger.debug(f"Skipping retired node: {node_id}")
             continue
 
-        # Check disk space
+        # Check disk space (using policy threshold)
         disk_free = info.get("disk_free_gb", 0)
-        if disk_free < MIN_DISK_FREE_GB:
+        if disk_free < exclusion_policy.min_disk_free_gb:
             logger.debug(f"Skipping {node_id}: only {disk_free:.1f}GB free")
             continue
 
@@ -545,7 +554,8 @@ class TrainingNodeWatcher:
                 timeout=5,
             )
             return result.returncode == 0
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Could not check for local training process: {e}")
             return False
 
     async def trigger_priority_sync(self, node_id: str) -> bool:

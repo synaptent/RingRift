@@ -188,10 +188,15 @@ def bootstrap_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         enable_training=True,
         enable_pipeline=True,
         enable_sync=args.sync_from_cluster,
+        # Pass training config from CLI args (December 2025)
+        training_epochs=args.training_epochs,
+        training_batch_size=args.batch_size,
+        training_model_version=args.model_version,
     )
 
     active = [k for k, v in result.items() if v]
     logger.info(f"Initialized {len(active)} coordinators: {', '.join(active[:5])}...")
+    logger.info(f"Training config: epochs={args.training_epochs}, batch_size={args.batch_size}, model_version={args.model_version}")
 
     return result
 

@@ -44,6 +44,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.coordination.protocols import (
+    CoordinatorStatus,
+    HealthCheckResult,
+    register_coordinator,
+    unregister_coordinator,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -292,6 +299,13 @@ class DataPipelineOrchestrator:
         self.auto_trigger_evaluation = getattr(config, "auto_trigger_evaluation", True) if config else True
         self.auto_trigger_promotion = getattr(config, "auto_trigger_promotion", True) if config else True
 
+        # Quality gate configuration (December 2025 - Phase 14)
+        self.quality_gate_enabled = getattr(config, "quality_gate_enabled", True) if config else True
+        self.quality_gate_threshold = getattr(config, "quality_gate_threshold", 0.6) if config else 0.6
+        self.quality_gate_min_high_quality_pct = getattr(config, "quality_gate_min_high_quality_pct", 0.30) if config else 0.30
+        self._quality_check_history: list[float] = []  # Track quality trend
+        self._last_quality_score: float = 0.0
+
         # Circuit breaker for fault tolerance (December 2025)
         cb_enabled = getattr(config, "circuit_breaker_enabled", True) if config else True
         cb_threshold = getattr(config, "circuit_breaker_failure_threshold", 3) if config else 3
@@ -358,6 +372,13 @@ class DataPipelineOrchestrator:
         self._cluster_monitor_ttl: float = 30.0  # Cache for 30 seconds
         self._last_constraint_emit: dict[str, float] = {}  # Dedup event emission
 
+        # CoordinatorProtocol state (December 2025 - Phase 14)
+        self._coordinator_status = CoordinatorStatus.INITIALIZING
+        self._start_time: float = 0.0
+        self._events_processed: int = 0
+        self._errors_count: int = 0
+        self._last_error: str = ""
+
     def _get_board_config(
         self, result: Any = None, metadata: dict | None = None
     ) -> tuple[str | None, int | None]:
@@ -416,6 +437,159 @@ class DataPipelineOrchestrator:
             )
 
         return board_type, num_players
+
+    # =========================================================================
+    # CoordinatorProtocol Implementation (December 2025 - Phase 14)
+    # =========================================================================
+
+    @property
+    def name(self) -> str:
+        """Unique name identifying this coordinator."""
+        return "DataPipelineOrchestrator"
+
+    @property
+    def status(self) -> CoordinatorStatus:
+        """Current status of the coordinator."""
+        return self._coordinator_status
+
+    @property
+    def uptime_seconds(self) -> float:
+        """Time since orchestrator started, in seconds."""
+        if self._start_time <= 0:
+            return 0.0
+        return time.time() - self._start_time
+
+    async def start(self) -> None:
+        """Start the orchestrator.
+
+        Subscribes to events and begins tracking pipeline state.
+        Idempotent - calling on an already running orchestrator is a no-op.
+        """
+        if self._coordinator_status == CoordinatorStatus.RUNNING:
+            return  # Already running
+
+        self._coordinator_status = CoordinatorStatus.RUNNING
+        self._start_time = time.time()
+
+        # Subscribe to events
+        self.subscribe_to_events()
+        self.subscribe_to_data_events()
+
+        # Register with coordinator registry
+        register_coordinator(self)
+
+        logger.info(f"[{self.name}] Started")
+
+    async def stop(self) -> None:
+        """Stop the orchestrator gracefully.
+
+        Cleans up subscriptions and resources.
+        Idempotent - calling on an already stopped orchestrator is a no-op.
+        """
+        if self._coordinator_status == CoordinatorStatus.STOPPED:
+            return  # Already stopped
+
+        self._coordinator_status = CoordinatorStatus.STOPPING
+
+        # Unregister from coordinator registry
+        unregister_coordinator(self.name)
+
+        self._coordinator_status = CoordinatorStatus.STOPPED
+        logger.info(f"[{self.name}] Stopped")
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Get orchestrator metrics in protocol-compliant format.
+
+        Returns:
+            Dictionary of metrics including pipeline-specific stats.
+        """
+        stats = self.get_stats()
+        return {
+            "name": self.name,
+            "status": self._coordinator_status.value,
+            "uptime_seconds": self.uptime_seconds,
+            "start_time": self._start_time,
+            "events_processed": self._events_processed,
+            "errors_count": self._errors_count,
+            "last_error": self._last_error,
+            # Pipeline-specific metrics
+            "current_stage": self._current_stage.value,
+            "current_iteration": self._current_iteration,
+            "iterations_completed": stats.iterations_completed,
+            "iterations_failed": stats.iterations_failed,
+            "total_games_generated": stats.total_games_generated,
+            "total_models_trained": stats.total_models_trained,
+            "promotions": stats.promotions,
+            "subscribed": self._subscribed,
+            "paused": self._paused,
+            "circuit_breaker_state": (
+                self._circuit_breaker.state.value if self._circuit_breaker else None
+            ),
+        }
+
+    def health_check(self) -> HealthCheckResult:
+        """Check orchestrator health.
+
+        Returns:
+            Health check result with status and pipeline details.
+        """
+        # Check for error state
+        if self._coordinator_status == CoordinatorStatus.ERROR:
+            return HealthCheckResult.unhealthy(
+                f"Orchestrator in error state: {self._last_error}"
+            )
+
+        # Check if stopped
+        if self._coordinator_status == CoordinatorStatus.STOPPED:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="Orchestrator is stopped",
+            )
+
+        # Check if paused due to resource constraints
+        if self._paused:
+            return HealthCheckResult.degraded(
+                f"Pipeline paused: {self._pause_reason or 'unknown'}",
+                pause_duration=time.time() - self._pause_time,
+                constraints=dict(self._resource_constraints),
+            )
+
+        # Check circuit breaker
+        if self._circuit_breaker and self._circuit_breaker.is_open:
+            return HealthCheckResult.degraded(
+                "Circuit breaker open - pipeline stages may be blocked",
+                circuit_breaker=self._circuit_breaker.get_status(),
+            )
+
+        # Check if events are subscribed
+        if not self._subscribed:
+            return HealthCheckResult.degraded(
+                "Not subscribed to events - pipeline may not progress automatically"
+            )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=self._coordinator_status,
+            details={
+                "uptime_seconds": self.uptime_seconds,
+                "events_processed": self._events_processed,
+                "current_stage": self._current_stage.value,
+                "current_iteration": self._current_iteration,
+            },
+        )
+
+    def _record_event_processed(self) -> None:
+        """Record that an event was processed (for protocol metrics)."""
+        self._events_processed += 1
+
+    def _record_error(self, error: str) -> None:
+        """Record an error (for protocol metrics)."""
+        self._errors_count += 1
+        self._last_error = error
+        if self._errors_count >= 10:
+            self._coordinator_status = CoordinatorStatus.DEGRADED
 
     def subscribe_to_events(self) -> bool:
         """Subscribe to pipeline stage events.
@@ -688,6 +862,19 @@ class DataPipelineOrchestrator:
         iteration = result.iteration
 
         if result.success:
+            # Quality gate check before training (December 2025 - Phase 14)
+            npz_path = getattr(result, "output_path", None) or result.metadata.get("output_path")
+            if self.quality_gate_enabled and npz_path:
+                quality_ok = await self._check_training_data_quality(npz_path, iteration)
+                if not quality_ok:
+                    logger.warning(
+                        f"[DataPipelineOrchestrator] Quality gate blocked training for "
+                        f"iteration {iteration} (quality={self._last_quality_score:.2f})"
+                    )
+                    await self._emit_training_blocked_by_quality(iteration, npz_path)
+                    # Don't transition to training - stay at export complete
+                    return
+
             self._transition_to(
                 PipelineStage.TRAINING,
                 iteration,
@@ -696,7 +883,6 @@ class DataPipelineOrchestrator:
 
             # Auto-trigger training if enabled (December 2025)
             if self.auto_trigger and self.auto_trigger_training:
-                npz_path = getattr(result, "output_path", None) or result.metadata.get("output_path")
                 if npz_path:
                     await self._auto_trigger_training(iteration, npz_path)
         else:
@@ -720,8 +906,19 @@ class DataPipelineOrchestrator:
         try:
             from app.coordination.pipeline_actions import trigger_training
 
-            logger.info(f"[DataPipelineOrchestrator] Auto-triggering training for {board_type}_{num_players}p")
-            result = await trigger_training(board_type, num_players, npz_path, iteration)
+            # Get training config from pipeline config (December 2025)
+            training_epochs = getattr(self._config, "training_epochs", 50)
+            training_batch_size = getattr(self._config, "training_batch_size", 512)
+
+            logger.info(
+                f"[DataPipelineOrchestrator] Auto-triggering training for {board_type}_{num_players}p "
+                f"(epochs={training_epochs}, batch_size={training_batch_size})"
+            )
+            result = await trigger_training(
+                board_type, num_players, npz_path, iteration,
+                batch_size=training_batch_size,
+                epochs=training_epochs,
+            )
 
             if result.success:
                 self._record_circuit_success("training")
@@ -733,6 +930,221 @@ class DataPipelineOrchestrator:
         except Exception as e:
             logger.error(f"[DataPipelineOrchestrator] Auto-trigger training failed: {e}")
             self._record_circuit_failure("training", str(e))
+
+    # =========================================================================
+    # Quality Gate Methods (December 2025 - Phase 14)
+    # =========================================================================
+
+    async def _check_training_data_quality(self, npz_path: str, iteration: int) -> bool:
+        """Check if training data meets quality threshold.
+
+        Evaluates NPZ training data quality and blocks training if:
+        - Average quality score < threshold (default 0.6)
+        - High quality game percentage < minimum (default 30%)
+        - Quality declining for 3 consecutive exports
+
+        Args:
+            npz_path: Path to NPZ training data
+            iteration: Pipeline iteration number
+
+        Returns:
+            True if quality is acceptable for training
+        """
+        try:
+            from pathlib import Path
+            import numpy as np
+
+            # Check if file exists
+            if not Path(npz_path).exists():
+                logger.warning(f"[QualityGate] NPZ file not found: {npz_path}")
+                return True  # Allow training if we can't check
+
+            # Load NPZ and check for quality metadata
+            with np.load(npz_path, allow_pickle=True) as data:
+                # Try to get quality scores from NPZ metadata
+                if "quality_scores" in data:
+                    quality_scores = data["quality_scores"]
+                    avg_quality = float(np.mean(quality_scores))
+                    high_quality_pct = float(np.mean(quality_scores >= 0.7))
+                elif "metadata" in data:
+                    # Check metadata for quality info
+                    metadata = data["metadata"].item() if data["metadata"].ndim == 0 else dict(data["metadata"])
+                    avg_quality = metadata.get("avg_quality", 0.7)
+                    high_quality_pct = metadata.get("high_quality_pct", 0.5)
+                else:
+                    # Estimate quality from data characteristics
+                    avg_quality = await self._estimate_data_quality(data, npz_path)
+                    high_quality_pct = 0.5  # Default
+
+            self._last_quality_score = avg_quality
+            self._quality_check_history.append(avg_quality)
+
+            # Keep only last 10 checks
+            if len(self._quality_check_history) > 10:
+                self._quality_check_history = self._quality_check_history[-10:]
+
+            logger.info(
+                f"[QualityGate] Iteration {iteration}: avg_quality={avg_quality:.3f}, "
+                f"high_quality_pct={high_quality_pct:.1%}, threshold={self.quality_gate_threshold}"
+            )
+
+            # Check 1: Average quality threshold
+            if avg_quality < self.quality_gate_threshold:
+                logger.warning(
+                    f"[QualityGate] Quality {avg_quality:.3f} below threshold "
+                    f"{self.quality_gate_threshold}"
+                )
+                return False
+
+            # Check 2: High quality percentage
+            if high_quality_pct < self.quality_gate_min_high_quality_pct:
+                logger.warning(
+                    f"[QualityGate] High quality games {high_quality_pct:.1%} below minimum "
+                    f"{self.quality_gate_min_high_quality_pct:.1%}"
+                )
+                return False
+
+            # Check 3: Quality declining trend
+            if len(self._quality_check_history) >= 3:
+                recent = self._quality_check_history[-3:]
+                if all(recent[i] > recent[i + 1] for i in range(len(recent) - 1)):
+                    decline_amount = recent[0] - recent[-1]
+                    if decline_amount > 0.1:  # More than 10% decline
+                        logger.warning(
+                            f"[QualityGate] Quality declining: {recent[0]:.3f} -> {recent[-1]:.3f}"
+                        )
+                        return False
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"[QualityGate] Error checking quality: {e}")
+            return True  # Allow training if quality check fails
+
+    async def _estimate_data_quality(self, data: "np.lib.npyio.NpzFile", npz_path: str) -> float:
+        """Estimate data quality from NPZ contents when no explicit quality scores.
+
+        Args:
+            data: Loaded NPZ file
+            npz_path: Path to NPZ (for logging)
+
+        Returns:
+            Estimated quality score (0-1)
+        """
+        try:
+            import numpy as np
+
+            quality_signals = []
+
+            # Check sample count
+            if "features" in data or "X" in data:
+                features_key = "features" if "features" in data else "X"
+                n_samples = len(data[features_key])
+                # More samples = generally better, normalize to 0.3-1.0 range
+                sample_score = min(1.0, 0.3 + 0.7 * (n_samples / 50000))
+                quality_signals.append(sample_score)
+
+            # Check policy distribution
+            if "policy" in data or "policy_targets" in data:
+                policy_key = "policy" if "policy" in data else "policy_targets"
+                policy = data[policy_key]
+                # Check entropy of policies (higher = more diverse = better)
+                policy_probs = np.clip(policy, 1e-10, 1.0)
+                entropy = -np.sum(policy_probs * np.log(policy_probs), axis=-1).mean()
+                max_entropy = np.log(policy.shape[-1])
+                entropy_ratio = entropy / max_entropy if max_entropy > 0 else 0.5
+                quality_signals.append(min(1.0, 0.3 + 0.7 * entropy_ratio))
+
+            # Check value distribution
+            if "value" in data or "value_targets" in data:
+                value_key = "value" if "value" in data else "value_targets"
+                values = data[value_key]
+                # Check if values span a reasonable range (not all same)
+                value_std = np.std(values)
+                value_score = min(1.0, 0.4 + value_std * 2)  # Higher variance = more diverse
+                quality_signals.append(value_score)
+
+            if quality_signals:
+                return float(np.mean(quality_signals))
+            return 0.6  # Default moderate quality
+
+        except Exception as e:
+            logger.debug(f"[QualityGate] Error estimating quality: {e}")
+            return 0.6
+
+    async def _emit_training_blocked_by_quality(self, iteration: int, npz_path: str) -> None:
+        """Emit event when training is blocked due to quality gate.
+
+        This triggers data regeneration or other corrective actions.
+
+        Args:
+            iteration: Pipeline iteration
+            npz_path: Path to the NPZ file that failed quality check
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                board_type, num_players = self._get_board_config()
+                await router.publish(
+                    event_type="TRAINING_BLOCKED_BY_QUALITY",
+                    payload={
+                        "iteration": iteration,
+                        "npz_path": npz_path,
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "quality_score": self._last_quality_score,
+                        "threshold": self.quality_gate_threshold,
+                        "quality_history": self._quality_check_history[-5:],
+                        "recommendation": "trigger_data_regeneration",
+                    },
+                    source="DataPipelineOrchestrator",
+                )
+                logger.info(
+                    f"[QualityGate] Emitted TRAINING_BLOCKED_BY_QUALITY for iteration {iteration}"
+                )
+
+                # Also trigger data regeneration if we have enough info
+                if board_type and num_players:
+                    await self._trigger_data_regeneration(board_type, num_players, iteration)
+
+        except Exception as e:
+            logger.warning(f"[QualityGate] Failed to emit quality block event: {e}")
+
+    async def _trigger_data_regeneration(
+        self, board_type: str, num_players: int, iteration: int
+    ) -> None:
+        """Trigger regeneration of training data when quality is low.
+
+        Args:
+            board_type: Board type
+            num_players: Number of players
+            iteration: Pipeline iteration
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                await router.publish(
+                    event_type="SELFPLAY_TARGET_UPDATED",
+                    payload={
+                        "config": f"{board_type}_{num_players}p",
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "extra_games": 2000,  # Request more data
+                        "reason": "quality_gate_failed",
+                        "quality_score": self._last_quality_score,
+                        "iteration": iteration,
+                    },
+                    source="DataPipelineOrchestrator",
+                )
+                logger.info(
+                    f"[QualityGate] Triggered data regeneration for {board_type}_{num_players}p"
+                )
+        except Exception as e:
+            logger.warning(f"[QualityGate] Failed to trigger data regeneration: {e}")
 
     async def _on_training_started(self, result) -> None:
         """Handle training start."""
@@ -1090,8 +1502,8 @@ class DataPipelineOrchestrator:
             except RuntimeError:
                 asyncio.run(bus.publish(event))
 
-        except Exception:
-            pass  # Best effort
+        except Exception as e:
+            logger.debug(f"[DataPipelineOrchestrator] Best-effort event emit failed: {e}")
 
     def _record_circuit_success(self, stage: str) -> None:
         """Record a successful stage execution to circuit breaker."""
@@ -1285,8 +1697,8 @@ class DataPipelineOrchestrator:
                 threshold=0,
                 action_taken=f"pipeline_paused: {reason}",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[DataPipelineOrchestrator] Failed to emit resource constraint: {e}")
 
     async def _resume_pipeline(self) -> None:
         """Resume the pipeline after constraint resolution."""
@@ -1542,17 +1954,34 @@ def get_pipeline_orchestrator() -> DataPipelineOrchestrator:
     return _pipeline_orchestrator
 
 
-def wire_pipeline_events(auto_trigger: bool = False) -> DataPipelineOrchestrator:
+def wire_pipeline_events(
+    auto_trigger: bool = False,
+    training_epochs: int | None = None,
+    training_batch_size: int | None = None,
+    training_model_version: str | None = None,
+) -> DataPipelineOrchestrator:
     """Wire pipeline events to the orchestrator.
 
     Args:
         auto_trigger: If True, automatically trigger downstream stages
+        training_epochs: Override default training epochs
+        training_batch_size: Override default training batch size
+        training_model_version: Override default model version
 
     Returns:
         The wired DataPipelineOrchestrator instance
     """
     global _pipeline_orchestrator
     _pipeline_orchestrator = DataPipelineOrchestrator(auto_trigger=auto_trigger)
+
+    # Apply training config overrides (December 2025 - CLI connection)
+    if training_epochs is not None:
+        _pipeline_orchestrator._config.training_epochs = training_epochs
+    if training_batch_size is not None:
+        _pipeline_orchestrator._config.training_batch_size = training_batch_size
+    if training_model_version is not None:
+        _pipeline_orchestrator._config.training_model_version = training_model_version
+
     _pipeline_orchestrator.subscribe_to_events()
     _pipeline_orchestrator.subscribe_to_data_events()  # December 2025
     return _pipeline_orchestrator

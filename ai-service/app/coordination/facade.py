@@ -296,8 +296,8 @@ class CoordinationFacade:
                 return TrainingStatus.RUNNING
             elif status and status.get("completed"):
                 return TrainingStatus.COMPLETED
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not get training status for {config_key}: {e}")
 
         return TrainingStatus.NOT_STARTED
 
@@ -448,7 +448,8 @@ class CoordinationFacade:
         try:
             router.unsubscribe(subscription_id)
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Could not unsubscribe {subscription_id}: {e}")
             return False
 
     # =========================================================================

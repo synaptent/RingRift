@@ -266,13 +266,23 @@ def _init_selfplay_orchestrator() -> BootstrapCoordinatorStatus:
     return status
 
 
-def _init_pipeline_orchestrator(auto_trigger: bool = False) -> BootstrapCoordinatorStatus:
+def _init_pipeline_orchestrator(
+    auto_trigger: bool = False,
+    training_epochs: int | None = None,
+    training_batch_size: int | None = None,
+    training_model_version: str | None = None,
+) -> BootstrapCoordinatorStatus:
     """Initialize DataPipelineOrchestrator."""
     status = BootstrapCoordinatorStatus(name="pipeline_orchestrator")
     try:
         from app.coordination.data_pipeline_orchestrator import wire_pipeline_events
 
-        orchestrator = wire_pipeline_events(auto_trigger=auto_trigger)
+        orchestrator = wire_pipeline_events(
+            auto_trigger=auto_trigger,
+            training_epochs=training_epochs,
+            training_batch_size=training_batch_size,
+            training_model_version=training_model_version,
+        )
         status.initialized = True
         status.subscribed = orchestrator._subscribed
         status.initialized_at = datetime.now()
@@ -674,6 +684,10 @@ def bootstrap_coordination(
     enable_integrations: bool = True,  # New: Wire integration modules (C2)
     pipeline_auto_trigger: bool = False,
     register_with_registry: bool = True,
+    # Training config (December 2025 - CLI connection)
+    training_epochs: int | None = None,
+    training_batch_size: int | None = None,
+    training_model_version: str | None = None,
 ) -> dict[str, Any]:
     """Initialize all coordination components.
 
@@ -722,6 +736,9 @@ def bootstrap_coordination(
         enable_integrations: Wire integration modules to event router (C2)
         pipeline_auto_trigger: Auto-trigger pipeline on events
         register_with_registry: Register coordinators with OrchestratorRegistry
+        training_epochs: Override default training epochs for pipeline
+        training_batch_size: Override default training batch size for pipeline
+        training_model_version: Override default model version for pipeline
 
     Returns:
         Status dict with initialization results
@@ -757,7 +774,9 @@ def bootstrap_coordination(
         # Selfplay layer (depends on task_lifecycle, resources)
         ("selfplay_orchestrator", enable_selfplay, _init_selfplay_orchestrator),
         # Pipeline layer (depends on selfplay, cache)
-        ("pipeline_orchestrator", enable_pipeline, lambda: _init_pipeline_orchestrator(pipeline_auto_trigger)),
+        ("pipeline_orchestrator", enable_pipeline, lambda: _init_pipeline_orchestrator(
+            pipeline_auto_trigger, training_epochs, training_batch_size, training_model_version
+        )),
         # Multi-provider layer
         ("multi_provider", enable_multi_provider, _init_multi_provider),
         # Job scheduler layer
