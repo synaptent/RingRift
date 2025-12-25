@@ -703,8 +703,8 @@ def collect_model_from_host(
 
             # Validate downloaded file before finalizing
             try:
-                import torch
-                test_load = torch.load(temp_path, map_location='cpu', weights_only=False)
+                from app.utils.torch_utils import safe_load_checkpoint
+                test_load = safe_load_checkpoint(temp_path, map_location='cpu')
                 if test_load is None:
                     temp_path.unlink(missing_ok=True)
                     return False, "Downloaded model is corrupt (loads as None)"

@@ -100,7 +100,8 @@ def _resolve_checkpoint_from_nn_model_id(
 
 
 def _load_checkpoint(path: Path) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
-    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    from app.utils.torch_utils import safe_load_checkpoint
+    ckpt = safe_load_checkpoint(path, map_location="cpu")
     if not isinstance(ckpt, dict):
         raise TypeError(f"Unexpected checkpoint type: {type(ckpt).__name__}")
 

@@ -53,17 +53,9 @@ except ImportError:
 
 
 def _load_checkpoint(model_path: str | Path, device: str):
-    """Load a torch checkpoint with PyTorch 2.6+ weights_only fallback."""
-    try:
-        return torch.load(model_path, map_location=device)
-    except Exception as exc:
-        if "Weights only load failed" in str(exc):
-            try:
-                return torch.load(model_path, map_location=device, weights_only=False)
-            except TypeError:
-                # Older torch without weights_only argument.
-                return torch.load(model_path, map_location=device)
-        raise
+    """Load a torch checkpoint using safe loading (tries weights_only=True first)."""
+    from app.utils.torch_utils import safe_load_checkpoint
+    return safe_load_checkpoint(model_path, map_location=device)
 
 
 class GNNAI(BaseAI):

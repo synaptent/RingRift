@@ -312,7 +312,8 @@ def load_and_adapt_model(
     """
     logger.info(f"Loading source model from {source_path}")
 
-    checkpoint = torch.load(source_path, map_location="cpu", weights_only=False)
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(source_path, map_location="cpu")
 
     if isinstance(checkpoint, dict):
         if "model_state_dict" in checkpoint:

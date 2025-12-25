@@ -187,7 +187,8 @@ def load_checkpoint(
     Returns:
         CheckpointState with loaded values
     """
-    checkpoint = torch.load(path, map_location=device, weights_only=False)
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(path, map_location=device)
 
     # Load model state
     model_state = checkpoint.get("model_state_dict", checkpoint.get("state_dict", {}))

@@ -116,7 +116,8 @@ class GMOv2Dataset(Dataset):
     def _load_from_cache(self, cache_path: Path) -> None:
         """Load preprocessed samples from cache."""
         logger.info(f"Loading from cache: {cache_path}")
-        data = torch.load(cache_path, weights_only=False)
+        from app.utils.torch_utils import safe_load_checkpoint
+        data = safe_load_checkpoint(cache_path)
         self.samples = [
             (data['state_features'][i], data['move_embeds'][i], data['outcomes'][i].item())
             for i in range(len(data['outcomes']))

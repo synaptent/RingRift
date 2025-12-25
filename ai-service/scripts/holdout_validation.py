@@ -513,8 +513,9 @@ def evaluate_model_on_holdout(
     try:
         from app.training.nnue_model import RingRiftNNUE
 
+        from app.utils.torch_utils import safe_load_checkpoint
         model = RingRiftNNUE(board_type=board_type)
-        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
         state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
         model.load_state_dict(state_dict)
         model.eval()
@@ -651,8 +652,9 @@ def evaluate_model_stratified(
         try:
             from app.training.nnue_model import RingRiftNNUE
 
+            from app.utils.torch_utils import safe_load_checkpoint
             model = RingRiftNNUE(board_type=board_type)
-            checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+            checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
             state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
             model.load_state_dict(state_dict)
             model.eval()

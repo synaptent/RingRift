@@ -474,7 +474,8 @@ class GNNSelfplayRunner(SelfplayRunner):
         # Load weights if weights_file is provided (reusing heuristic weights field)
         from pathlib import Path
         if self.config.weights_file and Path(self.config.weights_file).exists():
-            checkpoint = torch.load(self.config.weights_file, map_location=device, weights_only=False)
+            from app.utils.torch_utils import safe_load_checkpoint
+            checkpoint = safe_load_checkpoint(self.config.weights_file, map_location=device)
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
                 self._model.load_state_dict(checkpoint["model_state_dict"])
             else:

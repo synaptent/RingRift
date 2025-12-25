@@ -46,15 +46,8 @@ def _resolve_board_type(value: str | BoardType | None) -> BoardType:
 
 def _load_checkpoint(path: str):
     """Load a torch checkpoint with PyTorch 2.6+ weights_only fallback."""
-    try:
-        return torch.load(path, map_location="cpu")
-    except Exception as exc:
-        if "Weights only load failed" in str(exc):
-            try:
-                return torch.load(path, map_location="cpu", weights_only=False)
-            except TypeError:
-                return torch.load(path, map_location="cpu")
-        raise
+    from app.utils.torch_utils import safe_load_checkpoint
+    return safe_load_checkpoint(path, map_location="cpu")
 
 
 def _build_gnn_ai(model_path: str, player_number: int, device: str) -> GNNAI:

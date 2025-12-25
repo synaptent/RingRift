@@ -226,7 +226,8 @@ def run_regression_test(
 
                 # Now load specific model weights if different from default
                 if os.path.exists(model_path) and ai.neural_net.model is not None:
-                    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+                    from app.utils.torch_utils import safe_load_checkpoint
+                    checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
                     # Handle both raw state_dict and checkpoint format
                     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
                         ai.neural_net.model.load_state_dict(checkpoint["model_state_dict"])

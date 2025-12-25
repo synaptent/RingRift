@@ -66,8 +66,8 @@ def is_versioned_checkpoint(checkpoint_path: Path) -> bool:
     Versioned checkpoints are safer to load as they include architecture info.
     """
     try:
-        import torch
-        data = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        from app.utils.torch_utils import safe_load_checkpoint
+        data = safe_load_checkpoint(checkpoint_path, map_location="cpu")
         return "version" in data or "__version__" in data or "architecture" in data
     except Exception:
         return False

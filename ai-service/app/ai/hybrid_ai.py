@@ -80,7 +80,8 @@ class HybridAI(BaseAI):
         """Load trained hybrid model."""
         from app.ai.neural_net.hybrid_cnn_gnn import HybridPolicyNet, HAS_PYG as HAS_HYBRID_PYG
 
-        ckpt = torch.load(model_path, map_location=self.device, weights_only=False)
+        from app.utils.torch_utils import safe_load_checkpoint
+        ckpt = safe_load_checkpoint(model_path, map_location=self.device)
 
         # Extract model config from checkpoint
         self.action_space_size = ckpt.get("action_space_size", 4132)

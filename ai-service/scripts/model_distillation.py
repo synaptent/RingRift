@@ -222,7 +222,8 @@ class EnsembleTeacher(nn.Module):
         Returns:
             EnsembleTeacher instance
         """
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        from app.utils.torch_utils import safe_load_checkpoint
+        checkpoint = safe_load_checkpoint(checkpoint_path, map_location=device)
 
         if "ensemble_metadata" not in checkpoint:
             raise ValueError("Not an ensemble checkpoint (missing ensemble_metadata)")
@@ -262,7 +263,8 @@ def load_ensemble_models(
     Returns:
         Tuple of (teacher_model, metadata)
     """
-    checkpoint = torch.load(ensemble_path, map_location=device, weights_only=False)
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(ensemble_path, map_location=device)
 
     if "ensemble_metadata" in checkpoint:
         # Pre-averaged ensemble
@@ -451,7 +453,8 @@ def run_distillation(
     # Load teacher weights if path exists
     if teacher_path.exists():
         try:
-            checkpoint = torch.load(teacher_path, map_location=device, weights_only=False)
+            from app.utils.torch_utils import safe_load_checkpoint
+            checkpoint = safe_load_checkpoint(teacher_path, map_location=device)
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
                 # Try to load, but architecture may not match
                 logger.info(f"Teacher checkpoint found: {teacher_path}")

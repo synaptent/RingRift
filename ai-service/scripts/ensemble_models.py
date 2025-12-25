@@ -38,7 +38,8 @@ import torch
 
 def load_model_weights(model_path: str) -> dict[str, torch.Tensor]:
     """Load model weights from a checkpoint file."""
-    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
 
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
         return checkpoint["model_state_dict"]
