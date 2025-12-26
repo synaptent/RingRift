@@ -277,7 +277,7 @@ def _evaluation_heuristic_speed_knobs(
     if env_limit is not None:
         try:
             parsed = int(env_limit)
-        except Exception:
+        except (ValueError, TypeError):
             parsed = default_limit
     else:
         parsed = default_limit
@@ -592,11 +592,11 @@ def _tiebreak_winner(game_state: GameState) -> int | None:
             player_num = idx + 1
         try:
             eliminated = int(getattr(player, "eliminated_rings", 0) or 0)
-        except Exception:
+        except (ValueError, TypeError):
             eliminated = 0
         try:
             territory = int(getattr(player, "territory_spaces", 0) or 0)
-        except Exception:
+        except (ValueError, TypeError):
             territory = 0
         pieces = count_player_pieces(game_state, int(player_num))
 

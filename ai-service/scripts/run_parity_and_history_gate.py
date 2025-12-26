@@ -72,7 +72,7 @@ def infer_board_type(db_path: Path) -> str | None:
     """Best-effort board_type inference from the replay DB."""
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
-    except Exception:
+    except (sqlite3.Error, OSError, PermissionError):
         return None
 
     try:
@@ -80,7 +80,7 @@ def infer_board_type(db_path: Path) -> str | None:
         if not row:
             return None
         return str(row[0]).strip().lower()
-    except Exception:
+    except sqlite3.Error:
         return None
     finally:
         conn.close()
@@ -173,7 +173,7 @@ def main(argv: list[str]) -> int:
 
     try:
         parity_summary = json.loads(parity_proc.stdout)
-    except Exception:
+    except (json.JSONDecodeError, ValueError, TypeError):
         parity_summary = {
             "error": "failed_to_parse_parity_summary",
             "stdout": parity_proc.stdout,

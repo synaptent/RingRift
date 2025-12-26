@@ -88,7 +88,7 @@ def run_game(
         try:
             for p_id in collapsed_spaces.values():
                 territory_counts[int(p_id)] = territory_counts.get(int(p_id), 0) + 1
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError):
             pass
 
         marker_counts: dict[int, int] = {int(p.player_number): 0 for p in players}
@@ -97,14 +97,14 @@ def run_game(
                 owner = int(getattr(marker, "player", getattr(marker, "player_number", 0)) or 0)
                 if owner:
                     marker_counts[owner] = marker_counts.get(owner, 0) + 1
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError):
             pass
 
         last_actor: int | None = None
         try:
             if final_state.move_history:
                 last_actor = int(getattr(final_state.move_history[-1], "player", 0) or 0) or None
-        except Exception:
+        except (ValueError, TypeError, IndexError, AttributeError):
             last_actor = None
 
         sorted_players = sorted(

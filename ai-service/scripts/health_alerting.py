@@ -206,7 +206,7 @@ def check_p2p_network(config: AlertConfig) -> HealthCheck:
                     message=f"{active} active peers",
                     value=active,
                 )
-        except Exception:
+        except (ConnectionError, TimeoutError, OSError, json.JSONDecodeError) as e:
             continue
 
     return HealthCheck(
@@ -309,7 +309,7 @@ def check_selfplay_jobs(config: AlertConfig) -> HealthCheck:
                     message=f"{total_jobs} jobs, {idle} idle",
                     value=total_jobs,
                 )
-        except Exception:
+        except (ConnectionError, TimeoutError, OSError, json.JSONDecodeError) as e:
             continue
 
     return HealthCheck(
@@ -351,7 +351,7 @@ def check_local_disk() -> HealthCheck:
                     message=f"Disk usage: {usage_pct}%",
                     value=usage_pct,
                 )
-    except Exception:
+    except (subprocess.SubprocessError, OSError, ValueError, IndexError) as e:
         pass
 
     return HealthCheck(

@@ -48,7 +48,7 @@ ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 from app.config.thresholds import PRODUCTION_ELO_THRESHOLD
 try:  # pragma: no cover
     from app.training.selfplay_config import normalize_engine_mode as _normalize_engine_mode
-except Exception:  # pragma: no cover
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     def _normalize_engine_mode(raw_mode: str) -> str:
         return str(raw_mode).strip().lower()
 
@@ -233,7 +233,7 @@ def analyze_game(
             is_timeout=is_timeout,
         )
 
-    except Exception:
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return None
 
 
@@ -252,7 +252,7 @@ def analyze_jsonl_file(
                 with open(file_path, 'rb') as check_f:
                     magic = check_f.read(2)
                     is_gzip = magic == b'\x1f\x8b'
-            except Exception:
+            except (OSError, FileNotFoundError, PermissionError):
                 pass
 
         opener = gzip.open if is_gzip else open

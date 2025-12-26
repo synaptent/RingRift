@@ -145,7 +145,7 @@ def read_jsonl_chunked(
         if chunk:
             yield chunk
 
-    except Exception as e:
+    except (OSError, IOError, PermissionError) as e:
         logger.warning(f"Error reading {filepath}: {e}")
         if chunk:
             yield chunk
@@ -303,7 +303,7 @@ def process_chunk(
             else:
                 duplicates += 1
 
-        except Exception:
+        except (sqlite3.Error, ValueError, KeyError, TypeError, json.JSONDecodeError):
             invalid += 1
 
     conn.commit()
@@ -376,7 +376,7 @@ def scan_jsonl_files(
 
             files.append(jsonl_file)
 
-        except Exception:
+        except (OSError, ValueError):
             continue
 
     return sorted(files, key=lambda f: f.stat().st_size, reverse=True)
@@ -390,7 +390,7 @@ def load_marker_file(marker_path: Path) -> set[str]:
     try:
         content = marker_path.read_text().strip()
         return set(content.split("\n")) if content else set()
-    except Exception:
+    except (OSError, IOError, PermissionError):
         return set()
 
 

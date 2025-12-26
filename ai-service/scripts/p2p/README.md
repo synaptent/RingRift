@@ -29,17 +29,18 @@ Extract handlers into `scripts/p2p/handlers/`:
 
 | Module          | Lines | Methods | Status                |
 | --------------- | ----- | ------- | --------------------- |
-| `work_queue.py` | 471   | 12      | ✅ Extracted          |
+| `work_queue.py` | 471   | 11      | ✅ Extracted          |
 | `election.py`   | 349   | 5       | ✅ Extracted          |
 | `relay.py`      | 368   | 4       | ✅ Extracted          |
-| `gauntlet.py`   | 382   | 6       | ✅ Extracted          |
+| `gauntlet.py`   | 382   | 3       | ✅ Extracted          |
 | `gossip.py`     | 226   | 2       | ✅ Extracted          |
 | `admin.py`      | 131   | 3       | ✅ Extracted          |
+| `elo_sync.py`   | 175   | 4       | ✅ Extracted          |
 | `data_sync.py`  | ~1000 | 12      | Pending (interleaved) |
 | `dashboard.py`  | ~2000 | 20      | Pending               |
 | `api.py`        | ~2500 | 25      | Pending (scattered)   |
 
-**Progress: 29,767 → 28,325 lines (-1,442 lines, ~4.8% reduction)**
+**Progress: 29,767 → 28,194 lines (-1,573 lines, ~5.3% reduction)**
 
 ### Phase 2: Core Logic Extraction (TARGET: ~10,000 lines)
 

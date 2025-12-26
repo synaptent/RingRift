@@ -197,7 +197,7 @@ def check_node(name: str, config: dict) -> NodeStatus:
                 status.gpu_util = float(parts[1])
                 status.gpu_mem_used = float(parts[2])
                 status.gpu_mem_total = float(parts[3])
-    except Exception:
+    except (ValueError, IndexError):
         pass
 
     # Check screen sessions
@@ -212,7 +212,7 @@ def check_node(name: str, config: dict) -> NodeStatus:
                 if len(parts) >= 2:
                     session_name = parts[1].split("\t")[0]
                     status.screen_sessions.append(session_name)
-    except Exception:
+    except (ValueError, IndexError):
         pass
 
     # Check disk usage
@@ -227,7 +227,7 @@ def check_node(name: str, config: dict) -> NodeStatus:
                 parts = lines[1].split()
                 if len(parts) >= 5:
                     status.disk_percent = float(parts[4].rstrip("%"))
-    except Exception:
+    except (ValueError, IndexError):
         pass
 
     return status

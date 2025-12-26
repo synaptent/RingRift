@@ -344,6 +344,10 @@ class ClusterDataSyncDaemon:
             ],
         }
 
+    async def start(self) -> None:
+        """Start the daemon (alias for run)."""
+        await self.run()
+
     async def run(self) -> None:
         """Main daemon loop."""
         self._running = True

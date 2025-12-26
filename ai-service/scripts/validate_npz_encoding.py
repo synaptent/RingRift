@@ -75,14 +75,14 @@ def validate_npz(path: str, expected_board_type: str | None = None) -> Validatio
     if "policy_encoding" in data:
         try:
             policy_encoding = str(np.asarray(data["policy_encoding"]).item())
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
 
     board_type = "unknown"
     if "board_type" in data:
         try:
             board_type = str(np.asarray(data["board_type"]).item())
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
 
     # Use expected board type if provided
@@ -117,7 +117,7 @@ def validate_npz(path: str, expected_board_type: str | None = None) -> Validatio
                         local_max = int(np.max(flat))
                         if local_max > max_policy_index:
                             max_policy_index = local_max
-                except Exception:
+                except (ValueError, TypeError, IndexError):
                     pass
 
     # Check for issues

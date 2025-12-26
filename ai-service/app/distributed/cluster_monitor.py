@@ -119,6 +119,11 @@ class ClusterStatus:
     query_duration_seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
 
+    @property
+    def healthy_nodes(self) -> int:
+        """Alias for active_nodes for backward compatibility."""
+        return self.active_nodes
+
 
 class ClusterMonitor:
     """Monitor and query cluster-wide status.

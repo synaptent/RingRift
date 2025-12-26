@@ -166,7 +166,8 @@ from app.ai.canonical_move_encoding import (
 
 # Classes and functions still in legacy module (to be migrated in later phases)
 # NOTE: Moved to archive/ December 2025 - scheduled for removal Q1 2026
-from archive.deprecated_ai._neural_net_legacy import (
+# Symlinked at app/ai/_neural_net_legacy.py for compatibility
+from app.ai._neural_net_legacy import (
     _MODEL_CACHE,
     # Main AI class
     NeuralNetAI,

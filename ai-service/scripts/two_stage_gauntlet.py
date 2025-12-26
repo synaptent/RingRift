@@ -49,6 +49,7 @@ import argparse
 import json
 import math
 import socket
+import sqlite3
 import sys
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -318,13 +319,13 @@ def play_game(
                     model_player=model_player,
                     winner=winner,
                 )
-            except Exception:
+            except (OSError, IOError, PermissionError, sqlite3.Error):
                 # Don't fail the game if recording fails
                 pass
 
         return winner
 
-    except Exception:
+    except (ImportError, FileNotFoundError, RuntimeError, AttributeError, ValueError, TypeError, KeyError):
         return None
 
 
@@ -612,7 +613,7 @@ def run_two_stage_gauntlet(
             with db._get_conn() as conn:
                 count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
                 print(f"\nRecorded {count} winning games to database")
-        except Exception:
+        except (ImportError, sqlite3.Error, AttributeError, TypeError):
             pass
 
     return results

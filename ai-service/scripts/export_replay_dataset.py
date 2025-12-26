@@ -435,7 +435,7 @@ def export_replay_dataset_multi(
                 try:
                     with open(path, encoding="utf-8") as f:
                         fixture = json.load(f)
-                except Exception:
+                except (FileNotFoundError, PermissionError, json.JSONDecodeError, OSError):
                     continue
                 game_id = fixture.get("game_id")
                 diverged_at = fixture.get("diverged_at")
@@ -1526,7 +1526,7 @@ def main(argv: list[str] | None = None) -> int:
             with np.load(args.output, allow_pickle=True) as data:
                 if "values" in data:
                     samples_exported = len(data["values"])
-        except Exception:
+        except (FileNotFoundError, PermissionError, OSError, ValueError, KeyError):
             pass
 
         cache.record_export(
@@ -1554,7 +1554,7 @@ def main(argv: list[str] | None = None) -> int:
                 with np.load(args.output, allow_pickle=True) as data:
                     if "values" in data:
                         samples_exported = len(data["values"])
-            except Exception:
+            except (FileNotFoundError, PermissionError, OSError, ValueError, KeyError):
                 pass
 
         async def _emit():
