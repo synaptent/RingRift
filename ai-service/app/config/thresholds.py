@@ -878,6 +878,8 @@ SELFPLAY_GAMES_PER_NODE: dict[str, int] = {
     "RTX_3090": 300,
     "CPU": 50,       # CPU selfplay is slow
 }
+# Alias for GPU-centric code
+SELFPLAY_GAMES_PER_GPU_TYPE = SELFPLAY_GAMES_PER_NODE
 
 # Training batch size by GPU type
 TRAINING_BATCH_SIZE_BY_GPU: dict[str, int] = {
